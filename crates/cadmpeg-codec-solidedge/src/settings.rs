@@ -143,25 +143,11 @@ pub(crate) fn unit_system(sets: &[PropertySet], losses: &mut Vec<LossNote>) -> O
         )));
         return None;
     };
-    let length = set.word(LENGTH_PROPERTY).and_then(|code| {
-        let unit = length_unit(code);
-        if unit.is_none() {
-            losses.push(SolidEdgeLossCode::UnitCodeUnknown.note(format!(
-                "{LENGTH_PROPERTY} code {code} names no known length unit"
-            )));
-        }
-        unit
-    });
+    let length = set
+        .word(LENGTH_PROPERTY)
+        .and_then(|code| resolve(LENGTH_PROPERTY, "length", code, length_code(code), losses));
     let angle = match set.word(ANGLE_PROPERTY) {
-        Some(code) => {
-            let unit = angle_unit(code);
-            if unit.is_none() {
-                losses.push(SolidEdgeLossCode::UnitCodeUnknown.note(format!(
-                    "{ANGLE_PROPERTY} code {code} names no known angle unit"
-                )));
-            }
-            unit
-        }
+        Some(code) => resolve(ANGLE_PROPERTY, "angle", code, angle_code(code), losses),
         None => {
             losses.push(SolidEdgeLossCode::UnitsUnread.note(format!(
                 "the property set storing {LENGTH_PROPERTY} stores no {ANGLE_PROPERTY}"
@@ -177,22 +163,70 @@ pub(crate) fn unit_system(sets: &[PropertySet], losses: &mut Vec<LossNote>) -> O
     })
 }
 
-/// `DefaultDistancePrimary` codes.
-fn length_unit(code: u32) -> Option<UnitSymbol> {
+fn resolve(
+    property: &str,
+    quantity: &str,
+    code: u32,
+    resolved: Option<Code>,
+    losses: &mut Vec<LossNote>,
+) -> Option<UnitSymbol> {
+    match resolved {
+        Some(Code::Unit(unit)) => Some(unit),
+        Some(Code::NotNeutral(name)) => {
+            losses.push(SolidEdgeLossCode::UnitNotNeutral.note(format!(
+                "{property} code {code} selects the {name} {quantity} unit, which has no neutral symbol"
+            )));
+            None
+        }
+        None => {
+            losses.push(SolidEdgeLossCode::UnitCodeUnknown.note(format!(
+                "{property} code {code} names no known {quantity} unit"
+            )));
+            None
+        }
+    }
+}
+
+/// A unit code read from a unit record.
+enum Code {
+    /// A unit with a neutral symbol.
+    Unit(UnitSymbol),
+    /// A settled unit option that has no neutral symbol.
+    NotNeutral(&'static str),
+}
+
+/// `DefaultDistancePrimary` codes. The abbreviated and full display forms
+/// of one unit have distinct codes.
+fn length_code(code: u32) -> Option<Code> {
     Some(match code {
-        59 => UnitSymbol::M,
-        61 => UnitSymbol::Mm,
-        62 => UnitSymbol::Cm,
-        64 => UnitSymbol::In,
+        59 => Code::Unit(UnitSymbol::M),
+        60 => Code::Unit(UnitSymbol::Nm),
+        61 => Code::Unit(UnitSymbol::Mm),
+        62 => Code::Unit(UnitSymbol::Cm),
+        63 => Code::Unit(UnitSymbol::Km),
+        64 | 361 => Code::Unit(UnitSymbol::In),
+        65 | 360 => Code::Unit(UnitSymbol::Ft),
+        66 => Code::Unit(UnitSymbol::Yd),
+        67 => Code::Unit(UnitSymbol::Mi),
+        68 => Code::NotNeutral("tenth"),
+        69 => Code::NotNeutral("hundredth"),
+        70 => Code::NotNeutral("thousandth"),
+        71 => Code::NotNeutral("rod"),
+        72 => Code::NotNeutral("pole"),
+        74 => Code::NotNeutral("chain"),
+        76 => Code::NotNeutral("furlong"),
         _ => return None,
     })
 }
 
 /// `DefaultAnglePrimary` codes.
-fn angle_unit(code: u32) -> Option<UnitSymbol> {
+fn angle_code(code: u32) -> Option<Code> {
     Some(match code {
-        77 => UnitSymbol::Rad,
-        357 => UnitSymbol::Deg,
+        77 => Code::Unit(UnitSymbol::Rad),
+        78 | 357 => Code::Unit(UnitSymbol::Deg),
+        79 | 358 => Code::Unit(UnitSymbol::Arcmin),
+        80 | 359 => Code::Unit(UnitSymbol::Arcsec),
+        81 => Code::Unit(UnitSymbol::Grad),
         _ => return None,
     })
 }

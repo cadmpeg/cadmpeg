@@ -48,19 +48,47 @@ fn property_set_walks_every_value_type() {
 
 #[test]
 fn length_and_angle_codes_select_the_unit_system() {
-    for (code, unit) in [
+    let lengths = [
         (59, UnitSymbol::M),
+        (60, UnitSymbol::Nm),
         (61, UnitSymbol::Mm),
         (62, UnitSymbol::Cm),
+        (63, UnitSymbol::Km),
         (64, UnitSymbol::In),
-    ] {
-        for (angle, angle_unit) in [(357, UnitSymbol::Deg), (77, UnitSymbol::Rad)] {
+        (361, UnitSymbol::In),
+        (65, UnitSymbol::Ft),
+        (360, UnitSymbol::Ft),
+        (66, UnitSymbol::Yd),
+        (67, UnitSymbol::Mi),
+    ];
+    let angles = [
+        (77, UnitSymbol::Rad),
+        (78, UnitSymbol::Deg),
+        (357, UnitSymbol::Deg),
+        (79, UnitSymbol::Arcmin),
+        (358, UnitSymbol::Arcmin),
+        (80, UnitSymbol::Arcsec),
+        (359, UnitSymbol::Arcsec),
+        (81, UnitSymbol::Grad),
+    ];
+    for (code, unit) in lengths {
+        for (angle, angle_unit) in angles {
             let mut losses = Vec::new();
             let system = unit_system(&sets(&units(code, angle)), &mut losses).unwrap();
             assert_eq!(system.length, unit);
             assert_eq!(system.angle, angle_unit);
             assert!(losses.is_empty());
         }
+    }
+}
+
+#[test]
+fn unit_without_neutral_symbol_is_a_loss() {
+    for code in [68, 69, 70, 71, 72, 74, 76] {
+        let mut losses = Vec::new();
+        assert!(unit_system(&sets(&units(code, 357)), &mut losses).is_none());
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.local_code(), "units.not-neutral");
     }
 }
 
