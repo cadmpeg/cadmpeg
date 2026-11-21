@@ -28,12 +28,12 @@ pub(crate) mod named_parameter_scope_tail {
     pub(crate) const MIDDLE_REFERENCE: usize = 30;
     /// Offset of `previous_history_state_id` (`u32`, little-endian). Spec §3.1.
     pub(crate) const PREVIOUS_HISTORY_STATE_ID: usize = 31;
-    /// Offset of `lane_word` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const LANE_WORD: usize = 35;
-    /// Offset of `lane_scalar` (`f64`, little-endian). Spec §3.1.
-    pub(crate) const LANE_SCALAR: usize = 39;
-    /// Offset of `repeated_word` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const REPEATED_WORD: usize = 47;
+    /// Offset of `evaluation_epoch` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const EVALUATION_EPOCH: usize = 35;
+    /// Offset of `evaluation_duration` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const EVALUATION_DURATION: usize = 39;
+    /// Offset of `second_evaluation_epoch` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SECOND_EVALUATION_EPOCH: usize = 47;
     /// Offset of `second_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const SECOND_REFERENCE: usize = 51;
     /// Offset of `lane_flags` (`bytes[3]`). Spec §3.1.

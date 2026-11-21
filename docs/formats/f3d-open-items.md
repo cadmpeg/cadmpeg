@@ -807,16 +807,6 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Note.** The decoder places a Canvas with a zero byte in a non-legacy layout by its boundary segments and payload frame, keeps the byte in the native `second_boundary_flag` field, and reports `appearance.reference-image-flag-assumed`.
 
-### DR-879. Preceding history-state identity of a labeled tail
-
-**Question.** Does a named parameter-scope tail with a label of positive length `L` store a preceding history-state identity, and at which tail offset?
-
-**Known.** `f3d.md` §3.1 states that a tail whose label is empty is the 78-byte fixed tail, with the preceding history-state identity at tail offset 31 and the evaluation epoch at tail offsets 35 and 47. The feature item tail paragraph moves each later offset by `2L` after a custom label of `L` code units, which places a preceding history-state identity at tail offset `31 + 2L`. For a labeled tail, the decoder reads a preceding history-state identity for reciprocal `Hole` named tails from their reciprocal member layout, and leaves other labeled tails without one.
-
-**Need.** Labeled tails whose preceding identity can be checked against the current identity of another scope, to settle whether offset `31 + 2L` holds it.
-
-**Conflict.** None.
-
 ### DR-881. Tracked-entry record variants
 
 **Question.** What selects the 37-byte or the 33-byte form of a side-face entry and the token-string form of a body entry (type `335CC7BD-BBE5-40AA-9E8C-5EC99D427A3A`), what does the reference that other body entries (type `ABA79BE7-D8D2-4C17-B59B-C2035E111F77`) store in place of the null reference name, and what do the two operands after the sense word of a curve-record entry (type `2DEE34BE-FA70-4D54-979C-164D86FDA786`) encode?
