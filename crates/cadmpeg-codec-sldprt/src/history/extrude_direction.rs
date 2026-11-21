@@ -114,10 +114,12 @@ fn witness(ir: &CadIr, work: &WorkBudget) -> Option<Witness> {
     let mut usable = false;
     let mut reversed = false;
     for feature in &ir.model.features {
-        if let Some(candidate) = candidate(feature).filter(|candidate| placed(candidate.profile)) {
+        if reversed_join(feature).is_some_and(placed) {
             usable = true;
-            reversed |= candidate.adds_against_the_normal();
-        } else if two_sided(feature).is_some_and(|candidate| placed(candidate.profile)) {
+            reversed = true;
+        } else if candidate(feature).is_some_and(|candidate| placed(candidate.profile))
+            || two_sided(feature).is_some_and(|candidate| placed(candidate.profile))
+        {
             usable = true;
         }
     }
@@ -253,11 +255,23 @@ struct OneSided<'a> {
     travel: f64,
 }
 
-impl OneSided<'_> {
-    /// Whether it adds material against the profile normal, the travel
-    /// that the whole solid can contradict.
-    fn adds_against_the_normal(&self) -> bool {
-        self.travel < 0.0 && self.operation_sign > 0.0
+/// The planar profile of a one-sided extrusion from its profile's plane
+/// that adds material against the profile normal, whatever its
+/// termination: the travel that the whole solid can contradict.
+fn reversed_join(feature: &Feature) -> Option<&PlanarProfileRef> {
+    if feature.suppressed != Some(false) {
+        return None;
+    }
+    match feature.evaluation.definition().operation() {
+        FeatureOperation::Extrude {
+            profile: ProfileRef::Planar(profile),
+            start: ExtrudeStart::ProfilePlane {},
+            direction: ExtrudeDirection::ReversedProfileNormal {},
+            extent: ExtrudeExtent::OneSided { .. },
+            op: BooleanOp::Join | BooleanOp::NewBody,
+            ..
+        } => Some(profile),
+        _ => None,
     }
 }
 
@@ -514,30 +528,30 @@ fn samples(entity: &SketchEntity) -> Option<Vec<Point2>> {
 /// of the profile plane, or a start cap holding the profile with an end cap
 /// only on the opposite side.
 fn contradicts(model: &Model, feature: &Feature, witness: &Witness, work: &WorkBudget) -> bool {
-    let Some(candidate) = candidate(feature) else {
-        return false;
-    };
-    let OneSided {
+    let along = reversed_join(feature)
+        .and_then(|profile| profile_sketch(model, profile))
+        .and_then(Sketch::resolved_placement)
+        .and_then(|(origin, normal, _)| witness.solid.span(origin.get(), normal.get()))
+        .is_some_and(|(lowest, highest)| lowest >= -EPS_SOLID_SIDE && highest > EPS_SOLID_SIDE);
+    if along {
+        return work.charge();
+    }
+    let Some(OneSided {
         profile,
         length,
         operation_sign,
         travel,
-    } = candidate;
+    }) = candidate(feature)
+    else {
+        return false;
+    };
     let Some(sketch) = profile_sketch(model, profile) else {
         return false;
     };
-    let Some((origin, normal, _)) = sketch.resolved_placement() else {
+    let Some((_, normal, _)) = sketch.resolved_placement() else {
         return false;
     };
     let normal = normal.get();
-    if candidate.adds_against_the_normal()
-        && witness
-            .solid
-            .span(origin.get(), normal)
-            .is_some_and(|(lowest, highest)| lowest >= -EPS_SOLID_SIDE && highest > EPS_SOLID_SIDE)
-    {
-        return work.charge();
-    }
     let Some(points) = profile_points(model, profile, sketch) else {
         return false;
     };
