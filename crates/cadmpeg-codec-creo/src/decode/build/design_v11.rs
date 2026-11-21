@@ -29,6 +29,8 @@ use cadmpeg_ir::sketches::SketchId;
 
 use crate::container::ContainerScan;
 
+mod names;
+mod operations;
 mod parameters;
 mod sketches;
 
@@ -50,7 +52,9 @@ pub(super) fn project(
     parameters::project(ctx, ir, &definition)?;
     let sketches = sketches::project(ctx, scan, ir)?;
     parameters::omit_measured_display(ir);
-    project_timeline(ctx, ir, &definition, &sketches)?;
+    let names = names::Names::new(scan, regeneration_order(ir).map(|feature| &feature.id));
+    project_timeline(ctx, ir, &definition, &sketches, &names)?;
+    ir.design.names = names.table(ctx, ir)?;
     ir.design.features.sort_by(|a, b| a.id.cmp(&b.id));
     ir.design.containers.sort_by(|a, b| a.id().cmp(b.id()));
     Ok(())
@@ -114,6 +118,13 @@ fn definition_bodies(ir: &CadIr, definition: &ProductDefinitionId) -> Vec<BodyId
         .collect()
 }
 
+/// The model features in regeneration order.
+fn regeneration_order(ir: &CadIr) -> impl Iterator<Item = &LegacyFeature> {
+    let mut ordered = ir.model.features.iter().collect::<Vec<_>>();
+    ordered.sort_by(|a, b| (a.ordinal, &a.id).cmp(&(b.ordinal, &b.id)));
+    ordered.into_iter()
+}
+
 /// One ordered timeline holding every model feature in regeneration order.
 /// The decoder reads no insert position, so the timeline ends at its last
 /// member, which holds the current geometry.
@@ -122,9 +133,9 @@ fn project_timeline(
     ir: &mut CadIr,
     definition: &ProductDefinitionId,
     sketches: &BTreeSet<SketchId>,
+    names: &names::Names,
 ) -> Result<(), CodecError> {
-    let mut ordered = ir.model.features.iter().collect::<Vec<_>>();
-    ordered.sort_by(|a, b| (a.ordinal, &a.id).cmp(&(b.ordinal, &b.id)));
+    let ordered = regeneration_order(ir).collect::<Vec<_>>();
     let timeline = crate::identity::compose_checked::<ContainerId>(&TIMELINE, "root")?;
     let members = ordered
         .iter()
@@ -134,10 +145,11 @@ fn project_timeline(
         || Position::Start(timeline.clone()),
         |last| Position::After(last.clone()),
     );
+    let stated = operations::Stated::new(&ir.design.sketches, names);
     let mut features = Vec::new();
     for feature in &ordered {
         ctx.charge_entities(1, "project Creo v11 feature")?;
-        features.push(project_feature(feature, sketches)?);
+        features.push(project_feature(feature, sketches, &stated)?);
     }
     ctx.charge_entities(1, "project Creo v11 timeline")?;
     ctx.charge_entities(1, "project Creo v11 scope")?;
@@ -174,6 +186,7 @@ fn project_timeline(
 fn project_feature(
     feature: &LegacyFeature,
     sketches: &BTreeSet<SketchId>,
+    stated: &operations::Stated<'_>,
 ) -> Result<Feature, CodecError> {
     let (operation, refine) = match feature.evaluation.definition() {
         LegacyDefinition::Operation(operation) => (operation, None),
@@ -186,7 +199,10 @@ fn project_feature(
         name: feature.name.clone(),
         suppressed: None,
         definition: FeatureDefinition {
-            operation: self::operation(operation, sketches)?,
+            operation: match operations::typed(operation, &feature.id, stated) {
+                Some(typed) => typed,
+                None => self::operation(operation, sketches)?,
+            },
             refine,
             fuzzy_tolerance: None,
         },
@@ -313,9 +329,10 @@ fn operation(
             OperationFamily::Pattern
         }
         LegacyOperation::Thicken { .. } => OperationFamily::Thicken,
-        LegacyOperation::KnitSurface { .. } | LegacyOperation::SewBodies { .. } => {
-            OperationFamily::Knit
-        }
+        // A Creo merge is a knit in join mode and a mutual split in intersect
+        // mode; its role codes are not read, so it stays native (§6.6 Knit).
+        LegacyOperation::KnitSurface { .. } => return native("merge"),
+        LegacyOperation::SewBodies { .. } => OperationFamily::Knit,
         LegacyOperation::UnstitchFaces { .. } => OperationFamily::UnsewFaces,
         LegacyOperation::TrimSurface { .. }
         | LegacyOperation::CutWithSurface { .. }

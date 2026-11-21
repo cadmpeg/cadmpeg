@@ -1547,6 +1547,7 @@ fn removing_an_unordered_member_removes_its_own_result() {
         target: body_target(2),
         name: "on two".to_owned(),
         values: Vec::new(),
+        native_ref: None,
     }];
     document.model.presentation_layers = vec![crate::presentation::PresentationLayer {
         id: id("layer", 1),
