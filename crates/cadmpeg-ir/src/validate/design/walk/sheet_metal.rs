@@ -224,6 +224,24 @@ impl Walk for SheetMetal {
 impl Walk for SheetMetalKind {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         match self {
+            Self::AttachedPlate {
+                profile,
+                thickness: _,
+                side: _,
+                attachment,
+            } => {
+                profile.walk(into)?;
+                attachment.walk(into)
+            }
+            Self::AttachedBend {
+                plate: _,
+                attachment,
+                inside_radius: _,
+                relief: _,
+                transition_form: _,
+                transition_radius: _,
+            } => attachment.walk(into),
+            Self::UnchangedCorner { bend: _ } => Ok(()),
             Self::ApplyRule { rule: _, bodies } => bodies.walk(into),
             Self::Wall {
                 profile,
