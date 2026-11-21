@@ -585,7 +585,7 @@ pub(crate) enum F3dLossCode {
     ParameterUnprojected,
     /// Typed compact parameter frames match no parameter grammar.
     ParameterRecordUnparsed,
-    /// Decoded parameters set an uninterpreted flag in the compact expression trailer.
+    /// Decoded parameters set an uninterpreted flag in the expression trailer.
     ParameterTrailerFlagUninterpreted,
     /// Decoded parameter owners store a set final flag byte in the compact trailer.
     ParameterOwnerTrailerFlagUninterpreted,
@@ -747,6 +747,12 @@ pub(crate) enum F3dLossCode {
     FeatureProfileCutRegionsAssumed,
     /// A stored Cut transition certifies regions with stale curve identities.
     FeatureProfileRegionIdentitiesStale,
+    /// Extrude profile picks that exceed the carried regions of their Sketch
+    /// name its text on the reading that each pick is one glyph.
+    FeatureProfileTextGlyphsAssumed,
+    /// Extrude profile picks that exceed the carried regions of their Sketch
+    /// lie in its text, and the profile names none of their glyphs.
+    FeatureProfileTextGlyphsNative,
     /// Extrude profile selections assumed that a curve outside the
     /// arrangement makes no island in a selected face.
     FeatureProfileIslandAbsenceAssumed,
@@ -918,6 +924,9 @@ pub(crate) enum F3dLossCode {
     FeatureExtrudeTerminationMissing,
     /// A marker-one `Revolve` scope has a token-independent frame length outside its documented set.
     FeatureRevolveLayoutAssumed,
+    /// A Revolve scope frame matches no admitted Revolve form; its
+    /// construction stays undecoded.
+    FeatureRevolveFrameUnmatched,
     /// A marked `Move` or `Modify` transform record breaks a type, frame-length, or form-word rule of the rigid-transform record, or a `MoveFace` transform record breaks a frame-length or form-word rule.
     FeatureMoveTransformAssumed,
     /// A form-2 rigid-transform record stores four references whose effect on its stored motion is unresolved.
@@ -1204,6 +1213,8 @@ pub(crate) enum F3dLossCode {
     WriterJointOmitted,
     /// A parameter was not written.
     WriterParameterOmitted,
+    /// A sketch entity or constraint was not written.
+    WriterSketchContentOmitted,
     /// A configuration was not written.
     WriterConfigurationOmitted,
     /// A tessellation was not written.
@@ -1725,6 +1736,8 @@ impl F3dLossCode {
         Self::FeatureProfileLoopFlagsAssumed,
         Self::FeatureProfileCutRegionsAssumed,
         Self::FeatureProfileRegionIdentitiesStale,
+        Self::FeatureProfileTextGlyphsAssumed,
+        Self::FeatureProfileTextGlyphsNative,
         Self::FeatureProfileIslandAbsenceAssumed,
         Self::FeatureProfilePolylineSideAssumed,
         Self::FeatureProfileCapOutlineAssumed,
@@ -1841,6 +1854,7 @@ impl F3dLossCode {
         Self::FeatureExtrudeExtentNative,
         Self::FeatureExtrudeTerminationMissing,
         Self::FeatureRevolveLayoutAssumed,
+        Self::FeatureRevolveFrameUnmatched,
         Self::FeatureMoveTransformAssumed,
         Self::FeatureMoveTransformReferencesAssumed,
         Self::FeatureMoveScopeReferencesAssumed,
@@ -2002,6 +2016,7 @@ impl F3dLossCode {
         Self::WriterAssetOmitted,
         Self::WriterJointOmitted,
         Self::WriterParameterOmitted,
+        Self::WriterSketchContentOmitted,
         Self::WriterConfigurationOmitted,
         Self::WriterTessellationOmitted,
         Self::WriterSourceAssociationOmitted,
@@ -2711,6 +2726,8 @@ impl F3dLossCode {
                 "feature.profile-coincident-direction-assumed"
             }
             Self::FeatureProfileRegionIdentitiesStale => "feature.profile-region-identities-stale",
+            Self::FeatureProfileTextGlyphsAssumed => "feature.profile-text-glyphs-assumed",
+            Self::FeatureProfileTextGlyphsNative => "feature.profile-text-glyphs-native",
             Self::FeatureProfileCutRegionsAssumed => "feature.profile-cut-regions-assumed",
             Self::FeatureProfileIslandAbsenceAssumed => "feature.profile-island-absence-assumed",
             Self::FeatureProfilePolylineSideAssumed => "feature.profile-polyline-side-assumed",
@@ -2928,6 +2945,7 @@ impl F3dLossCode {
             Self::FeatureExtrudeExtentNative => "feature.extrude-extent-native",
             Self::FeatureExtrudeTerminationMissing => "feature.extrude-termination-missing",
             Self::FeatureRevolveLayoutAssumed => "feature.revolve-layout-assumed",
+            Self::FeatureRevolveFrameUnmatched => "feature.revolve-frame-unmatched",
             Self::FeatureMoveTransformAssumed => "feature.move-transform-assumed",
             Self::FeatureMoveTransformReferencesAssumed => {
                 "feature.move-transform-references-assumed"
@@ -3129,6 +3147,7 @@ impl F3dLossCode {
             Self::WriterAssetOmitted => "writer.asset-omitted",
             Self::WriterJointOmitted => "writer.joint-omitted",
             Self::WriterParameterOmitted => "writer.parameter-omitted",
+            Self::WriterSketchContentOmitted => "writer.sketch-content-omitted",
             Self::WriterConfigurationOmitted => "writer.configuration-omitted",
             Self::WriterTessellationOmitted => "writer.tessellation-omitted",
             Self::WriterSourceAssociationOmitted => "writer.source-association-omitted",
@@ -3234,6 +3253,7 @@ impl F3dLossCode {
             Self::WriterAssetOmitted => Severity::Warning,
             Self::WriterJointOmitted => Severity::Warning,
             Self::WriterParameterOmitted => Severity::Warning,
+            Self::WriterSketchContentOmitted => Severity::Warning,
             Self::WriterConfigurationOmitted => Severity::Warning,
             Self::WriterTessellationOmitted => Severity::Warning,
             Self::WriterSourceAssociationOmitted => Severity::Info,
@@ -3670,6 +3690,8 @@ impl F3dLossCode {
             | Self::FeatureProfileCoincidentDirectionAssumed
             | Self::FeatureProfileLoopFlagsAssumed
             | Self::FeatureProfileRegionIdentitiesStale
+            | Self::FeatureProfileTextGlyphsAssumed
+            | Self::FeatureProfileTextGlyphsNative
             | Self::FeatureProfileCutRegionsAssumed
             | Self::FeatureProfileIslandAbsenceAssumed
             | Self::FeatureProfilePolylineSideAssumed
@@ -3787,6 +3809,7 @@ impl F3dLossCode {
             | Self::FeatureExtrudeExtentNative
             | Self::FeatureExtrudeTerminationMissing
             | Self::FeatureRevolveLayoutAssumed
+            | Self::FeatureRevolveFrameUnmatched
             | Self::FeatureMoveTransformAssumed
             | Self::FeatureMoveTransformReferencesAssumed
             | Self::FeatureMoveScopeReferencesAssumed
@@ -4005,6 +4028,7 @@ impl F3dLossCode {
             Self::WriterAssetOmitted => LossTaxonomy::AssetNotTransferred,
             Self::WriterJointOmitted => LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::WriterParameterOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterSketchContentOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterConfigurationOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterTessellationOmitted => LossTaxonomy::TessellationOmitted,
             Self::WriterSourceAssociationOmitted => LossTaxonomy::SourceAssociationOmitted,
@@ -4384,6 +4408,8 @@ impl F3dLossCode {
             | Self::FeatureProfileCoincidentDirectionAssumed
             | Self::FeatureProfileLoopFlagsAssumed
             | Self::FeatureProfileRegionIdentitiesStale
+            | Self::FeatureProfileTextGlyphsAssumed
+            | Self::FeatureProfileTextGlyphsNative
             | Self::FeatureProfileCutRegionsAssumed
             | Self::FeatureProfileIslandAbsenceAssumed
             | Self::FeatureProfilePolylineSideAssumed
@@ -4501,6 +4527,7 @@ impl F3dLossCode {
             | Self::FeatureExtrudeExtentNative
             | Self::FeatureExtrudeTerminationMissing
             | Self::FeatureRevolveLayoutAssumed
+            | Self::FeatureRevolveFrameUnmatched
             | Self::FeatureMoveTransformAssumed
             | Self::FeatureMoveTransformReferencesAssumed
             | Self::FeatureMoveScopeReferencesAssumed
@@ -5207,6 +5234,8 @@ mod tests {
                 "feature.profile-loop-flags-assumed",
                 "feature.profile-cut-regions-assumed",
                 "feature.profile-region-identities-stale",
+                "feature.profile-text-glyphs-assumed",
+                "feature.profile-text-glyphs-native",
                 "feature.profile-island-absence-assumed",
                 "feature.profile-polyline-side-assumed",
                 "feature.profile-cap-outline-assumed",
@@ -5323,6 +5352,7 @@ mod tests {
                 "feature.extrude-extent-native",
                 "feature.extrude-termination-missing",
                 "feature.revolve-layout-assumed",
+                "feature.revolve-frame-unmatched",
                 "feature.move-transform-assumed",
                 "feature.move-transform-references-assumed",
                 "feature.move-scope-references-assumed",
@@ -5484,6 +5514,7 @@ mod tests {
                 "writer.asset-omitted",
                 "writer.joint-omitted",
                 "writer.parameter-omitted",
+                "writer.sketch-content-omitted",
                 "writer.configuration-omitted",
                 "writer.tessellation-omitted",
                 "writer.source-association-omitted",

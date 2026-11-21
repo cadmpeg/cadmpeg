@@ -195,7 +195,7 @@ fn a_band_between_two_parallels_and_its_complement() {
 /// The elbow `u ∈ [0, 1]` of the torus, bounded by its meridians at `u = 0`
 /// and `u = 1`, whose closed edges start at `v = starts[0]` and
 /// `v = starts[1]`.
-fn elbow(starts: [f64; 2]) -> CadIr {
+pub(super) fn elbow(starts: [f64; 2]) -> CadIr {
     let mut builder = Builder::new();
     let mut rings = Vec::new();
     for (u, start, sense) in [

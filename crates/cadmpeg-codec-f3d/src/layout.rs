@@ -28,12 +28,12 @@ pub(crate) mod named_parameter_scope_tail {
     pub(crate) const MIDDLE_REFERENCE: usize = 30;
     /// Offset of `previous_history_state_id` (`u32`, little-endian). Spec §3.1.
     pub(crate) const PREVIOUS_HISTORY_STATE_ID: usize = 31;
-    /// Offset of `lane_word` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const LANE_WORD: usize = 35;
-    /// Offset of `lane_scalar` (`f64`, little-endian). Spec §3.1.
-    pub(crate) const LANE_SCALAR: usize = 39;
-    /// Offset of `repeated_word` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const REPEATED_WORD: usize = 47;
+    /// Offset of `evaluation_epoch` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const EVALUATION_EPOCH: usize = 35;
+    /// Offset of `evaluation_duration` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const EVALUATION_DURATION: usize = 39;
+    /// Offset of `second_evaluation_epoch` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SECOND_EVALUATION_EPOCH: usize = 47;
     /// Offset of `second_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const SECOND_REFERENCE: usize = 51;
     /// Offset of `lane_flags` (`bytes[3]`). Spec §3.1.
@@ -534,6 +534,44 @@ pub(crate) mod design_parameter_wide_expression_trailer {
     pub(crate) const RESERVED_9_VALUE: u8 = 0;
     /// Offset of `document` (`u8`). Spec §3.1.
     pub(crate) const DOCUMENT: usize = 10;
+}
+
+/// Byte offsets for the `design_parameter_discriminated_expression_trailer` record.
+///
+/// Spec §3.1. Record length 9 B.
+///
+/// ```text
+/// This trailer is relative to the end of the variable LP-UTF16 expression of a discriminated parameter. DR-144 gives the four flag bytes before the document flag.
+/// ```
+pub(crate) mod design_parameter_discriminated_expression_trailer {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 9;
+    /// Offset of `zero_run_4` (`bytes[4]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_4: usize = 0;
+    /// Offset of `flags` (`bytes[4]`). Spec §3.1.
+    pub(crate) const FLAGS: usize = 4;
+    /// Offset of `document` (`u8`). Spec §3.1.
+    pub(crate) const DOCUMENT: usize = 8;
+}
+
+/// Byte offsets for the `design_parameter_discriminated_text_expression_trailer` record.
+///
+/// Spec §3.1. Record length 10 B.
+///
+/// ```text
+/// This trailer is relative to the end of the variable LP-UTF16 expression of a discriminated parameter. DR-144 gives the four flag bytes before the document flag.
+/// ```
+pub(crate) mod design_parameter_discriminated_text_expression_trailer {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 10;
+    /// Offset of `text` (`u8`). Spec §3.1.
+    pub(crate) const TEXT: usize = 0;
+    /// Offset of `zero_run_4` (`bytes[4]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_4: usize = 1;
+    /// Offset of `flags` (`bytes[4]`). Spec §3.1.
+    pub(crate) const FLAGS: usize = 5;
+    /// Offset of `document` (`u8`). Spec §3.1.
+    pub(crate) const DOCUMENT: usize = 9;
 }
 
 /// Byte offsets for the `design_parameter_compact_owned_expression_trailer` record.
@@ -8590,6 +8628,23 @@ pub(crate) mod assembly_as_built_scope_378 {
     pub(crate) const REFERENCE_COUNT: usize = 163;
 }
 
+/// Byte offsets for the `assembly_as_built_scope_381_403_prefix` record.
+///
+/// Spec §Assembly operands. Record length 171 B.
+pub(crate) mod assembly_as_built_scope_381_403_prefix {
+    /// Offset of `property_presence` (`u8`). Spec §Assembly operands.
+    pub(crate) const PROPERTY_PRESENCE: usize = 20;
+    /// Stated value of `property_presence` (`u8`). Spec §Assembly operands.
+    pub(crate) const PROPERTY_PRESENCE_VALUE: u8 = 1;
+    /// Offset of `property_count` (`u32`, little-endian). Spec §Assembly operands.
+    #[cfg(test)]
+    pub(crate) const PROPERTY_COUNT: usize = 21;
+    /// Stated value of `property_count` (`u32`). Spec §Assembly operands.
+    pub(crate) const PROPERTY_COUNT_VALUE: u32 = 0x0000_0000;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const REFERENCE_COUNT: usize = 167;
+}
+
 /// Byte offsets for the `assembly_as_built_scope_422` record.
 ///
 /// Spec §Assembly operands. Record length 422 B.
@@ -11084,16 +11139,26 @@ pub(crate) mod thread_owner_extended_scope_prefix {
 
 /// Byte offsets for the `constructed_plane_entity_prefix` record.
 ///
-/// Spec §3.1. Record length 134 B.
+/// Spec §3.1. Record length 21 B.
 ///
 /// ```text
-/// Offsets are relative to the plane entity's primary indexed header through the LP-UTF16 entity ID code-unit count.
+/// Offsets are relative to the plane entity's primary indexed header. The property block follows the presence byte, then `constructed_plane_entity_body`.
 /// ```
 pub(crate) mod constructed_plane_entity_prefix {
-    /// Record length in bytes. Spec §3.1.
-    pub(crate) const LEN: usize = 134;
+    /// Offset of `property_presence` (`u8`). Spec §3.1.
+    pub(crate) const PROPERTY_PRESENCE: usize = 20;
+}
+
+/// Byte offsets for the `constructed_plane_entity_body` record.
+///
+/// Spec §3.1. Record length 113 B.
+///
+/// ```text
+/// Offsets are relative to the end of the property block: offset 21 when the presence byte is `0`, 25 for an empty block, and 77 for the one property `EntityGenesis`. The LP-UTF16 code units of the Design entity ID follow.
+/// ```
+pub(crate) mod constructed_plane_entity_body {
     /// Offset of `entity_id_code_unit_count` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const ENTITY_ID_CODE_UNIT_COUNT: usize = 130;
+    pub(crate) const ENTITY_ID_CODE_UNIT_COUNT: usize = 109;
 }
 
 /// Byte offsets for the `derived_instance_prefix` record.
