@@ -488,7 +488,7 @@ impl<'ir> FaceInput<'_, 'ir> {
                     PlainBox {
                         chart,
                         region,
-                        gated: !box_work,
+                        hull_without_region: box_work,
                         tau_b,
                         hull,
                     },
@@ -780,14 +780,13 @@ impl<'ir> FaceInput<'_, 'ir> {
         let PlainBox {
             chart,
             region,
-            gated,
+            hull_without_region,
             tau_b,
             hull,
         } = basis;
-        let gate_passes = region.is_ok() || (!gated && resolved_cleanly(boundary));
         match (chart, region) {
-            (Ok(Chart::Plane(_) | Chart::Cylinder(_) | Chart::Extrusion(_)), _) if gate_passes => {
-                self.boundary_box(
+            (Ok(Chart::Plane(_) | Chart::Cylinder(_) | Chart::Extrusion(_)), Ok(_)) => self
+                .boundary_box(
                     face,
                     coedges,
                     boundary,
@@ -796,8 +795,7 @@ impl<'ir> FaceInput<'_, 'ir> {
                         member: None,
                         method: Method::BoundaryExtremum,
                     },
-                )
-            }
+                ),
             (Ok(Chart::Cone(_)), Ok(region)) => self.boundary_box(
                 face,
                 coedges,
@@ -808,7 +806,7 @@ impl<'ir> FaceInput<'_, 'ir> {
                     method: Method::CriticalPoints,
                 },
             ),
-            (Ok(Chart::Nurbs(_)), _) if gate_passes => match hull {
+            (Ok(Chart::Nurbs(_)), region) if region.is_ok() || hull_without_region => match hull {
                 Some(Ok(hull)) => {
                     let (boundary_box, _) = self.boundary_box(
                         face,
@@ -1171,33 +1169,15 @@ fn face_flux(
     })
 }
 
-/// Whether the boundary resolution of a face reported no diagnostic: the
-/// face's loops all resolved, and every loop chained into a closed ring or
-/// is a vertex loop with a point. Any reason a loop records, now or later,
-/// fails it, so the boundary pieces are then not known to be the whole
-/// boundary.
-fn resolved_cleanly(boundary: &Outcome<Boundary<'_>>) -> bool {
-    boundary.as_ref().is_ok_and(|boundary| {
-        boundary
-            .resolved
-            .loops
-            .iter()
-            .all(|resolution| resolution.outcome.is_ok())
-    })
-}
-
 /// What the box of a face on a plane, cylinder, cone or NURBS carrier
 /// reads.
 #[derive(Clone, Copy)]
 struct PlainBox<'a, 'ir> {
     chart: &'a Outcome<Chart<'ir>>,
     region: &'a Outcome<Region>,
-    /// Whether a plane, cylinder, extrusion or NURBS face needs a region to
-    /// have a box. A box pass boxes such a face from its boundary pieces
-    /// also when its region does not classify, provided its boundary
-    /// resolved with no diagnostic ([`resolved_cleanly`]); otherwise the face
-    /// has the region's unavailable reason, as in a full pass.
-    gated: bool,
+    /// Whether a NURBS face whose region does not classify has its
+    /// control-hull box, which contains the whole carrier.
+    hull_without_region: bool,
     tau_b: f64,
     hull: Option<Result<Aabb, UnavailableReason>>,
 }

@@ -149,13 +149,11 @@ pub fn findings(
 ///
 /// The pass resolves edge boxes, face boundaries, regions, orientation
 /// readings and witnesses; it computes no area, volume, extent or flux. Each
-/// box is the box [`Measurer::measure`] reports for the body row, with two
-/// differences:
+/// box is the box [`Measurer::measure`] reports for the body row, from the
+/// same face boxes, with two differences:
 ///
-/// - A face on a plane, cylinder, extrusion or NURBS carrier whose region
-///   does not classify, and whose boundary resolution reported no
-///   diagnostic (every loop resolved and closed), has the box of its
-///   boundary pieces.
+/// - A face on a NURBS carrier whose region does not classify has its
+///   control-hull box, which contains the whole carrier.
 /// - A sphere or torus face whose region rests on its declared orientation,
 ///   and which only its area or its shell's volume sign would settle, has
 ///   its declared box with the complement box as a candidate.
