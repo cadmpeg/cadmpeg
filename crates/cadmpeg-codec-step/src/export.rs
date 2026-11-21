@@ -844,6 +844,8 @@ impl<'a> Builder<'a> {
                 | AppearanceTarget::Vertex(_)
                 | AppearanceTarget::Tessellation(_)
                 | AppearanceTarget::TriangleGroup { .. }
+                | AppearanceTarget::Occurrence(_)
+                | AppearanceTarget::Record { .. }
                 | AppearanceTarget::Source { .. } => {}
             }
         }
@@ -1031,6 +1033,8 @@ impl<'a> Builder<'a> {
                 ),
                 AppearanceTarget::Body(_)
                 | AppearanceTarget::TriangleGroup { .. }
+                | AppearanceTarget::Occurrence(_)
+                | AppearanceTarget::Record { .. }
                 | AppearanceTarget::Source { .. } => continue,
             };
             let Some(target) = target else {
@@ -1044,6 +1048,8 @@ impl<'a> Builder<'a> {
                     AppearanceTarget::Tessellation(id) => id.clone(),
                     AppearanceTarget::Body(_)
                     | AppearanceTarget::TriangleGroup { .. }
+                    | AppearanceTarget::Occurrence(_)
+                    | AppearanceTarget::Record { .. }
                     | AppearanceTarget::Source { .. } => continue,
                 };
                 direct_unstyled.insert(target_id);
