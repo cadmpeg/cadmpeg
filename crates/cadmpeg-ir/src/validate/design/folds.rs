@@ -3,9 +3,9 @@
 //! edges that share one end vertex and lie in one plane.
 //!
 //! An edge is read where every pick resolves to one edge of the state: by its
-//! `resolved` entities, else by a name that matches that one edge under every
-//! reading. A carrier that is a conic is not straight; the plane is checked
-//! through the far end of each edge, within the linear tolerance.
+//! `resolved` entities, else by a name that matches that one edge. A carrier
+//! that is a conic is not straight; the plane is checked through the far end
+//! of each edge, within the linear tolerance.
 
 use std::collections::BTreeSet;
 
@@ -17,7 +17,7 @@ use crate::math::{Point3, Vector3};
 use crate::report::check::Finding;
 use crate::topology::{Edge, EdgeCarrier};
 
-use super::fit::curved;
+use super::fit::{curved, may_be_straight_edge};
 use super::index::DesignIndex;
 use super::matching::{Matcher, Matchers, StateTopology};
 use super::selections::{anchored_states, Site};
@@ -45,7 +45,8 @@ pub(super) fn check<'a>(
                 let Picks::Named(picks) = &selection.picks else {
                     continue;
                 };
-                if picks.as_slice().len() != 4 {
+                let picks = picks.as_slice();
+                if picks.len() != 4 || picks.iter().any(|pick| !may_be_straight_edge(index, pick)) {
                     continue;
                 }
                 let site = Site::of(index, record, &selection.at);
@@ -54,7 +55,7 @@ pub(super) fn check<'a>(
                     let Some(matcher) = matchers.get(&state) else {
                         continue;
                     };
-                    if let Some(message) = check_fold(&matcher, picks.as_slice(), linear) {
+                    if let Some(message) = check_fold(&matcher, picks, linear) {
                         messages.insert(message);
                     }
                 }
@@ -141,11 +142,11 @@ fn picked_edge<'a>(
             _ => return None,
         },
         (None, PickTarget::Entity(name)) => {
-            let possible = matcher.possible(name);
-            if possible.len() != 1 || matcher.matched(name) != possible {
+            let matched = matcher.matched(name);
+            if matched.len() != 1 {
                 return None;
             }
-            possible.first().copied()?
+            matched.first().copied()?
         }
         (None, _) => return None,
     };

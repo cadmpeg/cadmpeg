@@ -254,24 +254,118 @@ fn an_index_narrows_only_where_an_entry_states_one() {
 }
 
 #[test]
-fn a_nested_index_is_matched_under_either_reading() {
+fn a_nested_index_narrows_only_where_an_entry_states_one() {
     let mut ir = named();
     let modified = |index| TopoName::Modified {
         feature: super::super::fixture::feature("fillet"),
-        from: Box::new(face_name(0, Some(index))),
+        from: Box::new(face_name(0, index)),
     };
     let mut entries = ir.design.names.entries().clone();
-    entries.values_mut().next().unwrap().name = Some(modified(1));
+    entries.values_mut().next().unwrap().name = Some(modified(None));
     ir.design.names = entries.into();
-    assert_matches(&ir, &modified(1), true);
-    assert_matches(&ir, &modified(2), true);
+    assert_matches(&ir, &modified(Some(2)), true);
+
+    let mut entries = ir.design.names.entries().clone();
+    entries.values_mut().next().unwrap().name = Some(modified(Some(1)));
+    ir.design.names = entries.into();
+    assert_matches(&ir, &modified(Some(1)), true);
+    assert_matches(&ir, &modified(Some(2)), false);
+    assert_matches(&ir, &modified(None), true);
+}
+
+#[test]
+fn each_index_place_is_judged_against_all_candidates() {
+    let mut ir = named();
+    let blend = |first, second| TopoName::Blend {
+        feature: super::super::fixture::feature("fillet"),
+        between: vec![face_name(0, first), face_name(1, second)],
+        index: None,
+    };
+    let mut entries = ir.design.names.entries().clone();
+    let mut values = entries.values_mut();
+    values.next().unwrap().name = Some(blend(Some(1), None));
+    values.next().unwrap().name = Some(blend(Some(9), Some(2)));
+    ir.design.names = entries.into();
+    assert_matches(&ir, &blend(Some(1), Some(2)), false);
+    assert_matches(&ir, &blend(Some(9), Some(2)), true);
+}
+
+#[test]
+fn set_names_equal_without_indexes_share_one_place() {
+    let mut ir = named();
+    let merged = |indexes: &[Option<u32>]| TopoName::Merged {
+        feature: None,
+        from: indexes.iter().map(|&index| face_name(0, index)).collect(),
+    };
+    let mut entries = ir.design.names.entries().clone();
+    entries.values_mut().next().unwrap().name = Some(merged(&[None]));
+    ir.design.names = entries.into();
+    assert_matches(&ir, &merged(&[Some(1), Some(2)]), true);
+
+    let mut entries = ir.design.names.entries().clone();
+    entries.values_mut().next().unwrap().name = Some(merged(&[Some(1), Some(2)]));
+    ir.design.names = entries.into();
+    assert_matches(&ir, &merged(&[Some(1), Some(2)]), true);
+    assert_matches(&ir, &merged(&[Some(1)]), false);
+}
+
+#[test]
+fn ends_narrow_after_indexes_on_a_bounded_name() {
+    let mut ir = named();
+    let (first, second, _) = adjacent_and_opposite(&ir);
+    let (far_id, ordered): (String, Vec<String>) = {
+        let states = States::new(&ir);
+        let matchers = Matchers::new(&states);
+        let base_matcher = matchers
+            .get(&Stored::Extents(states.extents.iter().collect()))
+            .unwrap();
+        let all = base_matcher.matched(&bounded(&[face_name(first, None)], &[]));
+        let near = base_matcher.matched(&bounded(
+            &[face_name(first, None)],
+            &[face_name(second, None)],
+        ));
+        let far_edge = (*all.difference(&near).next().unwrap()).to_owned();
+        let mut ordered = vec![far_edge.clone()];
+        ordered.extend(near.into_iter().map(str::to_owned));
+        (far_edge, ordered)
+    };
+    let mut entries = ir.design.names.entries().clone();
+    for (index, edge_id) in ordered.iter().enumerate() {
+        let edge_id = ir
+            .geometry
+            .edges
+            .iter()
+            .find(|edge| edge.id.as_str() == edge_id)
+            .unwrap()
+            .id
+            .clone();
+        entries.insert(
+            EntityRef::Edge(edge_id),
+            NameEntry {
+                name: Some(TopoName::Bounded {
+                    faces: BTreeSet::from([face_name(first, None)]),
+                    ends: BTreeSet::new(),
+                    index: Some(u32::try_from(index).unwrap()),
+                }),
+                native: None,
+            },
+        );
+    }
+    ir.design.names = entries.into();
+    let pick = TopoName::Bounded {
+        faces: BTreeSet::from([face_name(first, None)]),
+        ends: BTreeSet::from([face_name(second, None)]),
+        index: Some(0),
+    };
     let states = States::new(&ir);
     let matchers = Matchers::new(&states);
     let matcher = matchers
         .get(&Stored::Extents(states.extents.iter().collect()))
         .unwrap();
-    assert!(matcher.matched(&modified(2)).is_empty());
-    assert_eq!(matcher.matched(&modified(1)).len(), 1);
+    assert_eq!(
+        matcher.matched(&pick).into_iter().collect::<Vec<_>>(),
+        vec![far_id.as_str()]
+    );
 }
 
 #[test]

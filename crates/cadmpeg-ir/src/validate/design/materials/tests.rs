@@ -79,11 +79,22 @@ fn names_select_bodies_only_in_the_active_configuration() {
 #[test]
 fn a_material_target_picks_bodies() {
     let mut ir = named();
-    let face = json!({"target": {"kind": "entity", "value": {"kind": "generated", "value": {
+    let mut face = json!({"target": {"kind": "entity", "value": {"kind": "generated", "value": {
         "kind": "face", "feature": "test:design:feature#extrude"
     }}}});
+    face["resolved"] = json!([{"kind": "face", "value": ir.geometry.faces[0].id.as_str()}]);
     ir.design.configurations[1].materials = vec![material(&face)];
-    assert_finding(&ir, "picks something other than a body");
+    let errors: Vec<_> = design_findings(&ir)
+        .into_iter()
+        .filter(|finding| {
+            finding.severity == Severity::Error
+                && (finding
+                    .message
+                    .contains("picks something other than a body")
+                    || finding.message.contains("which is no body"))
+        })
+        .collect();
+    assert_eq!(errors.len(), 1, "{errors:#?}");
 
     let mut ir = named();
     let mut pick = body_pick(&ir);

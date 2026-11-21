@@ -4,8 +4,8 @@
 //!
 //! An entry selects the bodies its picks' `resolved` entities name, and, in
 //! the scope's active configuration, whose current states are stored, the
-//! bodies its names match there under every reading. A configuration that is
-//! not active has no stored current states, so only `resolved` decides there.
+//! bodies its names match there. A configuration that is not active has no
+//! stored current states, so only `resolved` decides there.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -72,7 +72,8 @@ pub(super) fn check<'a>(
             };
             let mut chosen = BTreeSet::new();
             for pick in picks.as_slice() {
-                if !picks_bodies(pick) {
+                let target_is_body = picks_bodies(pick);
+                if !target_is_body {
                     super::error(
                         findings,
                         at,
@@ -89,14 +90,16 @@ pub(super) fn check<'a>(
                     Some(resolved) => {
                         for entity in resolved {
                             let EntityRef::Body(body) = entity else {
-                                super::error(
-                                    findings,
-                                    at,
-                                    format_args!(
-                                        "a material's target resolves to {}, which is no body",
-                                        entity.id()
-                                    ),
-                                );
+                                if target_is_body {
+                                    super::error(
+                                        findings,
+                                        at,
+                                        format_args!(
+                                            "a material's target resolves to {}, which is no body",
+                                            entity.id()
+                                        ),
+                                    );
+                                }
                                 continue;
                             };
                             let owner = owners.get(body.as_str());

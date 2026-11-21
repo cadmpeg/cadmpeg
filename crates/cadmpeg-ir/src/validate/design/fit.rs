@@ -4,20 +4,16 @@
 //! and the kinds of reference that cannot supply it, and what each `Built`
 //! kind and each pick target supplies. A `Built` construction fits as a pick
 //! of its kind would. A pick whose target does not state its kind (a body, a
-//! feature result, a sketch) and a `Native` pick fit every relation. The
-//! measuring origin, the second pick of an `AtParameter` or `Coordinates`
-//! reference, is a point, and a `Fold` input picks four straight edges.
+//! feature, a feature result, a sketch) and a `Native` pick fit every
+//! relation. The measuring origin, the second pick of an `AtParameter` or
+//! `Coordinates` reference, is a point, and a `Fold` input picks four
+//! straight edges.
 //!
-//! This module checks a `Built` reference's kind against the table, that the
-//! measuring origin may be a point, and that each pick of a `Fold` reference
-//! may be a straight edge.
-//!
-//! Interim: a `Built` `Axis` fits `PrincipalNormal` and `Binormal`, and a
-//! `Built` `Direction` fits `Coincident`, where the table refuses both. Of a
-//! reference's picks, the module reads only the measuring origin and the
-//! picks of a `Fold` input. Those two checks refuse a name of kind `Body` and
-//! a `Sketch` target, which §5.9 lists among the targets that fit every
-//! relation.
+//! This module checks each `Built` reference and each pick whose target
+//! states its kind against the §5.9 table (except the first pick of
+//! `Coordinates`, which `constructions.rs` checks), that the measuring
+//! origin may be a point, and that each pick of a `Fold` reference may be a
+//! straight edge.
 
 use crate::design::construction::{AnyConstruction, InputReference, Relation};
 use crate::design::names::NameKind;
@@ -56,20 +52,46 @@ pub(super) fn check_input(
                 return;
             };
             let picks = picks.as_slice();
-            if let (Relation::AtParameter | Relation::Coordinates, [_, origin]) = (relation, picks)
-            {
-                if !may_be_point(index, origin) {
-                    error(format_args!(
-                        "the measuring origin, the second pick of a {relation:?} reference, is not a point"
-                    ));
+            match relation {
+                Relation::AtParameter => {
+                    if let Some(first) = picks.first() {
+                        if !pick_fits(index, relation, first) {
+                            error(format_args!(
+                                "an AtParameter reference picks a target that cannot supply what it reads"
+                            ));
+                        }
+                    }
+                    if let [_, origin] = picks {
+                        if !may_be_point(index, origin) {
+                            error(format_args!(
+                                "the measuring origin, the second pick of a {relation:?} reference, is not a point"
+                            ));
+                        }
+                    }
                 }
-            }
-            if matches!(relation, Relation::Fold)
-                && picks.iter().any(|pick| !may_be_straight_edge(index, pick))
-            {
-                error(format_args!(
-                    "a Fold reference picks something other than a straight edge"
-                ));
+                Relation::Coordinates => {
+                    if let [_, origin] = picks {
+                        if !may_be_point(index, origin) {
+                            error(format_args!(
+                                "the measuring origin, the second pick of a {relation:?} reference, is not a point"
+                            ));
+                        }
+                    }
+                }
+                Relation::Fold => {
+                    if picks.iter().any(|pick| !may_be_straight_edge(index, pick)) {
+                        error(format_args!(
+                            "a Fold reference picks something other than a straight edge"
+                        ));
+                    }
+                }
+                _ => {
+                    if picks.iter().any(|pick| !pick_fits(index, relation, pick)) {
+                        error(format_args!(
+                            "a {relation:?} reference picks a target that cannot supply what it reads"
+                        ));
+                    }
+                }
             }
         }
         None => {}
@@ -87,26 +109,176 @@ const fn built_kind(built: &AnyConstruction) -> Kind {
     }
 }
 
-/// Whether a nested construction of `kind` may be the one pick of an input
-/// of `relation`.
+/// Whether a nested construction of `kind` fits `relation` under the table
+/// of §5.9. `Fold` is rejected separately by the single-pick rule on `Built`.
 const fn built_fits(relation: &Relation, kind: Kind) -> bool {
     match relation {
         Relation::Coordinates => matches!(kind, Kind::Frame),
-        Relation::Center | Relation::AxisOf => matches!(kind, Kind::Curve),
-        Relation::PrincipalNormal | Relation::Binormal => {
-            matches!(kind, Kind::Curve | Kind::Axis)
+        Relation::Center | Relation::AxisOf | Relation::PrincipalNormal | Relation::Binormal => {
+            matches!(kind, Kind::Curve)
         }
         Relation::Parallel | Relation::Perpendicular | Relation::Angle => {
             !matches!(kind, Kind::Point)
         }
         Relation::Tangent | Relation::AtParameter => !matches!(kind, Kind::Point | Kind::Direction),
-        Relation::Offset | Relation::Radius | Relation::Limit => !matches!(kind, Kind::Direction),
         Relation::Coincident
-        | Relation::Midway
+        | Relation::Offset
         | Relation::Centroid
+        | Relation::Radius
+        | Relation::Limit => !matches!(kind, Kind::Direction),
+        Relation::Midway | Relation::Projection | Relation::Fold | Relation::Native(_) => true,
+    }
+}
+
+/// The geometric kind a pick target states for the §5.9 relation table.
+#[derive(Clone, Copy)]
+enum TargetKind {
+    Point,
+    Axis,
+    Plane,
+    Frame,
+    Curve,
+    Surface,
+}
+
+const fn principal_kind(entity: PrincipalEntity) -> TargetKind {
+    match entity {
+        PrincipalEntity::Origin => TargetKind::Point,
+        PrincipalEntity::XAxis | PrincipalEntity::YAxis | PrincipalEntity::ZAxis => {
+            TargetKind::Axis
+        }
+        PrincipalEntity::XyPlane | PrincipalEntity::XzPlane | PrincipalEntity::YzPlane => {
+            TargetKind::Plane
+        }
+        PrincipalEntity::Frame => TargetKind::Frame,
+    }
+}
+
+const fn target_kind_fits(relation: &Relation, kind: TargetKind) -> bool {
+    match relation {
+        Relation::Coincident
+        | Relation::Offset
+        | Relation::Centroid
+        | Relation::Radius
+        | Relation::Limit
+        | Relation::Midway
         | Relation::Projection
-        | Relation::Fold
         | Relation::Native(_) => true,
+        Relation::Parallel
+        | Relation::Perpendicular
+        | Relation::Angle
+        | Relation::Tangent
+        | Relation::AtParameter => !matches!(kind, TargetKind::Point),
+        Relation::Center | Relation::AxisOf | Relation::PrincipalNormal | Relation::Binormal => {
+            !matches!(
+                kind,
+                TargetKind::Point | TargetKind::Axis | TargetKind::Plane | TargetKind::Frame
+            )
+        }
+        Relation::Coordinates => matches!(kind, TargetKind::Frame),
+        Relation::Fold => matches!(kind, TargetKind::Curve | TargetKind::Axis),
+    }
+}
+
+/// Whether a pick fits `relation` under the table of §5.9. Targets whose
+/// kind is not stated (a body, a feature, a feature result, a sketch, a
+/// `Native` pick) fit every relation.
+fn pick_fits(index: &DesignIndex<'_>, relation: &Relation, pick: &Picked) -> bool {
+    if matches!(
+        relation,
+        Relation::Midway | Relation::Projection | Relation::Native(_)
+    ) {
+        return true;
+    }
+    match &pick.target {
+        PickTarget::Entity(name) => {
+            let kinds = derived_kinds(name);
+            kinds.is_empty()
+                || kinds.iter().any(|kind| match kind {
+                    NameKind::Body => true,
+                    NameKind::Vertex => target_kind_fits(relation, TargetKind::Point),
+                    NameKind::Edge | NameKind::Curve => {
+                        target_kind_fits(relation, TargetKind::Curve)
+                    }
+                    NameKind::Face | NameKind::Surface => {
+                        target_kind_fits(relation, TargetKind::Surface)
+                    }
+                })
+        }
+        PickTarget::SketchEntity(entity) => {
+            index
+                .sketch_entities
+                .get(entity.as_str())
+                .is_none_or(|entity| {
+                    sketch_entity_kind(&entity.definition, planar_point)
+                        .is_none_or(|kind| target_kind_fits(relation, kind))
+                })
+        }
+        PickTarget::SpatialSketchEntity(entity) => index
+            .spatial_sketch_entities
+            .get(entity.as_str())
+            .is_none_or(|entity| {
+                sketch_entity_kind(&entity.definition, spatial_point)
+                    .is_none_or(|kind| target_kind_fits(relation, kind))
+            }),
+        PickTarget::SketchRegion { .. } => target_kind_fits(relation, TargetKind::Surface),
+        PickTarget::Datum { feature, part } => match part {
+            Some(DatumPart::Point(_)) => target_kind_fits(relation, TargetKind::Point),
+            Some(DatumPart::Principal(entity)) => {
+                target_kind_fits(relation, principal_kind(*entity))
+            }
+            None => match datum_element(index, feature.as_str()) {
+                DatumFeature::Datum(DatumElement::Points(_)) => {
+                    target_kind_fits(relation, TargetKind::Point)
+                }
+                DatumFeature::Datum(DatumElement::Axis(_)) => {
+                    target_kind_fits(relation, TargetKind::Axis)
+                }
+                DatumFeature::Datum(DatumElement::Plane(_)) => {
+                    target_kind_fits(relation, TargetKind::Plane)
+                }
+                DatumFeature::Datum(DatumElement::Frame(_)) => {
+                    target_kind_fits(relation, TargetKind::Frame)
+                }
+                DatumFeature::Unstated | DatumFeature::Other => true,
+            },
+        },
+        PickTarget::Principal { entity, .. } | PickTarget::SketchFrame { entity, .. } => {
+            target_kind_fits(relation, principal_kind(*entity))
+        }
+        PickTarget::Native { .. }
+        | PickTarget::Sketch(_)
+        | PickTarget::Feature(_)
+        | PickTarget::FeatureResult(_)
+        | PickTarget::Publication(_)
+        | PickTarget::TemplateInput { .. }
+        | PickTarget::Component => true,
+    }
+}
+
+/// The kind a sketch entity states for the §5.9 table, or `None` where it
+/// states none.
+fn sketch_entity_kind<S: SketchSpace>(
+    definition: &EntityDefinition<S>,
+    is_point: fn(Option<&S::Curve>) -> bool,
+) -> Option<TargetKind> {
+    let curve_kind = |curve: Option<&S::Curve>| {
+        if is_point(curve) {
+            TargetKind::Point
+        } else {
+            TargetKind::Curve
+        }
+    };
+    match definition {
+        EntityDefinition::Free(curve) => Some(curve_kind(Some(curve))),
+        EntityDefinition::Defined { form, solved } => match form.as_ref() {
+            EntityForm::Frame => Some(TargetKind::Point),
+            EntityForm::Conic { .. } => Some(TargetKind::Curve),
+            EntityForm::Native(_) | EntityForm::Text(_) | EntityForm::BlockInstance(_) => None,
+            EntityForm::Interpolated(_) | EntityForm::Derived(_) | EntityForm::Instanced { .. } => {
+                solved.as_ref().map(|curve| curve_kind(Some(curve)))
+            }
+        },
     }
 }
 
@@ -123,7 +295,7 @@ fn may_be_point(index: &DesignIndex<'_>, pick: &Picked) -> bool {
     let target = match &pick.target {
         PickTarget::Entity(name) => {
             let kinds = derived_kinds(name);
-            kinds.is_empty() || kinds.contains(&NameKind::Vertex)
+            kinds.is_empty() || kinds.contains(&NameKind::Vertex) || kinds.contains(&NameKind::Body)
         }
         PickTarget::SketchEntity(entity) => index
             .sketch_entities
@@ -145,20 +317,22 @@ fn may_be_point(index: &DesignIndex<'_>, pick: &Picked) -> bool {
             *entity == PrincipalEntity::Origin
         }
         PickTarget::Native { .. }
-        | PickTarget::Publication(_)
-        | PickTarget::FeatureResult(_)
-        | PickTarget::TemplateInput { .. } => true,
-        PickTarget::Sketch(_)
-        | PickTarget::SketchRegion { .. }
+        | PickTarget::Sketch(_)
         | PickTarget::Feature(_)
-        | PickTarget::Component => false,
+        | PickTarget::FeatureResult(_)
+        | PickTarget::Publication(_)
+        | PickTarget::TemplateInput { .. } => true,
+        PickTarget::SketchRegion { .. } | PickTarget::Component => false,
     };
-    target && resolved_admits(pick, |entity| matches!(entity, EntityRef::Vertex(_)))
+    target
+        && resolved_admits(pick, |entity| {
+            matches!(entity, EntityRef::Vertex(_) | EntityRef::Body(_))
+        })
 }
 
 /// Whether a pick may pick a straight edge: an edge or curve, a straight
 /// sketch entity, an axis, or a target whose kind is not stated.
-fn may_be_straight_edge(index: &DesignIndex<'_>, pick: &Picked) -> bool {
+pub(super) fn may_be_straight_edge(index: &DesignIndex<'_>, pick: &Picked) -> bool {
     let axis = |entity: &PrincipalEntity| {
         matches!(
             entity,
@@ -168,7 +342,10 @@ fn may_be_straight_edge(index: &DesignIndex<'_>, pick: &Picked) -> bool {
     let target = match &pick.target {
         PickTarget::Entity(name) => {
             let kinds = derived_kinds(name);
-            kinds.is_empty() || kinds.contains(&NameKind::Edge) || kinds.contains(&NameKind::Curve)
+            kinds.is_empty()
+                || kinds.contains(&NameKind::Edge)
+                || kinds.contains(&NameKind::Curve)
+                || kinds.contains(&NameKind::Body)
         }
         PickTarget::SketchEntity(entity) => index
             .sketch_entities
@@ -190,17 +367,19 @@ fn may_be_straight_edge(index: &DesignIndex<'_>, pick: &Picked) -> bool {
             axis(entity)
         }
         PickTarget::Native { .. }
-        | PickTarget::Publication(_)
-        | PickTarget::FeatureResult(_)
-        | PickTarget::TemplateInput { .. } => true,
-        PickTarget::Sketch(_)
-        | PickTarget::SketchRegion { .. }
+        | PickTarget::Sketch(_)
         | PickTarget::Feature(_)
-        | PickTarget::Component => false,
+        | PickTarget::FeatureResult(_)
+        | PickTarget::Publication(_)
+        | PickTarget::TemplateInput { .. } => true,
+        PickTarget::SketchRegion { .. } | PickTarget::Component => false,
     };
     target
         && resolved_admits(pick, |entity| {
-            matches!(entity, EntityRef::Edge(_) | EntityRef::Curve(_))
+            matches!(
+                entity,
+                EntityRef::Edge(_) | EntityRef::Curve(_) | EntityRef::Body(_)
+            )
         })
 }
 

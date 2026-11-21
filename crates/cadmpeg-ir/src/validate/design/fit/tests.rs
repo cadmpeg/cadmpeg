@@ -102,24 +102,48 @@ fn a_nested_construction_fits_its_relation() {
         &datum("points", &[input("center", &built("plane"), None)]),
         refused
     ));
+    assert!(errors(
+        &datum("axis", &[input("principal_normal", &built("axis"), None)]),
+        refused
+    ));
+    assert!(errors(
+        &datum("axis", &[input("binormal", &built("axis"), None)]),
+        refused
+    ));
+    assert!(!errors(
+        &datum("axis", &[input("principal_normal", &built("curve"), None)]),
+        refused
+    ));
+    assert!(errors(
+        &datum("plane", &[input("coincident", &built("direction"), None)]),
+        refused
+    ));
 }
 
 #[test]
 fn a_measuring_origin_is_a_point() {
     let ratio = json!({"kind": "ratio", "value": {"kind": "literal", "value": 0.5}});
     let origin = "the measuring origin";
-    let on_axis = |second: &str| {
+    let on_axis = |second: Value| {
         datum(
             "points",
             &[input(
                 "at_parameter",
-                &picks(&[principal("x_axis"), principal(second)]),
+                &picks(&[principal("x_axis"), second]),
                 Some(ratio.clone()),
             )],
         )
     };
-    assert!(errors(&on_axis("xy_plane"), origin));
-    assert!(!errors(&on_axis("origin"), origin));
+    assert!(errors(&on_axis(principal("xy_plane")), origin));
+    assert!(!errors(&on_axis(principal("origin")), origin));
+    let sketch = json!({"target": {"kind": "sketch", "value": "test:design:sketch#s"}});
+    let feature = json!({"target": {"kind": "feature", "value": "test:design:feature#extrude"}});
+    let body = json!({"target": {"kind": "entity", "value": {"kind": "generated", "value": {
+        "kind": "body", "feature": "test:design:feature#extrude"
+    }}}});
+    assert!(!errors(&on_axis(sketch), origin));
+    assert!(!errors(&on_axis(feature), origin));
+    assert!(!errors(&on_axis(body), origin));
 }
 
 #[test]
@@ -142,7 +166,70 @@ fn a_fold_reference_picks_straight_edges() {
     let edge = json!({"target": {"kind": "entity", "value": {"kind": "generated", "value": {
         "kind": "edge", "feature": "test:design:feature#extrude"
     }}}});
+    let sketch = json!({"target": {"kind": "sketch", "value": "test:design:sketch#s"}});
+    let feature = json!({"target": {"kind": "feature", "value": "test:design:feature#extrude"}});
+    let body = json!({"target": {"kind": "entity", "value": {"kind": "generated", "value": {
+        "kind": "body", "feature": "test:design:feature#extrude"
+    }}}});
     let refused = "other than a straight edge";
     assert!(errors(&fold(principal("xy_plane")), refused));
     assert!(!errors(&fold(edge), refused));
+    assert!(!errors(&fold(sketch), refused));
+    assert!(!errors(&fold(feature), refused));
+    assert!(!errors(&fold(body), refused));
+}
+
+#[test]
+fn a_pick_fits_its_relation() {
+    let refused = "cannot supply what it reads";
+    let sketch = json!({"target": {"kind": "sketch", "value": "test:design:sketch#s"}});
+    let feature = json!({"target": {"kind": "feature", "value": "test:design:feature#extrude"}});
+    let body = json!({"target": {"kind": "entity", "value": {"kind": "generated", "value": {
+        "kind": "body", "feature": "test:design:feature#extrude"
+    }}}});
+    let edge = json!({"target": {"kind": "entity", "value": {"kind": "generated", "value": {
+        "kind": "edge", "feature": "test:design:feature#extrude"
+    }}}});
+    assert!(errors(
+        &datum(
+            "plane",
+            &[input("parallel", &picks(&[principal("origin")]), None)]
+        ),
+        refused
+    ));
+    assert!(!errors(
+        &datum(
+            "plane",
+            &[input("parallel", &picks(&[principal("x_axis")]), None)]
+        ),
+        refused
+    ));
+    assert!(errors(
+        &datum(
+            "points",
+            &[input("center", &picks(&[principal("xy_plane")]), None)]
+        ),
+        refused
+    ));
+    assert!(errors(
+        &datum(
+            "axis",
+            &[input(
+                "principal_normal",
+                &picks(&[principal("x_axis")]),
+                None
+            )]
+        ),
+        refused
+    ));
+    assert!(!errors(
+        &datum("axis", &[input("principal_normal", &picks(&[edge]), None)]),
+        refused
+    ));
+    for target in [sketch, feature, body] {
+        assert!(!errors(
+            &datum("points", &[input("center", &picks(&[target]), None)]),
+            refused
+        ));
+    }
 }

@@ -9,17 +9,6 @@
 //! there; each place is judged against all the candidates, and names of one
 //! set that are equal with their indexes left out are one place. A `Bounded`
 //! name's `ends` narrows the candidates its indexes keep.
-//!
-//! Interim: this module matches each name under two readings. Against table
-//! entries, only the outer `index` narrows: under `Loose` every nested index
-//! is left out of the comparison; under `Exact` a nested name compares whole,
-//! its index included. Through adjacency, `Bounded` and `Meeting` resolve
-//! each name in `faces` (and `ends`) recursively through `resolve`, so a
-//! face or end name's own `index` narrows its matches independently, rather
-//! than against the outer candidates. A pick is lost only where it matches
-//! nothing under either reading, and an entity is selected only where both
-//! readings select it. `ends` narrows a `Bounded` name's adjacency candidates
-//! before the outer `index` narrows.
 
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -34,13 +23,34 @@ use crate::topology::{Coedge, Edge, Loop, LoopBoundary, Point, Vertex};
 use super::selections::Stored;
 use super::states::{Extent, States};
 
-/// How an `index` nested inside a name compares.
-#[derive(Clone, Copy)]
-enum Reading {
-    /// A nested name compares whole, its index included.
-    Exact,
-    /// Every index, nested ones included, is left out of the comparison.
-    Loose,
+/// One step down a name's tree to a place where an `index` may sit.
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum Step {
+    Generator,
+    Of,
+    From,
+    Between(usize),
+    Face(TopoName),
+    End(TopoName),
+    Merged(TopoName),
+}
+
+type Place = Vec<Step>;
+
+/// One table entry's name stripped of every `index`, with the index sets
+/// stated at each of its places.
+struct Entry {
+    stripped: TopoName,
+    places: BTreeMap<Place, BTreeSet<u32>>,
+}
+
+impl Entry {
+    fn of(name: &TopoName) -> Self {
+        Self {
+            stripped: stripped(name),
+            places: index_places(name),
+        }
+    }
 }
 
 /// The topology records of one stored state, by identity, and the adjacency
@@ -195,7 +205,7 @@ impl<'a> StateTopology<'a> {
 pub(super) struct Matcher<'a> {
     states: &'a States<'a>,
     state: StateKey<'a>,
-    entries: BTreeMap<&'a str, &'a TopoName>,
+    entries: BTreeMap<&'a str, Entry>,
     topology: OnceCell<Option<StateTopology<'a>>>,
 }
 
@@ -214,7 +224,9 @@ impl<'a> Matcher<'a> {
                 states
                     .extent_table(extents)
                     .into_iter()
-                    .filter_map(|(entity, entry)| Some((entity.id(), entry.name.as_ref()?)))
+                    .filter_map(|(entity, entry)| {
+                        Some((entity.id(), Entry::of(entry.name.as_ref()?)))
+                    })
                     .collect(),
                 StateKey::Extents(
                     extents
@@ -227,7 +239,9 @@ impl<'a> Matcher<'a> {
                 states
                     .table(evaluation)?
                     .into_iter()
-                    .filter_map(|(entity, entry)| Some((entity.id(), entry.name.as_ref()?)))
+                    .filter_map(|(entity, entry)| {
+                        Some((entity.id(), Entry::of(entry.name.as_ref()?)))
+                    })
                     .collect(),
                 StateKey::Evaluation(evaluation),
             ),
@@ -260,105 +274,90 @@ impl<'a> Matcher<'a> {
             .as_ref()
     }
 
-    /// Whether `name` matches an entity of the state under some reading.
+    /// Whether `name` matches an entity of the state.
     pub(super) fn matches_any(&self, name: &TopoName) -> bool {
-        !self.resolve(name, Reading::Loose).is_empty()
-            || !self.resolve(name, Reading::Exact).is_empty()
+        !self.matched(name).is_empty()
     }
 
-    /// The entities `name` matches under every reading.
+    /// The entities `name` matches in the state by the rule of §5.7.
     pub(super) fn matched(&self, name: &TopoName) -> BTreeSet<&'a str> {
-        let loose = self.resolve(name, Reading::Loose);
-        let exact = self.resolve(name, Reading::Exact);
-        loose.intersection(&exact).copied().collect()
-    }
-
-    /// The entities `name` matches under any reading.
-    pub(super) fn possible(&self, name: &TopoName) -> BTreeSet<&'a str> {
-        let mut found = self.resolve(name, Reading::Loose);
-        found.extend(self.resolve(name, Reading::Exact));
-        found
-    }
-
-    fn resolve(&self, name: &TopoName, reading: Reading) -> BTreeSet<&'a str> {
-        let mut found: BTreeSet<&'a str> = self
+        let target = stripped(name);
+        let mut candidates: BTreeSet<&'a str> = self
             .entries
             .iter()
-            .filter(|(_, entry)| same(entry, name, reading, true))
+            .filter(|(_, entry)| entry.stripped == target)
             .map(|(entity, _)| *entity)
             .collect();
         match name {
-            TopoName::Bounded { faces, ends, .. } => {
-                found.extend(self.bounded(faces, ends, reading));
+            TopoName::Bounded { faces, .. } => {
+                candidates.extend(self.bounded_candidates(faces));
             }
-            TopoName::Meeting { faces, .. } => found.extend(self.meeting(faces, reading)),
+            TopoName::Meeting { faces, .. } => {
+                candidates.extend(self.meeting(faces));
+            }
             _ => {}
         }
-        if let Some(index) = own_index(name) {
-            let index_of =
-                |entity: &&str| self.entries.get(entity).and_then(|entry| own_index(entry));
-            if found.iter().any(|entity| index_of(entity).is_some()) {
-                found.retain(|entity| index_of(entity) == Some(index));
+        let mut kept = candidates.clone();
+        for (place, wanted) in index_places(name) {
+            let stated = |entity: &str| {
+                self.entries
+                    .get(entity)
+                    .and_then(|entry| entry.places.get(&place))
+            };
+            if candidates.iter().any(|&entity| stated(entity).is_some()) {
+                kept.retain(|&entity| stated(entity) == Some(&wanted));
             }
         }
-        found
+        if let TopoName::Bounded { ends, .. } = name {
+            if kept.len() > 1 && !ends.is_empty() {
+                if let Some(topology) = self.topology() {
+                    let named: Vec<BTreeSet<&'a str>> = ends
+                        .iter()
+                        .map(|end| self.matched(end))
+                        .filter(|end| !end.is_empty())
+                        .collect();
+                    if !named.is_empty() {
+                        let narrowed: BTreeSet<&'a str> = kept
+                            .iter()
+                            .copied()
+                            .filter(|edge| {
+                                let at = topology.end_faces(edge);
+                                named.iter().all(|end| !end.is_disjoint(&at))
+                            })
+                            .collect();
+                        if !narrowed.is_empty() {
+                            kept = narrowed;
+                        }
+                    }
+                }
+            }
+        }
+        kept
     }
 
-    /// The edges between faces matching every name of `faces`, narrowed by
-    /// `ends` where there are several and the narrowing keeps one.
-    fn bounded(
-        &self,
-        faces: &BTreeSet<TopoName>,
-        ends: &BTreeSet<TopoName>,
-        reading: Reading,
-    ) -> Vec<&'a str> {
+    /// The edges between faces matching every name of `faces`.
+    fn bounded_candidates(&self, faces: &BTreeSet<TopoName>) -> Vec<&'a str> {
         let Some(topology) = self.topology() else {
             return Vec::new();
         };
-        let sides: Vec<BTreeSet<&'a str>> = faces
-            .iter()
-            .map(|face| self.resolve(face, reading))
-            .collect();
-        let mut candidates: Vec<&'a str> = if faces.is_empty() {
-            topology.edges.keys().copied().collect()
-        } else {
-            topology
-                .edge_faces
-                .iter()
-                .filter(|(_, beside)| sides.iter().all(|side| !side.is_disjoint(beside)))
-                .map(|(edge, _)| *edge)
-                .collect()
-        };
-        if candidates.len() > 1 {
-            let named: Vec<BTreeSet<&'a str>> = ends
-                .iter()
-                .map(|end| self.resolve(end, reading))
-                .filter(|end| !end.is_empty())
-                .collect();
-            let narrowed: Vec<&'a str> = candidates
-                .iter()
-                .copied()
-                .filter(|edge| {
-                    let at = topology.end_faces(edge);
-                    named.iter().all(|end| !end.is_disjoint(&at))
-                })
-                .collect();
-            if !narrowed.is_empty() {
-                candidates = narrowed;
-            }
+        if faces.is_empty() {
+            return topology.edges.keys().copied().collect();
         }
-        candidates
+        let sides: Vec<BTreeSet<&'a str>> = faces.iter().map(|face| self.matched(face)).collect();
+        topology
+            .edge_faces
+            .iter()
+            .filter(|(_, beside)| sides.iter().all(|side| !side.is_disjoint(beside)))
+            .map(|(edge, _)| *edge)
+            .collect()
     }
 
     /// The vertices where faces matching every name of `faces` meet.
-    fn meeting(&self, faces: &BTreeSet<TopoName>, reading: Reading) -> Vec<&'a str> {
+    fn meeting(&self, faces: &BTreeSet<TopoName>) -> Vec<&'a str> {
         let Some(topology) = self.topology() else {
             return Vec::new();
         };
-        let sides: Vec<BTreeSet<&'a str>> = faces
-            .iter()
-            .map(|face| self.resolve(face, reading))
-            .collect();
+        let sides: Vec<BTreeSet<&'a str>> = faces.iter().map(|face| self.matched(face)).collect();
         topology
             .vertices
             .keys()
@@ -388,128 +387,145 @@ const fn own_index(name: &TopoName) -> Option<u32> {
     }
 }
 
-/// Whether two names are one name with the index of each left out, and the
-/// indexes nested in them left out too under the loose reading.
-fn same(left: &TopoName, right: &TopoName, reading: Reading, outer: bool) -> bool {
-    if !outer && matches!(reading, Reading::Exact) {
-        return left == right;
+/// `name` with every `index` at any depth left out.
+fn stripped(name: &TopoName) -> TopoName {
+    match name {
+        TopoName::Generated {
+            kind,
+            feature,
+            role,
+            generator,
+            index: _,
+        } => TopoName::Generated {
+            kind: *kind,
+            feature: feature.clone(),
+            role: role.clone(),
+            generator: generator.as_ref().map(|generator| match generator {
+                Generator::Entity(inner) => Generator::Entity(Box::new(stripped(inner))),
+                other => other.clone(),
+            }),
+            index: None,
+        },
+        TopoName::Instance {
+            feature,
+            instance,
+            of,
+        } => TopoName::Instance {
+            feature: feature.clone(),
+            instance: instance.clone(),
+            of: Box::new(stripped(of)),
+        },
+        TopoName::Blend {
+            feature,
+            between,
+            index: _,
+        } => TopoName::Blend {
+            feature: feature.clone(),
+            between: between.iter().map(stripped).collect(),
+            index: None,
+        },
+        TopoName::Bounded {
+            faces,
+            ends,
+            index: _,
+        } => TopoName::Bounded {
+            faces: faces.iter().map(stripped).collect(),
+            ends: ends.iter().map(stripped).collect(),
+            index: None,
+        },
+        TopoName::Meeting { faces, index: _ } => TopoName::Meeting {
+            faces: faces.iter().map(stripped).collect(),
+            index: None,
+        },
+        TopoName::Modified { feature, from } => TopoName::Modified {
+            feature: feature.clone(),
+            from: Box::new(stripped(from)),
+        },
+        TopoName::Split {
+            feature,
+            from,
+            piece,
+        } => TopoName::Split {
+            feature: feature.clone(),
+            from: Box::new(stripped(from)),
+            piece: *piece,
+        },
+        TopoName::Merged { feature, from } => TopoName::Merged {
+            feature: feature.clone(),
+            from: from.iter().map(stripped).collect(),
+        },
+        TopoName::Root { container } => TopoName::Root {
+            container: container.clone(),
+        },
     }
-    let inner = |left: &TopoName, right: &TopoName| same(left, right, reading, false);
-    let sets = |left: &BTreeSet<TopoName>, right: &BTreeSet<TopoName>| {
-        left.len() == right.len()
-            && left
-                .iter()
-                .all(|left| right.iter().any(|right| inner(left, right)))
-            && right
-                .iter()
-                .all(|right| left.iter().any(|left| inner(left, right)))
-    };
-    match (left, right) {
-        (
+}
+
+/// Every place in `name` where one or more indexes are stated, mapped to the
+/// set of indexes stated there. Names of one set equal without their indexes
+/// share one place.
+fn index_places(name: &TopoName) -> BTreeMap<Place, BTreeSet<u32>> {
+    fn collect(name: &TopoName, path: &mut Place, into: &mut BTreeMap<Place, BTreeSet<u32>>) {
+        if let Some(index) = own_index(name) {
+            into.entry(path.clone()).or_default().insert(index);
+        }
+        match name {
             TopoName::Generated {
-                kind,
-                feature,
-                role,
-                generator,
-                index: _,
-            },
-            TopoName::Generated {
-                kind: other_kind,
-                feature: other_feature,
-                role: other_role,
-                generator: other_generator,
-                index: _,
-            },
-        ) => {
-            kind == other_kind
-                && feature == other_feature
-                && role == other_role
-                && match (generator, other_generator) {
-                    (Some(Generator::Entity(left)), Some(Generator::Entity(right))) => {
-                        inner(left, right)
-                    }
-                    (left, right) => left == right,
+                generator: Some(Generator::Entity(inner)),
+                ..
+            } => {
+                path.push(Step::Generator);
+                collect(inner, path, into);
+                path.pop();
+            }
+            TopoName::Instance { of: inner, .. } => {
+                path.push(Step::Of);
+                collect(inner, path, into);
+                path.pop();
+            }
+            TopoName::Modified { from: inner, .. } | TopoName::Split { from: inner, .. } => {
+                path.push(Step::From);
+                collect(inner, path, into);
+                path.pop();
+            }
+            TopoName::Blend { between, .. } => {
+                for (position, inner) in between.iter().enumerate() {
+                    path.push(Step::Between(position));
+                    collect(inner, path, into);
+                    path.pop();
                 }
+            }
+            TopoName::Bounded { faces, ends, .. } => {
+                for face in faces {
+                    path.push(Step::Face(stripped(face)));
+                    collect(face, path, into);
+                    path.pop();
+                }
+                for end in ends {
+                    path.push(Step::End(stripped(end)));
+                    collect(end, path, into);
+                    path.pop();
+                }
+            }
+            TopoName::Meeting { faces, .. } => {
+                for face in faces {
+                    path.push(Step::Face(stripped(face)));
+                    collect(face, path, into);
+                    path.pop();
+                }
+            }
+            TopoName::Merged { from, .. } => {
+                for inner in from {
+                    path.push(Step::Merged(stripped(inner)));
+                    collect(inner, path, into);
+                    path.pop();
+                }
+            }
+            TopoName::Generated { .. } | TopoName::Root { .. } => {}
         }
-        (
-            TopoName::Instance {
-                feature,
-                instance,
-                of,
-            },
-            TopoName::Instance {
-                feature: other_feature,
-                instance: other_instance,
-                of: other_of,
-            },
-        ) => feature == other_feature && instance == other_instance && inner(of, other_of),
-        (
-            TopoName::Blend {
-                feature,
-                between,
-                index: _,
-            },
-            TopoName::Blend {
-                feature: other_feature,
-                between: other_between,
-                index: _,
-            },
-        ) => {
-            feature == other_feature
-                && between.len() == other_between.len()
-                && between
-                    .iter()
-                    .zip(other_between)
-                    .all(|(left, right)| inner(left, right))
-        }
-        (
-            TopoName::Bounded {
-                faces,
-                ends,
-                index: _,
-            },
-            TopoName::Bounded {
-                faces: other_faces,
-                ends: other_ends,
-                index: _,
-            },
-        ) => sets(faces, other_faces) && sets(ends, other_ends),
-        (
-            TopoName::Meeting { faces, index: _ },
-            TopoName::Meeting {
-                faces: other_faces,
-                index: _,
-            },
-        ) => sets(faces, other_faces),
-        (
-            TopoName::Modified { feature, from },
-            TopoName::Modified {
-                feature: other_feature,
-                from: other_from,
-            },
-        ) => feature == other_feature && inner(from, other_from),
-        (
-            TopoName::Split {
-                feature,
-                from,
-                piece,
-            },
-            TopoName::Split {
-                feature: other_feature,
-                from: other_from,
-                piece: other_piece,
-            },
-        ) => feature == other_feature && piece == other_piece && inner(from, other_from),
-        (
-            TopoName::Merged { feature, from },
-            TopoName::Merged {
-                feature: other_feature,
-                from: other_from,
-            },
-        ) => feature == other_feature && sets(from, other_from),
-        (TopoName::Root { container }, TopoName::Root { container: other }) => container == other,
-        _ => false,
     }
+    let mut found = BTreeMap::new();
+    collect(name, &mut Vec::new(), &mut found);
+    found
 }
 
 /// The matchers of the stored states one validation reads, each built once.
