@@ -17,23 +17,9 @@ use super::{Context, PARAMETER_COLLECTION};
 /// DR-911, DR-917).
 pub(super) const DISCRIMINATOR: u64 = 6;
 
-/// The expression trailer of an owned parameter in the discriminated form.
-#[derive(Clone, Copy)]
-pub(super) enum Trailer {
-    /// Four zero bytes and five flag bytes, each `0`.
-    Flagged,
-    /// Ten zero bytes.
-    Owned,
-}
-
-impl Trailer {
-    fn len(self) -> usize {
-        match self {
-            Self::Flagged => 9,
-            Self::Owned => 10,
-        }
-    }
-}
+/// The expression trailer of a parameter of the written type version 8: the
+/// text flag, four zero bytes and five flag bytes, all `0` (f3d.md §3.1).
+const TRAILER: [u8; 10] = [0; 10];
 
 /// One owned parameter's records and where its owner sits.
 pub(super) struct Owned<'a> {
@@ -46,7 +32,6 @@ pub(super) struct Owned<'a> {
     pub(super) local: u32,
     /// The parameter's source kind.
     pub(super) kind: &'a str,
-    pub(super) trailer: Trailer,
     pub(super) value: &'a OwnedParameter,
 }
 
@@ -63,7 +48,6 @@ pub(super) fn write(
         scope,
         local,
         kind,
-        trailer,
         value,
     } = owned;
     out.record(&ctx.class(types::PARAMETER_OWNER.guid)?, owner)
@@ -91,7 +75,7 @@ pub(super) fn write(
         .u32(value.ordinal)
         .reference(owner)
         .lp_utf16(&value.expression)?
-        .zeros(trailer.len())
+        .raw(&TRAILER)
         .lp_utf16(kind)?
         .u32(0)
         .lp_utf16(value.unit.name())?

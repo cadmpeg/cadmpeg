@@ -402,6 +402,74 @@ fn the_distance_is_an_owned_parameter_of_the_extrude() {
         .any(|parameter| parameter.name == "Width" && parameter.owner.is_none()));
 }
 
+/// The LP-UTF16 string at `at` and the offset after it.
+fn utf16_at(bytes: &[u8], at: usize) -> (String, usize) {
+    let units = usize::try_from(u32_at(bytes, at)).expect("length");
+    let end = at + 4 + 2 * units;
+    let units = bytes[at + 4..end]
+        .chunks(2)
+        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+        .collect::<Vec<_>>();
+    (String::from_utf16(&units).expect("UTF-16"), end)
+}
+
+/// Each parameter record is framed by the version of the type the
+/// `MetaStream` registers for it (f3d.md §3.1): the eleven-byte header,
+/// and the nine-byte expression trailer at version 7 or the ten-byte one at
+/// version 8, whose last byte is the document flag.
+#[test]
+fn every_parameter_record_closes_with_the_trailer_of_its_type_version() {
+    let mut ir = sketch_and_extrude(blind(), false);
+    ir.design
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.id == parameter_id("width"))
+        .expect("Width")
+        .comment = Some("overall width".into());
+    let (_, _, bytes) = write_bytes(&ir);
+    let design = segment(&bytes, "FusionDesignSegmentType1");
+    let mut written = Vec::new();
+    for (index, version) in design.records_of(super::super::types::PARAMETER.guid) {
+        let record = design.record(index);
+        let trailer = match version {
+            7 => 9,
+            8 => 10,
+            other => panic!("parameter type version {other}"),
+        };
+        assert_eq!(&record[11..22], &[0; 11], "record {index}");
+        assert!(u32_at(record, 22) <= 6, "record {index}");
+        assert_eq!(record[26], 0, "record {index}");
+        let (comment, at) = utf16_at(record, 27);
+        let (owned, expression_at) = match record[at + 4] {
+            0 => (false, at + 5),
+            1 => {
+                assert_eq!(&record[at + 13..at + 15], &[0; 2], "record {index}");
+                (true, at + 15)
+            }
+            marker => panic!("record {index}: owner marker {marker}"),
+        };
+        let (_, end) = utf16_at(record, expression_at);
+        let mut expected = vec![0; trailer];
+        expected[trailer - 1] = u8::from(!owned);
+        assert_eq!(&record[end..end + trailer], expected, "record {index}");
+        let (kind, end) = utf16_at(record, end + trailer);
+        assert_eq!(u32_at(record, end), 0, "record {index}: the text value");
+        written.push((kind, comment));
+    }
+    for expected in [
+        ("AlongDistance", ""),
+        ("TaperAngle", ""),
+        ("User Parameter", "overall width"),
+    ] {
+        assert!(
+            written
+                .iter()
+                .any(|(kind, comment)| (kind.as_str(), comment.as_str()) == expected),
+            "{expected:?} in {written:?}"
+        );
+    }
+}
+
 #[test]
 fn the_extrude_commits_the_head_state() {
     let (_, decoded) = write(&sketch_and_extrude(blind(), false));
