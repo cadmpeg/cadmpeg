@@ -5,8 +5,10 @@
 //! text does not declare is bound on the root element to a namespace that
 //! carries the prefix, so that the reader keys the prefixed name as written.
 //! At any other error the text is cut after the last complete markup before
-//! the error, and the elements open there are closed. Each repair charges a
-//! loss that states the parser error.
+//! the error, and the elements open there are closed; the innermost of them
+//! is dropped when it holds no complete child element, because the cut
+//! interrupts its text. Each repair charges a loss that states the parser
+//! error.
 
 use std::borrow::Cow;
 use std::collections::BTreeSet;
@@ -39,11 +41,13 @@ struct Insertion {
 
 impl Insertion {
     fn source_offset(self, offset: usize) -> usize {
-        if offset >= self.at {
-            offset.saturating_sub(self.len).max(self.at)
-        } else {
-            offset
+        if offset < self.at {
+            return offset;
         }
+        offset
+            .checked_sub(self.len)
+            .filter(|shifted| *shifted >= self.at)
+            .unwrap_or(self.at)
     }
 }
 
@@ -200,8 +204,8 @@ fn repair(
         inserted: None,
         body_end: text.len(),
     };
+    let root_name_end = whole.root_name.as_ref().map(|name| name.end);
     for _ in 0..MAX_HISTORY_XML_REPAIRS {
-        let root_name_end = whole.root_name.as_ref().map(|name| name.end);
         match &error {
             roxmltree::Error::UnknownNamespace(prefix, _)
                 if bindable
@@ -281,16 +285,12 @@ fn error_limit(
         | roxmltree::Error::NodesLimitReached
         | roxmltree::Error::AttributesLimitReached
         | roxmltree::Error::NamespacesLimitReached => return None,
-        error => {
-            let offset = text_offset(&candidate.text, error.pos());
-            if offset >= candidate.body_end {
-                text.len()
-            } else {
-                candidate
-                    .inserted
-                    .map_or(offset, |inserted| inserted.source_offset(offset))
-            }
-        }
+        error => match text_offset(&candidate.text, error.pos()) {
+            Some(offset) if offset < candidate.body_end => candidate
+                .inserted
+                .map_or(offset, |inserted| inserted.source_offset(offset)),
+            _ => text.len(),
+        },
     };
     match cut {
         Some(cut) => Some(limit.min(cut.end.checked_sub(1)?)),
@@ -394,21 +394,20 @@ fn local(name: &str) -> &str {
 
 /// The byte offset of a parser position: a 1-based line and a 1-based
 /// character column.
-fn text_offset(text: &str, position: roxmltree::TextPos) -> usize {
-    let row = usize::try_from(position.row.saturating_sub(1)).unwrap_or(usize::MAX);
-    let column = usize::try_from(position.col.saturating_sub(1)).unwrap_or(usize::MAX);
+fn text_offset(text: &str, position: roxmltree::TextPos) -> Option<usize> {
+    let row = usize::try_from(position.row.checked_sub(1)?).ok()?;
+    let column = usize::try_from(position.col.checked_sub(1)?).ok()?;
     let line_start = text
         .split_inclusive('\n')
         .take(row)
         .map(str::len)
         .sum::<usize>();
-    text.get(line_start..).map_or(text.len(), |line| {
-        line_start
-            + line
-                .char_indices()
-                .nth(column)
-                .map_or(line.len(), |(offset, _)| offset)
-    })
+    let line = text.get(line_start..)?;
+    let column = line
+        .char_indices()
+        .nth(column)
+        .map_or(line.len(), |(offset, _)| offset);
+    line_start.checked_add(column)
 }
 
 /// Markup of the member text that ends at or before a limit.
