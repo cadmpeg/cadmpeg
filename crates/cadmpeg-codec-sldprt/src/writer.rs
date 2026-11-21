@@ -873,8 +873,8 @@ pub(super) fn reserve_configuration_index(
     }
 }
 
-/// One partition per indexed configuration, each holding no body. A part with
-/// no configuration stores no partition.
+/// One partition per indexed configuration, or `Config-0`, each holding no
+/// body. A file with no partition is not an SLDPRT part its readers detect.
 fn empty_partitions(ir: &CadIr) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
     let mut indices = ir
         .model
@@ -884,6 +884,9 @@ fn empty_partitions(ir: &CadIr) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
         .collect::<Vec<_>>();
     indices.sort_unstable();
     indices.dedup();
+    if indices.is_empty() {
+        indices.push(0);
+    }
     indices
         .into_iter()
         .map(|index| {

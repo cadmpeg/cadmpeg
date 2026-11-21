@@ -248,6 +248,19 @@ fn a_document_with_no_face_writes_an_empty_partition_and_names_it() {
     assert!(loss(&losses, "output.empty").is_some(), "{losses:#?}");
     let bodies = loss(&losses, "writer.bodies-omitted").unwrap();
     assert!(bodies.message.contains(ir.geometry.bodies[0].id.as_str()));
+    let mut bytes = Vec::new();
+    SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap()
+        .write_to(&mut bytes)
+        .unwrap();
+    let decoded = SldprtCodec
+        .decode(
+            &mut std::io::Cursor::new(bytes),
+            &cadmpeg_ir::codec::DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(decoded.ir().geometry.faces.is_empty());
 }
 
 #[test]
