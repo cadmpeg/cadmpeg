@@ -211,3 +211,134 @@ fn a_face_recipe_fallback_is_kept() {
     assert_eq!(operands[0].resolved_face_slots, [40]);
     assert!(losses.is_empty());
 }
+
+fn selected_start_group() -> crate::records::topology::construction::DesignConstructionOperandGroup
+{
+    use crate::records::topology::construction::{
+        DesignConstructionOperandGroup, DesignConstructionOperandGroupDraft,
+        DesignConstructionOperandGroupFrame, DesignConstructionOperandGroupFrameDraft,
+        DesignConstructionOperandRole,
+    };
+    use crate::records::topology::extrude_selection::{
+        DesignExtrudeFaceEncoding, DesignExtrudeFaceRole,
+    };
+    DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
+        id: "f3d:Design/BulkStream.dat:operand-group#100".into(),
+        scope_record_index: 42,
+        scope_reference_ordinal: 0,
+        record_index: 100,
+        byte_offset: 1000,
+        class_tag: "297".to_owned().try_into().unwrap(),
+        members: vec![crate::records::identity::Located {
+            value: 110,
+            offset: 1010,
+        }],
+        lost_edge_references: Vec::new(),
+        frame: DesignConstructionOperandGroupFrame::try_from(
+            DesignConstructionOperandGroupFrameDraft {
+                member_count_offset: 1008,
+                auxiliary_records: Vec::new(),
+                auxiliary_paths: Vec::new(),
+                trailing_records: Vec::new(),
+                trailing_transforms: Vec::new(),
+                trailing_dual_transforms: Vec::new(),
+                trailing_flags: Vec::new(),
+                opaque_index: 1,
+                opaque_index_offset: 1048,
+                opaque_scalar: 0.0,
+                opaque_scalar_offset: 1052,
+                variant: false,
+                closing_flag: false,
+            },
+        )
+        .unwrap(),
+        operand_role: DesignConstructionOperandRole::ExtrudeFaces {
+            encoding: DesignExtrudeFaceEncoding::SelectedStart,
+            usage: DesignExtrudeFaceRole::Start,
+        },
+        role_offset: 1030,
+        paired_class_tag: "259".to_owned().try_into().unwrap(),
+        paired_byte_offset: 1100,
+    })
+    .unwrap()
+}
+
+fn bind_selected_start(
+    context: &[i64],
+    role: crate::records::topology::extrude_selection::DesignExtrudeFaceRole,
+) -> (DesignFaceOperand, Vec<LossNote>) {
+    use crate::records::topology::construction::DesignConstructionOperandRole;
+    use crate::records::topology::extrude_selection::DesignExtrudeFaceEncoding;
+    let mut group = selected_start_group();
+    group.operand_role = DesignConstructionOperandRole::ExtrudeFaces {
+        encoding: DesignExtrudeFaceEncoding::SelectedStart,
+        usage: role,
+    };
+    let lanes = [context, &[10]];
+    let mut operand = operand(&lanes);
+    operand.recipe_references[1].selector = 2;
+    operand.alternate_selector_candidate_faces = vec![face(10)];
+    let recipe = crate::records::recipes::ConstructionRecipe {
+        id: operand.recipe_id.clone(),
+        byte_offset: 0,
+        kind: crate::records::recipes::ConstructionRecipeKind::BoundedFace,
+        design: None,
+        recipe_index: 0,
+        record_index: Some(crate::records::identity::RecordedValue {
+            value: 300,
+            offset: 0,
+        }),
+    };
+    let mut history = history(&lanes, &[]);
+    for ordinal in 0..history.states().len() {
+        crate::test_support::history::edit(&mut history, ordinal, |topology, _| {
+            topology.face_surfaces = vec![
+                crate::history_records::AsmHistoricalCarrierBinding {
+                    entity: 10,
+                    carrier: 110,
+                },
+                crate::history_records::AsmHistoricalCarrierBinding {
+                    entity: 20,
+                    carrier: 120,
+                },
+            ];
+        });
+    }
+    let mut bound = [operand];
+    let losses = crate::test_support::with_decode_context(|ctx| {
+        bind_face_operand_history_candidates(
+            ctx,
+            &mut bound,
+            &[scope(DesignFeatureKind::Extrude)],
+            std::slice::from_ref(&group),
+            std::slice::from_ref(&recipe),
+            BindingHistories::Shared(std::slice::from_ref(&history)),
+            &HashMap::new(),
+        )
+    })
+    .unwrap();
+    let [bound] = bound;
+    (bound, losses)
+}
+
+#[test]
+fn selected_start_keeps_its_unique_alternate_selector_after_other_proofs() {
+    use crate::records::topology::extrude_selection::DesignExtrudeFaceRole;
+    let (start, losses) = bind_selected_start(&[10, 20], DesignExtrudeFaceRole::Start);
+    assert!(losses.is_empty());
+    assert_eq!(start.alternate_selector_candidate_faces, [face(10)]);
+    assert_eq!(start.preceding_candidate_faces, [face(10)]);
+    assert_eq!(start.resolved_face_slots, [10]);
+    let (termination, _) = bind_selected_start(&[10, 20], DesignExtrudeFaceRole::Termination);
+    assert!(termination.alternate_selector_candidate_faces.is_empty());
+    assert!(termination.resolved_face_slots.is_empty());
+}
+
+#[test]
+fn selected_start_keeps_a_face_already_bound_by_history() {
+    use crate::records::topology::extrude_selection::DesignExtrudeFaceRole;
+    let (start, losses) = bind_selected_start(&[20], DesignExtrudeFaceRole::Start);
+    assert!(losses.is_empty());
+    assert!(start.alternate_selector_candidate_faces.is_empty());
+    assert_eq!(start.resolved_face_slots, [20]);
+}

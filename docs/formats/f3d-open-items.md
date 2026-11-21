@@ -2871,9 +2871,11 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 ### DR-326. Extrude start face on another component's body
 
-**Question.** Which identity in a role-`0x0000001100000000` direct start group names the selected face when that face belongs to a body of another component, and in which ASM history and state is it resolved?
+**Question.** Which identity in a role-`0x0000001100000000` start group names the selected face when that face belongs to a body of another component, and in which ASM history and state is it resolved?
 
 **Known.** The group uses the 143-byte direct construction-group frame of `f3d.md` §3.1. Its sole member is a bounded-face recipe operand, and its two auxiliary records each carry one u64 entity identity. The recipe's references resolve no face in the input state of the Extrude's own history. The two auxiliary identities also occur in a second history, as a surface and a pcurve. The surface carries one planar face, and the coedge of the pcurve lies on a different face. In the Extrude's own history, both identities occur as coedges, first inserted after the Extrude's state. Each auxiliary identity occurs in both histories. No single history holds both identities on one face. Both auxiliary records use the compact placement form with variant byte `1`; neither carries a rigid transform. The decoder keeps the start face native.
+
+In the public `00278-Moons__MS17HD6P420I-04.f3d`, start groups `2506`, `4199`, and `11991` have 144-byte counted frames and one bounded-face member each. Their owning scopes `2492`, `4085`, and `11833` each name preceding state `2`. Their recipes have 14, 72, and 12 prefix references respectively; every reference has an empty face lane in that state. Their ordered auxiliary identity pairs are `(2486, 2249)`, `(4079, 2486)`, and `(9236, 2249)`. Each auxiliary path has compact placement with variant `1`.
 
 **Need.** Designs with two components, A placed once in B. B's first `Extrude` starts from a planar face of a body in A and extends a sketch profile 5 mm. Save one design per selected face of A: the top face, a side face, and a face that a later feature of A changes. Save a further design where A is placed twice and the face of one occurrence is selected. Each save needs the start group frame, its auxiliary records, the ASM histories of both components, and the occurrence transforms of A in B.
 
@@ -3078,6 +3080,8 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 **Question.** Which stored relations bind an `Extrude` start or termination recipe when its node run covers an earlier boundary, a node has one side clause, or a prefix operand has an empty face lane in the preceding topology?
 
 **Known.** A two-sided termination stores two bounded-face recipes with Design reference `302`. One program has five nodes, of which four have a parsed two-clause structure. The other has four parsed two-clause nodes; its first prefix operand names face slot `50`, whose preceding loop has eight edges. Its aggregate candidate lane contains four side faces. A further termination program has eight parsed nodes and two empty prefix-face lanes. Two further programs have five nodes each, including a node with one side clause (`f3d.md` §3.1). Their remaining candidates include several preceding faces.
+
+The public `00550-Mini_AfterSherpa_Orbiter_v2_X_Carriage_MGN9C.f3d` has start group `1839` with bounded-face member `1842`. Its recipe has two one-clause nodes and three prefix operands. The middle operand names face `2675` through positive Design reference `7566` and token `6`. The first and third operands have negative Design references and empty face lanes. The selected-face candidate and historical support lanes are empty.
 
 **Need.** The mapping of a saved boundary edge to a chain of preceding edges, the edge that a one-clause node binds (DR-170), and the binding of empty prefix-face lanes. Independent selections before and after a boundary split must distinguish a selected face from its adjacent faces.
 
