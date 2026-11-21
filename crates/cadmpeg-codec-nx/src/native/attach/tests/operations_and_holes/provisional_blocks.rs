@@ -2,7 +2,8 @@
 
 use crate::native::attach::feature_projection::{new_body_boolean_op, NewBodyEvidence};
 use crate::native::history::BodyWriterHistory;
-use cadmpeg_ir::features::{BooleanOp, FeatureId};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::ids::BodyId;
 
 #[test]

@@ -20,7 +20,7 @@ fn standard_pcurve_geometry(
     support: &StandardCurveSupport,
     start: Point3,
     end: Point3,
-    witness: Option<cadmpeg_ir::features::FinitePoint3>,
+    witness: Option<cadmpeg_ir::features::geometry::FinitePoint3>,
     edge_curve: Option<&CurveGeometry>,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<(cadmpeg_ir::geometry::pcurve::PcurveGeometry, [f64; 2])> {
@@ -53,7 +53,7 @@ fn standard_circle_without_an_admissible_plane_normal_retains_unknown_carrier() 
         .map(|(index, position)| {
             Point::new(
                 PointId::mint(format!("catia:test:point#point-{index}")).expect("identity grammar"),
-                cadmpeg_ir::features::FinitePoint3::new(position)
+                cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                     .expect("a finite position is a point"),
                 None,
             )
@@ -340,7 +340,7 @@ fn sphere_section_circle_between_two_points_builds_an_edge_curve() {
     {
         ir.geometry.points.push(Point::new(
             PointId::mint(format!("catia:test:point#{index}")).expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(position).expect("finite point"),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(position).expect("finite point"),
             None,
         ));
     }

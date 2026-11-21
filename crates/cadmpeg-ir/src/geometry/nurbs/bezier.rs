@@ -2,7 +2,7 @@
 //! Homogeneous Bezier extraction and rational boundary bounds.
 
 use super::PoleValue;
-use crate::features::FinitePoint3;
+use crate::features::geometry::FinitePoint3;
 use crate::math::sum::ExactSignedSum;
 
 /// One nonempty knot span and its homogeneous Bezier control polygon.

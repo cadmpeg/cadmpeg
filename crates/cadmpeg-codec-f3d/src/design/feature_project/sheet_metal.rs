@@ -25,9 +25,9 @@ pub(super) fn project_base_flange(
     placements: &[DesignSketchPlacement],
     settings: &[crate::records::sheet_metal_settings::DesignSheetMetalSettings],
 ) -> Option<(cadmpeg_ir::features::FeatureDefinition, bool)> {
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, PlanarProfileRef, SheetMetalThicknessSide,
-    };
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
+    use cadmpeg_ir::features::sheet_metal_forms::SheetMetalThicknessSide;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let operation = scope.base_flange_operation()?;
     let mut matching = groups.iter().filter(|group| {
@@ -93,11 +93,11 @@ pub(super) fn project_edge_flange(
         DesignBendPosition, DesignEdgeFlangeHeightExtent, DesignEdgeFlangeWidthParameterSource,
         DesignSheetMetalHeightDatum,
     };
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, SheetMetalBendPosition, SheetMetalFlangeHeight,
-        SheetMetalFlangeHeightTarget, SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth,
-        SheetMetalHeightDatum,
+    use cadmpeg_ir::features::sheet_metal_forms::{
+        SheetMetalBendPosition, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
+        SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth, SheetMetalHeightDatum,
     };
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let ProjectInputs {
         native: parameters,
         owners,
@@ -241,12 +241,13 @@ pub(super) fn project_edge_flange(
                                         row.owners[1],
                                         "EdgeOffset_2"
                                     ))))),
-                                    first_reference: cadmpeg_ir::features::SelectionReference::new(
-                                        scope.id.clone(),
-                                    )
-                                    .ok(),
+                                    first_reference:
+                                        cadmpeg_ir::features::selections::SelectionReference::new(
+                                            scope.id.clone(),
+                                        )
+                                        .ok(),
                                     second_reference:
-                                        cadmpeg_ir::features::SelectionReference::new(
+                                        cadmpeg_ir::features::selections::SelectionReference::new(
                                             scope.id.clone(),
                                         )
                                         .ok(),
@@ -254,10 +255,12 @@ pub(super) fn project_edge_flange(
                             offsets.push(offset);
                         }
                         SheetMetalFlangeWidth::TwoOffsetsPerEdge {
-                            offsets: or_none!(cadmpeg_ir::features::NonEmptyMembers::try_from(
-                                offsets
-                            )
-                            .ok()),
+                            offsets: or_none!(
+                                cadmpeg_ir::features::selections::NonEmptyMembers::try_from(
+                                    offsets
+                                )
+                                .ok()
+                            ),
                         }
                     } else {
                         let mut widths = Vec::new();
@@ -275,7 +278,7 @@ pub(super) fn project_edge_flange(
                         }
                         SheetMetalFlangeWidth::TwoSidesPerEdge {
                             widths: or_none!(
-                                cadmpeg_ir::features::SheetMetalFlangeEdgeWidths::new(widths).ok()
+                                cadmpeg_ir::features::sheet_metal_forms::SheetMetalFlangeEdgeWidths::new(widths).ok()
                             ),
                         }
                     }
@@ -447,9 +450,8 @@ pub(super) fn project_hem(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use crate::records::feature::sheet_metal::DesignHemParameterOwners;
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, SheetMetalHemDirection, SheetMetalHemForm,
-    };
+    use cadmpeg_ir::features::sheet_metal_forms::{SheetMetalHemDirection, SheetMetalHemForm};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let ProjectInputs {
         native: parameters,

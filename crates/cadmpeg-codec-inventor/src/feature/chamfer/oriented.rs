@@ -6,15 +6,12 @@ use cadmpeg_core::{
     decode::{unique_index, DecodeContext},
     CodecError,
 };
-use cadmpeg_ir::{
-    features::{
-        edge_treatments::{ChamferForm, ChamferSpec},
-        DistinctMembers, EdgeSelection, Feature, FeatureDefinition, FeatureInputTopology,
-        FeatureOperation, HistoricalEdgeGeometry,
-    },
-    ids::{HistoricalEdgeId, HistoricalFaceId},
-    scalar::{Length, PositiveLength},
-};
+use cadmpeg_ir::features::edge_treatments::{ChamferForm, ChamferSpec};
+use cadmpeg_ir::features::evaluation::{FeatureInputTopology, HistoricalEdgeGeometry};
+use cadmpeg_ir::features::selections::{DistinctMembers, EdgeSelection};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::ids::{HistoricalEdgeId, HistoricalFaceId};
+use cadmpeg_ir::scalar::{Length, PositiveLength};
 
 use super::Operands;
 use crate::feature::{

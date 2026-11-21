@@ -531,7 +531,7 @@ fn patch_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
     let mut edited = result.ir().clone();
     let moved = edited.geometry.points[0].position().get();
     edited.geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 1.0,
             moved.y,
             moved.z,
@@ -951,11 +951,9 @@ fn an_edit_survives_the_patch_writer() {
                 };
                 let moved = point.position().get();
                 point.set_position(
-                    cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
-                        moved.x + MUTATION_MM,
-                        moved.y,
-                        moved.z,
-                    ))
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(
+                        cadmpeg_ir::math::Point3::new(moved.x + MUTATION_MM, moved.y, moved.z),
+                    )
                     .expect("a finite position is a point"),
                 );
                 true

@@ -12,11 +12,11 @@ use crate::records::feature::work_geometry::{
     DesignWorkPointInput, DesignWorkPointInputCarrier, DesignWorkPointSketchPointSelection,
     DesignWorkPointSketchPointSelectionDraft,
 };
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::holes::{HoleKind, HoleProfileFilter};
-use cadmpeg_ir::features::{
-    FaceSelection, Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
-    PlanarProfileRef,
-};
+use cadmpeg_ir::features::profiles::PlanarProfileRef;
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
     SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,

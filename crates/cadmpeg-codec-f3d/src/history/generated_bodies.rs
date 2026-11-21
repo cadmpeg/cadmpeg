@@ -28,10 +28,10 @@ pub(crate) fn bind_generated_body_selections(
     scope_histories: &HashMap<String, String>,
     primary_brep: Option<&str>,
     losses: &mut Vec<LossNote>,
-) -> Vec<cadmpeg_ir::features::FeatureResultTopology> {
-    use cadmpeg_ir::features::{
-        patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation, GeneratedBodyRef,
-    };
+) -> Vec<cadmpeg_ir::features::evaluation::FeatureResultTopology> {
+    use cadmpeg_ir::features::patterns::PatternSeed;
+    use cadmpeg_ir::features::selections::{BodySelection, GeneratedBodyRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let live = inputs
         .bodies
@@ -289,19 +289,21 @@ pub(crate) fn bind_generated_body_selections(
                 .iter()
                 .map(|slot| cadmpeg_core::text::NonBlankString::new(slot.to_string()))
                 .collect::<Option<Vec<_>>>()?;
-            let members = cadmpeg_ir::features::FeatureResultMembers::new(
+            let members = cadmpeg_ir::features::evaluation::FeatureResultMembers::new(
                 bodies,
                 Vec::new(),
                 Vec::new(),
                 Vec::new(),
             )
             .ok()?;
-            Some(cadmpeg_ir::features::FeatureResultTopology::new(
-                crate::ids::history_result_state_id(&producer, state_id),
-                producer,
-                members,
-                None,
-            ))
+            Some(
+                cadmpeg_ir::features::evaluation::FeatureResultTopology::new(
+                    crate::ids::history_result_state_id(&producer, state_id),
+                    producer,
+                    members,
+                    None,
+                ),
+            )
         })
         .collect()
 }
@@ -319,8 +321,10 @@ struct CombineSide {
     single_native: bool,
 }
 
-fn combine_side(selection: &cadmpeg_ir::features::BodySelection) -> Option<CombineSide> {
-    use cadmpeg_ir::features::BodySelection;
+fn combine_side(
+    selection: &cadmpeg_ir::features::selections::BodySelection,
+) -> Option<CombineSide> {
+    use cadmpeg_ir::features::selections::BodySelection;
     match selection {
         BodySelection::Historical { bodies, native, .. } => Some(CombineSide {
             slots: bodies
@@ -351,7 +355,7 @@ fn combine_side(selection: &cadmpeg_ir::features::BodySelection) -> Option<Combi
 /// them, the producers of generated bodies, and the features that become
 /// dependencies.
 type CombineSideBinding = (
-    cadmpeg_ir::features::BodySelection,
+    cadmpeg_ir::features::selections::BodySelection,
     Vec<Producer>,
     Vec<cadmpeg_ir::features::FeatureId>,
 );
@@ -445,7 +449,7 @@ fn combine_side_binding(
     scope: Option<&crate::records::feature::scope::DesignParameterScope>,
     side: &CombineSide,
 ) -> Result<CombineSideBinding, String> {
-    use cadmpeg_ir::features::{BodyMembers, BodySelection, GeneratedBodyRef};
+    use cadmpeg_ir::features::selections::{BodyMembers, BodySelection, GeneratedBodyRef};
     let inputs = context.inputs;
     let scope = scope.ok_or("the Combine has no scope")?;
     let history = scope_state_history(scope, context.scope_histories, inputs.histories)
@@ -603,7 +607,7 @@ struct ReverseContext<'a> {
 /// The model bodies of a selection of body slots, with the earlier features
 /// whose transitions insert those slots.
 struct ModelBodies {
-    bodies: cadmpeg_ir::features::DistinctMembers<cadmpeg_ir::ids::BodyId>,
+    bodies: cadmpeg_ir::features::selections::DistinctMembers<cadmpeg_ir::ids::BodyId>,
     dependencies: Vec<cadmpeg_ir::features::FeatureId>,
 }
 
@@ -890,12 +894,12 @@ pub(super) fn group_operand_body_slots(
 /// selects a model body whose entity number is outside the body slots that
 /// the group's operands resolve through their recipe identity.
 pub(super) fn keep_recipe_body_slots(
-    selection: &mut cadmpeg_ir::features::BodySelection,
-    native: cadmpeg_ir::features::BodySelection,
+    selection: &mut cadmpeg_ir::features::selections::BodySelection,
+    native: cadmpeg_ir::features::selections::BodySelection,
     scope: &crate::records::feature::scope::DesignParameterScope,
     inputs: &FeatureBodySelectionInputs<'_>,
 ) {
-    use cadmpeg_ir::features::BodySelection;
+    use cadmpeg_ir::features::selections::BodySelection;
     let (BodySelection::Native(group_id), BodySelection::Resolved { bodies, .. }) =
         (&native, &*selection)
     else {

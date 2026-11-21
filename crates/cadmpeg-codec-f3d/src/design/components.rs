@@ -1857,7 +1857,7 @@ pub(crate) fn project_derived_instance_features(
     paths: &paths::LocalOccurrencePaths,
     projected: &[Occurrence],
 ) -> Result<Vec<LossNote>, cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::InsertedComponents;
+    use cadmpeg_ir::features::selections::InsertedComponents;
 
     let available = projected
         .iter()
@@ -1896,8 +1896,9 @@ pub(crate) fn project_derived_instance_features(
                     | InsertedComponents::Resolved { native, .. }
                     | InsertedComponents::Partial { native, .. } => native,
                 };
-                *native = cadmpeg_ir::features::SelectionReference::new(scope.id.clone())
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                *native =
+                    cadmpeg_ir::features::selections::SelectionReference::new(scope.id.clone())
+                        .map_err(cadmpeg_core::CodecError::malformed)?;
                 feature
                     .evaluation
                     .set_definition(FeatureDefinition::Operation(
@@ -1994,7 +1995,8 @@ pub(crate) fn project_copy_paste_transfer_features(
     use crate::records::feature::occurrence_transfer::{
         DesignOccurrenceTransferMode, DesignOccurrenceTransferSource,
     };
-    use cadmpeg_ir::features::{ComponentTransferMode, FeatureOperation};
+    use cadmpeg_ir::features::tree::ComponentTransferMode;
+    use cadmpeg_ir::features::FeatureOperation;
     let mut losses = Vec::new();
     for scope in scopes {
         let Some(stream) = crate::ids::native_stream(&scope.id) else {
@@ -3971,12 +3973,12 @@ mod tests {
             ordinal: 1,
             name: None,
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::default(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "DerivedInstance".into(),
                     parameters: std::collections::BTreeMap::new(),
@@ -4201,12 +4203,12 @@ mod tests {
                 ordinal: 0,
                 name: None,
                 suppressed: None,
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                 source_properties: BTreeMap::new(),
                 source_tag: None,
                 source_text: None,
                 source_content: cadmpeg_ir::features::FeatureContent::default(),
-                evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::Native {
                         kind: "ComponentInsert".into(),
                         parameters: BTreeMap::new(),
@@ -4359,12 +4361,12 @@ mod tests {
             ordinal: 1,
             name: None,
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::default(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "ComponentInsert".into(),
                     parameters: std::collections::BTreeMap::new(),

@@ -656,7 +656,7 @@ impl ProfileGeometryWork {
 #[derive(Clone)]
 struct SketchArrangementEdge {
     nodes: [usize; 2],
-    boundary: cadmpeg_ir::features::SketchProfileBoundaryUse,
+    boundary: cadmpeg_ir::features::profiles::SketchProfileBoundaryUse,
     polyline: Vec<Point2>,
     /// Curves of coincident edges merged into this edge, each with its
     /// direction along the edge from its first node to its second.
@@ -688,7 +688,7 @@ impl ArrangementFragment {
 /// One closed boundary walk of an arrangement.
 #[derive(Clone)]
 struct ArrangementRing {
-    boundary: Vec<cadmpeg_ir::features::SketchProfileBoundaryUse>,
+    boundary: Vec<cadmpeg_ir::features::profiles::SketchProfileBoundaryUse>,
     /// Boundary fragments in walk order.
     fragments: Vec<ArrangementFragment>,
 }
@@ -1459,8 +1459,11 @@ fn match_member_rings(
             return Ok(None);
         }
         regions.push(geometric!(
-            cadmpeg_ir::features::SketchProfileRegion::trimmed(face.ring.boundary.clone(), named)
-                .ok()
+            cadmpeg_ir::features::profiles::SketchProfileRegion::trimmed(
+                face.ring.boundary.clone(),
+                named
+            )
+            .ok()
         ));
     }
     Ok(Some(MemberRingRegions {
@@ -1485,7 +1488,7 @@ enum MemberRingMultiplicity {
 pub(super) struct MemberRingRegions {
     multiplicity: MemberRingMultiplicity,
     pub(super) identity_unique: bool,
-    pub(super) regions: Vec<cadmpeg_ir::features::SketchProfileRegion>,
+    pub(super) regions: Vec<cadmpeg_ir::features::profiles::SketchProfileRegion>,
     /// Keep coincident-edge matches for the selection loss policy.
     pub(super) coincident: bool,
     /// Whether a curve outside the arrangement can lie inside a selected
@@ -1731,7 +1734,7 @@ fn curve_arrangement_faces_with_mode(
 
 /// A region that one arrangement face bounds.
 pub(super) struct ArrangementRegion {
-    pub(super) region: cadmpeg_ir::features::SketchProfileRegion,
+    pub(super) region: cadmpeg_ir::features::profiles::SketchProfileRegion,
     /// Whether the polyline side of a projected point within the tolerance
     /// of a NURBS tube of the face boundary decided the face.
     pub(super) polyline_side_assumed: bool,
@@ -1742,7 +1745,7 @@ pub(super) struct ArrangementRegion {
 /// The region `face` bounds when no arrangement component and no curve
 /// outside the arrangement lies inside it.
 fn arrangement_face_region(face: &SketchArrangementFace) -> Option<ArrangementRegion> {
-    use cadmpeg_ir::features::SketchProfileRegion;
+    use cadmpeg_ir::features::profiles::SketchProfileRegion;
 
     if face.holes.as_ref().is_none_or(|holes| !holes.is_empty())
         || face.excluded_island == ExcludedIsland::Present
@@ -1777,7 +1780,7 @@ fn sketch_arrangement_faces(
 /// One bounded face of the arrangement every non-construction curve of a
 /// sketch makes: its directed boundary and its boundary polyline.
 pub(super) struct AtomicSketchRegion {
-    pub(super) boundary: Vec<cadmpeg_ir::features::SketchProfileBoundaryUse>,
+    pub(super) boundary: Vec<cadmpeg_ir::features::profiles::SketchProfileBoundaryUse>,
     pub(super) polyline: Vec<Point2>,
     /// Whether an island lies inside the face, so its boundary is not the
     /// whole region.
@@ -1860,7 +1863,7 @@ const MAX_CROSSING_LOOP_CANDIDATES: usize = 16;
 
 /// The regions a self-crossing stored loop bounds.
 pub(super) struct CrossingLoopRegions {
-    pub(super) regions: Vec<cadmpeg_ir::features::SketchProfileRegion>,
+    pub(super) regions: Vec<cadmpeg_ir::features::profiles::SketchProfileRegion>,
     /// Whether a curve outside the arrangement can lie inside a selected
     /// face.
     pub(super) island_absence_assumed: bool,
@@ -1882,7 +1885,7 @@ pub(super) fn arrangement_regions_of_crossing_loop(
     work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<CrossingLoopRegions>, CodecError> {
-    use cadmpeg_ir::features::SketchProfileRegion;
+    use cadmpeg_ir::features::profiles::SketchProfileRegion;
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     if program.len() < 2 {
@@ -1993,7 +1996,7 @@ fn sketch_arrangement_faces_with_nodes(
     mut nodes: Vec<Point2>,
     mode: ArrangementMode,
 ) -> Result<Option<Vec<SketchArrangementFace>>, CodecError> {
-    use cadmpeg_ir::features::SketchProfileBoundaryUse;
+    use cadmpeg_ir::features::profiles::SketchProfileBoundaryUse;
     use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometryDefinition};
 
     let all_curves = !matches!(mode, ArrangementMode::ProfileLoops);
@@ -3919,7 +3922,7 @@ pub(super) fn sketch_geometry_point(
 
 fn point_on_profile_boundary_use(
     point: Point2,
-    use_: &cadmpeg_ir::features::SketchProfileBoundaryUse,
+    use_: &cadmpeg_ir::features::profiles::SketchProfileBoundaryUse,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
 ) -> bool {
@@ -3969,7 +3972,7 @@ pub(super) enum BoundaryCarrier {
 /// `count + 1` points evenly spaced in parameter along `use_`, from its
 /// first end to its last. `None` when the curve cannot be evaluated there.
 pub(super) fn boundary_use_samples(
-    use_: &cadmpeg_ir::features::SketchProfileBoundaryUse,
+    use_: &cadmpeg_ir::features::profiles::SketchProfileBoundaryUse,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     count: u32,
     ctx: &DecodeContext<'_>,
@@ -3990,7 +3993,7 @@ pub(super) fn boundary_use_samples(
 
 /// The line or circular arc `use_` traces. `None` for any other curve.
 pub(super) fn boundary_use_carrier(
-    use_: &cadmpeg_ir::features::SketchProfileBoundaryUse,
+    use_: &cadmpeg_ir::features::profiles::SketchProfileBoundaryUse,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
 ) -> Option<BoundaryCarrier> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
@@ -4024,7 +4027,7 @@ pub(super) fn boundary_use_carrier(
 
 pub(super) fn curve_overlaps_boundary_use(
     curve: &cadmpeg_ir::sketches::SketchEntity,
-    use_: &cadmpeg_ir::features::SketchProfileBoundaryUse,
+    use_: &cadmpeg_ir::features::profiles::SketchProfileBoundaryUse,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
 ) -> bool {
@@ -4076,8 +4079,8 @@ pub(super) fn region_containing_points(
     tolerance: f64,
     work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
-) -> Result<Option<cadmpeg_ir::features::SketchProfileRegion>, CodecError> {
-    use cadmpeg_ir::features::SketchProfileRegion;
+) -> Result<Option<cadmpeg_ir::features::profiles::SketchProfileRegion>, CodecError> {
+    use cadmpeg_ir::features::profiles::SketchProfileRegion;
 
     let mut boundaries = Vec::new();
     for profile in &sketch.profiles {
@@ -5572,10 +5575,10 @@ pub(super) fn project_to_sketch(
 pub(super) fn sketch_point_to_model(
     sketch: &cadmpeg_ir::sketches::Sketch,
     point: Point2,
-) -> Option<cadmpeg_ir::features::FinitePoint3> {
+) -> Option<cadmpeg_ir::features::geometry::FinitePoint3> {
     let (origin, normal, u_axis) = sketch.resolved_placement()?;
     let v_axis = normal.cross(u_axis.get());
-    cadmpeg_ir::features::FinitePoint3::new(
+    cadmpeg_ir::features::geometry::FinitePoint3::new(
         origin
             .get()
             .translated(u_axis.get(), point.u)

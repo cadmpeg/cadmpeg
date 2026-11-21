@@ -26,7 +26,8 @@ use crate::design::selection::{
 };
 use crate::design::tests::arm_failures;
 use crate::design::tests::unit_variants::{assert_units_refuse_value, reads, Reader};
-use crate::features::{FinitePoint3, ParameterId};
+use crate::features::geometry::FinitePoint3;
+use crate::features::ParameterId;
 use crate::math::Point3;
 use crate::units::UnitVector3;
 

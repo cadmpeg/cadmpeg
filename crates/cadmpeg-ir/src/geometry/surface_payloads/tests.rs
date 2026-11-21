@@ -832,7 +832,7 @@ fn the_revision_gated_surface_admissions_refuse_every_non_finite_form_scalar() {
         RevolutionSurfaceConstructionWire, SumSurfaceConstruction, SumSurfaceConstructionWire,
         TaperSurfaceConstruction, TaperSurfaceConstructionWire,
     };
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::geometry::{
         CacheContract, DeformableSurfaceConstruction, DeformableSurfaceData, ExactSpline,
         RevisionCacheForm, RevisionSurfaceForm, RevisionSurfaceParameterization, TaperSurfaceKind,
@@ -1373,7 +1373,7 @@ fn the_blend_admission_refuses_a_non_finite_radius_law() {
 #[test]
 fn an_axis_revolution_replaces_its_origin_and_keeps_the_admitted_direction() {
     use super::AxisRevolutionSurfaceConstruction;
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::ids::CurveId;
     use crate::math::{Point3, Vector3};
 
@@ -1408,7 +1408,7 @@ fn a_revolution_admits_a_finite_axis_origin_and_a_unit_axis_direction() {
     use super::{
         admit_revolution_axis, RevolutionSurfaceConstruction, RevolutionSurfaceConstructionWire,
     };
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::geometry::{CacheContract, ProceduralSurfaceDefinition};
     use crate::ids::CurveId;
     use crate::math::{Point3, Vector3};
@@ -1495,7 +1495,7 @@ fn a_revolution_admits_a_finite_axis_origin_and_a_unit_axis_direction() {
 #[test]
 fn admitted_revolution_axis_keeps_its_finite_origin_and_unit_refusal() {
     use super::{admit_revolution_axis, admit_revolution_axis_from_parts};
-    use crate::features::{FinitePoint3, FiniteVector3};
+    use crate::features::geometry::{FinitePoint3, FiniteVector3};
     use crate::math::{Point3, Vector3};
 
     let origin = Point3::new(1.0, 2.0, 3.0);
@@ -1513,7 +1513,7 @@ fn admitted_revolution_axis_keeps_its_finite_origin_and_unit_refusal() {
 #[test]
 fn a_revolution_replaces_its_origin_and_keeps_the_admitted_fields() {
     use super::RevolutionSurfaceConstruction;
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::geometry::CacheContract;
     use crate::ids::CurveId;
     use crate::math::Point3;
@@ -1550,7 +1550,7 @@ fn a_revolution_replaces_its_origin_and_keeps_the_admitted_fields() {
 #[test]
 fn revolution_refusals_name_the_cache_form_first_then_each_interval() {
     use super::RevolutionSurfaceConstruction;
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::geometry::{
         CacheContract, RevisionCacheForm, RevisionSurfaceForm, RevisionSurfaceParameterization,
     };
@@ -1670,7 +1670,7 @@ fn a_legacy_offset_from_admitted_parts_matches_its_raw_admission() {
 #[test]
 fn a_legacy_revolution_from_admitted_parts_matches_its_raw_admission() {
     use super::RevolutionSurfaceConstruction;
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::geometry::CacheContract;
     use crate::ids::CurveId;
     use crate::topology::IncreasingParameterInterval;
@@ -1713,7 +1713,7 @@ fn a_legacy_revolution_from_admitted_parts_matches_its_raw_admission() {
 #[test]
 fn a_legacy_extrusion_from_admitted_parts_matches_its_raw_admission() {
     use super::ExtrusionSurfaceConstruction;
-    use crate::features::{FinitePoint3, FiniteVector3};
+    use crate::features::geometry::{FinitePoint3, FiniteVector3};
     use crate::geometry::{CacheContract, FitTolerance, LegacyCache};
     use crate::ids::CurveId;
     use crate::math::{Point3, Vector3};

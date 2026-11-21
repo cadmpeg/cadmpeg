@@ -10,7 +10,7 @@ use crate::wire::records::{
 };
 use cadmpeg_core::decode::{index_from_u32, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::nurbs::NurbsError;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface},

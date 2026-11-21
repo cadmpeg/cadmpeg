@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use std::f64::consts::TAU;
 
 use cadmpeg_ir::draft::ModelDraft;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{
     CircleCurve, ConeSurface, CylinderSurface, LineCurve, PlaneSurface, SphereSurface, TorusSurface,
 };

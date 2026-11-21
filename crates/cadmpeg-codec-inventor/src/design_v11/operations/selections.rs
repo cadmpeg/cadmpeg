@@ -7,9 +7,8 @@ use cadmpeg_ir::design::selection::{
     Anchor, BoundaryUse, MemberOrder, Members, NativeOwner, OrderedSelection, PickTarget, Picked,
     Picks, Selection, SetSelection, SketchRegion,
 };
-use cadmpeg_ir::features::{
-    self as old, BodySelection, EdgeSelection, FaceSelection, PlanarProfileRef,
-};
+use cadmpeg_ir::features::profiles::PlanarProfileRef;
+use cadmpeg_ir::features::selections::{BodySelection, EdgeSelection, FaceSelection};
 use cadmpeg_ir::sketches::Sketch;
 
 use super::Projected;
@@ -117,36 +116,45 @@ pub(super) fn bodies(value: &BodySelection) -> Projected<OrderedSelection> {
     }
 }
 
-pub(super) fn path(value: &old::PathRef) -> Projected<OrderedSelection> {
+pub(super) fn path(value: &cadmpeg_ir::features::profiles::PathRef) -> Projected<OrderedSelection> {
     match value {
-        old::PathRef::Native(text) => native(text),
-        old::PathRef::Sketch(id) => selection(vec![picked(PickTarget::Sketch(id.clone()))]),
-        old::PathRef::SketchCurves { curves, .. } => selection(
+        cadmpeg_ir::features::profiles::PathRef::Native(text) => native(text),
+        cadmpeg_ir::features::profiles::PathRef::Sketch(id) => {
+            selection(vec![picked(PickTarget::Sketch(id.clone()))])
+        }
+        cadmpeg_ir::features::profiles::PathRef::SketchCurves { curves, .. } => selection(
             curves
                 .iter()
                 .map(|id| picked(PickTarget::SketchEntity(id.clone())))
                 .collect(),
         ),
-        old::PathRef::SpatialSketchCurves { curves, .. } => selection(
+        cadmpeg_ir::features::profiles::PathRef::SpatialSketchCurves { curves, .. } => selection(
             curves
                 .iter()
                 .map(|id| picked(PickTarget::SpatialSketchEntity(id.clone())))
                 .collect(),
         ),
-        old::PathRef::SpatialSketchSelection { sketch, selections } => selection(
-            selections
-                .iter()
-                .map(|text| named(text, Some(NativeOwner::SpatialSketch(sketch.clone()))))
-                .collect::<Projected<_>>()?,
-        ),
-        old::PathRef::HistoricalEdges { native: text, .. } => native(text.as_str()),
+        cadmpeg_ir::features::profiles::PathRef::SpatialSketchSelection { sketch, selections } => {
+            selection(
+                selections
+                    .iter()
+                    .map(|text| named(text, Some(NativeOwner::SpatialSketch(sketch.clone()))))
+                    .collect::<Projected<_>>()?,
+            )
+        }
+        cadmpeg_ir::features::profiles::PathRef::HistoricalEdges { native: text, .. } => {
+            native(text.as_str())
+        }
         _ => Err("the path selection has unresolved members"),
     }
 }
 
-pub(super) fn profile(value: &old::ProfileRef, sketches: &[Sketch]) -> Projected<OrderedSelection> {
+pub(super) fn profile(
+    value: &cadmpeg_ir::features::profiles::ProfileRef,
+    sketches: &[Sketch],
+) -> Projected<OrderedSelection> {
     match value {
-        old::ProfileRef::Planar(value) => planar(value, sketches),
+        cadmpeg_ir::features::profiles::ProfileRef::Planar(value) => planar(value, sketches),
         _ => Err("the spatial profile has no v11 sketch"),
     }
 }
@@ -185,8 +193,8 @@ pub(super) fn planar(value: &PlanarProfileRef, sketches: &[Sketch]) -> Projected
         PlanarProfileRef::Sketch(id) => selection(vec![picked(PickTarget::Sketch(id.clone()))]),
         PlanarProfileRef::SketchProfiles { .. } => Err("the selected loops have no explicit region nesting"),
         PlanarProfileRef::SketchRegions { sketch, regions } => selection(regions.iter().map(|region| match region {
-            old::SketchProfileRegion::Loops { loops } => loop_region(sketch, loops.outer(), loops.holes()),
-            old::SketchProfileRegion::Trimmed { .. } => Err("a trimmed profile stores parameter intervals outside the v11 boundary contract"),
+            cadmpeg_ir::features::profiles::SketchProfileRegion::Loops { loops } => loop_region(sketch, loops.outer(), loops.holes()),
+            cadmpeg_ir::features::profiles::SketchProfileRegion::Trimmed { .. } => Err("a trimmed profile stores parameter intervals outside the v11 boundary contract"),
         }).collect::<Projected<_>>()?),
         PlanarProfileRef::SketchEntities { entities, .. } => selection(entities.iter().map(|id| picked(PickTarget::SketchEntity(id.clone()))).collect()),
         PlanarProfileRef::SketchSelection { sketch, selections } => selection(selections.iter().map(|text| named(text, Some(NativeOwner::Sketch(sketch.clone())))).collect::<Projected<_>>()?),
