@@ -139,6 +139,7 @@ pub(crate) fn project_catalog(
                     properties,
                 )?,
                 textures: connected,
+                native_ref: None,
             });
         }
     }

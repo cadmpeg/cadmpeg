@@ -1594,6 +1594,13 @@
             "null"
           ]
         },
+        "native_ref": {
+          "description": "The native record this appearance was projected from.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "physical_token": {
           "description": "Physical-material token stored in the source, when present.",
           "type": [
@@ -1663,6 +1670,13 @@
           "description": "Globally unique deterministic assignment identity.",
           "$ref": "#/$defs/AppearanceBindingId"
         },
+        "native_ref": {
+          "description": "The native record this binding was projected from.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "object_type": {
           "description": "Design `MetaStream` object type, such as `Body`.",
           "type": [
@@ -1718,6 +1732,24 @@
             },
             "value": {
               "$ref": "#/$defs/BodyId"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "Appearance of an occurrence.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "occurrence"
+            },
+            "value": {
+              "$ref": "#/$defs/OccurrenceId"
             }
           },
           "additionalProperties": false,
@@ -1876,6 +1908,39 @@
               "required": [
                 "tessellation",
                 "group"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "Appearance of a neutral record that no other arm names: the field\nname of its arena in the model, the design, or the topology, and its\nid.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "record"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "arena": {
+                  "description": "The arena's field name.",
+                  "$ref": "#/$defs/NonBlankString"
+                },
+                "id": {
+                  "description": "The record's id.",
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "arena",
+                "id"
               ]
             }
           },
@@ -2400,9 +2465,209 @@
       "description": "Stable identity of one document asset.",
       "$ref": "#/$defs/Identity"
     },
+    "AttributeExpression": {
+      "description": "An expression that a source states on a property.",
+      "type": "object",
+      "properties": {
+        "comment": {
+          "description": "The source's comment on the expression.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expression": {
+          "description": "The expression.",
+          "$ref": "#/$defs/Expression"
+        },
+        "path": {
+          "description": "The source's path of the property the expression drives.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "expression"
+      ]
+    },
     "AttributeId": {
       "description": "Identifies a linked [`crate::attributes::SourceAttribute`] record.",
       "$ref": "#/$defs/Identity"
+    },
+    "AttributeJson": {
+      "description": "A typed JSON value.\n\nIts nesting has no ceiling of its own: the JSON depth limit bounds it.",
+      "oneOf": [
+        {
+          "description": "`null`.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "null"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "A Boolean.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "boolean"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A signed integer.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "integer"
+            },
+            "value": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "An unsigned integer.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "unsigned"
+            },
+            "value": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A finite number.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "float"
+            },
+            "value": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A text.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "An array.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "array"
+            },
+            "value": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/AttributeJson"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "An object, each key once.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "object"
+            },
+            "value": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/AttributeJson"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        }
+      ]
+    },
+    "AttributeMapEntry": {
+      "description": "One entry of an ordered attribute map.",
+      "type": "object",
+      "properties": {
+        "key": {
+          "description": "The entry's key.",
+          "type": "string"
+        },
+        "value": {
+          "description": "The entry's value.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "value"
+      ]
     },
     "AttributeTarget": {
       "description": "An entity which owns a source attribute.",
@@ -2548,6 +2813,258 @@
           ]
         },
         {
+          "description": "Attribute is owned by a region.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "region"
+            },
+            "value": {
+              "$ref": "#/$defs/RegionId"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "Attribute is owned by a surface carrier.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "surface"
+            },
+            "value": {
+              "$ref": "#/$defs/SurfaceId"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "Attribute is owned by a curve carrier.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "curve"
+            },
+            "value": {
+              "$ref": "#/$defs/CurveId"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "Attribute is owned by a point carrier.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "point"
+            },
+            "value": {
+              "$ref": "#/$defs/PointId"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "Attribute is owned by a feature of the design.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "feature"
+            },
+            "value": {
+              "$ref": "#/$defs/FeatureId"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "Attribute is owned by a sketch of the design.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "sketch"
+            },
+            "value": {
+              "$ref": "#/$defs/SketchId"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "Attribute is owned by a design parameter.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "parameter"
+            },
+            "value": {
+              "$ref": "#/$defs/ParameterId"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "Attribute is owned by a product definition.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "product_definition"
+            },
+            "value": {
+              "$ref": "#/$defs/ProductDefinitionId"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "Attribute is owned by an occurrence.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "occurrence"
+            },
+            "value": {
+              "$ref": "#/$defs/OccurrenceId"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "Attribute is owned by a tessellation, by its id.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "tessellation"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "Attribute is owned by a PMI annotation.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "pmi"
+            },
+            "value": {
+              "$ref": "#/$defs/PmiId"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "Attribute is owned by a semantic annotation.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "semantic_annotation"
+            },
+            "value": {
+              "$ref": "#/$defs/SemanticAnnotationId"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "Attribute is owned by a drawing record.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "drawing"
+            },
+            "value": {
+              "$ref": "#/$defs/DrawingId"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "Attribute is owned by a view presentation.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "view_presentation"
+            },
+            "value": {
+              "$ref": "#/$defs/PresentationId"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
           "description": "A configuration's own value of the like-named attribute of its\nscope's definition.",
           "type": "object",
           "properties": {
@@ -2557,6 +3074,39 @@
             },
             "value": {
               "$ref": "#/$defs/ConfigurationId"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "Attribute is owned by a neutral record that no other arm names: the\nfield name of its arena in the model, the design, or the topology, and\nits id.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "record"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "arena": {
+                  "description": "The arena's field name.",
+                  "$ref": "#/$defs/NonBlankString"
+                },
+                "id": {
+                  "description": "The record's id.",
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "arena",
+                "id"
+              ]
             }
           },
           "additionalProperties": false,
@@ -2645,7 +3195,7 @@
           ]
         },
         {
-          "description": "A string-encoded reference to another entity, opaque to this crate.",
+          "description": "A link to a local object, by the source's object name.",
           "type": "object",
           "properties": {
             "kind": {
@@ -2694,6 +3244,158 @@
                 "type": "number",
                 "format": "double"
               }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "An ordered map, repeated keys kept.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "map"
+            },
+            "value": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/AttributeMapEntry"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "An expression the source states on the property that no parameter\nholds.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "expression"
+            },
+            "value": {
+              "$ref": "#/$defs/AttributeExpression"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A link to sub-elements of a local object.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "sub_reference"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "object": {
+                  "description": "The source's object name, or `None` for the attribute's own\nobject.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "subelements": {
+                  "description": "The source's sub-element names, in source order.",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "subelements"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A link to an object of another document.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "external_reference"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "document": {
+                  "description": "The other document.",
+                  "type": "string"
+                },
+                "object": {
+                  "description": "The source's object name in that document, or `None` for the\ndocument itself.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "subelements": {
+                  "description": "The source's sub-element names, in source order.",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "document",
+                "subelements"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "An empty link slot.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "empty_reference"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "A typed JSON tree.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "json"
+            },
+            "value": {
+              "$ref": "#/$defs/AttributeJson"
             }
           },
           "additionalProperties": false,
@@ -20106,6 +20808,30 @@
         "distance"
       ]
     },
+    "EdgeSupport": {
+      "description": "One face beside a historical edge that carries an asymmetric chamfer distance.",
+      "type": "object",
+      "properties": {
+        "face": {
+          "description": "Face of the owning input state.",
+          "$ref": "#/$defs/HistoricalFaceId"
+        },
+        "normal": {
+          "description": "Outward unit normal of the face at the edge midpoint.",
+          "$ref": "#/$defs/UnitVector3"
+        },
+        "with_edge": {
+          "description": "The face's coedge runs with the edge, so the face lies on the left.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "face",
+        "normal",
+        "with_edge"
+      ]
+    },
     "Emboss": {
       "description": "Raises or sinks a profile, often text, by a depth, or imprints it.",
       "type": "object",
@@ -36102,6 +36828,13 @@
             }
           ]
         },
+        "supports": {
+          "description": "Support faces of an unequal two-distance chamfer that selects this edge.\nEmpty for every other edge.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EdgeSupport"
+          }
+        },
         "tangent": {
           "description": "Unit carrier tangent at `interior`, in the carrier's parameter\ndirection.",
           "anyOf": [
@@ -36118,7 +36851,8 @@
       "required": [
         "edge",
         "interior",
-        "faces"
+        "faces",
+        "supports"
       ]
     },
     "HistoricalEdgeId": {
@@ -82715,15 +83449,29 @@
           "description": "Source attribute name, as recorded in the native attribute table.",
           "type": "string"
         },
+        "native_ref": {
+          "description": "The native record this attribute was projected from.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "target": {
           "description": "The entity this attribute is attached to, in the placed instance and\nthe state that hold it.",
           "$ref": "#/$defs/InstanceTarget3"
         },
         "values": {
-          "description": "Ordered typed values carried by this attribute; length and types are\nsource-defined and vary per attribute name.",
+          "description": "Ordered typed values carried by this attribute; length and types are\nsource-defined and vary per attribute name. `None` where the source\nstates no value at that position.",
           "type": "array",
           "items": {
-            "$ref": "#/$defs/AttributeValue"
+            "anyOf": [
+              {
+                "$ref": "#/$defs/AttributeValue"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },

@@ -120,11 +120,11 @@ source = "spec"
 anchor = "the middle reference at offset 30"
 
 [[record.field]]
-name = "opaque_word"
+name = "previous_history_state_id"
 offset = 31
 type = "u32"
 source = "spec"
-anchor = "the opaque word at offset 31"
+anchor = "the preceding history-state identity at offset 31"
 
 [[record.field]]
 name = "lane_word"
@@ -11103,6 +11103,35 @@ source = "spec"
 anchor = "Each selected region starts with a nonzero u32 loop count."
 
 [[record]]
+name = "sketch_profile_text_selection"
+kind = "byte"
+section = "3.1"
+anchor = "A text selection is a 29-byte record `N+3`"
+size = 29
+note = "Offsets are relative to the N+3 selection header. The next indexed header starts at offset 29."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "its eleven-byte indexed header"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "ten zero bytes"
+
+[[record.field]]
+name = "text_record_index"
+offset = 21
+type = "u64"
+source = "spec"
+anchor = "the u64 record index of a Sketch text entity"
+
+[[record]]
 name = "sketch_profile_region_member"
 kind = "byte"
 section = "3.1"
@@ -12826,14 +12855,14 @@ name = "null_reference_flag"
 offset = 9
 type = "u8"
 source = "spec"
-anchor = "a flag byte of `0` or `1`, and a zero byte"
+anchor = "a flag byte of `0` or `1`, and a terminal byte"
 
 [[record.field]]
-name = "null_reference_zero"
+name = "null_reference_terminal"
 offset = 10
 type = "u8"
 source = "spec"
-anchor = "a flag byte of `0` or `1`, and a zero byte"
+anchor = "a flag byte of `0` or `1`, and a terminal byte"
 
 [[record.field]]
 name = "body_count"
@@ -12918,14 +12947,14 @@ name = "null_reference_flag"
 offset = 48
 type = "u8"
 source = "spec"
-anchor = "a flag byte of `0` or `1`, and a zero byte"
+anchor = "a flag byte of `0` or `1`, and a terminal byte"
 
 [[record.field]]
-name = "null_reference_zero"
+name = "null_reference_terminal"
 offset = 49
 type = "u8"
 source = "spec"
-anchor = "a flag byte of `0` or `1`, and a zero byte"
+anchor = "a flag byte of `0` or `1`, and a terminal byte"
 
 [[record.field]]
 name = "repeated_count"
@@ -31470,6 +31499,89 @@ size = 112
 note = "Scope suffix after the reference table."
 
 [[record]]
+name = "assembly_as_built_scope_381_403_prefix"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The 381- and 403-byte `As-built` scopes store an empty property block."
+size = 171
+parsed_by = ["crates/cadmpeg-codec-f3d/src/design/assembly.rs", "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_alignment.rs"]
+
+[[record.gap]]
+offset = 0
+size = 20
+note = "Prefix before the property block."
+
+[[record.field]]
+name = "property_presence"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "byte of one at offset 20"
+value = 1
+
+[[record.field]]
+name = "property_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "zero u32 property count at offset 21"
+value = 0
+
+[[record.gap]]
+offset = 25
+size = 22
+note = "Two marked references before the owner count."
+
+[[record.field]]
+name = "additional_owner_count"
+offset = 47
+type = "u32"
+source = "spec"
+anchor = "zero u32 additional-owner count is at offset 47"
+value = 0
+
+[[record.field]]
+name = "locator_count"
+offset = 51
+type = "u32"
+source = "spec"
+anchor = "u32 locator count is two at"
+value = 2
+
+[[record.field]]
+name = "first_locator_reference"
+offset = 55
+type = "bytes[11]"
+source = "spec"
+anchor = "two marked locator references at offsets 55 and 66"
+
+[[record.field]]
+name = "second_locator_reference"
+offset = 66
+type = "bytes[11]"
+source = "spec"
+anchor = "two marked locator references at offsets 55 and 66"
+
+[[record.field]]
+name = "joint_reference"
+offset = 77
+type = "bytes[11]"
+source = "spec"
+anchor = "marked joint reference at offset 77"
+
+[[record.gap]]
+offset = 88
+size = 79
+note = "Scope fields before the reference table."
+
+[[record.field]]
+name = "reference_count"
+offset = 167
+type = "u32"
+source = "spec"
+anchor = "u32 reference count at offset 167"
+
+[[record]]
 name = "assembly_as_built_scope_422"
 kind = "byte"
 section = "Assembly operands"
@@ -35270,6 +35382,7 @@ anchor = "| 4 \u00d7 f64 | `-1.0` |"
 name = "unit_scale"
 offset = 335
 type = "f32"
+value = 1.0
 source = "spec"
 anchor = "| 4 \u00d7 f64 | `-1.0` | | f32 | `1.0` |"
 
@@ -35472,6 +35585,7 @@ value = 0
 name = "tail_scale"
 offset = 871
 type = "f32"
+value = 1.0
 source = "spec"
 anchor = "appearance `PrismOpaque` | | u32 | `0` | | f32 | `1.0` |"
 
@@ -35671,6 +35785,7 @@ value = 1
 name = "scale"
 offset = 26
 type = "f32"
+value = 1.0
 source = "spec"
 anchor = "| u8 | `1` | | f32 | `1.0` |"
 
@@ -36309,6 +36424,7 @@ value = [0, 0]
 name = "scale_a"
 offset = 141
 type = "f32"
+value = 1.0
 source = "spec"
 anchor = "| 2 \u00d7 u8 | zero | | f32 | `1.0` |"
 
@@ -36316,6 +36432,7 @@ anchor = "| 2 \u00d7 u8 | zero | | f32 | `1.0` |"
 name = "scale_b"
 offset = 145
 type = "f32"
+value = 1.0
 source = "spec"
 anchor = "`1.0` for the point and the planes, `1.3` for the axes"
 
@@ -36431,6 +36548,7 @@ anchor = "f64 unit direction, f64 `0.175`"
 name = "scalar_a"
 offset = 125
 type = "f64"
+value = 0.175
 source = "spec"
 anchor = "f64 unit direction, f64 `0.175`, f64 `2.25`"
 
@@ -36438,6 +36556,7 @@ anchor = "f64 unit direction, f64 `0.175`, f64 `2.25`"
 name = "scalar_b"
 offset = 133
 type = "f64"
+value = 2.25
 source = "spec"
 anchor = "f64 `0.175`, f64 `2.25`"
 
@@ -36515,6 +36634,7 @@ value = [0, 0]
 name = "scale_a"
 offset = 181
 type = "f32"
+value = 1.0
 source = "spec"
 anchor = "| 2 \u00d7 u8 | zero | | f32 | `1.0` |"
 
@@ -36522,6 +36642,7 @@ anchor = "| 2 \u00d7 u8 | zero | | f32 | `1.0` |"
 name = "scale_b"
 offset = 185
 type = "f32"
+value = 1.3
 source = "spec"
 anchor = "`1.0` for the point and the planes, `1.3` for the axes"
 
@@ -36631,6 +36752,7 @@ value = 0
 name = "scalar_a"
 offset = 81
 type = "f64"
+value = 0.25
 source = "spec"
 anchor = "u32 `0`, f64 `0.25`, f64 `0.25`"
 
@@ -36638,6 +36760,7 @@ anchor = "u32 `0`, f64 `0.25`, f64 `0.25`"
 name = "scalar_b"
 offset = 89
 type = "f64"
+value = 0.25
 source = "spec"
 anchor = "u32 `0`, f64 `0.25`, f64 `0.25`"
 
@@ -36674,6 +36797,7 @@ anchor = "f64 unit v direction"
 name = "scalar_c"
 offset = 170
 type = "f64"
+value = 2.0
 source = "spec"
 anchor = "f64 unit v direction, f64 `2.0`, f64 `2.0`"
 
@@ -36681,6 +36805,7 @@ anchor = "f64 unit v direction, f64 `2.0`, f64 `2.0`"
 name = "scalar_d"
 offset = 178
 type = "f64"
+value = 2.0
 source = "spec"
 anchor = "f64 unit v direction, f64 `2.0`, f64 `2.0`"
 
@@ -36758,6 +36883,7 @@ value = [0, 0]
 name = "scale_a"
 offset = 228
 type = "f32"
+value = 1.0
 source = "spec"
 anchor = "| 2 \u00d7 u8 | zero | | f32 | `1.0` |"
 
@@ -36765,6 +36891,7 @@ anchor = "| 2 \u00d7 u8 | zero | | f32 | `1.0` |"
 name = "scale_b"
 offset = 232
 type = "f32"
+value = 1.0
 source = "spec"
 anchor = "`1.0` for the point and the planes, `1.3` for the axes"
 
@@ -48972,6 +49099,7 @@ anchor = "`base_feature_record_34`"
 name = "scale"
 offset = 42
 type = "f32"
+value = 1.0
 source = "spec"
 anchor = "`base_feature_record_34`"
 
@@ -49032,6 +49160,7 @@ anchor = "`base_feature_record_36`"
 name = "scale"
 offset = 22
 type = "f32"
+value = 1.0
 source = "spec"
 anchor = "`base_feature_record_36`"
 
@@ -49853,6 +49982,7 @@ anchor = "`base_feature_camera`"
 name = "scale"
 offset = 39
 type = "f32"
+value = 12.0
 source = "spec"
 anchor = "`base_feature_camera`"
 
@@ -49874,6 +50004,7 @@ anchor = "`base_feature_camera`"
 name = "unit_scale"
 offset = 59
 type = "f32"
+value = 1.0
 source = "spec"
 anchor = "`base_feature_camera`"
 
@@ -49897,6 +50028,7 @@ anchor = "`base_feature_camera`"
 name = "field_of_view"
 offset = 69
 type = "f64"
+value = 0.39479111969976155
 source = "spec"
 anchor = "`base_feature_camera`"
 
@@ -50001,6 +50133,7 @@ anchor = "`base_feature_lighting_environment`"
 name = "alpha"
 offset = 81
 type = "f32"
+value = 1.0
 source = "spec"
 anchor = "`base_feature_lighting_environment`"
 
@@ -50016,6 +50149,7 @@ anchor = "`base_feature_lighting_environment`"
 name = "range"
 offset = 89
 type = "f32"
+value = 1000.0
 source = "spec"
 anchor = "`base_feature_lighting_environment`"
 
@@ -50039,6 +50173,7 @@ anchor = "`base_feature_lighting_environment`"
 name = "angle"
 offset = 122
 type = "f32"
+value = -2.3561945
 source = "spec"
 anchor = "`base_feature_lighting_environment`"
 
@@ -50046,6 +50181,7 @@ anchor = "`base_feature_lighting_environment`"
 name = "height"
 offset = 126
 type = "f32"
+value = 9.5
 source = "spec"
 anchor = "`base_feature_lighting_environment`"
 
@@ -50053,6 +50189,7 @@ anchor = "`base_feature_lighting_environment`"
 name = "intensity"
 offset = 130
 type = "f32"
+value = 1.0
 source = "spec"
 anchor = "`base_feature_lighting_environment`"
 
@@ -50098,6 +50235,7 @@ anchor = "`base_feature_lighting_environment`"
 name = "exposure"
 offset = 171
 type = "f32"
+value = 1.6973956
 source = "spec"
 anchor = "`base_feature_lighting_environment`"
 
@@ -50141,6 +50279,7 @@ anchor = "`base_feature_lighting_environment`"
 name = "distance"
 offset = 240
 type = "f64"
+value = 150.0
 source = "spec"
 anchor = "`base_feature_lighting_environment`"
 
@@ -50148,6 +50287,7 @@ anchor = "`base_feature_lighting_environment`"
 name = "scale"
 offset = 248
 type = "f32"
+value = 0.1
 source = "spec"
 anchor = "`base_feature_lighting_environment`"
 
@@ -51692,6 +51832,7 @@ anchor = "`base_feature_asset_settings`"
 name = "grid"
 offset = 296
 type = "f64"
+value = 1.8
 source = "spec"
 anchor = "`base_feature_asset_settings`"
 
@@ -51707,6 +51848,7 @@ anchor = "`base_feature_asset_settings`"
 name = "grid_scale"
 offset = 341
 type = "f64"
+value = 1.0
 source = "spec"
 anchor = "`base_feature_asset_settings`"
 
