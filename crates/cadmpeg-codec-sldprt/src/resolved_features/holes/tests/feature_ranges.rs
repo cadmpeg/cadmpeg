@@ -33,7 +33,8 @@ fn feature_object_ranges_preserve_equal_offset_history_order() {
 #[test]
 fn scoped_principal_component_selects_its_plane_and_lane_front_keeps_the_fallback() {
     use crate::resolved_features::compact_reference_planes::{
-        principal_component_frame, principal_sketch_frame, CompactReferencePlaneIndex,
+        principal_component_frame, principal_sketch_frame, principal_source,
+        CompactReferencePlaneIndex,
     };
     use crate::resolved_features::curves::{SketchPlaneFrame, SketchPlaneUAxisSource};
     use crate::resolved_features::holes::{
@@ -88,6 +89,11 @@ fn scoped_principal_component_selects_its_plane_and_lane_front_keeps_the_fallbac
         );
         for context in [0, start] {
             let expected_top = (context == 0).then(|| principal_component_frame(plane));
+            assert_eq!(
+                index.local_principal_component(context, start, payload.len()),
+                (context == 0).then_some(plane)
+            );
+            assert_eq!(principal_source(plane), source);
             assert_eq!(
                 principal_component_profile_frame(&frames, &index, context, start, payload.len()),
                 expected_top

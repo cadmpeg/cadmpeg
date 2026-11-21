@@ -4274,20 +4274,15 @@ pub(super) fn principal_component_profile_frame(
     start: usize,
     end: usize,
 ) -> Option<(Point3, Vector3, Vector3)> {
-    let source = plane_index.profile_source(context_start, start, end)?;
-    let reference = plane_frames.get(&source)?;
-    if plane_index.profile_declared_source(context_start, start, end) != Some(source)
-        || plane_index.has_component_frame(context_start.min(start), end)
-        || source != 2
-        || reference.u_axis_source != SketchPlaneUAxisSource::Native
-        || reference.as_tuple()
-            != super::compact_reference_planes::principal_sketch_frame(
-                cadmpeg_ir::features::PrincipalPlane::Front,
-            )
-    {
-        return None;
-    }
-    plane_index.principal_component_profile_frame(start, end)
+    use super::compact_reference_planes::{
+        principal_component_frame, principal_sketch_frame, principal_source,
+    };
+    use cadmpeg_ir::features::PrincipalPlane;
+    let plane = plane_index.local_principal_component(context_start, start, end)?;
+    let reference = plane_frames.get(&principal_source(PrincipalPlane::Front))?;
+    (reference.u_axis_source == SketchPlaneUAxisSource::Native
+        && reference.as_tuple() == principal_sketch_frame(PrincipalPlane::Front))
+    .then(|| principal_component_frame(plane))
 }
 
 pub(super) fn feature_input_sketch_frame(

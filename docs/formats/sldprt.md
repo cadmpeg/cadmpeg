@@ -2401,8 +2401,9 @@ The Right frame is
 The stored marker pair `(a,b)` supplies sketch coordinates `(u,v)=(a,b)`.
 A profile point maps to `(a,0,-b)` in model space on Top and to `(0,b,-a)` on
 Right. The local component selects this frame before the declared plane frame.
-The same coordinate mapping applies to profile curves, construction points,
-dimensions, constraints and profile-derived axes.
+The source identifier of the component records names the built-in plane that
+supports the sketch. The same coordinate mapping applies to profile curves,
+construction points, dimensions, constraints and profile-derived axes.
 
 ---
 

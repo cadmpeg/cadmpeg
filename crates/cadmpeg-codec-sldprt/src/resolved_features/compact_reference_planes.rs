@@ -19,7 +19,7 @@ pub(super) struct CompactReferencePlaneIndex {
     declared: Vec<(usize, u32)>,
     components: Vec<(usize, u32)>,
     component_frames: Vec<(usize, PlaneFrame)>,
-    deferred_principal_components: Vec<(usize, PlaneFrame)>,
+    deferred_principal_components: Vec<(usize, cadmpeg_ir::features::PrincipalPlane)>,
 }
 
 impl CompactReferencePlaneIndex {
@@ -55,8 +55,7 @@ impl CompactReferencePlaneIndex {
                         payload.get(start..start + COMPACT_COMPONENT_PLANE_RECORD_LEN)
                     {
                         if let Some(plane) = compact_principal_reference_plane_record(bytes) {
-                            deferred_principal_components
-                                .push((start, principal_component_frame(plane)));
+                            deferred_principal_components.push((start, plane));
                         }
                         if let Some(source) = compact_component_reference_plane_record(bytes) {
                             components.push((start, source));
@@ -78,14 +77,31 @@ impl CompactReferencePlaneIndex {
         }
     }
 
-    /// The frame of the principal plane that every complete principal
-    /// component record in `start..end` names, where no custom component
-    /// record lies there.
-    pub(super) fn principal_component_profile_frame(
+    /// The principal plane of the local component records of the profile
+    /// object `start..end` with context from `context_start` (`sldprt.md`
+    /// §3.3).
+    pub(super) fn local_principal_component(
+        &self,
+        context_start: usize,
+        start: usize,
+        end: usize,
+    ) -> Option<cadmpeg_ir::features::PrincipalPlane> {
+        if self.profile_source(context_start, start, end) != Some(FRONT_SOURCE)
+            || self.profile_declared_source(context_start, start, end) != Some(FRONT_SOURCE)
+            || self.has_component_frame(context_start.min(start), end)
+        {
+            return None;
+        }
+        self.principal_component_plane(start, end)
+    }
+
+    /// The principal plane that every complete principal component record in
+    /// `start..end` names, where no custom component record lies there.
+    fn principal_component_plane(
         &self,
         start: usize,
         end: usize,
-    ) -> Option<PlaneFrame> {
+    ) -> Option<cadmpeg_ir::features::PrincipalPlane> {
         let principal = records_in_range(
             &self.deferred_principal_components,
             start,
@@ -457,6 +473,17 @@ fn compact_component_plane_frame_record(bytes: &[u8]) -> Option<PlaneFrame> {
         normal,
         u_axis,
     ))
+}
+
+const FRONT_SOURCE: u32 = 2;
+
+/// The feature source identifier of the built-in plane `plane`.
+pub(super) fn principal_source(plane: cadmpeg_ir::features::PrincipalPlane) -> u32 {
+    match plane {
+        cadmpeg_ir::features::PrincipalPlane::Front => FRONT_SOURCE,
+        cadmpeg_ir::features::PrincipalPlane::Top => 3,
+        cadmpeg_ir::features::PrincipalPlane::Right => 4,
+    }
 }
 
 pub(super) fn principal_top_component_frame() -> PlaneFrame {
