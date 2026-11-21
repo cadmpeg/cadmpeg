@@ -339,6 +339,10 @@ pub(crate) enum F3dLossCode {
     FeatureMeshOperationFieldsUninterpreted,
     FeatureMeshSectionCurvesUnresolved,
     FeatureMeshConversionScopeUnparsed,
+    FeatureMeshTessellateScopeUnparsed,
+    FeatureMeshTessellateOperandsAssumed,
+    FeatureMeshTessellateFieldsUninterpreted,
+    FeatureMeshTessellateSourceUnresolved,
     FeatureMeshPlaneCutScopeUnparsed,
     FeatureMeshPlaneCutTailPartial,
     FeatureMeshPlaneCutPlanePartial,
@@ -1491,6 +1495,10 @@ impl F3dLossCode {
         Self::FeatureMeshOperationFieldsUninterpreted,
         Self::FeatureMeshSectionCurvesUnresolved,
         Self::FeatureMeshConversionScopeUnparsed,
+        Self::FeatureMeshTessellateScopeUnparsed,
+        Self::FeatureMeshTessellateOperandsAssumed,
+        Self::FeatureMeshTessellateFieldsUninterpreted,
+        Self::FeatureMeshTessellateSourceUnresolved,
         Self::FeatureMeshPlaneCutScopeUnparsed,
         Self::FeatureMeshPlaneCutTailPartial,
         Self::FeatureMeshPlaneCutPlanePartial,
@@ -2460,6 +2468,16 @@ impl F3dLossCode {
             }
             Self::FeatureMeshSectionCurvesUnresolved => "feature.mesh-section-curves-unresolved",
             Self::FeatureMeshConversionScopeUnparsed => "feature.mesh-conversion-scope-unparsed",
+            Self::FeatureMeshTessellateScopeUnparsed => "feature.mesh-tessellate-scope-unparsed",
+            Self::FeatureMeshTessellateOperandsAssumed => {
+                "feature.mesh-tessellate-operands-assumed"
+            }
+            Self::FeatureMeshTessellateFieldsUninterpreted => {
+                "feature.mesh-tessellate-fields-uninterpreted"
+            }
+            Self::FeatureMeshTessellateSourceUnresolved => {
+                "feature.mesh-tessellate-source-unresolved"
+            }
             Self::FeatureMeshPlaneCutScopeUnparsed => "feature.mesh-plane-cut-scope-unparsed",
             Self::FeatureMeshPlaneCutTailPartial => "feature.mesh-plane-cut-tail-partial",
             Self::FeatureMeshPlaneCutPlanePartial => "feature.mesh-plane-cut-plane-partial",
@@ -3544,6 +3562,10 @@ impl F3dLossCode {
             | Self::FeatureMeshOperationFieldsUninterpreted
             | Self::FeatureMeshSectionCurvesUnresolved
             | Self::FeatureMeshConversionScopeUnparsed
+            | Self::FeatureMeshTessellateScopeUnparsed
+            | Self::FeatureMeshTessellateOperandsAssumed
+            | Self::FeatureMeshTessellateFieldsUninterpreted
+            | Self::FeatureMeshTessellateSourceUnresolved
             | Self::FeatureMeshPlaneCutScopeUnparsed
             | Self::FeatureMeshPlaneCutTailPartial
             | Self::FeatureMeshPlaneCutPlanePartial
@@ -4258,6 +4280,10 @@ impl F3dLossCode {
             | Self::FeatureMeshOperationFieldsUninterpreted
             | Self::FeatureMeshSectionCurvesUnresolved
             | Self::FeatureMeshConversionScopeUnparsed
+            | Self::FeatureMeshTessellateScopeUnparsed
+            | Self::FeatureMeshTessellateOperandsAssumed
+            | Self::FeatureMeshTessellateFieldsUninterpreted
+            | Self::FeatureMeshTessellateSourceUnresolved
             | Self::FeatureMeshPlaneCutScopeUnparsed
             | Self::FeatureMeshPlaneCutTailPartial
             | Self::FeatureMeshPlaneCutPlanePartial
@@ -5023,6 +5049,10 @@ mod tests {
                 "feature.mesh-operation-fields-uninterpreted",
                 "feature.mesh-section-curves-unresolved",
                 "feature.mesh-conversion-scope-unparsed",
+                "feature.mesh-tessellate-scope-unparsed",
+                "feature.mesh-tessellate-operands-assumed",
+                "feature.mesh-tessellate-fields-uninterpreted",
+                "feature.mesh-tessellate-source-unresolved",
                 "feature.mesh-plane-cut-scope-unparsed",
                 "feature.mesh-plane-cut-tail-partial",
                 "feature.mesh-plane-cut-plane-partial",

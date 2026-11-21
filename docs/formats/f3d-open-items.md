@@ -3968,3 +3968,13 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 **Need.** Saves that pick a subset of the glyphs of one text, and saves that pick a glyph counter, with the local identities of each member.
 
 **Note.** When the distinct members of the one selection group of an Extrude match no Sketch point, Sketch curve, or history binding and outnumber the atomic regions of the line, arc, and circle curves of a Sketch with non-construction text, the decoder takes the excess members as glyph picks. When the member count equals the count of non-whitespace characters of the Sketch text, the profile names the text entities and the decoder reports `feature.profile-text-glyphs-assumed`. Otherwise a Sketch with one profile loop selects that loop, any other Sketch keeps the group as a native selection within the Sketch, and the decoder reports `feature.profile-text-glyphs-native`. A Sketch with text and exactly one profile loop resolves to that loop when the distinct members are at most its atomic regions.
+
+### DR-893. `MeshTessellate` operand run and produced mesh body
+
+**Question.** Is the u32 at offset 65 of a `MeshTessellate` scope the count of its tessellation-operand references, and how does the mesh body that an operand names join its mesh collection?
+
+**Known.** The u32 is `1`, and one tessellation-operand reference follows it. Each operand names one group record and one produced mesh body. The produced mesh body record stores a reference to the `MeshTessellate` scope. Every mesh collection of the design lists no body. The GUID record of the produced body is the output-geometry reference of a later mesh operation scope.
+
+**Need.** A `MeshTessellate` feature over two bodies, and a `MeshTessellate` feature with no later mesh operation.
+
+**Note.** The decoder reads the u32 as the operand count and reports `feature.mesh-tessellate-operands-assumed`. The mesh graph joins no body of a collection that lists no body; such a design reports `mesh.container-unjoined`.
