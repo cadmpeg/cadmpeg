@@ -87,6 +87,7 @@ pub(crate) struct ProfileGeometryWork {
     spatial_transition_assumed_selections: Cell<usize>,
     hole_boundary_inferred_selections: Cell<usize>,
     region_hole_inferred_selections: Cell<usize>,
+    body_circle_rings_assumed_selections: Cell<usize>,
     sampled_regions: RefCell<Vec<RegionSampleEntry>>,
     arrangement_reuse: RefCell<Option<ArrangementReuse>>,
 }
@@ -163,6 +164,7 @@ impl ProfileGeometryWork {
             spatial_transition_assumed_selections: Cell::new(0),
             hole_boundary_inferred_selections: Cell::new(0),
             region_hole_inferred_selections: Cell::new(0),
+            body_circle_rings_assumed_selections: Cell::new(0),
             sampled_regions: RefCell::new(Vec::new()),
             arrangement_reuse: RefCell::new(None),
         }
@@ -306,6 +308,11 @@ impl ProfileGeometryWork {
     pub(crate) fn record_region_hole_profile_inferred(&self) {
         self.region_hole_inferred_selections
             .set(self.region_hole_inferred_selections.get() + 1);
+    }
+
+    pub(crate) fn record_body_circle_rings_assumed(&self) {
+        self.body_circle_rings_assumed_selections
+            .set(self.body_circle_rings_assumed_selections.get() + 1);
     }
 
     pub(crate) fn inferred_counts(&self) -> (usize, usize) {
@@ -568,6 +575,12 @@ impl ProfileGeometryWork {
         if region_hole_inferred != 0 {
             losses.push(F3dLossCode::FeatureProfileRegionHoleInferred.note(format!(
                 "{region_hole_inferred} extrude profile selection(s) assume that an inserted region's holes belong to the selected profile."
+            )));
+        }
+        let body_circle_rings_assumed = self.body_circle_rings_assumed_selections.get();
+        if body_circle_rings_assumed != 0 {
+            losses.push(F3dLossCode::FeatureProfileBodyCircleRingsAssumed.note(format!(
+                "{body_circle_rings_assumed} extrude profile selection(s) assume the smallest concentric sketch-circle ring set covering a cap bounded by a preceding body cylinder."
             )));
         }
         losses
