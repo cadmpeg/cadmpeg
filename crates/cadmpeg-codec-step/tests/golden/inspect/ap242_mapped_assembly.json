@@ -49,20 +49,20 @@
           "namespace": "step"
         }
       },
-      "message": "PRODUCT_DEFINITION #6 has a shape representation with no committed topology body",
+      "message": "PRODUCT_DEFINITION #10 has a shape representation with no committed topology body",
       "severity": "warning"
     },
     {
       "code": {
         "kind": "namespaced",
         "value": {
-          "code": "decode.warning",
+          "code": "product.occurrence-placement-inferred",
           "kind": "decode_diagnostic",
           "namespace": "step"
         }
       },
-      "message": "PRODUCT_DEFINITION #10 has a shape representation with no committed topology body",
-      "severity": "warning"
+      "message": "1 NEXT_ASSEMBLY_USAGE_OCCURRENCE record(s) take their placement from a parent representation's MAPPED_ITEM that no STEP relationship associates with them: #12",
+      "severity": "info"
     },
     {
       "code": {

@@ -3,8 +3,8 @@
 use crate::families::standard::decode::edge_geometry::build_standard_edge_curve;
 use crate::families::standard::decode::edge_geometry::standard_spline_line;
 use crate::families::standard::decode::StandardEdgeSupport;
+use crate::families::standard::decode::CYLINDER_CYLINDER_CONIC_TOLERANCE;
 use crate::families::standard::decode::CYLINDER_PLANE_CONIC_TOLERANCE;
-use crate::families::standard::decode::PERPENDICULAR_CYLINDER_CONIC_TOLERANCE;
 use crate::families::standard::decode::SPHERE_SECTION_ENDPOINT_TOLERANCE;
 use crate::families::standard::records::StandardCurveGeometry;
 use crate::families::standard::records::StandardCurveSupport;
@@ -446,20 +446,20 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
     let major_direction = ellipse_curve.frame().reference().as_raw();
     let major_radius = ellipse_curve.major_radius().get();
     let minor_radius = ellipse_curve.minor_radius().get();
-    assert!(center.distance(Point3::new(0.0, 0.0, 0.0)) <= PERPENDICULAR_CYLINDER_CONIC_TOLERANCE);
+    assert!(center.distance(Point3::new(0.0, 0.0, 0.0)) <= CYLINDER_CYLINDER_CONIC_TOLERANCE);
     assert!(
         axis.dot(Vector3::new(-1.0, 0.0, 1.0).scale(1.0 / 2.0_f64.sqrt()))
             .abs()
-            >= 1.0 - PERPENDICULAR_CYLINDER_CONIC_TOLERANCE
+            >= 1.0 - CYLINDER_CYLINDER_CONIC_TOLERANCE
     );
     assert!(
         major_direction
             .dot(Vector3::new(1.0, 0.0, 1.0).scale(1.0 / 2.0_f64.sqrt()))
             .abs()
-            >= 1.0 - PERPENDICULAR_CYLINDER_CONIC_TOLERANCE
+            >= 1.0 - CYLINDER_CYLINDER_CONIC_TOLERANCE
     );
-    assert!((major_radius - 2.0 * 2.0_f64.sqrt()).abs() <= PERPENDICULAR_CYLINDER_CONIC_TOLERANCE);
-    assert!((minor_radius - 2.0).abs() <= PERPENDICULAR_CYLINDER_CONIC_TOLERANCE);
+    assert!((major_radius - 2.0 * 2.0_f64.sqrt()).abs() <= CYLINDER_CYLINDER_CONIC_TOLERANCE);
+    assert!((minor_radius - 2.0).abs() <= CYLINDER_CYLINDER_CONIC_TOLERANCE);
     assert_eq!(ir.geometry.curves[0].id, id);
     assert!(ir.geometry.procedural_curves.is_empty());
 }
@@ -697,7 +697,7 @@ fn same_surface_spline_requires_an_exact_ruled_surface_generator() {
                 )
             }));
         standard_spline_line(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &ir,
             &[(
                 SurfaceId::mint("catia:test:surface#surface".to_string())
@@ -822,5 +822,89 @@ fn numerical_ranges_standard_line_rejects_cylinder_chord_mismatch() {
         })
         .expect("compute the standard pcurve geometry");
         assert_eq!(result.is_some(), accepted);
+    }
+}
+
+#[test]
+fn equal_intersecting_cylinders_have_conic_sections_at_oblique_angles() {
+    use crate::families::standard::decode::edge_geometry::standard_spline_intersecting_cylinders;
+    let radius = 2.0;
+    for angle in [
+        std::f64::consts::FRAC_PI_3,
+        2.0 * std::f64::consts::FRAC_PI_3,
+    ] {
+        let major = Vector3::new((angle / 2.0).sin(), 0.0, (angle / 2.0).cos());
+        let expected_radius = radius / (angle / 2.0).sin();
+        let mut ir = CadIr::empty();
+        for (index, sign) in [1.0, -1.0].into_iter().enumerate() {
+            ir.geometry.points.push(Point::new(
+                PointId::mint(format!("catia:test:point#{index}")).expect("point id"),
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                    major.x * expected_radius * sign,
+                    0.0,
+                    major.z * expected_radius * sign,
+                ))
+                .expect("ellipse endpoint"),
+                None,
+            ));
+        }
+        let mut bindings = Vec::new();
+        let mut indices = HashMap::new();
+        for (index, axis) in [
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(angle.sin(), 0.0, angle.cos()),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let id = SurfaceId::mint(format!("catia:test:surface#{index}")).expect("surface id");
+            indices.insert(id.clone(), index);
+            bindings.push((id.clone(), true, 0));
+            ir.geometry.surfaces.push(Surface {
+                id,
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                    cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        axis,
+                        Vector3::new(0.0, 1.0, 0.0),
+                        radius,
+                    )
+                    .expect("cylinder"),
+                )),
+                source_object: None,
+                native_ref: None,
+            });
+        }
+        let support = StandardCurveSupport {
+            pos: 0,
+            tag: 7,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Bspline,
+        };
+        let curve = crate::test_support::with_service_context(|ctx| {
+            standard_spline_intersecting_cylinders(ctx, &ir, &bindings, &indices, &support, [0, 1])
+        })
+        .expect("intersection resources")
+        .expect("one ellipse branch");
+        let Some(SolvedCurveGeometry::Ellipse(ellipse)) = curve.solved() else {
+            panic!("ellipse carrier");
+        };
+        assert!((ellipse.major_radius().get() - expected_radius).abs() < 1e-12);
+        for step in 0..32 {
+            let point = cadmpeg_ir::eval::decode::curve_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &curve,
+                f64::from(step) * std::f64::consts::TAU / 32.0,
+            )
+            .expect("ellipse point")
+            .get();
+            for axis in [
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(angle.sin(), 0.0, angle.cos()),
+            ] {
+                let offset = point.vector_from(Point3::new(0.0, 0.0, 0.0));
+                assert!(((offset - axis.scale(offset.dot(axis))).norm() - radius).abs() < 1e-12);
+            }
+        }
     }
 }

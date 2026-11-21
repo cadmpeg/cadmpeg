@@ -237,7 +237,7 @@ pub fn boundaries_within_resolution(
     ]);
     let threshold = threshold.finish();
     for index in 0..=product_degree {
-        let mut cross = [ExactSignedSum::default(); 3];
+        let mut cross: [ExactSignedSum; 3] = std::array::from_fn(|_| ExactSignedSum::default());
         // A control pair contributes when its indices sum to the product index.
         for (first_index, first_control) in first.iter().enumerate() {
             let Some(second_index) = index.checked_sub(first_index) else {
@@ -257,7 +257,7 @@ pub fn boundaries_within_resolution(
                 component.add_factors([-coefficient, second_control[axis], first_control[3]]);
             }
         }
-        for component in cross {
+        for mut component in cross {
             if let Some(value) = component.finish() {
                 let Some(limit) = threshold else {
                     return Some(false);

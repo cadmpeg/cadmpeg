@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_test_support::edit;
+use crate::test_support::edit;
 
 use crate::examples::unit_cube;
 use crate::geometry::SurfaceGeometry;
@@ -58,7 +58,7 @@ fn unknown_surface_json_round_trips() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let rec = UnknownId::mint("synthetic:cube:unknown#0").expect("valid identity");
     ir.set_native_unknowns(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         "synthetic",
         &[NativeUnknownRecord {
             id: rec.clone(),

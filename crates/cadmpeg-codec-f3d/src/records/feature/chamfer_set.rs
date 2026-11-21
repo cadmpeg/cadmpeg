@@ -92,6 +92,9 @@ pub(crate) struct DesignChamferSet {
     pub(crate) entry_count: u32,
     /// Edge-set tangent-chain flag.
     pub(crate) tangent_chain: bool,
+    /// Distance-angle setback-side reversal.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) distance_reversed: bool,
 }
 
 /// Parameter owners of one chamfer set's dimensional specification.

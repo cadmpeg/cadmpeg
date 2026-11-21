@@ -6,6 +6,8 @@
 //! around one period, a closed non-periodic curve whose domain ends coincide
 //! from its domain, and an open edge from the parameters of its two
 //! vertices, in the increasing-parameter convention of `Edge.param_range`.
+//! An edge with no vertex admits its curve record's whole domain where the
+//! record is closed.
 
 use std::rc::Rc;
 
@@ -155,6 +157,7 @@ pub(crate) fn measure_edge<'ir>(
                     &PcurveEnds {
                         placement: *placement,
                         alpha,
+                        tau,
                         start,
                         end,
                     },
@@ -232,6 +235,7 @@ pub(crate) fn measure_edge<'ir>(
 struct PcurveEnds {
     placement: Placement,
     alpha: f64,
+    tau: f64,
     start: Point3,
     end: Point3,
 }
@@ -272,7 +276,7 @@ fn pcurve_trace(
             )
         })?;
     let carrier = Carrier::resolve_in(owners, surface, ends.placement)?;
-    let chart = carrier.chart()?;
+    let chart = &carrier.chart()?.collapsing_within(ends.tau);
     let (start, end) = match coedge.sense {
         cadmpeg_ir::topology::Sense::Forward => (ends.start, ends.end),
         cadmpeg_ir::topology::Sense::Reversed => (ends.end, ends.start),
@@ -390,26 +394,11 @@ fn interval(
             message.to_owned(),
         )
     };
-    let domain = chart.domain();
-    let seed = domain.map_or(0.0, |[lower, _]| lower);
-    let parameter = |point: Point3, seed: f64| -> Measure<f64> {
-        chart
-            .parameter(eval, point, seed, alpha)?
-            .ok_or_else(|| unresolved("a vertex does not invert onto the edge's curve"))
-    };
-    if edge.ends.is_none() {
-        if let Some(period) = chart.period() {
-            return Ok([seed, seed + period]);
-        }
-    }
-    let start = start.ok_or_else(|| unresolved("the edge's start vertex has no point"))?;
-    let end = end.ok_or_else(|| unresolved("the edge's end vertex has no point"))?;
-    if single_vertex(edge) {
-        if let Some(period) = chart.period() {
-            let t = parameter(start, seed)?;
-            return Ok([t, t + period]);
-        }
-        return match domain {
+    // A curve record's own domain is its `parameter_range`, else one turn
+    // of a circle or an ellipse, else a NURBS knot domain; the record is
+    // closed where that domain is finite and its ends meet within α (§5.6).
+    let closed_domain = |domain: Option<[f64; 2]>| -> Measure<[f64; 2]> {
+        match domain {
             Some([lower, upper]) if upper > lower => {
                 let a = chart.point(eval, lower)?;
                 let b = chart.point(eval, upper)?;
@@ -420,7 +409,26 @@ fn interval(
                 }
             }
             _ => Err(unresolved("a closed edge's curve states no domain")),
-        };
+        }
+    };
+    let domain = chart.domain();
+    if edge.ends.is_none() {
+        return closed_domain(domain.or_else(|| chart.period().map(|period| [0.0, period])));
+    }
+    let seed = domain.map_or(0.0, |[lower, _]| lower);
+    let parameter = |point: Point3, seed: f64| -> Measure<f64> {
+        chart
+            .parameter(eval, point, seed, alpha)?
+            .ok_or_else(|| unresolved("a vertex does not invert onto the edge's curve"))
+    };
+    let start = start.ok_or_else(|| unresolved("the edge's start vertex has no point"))?;
+    let end = end.ok_or_else(|| unresolved("the edge's end vertex has no point"))?;
+    if single_vertex(edge) {
+        if let Some(period) = chart.period() {
+            let t = parameter(start, seed)?;
+            return Ok([t, t + period]);
+        }
+        return closed_domain(domain);
     }
     let t_start = parameter(start, seed)?;
     let t_end = parameter(end, domain.map_or(t_start, |[_, upper]| upper))?;

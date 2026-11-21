@@ -31,6 +31,8 @@ pub enum LossCategory {
     DesignIntent,
     /// Product structure, component occurrences, placements, or external dependencies.
     Product,
+    /// Manufacturing process records not transferred.
+    Process,
     /// Anything else.
     Other,
 }
@@ -45,6 +47,7 @@ impl fmt::Display for LossCategory {
             Self::Attribute => "attribute",
             Self::DesignIntent => "design_intent",
             Self::Product => "product",
+            Self::Process => "process",
             Self::Other => "other",
         })
     }
@@ -257,6 +260,7 @@ impl LossTaxonomy {
             Self::AssemblyComponentsExternal
             | Self::AssemblyPlacementsNotTransferred
             | Self::PhysicsNotTransferred => LossCategory::Product,
+            Self::ProcessRecordOmitted => LossCategory::Process,
             Self::RecordNotTyped
             | Self::DecodeDiagnostic
             | Self::IntegrityFailure
@@ -265,8 +269,7 @@ impl LossTaxonomy {
             | Self::SourceDialectDisplaced
             | Self::AssetNotTransferred
             | Self::PassthroughRecordOmitted
-            | Self::PreservedSourceUnavailable
-            | Self::ProcessRecordOmitted => LossCategory::Other,
+            | Self::PreservedSourceUnavailable => LossCategory::Other,
             Self::MissingGeometryStream
             | Self::GeometryNotTransferred
             | Self::GeometryAgreementSampled
@@ -336,7 +339,9 @@ pub const SHARED_LOSS_NAMESPACE: &str = "shared";
 /// one is `{ "kind": "namespaced", "value": { "namespace": "rhino", "code":
 /// "brep.trim-pcurve-dropped", "kind": "pcurve_omitted" } }`, carrying
 /// `strict_floor` exactly when the code pins one.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, cadmpeg_derive::DeserializeTagged,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -577,6 +582,13 @@ pub struct LossNote {
         deserialize_with = "deserialize_provenance"
     )]
     pub provenance: Option<SourceProvenance>,
+    /// The number of source instances the note reports together.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_count"
+    )]
+    pub count: Option<u64>,
 }
 
 impl LossNote {
@@ -588,6 +600,7 @@ impl LossNote {
             code,
             message: message.into(),
             provenance: None,
+            count: None,
         }
     }
 
@@ -605,6 +618,13 @@ impl LossNote {
         self
     }
 
+    /// Records that this note reports `count` source instances together.
+    #[must_use]
+    pub const fn with_count(mut self, count: u64) -> Self {
+        self.count = Some(count);
+        self
+    }
+
     /// Returns strict-mode handling after applying the kind's severity floor.
     pub fn strict_consequence(&self) -> StrictConsequence {
         match self.code.strict_floor() {
@@ -617,6 +637,7 @@ impl LossNote {
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_strict_floor, Severity, "strict_floor");
 cadmpeg_core::named_optional_field!(deserialize_provenance, SourceProvenance, "provenance");
+cadmpeg_core::named_optional_field!(deserialize_count, u64, "count");
 
 #[cfg(test)]
 mod tests;

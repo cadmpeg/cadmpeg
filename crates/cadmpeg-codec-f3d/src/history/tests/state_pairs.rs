@@ -11,6 +11,7 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+mod edge_recipe_faces;
 mod treatment;
 
 use crate::history::bind_scope_histories;

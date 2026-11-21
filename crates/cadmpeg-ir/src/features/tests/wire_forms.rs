@@ -327,7 +327,9 @@ fn to_plane_termination_keeps_its_frame_and_native_record() {
     );
     assert_eq!(native.as_str(), "native:plane");
     assert_eq!(serde_json::to_value(&termination).unwrap(), wire);
-    assert!(serde_json::from_value::<AngularTermination>(wire.clone()).is_err());
+    let angular: AngularTermination = serde_json::from_value(wire.clone()).unwrap();
+    assert!(matches!(angular, AngularTermination::ToPlane { .. }));
+    assert_eq!(serde_json::to_value(&angular).unwrap(), wire);
 
     let mut blank = wire.clone();
     blank["native"] = serde_json::json!(" ");
@@ -338,7 +340,8 @@ fn to_plane_termination_keeps_its_frame_and_native_record() {
     let mut degenerate = wire;
     degenerate["plane"]["normal"] = serde_json::json!({"x": 0.0, "y": 0.0, "z": 0.0});
     for refused in [blank, missing, oblique, degenerate] {
-        assert!(serde_json::from_value::<LinearTermination>(refused).is_err());
+        assert!(serde_json::from_value::<LinearTermination>(refused.clone()).is_err());
+        assert!(serde_json::from_value::<AngularTermination>(refused).is_err());
     }
 }
 

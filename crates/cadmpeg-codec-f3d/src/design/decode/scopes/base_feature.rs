@@ -12,11 +12,13 @@ use crate::records::feature::base_feature::{
 };
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::identity::Located;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use std::collections::HashMap;
 
 use super::shared_frames::marked_record_reference;
+
+mod owned_body_runs;
 
 fn marked_u64_reference(bytes: &[u8], marker_offset: usize, marker_value: u8) -> Option<u64> {
     if bytes.get(marker_offset) != Some(&marker_value) {
@@ -684,6 +686,7 @@ use crate::layout::base_feature_wide_zero_body as wide_zero_body;
 use crate::layout::timeline_body_owner_marked_prefix as owner_marked_prefix;
 use crate::layout::timeline_body_owner_prefix as owner_prefix;
 use crate::layout::timeline_owned_paste_source_pairs as paste_pairs;
+use crate::layout::timeline_paste_name_prefix as name_prefix;
 use crate::records::feature::scope;
 
 fn read_base_feature_entry_at(
@@ -711,7 +714,7 @@ fn marked_null_reference_flag(bytes: &[u8], at: usize) -> Option<bool> {
     if bytes.get(at + null_count::NULL_REFERENCE_MARKER) != Some(&1)
         || bytes.get(at + null_count::NULL_REFERENCE..at + null_count::NULL_REFERENCE_FLAG)
             != Some(&[0; 8])
-        || bytes.get(at + null_count::NULL_REFERENCE_ZERO) != Some(&0)
+        || bytes.get(at + null_count::NULL_REFERENCE_TERMINAL) != Some(&0)
     {
         return None;
     }
@@ -760,6 +763,11 @@ fn unclassed_result_body_count(
 /// Distance from the null GUID length field of the typed zero-body form to
 /// the scope kind.
 const TYPED_ZERO_BODY_GUID_COUNT_BEFORE_KIND: usize = 142;
+/// Offset of the kind payload in a 257-byte zero-body frame. The frame has the
+/// 258-byte prefix and a 76-byte scope tail instead of a 77-byte one.
+const ZERO_BODY_SHORT_TAIL_KIND_OFFSET: u64 = 157;
+/// Offset of the previous history-state identity in a 257-byte zero-body frame.
+const ZERO_BODY_SHORT_TAIL_PREVIOUS_STATE: u64 = 211;
 
 /// The typed-reference zero-body form: the class-409 zero-body prefix with a
 /// 51-byte typed shared-metadata reference, then zero bytes up to the null
@@ -828,6 +836,9 @@ pub(super) struct TimelineBodyOwner {
     /// The paste object stores a null removal key: it pastes copies and keeps
     /// its source bodies.
     keeps_sources: bool,
+    /// For a paste object that keeps its sources, the offset of the byte
+    /// after its null removal key and the end of its frame.
+    after_key: Option<(usize, usize)>,
 }
 
 impl TimelineBodyOwner {
@@ -839,17 +850,60 @@ impl TimelineBodyOwner {
 const NULL_GUID: &str = "00000000-0000-0000-0000-000000000000";
 const GUID_CODE_UNITS: usize = 36;
 
-/// Whether `envelope` is zero from `at` up to an LP-UTF16 null-GUID key that
-/// ends inside it.
-fn null_removal_key_at(envelope: &[u8], at: usize) -> bool {
-    let Some(key_at) = envelope
+/// The offset after an LP-UTF16 null-GUID key that ends inside `envelope`,
+/// when `envelope` is zero from `at` up to it.
+fn null_removal_key_end(envelope: &[u8], at: usize) -> Option<usize> {
+    let key_at = envelope
         .get(at..)
-        .and_then(|rest| rest.iter().position(|byte| *byte != 0))
-    else {
-        return false;
-    };
+        .and_then(|rest| rest.iter().position(|byte| *byte != 0))?;
     crate::bytes::lp_utf16_bounded(envelope, at + key_at, GUID_CODE_UNITS..=GUID_CODE_UNITS)
-        .is_some_and(|(key, _)| key == NULL_GUID)
+        .filter(|(key, _)| key == NULL_GUID)
+        .map(|(_, after)| after)
+}
+
+/// The kind and family-local ordinal that a paste object stores after its
+/// null removal key: three zero bytes, a u32 reference count, that many
+/// same-segment references, u32 `0xffffffff`, the LP-UTF16 kind, and the
+/// u32 ordinal, all before `frame_end`.
+fn paste_owner_timeline_name(
+    bytes: &[u8],
+    after_key: usize,
+    frame_end: usize,
+) -> Option<crate::records::feature::base_feature::DesignTimelineName> {
+    let bytes = bytes.get(..frame_end)?;
+    if bytes.get(after_key + name_prefix::ZERO_RUN_3..after_key + name_prefix::REFERENCE_COUNT)?
+        != [0; 3]
+    {
+        return None;
+    }
+    let mut cursor = after_key + name_prefix::LEN;
+    let references = cadmpeg_core::decode::bounded_len(
+        u64::from(View::u32_le_at(
+            bytes,
+            after_key + name_prefix::REFERENCE_COUNT,
+        )?),
+        1,
+        bytes.len().checked_sub(cursor)?,
+    )?;
+    for _ in 0..references {
+        crate::bytes::take_reference(bytes, &mut cursor)?.into_local()?;
+    }
+    if View::u32_le_at(bytes, cursor)? != u32::MAX {
+        return None;
+    }
+    let kind_at = cursor + 4;
+    let (kind, after_kind) = crate::bytes::lp_utf16_bounded(bytes, kind_at, 1..=64)?;
+    let ordinal = View::u32_le_at(bytes, after_kind)?;
+    Some(crate::records::feature::base_feature::DesignTimelineName {
+        kind: Located {
+            value: kind,
+            offset: u64::try_from(kind_at).ok()?,
+        },
+        ordinal: Located {
+            value: ordinal,
+            offset: u64::try_from(after_kind).ok()?,
+        },
+    })
 }
 
 /// Index the paste and body-to-component timeline objects that name each
@@ -924,6 +978,9 @@ fn parse_timeline_body_owner(
     }
     let reference_offset = u64::try_from(cursor.checked_add(1)?).ok()?;
     let (scope, _) = crate::bytes::take_reference(bytes, &mut cursor)?.into_local()?;
+    let after_key = end
+        .filter(|_| pastes)
+        .and_then(|end| Some((null_removal_key_end(bytes, cursor)?, end)));
     Some((
         u32::try_from(scope).ok()?,
         TimelineBodyOwner {
@@ -932,14 +989,15 @@ fn parse_timeline_body_owner(
             reference_offset,
             paired: end.is_some(),
             pastes,
-            keeps_sources: pastes && end.is_some() && null_removal_key_at(bytes, cursor),
+            keeps_sources: after_key.is_some(),
+            after_key,
         },
     ))
 }
 
 /// Read the counted GUID pair of each pasted body after the body runs: the
 /// first GUID of each pair and the offset of its code units.
-fn paste_source_pairs(bytes: &[u8], at: usize, body_count: usize) -> Option<Vec<(String, u64)>> {
+fn paste_source_pairs(bytes: &[u8], at: usize, body_count: usize) -> Option<Vec<PasteGuidPair>> {
     if bytes.get(at + paste_pairs::MARKER) != Some(&1)
         || bytes.get(at + paste_pairs::ZERO_RUN_4..at + paste_pairs::PAIR_COUNT)? != [0; 4]
         || usize::try_from(View::u32_le_at(bytes, at + paste_pairs::PAIR_COUNT)?).ok()?
@@ -958,28 +1016,69 @@ fn paste_source_pairs(bytes: &[u8], at: usize, body_count: usize) -> Option<Vec<
     };
     (0..body_count)
         .map(|_| {
-            let source = guid()?;
-            guid()?;
-            Some(source)
+            let (source, source_offset) = guid()?;
+            let (copy, _) = guid()?;
+            Some(PasteGuidPair {
+                source,
+                source_offset,
+                copy,
+            })
         })
         .collect()
 }
 
-/// The entity suffix of the browser node that each source GUID names, when
-/// every source GUID names exactly one node.
+/// One GUID pair of a paste: the browser-node GUID of the source body and the
+/// scene-node GUID that the copy's body presentation stores.
+struct PasteGuidPair {
+    source: String,
+    source_offset: u64,
+    copy: String,
+}
+
+/// The GUID joins that name the source and the copy of each pasted body.
+#[derive(Default)]
+pub(super) struct PasteNodes {
+    /// Browser-node GUID, in lower case, to the Design entity suffix of the
+    /// node; `None` when two typed browser-node frames store the GUID.
+    pub(super) sources: HashMap<String, Option<u64>>,
+    /// Body-presentation entity to the scene-node GUID it stores, in lower
+    /// case.
+    pub(super) copies: HashMap<u64, String>,
+}
+
+/// The source of each pasted body, in the order of the scope's body runs.
+/// Each pair's copy GUID names the copy's parameter-body presentation, and
+/// every pair joins one distinct copy and one source. The one pair of a
+/// one-body scope belongs to its body.
 fn paste_sources(
-    pairs: Vec<(String, u64)>,
-    nodes: &HashMap<String, Option<u64>>,
+    pairs: Vec<PasteGuidPair>,
+    parameter_bodies: &[DesignBaseFeatureEntry<u64>],
+    nodes: &PasteNodes,
 ) -> Option<Vec<DesignPasteSource>> {
-    pairs
-        .into_iter()
-        .map(|(source, node_guid_offset)| {
-            Some(DesignPasteSource {
-                entity_suffix: (*nodes.get(&source.to_ascii_lowercase())?)?,
-                node_guid_offset,
-            })
-        })
-        .collect()
+    let mut sources = vec![None; parameter_bodies.len()];
+    let single = parameter_bodies.len() == 1;
+    for pair in pairs {
+        let copy = pair.copy.to_ascii_lowercase();
+        let mut copies = parameter_bodies.iter().enumerate().filter(|(_, body)| {
+            single
+                || nodes
+                    .copies
+                    .get(&body.value)
+                    .is_some_and(|guid| *guid == copy)
+        });
+        let (ordinal, _) = copies.next()?;
+        if copies.next().is_some() {
+            return None;
+        }
+        let source = DesignPasteSource {
+            entity_suffix: (*nodes.sources.get(&pair.source.to_ascii_lowercase())?)?,
+            node_guid_offset: pair.source_offset,
+        };
+        if sources.get_mut(ordinal)?.replace(source).is_some() {
+            return None;
+        }
+    }
+    sources.into_iter().collect()
 }
 
 /// The owned construction of the first object, in record order, whose owned
@@ -987,18 +1086,25 @@ fn paste_sources(
 /// paste object without a paired header and copy sources that do not resolve
 /// each add a loss.
 pub(super) fn timeline_owned_base_feature(
-    bytes: &[u8],
+    ctx: &DecodeContext<'_>,
+    stream: View<'_>,
     scope: &DesignParameterScope,
     owners: &[TimelineBodyOwner],
-    nodes: &HashMap<String, Option<u64>>,
+    nodes: &PasteNodes,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Option<DesignBaseFeatureConstruction> {
-    let (owner, (mut construction, source_loss)) = owners.iter().find_map(|owner| {
-        Some((
-            owner,
-            exact_timeline_owned_base_feature(bytes, scope, *owner, nodes)?,
-        ))
-    })?;
+) -> Result<Option<DesignBaseFeatureConstruction>, CodecError> {
+    let mut admitted = None;
+    for &owner in owners {
+        if let Some(construction) =
+            exact_timeline_owned_base_feature(ctx, stream, scope, owner, nodes)?
+        {
+            admitted = Some((owner, construction));
+            break;
+        }
+    }
+    let Some((owner, (mut construction, source_loss))) = admitted else {
+        return Ok(None);
+    };
     if owners.len() > 1 {
         losses.push(F3dLossCode::FeatureTimelineOwnerCompeting.note(format!(
             "{} is named by timeline objects {}; object {}, the lowest record whose owned runs read, owns it.",
@@ -1015,6 +1121,9 @@ pub(super) fn timeline_owned_base_feature(
         {
             copy_sources.clear();
         }
+        if !owner.pastes {
+            losses.extend(source_loss);
+        }
     } else {
         losses.extend(source_loss);
     }
@@ -1024,7 +1133,7 @@ pub(super) fn timeline_owned_base_feature(
             scope.id, owner.record
         )));
     }
-    Some(construction)
+    Ok(Some(construction))
 }
 
 /// Read the parallel parameter-body and body-entity runs of an owned scope.
@@ -1033,44 +1142,38 @@ pub(super) fn timeline_owned_base_feature(
 /// sources. Unread pairs or unresolved sources then leave the copy sources
 /// empty and give a loss.
 pub(super) fn exact_timeline_owned_base_feature(
-    bytes: &[u8],
+    ctx: &DecodeContext<'_>,
+    stream: View<'_>,
     scope: &DesignParameterScope,
     owner: TimelineBodyOwner,
-    nodes: &HashMap<String, Option<u64>>,
-) -> Option<(
-    DesignBaseFeatureConstruction,
-    Option<cadmpeg_ir::report::loss::LossNote>,
-)> {
-    if scope.kind() != scope::DesignFeatureKind::BaseFeature {
-        return None;
-    }
-    let start = usize::try_from(scope.byte_offset()).ok()?;
-    let bytes = bytes.get(..usize::try_from(scope.paired_byte_offset()).ok()?)?;
-    if bytes.get(start + result_body::ZERO_RUN_8..start + result_body::BODY_COUNT_MARKER)? != [0; 8]
-        || bytes.get(start + result_body::BODY_COUNT_MARKER) != Some(&1)
-        || usize::try_from(View::u32_le_at(
-            bytes,
-            start + result_body::COMBINED_BODY_REFERENCE_COUNT,
-        )?)
-        .ok()?
-            != owner.body_count.checked_mul(2)?
-    {
-        return None;
-    }
-    let mut cursor = start + result_body::LEN;
-    let mut run = |count: usize| -> Option<Vec<DesignBaseFeatureEntry<u64>>> {
-        (0..count)
-            .map(|_| read_base_feature_entry_at(bytes, &mut cursor))
-            .collect()
+    nodes: &PasteNodes,
+) -> Result<
+    Option<(
+        DesignBaseFeatureConstruction,
+        Option<cadmpeg_ir::report::loss::LossNote>,
+    )>,
+    CodecError,
+> {
+    let Some(owned_body_runs::OwnedBodyRuns {
+        parameter_bodies,
+        bodies,
+        end,
+        typed,
+    }) = owned_body_runs::decode(ctx, stream, scope, owner)?
+    else {
+        return Ok(None);
     };
-    let parameter_bodies = run(owner.body_count)?;
-    let bodies = run(owner.body_count)?;
-    let mut source_loss = None;
+    let mut source_loss = typed.then(|| {
+        F3dLossCode::FeatureOwnedBodyPairingAssumed.note(format!(
+            "{} pairs its typed parameter-body and result-body runs by position",
+            scope.id
+        ))
+    });
     let copy_sources = if owner.keeps_sources {
         let pairs = usize::try_from(scope.reference_count_offset())
             .ok()
-            .and_then(|references| bytes.get(..references))
-            .and_then(|bounded| paste_source_pairs(bounded, cursor, owner.body_count));
+            .and_then(|references| stream.window().get(..references))
+            .and_then(|bounded| paste_source_pairs(bounded, end, owner.body_count));
         match pairs {
             None => {
                 source_loss = Some(F3dLossCode::FeaturePasteSourcesUnresolved.note(format!(
@@ -1079,9 +1182,9 @@ pub(super) fn exact_timeline_owned_base_feature(
                 )));
                 Vec::new()
             }
-            Some(pairs) => paste_sources(pairs, nodes).unwrap_or_else(|| {
+            Some(pairs) => paste_sources(pairs, &parameter_bodies, nodes).unwrap_or_else(|| {
                 source_loss = Some(F3dLossCode::FeaturePasteSourcesUnresolved.note(format!(
-                    "{} keeps its pasted copies as stored bodies; a source GUID names no unique browser node.",
+                    "{} keeps its pasted copies as stored bodies; a source GUID names no unique browser node, or a copy GUID names no unique copy.",
                     scope.id
                 )));
                 Vec::new()
@@ -1090,16 +1193,19 @@ pub(super) fn exact_timeline_owned_base_feature(
     } else {
         Vec::new()
     };
-    Some((
+    Ok(Some((
         DesignBaseFeatureConstruction::TimelineOwnedBodies {
             parameter_bodies,
             bodies,
             owner_record: owner.record,
             owner_reference_offset: owner.reference_offset,
             copy_sources,
+            owner_timeline_name: owner.after_key.and_then(|(at, frame_end)| {
+                paste_owner_timeline_name(stream.window(), at, frame_end)
+            }),
         },
         source_loss,
-    ))
+    )))
 }
 
 /// Read the zero-body frame whose shared-metadata reference starts at offset 36.
@@ -1281,9 +1387,14 @@ pub(super) fn exact_base_feature_construction(
             scope.class_tag.as_str() == "360" && scope.paired_class_tag.as_str() == "258";
         let legacy_444_263 =
             scope.class_tag.as_str() == "444" && scope.paired_class_tag.as_str() == "263";
-        if !legacy_444_263 && scope.frame_length() == 258 {
+        if !legacy_444_263 && matches!(scope.frame_length(), 257 | 258) {
             if scope.byte_offset().checked_add(scope.frame_length())
                 != Some(scope.paired_byte_offset())
+                || (scope.frame_length() == 257
+                    && (scope.kind_offset().checked_sub(scope.byte_offset())
+                        != Some(ZERO_BODY_SHORT_TAIL_KIND_OFFSET)
+                        || scope.previous_history_state_id_offset()
+                            != Some(scope.byte_offset() + ZERO_BODY_SHORT_TAIL_PREVIOUS_STATE)))
             {
                 return None;
             }
@@ -1344,7 +1455,7 @@ pub(super) fn exact_base_feature_construction(
         if let Some(construction) = exact_wide_shifted_zero_body_base_feature(bytes, scope, start) {
             return Some(Ok(construction));
         }
-        if legacy_444_263 && scope.frame_length() == 258 {
+        if legacy_444_263 && matches!(scope.frame_length(), 257 | 258) {
             if scope.byte_offset().checked_add(scope.frame_length())
                 != Some(scope.paired_byte_offset())
                 || scope.reference_members().len() != 1

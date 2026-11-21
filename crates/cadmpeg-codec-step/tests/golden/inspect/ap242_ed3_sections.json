@@ -134,7 +134,13 @@
           "namespace": "step"
         }
       },
+      "count": 1,
       "message": "preserved 1 EXAMPLE_RECORD instance(s) as named opaque STEP records",
+      "provenance": {
+        "format": "step",
+        "offset": 398,
+        "tag": "EXAMPLE_RECORD"
+      },
       "severity": "warning"
     }
   ],

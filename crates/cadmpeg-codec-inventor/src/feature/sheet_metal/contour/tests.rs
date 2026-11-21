@@ -343,6 +343,7 @@ fn contour_refusal_details_are_pinned() {
         ContourRefusal::PropertyCount,
         ContourRefusal::StyleVersion,
         ContourRefusal::ReservedSlot,
+        ContourRefusal::EdgeAttached(2),
         ContourRefusal::PartOperation,
         ContourRefusal::ProfileSelection,
         ContourRefusal::EdgeCollection,
@@ -381,6 +382,7 @@ fn contour_refusal_details_are_pinned() {
             "property-count",
             "style-version",
             "reserved-slot",
+            "edge-attached",
             "part-operation",
             "profile-selection",
             "edge-collection",
@@ -579,3 +581,5 @@ fn the_travel_parameter_is_a_length_or_internal_centimetres() {
     assert_eq!(lengths(reference(50)).map(Length::get), Some(30.0));
     assert_eq!(lengths(reference(4)), ContourFixture::length(reference(4)));
 }
+
+mod attachments;

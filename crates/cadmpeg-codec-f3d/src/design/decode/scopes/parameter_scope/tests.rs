@@ -11,6 +11,16 @@ fn marked_named_combine(
     middle: Option<u32>,
     closing: Option<u32>,
 ) -> Vec<u8> {
+    marked_named_scope("Combine", label, associated, middle, closing)
+}
+
+fn marked_named_scope(
+    kind: &str,
+    label: &str,
+    associated: &[u32],
+    middle: Option<u32>,
+    closing: Option<u32>,
+) -> Vec<u8> {
     use crate::test_support::{indexed_header, push_reference_u64};
     let mut bytes = Vec::new();
     indexed_header(&mut bytes, *b"300", 100);
@@ -20,7 +30,7 @@ fn marked_named_combine(
         push_reference_u64(&mut bytes, member);
     }
     bytes.extend_from_slice(&u32::MAX.to_le_bytes());
-    lp_utf16(&mut bytes, "Combine");
+    lp_utf16(&mut bytes, kind);
     bytes.extend_from_slice(&1u32.to_le_bytes());
     bytes.extend_from_slice(&0u32.to_le_bytes());
     lp_utf16(&mut bytes, label);
@@ -61,6 +71,37 @@ fn parse_marked_named_combine(bytes: &[u8]) -> Option<super::DesignParameterScop
         0,
     )
     .unwrap()
+}
+
+#[test]
+fn registered_boundary_fill_admits_a_named_tail_with_odd_associated_reference_count() {
+    let bytes = marked_named_scope("BoundaryFill", "Fill", &[700], None, Some(701));
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let class = "300".to_owned().try_into().unwrap();
+    let scope = super::parse_parameter_scope_with_type_guid(
+        &bytes,
+        &records,
+        100,
+        &class,
+        0,
+        Some("49004167-470D-4892-B50E-5C589B1486D2"),
+    )
+    .unwrap()
+    .unwrap();
+    let tail = scope.boundary_fill().unwrap().named_tail.as_ref().unwrap();
+    assert_eq!(tail.associated[0].value, 700);
+    assert_eq!(tail.closing.as_ref().unwrap().value, 701);
+    assert_eq!(scope.previous_history_state_id(), None);
+    let wire = serde_json::to_value(&scope).unwrap();
+    assert_eq!(
+        serde_json::from_value::<super::DesignParameterScope>(wire).unwrap(),
+        scope
+    );
+    assert!(
+        super::parse_parameter_scope(&bytes, &records, 100, &class, 0)
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[test]
@@ -299,6 +340,20 @@ fn sketch_scope_reference_offsets_refuse_second_unique_marker() {
     let admitted = first_marked_reference_offsets(&frame);
     assert_eq!(admitted.get(&42), Some(&0));
     assert_eq!(admitted.get(&43), Some(&12));
+}
+
+#[test]
+fn sketch_scope_reference_offsets_admit_typed_container_references() {
+    let mut frame = vec![0; 3];
+    frame.push(1);
+    frame.extend_from_slice(&4137u64.to_le_bytes());
+    frame.extend_from_slice(&36u32.to_le_bytes());
+    frame.extend_from_slice(b"44A64366-4BD3-4B24-881A-F94C206E8F2D");
+    frame.extend_from_slice(&[0, 0]);
+    assert_eq!(first_marked_reference_offsets(&frame).get(&4137), Some(&3));
+    assert!(first_marked_reference_offsets(&frame[..frame.len() - 1]).is_empty());
+    frame[16] = b'X';
+    assert!(first_marked_reference_offsets(&frame).is_empty());
 }
 
 #[test]
@@ -619,6 +674,25 @@ fn reciprocal_hole_tail_length_follows_its_members_and_further_reference() {
 }
 
 #[test]
+fn named_reciprocal_hole_retains_its_label_and_preceding_state() {
+    let mut reciprocal = reciprocal_hole_tail(&[12, 100], false, false);
+    let closing_references_width = 2 * 11 + 1;
+    reciprocal.insert(reciprocal.len() - closing_references_width, 0);
+    let mut tail = reciprocal[..8].to_vec();
+    lp_utf16(&mut tail, "Tapped Hole");
+    let count_at = tail.len();
+    tail.extend_from_slice(&reciprocal[12..]);
+    let scope = parse_hole_scope(&tail).expect("named reciprocal Hole");
+    assert_eq!(
+        scope.label.as_ref().map(|label| label.value.as_str()),
+        Some("Tapped Hole")
+    );
+    assert_eq!(scope.previous_history_state_id(), Some(8));
+    tail[count_at] = 1;
+    assert!(parse_hole_scope(&tail).is_none());
+}
+
+#[test]
 fn reciprocal_hole_tail_needs_its_own_members_and_companion_chain() {
     assert!(parse_hole_scope(&reciprocal_hole_tail(&[13], false, false)).is_none());
     assert!(parse_hole_scope(&reciprocal_hole_tail(&[12, 12], false, false)).is_none());
@@ -707,7 +781,7 @@ fn scope_class_type_selects_hole_and_preserves_the_display_name() {
     with_scan(&archive, |scan| {
         for type_rows in [&types[..], &[][..]] {
             let scopes = super::decode_parameter_scopes(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 scan,
                 &super::ParameterScopeSources {
                     types: type_rows,
@@ -734,7 +808,7 @@ fn scope_class_type_selects_hole_and_preserves_the_display_name() {
                     .map(|offset| offset - 6);
                 let english = DesignParameterScope::try_new(english).unwrap();
                 assert!(super::equivalent_scope_variant_payload(
-                    &cadmpeg_test_support::service_decode_context(),
+                    &cadmpeg_core::decode::test_support::service_decode_context(),
                     scope,
                     &english,
                 )
@@ -859,4 +933,71 @@ fn only_the_class_guid_selects_the_path_pattern_family() {
         super::scope_feature_kind("PathPattern", None),
         Some(DesignFeatureKind::native("PathPattern"))
     );
+}
+
+#[test]
+fn sketch_scope_binding_selects_the_container_shared_with_its_placement() {
+    use crate::records::entity_header::{
+        DesignEntityHeader, DesignEntityRegistration, DESIGN_MODULE_SKETCH,
+    };
+    use crate::records::identity::ReferenceRun;
+    use crate::test_support::{indexed_header, push_reference_u64};
+    let stream = "f3d:Design/BulkStream.dat";
+    let entities = [173u32, 174].map(|suffix| DesignEntityHeader {
+        id: format!("{stream}:design-entity-header#{suffix}"),
+        byte_offset: u64::from(suffix),
+        entity_id: format!("0_{suffix}").try_into().unwrap(),
+        class_tag: "281".to_owned().try_into().unwrap(),
+        optional_slot_present: false,
+        registration: DesignEntityRegistration::new(
+            Some(DESIGN_MODULE_SKETCH.to_owned()),
+            None,
+            ReferenceRun::unlocated(Vec::new()),
+        )
+        .unwrap(),
+    });
+    let typed = |bytes: &mut Vec<u8>, suffix: u32| {
+        bytes.push(1);
+        bytes.extend_from_slice(&u64::from(suffix).to_le_bytes());
+        bytes.extend_from_slice(&36u32.to_le_bytes());
+        bytes.extend_from_slice(b"44A64366-4BD3-4B24-881A-F94C206E8F2D");
+        bytes.extend_from_slice(&[0, 0]);
+    };
+    for selected in [173u32, 174] {
+        let mut bytes = Vec::new();
+        push_reference_u64(&mut bytes, 173);
+        typed(&mut bytes, 174);
+        typed(&mut bytes, 185);
+        let frame_end = bytes.len();
+        indexed_header(&mut bytes, *b"356", 185);
+        bytes.extend_from_slice(&[0; 10]);
+        typed(&mut bytes, selected);
+        bytes.resize(frame_end + 201, 0);
+        indexed_header(&mut bytes, *b"259", 185);
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        let (entity, at) = super::sketch_scope_entity(
+            &bytes,
+            &bytes[..frame_end],
+            177,
+            stream,
+            &entities,
+            &records,
+        )
+        .expect("shared container binding");
+        assert_eq!(entity.entity_id.suffix(), u64::from(selected));
+        assert_eq!(at, if selected == 173 { 1 } else { 12 });
+        let mut typed_frame = Vec::new();
+        typed(&mut typed_frame, selected);
+        typed(&mut typed_frame, 185);
+        let (entity, at) =
+            super::sketch_scope_entity(&bytes, &typed_frame, 177, stream, &entities, &records)
+                .expect("typed container and placement binding");
+        assert_eq!(entity.entity_id.suffix(), u64::from(selected));
+        assert_eq!(at, 1);
+        let (entity, at) =
+            super::sketch_scope_entity(&bytes, &bytes[..62], 177, stream, &entities, &records)
+                .expect("plain container binding");
+        assert_eq!(entity.entity_id.suffix(), 173);
+        assert_eq!(at, 1);
+    }
 }

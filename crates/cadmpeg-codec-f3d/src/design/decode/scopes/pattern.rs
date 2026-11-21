@@ -19,15 +19,12 @@ use crate::records::feature::patterns::DesignCircularPatternConstruction;
 use crate::records::feature::patterns::DesignRectangularPatternConstruction;
 use crate::records::feature::patterns::DesignRectangularPatternInstances;
 use crate::records::feature::patterns::RectangularPatternSearchCap;
-use crate::records::feature::patterns::{
-    MAX_RECTANGULAR_PATTERN_INSTANCES, MAX_RECTANGULAR_PATTERN_RECORD_BYTES,
-    MAX_RECTANGULAR_PATTERN_SCANNED_BYTES, RECTANGULAR_PATTERN_RUN_WORK,
-};
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::DesignParameterOwner;
-use cadmpeg_core::decode::{View, WorkBudget};
+use cadmpeg_core::decode::{bounded_len, View, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
+use std::collections::HashMap;
 
 const EPS_SCOPES_EXACT_RECTANGULAR_PATTERN_INSTANCES_E8: f64 = 1.0e-8;
 
@@ -38,6 +35,7 @@ pub(super) fn exact_rectangular_pattern_construction(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     parameter_owners: &[DesignParameterOwner],
+    stream_types: &HashMap<u64, (&str, u32)>,
 ) -> Result<Option<DesignRectangularPatternConstruction>, CodecError> {
     let parsed = (|| {
         if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::RectangularPattern) {
@@ -99,7 +97,10 @@ pub(super) fn exact_rectangular_pattern_construction(
     let Some(mut construction) = parsed else {
         return Ok(None);
     };
-    let directions = exact_rectangular_pattern_directions(bytes, records, scope);
+    let directions = active_direction_records(
+        &construction,
+        exact_rectangular_pattern_directions(bytes, records, scope),
+    );
     let secondary = exact_rectangular_pattern_secondary_direction(
         bytes,
         records,
@@ -116,10 +117,9 @@ pub(super) fn exact_rectangular_pattern_construction(
         scope,
         &construction,
         &directions,
+        stream_types,
     ));
-    if directions.len() + usize::from(construction.secondary_direction().is_some())
-        == construction.active_direction_count()
-    {
+    if directions.len() == construction.bound_direction_record_count() {
         construction
             .try_set_directions(directions)
             .map_err(CodecError::malformed)?;
@@ -129,7 +129,13 @@ pub(super) fn exact_rectangular_pattern_construction(
         .first()
         .is_none_or(|record| record.distance_type != 7)
     {
-        match exact_rectangular_pattern_instances(bytes, records, scope, &construction) {
+        match exact_rectangular_pattern_instances(
+            bytes,
+            records,
+            scope,
+            &construction,
+            RectangularPatternSearchCap::limit,
+        ) {
             InstanceSearch::Resolved(instances) => construction
                 .try_set_instances(Some(*instances))
                 .map_err(CodecError::malformed)?,
@@ -140,6 +146,28 @@ pub(super) fn exact_rectangular_pattern_construction(
         }
     }
     Ok(Some(construction))
+}
+
+/// The direction records of the active directions. A scope that stores both
+/// direction slots, direction one first, keeps the record of an inactive
+/// direction; every other record list is returned whole.
+fn active_direction_records(
+    construction: &DesignRectangularPatternConstruction,
+    directions: Vec<patterns::DesignRectangularPatternDirection>,
+) -> Vec<patterns::DesignRectangularPatternDirection> {
+    if directions.len() != 2 {
+        return directions;
+    }
+    let active = [
+        (construction.u_count(), construction.u_extent()),
+        (construction.v_count(), construction.v_extent()),
+    ]
+    .map(|(count, extent)| count > 1 && extent != 0.0);
+    directions
+        .into_iter()
+        .zip(active)
+        .filter_map(|(direction, active)| active.then_some(direction))
+        .collect()
 }
 
 /// The direction records of a rectangular-pattern scope, in reference order.
@@ -187,8 +215,8 @@ fn exact_rectangular_pattern_direction(
     let length = paired_at.checked_sub(start)?;
     let shift = match (length, distance_type) {
         (frame::LEN, 8) => 0,
-        (spacing::LEN, 7) if bytes.get(start + spacing::SPACING_FLAG) == Some(&0) => 1,
-        (compact::LEN, 7) | (compact_extent::LEN, 8) => 0,
+        (spacing::LEN, 7 | 10) if bytes.get(start + spacing::SPACING_FLAG) == Some(&0) => 1,
+        (compact::LEN, 7) | (compact_extent::LEN, 8 | 10) => 0,
         _ => return None,
     };
     let compact_spacing = length == compact::LEN;
@@ -348,7 +376,7 @@ fn exact_rectangular_pattern_secondary_direction(
     let [direction] = directions else {
         return None;
     };
-    if construction.active_direction_count() != 2 {
+    if !construction.direction_two_active() {
         return None;
     }
     let mut found = None;
@@ -384,13 +412,17 @@ fn exact_rectangular_pattern_distribution(
     scope: &DesignParameterScope,
     construction: &DesignRectangularPatternConstruction,
     directions: &[patterns::DesignRectangularPatternDirection],
+    stream_types: &HashMap<u64, (&str, u32)>,
 ) -> Option<patterns::DesignRectangularPatternDistribution> {
-    use crate::layout::rectangular_pattern_payload_counted_head as counted_head;
     use crate::layout::rectangular_pattern_payload_distribution as block;
     use crate::layout::rectangular_pattern_payload_prefix as prefix;
     use crate::layout::rectangular_pattern_payload_suffix as suffix;
     const ENTRY_LEN: usize = 16;
     const MARKED_REFERENCE_LEN: usize = 11;
+    /// Largest Compute option: `0` Optimized, `1` Identical, `2` Adjust.
+    const LAST_COMPUTE_OPTION: u32 = 2;
+    /// Bytes a four-byte zero run after one body reference moves the fixed fields back.
+    const FOUR_ZERO_SHIFT: usize = 4;
 
     let u_direction = directions.first()?.record_index;
     let frames =
@@ -399,36 +431,52 @@ fn exact_rectangular_pattern_distribution(
         return None;
     };
     let after_prefix = start + prefix::LEN;
-    // `at` is the block offset that places `FIXED_TWO` on the u32 `2`.
-    let (at, zero_run) = match bytes.get(after_prefix)? {
-        0 => {
-            let head = after_prefix + 1;
-            if View::u32_le_at(bytes, head + counted_head::COUNT) == Some(counted_head::COUNT_VALUE)
-            {
-                // The counted form replaces the twelve zero bytes with the
-                // count, a marked record reference, and four zero bytes.
-                marked_record_reference(bytes, head + counted_head::REFERENCE)?;
-                (
-                    (head + counted_head::LEN).checked_sub(block::FIXED_TWO)?,
-                    head + counted_head::ZERO_RUN..head + counted_head::LEN,
-                )
-            } else {
-                (head, head + block::ZERO_RUN..head + block::FIXED_TWO)
-            }
-        }
+    let head = match bytes.get(after_prefix)? {
+        0 => after_prefix + 1,
         1 => {
             marked_record_reference(bytes, after_prefix)?;
-            let at = after_prefix + MARKED_REFERENCE_LEN;
-            (at, at + block::ZERO_RUN..at + block::FIXED_TWO)
+            after_prefix + MARKED_REFERENCE_LEN
         }
         _ => return None,
     };
-    if bytes.get(zero_run.clone())? != &[0; 12][..zero_run.len()]
-        || View::u32_le_at(bytes, at + block::FIXED_TWO) != Some(block::FIXED_TWO_VALUE)
-        || View::u32_le_at(bytes, at + block::SENTINEL) != Some(u32::MAX)
-    {
+    let references_at = head + block::ZERO_RUN;
+    let bodies = bounded_len(
+        u64::from(View::u32_le_at(bytes, head + block::BODY_COUNT)?),
+        MARKED_REFERENCE_LEN,
+        end.checked_sub(references_at)?,
+    )?;
+    let eight_zero_at = head.checked_add(bodies.checked_mul(MARKED_REFERENCE_LEN)?)?;
+    if eight_zero_at.checked_add(block::LEN)? > *end {
         return None;
     }
+    let mut untyped_body_references = 0_u32;
+    for body in 0..bodies {
+        let target = marked_record_reference(bytes, references_at + body * MARKED_REFERENCE_LEN)?;
+        let is_browser_node = stream_types
+            .get(&u64::from(target))
+            .is_some_and(|(type_guid, _)| {
+                type_guid.eq_ignore_ascii_case(crate::design::presentation::BROWSER_NODE_TYPE_GUID)
+            });
+        if !is_browser_node {
+            untyped_body_references = untyped_body_references.checked_add(1)?;
+        }
+    }
+    let zero_runs: &[usize] = if head == after_prefix + 1 && bodies == 1 {
+        &[0, FOUR_ZERO_SHIFT]
+    } else {
+        &[0]
+    };
+    let (at, compute_option) = zero_runs.iter().find_map(|&shift| {
+        let at = eight_zero_at.checked_sub(shift)?;
+        let compute_option = View::u32_le_at(bytes, at + block::COMPUTE_OPTION)?;
+        (bytes
+            .get(at + block::ZERO_RUN + shift..at + block::COMPUTE_OPTION)?
+            .iter()
+            .all(|byte| *byte == 0)
+            && compute_option <= LAST_COMPUTE_OPTION
+            && View::u32_le_at(bytes, at + block::SENTINEL) == Some(u32::MAX))
+        .then_some((at, compute_option))
+    })?;
     let total_extent = match bytes.get(at + block::DISTANCE_TYPE)? {
         0 => false,
         1 => true,
@@ -461,6 +509,19 @@ fn exact_rectangular_pattern_distribution(
             value: total_extent,
             offset: u64::try_from(at + block::DISTANCE_TYPE).ok()?,
         },
+        compute_option: crate::records::identity::Located {
+            value: compute_option,
+            offset: u64::try_from(at + block::COMPUTE_OPTION).ok()?,
+        },
+        seed_kind: crate::records::identity::Located {
+            value: View::u32_le_at(bytes, at + block::SEED_KIND)?,
+            offset: u64::try_from(at + block::SEED_KIND).ok()?,
+        },
+        body_references: crate::records::identity::Located {
+            value: u32::try_from(bodies).ok()?,
+            offset: u64::try_from(head + block::BODY_COUNT).ok()?,
+        },
+        untyped_body_references,
     })
 }
 
@@ -475,11 +536,13 @@ enum InstanceSearch {
     Capped(RectangularPatternSearchCap),
 }
 
+/// Searches the instance run under the value `limit` gives each local cap.
 fn exact_rectangular_pattern_instances(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     construction: &DesignRectangularPatternConstruction,
+    limit: fn(RectangularPatternSearchCap) -> usize,
 ) -> InstanceSearch {
     (|| {
         let mut active = [
@@ -493,7 +556,7 @@ fn exact_rectangular_pattern_instances(
             return None;
         }
         let count = usize::try_from(count).ok()?;
-        if count > MAX_RECTANGULAR_PATTERN_INSTANCES {
+        if count > limit(RectangularPatternSearchCap::Instances) {
             return Some(InstanceSearch::Capped(
                 RectangularPatternSearchCap::Instances,
             ));
@@ -534,14 +597,14 @@ fn exact_rectangular_pattern_instances(
                 .filter_map(|(_, offset)| (*offset > start).then_some(*offset))
                 .min()?;
             let span = end.checked_sub(start)?;
-            if span > MAX_RECTANGULAR_PATTERN_RECORD_BYTES {
+            if span > limit(RectangularPatternSearchCap::RecordBytes) {
                 return Some(InstanceSearch::Capped(
                     RectangularPatternSearchCap::RecordBytes,
                 ));
             }
             let Some(total) = scanned_bytes
                 .checked_add(span)
-                .filter(|total| *total <= MAX_RECTANGULAR_PATTERN_SCANNED_BYTES)
+                .filter(|total| *total <= limit(RectangularPatternSearchCap::ScannedBytes))
             else {
                 return Some(InstanceSearch::Capped(
                     RectangularPatternSearchCap::ScannedBytes,
@@ -552,7 +615,7 @@ fn exact_rectangular_pattern_instances(
         }
         let first_candidates = candidates.first()?;
         let final_candidates = candidates.last()?;
-        let budget = WorkBudget::new(RECTANGULAR_PATTERN_RUN_WORK);
+        let budget = WorkBudget::new(limit(RectangularPatternSearchCap::RunWork));
         let mut runs = Vec::new();
         for first in first_candidates {
             for final_candidate in final_candidates {

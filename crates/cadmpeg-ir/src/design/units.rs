@@ -109,6 +109,39 @@ impl UnitSymbol {
         Self::Lb,
     ];
 
+    /// The factor from the symbol to the canonical unit of its quantity, and
+    /// that quantity.
+    #[must_use]
+    pub fn canonical(self) -> (f64, Quantity) {
+        use std::f64::consts::PI;
+        const MASS: Quantity = Quantity::of(0, 1, 0, 0);
+        const TIME: Quantity = Quantity::of(0, 0, 0, 1);
+        match self {
+            Self::Nm => (1.0 / 1_000_000.0, Quantity::LENGTH),
+            Self::Um => (1.0 / 1_000.0, Quantity::LENGTH),
+            Self::Mm => (1.0, Quantity::LENGTH),
+            Self::Cm => (10.0, Quantity::LENGTH),
+            Self::M => (1_000.0, Quantity::LENGTH),
+            Self::Km => (1_000_000.0, Quantity::LENGTH),
+            Self::In => (25.4, Quantity::LENGTH),
+            Self::Ft => (304.8, Quantity::LENGTH),
+            Self::Yd => (914.4, Quantity::LENGTH),
+            Self::Mi => (1_609_344.0, Quantity::LENGTH),
+            Self::Rad => (1.0, Quantity::ANGLE),
+            Self::Deg => (PI / 180.0, Quantity::ANGLE),
+            Self::Grad => (PI / 200.0, Quantity::ANGLE),
+            Self::Arcmin => (PI / 10_800.0, Quantity::ANGLE),
+            Self::Arcsec => (PI / 648_000.0, Quantity::ANGLE),
+            Self::Rev => (2.0 * PI, Quantity::ANGLE),
+            Self::S => (1.0, TIME),
+            Self::Min => (60.0, TIME),
+            Self::H => (3_600.0, TIME),
+            Self::G => (1.0 / 1_000.0, MASS),
+            Self::Kg => (1.0, MASS),
+            Self::Lb => (0.453_592_37, MASS),
+        }
+    }
+
     /// The wire name of the symbol, which canonical expression text also
     /// writes.
     #[must_use]
@@ -167,7 +200,7 @@ pub struct UnitSystem {
 }
 
 /// The declared kind of a parameter's value.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -218,13 +251,26 @@ impl Quantity {
     /// An area, (2, 0, 0, 0).
     pub const AREA: Self = Self::of(2, 0, 0, 0);
 
-    const fn of(length: i8, mass: i8, angle: i8, time: i8) -> Self {
+    /// The quantity with these exponents of length, mass, angle, and time.
+    #[must_use]
+    pub const fn of(length: i8, mass: i8, angle: i8, time: i8) -> Self {
         Self {
             length,
             mass,
             angle,
             time,
         }
+    }
+
+    /// The factor that converts a value of this quantity from a unit system
+    /// of `millimetres`, `kilograms`, `radians`, and `seconds` per unit to
+    /// the canonical units.
+    #[must_use]
+    pub fn factor(&self, millimetres: f64, kilograms: f64, radians: f64, seconds: f64) -> f64 {
+        millimetres.powi(i32::from(self.length))
+            * kilograms.powi(i32::from(self.mass))
+            * radians.powi(i32::from(self.angle))
+            * seconds.powi(i32::from(self.time))
     }
 }
 

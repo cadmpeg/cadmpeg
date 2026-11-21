@@ -18,7 +18,7 @@ use crate::context::Eval;
 use crate::failure::{Measure, MeasureFailure};
 use crate::geom::{combine, offset, Aabb};
 use crate::reason::UnavailableReason;
-use crate::tolerance::INVERSION_PARAMETER_RESOLUTION;
+use crate::tolerance::{INVERSION_PARAMETER_RESOLUTION, NURBS_SEAM_RATIO};
 
 /// Gauss–Newton steps refining one point inverted onto a NURBS carrier.
 const MAX_INVERSION_REFINEMENT_STEPS: usize = 16;
@@ -121,6 +121,8 @@ pub(crate) struct NurbsChart<'ir> {
     pub(crate) evaluation: Option<&'ir SurfaceId>,
     pub(crate) offset_reach: f64,
     pub(crate) column_offset: Option<f64>,
+    /// The distance within which the poles of a `v` side coincide.
+    pub(crate) collapse_tolerance: f64,
     /// The `u` and `v` knot domains.
     pub(crate) domain: [[f64; 2]; 2],
     pub(crate) periods: [Option<f64>; 2],
@@ -233,78 +235,156 @@ impl<'ir> NurbsChart<'ir> {
             surface.v_degree(),
             surface.v_count(),
         )?;
-        Some(Self {
+        let mut chart = Self {
             surface,
             placement,
             evaluation: None,
             offset_reach: 0.0,
             column_offset: None,
+            collapse_tolerance: 0.0,
             domain: [u, v],
             periods: [
                 surface.u_periodic().then_some(u[1] - u[0]),
                 surface.v_periodic().then_some(v[1] - v[0]),
             ],
-        })
+        };
+        // A clamped axis whose two boundary curves are one curve closes at a
+        // seam, and its parameter repeats there as a periodic one does.
+        let size = chart
+            .control_hull()
+            .map_or(0.0, |hull| hull.min_point().distance(hull.max_point()));
+        for axis in 0..2 {
+            if chart.periods[axis].is_none()
+                && chart.clamped(axis)
+                && chart.seam(axis, NURBS_SEAM_RATIO * size)
+            {
+                let [low, high] = chart.domain[axis];
+                chart.periods[axis] = Some(high - low);
+            }
+        }
+        Some(chart)
+    }
+
+    /// The model points to which a whole `v` side of the pole grid
+    /// collapses: along such a side the surface is one point and `u` is not
+    /// defined.
+    pub(crate) fn collapsed_v_sides(&self) -> Vec<Point3> {
+        let (columns, rows) = (self.surface.u_count(), self.surface.v_count());
+        let mut points = Vec::new();
+        let Some(last) = rows.checked_sub(1) else {
+            return points;
+        };
+        for side in [0, last] {
+            let Some(first) = self.surface.pole(0, side) else {
+                continue;
+            };
+            let first = self.placement.point(first.get());
+            let collapsed = (1..columns).all(|column| {
+                self.surface.pole(column, side).is_some_and(|pole| {
+                    self.placement.point(pole.get()).distance(first) <= self.collapse_tolerance
+                })
+            });
+            if collapsed && !points.contains(&first) {
+                points.push(first);
+            }
+        }
+        points
     }
 
     pub(crate) fn closed_domain(&self, tolerance: f64) -> bool {
-        let counts = [self.surface.u_count(), self.surface.v_count()];
+        (0..2).all(|axis| {
+            self.periods[axis].is_some()
+                || self.clamped(axis)
+                    && (self.seam(axis, tolerance)
+                        || self.collapsed(axis, 0, tolerance)
+                            && self.collapsed(axis, self.counts()[axis] - 1, tolerance))
+        })
+    }
+
+    fn counts(&self) -> [usize; 2] {
+        [self.surface.u_count(), self.surface.v_count()]
+    }
+
+    /// Whether the knots of `axis` repeat its domain ends a degree plus one
+    /// times, so that the first and last pole columns are the surface's
+    /// boundary curves there.
+    fn clamped(&self, axis: usize) -> bool {
         let degrees = [self.surface.u_degree(), self.surface.v_degree()];
         let knots = [
             self.surface.u_knots().as_slice(),
             self.surface.v_knots().as_slice(),
         ];
-        for axis in 0..2 {
-            if self.periods[axis].is_some() {
-                continue;
-            }
-            let Ok(degree) = usize::try_from(degrees[axis]) else {
-                return false;
-            };
-            if knots[axis]
-                .get(..=degree)
-                .is_none_or(|head| head.iter().any(|knot| *knot != self.domain[axis][0]))
-                || knots[axis]
-                    .get(counts[axis]..)
-                    .is_none_or(|tail| tail.iter().any(|knot| *knot != self.domain[axis][1]))
-            {
-                return false;
-            }
-            let pole = |side: usize, index: usize| {
-                let [u, v] = if axis == 0 {
-                    [side, index]
-                } else {
-                    [index, side]
-                };
-                let point = self.placement.point(self.surface.pole(u, v)?.get());
-                let weight = self
-                    .surface
-                    .weight(u, v)
-                    .map_or(1.0, cadmpeg_ir::scalar::NonZeroReal::get);
-                (weight > 0.0).then_some((point, weight))
-            };
-            let last = counts[axis] - 1;
-            let width = counts[1 - axis];
-            let same = |a: Point3, b: Point3| a.distance(b) <= tolerance;
-            let seam = (0..width).all(|index| match (pole(0, index), pole(last, index)) {
-                (Some((a, w)), Some((b, v))) => w == v && same(a, b),
+        let Ok(degree) = usize::try_from(degrees[axis]) else {
+            return false;
+        };
+        let [low, high] = self.domain[axis];
+        knots[axis]
+            .get(..=degree)
+            .is_some_and(|head| head.iter().all(|knot| *knot == low))
+            && knots[axis]
+                .get(self.counts()[axis]..)
+                .is_some_and(|tail| tail.iter().all(|knot| *knot == high))
+    }
+
+    /// The placed pole and weight at `index` of the pole column `side` of
+    /// `axis`, when its weight is positive.
+    fn side_pole(&self, axis: usize, side: usize, index: usize) -> Option<(Point3, f64)> {
+        let [u, v] = if axis == 0 {
+            [side, index]
+        } else {
+            [index, side]
+        };
+        let point = self.placement.point(self.surface.pole(u, v)?.get());
+        let weight = self
+            .surface
+            .weight(u, v)
+            .map_or(1.0, cadmpeg_ir::scalar::NonZeroReal::get);
+        (weight > 0.0).then_some((point, weight))
+    }
+
+    /// Whether the first and last pole columns of `axis` coincide within
+    /// `tolerance`, with equal weights.
+    fn seam(&self, axis: usize, tolerance: f64) -> bool {
+        let last = self.counts()[axis] - 1;
+        (0..self.counts()[1 - axis]).all(|index| {
+            match (
+                self.side_pole(axis, 0, index),
+                self.side_pole(axis, last, index),
+            ) {
+                (Some((a, w)), Some((b, v))) => w == v && a.distance(b) <= tolerance,
                 _ => false,
-            });
-            let collapsed = |side| {
-                let Some((origin, _)) = pole(side, 0) else {
-                    return false;
-                };
-                (0..width)
-                    .all(|index| pole(side, index).is_some_and(|(point, _)| same(origin, point)))
-            };
-            if !(seam || collapsed(0) && collapsed(last)) {
-                return false;
             }
-        }
-        true
+        })
+    }
+
+    /// Whether the pole column `side` of `axis` collapses to one point
+    /// within `tolerance`.
+    fn collapsed(&self, axis: usize, side: usize, tolerance: f64) -> bool {
+        let Some((origin, _)) = self.side_pole(axis, side, 0) else {
+            return false;
+        };
+        (0..self.counts()[1 - axis]).all(|index| {
+            self.side_pole(axis, side, index)
+                .is_some_and(|(point, _)| origin.distance(point) <= tolerance)
+        })
+    }
+
+    /// `[u, v]` with each periodic parameter moved by whole periods into the
+    /// knot domain, outside which the spline extrapolates.
+    fn in_domain(&self, uv: [f64; 2]) -> [f64; 2] {
+        std::array::from_fn(|axis| {
+            let [low, high] = self.domain[axis];
+            match self.periods[axis] {
+                Some(period) if uv[axis] < low || uv[axis] > high => {
+                    low + (uv[axis] - low).rem_euclid(period)
+                }
+                _ => uv[axis],
+            }
+        })
     }
 
     fn partials(&self, eval: &Eval<'_, '_>, u: f64, v: f64) -> Measure<Partials> {
+        let [u, v] = self.in_domain([u, v]);
         let local = eval
             .work
             .evaluate(eval.ctx, |admission| match self.evaluation {
@@ -419,13 +499,38 @@ impl NurbsChart<'_> {
         self.surface.v_knots().as_slice().to_vec()
     }
 
+    /// The width of the knot domain of `axis`. An integral along an
+    /// isoline of the other parameter is a density per unit of `axis`, so
+    /// its error goal is an area goal over this width.
+    pub(crate) fn width(&self, axis: usize) -> f64 {
+        self.domain[axis][1] - self.domain[axis][0]
+    }
+
     /// The knots of the `u` direction.
     pub(crate) fn u_breaks(&self) -> Vec<f64> {
         self.surface.u_knots().as_slice().to_vec()
     }
 }
 
+/// The number of distinct values in a sorted knot vector.
+fn distinct_knots(knots: &[f64]) -> usize {
+    knots.windows(2).filter(|pair| pair[0] != pair[1]).count() + usize::from(!knots.is_empty())
+}
+
 impl Chart<'_> {
+    /// Whether the inner integrals of a region run along `u`: on a NURBS
+    /// chart with no periodic axis whose `u` knots bound fewer spans than
+    /// its `v` knots.
+    pub(crate) fn inner_along_u(&self) -> bool {
+        match self {
+            Self::Nurbs(nurbs) => {
+                nurbs.periods == [None, None]
+                    && distinct_knots(&nurbs.u_breaks()) < distinct_knots(&nurbs.v_breaks())
+            }
+            _ => false,
+        }
+    }
+
     /// The periods of `u` and `v`.
     pub(crate) fn periods(&self) -> [Option<f64>; 2] {
         let tau = Some(std::f64::consts::TAU);
@@ -724,16 +829,38 @@ impl Chart<'_> {
         }
     }
 
-    /// Whether `point` lies within `tolerance` of a point where `u` is not
-    /// defined: a cone apex or a sphere pole.
-    pub(crate) fn singular_at(&self, point: Point3, tolerance: f64) -> bool {
+    /// The chart with a NURBS `v` side collapsed where its poles coincide
+    /// within `tolerance`.
+    pub(crate) fn collapsing_within(self, tolerance: f64) -> Self {
+        match self {
+            Self::Nurbs(nurbs) => Self::Nurbs(NurbsChart {
+                collapse_tolerance: tolerance,
+                ..nurbs
+            }),
+            other => other,
+        }
+    }
+
+    /// The points where `u` is not defined: a cone apex, the poles of a
+    /// closed chart, and the points to which a whole `v` side of a NURBS
+    /// pole grid collapses within the chart's collapse tolerance.
+    pub(crate) fn singular_points(&self) -> impl Iterator<Item = Point3> {
+        let collapsed = match self {
+            Self::Nurbs(nurbs) => nurbs.collapsed_v_sides(),
+            _ => Vec::new(),
+        };
         self.apex()
-            .is_some_and(|(_, apex)| apex.distance(point) <= tolerance)
-            || self.poles().is_some_and(|poles| {
-                poles
-                    .iter()
-                    .any(|(_, pole)| pole.distance(point) <= tolerance)
-            })
+            .map(|(_, apex)| apex)
+            .into_iter()
+            .chain(self.poles().into_iter().flatten().map(|(_, pole)| pole))
+            .chain(collapsed)
+    }
+
+    /// Whether `point` lies within `tolerance` of one of the
+    /// [`singular_points`](Self::singular_points).
+    pub(crate) fn singular_at(&self, point: Point3, tolerance: f64) -> bool {
+        self.singular_points()
+            .any(|singular| singular.distance(point) <= tolerance)
     }
 
     /// The profile span of a closed chart.

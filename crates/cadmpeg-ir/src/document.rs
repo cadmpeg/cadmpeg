@@ -687,6 +687,20 @@ macro_rules! declare_topology {
         declare_home_arenas!(Topology, $($field: $ty;)*);
         declare_home_rewrite!(Topology, $($field: $ty;)*);
 
+        impl crate::schema::rewrite::typed::RewriteIdentities for Topology {
+            fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
+                let _depth = ctx.enter_nested("nested topology references")?;
+                let mut local = std::collections::HashSet::new();
+                $(for entity in &self.$field {local.insert(entity.id.as_str());})*
+                $(self.$field.visit_identity_references(ctx, &mut |id| if local.contains(id) {Ok(())} else {visitor(id)})?;)*
+                Ok(())
+            }
+            fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut crate::schema::rewrite::typed::IdentityMap<'_,F>) -> Result<Self,cadmpeg_core::CodecError> {
+                let _depth = ctx.enter_nested("nested topology identities")?;
+                Ok(Self {$($field: self.$field.rewrite_identities(ctx,map)?,)*})
+            }
+        }
+
         #[cfg(feature = "schema")]
         impl JsonSchema for Topology {
             fn schema_name() -> std::borrow::Cow<'static, str> {
@@ -2322,7 +2336,7 @@ impl CadIr {
     ///
     /// ```compile_fail
     /// use cadmpeg_ir::CadIr;
-    /// let ctx = cadmpeg_test_support::service_decode_context();
+    /// let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     /// let raw = serde_json::json!({"id": "test:native:unknown#0", "extra": true});
     /// CadIr::empty().set_native_unknowns_from(&ctx, "test", [raw]).unwrap();
     /// ```

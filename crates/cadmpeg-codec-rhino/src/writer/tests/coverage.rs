@@ -6,14 +6,13 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::products::{
-    Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
+    ExternalDocument, Occurrence, ProductDefinition, ProductDefinitionKind,
 };
-use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::transform::Transform;
 
 use crate::{RhinoArchiveVersion, RhinoCodec};
 
-/// One point body, one part definition holding it, and two root occurrences
+/// One point body, one part definition holding it, and a root definition
 /// placing that part at x=100 and x=200.
 fn placed_point_product() -> CadIr {
     let mut ir = CadIr::empty();
@@ -61,8 +60,10 @@ fn placed_point_product() -> CadIr {
         "cadir:model:product#pin".try_into().expect("identity");
     ir.model.product_definitions.push(ProductDefinition {
         sketches: Vec::default(),
+
+        tessellations: Vec::new(),
         id: part.clone(),
-        kind: ProductDefinitionKind::Part,
+        kind: Some(ProductDefinitionKind::Part),
         source_name: Some("Pin".into()),
         label: None,
         description: None,
@@ -70,29 +71,42 @@ fn placed_point_product() -> CadIr {
         bom_properties: std::collections::BTreeMap::new(),
         bodies: vec![body],
         native_ref: None,
+        generated_from: None,
+        storage: cadmpeg_ir::products::Storage::Embedded,
+        occurrences: Vec::new(),
+        instance_bodies: Vec::new(),
+        representations: Vec::new(),
+        units: None,
+        general_tolerance: None,
+        active: None,
     });
+    let mut root = ProductDefinition::root(
+        "cadir:model:product#root".try_into().expect("identity"),
+        ExternalDocument::default(),
+    );
     for (ordinal, x) in [(0, 100.0), (1, 200.0)] {
+        root.occurrences.push(
+            cadmpeg_ir::ids::OccurrenceId::mint(format!("cadir:model:occurrence#pin.{ordinal}"))
+                .expect("identity"),
+        );
         ir.model.occurrences.push(Occurrence {
             id: cadmpeg_ir::ids::OccurrenceId::mint(format!(
                 "cadir:model:occurrence#pin.{ordinal}"
             ))
             .expect("identity"),
-            prototype: PrototypeReference::Local {
-                definition: part.clone(),
-            },
-            parent: OccurrenceParent::Root {},
-            ordinal,
-            transform: Transform::identity().with_translation(
+            prototype: part.clone(),
+            transform: Some(Transform::identity().with_translation(
                 FiniteVector3::new(Vector3::new(x, 0.0, 0.0)).expect("finite offset"),
-            ),
-            linked_prototype: None,
-            scale: [FiniteReal::ONE; 3],
-            name: None,
+            )),
+            suppressed: None,
             visible: None,
-            link: None,
+            representation: None,
+            overrides: Vec::new(),
+            name: None,
             native_ref: None,
         });
     }
+    ir.model.product_definitions.push(root);
     ir.finalize();
     ir
 }
@@ -120,7 +134,7 @@ fn unrepresented_product_structure_is_an_export_loss() {
     assert_eq!(
         omitted,
         [
-            "the rhino write does not represent model arena `product_definitions`: 1 record(s) omitted",
+            "the rhino write does not represent model arena `product_definitions`: 2 record(s) omitted",
             "the rhino write does not represent model arena `occurrences`: 2 record(s) omitted",
         ]
     );

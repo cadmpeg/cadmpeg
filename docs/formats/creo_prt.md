@@ -1973,7 +1973,8 @@ before a structural control byte or the bounded body end is a seven-byte
 negative coordinate token. Its value is the big-endian IEEE-754 binary64 image
 `c0 b1 b2 b3 b4 b5 b6 00`. The trailing low byte is implicit; the structural
 control byte is not part of the scalar. An unframed `2d` scalar retains the
-generic eight-byte form.
+generic eight-byte form. A type-26 radius slot reads `2d <tail7>` in its
+eight-byte radius-slot form.
 
 A `geom_type = 26` positional body trailer has the form `01 12 50
 <selector_ci> <outline[2][3]>`. The selector is a compact integer. The outline

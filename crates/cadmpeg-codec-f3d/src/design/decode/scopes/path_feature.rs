@@ -79,10 +79,14 @@ fn two_sided_revolve_construction(
             bytes.get(start + two_sided_revolve::PROJECT_AXIS),
             Some(0 | 1)
         )
-        || bytes.get(start + two_sided_revolve::SOLID) != Some(&1)
     {
         return None;
     }
+    let solid = match bytes.get(start + two_sided_revolve::SOLID)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
     let opposite_record_index = marked_record_reference(
         bytes,
         start + two_sided_revolve::OPPOSITE_ANGLE_REFERENCE_MARKER,
@@ -113,7 +117,7 @@ fn two_sided_revolve_construction(
                 angle_record_index: opposite_record_index,
                 angle_offset: opposite.evaluated_value_offset(),
             }),
-            solid: None,
+            solid: Some(solid),
             reversed: false,
         },
     ))
@@ -135,33 +139,49 @@ pub(super) fn tail_second_reference(bytes: &[u8], scope: &DesignParameterScope) 
     let tail = scope
         .paired_byte_offset()
         .checked_sub(SECOND_REFERENCE_TAIL)?;
-    if scope.previous_history_state_id_offset() != tail.checked_add(SECOND_REFERENCE_PREVIOUS_STATE)
+    if scope.feature_ordinal_offset() != tail
+        || scope.previous_history_state_id_offset()
+            != tail.checked_add(SECOND_REFERENCE_PREVIOUS_STATE)
     {
         return None;
     }
     let marker = usize::try_from(tail)
         .ok()?
         .checked_add(super::parameter_scope::FIXED_TAIL_SECOND_REFERENCE)?;
-    if bytes.get(marker) != Some(&1) {
-        return None;
-    }
-    View::u64_le_at(bytes, marker.checked_add(1)?)
-}
-
-/// The loss of a 361-byte referenced-angle `Revolve` frame, whose second tail
-/// reference the decoder reads without a meaning (DR-657).
-pub(super) fn referenced_revolve_reference_loss(
-    bytes: &[u8],
-    scope: &DesignParameterScope,
-) -> Option<cadmpeg_ir::report::loss::LossNote> {
-    if design_feature_family(&scope.kind())? != DesignFeatureFamily::Revolve
-        || parameter_scope_payload_length(scope)? != 361
+    if bytes.get(marker) != Some(&1)
+        || bytes.get(marker.checked_add(9)?..marker.checked_add(11)?) != Some(&[0; 2])
     {
         return None;
     }
+    let target = View::u64_le_at(bytes, marker.checked_add(1)?)?;
+    (!scope
+        .reference_members()
+        .values()
+        .any(|&member| u64::from(member) == target))
+    .then_some(target)
+}
+
+pub(super) fn referenced_revolve_reference_loss(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    construction: &path_features::DesignRevolveConstruction,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    if design_feature_family(&scope.kind())? != DesignFeatureFamily::Revolve {
+        return None;
+    }
+    let length = parameter_scope_payload_length(scope)?;
+    construction.solid?;
+    let operation = construction
+        .operation_offset
+        .checked_sub(scope.byte_offset())?;
+    let base_length = match (length, usize::try_from(operation).ok()?) {
+        (361, referenced_revolve::OPERATION) => 351,
+        (379, unmarked_revolve::OPERATION) => 369,
+        _ => return None,
+    };
     let target = tail_second_reference(bytes, scope)?;
     Some(crate::loss::F3dLossCode::FeatureRevolveLayoutAssumed.note(format!(
-        "Revolve scope {} stores a second tail reference with target {target} in its 361-byte referenced-angle frame; the decoder reads the other fields at the 351-byte offsets (DR-657).",
+        "Revolve scope {} stores a second tail reference with target {target} in its {length}-byte referenced-angle frame; the decoder reads the other fields at the {base_length}-byte offsets (DR-657).",
         scope.id
     )))
 }
@@ -207,10 +227,11 @@ fn referenced_angle_revolve_construction(
                 referenced_revolve::ANGLE_REFERENCE_MARKER,
             )
         }
-        (369, 8)
-            if bytes
-                .get(start + unmarked_revolve::ZERO_RUN..start + unmarked_revolve::OPERATION)?
-                == [0; 10]
+        (length @ (369 | 379), 8)
+            if (length == 369 || tail_second_reference(bytes, scope).is_some())
+                && bytes.get(
+                    start + unmarked_revolve::ZERO_RUN..start + unmarked_revolve::OPERATION,
+                )? == [0; 10]
                 && View::u32_le_at(bytes, start + unmarked_revolve::EXTENT_KIND)
                     == Some(unmarked_revolve::EXTENT_KIND_VALUE)
                 && bytes.get(start + unmarked_revolve::DIRECTION_KIND)

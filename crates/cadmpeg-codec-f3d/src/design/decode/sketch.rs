@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse Design sketch placements, headers, relations, and geometry.
 
-use crate::bytes::lp_utf16_bounded;
+use crate::bytes::{lp_utf16_bounded, lp_utf16_bounded_view};
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::records::sketch_placement::{
@@ -19,6 +19,10 @@ use crate::design::decode::text::design_record_id;
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::layout::sketch_container_visibility_member_prefix as visibility_member;
+use crate::layout::sketch_explicit_member_head as marked_head;
+use crate::layout::sketch_item_geometry_member_run_head as member_run_head;
+use crate::layout::sketch_null_explicit_member_head as null_head;
+use crate::layout::sketch_typed_explicit_member_head as typed_head;
 use crate::loss::F3dLossCode;
 use crate::records::{
     decal::DesignRecordHeader,
@@ -54,7 +58,7 @@ const EPS_SKETCH_DECODE_LINE_COMPONENTS_E12: f64 = 1.0e-12;
 
 /// Byte offsets of every indexed-record header in one `BulkStream`, grouped by
 /// the record index carried at header offset seven.
-pub(in crate::design) struct IndexedRecordOffsets {
+pub(crate) struct IndexedRecordOffsets {
     by_record_index: HashMap<u32, Vec<usize>>,
 }
 
@@ -236,32 +240,9 @@ pub(crate) fn decode_sketch_placements(
         else {
             continue;
         };
-        let mut referenced_indices = Vec::new();
-        for window in frame.windows(11) {
-            if window[0] == 1 && window[5..11] == [0; 6] {
-                let Some(record_index) = View::u32_le_at(window, 1) else {
-                    continue;
-                };
-                if !referenced_indices.contains(&record_index) {
-                    referenced_indices.push(record_index);
-                }
-            }
-        }
-        let mut candidates = Vec::new();
-        for record_index in referenced_indices {
-            let parsed = parse_sketch_placement_candidates(
-                bytes,
-                scope.record_index,
-                entity_id,
-                record_index,
-                records,
-            );
-            candidates.extend(parsed);
-        }
-        if candidates.len() == 1 {
-            let Some(mut placement) = candidates.pop() else {
-                continue;
-            };
+        if let Some(mut placement) =
+            parse_scope_sketch_placement(bytes, frame, scope.record_index, entity_id, records)
+        {
             placement.id = design_record_id(
                 &entry.name,
                 ":design-sketch-placement#",
@@ -736,6 +717,17 @@ fn decode_sketch_visibility_member(
 }
 
 pub(super) fn decode_sketch_member_display_name(bytes: &[u8], member_at: usize) -> Option<String> {
+    let (name, _) = sketch_member_display_name_field(bytes, member_at)?;
+    let name = name.to_string();
+    (!name.trim().is_empty() && !name.chars().any(char::is_control)).then_some(name)
+}
+
+/// The LP-UTF16 display name of a sketch Geometry member and the offset after
+/// it. The name follows the direct-container reference.
+fn sketch_member_display_name_field(
+    bytes: &[u8],
+    member_at: usize,
+) -> Option<(crate::bytes::utf16::Utf16View<'_>, usize)> {
     let mut collection_at = member_at + visibility_member::TAIL_MARKER;
     let reference = take_reference(bytes, &mut collection_at)?;
     match reference {
@@ -746,16 +738,8 @@ pub(super) fn decode_sketch_member_display_name(bytes: &[u8], member_at: usize) 
         } if target != 0 => {}
         _ => return None,
     }
-    let (name, _) = lp_utf16_bounded(bytes, collection_at, 1..=256)?;
-    (!name.trim().is_empty() && !name.chars().any(char::is_control)).then_some(name)
+    lp_utf16_bounded_view(bytes, collection_at, 0..=256)
 }
-
-/// Byte length of a member-run head carrying an explicit 4×4 transform.
-const MEMBER_RUN_HEAD_FRAME: usize = 162;
-
-/// The explicit head frame whose closing reference at offset 151 carries an
-/// inline type GUID: forty bytes longer than the plain frame.
-const TYPED_MEMBER_RUN_HEAD_FRAME: usize = MEMBER_RUN_HEAD_FRAME + 40;
 
 /// The Sketch scope that owns a member-run sketch entity.
 fn member_run_sketch_scope<'a>(
@@ -790,11 +774,6 @@ fn member_run_sketch_scope<'a>(
     }
 }
 
-/// Parse a member-run head placement: the paired same-index record after the
-/// sketch's entity header opens with a marked
-/// reference naming a head record. A 34-byte head denotes the identity
-/// placement. A 162-byte head stores eleven zero bytes and the row-major 4×4
-/// local-to-model transform at offset 22.
 fn parse_member_run_head_placement(
     bytes: &[u8],
     entity_byte_offset: u64,
@@ -857,24 +836,60 @@ fn parse_member_run_head_placement(
                     paired_byte_offset: u64_from_index(paired_at),
                 }
             }
-            MEMBER_RUN_HEAD_FRAME | TYPED_MEMBER_RUN_HEAD_FRAME
-                if bytes.get(head_at + 11..head_at + 22) == Some(&[0u8; 11][..])
-                    && (frame_length == MEMBER_RUN_HEAD_FRAME
-                        || crate::bytes::typed_local_reference_target(bytes, head_at + 151)
-                            .is_some()) =>
-            {
-                let values = f64s_at::<16>(bytes, head_at + 22)?;
+            null_head::LEN | marked_head::LEN | typed_head::LEN => {
+                let (zero_run, transform_at, padding, closing_reference) = match frame_length {
+                    null_head::LEN => (
+                        null_head::ZERO_RUN,
+                        null_head::TRANSFORM,
+                        null_head::PADDING,
+                        null_head::CLOSING_REFERENCE,
+                    ),
+                    marked_head::LEN => (
+                        marked_head::ZERO_RUN,
+                        marked_head::TRANSFORM,
+                        marked_head::PADDING,
+                        marked_head::CLOSING_REFERENCE,
+                    ),
+                    _ => (
+                        typed_head::ZERO_RUN,
+                        typed_head::TRANSFORM,
+                        typed_head::PADDING,
+                        typed_head::CLOSING_REFERENCE,
+                    ),
+                };
+                if bytes.get(head_at + zero_run..head_at + transform_at) != Some(&[0u8; 11][..])
+                    || (frame_length == typed_head::LEN
+                        && crate::bytes::typed_local_reference_target(
+                            bytes,
+                            head_at + closing_reference,
+                        )
+                        .is_none())
+                {
+                    return None;
+                }
+                let values = f64s_at::<16>(bytes, head_at + transform_at)?;
                 let mut transform = [[0.0; 4]; 4];
                 for (ordinal, value) in values.iter().copied().enumerate() {
                     transform[ordinal / 4][ordinal % 4] = value;
                 }
-                if bytes.get(head_at + 150..head_at + 152) != Some(&[0, 1][..]) {
+                if bytes.get(head_at + padding) != Some(&0)
+                    || bytes.get(head_at + closing_reference)
+                        != Some(&u8::from(frame_length != null_head::LEN))
+                {
                     return None;
                 }
-                DesignSketchFrameForm::MemberExplicit {
-                    paired_byte_offset: u64_from_index(paired_at),
-                    transform: SketchPlacementMatrix::try_from(transform).ok()?,
-                    typed_reference: frame_length == TYPED_MEMBER_RUN_HEAD_FRAME,
+                let transform = SketchPlacementMatrix::try_from(transform).ok()?;
+                if frame_length == null_head::LEN {
+                    DesignSketchFrameForm::MemberNullExplicit {
+                        paired_byte_offset: u64_from_index(paired_at),
+                        transform,
+                    }
+                } else {
+                    DesignSketchFrameForm::MemberExplicit {
+                        paired_byte_offset: u64_from_index(paired_at),
+                        transform,
+                        typed_reference: frame_length == typed_head::LEN,
+                    }
                 }
             }
             _ => return None,
@@ -894,6 +909,38 @@ fn parse_member_run_head_placement(
         record_index: head_index,
         paired_class_tag,
     })
+}
+
+pub(in crate::design) fn parse_scope_sketch_placement(
+    bytes: &[u8],
+    frame: &[u8],
+    scope_record_index: u32,
+    entity_id: &crate::records::identity::DesignEntityId,
+    records: &IndexedRecordOffsets,
+) -> Option<DesignSketchPlacement> {
+    let mut referenced_indices = HashSet::new();
+    let mut candidates = Vec::new();
+    for at in memchr::memchr_iter(1, frame) {
+        let Some(record_index) = crate::bytes::local_reference_target(frame, at, false)
+            .or_else(|| crate::bytes::local_reference_target(frame, at, true))
+        else {
+            continue;
+        };
+        if referenced_indices.insert(record_index) {
+            candidates.extend(parse_sketch_placement_candidates(
+                bytes,
+                scope_record_index,
+                entity_id,
+                record_index,
+                records,
+            ));
+        }
+    }
+    if candidates.len() == 1 {
+        candidates.pop()
+    } else {
+        None
+    }
 }
 
 fn parse_sketch_placement_candidates(
@@ -1324,9 +1371,9 @@ fn lp_ascii_matches(bytes: &[u8], at: usize, expected: &[u8]) -> Option<usize> {
     (bytes.get(start..end) == Some(expected)).then_some(end)
 }
 
-/// Parse the counted member-record run of the paired same-index container
-/// record that follows an `EntityGenesis`-form sketch entity header: the u32
-/// member count at paired-record offset 52 followed by `count` entries of
+/// Parse the counted member-record run of the Geometry member paired with an
+/// `EntityGenesis`-form sketch entity header. The display name, a zero byte,
+/// and the u32 member count precede `count` entries of
 /// `0x01 + u32 record_index + six zero bytes`. The first entry references the
 /// sketch's base-point record and the others name its owned records.
 fn parse_sketch_member_run(
@@ -1344,17 +1391,24 @@ fn parse_sketch_member_run(
     if let Some(members) = parse_typed_sketch_member_run(bytes, paired) {
         return members;
     }
-    let Some(count) =
-        View::u32_le_at(bytes, paired + 52).and_then(|count| usize::try_from(count).ok())
+    let Some((_, name_end)) = sketch_member_display_name_field(bytes, paired) else {
+        return empty;
+    };
+    if bytes.get(name_end + member_run_head::ZERO_BYTE) != Some(&member_run_head::ZERO_BYTE_VALUE) {
+        return empty;
+    }
+    let Some(count) = View::u32_le_at(bytes, name_end + member_run_head::MEMBER_COUNT)
+        .and_then(|count| usize::try_from(count).ok())
     else {
         return empty;
     };
     if count == 0 {
         return empty;
     }
+    let first = name_end + member_run_head::LEN;
     let Some(run_end) = count
         .checked_mul(11)
-        .and_then(|length| paired.checked_add(56)?.checked_add(length))
+        .and_then(|length| first.checked_add(length))
     else {
         return empty;
     };
@@ -1364,7 +1418,7 @@ fn parse_sketch_member_run(
 
     let mut members = Vec::new();
     for ordinal in 0..count {
-        let marker = paired + 56 + ordinal * 11;
+        let marker = first + ordinal * 11;
         if bytes.get(marker) != Some(&1)
             || bytes.get(marker + 5..marker + 11) != Some(&[0u8; 6][..])
         {
@@ -1452,18 +1506,6 @@ fn parse_legacy_sketch_member_run(
         .or_else(|| parse_legacy_sketch_member_run_with(bytes, primary_at, entity_suffix, true))
 }
 
-/// Target of the local reference at `at` in one spelling: the eleven-byte
-/// `01 + u32 + six zero bytes` or the 51-byte typed reference.
-fn legacy_sketch_reference_target(bytes: &[u8], at: usize, typed: bool) -> Option<u32> {
-    if typed {
-        crate::bytes::typed_local_reference_target(bytes, at)
-    } else if bytes.get(at) == Some(&1) && bytes.get(at + 5..at + 11) == Some(&[0u8; 6][..]) {
-        View::u32_le_at(bytes, at + 1)
-    } else {
-        None
-    }
-}
-
 /// Parse the legacy counted sketch member run with one reference spelling.
 ///
 /// The paired header is followed by eight zero bytes, a reference at offset
@@ -1484,7 +1526,7 @@ fn parse_legacy_sketch_member_run_with(
         let paired_at = next_indexed_record_offset(bytes, primary_at + 11)?;
         if View::u32_le_at(bytes, paired_at + 7) != Some(entity_suffix)
             || bytes.get(paired_at + 11..paired_at + 19) != Some(&[0u8; 8][..])
-            || legacy_sketch_reference_target(bytes, paired_at + 19, typed).is_none()
+            || crate::bytes::local_reference_target(bytes, paired_at + 19, typed).is_none()
         {
             return None;
         }
@@ -1521,7 +1563,7 @@ fn parse_legacy_sketch_member_run_with(
     for ordinal in 0..count {
         let marker = first + ordinal * width;
         members.push(crate::records::identity::Located {
-            value: legacy_sketch_reference_target(bytes, marker, typed)?,
+            value: crate::bytes::local_reference_target(bytes, marker, typed)?,
             offset: u64_from_index(marker + 1),
         });
     }
@@ -2536,6 +2578,9 @@ const TEXT_REFERENCE_SLOTS: [TextReferenceSlot; 2] =
 /// Bytes between a sketch-text record's last class member and its
 /// owning-sketch reference, in either identity form.
 const SKETCH_TEXT_TRAILING_RUN: usize = 30;
+/// Zero bytes a `textex_tag` record can store between its trailing run and
+/// its owning-sketch reference.
+const TEXTEX_OWNER_PADDING: usize = 4;
 
 /// How far a placement-transform element may sit from the constant a planar
 /// rigid placement writes there. The transform is composed in floating point,
@@ -2892,8 +2937,16 @@ fn decode_sketch_text_tail(
             _ => return None,
         };
         cursor = cursor.checked_add(SKETCH_TEXT_TRAILING_RUN)?;
-        let owner = take_reference(payload, &mut cursor)?;
-        (cursor == payload.len()).then_some(())?;
+        let owner = [0, TEXTEX_OWNER_PADDING].into_iter().find_map(|padding| {
+            let mut at = cursor.checked_add(padding)?;
+            payload
+                .get(cursor..at)?
+                .iter()
+                .all(|byte| *byte == 0)
+                .then_some(())?;
+            let owner = take_reference(payload, &mut at)?;
+            (at == payload.len()).then_some(owner)
+        })?;
         Some(Ok(SketchTextTail {
             layout: SketchTextLayout::TextexTag {
                 width_factor,
@@ -4009,6 +4062,7 @@ fn decode_sketch_curve_identities_from_stream(
     let frames = design_primary_frames(bytes, meta)?;
     let groups = collect_sketch_geometry_groups(bytes, meta, stream, &frames)?;
     let mut unlisted = Vec::new();
+    let mut short_tails = 0usize;
     let mut out = Vec::new();
     for frame in frames {
         let payload = &bytes[frame.start..frame.end];
@@ -4047,10 +4101,14 @@ fn decode_sketch_curve_identities_from_stream(
                 )
             });
 
-        let tail_marker = geometry
+        let planar_tail = geometry
             .as_ref()
             .filter(|geometry| !matches!(geometry, SketchCurveGeometry::Nurbs { .. }))
-            .and_then(|_| planar_tail_marker(payload, geometry_offset));
+            .and_then(|_| planar_curve_tail(payload, geometry_offset));
+        if planar_tail.is_some_and(|tail| tail.short) {
+            short_tails += 1;
+        }
+        let tail_marker = planar_tail.map(|tail| tail.marker);
         let backlink = trailing_sketch_owner_reference(payload)
             .map(|target| SketchBacklink::resolve(&groups, record_index, target));
         if backlink.is_some_and(|backlink| backlink.unlisted) {
@@ -4079,6 +4137,14 @@ fn decode_sketch_curve_identities_from_stream(
         });
     }
     push_unlisted_group_member_loss(losses, stream, "curve", &unlisted);
+    if short_tails != 0 {
+        losses.push(F3dLossCode::SketchCurveTailMarkerAssumed.note(format!(
+            "{short_tails} planar sketch curve(s) in {stream} store two opaque bytes in the tail; the byte before the u32 lane is read as the tail marker."
+        )));
+        losses.push(F3dLossCode::SketchCurveTailConstructionAssumed.note(format!(
+            "{short_tails} planar sketch curve(s) in {stream} store two opaque bytes in the tail; a u32 lane of 1 is read as construction geometry."
+        )));
+    }
     Ok(out)
 }
 
@@ -4531,10 +4597,21 @@ const PLANAR_ANALYTIC_PAYLOAD_LEN: usize = 96;
 /// Bytes of the planar tail that the reference run, pad, and marker occupy.
 const PLANAR_TAIL_WINDOW_LEN: usize = 80;
 
-/// The fourth opaque byte of the planar analytic tail that follows the
-/// payload at `geometry_offset`: `N` (1 to 3) marked references, `P` zero pad
-/// bytes, then three opaque bytes and the marker. `None` for a tail of another shape.
-fn planar_tail_marker(payload: &[u8], geometry_offset: usize) -> Option<u8> {
+/// Fields of the planar analytic tail after its reference run and zero pad.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct PlanarCurveTail {
+    pub(crate) marker: u8,
+    pub(crate) construction: bool,
+    /// The tail stores two opaque bytes before the marker.
+    pub(crate) short: bool,
+}
+
+/// Read the planar analytic tail that follows the payload at
+/// `geometry_offset`: `N` (1 to 3) marked references, `P` zero pad bytes,
+/// three or two opaque bytes, the marker, the u32 lane, and the construction
+/// flag. The two-byte form has a u32 lane of `0` or `1` and a flag byte of
+/// `1`. `None` for a tail of another shape.
+pub(crate) fn planar_curve_tail(payload: &[u8], geometry_offset: usize) -> Option<PlanarCurveTail> {
     let start = geometry_offset.checked_add(PLANAR_ANALYTIC_PAYLOAD_LEN)?;
     let end = start
         .checked_add(PLANAR_TAIL_WINDOW_LEN)?
@@ -4557,7 +4634,22 @@ fn planar_tail_marker(payload: &[u8], geometry_offset: usize) -> Option<u8> {
     {
         return None;
     }
-    tail.get(cursor + pad + 3).copied()
+    let fields = cursor + pad;
+    let short_lane = View::u32_le_at(tail, fields + 3)
+        .filter(|lane| *lane <= 1 && tail.get(fields + 7) == Some(&1));
+    if let Some(lane) = short_lane {
+        return Some(PlanarCurveTail {
+            marker: *tail.get(fields + 2)?,
+            construction: lane == 1,
+            short: true,
+        });
+    }
+    Some(PlanarCurveTail {
+        marker: *tail.get(fields + 3)?,
+        construction: View::u32_le_at(tail, fields + 4) == Some(1)
+            && tail.get(fields + 8) == Some(&1),
+        short: false,
+    })
 }
 
 struct DecodedSketchCurveGeometry {

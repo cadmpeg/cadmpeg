@@ -192,6 +192,38 @@ pub struct GivenUpPart {
 }
 
 impl GivenUpPart {
+    #[doc = "Coalesce repeated readings of the same source part, retaining every containing link."]
+    #[doc = "Returns a malformed error when equal part identities carry different source images or losses."]
+    pub fn coalesce(mut parts: Vec<Self>) -> Result<Vec<Self>, CodecError> {
+        parts.sort_by(|left, right| left.id().cmp(right.id()));
+        let mut conflict = false;
+        parts.dedup_by(|next, previous| {
+            if next.id() != previous.id() {
+                return false;
+            }
+            if next.codec != previous.codec
+                || next.retained != previous.retained
+                || next.loss != previous.loss
+            {
+                conflict = true;
+                return false;
+            }
+            previous.stub.links.append(&mut next.stub.links);
+            true
+        });
+        if conflict {
+            Err(CodecError::malformed(
+                "repeated given-up part has contradictory source images or losses",
+            ))
+        } else {
+            for part in &mut parts {
+                part.stub.links.sort();
+                part.stub.links.dedup();
+            }
+            Ok(parts)
+        }
+    }
+
     /// The stub's id.
     #[must_use]
     pub fn id(&self) -> &UnknownId {

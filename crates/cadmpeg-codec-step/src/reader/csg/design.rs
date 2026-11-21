@@ -20,14 +20,14 @@ use cadmpeg_ir::design::ops::swept::{
     Extrude, ExtrudeDirection, ExtrudeOrigin, Primitive, PrimitiveShape, Revolve,
 };
 use cadmpeg_ir::design::options::{BodyForm, Boolean, BooleanOp, NativeOptions, SolidOutput};
-use cadmpeg_ir::design::refs::{EntityRef, Member, Position};
+use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::design::selection::{
     Anchor, MemberOrder, Members, PickTarget, Picked, Picks, Selection,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{FeatureId, FinitePoint3};
-use cadmpeg_ir::ids::{ProductDefinitionId, SurfaceId};
+use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Angle, Length, NonNegativeLength, PositiveLength};
@@ -181,7 +181,7 @@ pub(in crate::reader) fn attach(
 fn swept_placement(item: &Item) -> Option<Box<Construction<kinds::Frame>>> {
     match (&item.shape, &item.orientation) {
         (Shape::Extruded { .. } | Shape::Revolved { .. }, Some(frame)) => {
-            fixed_frame(frame, None).map(Box::new)
+            fixed_frame(frame, None).and_then(stated).map(Box::new)
         }
         _ => None,
     }
@@ -232,7 +232,7 @@ fn typed_operation(item: &Item, csg: &CsgData) -> Option<FeatureOperation> {
     let primitive = |shape: PrimitiveShape, placement: Construction<kinds::Frame>| {
         FeatureOperation::Primitive(Box::new(Primitive {
             shape,
-            placement: Some(placement),
+            placement: stated(placement),
             output: new_solid(),
             native_options: NativeOptions::new(),
             source_settings: NativeOptions::new(),
@@ -407,21 +407,19 @@ fn step_name(id: u64) -> NativeName {
     }
 }
 
-/// The swept area, picked by its `CURVE_BOUNDED_SURFACE` record and the
-/// surface the geometry stage decoded from it.
+/// The swept area, picked by its `CURVE_BOUNDED_SURFACE` record. No body
+/// of the current geometry reaches the surface decoded from it, so the pick
+/// states no resolved entity.
 fn profile_pick<O: MemberOrder>(area: u64) -> Selection<O> {
     single(
-        Anchor::Input,
+        Anchor::Current,
         Picked {
             target: PickTarget::Native { within: None },
             context: None,
             native: Some(step_name(area)),
             domain: None,
             witness: None,
-            resolved: Some(vec![EntityRef::Surface(SurfaceId::from(ids::data(
-                kind!("surface"),
-                area,
-            )))]),
+            resolved: None,
         },
     )
 }
@@ -444,7 +442,7 @@ fn operand_pick<O: MemberOrder>(operand: u64, csg: &CsgData) -> Selection<O> {
         );
     }
     single(
-        Anchor::Input,
+        Anchor::Current,
         Picked {
             target: PickTarget::Native { within: None },
             context: None,
@@ -499,6 +497,21 @@ fn fixed_frame(frame: &Frame, shift: Option<f64>) -> Option<Construction<kinds::
         }),
         resolved_in: BTreeMap::new(),
     })
+}
+
+/// The placement, or `None` where it resolves to the identity, which a
+/// placement with no binding does not state.
+fn stated(placement: Construction<kinds::Frame>) -> Option<Construction<kinds::Frame>> {
+    let identity = placement.resolved.as_ref().is_some_and(|frame| {
+        let origin = frame.origin.get();
+        origin.x == 0.0
+            && origin.y == 0.0
+            && origin.z == 0.0
+            && frame.x_axis == UnitVector3::X_AXIS
+            && frame.y_axis == UnitVector3::Y_AXIS
+            && frame.z_axis == UnitVector3::Z_AXIS
+    });
+    (!identity).then_some(placement)
 }
 
 fn fixed_axis(frame: &Frame) -> Option<Construction<kinds::Axis>> {

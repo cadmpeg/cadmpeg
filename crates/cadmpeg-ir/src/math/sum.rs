@@ -49,7 +49,7 @@ const EXACT_SUM_WORDS: usize = 138;
 const EXACT_SUM_WORDS_I32: i32 = 138;
 const SUBNORMAL_UNIT_BIT: usize = 3286;
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(crate) struct ExactSignedSum {
     positive: [u64; EXACT_SUM_WORDS],
     negative: [u64; EXACT_SUM_WORDS],
@@ -482,7 +482,7 @@ impl ExactSignedSum {
         Some(())
     }
 
-    pub(crate) fn finish(mut self) -> Option<ScaledValue> {
+    pub(crate) fn finish(&mut self) -> Option<ScaledValue> {
         if self.invalid {
             return None;
         }
@@ -499,7 +499,7 @@ impl ExactSignedSum {
     /// Round a sum in the subnormal range directly onto the binary64 grid.
     /// Rounding through a 53-bit scaled mantissa first can discard a tail that
     /// breaks a tie at half of the smallest subnormal.
-    pub(crate) fn finite_sum(mut self) -> Option<FiniteReal> {
+    pub(crate) fn finite_sum(&mut self) -> Option<FiniteReal> {
         if self.invalid {
             return None;
         }
@@ -655,6 +655,16 @@ pub(crate) fn scaled_ratio_products<const N: usize>(
     denominator: FiniteReal,
     factors: [FiniteReal; N],
 ) -> Option<[FiniteReal; N]> {
+    normal_ratio_products(value, denominator, factors)
+        .or_else(|| extended_ratio_products(value, denominator, factors))
+}
+
+/// [`scaled_ratio_products`] in the extended exponent range.
+fn extended_ratio_products<const N: usize>(
+    value: FiniteReal,
+    denominator: FiniteReal,
+    factors: [FiniteReal; N],
+) -> Option<[FiniteReal; N]> {
     // A finite value has a scaled form exactly when it is not zero.
     let (Some(value), Some(denominator)) =
         (scaled_finite(value.get()), scaled_finite(denominator.get()))
@@ -676,6 +686,34 @@ pub(crate) fn scaled_ratio_products<const N: usize>(
             ratio * factor.sign * factor.mantissa,
             exponent + factor.exponent.0,
         )?;
+    }
+    Some(products)
+}
+
+/// [`scaled_ratio_products`] in plain binary64 while the quotient and every
+/// product are normal; `None` leaves the case to the scaled form.
+fn normal_ratio_products<const N: usize>(
+    value: FiniteReal,
+    denominator: FiniteReal,
+    factors: [FiniteReal; N],
+) -> Option<[FiniteReal; N]> {
+    if value.get() == 0.0 || denominator.get() == 0.0 {
+        return Some([FiniteReal::ZERO; N]);
+    }
+    let ratio = value.get() / denominator.get();
+    if !ratio.is_normal() {
+        return None;
+    }
+    let mut products = [FiniteReal::ZERO; N];
+    for (product, factor) in products.iter_mut().zip(factors) {
+        if factor.get() == 0.0 {
+            continue;
+        }
+        let plain = ratio * factor.get();
+        if !plain.is_normal() {
+            return None;
+        }
+        *product = FiniteReal::new(plain)?;
     }
     Some(products)
 }

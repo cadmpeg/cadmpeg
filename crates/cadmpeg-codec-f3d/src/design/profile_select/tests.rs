@@ -52,6 +52,7 @@ mod spatial_transition;
 mod sweep_paths;
 mod typed_regions;
 mod unprofiled_curves;
+mod whole_sketch;
 
 fn group() -> DesignConstructionOperandGroup {
     DesignConstructionOperandGroup::try_from(

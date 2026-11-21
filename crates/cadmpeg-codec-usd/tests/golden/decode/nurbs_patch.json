@@ -265,19 +265,8 @@
           "id": "usd:stage:occurrence#/Surfaces",
           "name": "Surfaces",
           "native_ref": "/Surfaces",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Surfaces",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Surfaces",
           "transform": [
             [
               1.0,
@@ -303,20 +292,8 @@
           "id": "usd:stage:occurrence#/Surfaces/Bilinear",
           "name": "Bilinear",
           "native_ref": "/Surfaces/Bilinear",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Surfaces"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Surfaces/Bilinear",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Surfaces/Bilinear",
           "transform": [
             [
               1.0,
@@ -342,20 +319,8 @@
           "id": "usd:stage:occurrence#/Surfaces/Trimmed",
           "name": "Trimmed",
           "native_ref": "/Surfaces/Trimmed",
-          "ordinal": 1,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Surfaces"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Surfaces/Trimmed",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Surfaces/Trimmed",
           "transform": [
             [
               1.0,
@@ -390,10 +355,20 @@
           "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Surfaces",
+          "instance_bodies": [],
           "kind": "group",
           "native_ref": "/Surfaces",
+          "occurrences": [
+            "usd:stage:occurrence#/Surfaces/Bilinear",
+            "usd:stage:occurrence#/Surfaces/Trimmed"
+          ],
+          "representations": [],
           "sketches": [],
-          "source_name": "Surfaces"
+          "source_name": "Surfaces",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
         },
         {
           "bodies": [
@@ -401,10 +376,17 @@
           ],
           "bom_properties": {},
           "id": "usd:stage:definition#/Surfaces/Bilinear",
+          "instance_bodies": [],
           "kind": "object",
           "native_ref": "/Surfaces/Bilinear",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
-          "source_name": "Bilinear"
+          "source_name": "Bilinear",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
         },
         {
           "bodies": [
@@ -412,10 +394,33 @@
           ],
           "bom_properties": {},
           "id": "usd:stage:definition#/Surfaces/Trimmed",
+          "instance_bodies": [],
           "kind": "object",
           "native_ref": "/Surfaces/Trimmed",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
-          "source_name": "Trimmed"
+          "source_name": "Trimmed",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
+        },
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "usd:stage:root#stage",
+          "instance_bodies": [],
+          "occurrences": [
+            "usd:stage:occurrence#/Surfaces"
+          ],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],

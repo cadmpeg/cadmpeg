@@ -83,10 +83,10 @@ pub(super) fn project_datum_axis(feature: &Feature) -> Option<FeatureDefinition>
     let origin = parse_point3_mm(feature.properties.get("Origin")?)?;
     let direction = parse_vector3(feature.properties.get("Direction")?)?;
     valid_direction(direction).then_some(FeatureDefinition::Operation(
-        FeatureOperation::DatumAxis {
+        FeatureOperation::datum_axis(
             origin,
-            direction: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
-        },
+            cadmpeg_ir::features::FeatureDirection3::new(direction)?,
+        ),
     ))
 }
 

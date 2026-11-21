@@ -986,6 +986,9 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .geometry
         .bodies
         .retain(|body| selected.contains(&body.id));
+    for definition in &mut subset.model.product_definitions {
+        definition.bodies.retain(|body| selected.contains(body));
+    }
     subset
         .geometry
         .regions
@@ -1325,6 +1328,7 @@ fn patch_retained_swobjects_metadata(
     let mut attributes = metadata_attributes(ir)
         .into_iter()
         .filter(|attribute| attribute.name != "source_linear_unit_code")
+        .filter(|attribute| !states_no_value(attribute))
         .map(|attribute| {
             let provenance = annotations
                 .provenance
@@ -1364,14 +1368,17 @@ fn patch_retained_swobjects_metadata(
         };
         if attribute.name == "configuration_manager"
             && attribute.target.entity == cadmpeg_ir::attributes::AttributeTarget::Document
-            && crate::metadata::configuration_manager::values(payload, offset)
-                .is_some_and(|values| attribute.values == values.map(AttributeValue::Integer))
+            && crate::metadata::configuration_manager::values(payload, offset).is_some_and(
+                |values| {
+                    attribute.values == values.map(|value| Some(AttributeValue::Integer(value)))
+                },
+            )
         {
             continue;
         }
         match MetadataRecord::project(attribute, length_scale, retained)? {
             Some(MetadataRecord::BoundingEnvelope(values)) => {
-                let [AttributeValue::Vector(current)] = attribute.values.as_slice() else {
+                let [Some(AttributeValue::Vector(current))] = attribute.values.as_slice() else {
                     return Err(CodecError::Malformed(
                         "invalid retained bounding envelope".into(),
                     ));
@@ -1387,7 +1394,7 @@ fn patch_retained_swobjects_metadata(
                 )?;
             }
             Some(MetadataRecord::DefaultReferencePlane { origin, frame }) => {
-                let [AttributeValue::Vector(current_origin), AttributeValue::Vector(current_frame)] =
+                let [Some(AttributeValue::Vector(current_origin)), Some(AttributeValue::Vector(current_frame))] =
                     attribute.values.as_slice()
                 else {
                     return Err(CodecError::Malformed(
@@ -1420,7 +1427,7 @@ fn patch_retained_swobjects_metadata(
                         "SLDPRT enclosure edit requires a retained complete present record".into(),
                     ));
                 };
-                let [AttributeValue::Vector(ir_center), AttributeValue::Vector(ir_upper), AttributeValue::Vector(ir_lower), AttributeValue::Float(ir_radius)] =
+                let [Some(AttributeValue::Vector(ir_center)), Some(AttributeValue::Vector(ir_upper)), Some(AttributeValue::Vector(ir_lower)), Some(AttributeValue::Float(ir_radius))] =
                     attribute.values.as_slice()
                 else {
                     return Err(CodecError::Malformed(
@@ -1982,7 +1989,7 @@ impl MetadataRecord {
         Ok(Some(match attribute.name.as_str() {
             "bounding_envelope" => {
                 let kind = "bounding envelope";
-                let [AttributeValue::Vector(values)] = values else {
+                let [Some(AttributeValue::Vector(values))] = values else {
                     return Err(invalid(kind));
                 };
                 let values = ratios::<4>(values).ok_or_else(|| invalid(kind))?;
@@ -1991,7 +1998,9 @@ impl MetadataRecord {
             }
             "default_reference_plane" => {
                 let kind = "default reference plane";
-                let [AttributeValue::Vector(origin), AttributeValue::Vector(frame)] = values else {
+                let [Some(AttributeValue::Vector(origin)), Some(AttributeValue::Vector(frame))] =
+                    values
+                else {
                     return Err(invalid(kind));
                 };
                 let (Some(origin), Some(frame)) = (ratios::<3>(origin), ratios(frame)) else {
@@ -2003,7 +2012,7 @@ impl MetadataRecord {
             }
             "transformed_reference_enclosure" => {
                 let kind = "transformed reference enclosure";
-                let [AttributeValue::Vector(center), AttributeValue::Vector(upper), AttributeValue::Vector(lower), AttributeValue::Float(radius)] =
+                let [Some(AttributeValue::Vector(center)), Some(AttributeValue::Vector(upper)), Some(AttributeValue::Vector(lower)), Some(AttributeValue::Float(radius))] =
                     values
                 else {
                     return Err(invalid(kind));
@@ -2034,8 +2043,8 @@ impl MetadataRecord {
             "part_record" => {
                 retained(PART_RECORD_TOKEN)?;
                 let (first, trailing) = match values {
-                    [AttributeValue::Integer(first)] => (*first, None),
-                    [AttributeValue::Integer(first), AttributeValue::Integer(last)] => {
+                    [Some(AttributeValue::Integer(first))] => (*first, None),
+                    [Some(AttributeValue::Integer(first)), Some(AttributeValue::Integer(last))] => {
                         (*first, Some(*last))
                     }
                     _ => return Err(invalid("part scalar prefix")),
@@ -2054,13 +2063,13 @@ impl MetadataRecord {
                 ));
             }
             "source_linear_unit_code" => {
-                let [AttributeValue::Integer(code)] = values else {
+                let [Some(AttributeValue::Integer(code))] = values else {
                     return Err(invalid("source linear unit code"));
                 };
                 Self::SourceLinearUnitCode(*code)
             }
             "source_linear_unit_name" => {
-                let [AttributeValue::String(name)] = values else {
+                let [Some(AttributeValue::String(name))] = values else {
                     return Err(invalid("source linear unit name"));
                 };
                 retained(UNIT_NAME_TOKEN)?;
@@ -2096,6 +2105,13 @@ fn scaled<const N: usize>(values: [f64; N], scale: f64) -> Option<[f64; N]> {
         .then_some(products)
 }
 
+/// Whether `attribute` states no value at some position. No metadata record
+/// has such a reading: the patch writer keeps the record's retained bytes, the
+/// generator writes no record for it, and `WriterAttributesOmitted` names it.
+fn states_no_value(attribute: &cadmpeg_ir::attributes::SourceAttribute) -> bool {
+    attribute.values.iter().any(Option::is_none)
+}
+
 /// This codec's document attributes, ordered by source payload position.
 ///
 /// Arena order is by identifier name; writing that order would move every
@@ -2127,6 +2143,9 @@ fn metadata_payloads(
     let mut objects = Vec::new();
     let mut unit_code = None;
     for attribute in metadata_attributes(ir) {
+        if states_no_value(attribute) {
+            continue;
+        }
         if attribute.target.entity != AttributeTarget::Document {
             return Err(CodecError::NotImplemented(
                 "SLDPRT semantic writer does not support entity attributes".into(),
@@ -3194,14 +3213,24 @@ pub(crate) fn brep_body(
         }
         be16(&mut out, *owner);
     }
+    let mut edges_by_id = HashMap::new();
+    for edge in &ir.geometry.edges {
+        edges_by_id.entry(&edge.id).or_insert(edge);
+    }
+    let mut loops_by_id = HashMap::<_, Vec<_>>::new();
+    for lp in &ir.geometry.loops {
+        loops_by_id.entry(&lp.id).or_default().push(lp);
+    }
+    let mut faces_by_id = HashMap::new();
+    for face in &ir.geometry.faces {
+        faces_by_id.entry(&face.id).or_insert(face);
+    }
     for coedge in &ir.geometry.coedges {
         tag(&mut out, 0x11);
         be16(&mut out, coedges[&coedge.id]);
-        let edge = ir
-            .geometry
-            .edges
-            .iter()
-            .find(|edge| edge.id == coedge.edge)
+        let edge = edges_by_id
+            .get(&coedge.edge)
+            .copied()
             .ok_or_else(|| CodecError::Malformed("coedge references missing edge".into()))?;
         let ends = edge_ends(edge)?;
         let forward_vertex = if coedge.sense == Sense::Forward {
@@ -3209,15 +3238,17 @@ pub(crate) fn brep_body(
         } else {
             &ends.start
         };
-        let (next, previous) =
-            cadmpeg_ir::topology::coedge_ring_neighbors(&ir.geometry.loops, coedge).ok_or_else(
-                || {
-                    CodecError::malformed(format_args!(
-                        "coedge {} is absent from its owning loop ring",
-                        coedge.id
-                    ))
-                },
-            )?;
+        let (next, previous) = loops_by_id
+            .get(&coedge.owner_loop)
+            .into_iter()
+            .flatten()
+            .find_map(|lp| lp.ring_neighbors_of(coedge))
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "coedge {} is absent from its owning loop ring",
+                    coedge.id
+                ))
+            })?;
         for value in [
             0,
             loops[&coedge.owner_loop],
@@ -3240,11 +3271,9 @@ pub(crate) fn brep_body(
         );
     }
     for lp in &ir.geometry.loops {
-        let face = ir
-            .geometry
-            .faces
-            .iter()
-            .find(|face| face.id == lp.face)
+        let face = faces_by_id
+            .get(&lp.face)
+            .copied()
             .ok_or_else(|| CodecError::Malformed("loop references missing face".into()))?;
         let position = face
             .loops
@@ -4543,6 +4572,9 @@ mod nurbs_write_tests {
             definition: cadmpeg_ir::PmiDefinition::Datum {
                 identification: "A".into(),
             },
+            native_ref: None,
+            native_options: cadmpeg_ir::design::options::NativeOptions::new(),
+            source_settings: cadmpeg_ir::design::options::NativeOptions::new(),
         });
         let hash = pmi_local_sha256(&ir).expect("PMI baseline hash");
         ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(

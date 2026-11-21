@@ -17,12 +17,16 @@
 //!   (5, 50, 100).
 //! - `#150` (SUB) lists no body; its subtree places the pin through `#160`
 //!   by the same composition, so its rows are those of `#160`.
-//! - The root occurrence of ROOT reaches the pin twice, through `#140` and
-//!   through `#160`.
+//!
+//! ROOT is the root definition: it owns `#140` and `#150` and no occurrence
+//! places it.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use cadmpeg_ir::ids::ProductDefinitionId;
+use cadmpeg_ir::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
+use cadmpeg_ir::transform::Transform;
 use predicates::prelude::{predicate, PredicateBooleanExt};
 use serde_json::Value;
 use tempfile::tempdir;
@@ -52,21 +56,14 @@ fn bodies_are_placed_by_their_own_transform_then_the_occurrence_chain() {
     for (occurrence, chain, centroid, low, high) in [
         (
             "step:product:occurrence#140",
-            &[
-                "step:product:occurrence#definition-105",
-                "step:product:occurrence#140",
-            ][..],
+            &["step:product:occurrence#140"][..],
             [100.0, 0.0, 20.0],
             [90.0, -10.0, 5.0],
             [110.0, 10.0, 35.0],
         ),
         (
             "step:product:occurrence#160",
-            &[
-                "step:product:occurrence#definition-105",
-                "step:product:occurrence#150",
-                "step:product:occurrence#160",
-            ][..],
+            &["step:product:occurrence#150", "step:product:occurrence#160"][..],
             [20.0, 50.0, 100.0],
             [5.0, 40.0, 90.0],
             [35.0, 60.0, 110.0],
@@ -149,16 +146,6 @@ fn a_subassembly_occurrence_measures_the_bodies_of_its_subtree() {
         descendant["bodies"],
         serde_json::json!(["step:data:body#71"])
     );
-
-    let root = occurrence_report(&assembly(), "occurrence#definition-105", &[]);
-    assert!(root["measure"]["bodies"].as_array().unwrap().is_empty());
-    let unavailable = &root["measure"]["occurrence"]["unavailable"];
-    assert_eq!(unavailable["reason"], "placement.occurrence-body-repeated");
-    assert_eq!(unavailable["entity"], "step:data:body#71");
-    assert_eq!(
-        root["measure"]["document"]["area"]["reason"],
-        "placement.occurrence-body-repeated"
-    );
 }
 
 /// The assembly as CADIR with `edit` applied to its occurrences.
@@ -179,21 +166,55 @@ fn edited(dir: &Path, edit: impl Fn(&mut Value)) -> PathBuf {
     out
 }
 
-fn occurrence_mut<'a>(document: &'a mut Value, id: &str) -> &'a mut Value {
-    document["model"]["occurrences"]
+/// Applies `edit` to the occurrence `id` of a CADIR document.
+fn edit_occurrence(document: &mut Value, id: &str, edit: impl FnOnce(&mut Occurrence)) {
+    let entry = document["model"]["occurrences"]
         .as_array_mut()
         .unwrap()
         .iter_mut()
         .find(|occurrence| occurrence["id"] == id)
+        .unwrap();
+    let mut occurrence: Occurrence = serde_json::from_value(entry.clone()).unwrap();
+    edit(&mut occurrence);
+    *entry = serde_json::to_value(occurrence).unwrap();
+}
+
+/// Points the occurrence `id` at a new definition stored in `document`,
+/// which is not read.
+fn place_externally(cadir: &mut Value, id: &str, document: ExternalDocument) {
+    let external = ProductDefinitionId::mint("test:measure:product#external").unwrap();
+    cadir["model"]["product_definitions"]
+        .as_array_mut()
         .unwrap()
+        .push(
+            serde_json::to_value(ProductDefinition::new(
+                external.clone(),
+                Storage::External(document),
+            ))
+            .unwrap(),
+        );
+    edit_occurrence(cadir, id, |occurrence| occurrence.prototype = external);
 }
 
 #[test]
 fn a_scaled_chain_or_an_external_prototype_gives_no_rows() {
     let dir = tempdir().unwrap();
     let scaled = edited(dir.path(), |document| {
-        occurrence_mut(document, "step:product:occurrence#150")["scale"] =
-            serde_json::json!([2.0, 1.0, 1.0]);
+        edit_occurrence(document, "step:product:occurrence#150", |occurrence| {
+            let scale = Transform::affine([
+                [2.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ])
+            .unwrap();
+            occurrence.transform = Some(
+                occurrence
+                    .transform
+                    .unwrap_or_default()
+                    .compose(scale)
+                    .unwrap(),
+            );
+        });
     });
     let report = occurrence_report(&scaled, "occurrence#160", &[]);
     assert!(report["measure"]["bodies"].as_array().unwrap().is_empty());
@@ -232,10 +253,11 @@ fn a_scaled_chain_or_an_external_prototype_gives_no_rows() {
         ));
 
     let external = edited(dir.path(), |document| {
-        occurrence_mut(document, "step:product:occurrence#140")["prototype"] = serde_json::json!({
-            "kind": "external",
-            "document": {"kind": "path", "path": "pin.step"}
-        });
+        place_externally(
+            document,
+            "step:product:occurrence#140",
+            ExternalDocument::path("pin.step"),
+        );
     });
     let report = occurrence_report(&external, "occurrence#140", &[]);
     assert!(report["measure"]["bodies"].as_array().unwrap().is_empty());
@@ -288,8 +310,11 @@ fn occurrence_selectors_resolve_and_scope_the_rows() {
         .stderr(predicate::str::contains("model.occurrences"));
     let dir = tempdir().unwrap();
     let detached = edited(dir.path(), |document| {
-        occurrence_mut(document, "step:product:occurrence#160")["prototype"] =
-            serde_json::json!({"kind": "unresolved"});
+        place_externally(
+            document,
+            "step:product:occurrence#160",
+            ExternalDocument::default(),
+        );
     });
     cadmpeg()
         .arg("measure")
@@ -304,4 +329,38 @@ fn occurrence_selectors_resolve_and_scope_the_rows() {
     let unavailable = &report["measure"]["occurrence"]["unavailable"];
     assert_eq!(unavailable["reason"], "placement.prototype-unresolved");
     assert_eq!(unavailable["entity"], "step:product:occurrence#160");
+}
+
+/// `#160` through `#150` is the pin's one instance. A repeated
+/// `--occurrence` still names the last value as the measured occurrence:
+/// `#160 / #150 / #160` lists `#150` above `#160` and `#160` above `#150`,
+/// which does not place ROOT, so the chain is broken.
+#[test]
+fn a_repeated_occurrence_breaks_the_chain() {
+    let path = assembly();
+    let path = path.to_str().unwrap();
+    let through = measure_json(&[
+        path,
+        "--occurrence",
+        "occurrence#150",
+        "--occurrence",
+        "occurrence#160",
+    ]);
+    assert_point(&only_body(&through)["centroid"], [20.0, 50.0, 100.0], 110.0);
+    let repeated = measure_json(&[
+        path,
+        "--occurrence",
+        "occurrence#160",
+        "--occurrence",
+        "occurrence#150",
+        "--occurrence",
+        "occurrence#160",
+    ]);
+    assert!(repeated["measure"]["bodies"].as_array().unwrap().is_empty());
+    let block = &repeated["measure"]["occurrence"];
+    assert_eq!(block["occurrence"], "step:product:occurrence#160");
+    assert_eq!(
+        block["unavailable"]["reason"],
+        "placement.occurrence-chain-broken"
+    );
 }

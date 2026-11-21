@@ -781,7 +781,7 @@ fn nx_replace_face_completeness_requires_resolved_disjoint_operands() {
 
     assert_eq!(
         FeatureDefinition::Operation(FeatureOperation::ReplaceFace {
-            operands: cadmpeg_ir::features::ReplaceFaceOperands::new(
+            operands: cadmpeg_ir::features::replace_face::ReplaceFaceOperands::new(
                 complete_targets.clone(),
                 complete_replacements.clone(),
             )

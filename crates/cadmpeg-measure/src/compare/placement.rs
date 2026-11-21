@@ -2,18 +2,19 @@
 //! Whether a document's model-space bodies are its instances.
 //!
 //! The placement is trivial when the document has no occurrences, or when
-//! every occurrence has a local prototype, unit scale and an effective
-//! transform that is the identity, every product definition that lists
-//! bodies is the prototype of exactly one occurrence, and no body is listed
-//! by two definitions. Then each body is placed once, as in model space.
+//! every occurrence places a definition the document holds at a transform
+//! that is the identity, every product definition that lists bodies, other
+//! than a root definition, is the prototype of exactly one occurrence, and no
+//! body is listed by two definitions. Then each body is placed once, as in
+//! model space.
 
 use std::collections::BTreeSet;
 
-use cadmpeg_ir::products::PrototypeReference;
+use cadmpeg_ir::products::Storage;
 use cadmpeg_ir::CadIr;
 
 use super::PlacementClass;
-use crate::tolerance::{COMPARE_OCCURRENCE_LINEAR_DEVIATION, COMPARE_OCCURRENCE_SCALE_DEVIATION};
+use crate::tolerance::COMPARE_OCCURRENCE_LINEAR_DEVIATION;
 
 /// The placement class of a document.
 pub(super) fn class(ir: &CadIr) -> PlacementClass {
@@ -31,19 +32,14 @@ fn trivial(ir: &CadIr) -> bool {
     }
     let linear = ir.tolerances.linear.get();
     for occurrence in &model.occurrences {
-        if !matches!(occurrence.prototype, PrototypeReference::Local { .. }) {
+        let held = model.product_definitions.iter().any(|definition| {
+            definition.id == occurrence.prototype
+                && !matches!(definition.storage, Storage::External(_))
+        });
+        if !held {
             return false;
         }
-        if occurrence
-            .scale
-            .iter()
-            .any(|scale| (scale.get() - 1.0).abs() > COMPARE_OCCURRENCE_SCALE_DEVIATION)
-        {
-            return false;
-        }
-        let Ok(transform) = occurrence.effective_transform() else {
-            return false;
-        };
+        let transform = occurrence.transform.unwrap_or_default();
         for (row, coefficients) in transform.affine_rows().iter().enumerate() {
             for (column, coefficient) in coefficients.iter().take(3).enumerate() {
                 let identity = if row == column { 1.0 } else { 0.0 };
@@ -64,14 +60,9 @@ fn trivial(ir: &CadIr) -> bool {
         let instances = model
             .occurrences
             .iter()
-            .filter(|occurrence| {
-                matches!(
-                    &occurrence.prototype,
-                    PrototypeReference::Local { definition: prototype } if *prototype == definition.id
-                )
-            })
+            .filter(|occurrence| occurrence.prototype == definition.id)
             .count();
-        if instances != 1 {
+        if instances != usize::from(!definition.is_root()) {
             return false;
         }
         for body in &definition.bodies {

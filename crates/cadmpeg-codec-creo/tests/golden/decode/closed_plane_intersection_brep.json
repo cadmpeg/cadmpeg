@@ -3,14 +3,466 @@
     "design": {
       "arrangements": [],
       "configurations": [],
-      "containers": [],
+      "containers": [
+        {
+          "kind": "ordered",
+          "value": {
+            "folders": [],
+            "id": "creo:model:timeline#root",
+            "kind": "timeline",
+            "members": [
+              {
+                "kind": "feature",
+                "value": "creo:model:feature#4"
+              }
+            ],
+            "rollback": {
+              "kind": "end"
+            }
+          }
+        }
+      ],
       "evaluations": [],
-      "features": [],
-      "names": [],
+      "features": [
+        {
+          "definition": {
+            "operation": {
+              "kind": "fillet",
+              "value": {
+                "controls": {
+                  "corners": [],
+                  "limits": [],
+                  "transitions": []
+                },
+                "native_options": {},
+                "sets": [
+                  {
+                    "edges": {
+                      "at": {
+                        "kind": "input"
+                      },
+                      "native": [
+                        "creo:allfeatur:edgs_affected#4:10,11"
+                      ],
+                      "picks": {
+                        "kind": "named",
+                        "value": [
+                          {
+                            "native": {
+                              "codec": "creo",
+                              "value": {
+                                "kind": "integers",
+                                "value": [
+                                  10
+                                ]
+                              }
+                            },
+                            "target": {
+                              "kind": "native",
+                              "value": {}
+                            }
+                          },
+                          {
+                            "native": {
+                              "codec": "creo",
+                              "value": {
+                                "kind": "integers",
+                                "value": [
+                                  11
+                                ]
+                              }
+                            },
+                            "target": {
+                              "kind": "native",
+                              "value": {}
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    "hold": [
+                      null,
+                      null
+                    ],
+                    "kind": "edges",
+                    "section": {}
+                  }
+                ],
+                "source_settings": {}
+              }
+            }
+          },
+          "id": "creo:model:feature#4",
+          "name": "Round id 4"
+        }
+      ],
+      "names": [
+        [
+          {
+            "kind": "face",
+            "value": "creo:visibgeom:face#1"
+          },
+          {
+            "name": {
+              "kind": "generated",
+              "value": {
+                "feature": "creo:model:feature#4",
+                "kind": "face"
+              }
+            },
+            "native": {
+              "codec": "creo",
+              "value": {
+                "kind": "integers",
+                "value": [
+                  1
+                ]
+              }
+            }
+          }
+        ],
+        [
+          {
+            "kind": "face",
+            "value": "creo:visibgeom:face#2"
+          },
+          {
+            "name": {
+              "kind": "generated",
+              "value": {
+                "feature": "creo:model:feature#4",
+                "kind": "face"
+              }
+            },
+            "native": {
+              "codec": "creo",
+              "value": {
+                "kind": "integers",
+                "value": [
+                  2
+                ]
+              }
+            }
+          }
+        ],
+        [
+          {
+            "kind": "face",
+            "value": "creo:visibgeom:face#3"
+          },
+          {
+            "name": {
+              "kind": "generated",
+              "value": {
+                "feature": "creo:model:feature#4",
+                "kind": "face"
+              }
+            },
+            "native": {
+              "codec": "creo",
+              "value": {
+                "kind": "integers",
+                "value": [
+                  3
+                ]
+              }
+            }
+          }
+        ],
+        [
+          {
+            "kind": "face",
+            "value": "creo:visibgeom:face#4"
+          },
+          {
+            "name": {
+              "kind": "generated",
+              "value": {
+                "feature": "creo:model:feature#4",
+                "kind": "face"
+              }
+            },
+            "native": {
+              "codec": "creo",
+              "value": {
+                "kind": "integers",
+                "value": [
+                  4
+                ]
+              }
+            }
+          }
+        ],
+        [
+          {
+            "kind": "edge",
+            "value": "creo:visibgeom:edge#10"
+          },
+          {
+            "name": {
+              "kind": "generated",
+              "value": {
+                "feature": "creo:model:feature#4",
+                "kind": "edge"
+              }
+            },
+            "native": {
+              "codec": "creo",
+              "value": {
+                "kind": "integers",
+                "value": [
+                  10
+                ]
+              }
+            }
+          }
+        ],
+        [
+          {
+            "kind": "edge",
+            "value": "creo:visibgeom:edge#11"
+          },
+          {
+            "name": {
+              "kind": "generated",
+              "value": {
+                "feature": "creo:model:feature#4",
+                "kind": "edge"
+              }
+            },
+            "native": {
+              "codec": "creo",
+              "value": {
+                "kind": "integers",
+                "value": [
+                  11
+                ]
+              }
+            }
+          }
+        ],
+        [
+          {
+            "kind": "edge",
+            "value": "creo:visibgeom:edge#12"
+          },
+          {
+            "name": {
+              "kind": "generated",
+              "value": {
+                "feature": "creo:model:feature#4",
+                "kind": "edge"
+              }
+            },
+            "native": {
+              "codec": "creo",
+              "value": {
+                "kind": "integers",
+                "value": [
+                  12
+                ]
+              }
+            }
+          }
+        ],
+        [
+          {
+            "kind": "edge",
+            "value": "creo:visibgeom:edge#13"
+          },
+          {
+            "name": {
+              "kind": "generated",
+              "value": {
+                "feature": "creo:model:feature#4",
+                "kind": "edge"
+              }
+            },
+            "native": {
+              "codec": "creo",
+              "value": {
+                "kind": "integers",
+                "value": [
+                  13
+                ]
+              }
+            }
+          }
+        ],
+        [
+          {
+            "kind": "edge",
+            "value": "creo:visibgeom:edge#14"
+          },
+          {
+            "name": {
+              "kind": "generated",
+              "value": {
+                "feature": "creo:model:feature#4",
+                "kind": "edge"
+              }
+            },
+            "native": {
+              "codec": "creo",
+              "value": {
+                "kind": "integers",
+                "value": [
+                  14
+                ]
+              }
+            }
+          }
+        ],
+        [
+          {
+            "kind": "edge",
+            "value": "creo:visibgeom:edge#15"
+          },
+          {
+            "name": {
+              "kind": "generated",
+              "value": {
+                "feature": "creo:model:feature#4",
+                "kind": "edge"
+              }
+            },
+            "native": {
+              "codec": "creo",
+              "value": {
+                "kind": "integers",
+                "value": [
+                  15
+                ]
+              }
+            }
+          }
+        ],
+        [
+          {
+            "kind": "surface",
+            "value": "creo:visibgeom:surface#1"
+          },
+          {
+            "name": {
+              "kind": "generated",
+              "value": {
+                "feature": "creo:model:feature#4",
+                "kind": "surface"
+              }
+            },
+            "native": {
+              "codec": "creo",
+              "value": {
+                "kind": "integers",
+                "value": [
+                  1
+                ]
+              }
+            }
+          }
+        ],
+        [
+          {
+            "kind": "surface",
+            "value": "creo:visibgeom:surface#2"
+          },
+          {
+            "name": {
+              "kind": "generated",
+              "value": {
+                "feature": "creo:model:feature#4",
+                "kind": "surface"
+              }
+            },
+            "native": {
+              "codec": "creo",
+              "value": {
+                "kind": "integers",
+                "value": [
+                  2
+                ]
+              }
+            }
+          }
+        ],
+        [
+          {
+            "kind": "surface",
+            "value": "creo:visibgeom:surface#3"
+          },
+          {
+            "name": {
+              "kind": "generated",
+              "value": {
+                "feature": "creo:model:feature#4",
+                "kind": "surface"
+              }
+            },
+            "native": {
+              "codec": "creo",
+              "value": {
+                "kind": "integers",
+                "value": [
+                  3
+                ]
+              }
+            }
+          }
+        ],
+        [
+          {
+            "kind": "surface",
+            "value": "creo:visibgeom:surface#4"
+          },
+          {
+            "name": {
+              "kind": "generated",
+              "value": {
+                "feature": "creo:model:feature#4",
+                "kind": "surface"
+              }
+            },
+            "native": {
+              "codec": "creo",
+              "value": {
+                "kind": "integers",
+                "value": [
+                  4
+                ]
+              }
+            }
+          }
+        ]
+      ],
       "parameters": [],
       "programs": [],
       "publications": [],
-      "scopes": [],
+      "scopes": [
+        {
+          "active_arrangements": [],
+          "current": [
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "creo:model:feature#4"
+                }
+              },
+              "bodies": [
+                "creo:visibgeom:body#1"
+              ],
+              "poses": [],
+              "status": "current"
+            }
+          ],
+          "definition": "creo:model:product_definition#root",
+          "occurrences": {},
+          "roots": [
+            "creo:model:timeline#root"
+          ]
+        }
+      ],
       "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],
@@ -1093,7 +1545,25 @@
       "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "bodies": [
+            "creo:visibgeom:body#1"
+          ],
+          "bom_properties": {},
+          "id": "creo:model:product_definition#root",
+          "instance_bodies": [],
+          "kind": "part",
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
       "rigid_bodies": [],
       "semantic_annotations": [],
       "sketch_constraints": [],

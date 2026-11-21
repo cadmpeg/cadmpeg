@@ -8,11 +8,11 @@ use cadmpeg_ir::transform::Transform;
 #[test]
 fn an_omitted_nested_placement_keeps_an_unbound_joint_native_and_its_feature_valid() {
     let id = OccurrenceId::mint("f3d:model:occurrence#member").unwrap();
-    let occurrence = serde_json::from_value(serde_json::json!({
-        "id": id, "prototype": {"kind":"unresolved"}, "parent": {"kind":"root"},
-        "ordinal":0, "transform":Transform::identity(), "scale":[1.0,1.0,1.0]
-    }))
-    .unwrap();
+    let occurrence = cadmpeg_ir::products::Occurrence::new(
+        id.clone(),
+        cadmpeg_ir::ids::ProductDefinitionId::mint(format!("{id}/unresolved")).unwrap(),
+        Some(Transform::identity()),
+    );
     let joint = |key: &str, residual: Vec<String>| {
         let connector = |operand| JointConnector {
             operand,
@@ -55,7 +55,16 @@ fn an_omitted_nested_placement_keeps_an_unbound_joint_native_and_its_feature_val
         native_ref: None,
     };
     let mut model = cadmpeg_ir::document::Model::default();
+    model
+        .product_definitions
+        .push(cadmpeg_ir::products::ProductDefinition::new(
+            occurrence.prototype.clone(),
+            cadmpeg_ir::products::Storage::External(
+                cadmpeg_ir::products::ExternalDocument::default(),
+            ),
+        ));
     model.occurrences.push(occurrence);
+    crate::tree::place_top_level(&mut model, id.clone());
     model.features.push(feature);
     let mut external = joint("external", Vec::new());
     external.connectors_mut().next().unwrap().operand = JointOperand::external(
@@ -65,7 +74,7 @@ fn an_omitted_nested_placement_keeps_an_unbound_joint_native_and_its_feature_val
     );
     let mut partial = joint("partial", Vec::new());
     partial.connectors_mut().next().unwrap().operand = JointOperand::external(
-        cadmpeg_ir::products::ExternalDocument::Missing {},
+        cadmpeg_ir::products::ExternalDocument::default(),
         "f3d:Design/BulkStream.dat:design-record#10",
         Vec::new(),
     );
@@ -101,11 +110,11 @@ fn an_omitted_nested_placement_keeps_an_unbound_joint_native_and_its_feature_val
 #[test]
 fn a_path_inside_a_placed_member_survives_an_omitted_sibling_reference() {
     let placed = OccurrenceId::mint("f3d:model:occurrence#placed").unwrap();
-    let occurrence = serde_json::from_value(serde_json::json!({
-        "id": placed, "prototype": {"kind":"unresolved"}, "parent": {"kind":"root"},
-        "ordinal":0, "transform":Transform::identity(), "scale":[1.0,1.0,1.0]
-    }))
-    .unwrap();
+    let occurrence = cadmpeg_ir::products::Occurrence::new(
+        placed.clone(),
+        cadmpeg_ir::ids::ProductDefinitionId::mint(format!("{placed}/unresolved")).unwrap(),
+        Some(Transform::identity()),
+    );
     let connector = |operand| JointConnector {
         operand,
         frame: Transform::identity(),

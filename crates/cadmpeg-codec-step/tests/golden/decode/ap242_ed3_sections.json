@@ -68,12 +68,20 @@
           "bodies": [],
           "bom_properties": {},
           "id": "step:product:product#1",
+          "instance_bodies": [],
           "kind": "part",
           "label": "Part",
           "native_ref": "#1",
+          "occurrences": [],
           "part_number": "P1",
+          "representations": [],
           "sketches": [],
-          "source_name": "Part"
+          "source_name": "Part",
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],
@@ -125,6 +133,14 @@
     },
     "source": {
       "attributes": {
+        "file_description.description.0": "edition 3 sections",
+        "file_description.implementation_level": "4;2",
+        "file_name.author.0": "cadmpeg",
+        "file_name.name": "sections",
+        "file_name.organization.0": "cadmpeg",
+        "file_name.preprocessor_version": "cadmpeg-step",
+        "file_name.time_stamp": "2026-07-14T00:00:00",
+        "file_schema.schema_identifiers.0": "AP242",
         "schema": "AP242"
       },
       "identity": {
@@ -231,7 +247,13 @@
             "namespace": "step"
           }
         },
+        "count": 1,
         "message": "preserved 1 EXAMPLE_RECORD instance(s) as named opaque STEP records",
+        "provenance": {
+          "format": "step",
+          "offset": 398,
+          "tag": "EXAMPLE_RECORD"
+        },
         "severity": "warning"
       },
       {
@@ -243,7 +265,13 @@
             "namespace": "step"
           }
         },
+        "count": 1,
         "message": "preserved 1 SIGNATURE instance(s) as named opaque STEP records",
+        "provenance": {
+          "format": "step",
+          "offset": 453,
+          "tag": "SIGNATURE"
+        },
         "severity": "warning"
       }
     ],

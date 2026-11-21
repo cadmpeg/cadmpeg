@@ -452,7 +452,6 @@ mod sketch_profiles {
 mod product_roundtrip {
     #![allow(clippy::unwrap_used)]
 
-    use cadmpeg_test_support::assembly;
     use std::collections::{BTreeMap, HashMap, HashSet};
     use std::io::Cursor;
 
@@ -462,7 +461,8 @@ mod product_roundtrip {
     use cadmpeg_ir::codec::write::EncodeInput;
     use cadmpeg_ir::codec::write::Encoder;
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
-    use cadmpeg_ir::products::{AssemblyGraph, Occurrence, OccurrenceParent, PrototypeReference};
+    use cadmpeg_ir::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
+    use cadmpeg_ir::transform::Transform;
     use cadmpeg_ir::CadIr;
 
     const CORE_DESIGN_PRODUCT: &[u8] = include_bytes!(concat!(
@@ -489,63 +489,77 @@ mod product_roundtrip {
             .collect()
     }
 
+    /// Each placed instance, by the path of `position:definition` segments
+    /// from a root definition, with its composed placement.
     fn occurrence_paths(ir: &CadIr) -> BTreeMap<String, [[f64; 4]; 4]> {
-        fn path(
-            occurrence: &Occurrence,
-            occurrences: &HashMap<&str, &Occurrence>,
-            definitions: &HashMap<&str, String>,
-            memo: &mut HashMap<String, String>,
-        ) -> String {
-            if let Some(path) = memo.get(occurrence.id.as_str()) {
-                return path.clone();
-            }
-            let definition = match &occurrence.prototype {
-                PrototypeReference::Local { definition } => definitions
-                    .get(definition.as_str())
-                    .expect("local prototype resolves"),
-                _ => panic!("round-trip fixture contains only local prototypes"),
-            };
-            let segment = format!("{}:{definition}", occurrence.ordinal);
-            let resolved = match &occurrence.parent {
-                OccurrenceParent::Root {} => segment,
-                OccurrenceParent::Occurrence { occurrence: parent } => format!(
-                    "{}/{}",
-                    path(
-                        occurrences
-                            .get(parent.as_str())
-                            .expect("parent occurrence resolves"),
-                        occurrences,
-                        definitions,
-                        memo,
-                    ),
-                    segment
-                ),
-            };
-            memo.insert(occurrence.id.as_str().to_owned(), resolved.clone());
-            resolved
-        }
-
-        let definitions = definition_names(ir);
+        let names = definition_names(ir);
+        let definitions = ir
+            .model
+            .product_definitions
+            .iter()
+            .map(|definition| (definition.id.as_str(), definition))
+            .collect::<HashMap<_, _>>();
         let occurrences = ir
             .model
             .occurrences
             .iter()
             .map(|occurrence| (occurrence.id.as_str(), occurrence))
-            .collect::<HashMap<_, _>>();
-        let graph = AssemblyGraph::new(&ir.model.occurrences).expect("valid assembly graph");
-        let mut memo = HashMap::new();
-        ir.model
-            .occurrences
+            .collect::<HashMap<_, &Occurrence>>();
+        let mut paths = BTreeMap::new();
+        let mut pending = ir
+            .model
+            .product_definitions
             .iter()
-            .map(|occurrence| {
-                (
-                    path(occurrence, &occurrences, &definitions, &mut memo),
-                    assembly::resolved_transform(&graph, &occurrence.id)
-                        .expect("resolved transform")
-                        .rows(),
-                )
-            })
-            .collect()
+            .filter(|definition| definition.is_root())
+            .map(|definition| (definition, String::new(), Transform::identity()))
+            .collect::<Vec<_>>();
+        while let Some((definition, prefix, placement)) = pending.pop() {
+            for (position, id) in definition.occurrences.iter().enumerate() {
+                let occurrence = occurrences[id.as_str()];
+                let prototype = occurrence.prototype.as_str();
+                let segment = format!("{position}:{}", names[prototype]);
+                let path = if prefix.is_empty() {
+                    segment
+                } else {
+                    format!("{prefix}/{segment}")
+                };
+                let placed = placement
+                    .compose(occurrence.transform.unwrap_or_default())
+                    .expect("finite placement");
+                paths.insert(path.clone(), placed.rows());
+                pending.push((definitions[prototype], path, placed));
+            }
+        }
+        paths
+    }
+
+    /// The definitions `root` reaches through the occurrences they own.
+    fn reached(ir: &CadIr, root: &str) -> HashSet<String> {
+        let mut reached = HashSet::from([root.to_owned()]);
+        let mut pending = vec![root.to_owned()];
+        while let Some(id) = pending.pop() {
+            let definition = ir
+                .model
+                .product_definitions
+                .iter()
+                .find(|definition| definition.id.as_str() == id)
+                .expect("reached definition");
+            for occurrence in &definition.occurrences {
+                let prototype = ir
+                    .model
+                    .occurrences
+                    .iter()
+                    .find(|candidate| &candidate.id == occurrence)
+                    .expect("owned occurrence")
+                    .prototype
+                    .as_str()
+                    .to_owned();
+                if reached.insert(prototype.clone()) {
+                    pending.push(prototype);
+                }
+            }
+        }
+        reached
     }
 
     #[test]
@@ -559,51 +573,42 @@ mod product_roundtrip {
             .into_parts()
             .0;
 
-        let assembly_root = source
+        // Keep the `Product` part as the root definition with what it
+        // reaches.
+        let product = source
             .model
-            .occurrences
+            .product_definitions
             .iter()
-            .find(|occurrence| {
-                matches!(occurrence.parent, OccurrenceParent::Root {})
-                    && matches!(
-                        &occurrence.prototype,
-                        PrototypeReference::Local { definition }
-                            if source.model.product_definitions.iter().any(|candidate| {
-                                candidate.id == *definition
-                                    && candidate.source_name.as_deref() == Some("Product")
-                            })
-                    )
-            })
-            .expect("Product assembly root")
+            .find(|definition| definition.source_name.as_deref() == Some("Product"))
+            .expect("Product assembly")
             .id
-            .clone();
-        let mut retained = HashSet::from([assembly_root.clone()]);
-        loop {
-            let before = retained.len();
-            for occurrence in &source.model.occurrences {
-                if matches!(
-                    &occurrence.parent,
-                    OccurrenceParent::Occurrence { occurrence: parent }
-                        if retained.contains(parent)
-                ) {
-                    retained.insert(occurrence.id.clone());
-                }
-            }
-            if retained.len() == before {
-                break;
-            }
-        }
+            .as_str()
+            .to_owned();
+        let retained = reached(&source, &product);
+        source
+            .model
+            .product_definitions
+            .retain(|definition| retained.contains(definition.id.as_str()));
+        let owned = source
+            .model
+            .product_definitions
+            .iter()
+            .flat_map(|definition| definition.occurrences.iter().cloned())
+            .collect::<HashSet<_>>();
         source
             .model
             .occurrences
-            .retain(|occurrence| retained.contains(&occurrence.id));
-        source
+            .retain(|occurrence| owned.contains(&occurrence.id));
+        let product: &mut ProductDefinition = source
             .model
-            .occurrences
+            .product_definitions
             .iter_mut()
-            .find(|occurrence| occurrence.id == assembly_root)
-            .expect("retained root")
-            .ordinal = 0;
+            .find(|definition| definition.id.as_str() == product)
+            .expect("retained Product");
+        product.storage = Storage::File {
+            document: ExternalDocument::default(),
+            source: None,
+        };
 
         assert_eq!(
             source
@@ -620,7 +625,7 @@ mod product_roundtrip {
             .collect::<HashSet<_>>();
         let expected_occurrences = occurrence_paths(&source);
         assert_eq!(expected_definitions.len(), 6);
-        assert_eq!(expected_occurrences.len(), 6);
+        assert_eq!(expected_occurrences.len(), 5);
 
         let mut step = Vec::new();
         StepCodec::default()
@@ -663,6 +668,51 @@ mod product_roundtrip {
         env!("CARGO_MANIFEST_DIR"),
         "/../../corpus/freecad_fcstd/fixtures/core_operations.FCStd"
     ));
+
+    /// The definitions, the roots, the occurrences, and the bodies the roots
+    /// own, of a single-part document.
+    fn product_shape(ir: &CadIr) -> (usize, usize, usize, usize) {
+        let roots = ir
+            .model
+            .product_definitions
+            .iter()
+            .filter(|definition| definition.is_root())
+            .collect::<Vec<_>>();
+        (
+            ir.model.product_definitions.len(),
+            roots.len(),
+            ir.model.occurrences.len(),
+            roots.iter().map(|root| root.bodies.len()).sum(),
+        )
+    }
+
+    #[test]
+    fn a_single_part_round_trips_with_its_root_as_the_document() {
+        let source = FcstdCodec
+            .decode(&mut Cursor::new(CORE_OPERATIONS), &DecodeOptions::default())
+            .expect("decode FCStd part")
+            .into_parts()
+            .0;
+        let (_, _, _, bodies) = product_shape(&source);
+        assert!(bodies > 0);
+        assert_eq!(product_shape(&source), (1, 1, 0, bodies));
+
+        let mut step = Vec::new();
+        StepCodec::default()
+            .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
+            .and_then(|plan| plan.write_to(&mut step))
+            .expect("write STEP");
+        let decoded = StepCodec::default()
+            .decode(&mut Cursor::new(step), &DecodeOptions::default())
+            .expect("decode STEP")
+            .into_parts()
+            .0;
+        assert_eq!(
+            product_shape(&decoded),
+            (1, 1, 0, decoded.geometry.bodies.len()),
+            "through STEP"
+        );
+    }
 
     #[test]
     fn fcstd_trimmed_edges_round_trip_through_step_onto_their_vertices() {

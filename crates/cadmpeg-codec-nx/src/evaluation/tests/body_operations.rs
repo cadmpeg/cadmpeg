@@ -749,7 +749,8 @@ fn complete_single_body_dress_up_families_preserve_identity() {
             second_side: None,
         }),
         FeatureDefinition::Operation(FeatureOperation::ReplaceFace {
-            operands: cadmpeg_ir::features::ReplaceFaceOperands::new(first, second).unwrap(),
+            operands: cadmpeg_ir::features::replace_face::ReplaceFaceOperands::new(first, second)
+                .unwrap(),
         }),
     ];
     for (index, definition) in definitions.into_iter().enumerate() {

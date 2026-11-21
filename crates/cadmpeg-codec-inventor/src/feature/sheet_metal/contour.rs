@@ -28,13 +28,15 @@ use crate::feature::{
 };
 use crate::pmdc::PmDcReference;
 
+mod attachment;
+
 /// Largest deviation of the travel direction from the profile-plane normal.
 const EPS_TRAVEL_NORMAL: f64 = 1.0e-10;
 /// Millimetres in one internal centimetre.
 const INTERNAL_CM_TO_MM: f64 = 10.0;
 
 /// Plate slots that the contour form requires null.
-const RESERVED_SLOTS: [usize; 4] = [5, 6, 12, 14];
+const RESERVED_SLOTS: [usize; 3] = [5, 6, 14];
 /// Plate slots and the bend slots that repeat them.
 const BEND_SHARED: [(usize, usize); 5] = [(7, 0), (4, 3), (10, 4), (11, 7), (15, 9)];
 /// Plate slots and the corner slots that repeat them.
@@ -57,8 +59,10 @@ pub(crate) enum ContourRefusal {
     PropertyCount,
     /// The style and the plate come from different save-version majors.
     StyleVersion,
-    /// Plate slot 5, 6, 12, or 14 is not null.
+    /// A reserved operand or an unresolved attachment list blocks projection.
     ReservedSlot,
+    /// Slot 12 selects this many input edges.
+    EdgeAttached(usize),
     /// Slot 16 is not the new-body part operation `(5, 1)`.
     PartOperation,
     /// Slot 0 is not the plate profile selection with value 0.
@@ -123,6 +127,7 @@ impl ContourRefusal {
             Self::PropertyCount => "property-count",
             Self::StyleVersion => "style-version",
             Self::ReservedSlot => "reserved-slot",
+            Self::EdgeAttached(_) => "edge-attached",
             Self::PartOperation => "part-operation",
             Self::ProfileSelection => "profile-selection",
             Self::EdgeCollection => "edge-collection",
@@ -159,6 +164,141 @@ impl ContourRefusal {
             _ => Self::Length,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AttachmentEdges {
+    pub(crate) selection: PmDcReference,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_attachment_state"
+    )]
+    pub(crate) state: Option<crate::feature::history_states::StateRef>,
+    pub(crate) edges: Vec<AttachmentEdge>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AttachmentEdge {
+    pub(crate) item: PmDcReference,
+    pub(crate) selector_source: u32,
+    pub(crate) entity_index: i64,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_attachment_revision"
+    )]
+    pub(crate) revision: Option<i64>,
+}
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(
+    deserialize_attachment_state,
+    crate::feature::history_states::StateRef,
+    "state"
+);
+cadmpeg_core::named_optional_field!(deserialize_attachment_revision, i64, "revision");
+
+fn attachment_edges<'a>(
+    plate: &PmDcFeature,
+    property: impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
+    resolve: impl Fn(PmDcReference, u32) -> Option<i64>,
+) -> Option<AttachmentEdges> {
+    let selection = *plate.properties.references().get(12)?;
+    let PmDcFeaturePropertyKind::References {
+        family: PmDcFeatureReferenceFamily::SheetMetalAttachmentSelections,
+        items,
+    } = &property(selection)?.kind
+    else {
+        return None;
+    };
+    let mut edges = Vec::new();
+    let mut sources = HashSet::new();
+    let mut owners = HashSet::new();
+    for wrapper in items.references() {
+        let SheetMetalProperty::EdgeSelection { edges: collection } = sheet(property(*wrapper)?)?
+        else {
+            return None;
+        };
+        let PmDcFeaturePropertyKind::References {
+            family: PmDcFeatureReferenceFamily::EdgeCollection,
+            items,
+        } = &property(*collection)?.kind
+        else {
+            return None;
+        };
+        if items.references().is_empty() {
+            return None;
+        }
+        for item in items.references() {
+            let PmDcFeaturePropertyKind::EdgeItem {
+                index_references,
+                index_reference_value: -1,
+                value: 0,
+            } = &property(*item)?.kind
+            else {
+                return None;
+            };
+            if index_references.values().is_empty() {
+                return None;
+            }
+            for source in index_references.values() {
+                let owner = resolve(*item, *source)?;
+                if *source == 0 || owner < 0 || !sources.insert(*source) || !owners.insert(owner) {
+                    return None;
+                }
+                edges.push(AttachmentEdge {
+                    item: *item,
+                    selector_source: *source,
+                    entity_index: owner,
+                    revision: None,
+                });
+            }
+        }
+    }
+    (!edges.is_empty()).then_some(AttachmentEdges {
+        selection,
+        state: None,
+        edges,
+    })
+}
+
+pub(in crate::feature) fn retain_attachments(
+    ctx: &DecodeContext<'_>,
+    inventory: &mut FeatureInventory,
+    resolved: &std::collections::HashMap<(String, u32), AttachmentEdges>,
+) -> Result<(), CodecError> {
+    for flange in &mut inventory.sheet_metal_flanges {
+        if FlangeKind::of(flange) != Some(FlangeKind::Contour) {
+            continue;
+        }
+        let attachment = flange
+            .children
+            .references()
+            .first()
+            .and_then(|reference| reference.record_ordinal())
+            .and_then(|ordinal| {
+                resolved.get(&(flange.identity.segment_token.as_str().to_owned(), ordinal))
+            })
+            .cloned();
+        if let Some(edges) = &attachment {
+            ctx.charge_entities(
+                cadmpeg_core::decode::u64_from_index(edges.edges.len()),
+                "retain Inventor contour attachment edges",
+            )?;
+        }
+        *flange = flange.with_attachment_edges(attachment);
+    }
+    Ok(())
+}
+
+pub(in crate::feature) fn read_attachments(
+    ctx: &DecodeContext<'_>,
+    document: &crate::rse::RseInventory<'_>,
+    inventory: &mut FeatureInventory,
+) -> Result<(), CodecError> {
+    let resolved = attachment::read(ctx, document, inventory)?;
+    retain_attachments(ctx, inventory, &resolved)
 }
 
 /// The construction scalars of a contour flange.
@@ -235,6 +375,7 @@ pub(crate) struct Children<'a> {
     pub(crate) plate: &'a PmDcFeature,
     pub(crate) bend: &'a PmDcFeature,
     pub(crate) corner: &'a PmDcFeature,
+    pub(crate) attachment_edges: Option<&'a AttachmentEdges>,
 }
 
 /// The construction scalars of a contour flange, after every operand check.
@@ -255,6 +396,7 @@ pub(crate) fn operands<'a>(
         plate,
         bend,
         corner,
+        attachment_edges,
     } = children;
     let style = style.refuse(ContourRefusal::Style)?;
     let slots = plate.properties.references();
@@ -270,6 +412,16 @@ pub(crate) fn operands<'a>(
         RESERVED_SLOTS.iter().all(|&slot| slots[slot].index() == 0),
         ContourRefusal::ReservedSlot,
     )?;
+    if slots[12].index() != 0 {
+        return Err(match attachment_edges {
+            Some(attachment)
+                if attachment.selection == slots[12] && !attachment.edges.is_empty() =>
+            {
+                ContourRefusal::EdgeAttached(attachment.edges.len())
+            }
+            _ => ContourRefusal::ReservedSlot,
+        });
+    }
     require(
         matches!(
             property(slots[16]).map(|p| &p.kind),
@@ -495,6 +647,7 @@ pub(crate) fn children<'a>(
         plate: source(members.plate)?,
         bend: source(members.bend)?,
         corner: source(members.corner)?,
+        attachment_edges: None,
     })
 }
 
@@ -615,7 +768,9 @@ fn project<'a>(
 ) -> Result<Projected<'a>, ContourError> {
     let token = flange.identity.segment_token.as_str();
     let label = label_of(token, flange.identity.record_ordinal).refuse(ContourRefusal::Members)?;
-    let children = children(&inventory.features, token, members).refuse(ContourRefusal::Members)?;
+    let mut children =
+        children(&inventory.features, token, members).refuse(ContourRefusal::Members)?;
+    children.attachment_edges = flange.attachment_edges.as_ref();
     let sketch = index
         .sketches
         .get(&(token, members.sketch))
@@ -737,6 +892,11 @@ fn project<'a>(
 pub(in crate::feature) struct Refusals(BTreeMap<String, ContourRefusal>);
 
 impl Refusals {
+    /// Whether the plate record `source` has a refusal.
+    pub(in crate::feature) fn contains(&self, source: &str) -> bool {
+        self.0.contains_key(source)
+    }
+
     /// Record the refusal of the contour plate `source`.
     pub(in crate::feature) fn insert(&mut self, source: String, refusal: ContourRefusal) {
         self.0.entry(source).or_insert(refusal);
@@ -758,12 +918,17 @@ impl Refusals {
             })
             .filter_map(|feature| {
                 let refusal = self.0.get(feature.native_ref.as_deref()?)?;
+                let attachment = match refusal {
+                    ContourRefusal::EdgeAttached(count) => format!("; decoded attachment selects {count} input edge(s)"),
+                    _ => String::new(),
+                };
                 Some(
                     crate::loss::InventorLossCode::FeatureSheetMetalContourFlangeRefused.note(
                         format!(
-                            "Retained {} and its bend and corner as native: the first refused contour-flange check is {}.",
+                            "Retained {} and its bend and corner as native: the first refused contour-flange check is {}{}.",
                             feature.id,
-                            refusal.detail()
+                            refusal.detail(),
+                            attachment
                         ),
                     ),
                 )

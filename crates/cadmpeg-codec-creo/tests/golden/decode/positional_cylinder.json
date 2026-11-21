@@ -3,14 +3,94 @@
     "design": {
       "arrangements": [],
       "configurations": [],
-      "containers": [],
+      "containers": [
+        {
+          "kind": "ordered",
+          "value": {
+            "folders": [],
+            "id": "creo:model:timeline#root",
+            "kind": "timeline",
+            "members": [
+              {
+                "kind": "feature",
+                "value": "creo:model:feature#4"
+              }
+            ],
+            "rollback": {
+              "kind": "end"
+            }
+          }
+        }
+      ],
       "evaluations": [],
-      "features": [],
-      "names": [],
+      "features": [
+        {
+          "definition": {
+            "operation": {
+              "kind": "native",
+              "value": {
+                "kind": "creo:stored_geometry",
+                "native_options": {},
+                "source_settings": {}
+              }
+            }
+          },
+          "id": "creo:model:feature#4"
+        }
+      ],
+      "names": [
+        [
+          {
+            "kind": "surface",
+            "value": "creo:visibgeom:surface#7"
+          },
+          {
+            "name": {
+              "kind": "generated",
+              "value": {
+                "feature": "creo:model:feature#4",
+                "kind": "surface"
+              }
+            },
+            "native": {
+              "codec": "creo",
+              "value": {
+                "kind": "integers",
+                "value": [
+                  7
+                ]
+              }
+            }
+          }
+        ]
+      ],
       "parameters": [],
       "programs": [],
       "publications": [],
-      "scopes": [],
+      "scopes": [
+        {
+          "active_arrangements": [],
+          "current": [
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "creo:model:feature#4"
+                }
+              },
+              "bodies": [],
+              "poses": [],
+              "status": "current"
+            }
+          ],
+          "definition": "creo:model:product_definition#root",
+          "occurrences": {},
+          "roots": [
+            "creo:model:timeline#root"
+          ]
+        }
+      ],
       "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],
@@ -111,7 +191,23 @@
       "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "creo:model:product_definition#root",
+          "instance_bodies": [],
+          "kind": "part",
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
       "rigid_bodies": [],
       "semantic_annotations": [],
       "sketch_constraints": [],

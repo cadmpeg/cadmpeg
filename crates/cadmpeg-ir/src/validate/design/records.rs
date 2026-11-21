@@ -16,11 +16,11 @@ use crate::design::refs::{Evaluated, Member, Position};
 use crate::design::scope::DesignScope;
 use crate::document::CadIr;
 use crate::features::ConfigurationId;
-use crate::products::{Occurrence, OccurrenceParent, ProductDefinition, PrototypeReference};
+use crate::products::{Occurrence, ProductDefinition, Storage};
 
 /// A member of a container, by identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) enum MemberKey<'a> {
+pub(in crate::validate) enum MemberKey<'a> {
     /// A feature.
     Feature(&'a str),
     /// A nested container.
@@ -28,14 +28,14 @@ pub(super) enum MemberKey<'a> {
 }
 
 impl<'a> MemberKey<'a> {
-    pub(super) fn of(member: &'a Member) -> Self {
+    pub(in crate::validate) fn of(member: &'a Member) -> Self {
         match member {
             Member::Feature(id) => Self::Feature(id.as_str()),
             Member::Container(id) => Self::Container(id.as_str()),
         }
     }
 
-    pub(super) const fn id(self) -> &'a str {
+    pub(in crate::validate) const fn id(self) -> &'a str {
         match self {
             Self::Feature(id) | Self::Container(id) => id,
         }
@@ -53,7 +53,7 @@ impl fmt::Display for MemberKey<'_> {
 
 /// A position, by identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) enum PositionKey<'a> {
+pub(in crate::validate) enum PositionKey<'a> {
     /// The start of an ordered container.
     Start(&'a str),
     /// The position after a member.
@@ -61,7 +61,7 @@ pub(super) enum PositionKey<'a> {
 }
 
 impl<'a> PositionKey<'a> {
-    pub(super) fn of(position: &'a Position) -> Self {
+    pub(in crate::validate) fn of(position: &'a Position) -> Self {
         match position {
             Position::Start(id) => Self::Start(id.as_str()),
             Position::After(member) => Self::After(MemberKey::of(member)),
@@ -80,7 +80,7 @@ impl fmt::Display for PositionKey<'_> {
 
 /// What an evaluation evaluates, by identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) enum OfKey<'a> {
+pub(in crate::validate) enum OfKey<'a> {
     /// The state at a position.
     State(PositionKey<'a>),
     /// The tool body of a feature.
@@ -88,7 +88,7 @@ pub(super) enum OfKey<'a> {
 }
 
 impl<'a> OfKey<'a> {
-    pub(super) fn of(of: &'a Evaluated) -> Self {
+    pub(in crate::validate) fn of(of: &'a Evaluated) -> Self {
         match of {
             Evaluated::State(position) => Self::State(PositionKey::of(position)),
             Evaluated::Tool(feature) => Self::Tool(feature.as_str()),
@@ -97,35 +97,38 @@ impl<'a> OfKey<'a> {
 }
 
 /// The design records of one document, by identity.
-pub(super) struct DesignRecords<'a> {
-    pub(super) ir: &'a CadIr,
+pub(in crate::validate) struct DesignRecords<'a> {
+    pub(in crate::validate) ir: &'a CadIr,
     /// Each scope, by the definition whose design it is.
-    pub(super) scopes: BTreeMap<&'a str, &'a DesignScope>,
-    pub(super) containers: BTreeMap<&'a str, &'a Container>,
-    pub(super) features: BTreeMap<&'a str, &'a Feature>,
-    pub(super) configurations: BTreeMap<&'a str, &'a DesignConfiguration>,
-    pub(super) arrangements: BTreeMap<&'a str, &'a Arrangement>,
-    pub(super) evaluations: BTreeMap<&'a str, &'a Evaluation>,
-    pub(super) parameters: BTreeMap<&'a str, &'a DesignParameter>,
-    pub(super) definitions: BTreeMap<&'a str, &'a ProductDefinition>,
-    pub(super) occurrences: BTreeMap<&'a str, &'a Occurrence>,
+    pub(in crate::validate) scopes: BTreeMap<&'a str, &'a DesignScope>,
+    pub(in crate::validate) containers: BTreeMap<&'a str, &'a Container>,
+    pub(in crate::validate) features: BTreeMap<&'a str, &'a Feature>,
+    pub(in crate::validate) configurations: BTreeMap<&'a str, &'a DesignConfiguration>,
+    pub(in crate::validate) arrangements: BTreeMap<&'a str, &'a Arrangement>,
+    pub(in crate::validate) evaluations: BTreeMap<&'a str, &'a Evaluation>,
+    pub(in crate::validate) parameters: BTreeMap<&'a str, &'a DesignParameter>,
+    pub(in crate::validate) definitions: BTreeMap<&'a str, &'a ProductDefinition>,
+    pub(in crate::validate) occurrences: BTreeMap<&'a str, &'a Occurrence>,
     /// The container that lists each member.
-    pub(super) parents: BTreeMap<MemberKey<'a>, &'a str>,
+    pub(in crate::validate) parents: BTreeMap<MemberKey<'a>, &'a str>,
     /// The scope whose roots list each root container.
-    pub(super) roots: BTreeMap<&'a str, &'a str>,
+    pub(in crate::validate) roots: BTreeMap<&'a str, &'a str>,
     /// The configurations of each scope.
-    pub(super) scope_configurations: BTreeMap<&'a str, Vec<&'a DesignConfiguration>>,
+    pub(in crate::validate) scope_configurations: BTreeMap<&'a str, Vec<&'a DesignConfiguration>>,
 }
 
 /// A container's members: in order for an ordered container.
-pub(super) fn members(container: &Container) -> Vec<&Member> {
+pub(in crate::validate) fn members(container: &Container) -> Vec<&Member> {
     match container {
         Container::Ordered { members, .. } => members.iter().collect(),
         Container::Unordered { members, .. } => members.iter().collect(),
     }
 }
 
-fn by_id<'a, T>(records: &'a [T], id: impl Fn(&'a T) -> &'a str) -> BTreeMap<&'a str, &'a T> {
+pub(super) fn by_id<'a, T>(
+    records: &'a [T],
+    id: impl Fn(&'a T) -> &'a str,
+) -> BTreeMap<&'a str, &'a T> {
     let mut index = BTreeMap::new();
     for record in records {
         index.entry(id(record)).or_insert(record);
@@ -134,7 +137,7 @@ fn by_id<'a, T>(records: &'a [T], id: impl Fn(&'a T) -> &'a str) -> BTreeMap<&'a
 }
 
 impl<'a> DesignRecords<'a> {
-    pub(super) fn new(ir: &'a CadIr) -> Self {
+    pub(in crate::validate) fn new(ir: &'a CadIr) -> Self {
         let design = &ir.design;
         let mut parents = BTreeMap::new();
         for container in &design.containers {
@@ -181,7 +184,7 @@ impl<'a> DesignRecords<'a> {
     }
 
     /// Whether the member's record exists.
-    pub(super) fn member_exists(&self, member: MemberKey<'_>) -> bool {
+    pub(in crate::validate) fn member_exists(&self, member: MemberKey<'_>) -> bool {
         match member {
             MemberKey::Feature(id) => self.features.contains_key(id),
             MemberKey::Container(id) => self.containers.contains_key(id),
@@ -191,7 +194,7 @@ impl<'a> DesignRecords<'a> {
     /// The scope a member belongs to through the containers above it: the
     /// scope whose roots list the topmost container. `None` where the chain
     /// reaches no root or does not end.
-    pub(super) fn scope_of(&self, member: MemberKey<'a>) -> Option<&'a str> {
+    pub(in crate::validate) fn scope_of(&self, member: MemberKey<'a>) -> Option<&'a str> {
         let mut container = match member {
             MemberKey::Container(id) => id,
             MemberKey::Feature(_) => self.parents.get(&member).copied()?,
@@ -210,7 +213,10 @@ impl<'a> DesignRecords<'a> {
 
     /// The container a position lies in: the container itself for `Start`,
     /// and the container that lists the member for `After`.
-    pub(super) fn container_of(&self, position: PositionKey<'a>) -> Option<&'a Container> {
+    pub(in crate::validate) fn container_of(
+        &self,
+        position: PositionKey<'a>,
+    ) -> Option<&'a Container> {
         let id = match position {
             PositionKey::Start(id) => id,
             PositionKey::After(member) => self.parents.get(&member).copied()?,
@@ -221,7 +227,9 @@ impl<'a> DesignRecords<'a> {
     /// The rollback position of an ordered container, spelled through its
     /// member. `None` for an unordered container, or where `Before` names no
     /// member of it.
-    pub(super) fn rollback_position(container: &'a Container) -> Option<PositionKey<'a>> {
+    pub(in crate::validate) fn rollback_position(
+        container: &'a Container,
+    ) -> Option<PositionKey<'a>> {
         let Container::Ordered {
             id,
             members,
@@ -243,7 +251,7 @@ impl<'a> DesignRecords<'a> {
 
     /// The configuration and its ancestors through `parent`, nearest first,
     /// stopping before a configuration already listed.
-    pub(super) fn configuration_chain(
+    pub(in crate::validate) fn configuration_chain(
         &self,
         configuration: Option<&str>,
     ) -> Vec<&'a DesignConfiguration> {
@@ -263,24 +271,22 @@ impl<'a> DesignRecords<'a> {
         chain
     }
 
-    /// The definition an occurrence places, where it is a definition of this
-    /// document.
-    pub(super) fn prototype(&self, occurrence: &str) -> Option<&'a str> {
-        match &self.occurrences.get(occurrence)?.prototype {
-            PrototypeReference::Local { definition } => Some(definition.as_str()),
-            PrototypeReference::External { .. } | PrototypeReference::Unresolved {} => None,
-        }
+    /// The definition an occurrence places.
+    pub(in crate::validate) fn prototype(&self, occurrence: &str) -> Option<&'a str> {
+        self.occurrences
+            .get(occurrence)
+            .map(|occurrence| occurrence.prototype.as_str())
     }
 
     /// Whether the scope has configurations.
-    pub(super) fn has_configurations(&self, scope: &str) -> bool {
+    pub(in crate::validate) fn has_configurations(&self, scope: &str) -> bool {
         self.scope_configurations.contains_key(scope)
     }
 
     /// The definition of `feature` that applies in `configuration` (§5.10,
     /// §5.11): the nearest definition override on the configuration's chain,
     /// else the feature's own.
-    pub(super) fn definition_in(
+    pub(in crate::validate) fn definition_in(
         &self,
         feature: &'a Feature,
         configuration: Option<&str>,
@@ -301,7 +307,7 @@ impl<'a> DesignRecords<'a> {
     /// Every feature definition the design states, with the record that
     /// states it: each feature's own, and each definition override of a
     /// configuration or an arrangement.
-    pub(super) fn feature_definitions(&self) -> Vec<(&'a str, &'a FeatureDefinition)> {
+    pub(in crate::validate) fn feature_definitions(&self) -> Vec<(&'a str, &'a FeatureDefinition)> {
         let design = &self.ir.design;
         let overrides = design
             .configurations
@@ -342,13 +348,9 @@ impl<'a> DesignRecords<'a> {
     /// features of several definitions, every definition placed below it
     /// that has no scope of its own.
     ///
-    /// An occurrence is placed in the definition that owns it (§5.5, §8.1).
-    /// A child occurrence is owned by its parent occurrence's prototype. A
-    /// root occurrence is listed by no definition, so it belongs to the
-    /// scope's definition where that definition is the document's top, which
-    /// no occurrence places; where an occurrence places the scope's
-    /// definition, the root occurrences sit beside it, not below it.
-    pub(super) fn spanned_definitions(&self, scope: &str) -> BTreeSet<&'a str> {
+    /// A definition places the prototypes of the occurrences it owns (§5.5,
+    /// §8.1). An `External` definition is never spanned: it has no design.
+    pub(in crate::validate) fn spanned_definitions(&self, scope: &str) -> BTreeSet<&'a str> {
         let Some((&scope, _)) = self.definitions.get_key_value(scope) else {
             return BTreeSet::new();
         };
@@ -356,30 +358,23 @@ impl<'a> DesignRecords<'a> {
         if !self.holds_several_definitions(scope) {
             return spanned;
         }
-        let occurrences = &self.ir.model.occurrences;
-        let local = |occurrence: &'a Occurrence| match &occurrence.prototype {
-            PrototypeReference::Local { definition } => Some(definition.as_str()),
-            PrototypeReference::External { .. } | PrototypeReference::Unresolved {} => None,
-        };
-        let top = !occurrences
-            .iter()
-            .any(|occurrence| local(occurrence) == Some(scope));
-        let mut owned: BTreeMap<&str, Vec<&'a str>> = BTreeMap::new();
-        for occurrence in occurrences {
-            let owner = match &occurrence.parent {
-                OccurrenceParent::Occurrence { occurrence: parent } => {
-                    self.prototype(parent.as_str())
-                }
-                OccurrenceParent::Root {} => top.then_some(scope),
-            };
-            if let (Some(owner), Some(prototype)) = (owner, local(occurrence)) {
-                owned.entry(owner).or_default().push(prototype);
-            }
-        }
         let mut pending = vec![scope];
         while let Some(definition) = pending.pop() {
-            for &prototype in owned.get(definition).into_iter().flatten() {
-                if !self.scopes.contains_key(prototype) && spanned.insert(prototype) {
+            let owned = self
+                .definitions
+                .get(definition)
+                .map_or(&[][..], |definition| &definition.occurrences[..]);
+            for occurrence in owned {
+                let Some((&prototype, placed)) = self
+                    .prototype(occurrence.as_str())
+                    .and_then(|prototype| self.definitions.get_key_value(prototype))
+                else {
+                    continue;
+                };
+                if !matches!(placed.storage, Storage::External(_))
+                    && !self.scopes.contains_key(prototype)
+                    && spanned.insert(prototype)
+                {
                     pending.push(prototype);
                 }
             }

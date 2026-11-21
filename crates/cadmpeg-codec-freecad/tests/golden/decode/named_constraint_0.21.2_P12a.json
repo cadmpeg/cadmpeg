@@ -5851,15 +5851,6 @@
           "states": [
             {
               "assets": [],
-              "attributes": {},
-              "kind": {
-                "kind": "Native",
-                "value": "Expand"
-              },
-              "order": 0
-            },
-            {
-              "assets": [],
               "attributes": {
                 "settings": ""
               },
@@ -5877,7 +5868,26 @@
         }
       ],
       "presentation_layers": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "bodies": [
+            "fcstd:model:body#Body:Shape:PartShape.brp:34%40location1",
+            "fcstd:model:body#Sketch:Shape:PartShape1.brp:9%40location1",
+            "fcstd:model:body#Pad:Shape:PartShape3.brp:24%40location1"
+          ],
+          "bom_properties": {},
+          "id": "fcstd:model:product_definition#document:root",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
       "rigid_bodies": [],
       "semantic_annotations": [],
       "sketch_constraints": [

@@ -1381,7 +1381,7 @@ impl TryFrom<OffsetPcurveWire> for OffsetPcurve {
 }
 
 /// The shape of a parameter-space (u, v) curve on a surface.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PcurveGeometry {
@@ -2343,7 +2343,7 @@ impl Pcurve {
 }
 
 /// Source-specific pcurve parameterization metadata.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum PcurveMetadata {
@@ -2368,6 +2368,34 @@ impl Default for PcurveMetadata {
 }
 
 impl PcurveMetadata {
+    #[doc = "Scale support-chart offsets and fit tolerances while preserving curve parameters."]
+    pub fn scale_chart(&mut self, scales: [f64; 2]) -> Result<(), &'static str> {
+        if !scales.iter().all(|v| v.is_finite() && *v > 0.0) {
+            return Err("chart scales must be positive and finite");
+        }
+        let offset = self
+            .uv_offset()
+            .map(|value| {
+                let value = value.get();
+                admit_pcurve_uv_offset([value[0] * scales[0], value[1] * scales[1]])
+            })
+            .transpose()?;
+        let tolerance = self
+            .fit_tolerance()
+            .map(|v| admit_pcurve_fit_tolerance(v.get() * scales[0].max(scales[1])))
+            .transpose()?;
+        match self {
+            Self::AsmInline { form } => {
+                form.uv_offset = offset.ok_or(Self::NON_FINITE_UV_OFFSET)?;
+                form.fit_tolerance = tolerance.ok_or(Self::INVALID_FIT_TOLERANCE)?;
+            }
+            Self::General { form } => {
+                form.uv_offset = offset;
+                form.fit_tolerance = tolerance;
+            }
+        }
+        Ok(())
+    }
     /// The refusal of a parameter range with a non-finite endpoint.
     pub const NON_FINITE_PARAMETER_RANGE: &'static str =
         "pcurve parameter_range endpoints must be finite";

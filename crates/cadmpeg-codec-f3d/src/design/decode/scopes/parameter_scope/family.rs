@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Stable type identities of parameter-scope families.
 
+use crate::design::assembly::AS_BUILT_SCOPE_TYPE_GUID;
 use crate::records::feature::scope::DesignFeatureKind;
 
 const FAMILIES: &[(&str, DesignFeatureKind)] = &[
@@ -20,10 +21,7 @@ const FAMILIES: &[(&str, DesignFeatureKind)] = &[
         "359F7902-43B0-445C-8F4B-FED1D15B2680",
         DesignFeatureKind::Align,
     ),
-    (
-        "AA8B3D40-B67D-4AF1-B3CF-E1E00279B5F0",
-        DesignFeatureKind::AsBuilt,
-    ),
+    (AS_BUILT_SCOPE_TYPE_GUID, DesignFeatureKind::AsBuilt),
     (
         "8DFDD543-F823-43AA-BDAF-C638E023F0A0",
         DesignFeatureKind::Assemble,
@@ -189,6 +187,14 @@ const FAMILIES: &[(&str, DesignFeatureKind)] = &[
         DesignFeatureKind::SpherePrimitive,
     ),
     (
+        super::super::silhouette_split::TYPE_GUID,
+        DesignFeatureKind::SilhouetteSplit,
+    ),
+    (
+        crate::records::feature::motion_link::SCOPE_TYPE,
+        DesignFeatureKind::MotionLink,
+    ),
+    (
         "65CA3206-E33A-471E-8E40-2C72B57C6181",
         DesignFeatureKind::Split,
     ),
@@ -281,7 +287,7 @@ pub(super) fn paste_scope_prefix(
     }
 }
 
-pub(in crate::design::decode::scopes) fn from_type_guid(guid: &str) -> Option<DesignFeatureKind> {
+pub(crate) fn from_type_guid(guid: &str) -> Option<DesignFeatureKind> {
     if guid.eq_ignore_ascii_case(super::super::position::TYPE_GUID) {
         return Some(DesignFeatureKind::native("Position"));
     }

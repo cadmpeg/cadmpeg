@@ -2406,15 +2406,6 @@
           "states": [
             {
               "assets": [],
-              "attributes": {},
-              "kind": {
-                "kind": "Native",
-                "value": "Expand"
-              },
-              "order": 0
-            },
-            {
-              "assets": [],
               "attributes": {
                 "settings": "OrthographicCamera {\n  viewportMapping ADJUST_CAMERA\n  position 17.311642 -2.3116379 17.811638\n  orientation 0.74290609 0.30772209 0.59447283  1.2171158\n  nearDistance 0\n  farDistance 28.79236\n  aspectRatio 1\n  focalDistance 14.39618\n  height 32.432148\n\n}\n"
               },
@@ -2443,7 +2434,24 @@
         }
       ],
       "presentation_layers": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "bodies": [
+            "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1"
+          ],
+          "bom_properties": {},
+          "id": "fcstd:model:product_definition#document:root",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
       "rigid_bodies": [],
       "semantic_annotations": [],
       "sketch_constraints": [],

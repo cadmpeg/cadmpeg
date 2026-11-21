@@ -3,8 +3,8 @@
 //! mass properties, rigid bodies, colliders, articulations, and the settings
 //! of particular solvers.
 //!
-//! Masses are kilograms, densities kilograms per cubic metre, lengths and
-//! positions millimetres, and moments of inertia kilogram square
+//! Masses are kilograms, densities kilograms per cubic millimetre, lengths
+//! and positions millimetres, and moments of inertia kilogram square
 //! millimetres.
 
 #[cfg(feature = "schema")]
@@ -24,7 +24,7 @@ use crate::units::UnitVector3;
 pub mod solver;
 
 /// The model entity that a physical record describes.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PhysicsTarget {
@@ -59,7 +59,7 @@ pub struct PhysicalMaterial {
         deserialize_with = "deserialize_name"
     )]
     pub name: Option<String>,
-    /// Mass per unit volume in kilograms per cubic metre.
+    /// Mass per unit volume in kilograms per cubic millimetre.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -134,7 +134,7 @@ pub struct MassProperties {
         deserialize_with = "deserialize_mass"
     )]
     pub mass: Option<PositiveReal>,
-    /// Mass per unit volume in kilograms per cubic metre.
+    /// Mass per unit volume in kilograms per cubic millimetre.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -212,22 +212,28 @@ pub struct RigidBody {
 }
 
 /// The shape a collider gives its target's geometry.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ColliderShape {
     /// The geometry itself.
-    Exact {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    Exact,
     /// The convex hull of the geometry.
-    ConvexHull {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    ConvexHull,
     /// A union of convex parts that approximates the geometry.
-    ConvexDecomposition {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    ConvexDecomposition,
     /// The bounding box of the geometry.
-    BoundingBox {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    BoundingBox,
     /// The bounding sphere of the geometry.
-    BoundingSphere {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    BoundingSphere,
     /// A mesh with fewer faces that approximates the geometry.
-    Simplified {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    Simplified,
     /// An application-defined approximation.
     Native {
         /// Application-defined approximation name.

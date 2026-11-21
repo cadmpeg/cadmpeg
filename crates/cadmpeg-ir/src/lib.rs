@@ -113,8 +113,9 @@ pub use native::{
     LossCount, Native, NativeConvertError, NativeField, NativeNamespace, NativeRecord,
 };
 pub use pmi::{
-    DatumReference, DatumTargetForm, DimensionKind, DimensionTolerance, GeometricToleranceKind,
-    PmiAnnotation, PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
+    DatumReference, DatumTargetForm, DimensionModifier, FitStandard, FitZone,
+    GeometricToleranceKind, LimitsAndFits, PmiAnnotation, PmiDefinition, PmiDimension,
+    PmiDimensionKind, PmiQuantity, PmiTarget, PmiValue,
 };
 pub use presentation::{
     CameraState, PresentationDocument, PresentationId, PresentationState, PresentationStateKind,
@@ -122,10 +123,9 @@ pub use presentation::{
 };
 pub use presentation::{PresentationItem, PresentationLayer};
 pub use products::{
-    AssemblyGraph, AssemblyGraphError, AssemblyJoint, CopyOnChange, CopyOnChangePolicy,
-    ExternalDocument, JointConnector, JointId, JointLimits, JointOperand, JointOperands,
-    LinkMember, LinkState, Occurrence, OperandContainer, PairedJointKind, PlaneSense,
-    ProductDefinition, ProductDefinitionKind, PrototypeReference, TangentContact,
+    AssemblyJoint, ExternalDocument, InstanceBodies, JointConnector, JointId, JointLimits,
+    JointOperand, JointOperands, Occurrence, OperandContainer, PairedJointKind, PlaneSense,
+    ProductDefinition, ProductDefinitionKind, Storage, TangentContact,
 };
 /// Source location attached to a [`report::loss::LossNote`].
 pub use provenance::{
@@ -164,6 +164,15 @@ pub use validate::admit::{
 pub use validate::{validate_neutral, validate_neutral_with_source_fidelity};
 
 pub mod unknown;
+
+/// The JSON Schema of the current [`CadIr`] representation: the pretty JSON
+/// text of `cadir_json_schema()`, which requires the `schema` feature.
+pub const CADIR_JSON_SCHEMA: &str = include_str!("../schema/cadir.schema.json");
+
+/// The JSON Schema of the decode sidecar (`<stem>.fidelity.json`): the pretty
+/// JSON text of `decode_sidecar_json_schema()`, which requires the `schema`
+/// feature.
+pub const DECODE_SIDECAR_JSON_SCHEMA: &str = include_str!("../schema/decode-sidecar.schema.json");
 
 /// Generate the JSON Schema for the current [`CadIr`] representation.
 ///

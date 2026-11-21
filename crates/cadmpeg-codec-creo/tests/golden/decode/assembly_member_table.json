@@ -60,23 +60,8 @@
           "id": "creo:model:occurrence#member-0",
           "name": "SUBASM",
           "native_ref": "NeuAsmSld:members:42",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "creo:model:occurrence#root"
-          },
-          "prototype": {
-            "document": {
-              "kind": "path",
-              "path": "SUBASM.asm"
-            },
-            "kind": "external"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "creo:model:product_definition#member-0",
           "transform": [
             [
               1.0,
@@ -102,23 +87,8 @@
           "id": "creo:model:occurrence#member-1",
           "name": "BRACKET",
           "native_ref": "NeuAsmSld:members:2575",
-          "ordinal": 1,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "creo:model:occurrence#root"
-          },
-          "prototype": {
-            "document": {
-              "kind": "path",
-              "path": "BRACKET.prt"
-            },
-            "kind": "external"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "creo:model:product_definition#member-1",
           "transform": [
             [
               1.0,
@@ -144,23 +114,8 @@
           "id": "creo:model:occurrence#member-2",
           "name": "BRACKET",
           "native_ref": "NeuAsmSld:members:2576",
-          "ordinal": 2,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "creo:model:occurrence#root"
-          },
-          "prototype": {
-            "document": {
-              "kind": "path",
-              "path": "BRACKET.prt"
-            },
-            "kind": "external"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "creo:model:product_definition#member-1",
           "transform": [
             [
               0.0,
@@ -181,43 +136,6 @@
               619.0
             ]
           ]
-        },
-        {
-          "id": "creo:model:occurrence#root",
-          "name": "TOP_ASSY",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "creo:model:product_definition#root",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
         }
       ],
       "parameters": [],
@@ -231,12 +149,54 @@
         {
           "bodies": [],
           "bom_properties": {},
-          "id": "creo:model:product_definition#root",
-          "kind": "part",
-          "label": "TOP_ASSY",
-          "part_number": "TOP_ASSY",
+          "id": "creo:model:product_definition#member-0",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
-          "source_name": "TOP_ASSY"
+          "source_name": "SUBASM",
+          "storage": {
+            "kind": "external",
+            "path": "SUBASM.asm"
+          },
+          "tessellations": []
+        },
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "creo:model:product_definition#member-1",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "source_name": "BRACKET",
+          "storage": {
+            "kind": "external",
+            "path": "BRACKET.prt"
+          },
+          "tessellations": []
+        },
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "creo:model:product_definition#root",
+          "instance_bodies": [],
+          "kind": "assembly",
+          "label": "TOP_ASSY",
+          "occurrences": [
+            "creo:model:occurrence#member-0",
+            "creo:model:occurrence#member-1",
+            "creo:model:occurrence#member-2"
+          ],
+          "part_number": "TOP_ASSY",
+          "representations": [],
+          "sketches": [],
+          "source_name": "TOP_ASSY",
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],
@@ -814,11 +774,6 @@
           "fields": {},
           "kind": "entity"
         },
-        "creo:model:occurrence#root": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
         "creo:model:product_definition#root": {
           "entity": "derived",
           "fields": {},
@@ -840,11 +795,6 @@
           "offset": 321,
           "stream": "creo:NeuAsmSld",
           "tag": "assembly_member"
-        },
-        "creo:model:occurrence#root": {
-          "offset": 116,
-          "stream": "creo:archive_header",
-          "tag": "part_product_occurrence"
         },
         "creo:model:product_definition#root": {
           "offset": 116,

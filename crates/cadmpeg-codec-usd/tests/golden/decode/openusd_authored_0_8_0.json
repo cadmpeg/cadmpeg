@@ -41,7 +41,7 @@
         {
           "id": "usd:stage:body#prototype0",
           "kind": "general",
-          "name": "Leg0"
+          "name": "Leg"
         }
       ],
       "coedges": [],
@@ -320,19 +320,8 @@
           "id": "usd:stage:occurrence#/Plant",
           "name": "Plant",
           "native_ref": "/Plant",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Plant",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Plant",
           "transform": [
             [
               1.0,
@@ -358,20 +347,8 @@
           "id": "usd:stage:occurrence#/Plant/Frame",
           "name": "Frame",
           "native_ref": "/Plant/Frame",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Plant"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Plant/Frame",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Plant/Frame",
           "transform": [
             [
               0.8660254037844387,
@@ -397,20 +374,8 @@
           "id": "usd:stage:occurrence#/Plant/Frame/Rail",
           "name": "Rail",
           "native_ref": "/Plant/Frame/Rail",
-          "ordinal": 1,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Plant/Frame"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Plant/Frame/Rail",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Plant/Frame/Rail",
           "transform": [
             [
               1.0,
@@ -436,20 +401,8 @@
           "id": "usd:stage:occurrence#/Plant/Frame/Tube",
           "name": "Tube",
           "native_ref": "/Plant/Frame/Tube",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Plant/Frame"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Plant/Frame/Tube",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Plant/Frame/Tube",
           "transform": [
             [
               1.0,
@@ -475,20 +428,8 @@
           "id": "usd:stage:occurrence#/Plant/Leg0",
           "name": "Leg0",
           "native_ref": "/Plant/Leg0",
-          "ordinal": 2,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Plant"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#prototype0",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#prototype0",
           "transform": [
             [
               1.0,
@@ -514,20 +455,8 @@
           "id": "usd:stage:occurrence#/Plant/Leg1",
           "name": "Leg1",
           "native_ref": "/Plant/Leg1",
-          "ordinal": 3,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Plant"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#prototype0",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#prototype0",
           "transform": [
             [
               1.0,
@@ -553,20 +482,8 @@
           "id": "usd:stage:occurrence#/Plant/Roof",
           "name": "Roof",
           "native_ref": "/Plant/Roof",
-          "ordinal": 1,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Plant"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Plant/Roof",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Plant/Roof",
           "transform": [
             [
               1.0,
@@ -601,19 +518,41 @@
           "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Plant",
+          "instance_bodies": [],
           "kind": "part",
           "native_ref": "/Plant",
+          "occurrences": [
+            "usd:stage:occurrence#/Plant/Frame",
+            "usd:stage:occurrence#/Plant/Roof",
+            "usd:stage:occurrence#/Plant/Leg0",
+            "usd:stage:occurrence#/Plant/Leg1"
+          ],
+          "representations": [],
           "sketches": [],
-          "source_name": "Plant"
+          "source_name": "Plant",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
         },
         {
           "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Plant/Frame",
+          "instance_bodies": [],
           "kind": "group",
           "native_ref": "/Plant/Frame",
+          "occurrences": [
+            "usd:stage:occurrence#/Plant/Frame/Tube",
+            "usd:stage:occurrence#/Plant/Frame/Rail"
+          ],
+          "representations": [],
           "sketches": [],
-          "source_name": "Frame"
+          "source_name": "Frame",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
         },
         {
           "bodies": [
@@ -621,10 +560,17 @@
           ],
           "bom_properties": {},
           "id": "usd:stage:definition#/Plant/Frame/Rail",
+          "instance_bodies": [],
           "kind": "object",
           "native_ref": "/Plant/Frame/Rail",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
-          "source_name": "Rail"
+          "source_name": "Rail",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
         },
         {
           "bodies": [
@@ -632,10 +578,17 @@
           ],
           "bom_properties": {},
           "id": "usd:stage:definition#/Plant/Frame/Tube",
+          "instance_bodies": [],
           "kind": "object",
           "native_ref": "/Plant/Frame/Tube",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
-          "source_name": "Tube"
+          "source_name": "Tube",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
         },
         {
           "bodies": [
@@ -643,10 +596,17 @@
           ],
           "bom_properties": {},
           "id": "usd:stage:definition#/Plant/Roof",
+          "instance_bodies": [],
           "kind": "object",
           "native_ref": "/Plant/Roof",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
-          "source_name": "Roof"
+          "source_name": "Roof",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
         },
         {
           "bodies": [
@@ -654,10 +614,33 @@
           ],
           "bom_properties": {},
           "id": "usd:stage:definition#prototype0",
+          "instance_bodies": [],
           "kind": "object",
           "native_ref": "/Plant/Leg0",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
-          "source_name": "Leg"
+          "source_name": "Leg",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
+        },
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "usd:stage:root#stage",
+          "instance_bodies": [],
+          "occurrences": [
+            "usd:stage:occurrence#/Plant"
+          ],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],

@@ -36,6 +36,7 @@ use std::collections::{HashMap, HashSet};
 mod cap_regions;
 mod compact_members;
 pub(crate) mod face_profile_sets;
+mod group_union;
 mod region_members;
 mod spatial_regions;
 mod stored_loop_cap;
@@ -353,7 +354,9 @@ pub(crate) fn bind_split_face_sketch_selections(
             else {
                 break 'feature_edit;
             };
-            let SplitFaceTool::Path(PathRef::Native(group_id)) = tool else {
+            let (SplitFaceTool::Native(group_id) | SplitFaceTool::Path(PathRef::Native(group_id))) =
+                tool
+            else {
                 break 'feature_edit;
             };
             let mut matching_groups = resolution.groups.iter().filter(|group| {
@@ -872,6 +875,16 @@ pub(crate) fn bind_extrude_profile_selections(
                                 *profile = ProfileRef::Planar(selected);
                                 break 'feature_edit;
                             }
+                            if let Some(states) = scope.history_state_id().zip(effective_previous_history_state_id) {
+                                if let Some(selected) = region_members::resolve_certified(
+                                    stream, operand, sketch, curve_resolution.curve_identities,
+                                    scoped_resolution, states,
+                                    cap_regions::compact::Sweep { operation: op, start, direction, extent },
+                                )? {
+                                    *profile = ProfileRef::Planar(selected);
+                                    break 'feature_edit;
+                                }
+                            }
                             unresolved_region_operand = Some((operand, stream));
                         }
                     }
@@ -1081,6 +1094,35 @@ pub(crate) fn bind_extrude_profile_selections(
                         }
                     }
                     if matching_groups.is_empty() {
+                        if scope
+                            .extrude_profile()
+                            .is_none_or(|operand| operand.region_selection.is_none())
+                        {
+                            if let Some(states) = scope
+                                .history_state_id()
+                                .zip(effective_previous_history_state_id)
+                            {
+                                let sweep = cap_regions::compact::Sweep {
+                                    operation: op,
+                                    start,
+                                    direction,
+                                    extent,
+                                };
+                                // A Cut's removed planes cannot see a profile over no
+                                // material, so only a Join or New Body far cap narrows
+                                // the whole Sketch.
+                                if let Some(candidate) = cap_regions::compact::added_candidate(
+                                    sketch,
+                                    scoped_resolution,
+                                    states,
+                                    sweep,
+                                )? {
+                                    if !selects_whole_sketch(&candidate, sketch) {
+                                        *profile = ProfileRef::Planar(candidate);
+                                    }
+                                }
+                            }
+                        }
                         break 'feature_edit;
                     }
                     let group_ids: Vec<_> = matching_groups
@@ -1181,6 +1223,58 @@ pub(crate) fn bind_extrude_profile_selections(
         resolution.profile_work.finish_selection();
     }
     Ok(losses)
+}
+
+fn sorted(
+    mut entities: Vec<&cadmpeg_ir::sketches::SketchEntityId>,
+) -> Vec<&cadmpeg_ir::sketches::SketchEntityId> {
+    entities.sort_unstable();
+    entities
+}
+
+/// Whether `selection` names every Sketch profile as its own filled region,
+/// which is what the whole Sketch means. A trimmed region counts as a profile
+/// when it has no hole and bounds the same curves.
+fn selects_whole_sketch(
+    selection: &cadmpeg_ir::features::PlanarProfileRef,
+    sketch: &cadmpeg_ir::sketches::Sketch,
+) -> bool {
+    use cadmpeg_ir::features::SketchProfileRegion;
+
+    let cadmpeg_ir::features::PlanarProfileRef::SketchRegions { regions, .. } = selection else {
+        return false;
+    };
+    let mut taken = Vec::new();
+    for region in regions.as_slice() {
+        let index = match region {
+            SketchProfileRegion::Loops { loops } if loops.holes().is_empty() => {
+                usize::try_from(loops.outer()).ok()
+            }
+            SketchProfileRegion::Trimmed {
+                outer_boundary,
+                hole_boundaries,
+            } if hole_boundaries.is_empty() => {
+                let boundary = sorted(outer_boundary.iter().map(|use_| &use_.entity).collect());
+                (0..sketch.profiles.len()).find(|&index| {
+                    !taken.contains(&index)
+                        && sorted(
+                            sketch.profiles[index]
+                                .iter()
+                                .map(|use_| &use_.entity)
+                                .collect(),
+                        ) == boundary
+                })
+            }
+            _ => None,
+        };
+        match index {
+            Some(index) if index < sketch.profiles.len() && !taken.contains(&index) => {
+                taken.push(index);
+            }
+            _ => return false,
+        }
+    }
+    taken.len() == sketch.profiles.len()
 }
 
 pub(crate) fn unprofiled_region_losses(
@@ -1734,6 +1828,7 @@ fn copy_bound_planar_profile(
         | PlanarProfileRef::SketchProfiles { .. }
         | PlanarProfileRef::SketchRegions { .. }
         | PlanarProfileRef::SketchSelection { .. }
+        | PlanarProfileRef::SketchEntities { .. }
         | PlanarProfileRef::Native(_) => Ok(profile.clone()),
         _ => Err(CodecError::malformed(
             "bound planar profile has unsupported resolved form",
@@ -2509,12 +2604,19 @@ pub(in crate::design) fn transition_profile_selection(
         .iter()
         .map(|(step_state, step_prev_id)| {
             let before_step = resolution.profile_work.inferred_counts();
-            let sel = transition_profile_selection_step(
+            let sel = resolution.profile_work.reusing_arrangement(
                 sketch,
-                resolution,
-                history,
-                step_state,
-                *step_prev_id,
+                resolution.entities,
+                resolution.linear_tolerance,
+                || {
+                    transition_profile_selection_step(
+                        sketch,
+                        resolution,
+                        history,
+                        step_state,
+                        *step_prev_id,
+                    )
+                },
             )?;
             let after_step = resolution.profile_work.inferred_counts();
             let step_delta = (after_step.0 - before_step.0, after_step.1 - before_step.1);
@@ -2667,6 +2769,24 @@ fn transition_profile_selection_step(
                     || historical_face_points(*face, topology).is_none_or(|pts| pts.len() <= 2)
             });
     if only_circular_faces {
+        let rings = BodyCircleRings {
+            sketch,
+            entities,
+            topology,
+            previous: prev_topology_opt,
+            inserted_faces,
+            cyl_loops: &cyl_loops,
+            tolerance,
+            angular_tolerance: resolution.angular_tolerance,
+        };
+        if let Some(regions) = rings_from_body_to_sketch_circle(rings) {
+            resolution.profile_work.record_body_circle_rings_assumed();
+            return Ok(Some(ResolvedProfileSelection::Regions(regions)));
+        }
+        if let Some(regions) = rings_from_sketch_circle_in_to_body(rings) {
+            resolution.profile_work.record_body_circle_rings_assumed();
+            return Ok(Some(ResolvedProfileSelection::Regions(regions)));
+        }
         return Ok(Some(ResolvedProfileSelection::Loops(cyl_loops)));
     }
     let mut inserted_selections = Vec::new();
@@ -2957,6 +3077,449 @@ fn points_share_sketch_offset(
     points
         .iter()
         .all(|point| (offset(point) - first).abs() <= tolerance)
+}
+
+/// Profile indices of the concentric circles strictly outside `inner` and at
+/// most `outer`, nearest first. `None` when that is not at least two circles
+/// with one on `outer`: a single ring is the cylinder match the caller
+/// already has.
+///
+/// `circles` are `(profile index, radius)` of one center. A circle on the
+/// body radius is not strictly outside it, so it stays out of the result.
+pub(super) fn circle_indices_outside_body(
+    circles: &[(u32, f64)],
+    inner: f64,
+    outer: f64,
+    tolerance: f64,
+) -> Option<Vec<u32>> {
+    let mut chosen: Vec<(u32, f64)> = circles
+        .iter()
+        .copied()
+        .filter(|(_, radius)| *radius > inner + tolerance && *radius <= outer + tolerance)
+        .collect();
+    if chosen.len() < 2
+        || !chosen
+            .iter()
+            .any(|(_, radius)| (radius - outer).abs() <= tolerance)
+    {
+        return None;
+    }
+    chosen.sort_by(|left, right| left.1.total_cmp(&right.1).then(left.0.cmp(&right.0)));
+    Some(chosen.into_iter().map(|(index, _)| index).collect())
+}
+
+/// Profile indices of the concentric circles that cover an inward shoulder
+/// from the new circle `inner` out to the body cylinder `body`, nearest first.
+///
+/// The shoulder ends on the body, which is not a sketch circle. Every full
+/// sketch circle strictly outside `inner`, through the first circle strictly
+/// outside `body`, is material. That circle is included only when its radius
+/// is at most `wall`, the next solid cylinder outside the body: past that
+/// wall the ring would add material beyond the solid. `None` when no sketch
+/// circle lies outside the body, or that circle passes `wall`.
+pub(super) fn circle_indices_inward_shoulder(
+    circles: &[(u32, f64)],
+    inner: f64,
+    body: f64,
+    wall: f64,
+    tolerance: f64,
+) -> Option<Vec<u32>> {
+    if body <= inner + tolerance || wall <= body + tolerance {
+        return None;
+    }
+    let mut outside: Option<(u32, f64)> = None;
+    for &(index, radius) in circles {
+        if radius > body + tolerance && outside.is_none_or(|(_, have)| radius < have) {
+            outside = Some((index, radius));
+        }
+    }
+    let (_, outer_radius) = outside?;
+    if outer_radius > wall + tolerance {
+        return None;
+    }
+    let mut chosen: Vec<(u32, f64)> = circles
+        .iter()
+        .copied()
+        .filter(|(_, radius)| *radius > inner + tolerance && *radius <= outer_radius + tolerance)
+        .collect();
+    if chosen.is_empty()
+        || !chosen
+            .iter()
+            .any(|(_, radius)| (radius - outer_radius).abs() <= tolerance)
+    {
+        return None;
+    }
+    chosen.sort_by(|left, right| left.1.total_cmp(&right.1).then(left.0.cmp(&right.0)));
+    Some(chosen.into_iter().map(|(index, _)| index).collect())
+}
+
+pub(super) struct ConcentricCircle<'a> {
+    pub(super) index: u32,
+    pub(super) center: Point2,
+    pub(super) radius: f64,
+    pub(super) use_: &'a cadmpeg_ir::sketches::SketchEntityUse,
+}
+
+/// Sketch circles and the body cylinder a cap can fill with one region per circle.
+#[derive(Clone, Copy)]
+struct BodyCircleRings<'a> {
+    sketch: &'a cadmpeg_ir::sketches::Sketch,
+    entities: &'a [cadmpeg_ir::sketches::SketchEntity],
+    topology: &'a crate::history_records::AsmHistoricalTopology,
+    previous: Option<&'a crate::history_records::AsmHistoricalTopology>,
+    inserted_faces: &'a [i64],
+    cyl_loops: &'a [u32],
+    tolerance: f64,
+    angular_tolerance: f64,
+}
+
+/// Rings that fill a new cap from an existing body cylinder out to one new
+/// sketch circle.
+///
+/// The cap's inner edge is the body, so it is not a sketch curve. Every full
+/// sketch circle strictly outside that radius, through the new outer circle,
+/// is material. Each is emitted as its own curve ring. Nesting those circles
+/// as one loop with holes would keep only the outermost ring and leave the
+/// body short of the cap.
+fn rings_from_body_to_sketch_circle(
+    rings: BodyCircleRings<'_>,
+) -> Option<Vec<cadmpeg_ir::features::SketchProfileRegion>> {
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+
+    let BodyCircleRings {
+        sketch,
+        entities,
+        topology,
+        previous,
+        inserted_faces,
+        cyl_loops,
+        tolerance,
+        angular_tolerance,
+    } = rings;
+    let previous = previous?;
+    let (_, sketch_normal, _) = sketch.resolved_placement()?;
+    let normal = *sketch_normal.as_raw();
+    let mut circles = Vec::new();
+    for (index, profile) in sketch.profiles.iter().enumerate() {
+        let [use_] = profile.as_slice() else {
+            continue;
+        };
+        let Some(entity) = entities.iter().find(|entity| {
+            entity.sketch == sketch.id && entity.id() == &use_.entity && !entity.construction
+        }) else {
+            continue;
+        };
+        let SketchGeometryDefinition::Circle { center, radius } = *entity.geometry.definition()
+        else {
+            continue;
+        };
+        let Ok(index) = u32::try_from(index) else {
+            continue;
+        };
+        circles.push(ConcentricCircle {
+            index,
+            center: *center,
+            radius: radius.get(),
+            use_,
+        });
+    }
+    let mut agreed: Option<(f64, f64, u32)> = None;
+    for face in inserted_faces {
+        let mut carriers = topology
+            .face_surfaces
+            .iter()
+            .filter(|binding| binding.entity == *face);
+        let carrier = carriers.next()?.carrier;
+        if carriers.next().is_some() {
+            return None;
+        }
+        let mut planes = topology
+            .surface_planes
+            .iter()
+            .filter(|plane| plane.surface == carrier);
+        let Some(plane) = planes.next() else {
+            continue;
+        };
+        if planes.next().is_some() {
+            return None;
+        }
+        let align =
+            plane.normal.x * normal.x + plane.normal.y * normal.y + plane.normal.z * normal.z;
+        if align.abs() < angular_tolerance.cos() {
+            continue;
+        }
+        let mut projected = Vec::new();
+        for point in historical_face_all_points(*face, topology) {
+            projected.push(project_to_sketch(sketch, point)?);
+        }
+        if projected.is_empty() {
+            return None;
+        }
+        let mut found = None;
+        for circle in circles
+            .iter()
+            .filter(|circle| cyl_loops.contains(&circle.index))
+        {
+            let mut radii = Vec::new();
+            for point in &projected {
+                let radius = (point.u - circle.center.u).hypot(point.v - circle.center.v);
+                if !radii
+                    .iter()
+                    .any(|have: &f64| (have - radius).abs() <= tolerance)
+                {
+                    radii.push(radius);
+                }
+            }
+            if radii.len() != 2 {
+                continue;
+            }
+            radii.sort_by(f64::total_cmp);
+            let (inner, outer) = (radii[0], radii[1]);
+            if (outer - circle.radius).abs() > tolerance {
+                continue;
+            }
+            if found.replace((inner, outer, circle.index)).is_some() {
+                return None;
+            }
+        }
+        let found = found?;
+        if let Some((inner, outer, profile)) = agreed {
+            if (inner - found.0).abs() > tolerance
+                || (outer - found.1).abs() > tolerance
+                || profile != found.2
+            {
+                return None;
+            }
+        } else {
+            agreed = Some(found);
+        }
+    }
+    let (inner, outer, outer_profile) = agreed?;
+    let outer_circle = circles
+        .iter()
+        .find(|circle| circle.index == outer_profile)?;
+    let same_center = |circle: &ConcentricCircle<'_>| {
+        (circle.center.u - outer_circle.center.u).hypot(circle.center.v - outer_circle.center.v)
+            <= tolerance
+    };
+    let body = previous.surface_cylinders.iter().any(|cylinder| {
+        let align =
+            cylinder.axis.x * normal.x + cylinder.axis.y * normal.y + cylinder.axis.z * normal.z;
+        (cylinder.radius - inner).abs() <= tolerance && align.abs() >= angular_tolerance.cos()
+    });
+    if !body {
+        return None;
+    }
+    let concentric: Vec<(u32, f64)> = circles
+        .iter()
+        .filter(|circle| same_center(circle))
+        .map(|circle| (circle.index, circle.radius))
+        .collect();
+    let indices = circle_indices_outside_body(&concentric, inner, outer, tolerance)?;
+    let innermost_hole = circles
+        .iter()
+        .find(|circle| same_center(circle) && (circle.radius - inner).abs() <= tolerance);
+    concentric_ring_regions(&circles, &indices, innermost_hole)
+}
+
+/// Rings that fill a new cap from one new sketch circle out to an existing
+/// body cylinder.
+///
+/// The cap's outer edge is the body, so it is not a sketch curve. Every full
+/// sketch circle strictly outside the new circle, through the first circle
+/// strictly outside the body, is material. That outer circle stays in the
+/// selection only when its radius is at most the next solid cylinder: the
+/// ring past the body is already solid. Each circle is its own region.
+/// Nesting them as one loop with holes would keep only the outermost ring.
+fn rings_from_sketch_circle_in_to_body(
+    rings: BodyCircleRings<'_>,
+) -> Option<Vec<cadmpeg_ir::features::SketchProfileRegion>> {
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+
+    let BodyCircleRings {
+        sketch,
+        entities,
+        topology,
+        previous,
+        inserted_faces,
+        cyl_loops,
+        tolerance,
+        angular_tolerance,
+    } = rings;
+    let previous = previous?;
+    let (_, sketch_normal, _) = sketch.resolved_placement()?;
+    let normal = *sketch_normal.as_raw();
+    let mut circles = Vec::new();
+    for (index, profile) in sketch.profiles.iter().enumerate() {
+        let [use_] = profile.as_slice() else {
+            continue;
+        };
+        let Some(entity) = entities.iter().find(|entity| {
+            entity.sketch == sketch.id && entity.id() == &use_.entity && !entity.construction
+        }) else {
+            continue;
+        };
+        let SketchGeometryDefinition::Circle { center, radius } = *entity.geometry.definition()
+        else {
+            continue;
+        };
+        let Ok(index) = u32::try_from(index) else {
+            continue;
+        };
+        circles.push(ConcentricCircle {
+            index,
+            center: *center,
+            radius: radius.get(),
+            use_,
+        });
+    }
+    let mut agreed: Option<(f64, f64, u32)> = None;
+    for face in inserted_faces {
+        let mut carriers = topology
+            .face_surfaces
+            .iter()
+            .filter(|binding| binding.entity == *face);
+        let carrier = carriers.next()?.carrier;
+        if carriers.next().is_some() {
+            return None;
+        }
+        let mut planes = topology
+            .surface_planes
+            .iter()
+            .filter(|plane| plane.surface == carrier);
+        let Some(plane) = planes.next() else {
+            continue;
+        };
+        if planes.next().is_some() {
+            return None;
+        }
+        let align =
+            plane.normal.x * normal.x + plane.normal.y * normal.y + plane.normal.z * normal.z;
+        if align.abs() < angular_tolerance.cos() {
+            continue;
+        }
+        let mut projected = Vec::new();
+        for point in historical_face_all_points(*face, topology) {
+            projected.push(project_to_sketch(sketch, point)?);
+        }
+        if projected.is_empty() {
+            return None;
+        }
+        let mut found = None;
+        for circle in circles
+            .iter()
+            .filter(|circle| cyl_loops.contains(&circle.index))
+        {
+            let mut radii = Vec::new();
+            for point in &projected {
+                let radius = (point.u - circle.center.u).hypot(point.v - circle.center.v);
+                if !radii
+                    .iter()
+                    .any(|have: &f64| (have - radius).abs() <= tolerance)
+                {
+                    radii.push(radius);
+                }
+            }
+            if radii.len() != 2 {
+                continue;
+            }
+            radii.sort_by(f64::total_cmp);
+            let (inner, outer) = (radii[0], radii[1]);
+            if (inner - circle.radius).abs() > tolerance || outer <= inner + tolerance {
+                continue;
+            }
+            if found.replace((inner, outer, circle.index)).is_some() {
+                return None;
+            }
+        }
+        let found = found?;
+        if let Some((inner, outer, profile)) = agreed {
+            if (inner - found.0).abs() > tolerance
+                || (outer - found.1).abs() > tolerance
+                || profile != found.2
+            {
+                return None;
+            }
+        } else {
+            agreed = Some(found);
+        }
+    }
+    let (inner, body, inner_profile) = agreed?;
+    let inner_circle = circles
+        .iter()
+        .find(|circle| circle.index == inner_profile)?;
+    let same_center = |circle: &ConcentricCircle<'_>| {
+        (circle.center.u - inner_circle.center.u).hypot(circle.center.v - inner_circle.center.v)
+            <= tolerance
+    };
+    let centered = |cylinder: &crate::history_records::AsmHistoricalCylinder| {
+        let align =
+            cylinder.axis.x * normal.x + cylinder.axis.y * normal.y + cylinder.axis.z * normal.z;
+        align.abs() >= angular_tolerance.cos()
+            && cylinder.radius.is_finite()
+            && project_to_sketch(sketch, cylinder.origin).is_some_and(|point| {
+                (point.u - inner_circle.center.u).hypot(point.v - inner_circle.center.v)
+                    <= tolerance
+            })
+    };
+    if !previous
+        .surface_cylinders
+        .iter()
+        .any(|cylinder| centered(cylinder) && (cylinder.radius - body).abs() <= tolerance)
+    {
+        return None;
+    }
+    let mut wall = None;
+    for cylinder in &previous.surface_cylinders {
+        if !centered(cylinder) || cylinder.radius <= body + tolerance {
+            continue;
+        }
+        wall = Some(match wall {
+            Some(have) if have < cylinder.radius => have,
+            _ => cylinder.radius,
+        });
+    }
+    let wall = wall?;
+    let concentric: Vec<(u32, f64)> = circles
+        .iter()
+        .filter(|circle| same_center(circle))
+        .map(|circle| (circle.index, circle.radius))
+        .collect();
+    let indices = circle_indices_inward_shoulder(&concentric, inner, body, wall, tolerance)?;
+    concentric_ring_regions(&circles, &indices, Some(inner_circle))
+}
+
+/// Emit disjoint atomic ring regions for concentric sketch circles ordered by
+/// increasing radius. Each circle is the outer boundary of the annulus between
+/// it and the next smaller selected circle, or `innermost_hole` for the first.
+pub(super) fn concentric_ring_regions(
+    circles: &[ConcentricCircle<'_>],
+    indices: &[u32],
+    innermost_hole: Option<&ConcentricCircle<'_>>,
+) -> Option<Vec<cadmpeg_ir::features::SketchProfileRegion>> {
+    use cadmpeg_ir::features::{SketchProfileBoundaryUse, SketchProfileRegion};
+    use cadmpeg_ir::geometry::DirectedParameterRange;
+
+    let circle_use = |circle: &ConcentricCircle<'_>, reversed: bool| {
+        Some(SketchProfileBoundaryUse {
+            entity: circle.use_.entity.clone(),
+            parameter_range: DirectedParameterRange::new([0.0, std::f64::consts::TAU]).ok()?,
+            reversed,
+        })
+    };
+    let mut regions = Vec::with_capacity(indices.len());
+    let mut previous = innermost_hole;
+    for &index in indices {
+        let circle = circles.iter().find(|circle| circle.index == index)?;
+        let outer = vec![circle_use(circle, circle.use_.reversed)?];
+        let holes = match previous {
+            Some(hole) => vec![vec![circle_use(hole, !hole.use_.reversed)?]],
+            None => Vec::new(),
+        };
+        regions.push(SketchProfileRegion::trimmed(outer, holes).ok()?);
+        previous = Some(circle);
+    }
+    Some(regions)
 }
 
 fn inserted_cylindrical_profile_selection(
@@ -4414,6 +4977,7 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
     let mut island_absence = false;
     let mut flags_read = false;
     let mut coincident = false;
+    let mut unions = Vec::new();
     let mut cursor = 0usize;
     for (ordinal, member) in group.members().iter().enumerate() {
         let Some(selection) = resolution.profile_curves.iter().find(|selection| {
@@ -4428,122 +4992,141 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
         if !selection.valid_layout() {
             return Ok(None);
         }
-        for loops in selection.regions() {
-            let Some(end) = loops
-                .iter()
-                .try_fold(cursor, |end, loop_| end.checked_add(loop_.entries.len()))
-            else {
-                return Ok(None);
-            };
-            let Some(program) = curves.get(cursor..end) else {
-                return Ok(None);
-            };
-            cursor = end;
-            let single_exterior = matches!(loops.as_slice(), [loop_] if loop_.outer);
-            let found = if single_exterior && !compact {
-                crate::design::geometry::arrangement_region_matching_curve_program(
-                    source,
-                    resolution.sketch_entities,
-                    program,
-                    scoped.linear_tolerance,
-                    scoped.profile_work,
-                    scoped.ctx,
-                )?
-            } else {
-                None
-            };
-            let Some(found) = found else {
-                if !compact {
-                    if let Some(rings) = stored_loop_rings(loops, program) {
-                        if let Some(selected) =
-                            crate::design::geometry::arrangement_regions_matching_member_rings(
-                                source,
-                                resolution.sketch_entities,
-                                &rings,
-                                &std::collections::HashSet::new(),
-                                scoped.linear_tolerance,
-                                scoped.profile_work,
-                                scoped.ctx,
-                            )?
-                        {
-                            if let [region] = selected.regions.as_slice() {
-                                flags_read |= allow_assumptions || !selected.identity_unique;
-                                coincident |= selected.coincident
-                                    && (allow_assumptions || !selected.identity_unique);
-                                island_absence |= selected.island_absence;
-                                if !regions.contains(region) {
-                                    regions.push(region.clone());
-                                }
-                                continue;
-                            }
-                        }
-                    }
+        for group in &selection.groups {
+            let group_start = regions.len();
+            let mut first_end = None;
+            for (position, loops) in std::iter::once(&group.region)
+                .chain(&group.further)
+                .enumerate()
+            {
+                if position == 1 {
+                    first_end = Some(regions.len());
                 }
-                if !single_exterior {
+                let Some(end) = loops
+                    .iter()
+                    .try_fold(cursor, |end, loop_| end.checked_add(loop_.entries.len()))
+                else {
                     return Ok(None);
-                }
-                if !allow_assumptions {
-                    if let Some(rings) = stored_loop_rings(loops, program) {
-                        if let [members] = rings.as_slice() {
-                            let program = members
-                                .iter()
-                                .zip(&loops[0].entries)
-                                .map(|(member, entry)| {
-                                    (
-                                        member.clone(),
-                                        [entry.entry_fields[1], entry.entry_fields[2]],
-                                    )
-                                })
-                                .collect::<Vec<_>>();
+                };
+                let Some(program) = curves.get(cursor..end) else {
+                    return Ok(None);
+                };
+                cursor = end;
+                let single_exterior = matches!(loops.as_slice(), [loop_] if loop_.outer);
+                let found = if single_exterior && !compact {
+                    crate::design::geometry::arrangement_region_matching_curve_program(
+                        source,
+                        resolution.sketch_entities,
+                        program,
+                        scoped.linear_tolerance,
+                        scoped.profile_work,
+                        scoped.ctx,
+                    )?
+                } else {
+                    None
+                };
+                let Some(found) = found else {
+                    if !compact {
+                        if let Some(rings) = stored_loop_rings(loops, program) {
                             if let Some(selected) =
-                                crate::design::geometry::member_loop_union::resolve(
+                                crate::design::geometry::arrangement_regions_matching_member_rings(
                                     source,
                                     resolution.sketch_entities,
-                                    &program,
+                                    &rings,
+                                    &std::collections::HashSet::new(),
                                     scoped.linear_tolerance,
                                     scoped.profile_work,
                                     scoped.ctx,
                                 )?
                             {
-                                for region in selected {
-                                    if !regions.contains(&region) {
-                                        regions.push(region);
+                                if let [region] = selected.regions.as_slice() {
+                                    flags_read |= allow_assumptions || !selected.identity_unique;
+                                    coincident |= selected.coincident
+                                        && (allow_assumptions || !selected.identity_unique);
+                                    island_absence |= selected.island_absence;
+                                    if !regions.contains(region) {
+                                        regions.push(region.clone());
                                     }
+                                    continue;
                                 }
-                                continue;
                             }
                         }
                     }
-                }
-                let Some(split) = crate::design::geometry::arrangement_regions_of_crossing_loop(
-                    source,
-                    resolution.sketch_entities,
-                    program,
-                    scoped.linear_tolerance,
-                    scoped.profile_work,
-                    scoped.ctx,
-                )?
-                else {
-                    return Ok(None);
-                };
-                assumed = true;
-                island_absence |= split.island_absence_assumed;
-                for region in split.regions {
-                    if !regions.contains(&region) {
-                        regions.push(region);
+                    if !single_exterior {
+                        return Ok(None);
                     }
+                    if !allow_assumptions {
+                        if let Some(rings) = stored_loop_rings(loops, program) {
+                            if let [members] = rings.as_slice() {
+                                let program = members
+                                    .iter()
+                                    .zip(&loops[0].entries)
+                                    .map(|(member, entry)| {
+                                        (
+                                            member.clone(),
+                                            [entry.entry_fields[1], entry.entry_fields[2]],
+                                        )
+                                    })
+                                    .collect::<Vec<_>>();
+                                if let Some(selected) =
+                                    crate::design::geometry::member_loop_union::resolve(
+                                        source,
+                                        resolution.sketch_entities,
+                                        &program,
+                                        scoped.linear_tolerance,
+                                        scoped.profile_work,
+                                        scoped.ctx,
+                                    )?
+                                {
+                                    for region in selected {
+                                        if !regions.contains(&region) {
+                                            regions.push(region);
+                                        }
+                                    }
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                    let Some(split) =
+                        crate::design::geometry::arrangement_regions_of_crossing_loop(
+                            source,
+                            resolution.sketch_entities,
+                            program,
+                            scoped.linear_tolerance,
+                            scoped.profile_work,
+                            scoped.ctx,
+                        )?
+                    else {
+                        return Ok(None);
+                    };
+                    assumed = true;
+                    island_absence |= split.island_absence_assumed;
+                    for region in split.regions {
+                        if !regions.contains(&region) {
+                            regions.push(region);
+                        }
+                    }
+                    continue;
+                };
+                island_absence |= found.island_absence_assumed;
+                if !regions.contains(&found.region) {
+                    regions.push(found.region);
                 }
-                continue;
-            };
-            island_absence |= found.island_absence_assumed;
-            if !regions.contains(&found.region) {
-                regions.push(found.region);
+            }
+            if let Some(union) = first_end.and_then(|first_end| {
+                group_union::remove_union_first_region(&mut regions, group_start, first_end)
+            }) {
+                unions.push(union);
             }
         }
     }
     if cursor != curves.len() {
         return Ok(None);
     }
+    // A later member can repeat a group whose first region was removed as
+    // the union of its further regions; the further regions still cover it.
+    regions.retain(|region| !unions.contains(region));
     if !allow_assumptions && (assumed || island_absence || flags_read || coincident) {
         return Ok(None);
     }
@@ -5643,6 +6226,11 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             continue;
         }
         let Some(profile) = profile else {
+            if let Some(selected) =
+                resolve_entity_selection_profile(group, &resolution.path_resolution())
+            {
+                resolved_revolve_profiles.insert(group.id.clone(), (selected, None));
+            }
             continue;
         };
         let mut matches = resolution.placements.iter().filter(|placement| {

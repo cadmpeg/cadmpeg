@@ -2382,7 +2382,7 @@ pub(crate) fn parse_payloads(
     Ok(payloads)
 }
 
-fn direct_shape_entry(
+pub(crate) fn direct_shape_entry(
     ctx: &DecodeContext<'_>,
     property: &PropertyRecord,
 ) -> Result<Option<String>, CodecError> {

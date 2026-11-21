@@ -119,6 +119,62 @@ fn a_closed_edge_on_a_curve_without_a_period_has_no_interval() {
     assert!(length.is_none());
 }
 
+/// `ir` with every edge's vertices removed.
+fn without_vertices(mut ir: cadmpeg_ir::CadIr) -> cadmpeg_ir::CadIr {
+    for edge in &mut ir.geometry.edges {
+        edge.ends = None;
+    }
+    ir
+}
+
+#[test]
+fn an_edge_with_no_vertex_on_a_clamped_closed_spline_admits_its_knot_domain() {
+    let mut builder = Builder::new();
+    let vertex = builder.vertex([0.0, 0.0, 0.0]);
+    builder.closed_polyline(
+        &[
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ],
+        &vertex,
+    );
+    let ir = without_vertices(builder.finish(BodyKind::Wire));
+    let [(interval, length)] = edges(&ir).try_into().ok().unwrap();
+    assert_eq!(interval.unwrap(), [0.0, 4.0]);
+    assert!((length.unwrap().0 - 4.0).abs() < 1.0e-12);
+}
+
+#[test]
+fn an_edge_with_no_vertex_on_a_circle_admits_its_stated_range_only_where_it_closes() {
+    for (range, closed) in [(None, true), (Some([0.0, PI]), false)] {
+        let mut builder = Builder::new();
+        let vertex = builder.vertex([3.0, 0.0, 0.0]);
+        builder.circle(
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+            3.0,
+            &vertex,
+        );
+        let mut ir = without_vertices(builder.finish(BodyKind::Wire));
+        ir.geometry.curves[0].parameter_range =
+            range.and_then(cadmpeg_ir::topology::IncreasingParameterInterval::new);
+        let [(interval, length)] = edges(&ir).try_into().ok().unwrap();
+        if closed {
+            assert_eq!(interval.unwrap(), [0.0, 2.0 * PI]);
+            assert!((length.unwrap().0 - 6.0 * PI).abs() < 1.0e-12);
+        } else {
+            assert_eq!(
+                interval.unwrap_err().reason,
+                UnavailableReason::BoundaryEdgeRangeUnresolved
+            );
+            assert!(length.is_none());
+        }
+    }
+}
+
 #[test]
 fn an_ellipse_quarter_integrates_to_its_series_length() {
     let mut builder = Builder::new();

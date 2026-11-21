@@ -611,6 +611,7 @@ fn the_join_resolves_split_and_base_body_keys_through_their_links() {
             &split,
             SPLIT_TAG,
             FeatureDefinition::Operation(FeatureOperation::SplitBody {
+                extend_tool: None,
                 targets: BodySelection::Native(wrappers[0].id()),
                 tool: SplitBodyTool::Faces(cadmpeg_ir::features::FaceSelection::Native(
                     "tool".to_owned(),
@@ -712,6 +713,7 @@ fn a_split_with_a_local_target_binds_through_its_wrapper_link() {
         &split,
         SPLIT_TAG,
         FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            extend_tool: None,
             targets: local,
             tool: SplitBodyTool::Faces(cadmpeg_ir::features::FaceSelection::Native(
                 "tool".to_owned(),

@@ -396,7 +396,7 @@ pub(super) fn cap_profile_selection(
     let Some(regions) = atomic_sketch_regions(sketch, entities, tolerance, work, ctx)? else {
         return Ok(None);
     };
-    let Some(sampled) = sample_regions(&regions, tolerance) else {
+    let Some(sampled) = sample_regions(&regions, tolerance, work) else {
         return Ok(None);
     };
     let mut selected = Vec::new();
@@ -660,7 +660,7 @@ fn removed_regions(
     let Some(regions) = atomic_sketch_regions(sketch, entities, tolerance, work, ctx)? else {
         return Ok(None);
     };
-    let Some(sampled) = sample_regions(&regions, tolerance) else {
+    let Some(sampled) = sample_regions(&regions, tolerance, work) else {
         return Ok(None);
     };
     let mut selected = Vec::new();
@@ -726,8 +726,9 @@ fn removed_regions(
     Ok(selection)
 }
 
-/// The `selected` regions as trimmed regions, each with the nested regions
-/// left out of the selection as holes.
+/// The `selected` regions as trimmed regions, each with every region nested
+/// directly in it as a hole. A nested region that is also selected is its own
+/// trimmed region, so the regions do not overlap.
 fn trimmed_selection(
     sampled: &[Sampled<'_>],
     selected: &[usize],
@@ -738,7 +739,6 @@ fn trimmed_selection(
         let holes = region
             .nested
             .iter()
-            .filter(|nested| !selected.contains(nested))
             .map(|nested| {
                 sampled[*nested]
                     .region
@@ -1426,7 +1426,31 @@ fn polygon_area(ring: &[Point2]) -> f64 {
 
 /// Each region with a point well inside it, outside the regions nested in it.
 /// `None` when a region has no such point.
-fn sample_regions(regions: &[AtomicSketchRegion], tolerance: f64) -> Option<Vec<Sampled<'_>>> {
+fn sample_regions<'a>(
+    regions: &'a [AtomicSketchRegion],
+    tolerance: f64,
+    work: &ProfileGeometryWork,
+) -> Option<Vec<Sampled<'a>>> {
+    let samples = work.region_samples(regions, tolerance, || sample_points(regions, tolerance))?;
+    Some(
+        regions
+            .iter()
+            .zip(samples)
+            .map(|(region, (point, nested))| Sampled {
+                region,
+                point,
+                nested,
+            })
+            .collect(),
+    )
+}
+
+/// The point of [`sample_regions`] for each region and the outermost regions
+/// nested in it.
+fn sample_points(
+    regions: &[AtomicSketchRegion],
+    tolerance: f64,
+) -> Option<Vec<(Point2, Vec<usize>)>> {
     let areas: Vec<f64> = regions
         .iter()
         .map(|region| polygon_area(&region.polyline).abs())
@@ -1477,8 +1501,11 @@ fn sample_regions(regions: &[AtomicSketchRegion], tolerance: f64) -> Option<Vec<
             high = Point2::new(high.u.max(p.u), high.v.max(p.v));
         }
         let mut best: Option<(Point2, f64)> = None;
+        // The boundary segment that stopped the previous scan. A neighbouring
+        // grid point starts its scan there.
+        let mut nearest = 0;
         for i in 1..SAMPLE_GRID {
-            for j in 1..SAMPLE_GRID {
+            'grid: for j in 1..SAMPLE_GRID {
                 let point = Point2::new(
                     low.u + (high.u - low.u) * f64::from(i) / f64::from(SAMPLE_GRID),
                     low.v + (high.v - low.v) * f64::from(j) / f64::from(SAMPLE_GRID),
@@ -1490,24 +1517,37 @@ fn sample_regions(regions: &[AtomicSketchRegion], tolerance: f64) -> Option<Vec<
                 {
                     continue;
                 }
-                let room = nested
-                    .iter()
-                    .map(|inner| clearance(point, &regions[*inner].polyline))
-                    .fold(clearance(point, &region.polyline), f64::min);
-                if best.is_none_or(|(_, most)| room > most) {
-                    best = Some((point, room));
+                // A point whose clearance falls to the best clearance cannot
+                // replace the best point, so its scan stops there.
+                let floor = best.map(|(_, most)| most);
+                let mut room = f64::INFINITY;
+                let rings = std::iter::once(index)
+                    .chain(nested.iter().copied())
+                    .map(|ring| &regions[ring].polyline);
+                for (order, ring) in rings.enumerate() {
+                    let start = if order == 0 { nearest } else { 0 };
+                    for step in 0..ring.len() {
+                        let segment = (start + step) % ring.len();
+                        room = room.min(point_segment_distance(
+                            point,
+                            (ring[segment], ring[(segment + 1) % ring.len()]),
+                        ));
+                        if floor.is_some_and(|most| room <= most) {
+                            if order == 0 {
+                                nearest = segment;
+                            }
+                            continue 'grid;
+                        }
+                    }
                 }
+                best = Some((point, room));
             }
         }
         let (point, room) = best?;
         if room <= 10.0 * tolerance || area <= tolerance * tolerance {
             return None;
         }
-        out.push(Sampled {
-            region,
-            point,
-            nested,
-        });
+        out.push((point, nested));
     }
     Some(out)
 }

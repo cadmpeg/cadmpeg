@@ -28,7 +28,16 @@
           "kind": "sheet"
         }
       ],
-      "coedges": [],
+      "coedges": [
+        {
+          "edge": "step:data:edge#10-face-11-geometric-set-13-0",
+          "id": "step:data:coedge#10-face-11-geometric-set-13-0",
+          "owner_loop": "step:data:loop#10-face-11-geometric-set-13",
+          "pcurves": [],
+          "radial_next": "step:data:coedge#10-face-11-geometric-set-13-0",
+          "sense": "forward"
+        }
+      ],
       "curves": [
         {
           "geometry": {
@@ -85,22 +94,65 @@
           }
         }
       ],
-      "edges": [],
+      "edges": [
+        {
+          "carrier": {
+            "curve": "step:data:curve#7",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
+          },
+          "ends": {
+            "end": "step:data:vertex#10-face-11-geometric-set-13-0",
+            "start": "step:data:vertex#10-face-11-geometric-set-13-0"
+          },
+          "id": "step:data:edge#10-face-11-geometric-set-13-0"
+        }
+      ],
       "faces": [
         {
           "id": "step:data:face#11-geometric-set-13",
           "loops": {
-            "kind": "unspecified",
-            "loops": []
+            "inner": [],
+            "kind": "classified",
+            "outer": "step:data:loop#10-face-11-geometric-set-13"
           },
           "sense": "forward",
           "shell": "step:data:shell#geometric-set-13",
           "surface": "step:data:surface#11"
         }
       ],
-      "loops": [],
+      "loops": [
+        {
+          "boundary": {
+            "coedges": [
+              "step:data:coedge#10-face-11-geometric-set-13-0"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "step:data:face#11-geometric-set-13",
+          "id": "step:data:loop#10-face-11-geometric-set-13"
+        }
+      ],
       "pcurves": [],
-      "points": [],
+      "points": [
+        {
+          "id": "step:data:point#10-face-11-geometric-set-13-0",
+          "position": {
+            "x": 5.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "instance_path": [],
+            "object_id": "#10"
+          }
+        }
+      ],
       "procedural_curves": [],
       "procedural_surfaces": [
         {
@@ -190,7 +242,12 @@
           }
         }
       ],
-      "vertices": []
+      "vertices": [
+        {
+          "id": "step:data:vertex#10-face-11-geometric-set-13-0",
+          "point": "step:data:point#10-face-11-geometric-set-13-0"
+        }
+      ]
     },
     "ir_version": "11",
     "model": {
@@ -217,7 +274,24 @@
       "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "bodies": [
+            "step:data:body#13"
+          ],
+          "bom_properties": {},
+          "id": "step:product:product#document",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
       "rigid_bodies": [],
       "semantic_annotations": [],
       "sketch_constraints": [],
@@ -252,6 +326,14 @@
     },
     "source": {
       "attributes": {
+        "file_description.description.0": "bounded surface set",
+        "file_description.implementation_level": "2;1",
+        "file_name.author.0": "cadmpeg",
+        "file_name.name": "surface-set",
+        "file_name.organization.0": "cadmpeg",
+        "file_name.preprocessor_version": "cadmpeg-step",
+        "file_name.time_stamp": "2026-07-14T00:00:00",
+        "file_schema.schema_identifiers.0": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
         "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
       },
       "identity": {

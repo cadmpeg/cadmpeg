@@ -19,7 +19,6 @@ use cadmpeg_ir::declared_measures::{
 };
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::products::{OccurrenceParent, PrototypeReference};
 use cadmpeg_ir::report::check::{Check, Finding};
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::topology::{Body, BodyKind};
@@ -252,19 +251,7 @@ fn member_bodies<'ir>(
                     format!("the target definition {definition} is not in the document"),
                 ));
             };
-            let assembly = ir.model.occurrences.iter().any(|child| {
-                let OccurrenceParent::Occurrence { occurrence: parent } = &child.parent else {
-                    return false;
-                };
-                ir.model.occurrences.iter().any(|occurrence| {
-                    &occurrence.id == parent
-                        && matches!(
-                            &occurrence.prototype,
-                            PrototypeReference::Local { definition: local } if local == definition
-                        )
-                })
-            });
-            if assembly {
+            if !found.occurrences.is_empty() {
                 return Err(Unmeasured::gap(
                     Gap::TargetAssembly,
                     format!("the target definition {definition} places child occurrences"),

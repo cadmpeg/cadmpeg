@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::features::edge_treatments::{FullRoundFilletGroup, FullRoundSideSelection};
 use crate::features::holes::{CounterdrillDiameters, HoleConstruction, HoleKind, HoleShape};
+use crate::features::replace_face::ReplaceFaceOperands;
 use crate::features::{
-    BodySelection, FaceBlendOperands, FaceSelection, GeneratedSweepSection, ReplaceFaceOperands,
-    SewBodySelection, SweepCircularRegion, SweepMode, SweepSection, SweepShape,
+    BodySelection, FaceBlendOperands, FaceSelection, GeneratedSweepSection, SewBodySelection,
+    SweepCircularRegion, SweepMode, SweepSection, SweepShape,
 };
 use crate::scalar::{InteriorAngle, PositiveLength};
 

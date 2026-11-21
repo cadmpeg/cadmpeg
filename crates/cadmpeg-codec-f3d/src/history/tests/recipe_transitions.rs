@@ -176,6 +176,7 @@ fn split_face_case() -> (
                 tool: SplitFaceTool::Plane {
                     plane: FeatureId::mint("f3d:test:feature#plane").expect("identity grammar"),
                 },
+                method: Default::default(),
             }),
         ),
         native_ref: Some(scope_id),
@@ -209,6 +210,61 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
             ..
         }) if faces == &[face_id] && native == &group_id
     ));
+}
+
+#[test]
+fn split_face_recovery_and_final_admission_do_not_leave_an_unresolved_selection_loss() {
+    let (mut features, face_id, _) = split_face_case();
+    let mut face = cadmpeg_ir::examples::unit_cube().unwrap().geometry.faces[0].clone();
+    face.id = face_id;
+    let mut losses = Vec::new();
+    crate::history::face_admission::admit_feature_input_faces(
+        &mut features,
+        &[],
+        &[face],
+        &mut losses,
+    )
+    .unwrap();
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn split_face_historical_demotion_records_the_final_selection_loss() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    let (mut features, _, native) = split_face_case();
+    let feature_id = features[0].id.clone();
+    let selection = FaceSelection::historical(
+        crate::ids::feature_input_topology_id(&feature_id, 1),
+        vec![crate::ids::history_input_face_id(
+            &crate::ids::history_input_prefix(&feature_id.key(), 1),
+            7,
+        )],
+        native.clone(),
+    )
+    .unwrap();
+    features[0].evaluation.edit(|definition, _| {
+        let FeatureDefinition::Operation(FeatureOperation::SplitFace { targets, .. }) = definition
+        else {
+            panic!("SplitFace")
+        };
+        *targets = selection;
+    });
+    let mut losses = Vec::new();
+    crate::history::face_admission::admit_feature_input_faces(&mut features, &[], &[], &mut losses)
+        .unwrap();
+    assert_eq!(
+        losses
+            .iter()
+            .map(|loss| loss.code.local_code())
+            .collect::<Vec<_>>(),
+        [
+            "history.face-selection-unbound",
+            "feature.split-face-selection-unresolved"
+        ]
+    );
+    assert!(
+        matches!(features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::SplitFace { targets: FaceSelection::Native(target), .. }) if target == &native)
+    );
 }
 
 #[test]
@@ -448,6 +504,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         cylinder_scope.payload_mut()
     {
         *slot = Some(DesignThreadConstruction {
+            angle: crate::records::feature::thread::DesignThreadAngle::SIXTY,
             form: DesignThreadForm::Standard,
             designation_offset: 0,
             designation: cadmpeg_core::text::NonBlankString::new("M4x0.7").unwrap(),
@@ -1090,6 +1147,7 @@ fn entry_location(position: [f64; 3]) -> crate::records::feature::hole::DesignHo
         position_offset: 0,
         reference_type: 10,
         vertex_input: None,
+        plane: None,
     }
 }
 

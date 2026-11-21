@@ -391,6 +391,7 @@ fn decoded_multiple_sources_share_their_component_record_definition() {
     let paths = crate::design::components::paths::LocalOccurrencePaths::new(
         &occurrences,
         &[],
+        &projection.definitions,
         &projection.occurrences,
         std::slice::from_ref(&scope),
     );
@@ -434,6 +435,7 @@ fn one_missing_source_keeps_the_known_occurrence_and_all_source_matrices() {
     let paths = crate::design::components::paths::LocalOccurrencePaths::new(
         &occurrences[..1],
         &[],
+        &projection.definitions,
         &projection.occurrences,
         std::slice::from_ref(&scope),
     );
@@ -484,8 +486,14 @@ fn source_pose_disagreement_and_omission_have_separate_losses() {
         }
         let projection = project(&scope, &occurrences, &[], &BTreeSet::new());
         assert_eq!(projection.occurrences.len(), 1);
-        assert_eq!(projection.occurrences[0].transform.rows()[0][3], expected);
-        assert_eq!(projection.occurrences[0].transform.rows()[1][3], 0.0);
+        assert_eq!(
+            projection.occurrences[0].transform.unwrap().rows()[0][3],
+            expected
+        );
+        assert_eq!(
+            projection.occurrences[0].transform.unwrap().rows()[1][3],
+            0.0
+        );
         assert!(projection
             .losses
             .iter()
@@ -568,6 +576,7 @@ fn ambiguous_occurrence_identity_retains_an_unresolved_component_selection() {
     let paths = crate::design::components::paths::LocalOccurrencePaths::new(
         &occurrences,
         &[],
+        &projection.definitions,
         &projection.occurrences,
         std::slice::from_ref(&scope),
     );
@@ -632,7 +641,6 @@ fn project(
             body_bindings: bindings,
             bodies: Some(bodies),
             hidden_bodies: None,
-            root_ordinal_start: 0,
             limits: cadmpeg_core::decode::ResourceLimits::default(),
         },
     )
@@ -738,6 +746,7 @@ fn typed_source_sets_project_all_decoded_occurrences() {
     let paths = crate::design::components::paths::LocalOccurrencePaths::new(
         &occurrences,
         &[],
+        &projection.definitions,
         &projection.occurrences,
         std::slice::from_ref(&scope),
     );
@@ -792,7 +801,10 @@ fn a_conflicting_placement_reference_type_uses_the_carrier_with_a_loss() {
     }
     let projection = project(&scope, &occurrences, &[], &BTreeSet::new());
     assert_eq!(projection.occurrences.len(), 1);
-    assert_eq!(projection.occurrences[0].transform.rows()[0][3], 0.0);
+    assert_eq!(
+        projection.occurrences[0].transform.unwrap().rows()[0][3],
+        0.0
+    );
     assert!(projection.losses.iter().any(|loss| loss.code
         == crate::loss::F3dLossCode::FeatureDerivedInstanceCarrierPlacementAssumed.kind()));
 }
@@ -911,7 +923,6 @@ fn centimetre_overflow_retains_native_membership_and_can_use_a_finite_carrier() 
                 body_bindings: &[],
                 bodies: Some(&BTreeSet::new()),
                 hidden_bodies: None,
-                root_ordinal_start: 0,
                 limits: cadmpeg_core::decode::ResourceLimits::default(),
             },
         )
@@ -924,6 +935,7 @@ fn centimetre_overflow_retains_native_membership_and_can_use_a_finite_carrier() 
         let paths = crate::design::components::paths::LocalOccurrencePaths::new(
             &occurrences,
             &[],
+            &projection.definitions,
             &projection.occurrences,
             &[],
         );

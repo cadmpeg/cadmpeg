@@ -4,11 +4,15 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::design::dimension::Dimension;
+use cadmpeg_ir::design::options::{NativeOption, NativeOptions};
+use cadmpeg_ir::design::parameter::{Deviations, Tolerance};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::PmiId;
 use cadmpeg_ir::pmi::{
-    DimensionKind, DimensionTolerance, PmiAnnotation, PmiDefinition, PmiDimension, PmiQuantity,
+    PmiAnnotation, PmiDefinition, PmiDimension, PmiDimensionKind as DimensionKind, PmiQuantity,
     PmiTarget, PmiValue,
 };
 use cadmpeg_ir::report::loss::LossNote;
@@ -23,6 +27,109 @@ const SYMMETRIC_LENGTH_LIMIT_ROUNDING_TOLERANCE_MM: f64 = 1.0e-9;
 const SYMMETRIC_ANGLE_LIMIT_ROUNDING_TOLERANCE_RAD: f64 = 1.0e-12;
 const DEVIATION_LIMIT_RELEASE: u32 = 4;
 const ABSOLUTE_LIMIT_RELEASE: u32 = 10;
+
+/// A tolerance as the attributes state it: deviations about the nominal, or
+/// the lower and upper bounds.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum DimensionTolerance {
+    PlusMinus { lower: PmiValue, upper: PmiValue },
+    Limits { lower: PmiValue, upper: PmiValue },
+}
+
+/// A dimension admitted from its kind, nominal, and stated tolerance, with
+/// the native values its annotation keeps.
+struct Admitted {
+    dimension: PmiDimension,
+    native_options: NativeOptions,
+    source_settings: NativeOptions,
+}
+
+/// Admit a dimension, refusing a nominal or tolerance whose quantity
+/// disagrees with the kind and reversed bounds. Bounds about a nominal are
+/// its deviations; bounds with no nominal stay native.
+fn admit(
+    kind: &DimensionKind,
+    nominal: Option<PmiValue>,
+    tolerance: Option<DimensionTolerance>,
+    mode: Option<&[u8]>,
+) -> Result<Admitted, String> {
+    let expected = kind.quantity().or(nominal.map(|value| value.quantity));
+    if nominal.is_some_and(|value| Some(value.quantity) != expected) {
+        return Err("dimension nominal quantity disagrees with its kind".into());
+    }
+    let mut native_options = NativeOptions::new();
+    let mut source_settings = NativeOptions::new();
+    let stated = match tolerance {
+        None => None,
+        Some(
+            DimensionTolerance::PlusMinus { lower, upper }
+            | DimensionTolerance::Limits { lower, upper },
+        ) if lower.quantity != upper.quantity => {
+            return Err("dimension tolerance quantities disagree".into());
+        }
+        Some(
+            DimensionTolerance::PlusMinus { lower, .. } | DimensionTolerance::Limits { lower, .. },
+        ) if expected.is_some_and(|quantity| quantity != lower.quantity) => {
+            return Err("dimension tolerance quantity disagrees with its kind or nominal".into());
+        }
+        Some(DimensionTolerance::Limits { lower, upper })
+            if lower.value.get() > upper.value.get() =>
+        {
+            return Err("dimension lower limit exceeds its upper limit".into());
+        }
+        Some(DimensionTolerance::PlusMinus { lower, upper }) => {
+            Some(Tolerance::Deviations(Deviations {
+                lower: lower.value,
+                upper: upper.value,
+            }))
+        }
+        Some(DimensionTolerance::Limits { lower, upper }) => {
+            let deviations = nominal.and_then(|nominal| {
+                Deviations::from_limits(nominal.value.get(), lower.value.get(), upper.value.get())
+            });
+            if deviations.is_none() {
+                for (name, limit) in [
+                    (cadmpeg_core::nonblank_literal!("creo:lower_limit"), lower),
+                    (cadmpeg_core::nonblank_literal!("creo:upper_limit"), upper),
+                ] {
+                    native_options.insert(name, measure_option(limit));
+                }
+            }
+            deviations.map(Tolerance::Deviations)
+        }
+    };
+    if stated.is_some() {
+        if let Some(mode) = mode
+            .and_then(|mode| std::str::from_utf8(mode).ok())
+            .and_then(NonBlankString::new)
+        {
+            source_settings.insert(
+                cadmpeg_core::nonblank_literal!("creo:tol_type"),
+                NativeOption::Text(Dimension::Literal(mode)),
+            );
+        }
+    }
+    let mut dimension = PmiDimension::new(kind.clone());
+    dimension.nominal = nominal.map(Dimension::Literal);
+    dimension.tolerance = stated;
+    Ok(Admitted {
+        dimension,
+        native_options,
+        source_settings,
+    })
+}
+
+fn measure_option(value: PmiValue) -> NativeOption {
+    match value.quantity {
+        PmiQuantity::Length => NativeOption::Length(Dimension::Literal(
+            cadmpeg_ir::scalar::Length::from_assigned_real(value.value),
+        )),
+        PmiQuantity::Angle => NativeOption::Angle(Dimension::Literal(
+            cadmpeg_ir::scalar::Angle::from_assigned_real(value.value),
+        )),
+        PmiQuantity::Ratio => NativeOption::Real(Dimension::Literal(value.value)),
+    }
+}
 
 /// How `PTC_DIM_LOWER_LIMIT` and `PTC_DIM_UPPER_LIMIT` state a dimension's bounds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -62,7 +169,7 @@ struct ProjectedDimension {
     owner: u32,
     owner_type: u32,
     offset: usize,
-    definition: PmiDimension,
+    definition: Admitted,
     targets: Vec<PmiTarget>,
 }
 
@@ -185,8 +292,7 @@ pub(super) fn transfer(
         let (mut dimension_tolerance, mut unresolved_tolerance) =
             tolerance(&fields, fields.nominal, form, quantity, length_scale);
         let admissible = |candidate: &Option<DimensionTolerance>| {
-            candidate.is_some()
-                && PmiDimension::new(dimension_kind.clone(), nominal, candidate.clone()).is_ok()
+            candidate.is_some() && admit(&dimension_kind, nominal, *candidate, fields.mode).is_ok()
         };
         if !form_selected && reads_limits(&fields) && !admissible(&dimension_tolerance) {
             let other = form.other();
@@ -198,25 +304,24 @@ pub(super) fn transfer(
         }
         let assumed_form = !form_selected && dimension_tolerance.is_some() && reads_limits(&fields);
         unresolved += usize::from(unresolved_tolerance);
-        let definition =
-            match PmiDimension::new(dimension_kind.clone(), nominal, dimension_tolerance) {
-                Ok(definition) => {
-                    if assumed_form {
-                        match form {
-                            LimitForm::Deviation => assumed_deviation_limits += 1,
-                            LimitForm::Absolute => assumed_absolute_limits += 1,
-                        }
+        let definition = match admit(&dimension_kind, nominal, dimension_tolerance, fields.mode) {
+            Ok(definition) => {
+                if assumed_form {
+                    match form {
+                        LimitForm::Deviation => assumed_deviation_limits += 1,
+                        LimitForm::Absolute => assumed_absolute_limits += 1,
                     }
-                    definition
                 }
-                Err(_) => {
-                    unresolved += 1;
-                    let Ok(definition) = PmiDimension::new(dimension_kind, nominal, None) else {
-                        continue;
-                    };
-                    definition
-                }
-            };
+                definition
+            }
+            Err(_) => {
+                unresolved += 1;
+                let Ok(definition) = admit(&dimension_kind, nominal, None, fields.mode) else {
+                    continue;
+                };
+                definition
+            }
+        };
         if quantity == PmiQuantity::Length {
             length_dimensions += 1;
         }
@@ -262,13 +367,18 @@ pub(super) fn transfer(
             "dimensional attributes",
             Exactness::Derived,
         )?;
-        ir.model.pmi.push(PmiAnnotation {
+        let mut annotation = PmiAnnotation::new(
             id,
-            name: None,
-            visible: None,
-            targets: dimension.targets.iter().cloned().map(Into::into).collect(),
-            definition: PmiDefinition::Dimension(dimension.definition.clone()),
-        });
+            dimension.targets.iter().cloned().map(Into::into).collect(),
+            PmiDefinition::Dimension(dimension.definition.dimension.clone()),
+        );
+        annotation
+            .native_options
+            .clone_from(&dimension.definition.native_options);
+        annotation
+            .source_settings
+            .clone_from(&dimension.definition.source_settings);
+        ir.model.pmi.push(annotation);
     }
 
     if unresolved != 0 {
@@ -572,13 +682,12 @@ fn tolerance(
 mod tests {
     use super::{
         add_attribute, dimension_kind, tolerance, transfer, AnnotationIndex, Attribute,
-        DimensionFields, DimensionSource, Element, LimitForm, Value,
+        DimensionFields, DimensionKind, DimensionSource, DimensionTolerance, Element, LimitForm,
+        Value,
     };
     use crate::loss::CreoLossCode;
     use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::pmi::{
-        DimensionKind, DimensionTolerance, PmiAnnotation, PmiDefinition, PmiQuantity, PmiValue,
-    };
+    use cadmpeg_ir::pmi::{PmiAnnotation, PmiDefinition, PmiQuantity, PmiValue};
     use cadmpeg_ir::report::loss::LossNote;
     use cadmpeg_ir::AnnotationBuilder;
     use std::collections::BTreeMap;
@@ -824,8 +933,8 @@ mod tests {
             let PmiDefinition::Dimension(dimension) = &pmi[0].definition else {
                 panic!("dimension definition")
             };
-            assert_eq!(dimension.kind(), &DimensionKind::Radius);
-            let nominal = dimension.nominal().expect("nominal");
+            assert_eq!(&dimension.dimension, &DimensionKind::Radius);
+            let nominal = dimension.literal_nominal().expect("nominal");
             assert_eq!(nominal.quantity, PmiQuantity::Length);
             close(nominal.value.get(), expected_nominal_mm);
             assert!(losses
@@ -932,7 +1041,32 @@ mod tests {
         let PmiDefinition::Dimension(dimension) = &annotation.definition else {
             panic!("dimension definition")
         };
-        (dimension.tolerance().cloned(), losses)
+        let limits = annotation.source_settings.get("creo:tol_type")
+            == Some(&cadmpeg_ir::design::options::NativeOption::Text(
+                cadmpeg_ir::design::dimension::Dimension::Literal(
+                    cadmpeg_core::text::NonBlankString::new("Limits").expect("a mode"),
+                ),
+            ));
+        let nominal = dimension
+            .literal_nominal()
+            .map_or(0.0, |value| value.value.get());
+        let length = |value| PmiValue::new(value, PmiQuantity::Length).expect("finite length");
+        let tolerance = match &dimension.tolerance {
+            Some(cadmpeg_ir::design::parameter::Tolerance::Deviations(deviations)) if limits => {
+                Some(DimensionTolerance::Limits {
+                    lower: length(nominal + deviations.lower.get()),
+                    upper: length(nominal + deviations.upper.get()),
+                })
+            }
+            Some(cadmpeg_ir::design::parameter::Tolerance::Deviations(deviations)) => {
+                Some(DimensionTolerance::PlusMinus {
+                    lower: length(deviations.lower.get()),
+                    upper: length(deviations.upper.get()),
+                })
+            }
+            _ => None,
+        };
+        (tolerance, losses)
     }
 
     fn limit_form_losses(losses: &[LossNote]) -> usize {

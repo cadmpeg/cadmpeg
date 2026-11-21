@@ -43,6 +43,7 @@ pub(super) fn split_body_test_feature(scope_id: &str) -> Feature {
         source_content: Default::default(),
         evaluation: FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::SplitBody {
+                extend_tool: None,
                 targets: BodySelection::Unresolved,
                 tool: SplitBodyTool::Faces(FaceSelection::Faces(vec![])),
             }),
@@ -62,6 +63,7 @@ fn split_body_with_face_tool(scope_id: &str, face_slots: &[i64]) -> Feature {
     feature
         .evaluation
         .set_definition(FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            extend_tool: None,
             targets: BodySelection::Unresolved,
             tool: SplitBodyTool::Faces(FaceSelection::Faces(faces)),
         }));
@@ -481,6 +483,7 @@ fn split_plane_only_emitted_for_split_body() {
     feature_datum_split
         .evaluation
         .set_definition(FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            extend_tool: None,
             targets: BodySelection::Unresolved,
             tool: SplitBodyTool::Plane { plane: datum_id },
         }));

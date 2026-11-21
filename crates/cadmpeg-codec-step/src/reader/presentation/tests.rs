@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 use super::{find_color, style_application_order, ColorResolution, StyleDomain};
+use cadmpeg_ir::design::options::NativeOptions;
 use std::collections::BTreeSet;
 
 mod cache_storage;
@@ -960,6 +961,41 @@ fn surface_style_transparency_transfers_to_appearance_alpha() {
         .any(|binding| binding.source_entity_id.as_deref() == Some("#12")));
 }
 
+/// ISO 10303-46 admits `SURFACE_STYLE_TRANSPARENT` in a surface side style
+/// only through a rendering's properties, so one listed directly in the side
+/// style leaves the color opaque and is reported.
+#[test]
+fn a_transparency_listed_outside_a_rendering_is_reported() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('surface origin',(0.,0.,0.));
+#2=DIRECTION('surface normal',(0.,0.,1.));
+#3=DIRECTION('surface u',(1.,0.,0.));
+#4=AXIS2_PLACEMENT_3D('surface placement',#1,#2,#3);
+#5=PLANE('styled surface',#4);
+#6=COLOUR_RGB('red',1.,0.,0.);
+#7=SURFACE_STYLE_TRANSPARENT(0.25);
+#8=SURFACE_STYLE_RENDERING(.CONSTANT_SHADING.,#6);
+#9=SURFACE_SIDE_STYLE('',(#8,#7));
+#10=SURFACE_STYLE_USAGE(.BOTH.,#9);
+#11=PRESENTATION_STYLE_ASSIGNMENT((#10));
+#12=STYLED_ITEM('',(#11),#5);",
+    );
+
+    let alphas = result
+        .ir()
+        .model
+        .appearances
+        .iter()
+        .filter_map(|appearance| appearance.base_color.map(cadmpeg_ir::topology::Color::a))
+        .collect::<Vec<_>>();
+    assert_eq!(alphas, vec![1.0]);
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::SurfaceTransparencyMisplaced.kind()
+            && loss.message.contains("SURFACE_SIDE_STYLE #9")
+            && loss.message.contains("#7")
+    }));
+}
+
 #[test]
 fn duplicate_surface_transparency_properties_do_not_select_by_set_order() {
     for input in [
@@ -1588,6 +1624,7 @@ pub(crate) fn face_appearance_binding_styles_the_advanced_face() {
         ),
         properties: std::collections::BTreeMap::default(),
         textures: Vec::new(),
+        native_ref: None,
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:model:appearance-binding#face"
@@ -1600,6 +1637,7 @@ pub(crate) fn face_appearance_binding_styles_the_advanced_face() {
         object_type: None,
         visible: None,
         channels: std::collections::BTreeMap::default(),
+        native_ref: None,
     });
     let s = export(&ir);
     assert!(s.contains("COLOUR_RGB('',0.125,0.125,0.125)"));
@@ -1638,6 +1676,7 @@ fn vertex_appearance_binding_styles_the_vertex_point() {
         ),
         properties: std::collections::BTreeMap::default(),
         textures: Vec::new(),
+        native_ref: None,
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:model:appearance-binding#vertex"
@@ -1650,6 +1689,7 @@ fn vertex_appearance_binding_styles_the_vertex_point() {
         object_type: None,
         visible: None,
         channels: std::collections::BTreeMap::default(),
+        native_ref: None,
     });
 
     let text = export(&ir);
@@ -1708,7 +1748,9 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
     use cadmpeg_ir::ids::{LayerId, OccurrenceId, PmiId, ProductDefinitionId};
     use cadmpeg_ir::pmi::{PmiAnnotation, PmiDefinition};
     use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
-    use cadmpeg_ir::products::{Occurrence, OccurrenceParent, ProductDefinition};
+    use cadmpeg_ir::products::{
+        ExternalDocument, Occurrence, ProductDefinition, ProductDefinitionKind, Storage,
+    };
 
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let body = ir.geometry.bodies[0].id.clone();
@@ -1716,71 +1758,34 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
         ProductDefinitionId::mint("test:model:product#parent").expect("identity grammar");
     let child_product =
         ProductDefinitionId::mint("test:model:product#child").expect("identity grammar");
-    ir.model.product_definitions.extend([
-        ProductDefinition {
-            sketches: Vec::default(),
-            id: parent_product.clone(),
-            kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
-            source_name: Some("Parent assembly".into()),
-            label: Some("Parent assembly".into()),
-            description: None,
-            part_number: None,
-            bom_properties: std::collections::BTreeMap::default(),
-            bodies: Vec::new(),
-            native_ref: None,
-        },
-        ProductDefinition {
-            sketches: Vec::default(),
-            id: child_product.clone(),
-            kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
-            source_name: Some("Child part".into()),
-            label: Some("Child part".into()),
-            description: None,
-            part_number: None,
-            bom_properties: std::collections::BTreeMap::default(),
-            bodies: vec![body],
-            native_ref: None,
-        },
-    ]);
-    let root = OccurrenceId::mint("test:model:occurrence#root").expect("identity grammar");
     let child = OccurrenceId::mint("test:model:occurrence#child").expect("identity grammar");
-    ir.model.occurrences.extend([
-        Occurrence {
-            id: root.clone(),
-            prototype: cadmpeg_ir::products::PrototypeReference::Local {
-                definition: parent_product.clone(),
-            },
-            parent: OccurrenceParent::Root {},
-            ordinal: 0,
-            transform: Transform::identity(),
-            linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-            name: Some("Root assembly".into()),
-            visible: None,
-            link: None,
-            native_ref: None,
-        },
-        Occurrence {
-            id: child.clone(),
-            prototype: cadmpeg_ir::products::PrototypeReference::Local {
-                definition: child_product,
-            },
-            parent: OccurrenceParent::Occurrence { occurrence: root },
-            ordinal: 0,
-            transform: Transform::affine([
+    let mut parent = ProductDefinition::root(parent_product.clone(), ExternalDocument::default());
+    parent.kind = Some(ProductDefinitionKind::Part);
+    parent.source_name = Some("Parent assembly".into());
+    parent.label = Some("Parent assembly".into());
+    parent.occurrences = vec![child.clone()];
+    let mut child_definition = ProductDefinition::new(child_product.clone(), Storage::Embedded);
+    child_definition.kind = Some(ProductDefinitionKind::Part);
+    child_definition.source_name = Some("Child part".into());
+    child_definition.label = Some("Child part".into());
+    child_definition.bodies = vec![body];
+    ir.model
+        .product_definitions
+        .extend([parent, child_definition]);
+    let mut child_occurrence = Occurrence::new(
+        child.clone(),
+        child_product,
+        Some(
+            Transform::affine([
                 [1.0, 0.0, 0.0, 25.0],
                 [0.0, 1.0, 0.0, 0.0],
                 [0.0, 0.0, 1.0, 0.0],
             ])
             .expect("affine transform"),
-            linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-            name: Some("Child occurrence".into()),
-            visible: None,
-            link: None,
-            native_ref: None,
-        },
-    ]);
+        ),
+    );
+    child_occurrence.name = Some("Child occurrence".into());
+    ir.model.occurrences.push(child_occurrence);
     let annotation = PmiId::mint("test:model:pmi#note").expect("identity grammar");
     ir.model.pmi.push(PmiAnnotation {
         id: annotation.clone(),
@@ -1792,6 +1797,9 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
             placement: Some(Transform::identity()),
             semantics: Vec::new(),
         },
+        native_ref: None,
+        native_options: NativeOptions::new(),
+        source_settings: NativeOptions::new(),
     });
     ir.model.presentation_layers.push(PresentationLayer {
         id: LayerId::mint("test:model:layer#mixed").expect("identity grammar"),
@@ -1878,6 +1886,7 @@ pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
         ),
         properties: std::collections::BTreeMap::default(),
         textures: Vec::new(),
+        native_ref: None,
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:model:appearance-binding#face"
@@ -1890,6 +1899,7 @@ pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
         object_type: None,
         visible: None,
         channels: std::collections::BTreeMap::default(),
+        native_ref: None,
     });
 
     let s = export(&ir);

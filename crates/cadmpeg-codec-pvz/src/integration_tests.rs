@@ -132,7 +132,11 @@ fn decode_classifies_the_package_and_reports_an_undecodable_structure() {
             ),
         "{message}"
     );
-    assert!(result.ir().model.product_definitions.is_empty());
+    assert!(
+        cadmpeg_ir::products::stated_definitions(&result.ir().model.product_definitions)
+            .next()
+            .is_none()
+    );
     assert!(result.ir().model.tessellations.is_empty());
 
     let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).unwrap();
@@ -161,7 +165,7 @@ fn every_structure_signature_decodes_the_assembly() {
                 model.appearances.len(),
                 model.appearance_bindings.len(),
             ),
-            (3, 4, 2, 2, 1, 1),
+            (3, 3, 2, 2, 1, 1),
             "{signature}"
         );
         assert!(result.report().geometry_transferred());
@@ -206,20 +210,16 @@ fn the_assembly_maps_to_products_placements_meshes_and_appearances() {
     let turned = model
         .occurrences
         .iter()
-        .find(|occurrence| occurrence.id.as_str() == "pvz:model:occurrence#2")
+        .find(|occurrence| occurrence.id.as_str() == "pvz:model:occurrence#1")
         .unwrap();
     assert_eq!(turned.name.as_deref(), Some("42"));
     assert_eq!(
-        turned.transform.affine_rows(),
+        turned.transform.unwrap().affine_rows(),
         [
-            [0.0, -1.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0, 200.0],
-            [0.0, 0.0, 1.0, 0.0]
+            [0.0, -2.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0, 200.0],
+            [0.0, 0.0, 2.0, 0.0]
         ]
-    );
-    assert_eq!(
-        turned.scale.map(cadmpeg_ir::scalar::FiniteReal::get),
-        [2.0; 3]
     );
 
     let bracket = &model.tessellations[0];
@@ -282,7 +282,8 @@ fn a_malformed_geometry_member_is_reported_and_the_rest_decodes() {
     let result = decode(&bytes);
     assert!(loss_codes(&result).contains(&record_unreadable_kind()));
     assert_eq!(result.ir().model.tessellations.len(), 1);
-    assert_eq!(result.ir().model.occurrences.len(), 4);
+    // §8.1: the root definition owns the three placements.
+    assert_eq!(result.ir().model.occurrences.len(), 3);
 }
 
 #[test]
@@ -308,7 +309,8 @@ fn a_geometry_member_that_does_not_open_is_reported_and_the_rest_decodes() {
         .starts_with("part archive-entry \"bracket.ol\" stream=\"\" offset="));
     assert!(malformed[0].message.ends_with("; dropped=[]"));
     assert_eq!(result.ir().model.tessellations.len(), 1);
-    assert_eq!(result.ir().model.occurrences.len(), 4);
+    // §8.1: the root definition owns the three placements.
+    assert_eq!(result.ir().model.occurrences.len(), 3);
     let stubs = result.ir().native_unknowns("pvz").unwrap();
     let [stub] = stubs.as_slice() else {
         panic!("one stub: {stubs:?}");

@@ -16,14 +16,8 @@ use crate::report::check::{Check, Finding};
 use crate::report::Severity;
 use crate::schema::EntitySchema;
 
-use super::geometry_consistency::check_edge_endpoint_consistency;
-use super::identity_order::check_identity_and_order;
 use super::record_finding;
-use super::referential_integrity::check_typed_references;
-use super::topology::graphs::{
-    check_coedge_pairing, check_shell_connectivity, check_wire_topology,
-};
-use super::topology::{check_references, check_topology_tolerances};
+use super::topology::nested;
 
 /// Identities of every record of a nest.
 fn nest_identities(geometry: &crate::document::Topology) -> Vec<&str> {
@@ -52,18 +46,8 @@ fn check_nest(
     body: &HistoryBody,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    let mut nest = CadIr::empty();
-    nest.geometry = body.topology.to_topology();
-    let index = ModelIndex::build(&nest);
     let mut nested = Vec::new();
-    check_identity_and_order(&index, &mut nested)?;
-    check_references(ctx, &nest, &index, &mut nested)?;
-    check_typed_references(ctx, &nest, &index, &mut nested)?;
-    check_coedge_pairing(&nest, &mut nested)?;
-    check_shell_connectivity(&nest, &mut nested);
-    check_wire_topology(&nest, &mut nested);
-    check_edge_endpoint_consistency(ctx, &nest, &mut nested)?;
-    check_topology_tolerances(&nest, &mut nested);
+    nested::check(ctx, body.topology.to_topology(), &mut nested)?;
     for mut finding in nested {
         finding.message = format!("history body nest: {}", finding.message);
         finding.related.insert(0, body.id.as_str().to_owned());

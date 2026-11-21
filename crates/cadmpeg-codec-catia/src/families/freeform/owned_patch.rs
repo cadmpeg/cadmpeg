@@ -67,6 +67,7 @@ enum SheetSurfaceFit {
 
 #[derive(Clone, Copy, Default)]
 struct SheetBoundaryRecovery {
+    untransferred_plane_bounds: Option<[[f64; 2]; 2]>,
     rolling_extension_mm: f64,
     affine_vertex_shift_mm: f64,
 }

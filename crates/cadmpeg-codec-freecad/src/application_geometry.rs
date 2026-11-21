@@ -80,6 +80,19 @@ pub(crate) fn transfer(
     Ok(transferred)
 }
 
+/// The side entry a mesh or point-cloud property names on its value root.
+pub(crate) fn payload_entry(
+    ctx: &DecodeContext<'_>,
+    property: &PropertyRecord,
+) -> Result<Option<String>, CodecError> {
+    let geometry_kind = match property.type_name.as_str() {
+        "Mesh::PropertyMeshKernel" => GeometryKind::Mesh,
+        "Points::PropertyPointKernel" => GeometryKind::Points,
+        _ => return Ok(None),
+    };
+    validate_value_root(ctx, property, geometry_kind.value_tag())
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum GeometryKind {
     Mesh,

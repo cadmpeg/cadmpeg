@@ -60,19 +60,8 @@
           "id": "usd:stage:occurrence#/Future",
           "name": "Future",
           "native_ref": "/Future",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Future",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Future",
           "transform": [
             [
               1.0,
@@ -107,10 +96,33 @@
           "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Future",
+          "instance_bodies": [],
           "kind": "group",
           "native_ref": "/Future",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
-          "source_name": "Future"
+          "source_name": "Future",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
+        },
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "usd:stage:root#stage",
+          "instance_bodies": [],
+          "occurrences": [
+            "usd:stage:occurrence#/Future"
+          ],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],

@@ -53,7 +53,7 @@ fn damaged_first_optional_frame_keeps_detection_and_required_brep_admission() {
     super::assert_valid(&decoded);
     assert!(!decoded.report().losses.is_empty());
     assert!(<F3dCodec as CodecBackend>::validate_native(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         decoded.ir(),
         None,
     )
@@ -138,7 +138,7 @@ fn unreadable_assets_preserve_the_complete_model_and_exact_archive() {
             assert_eq!(decoded.ir().model, expected.ir().model);
             super::assert_valid(&decoded);
             assert!(<F3dCodec as CodecBackend>::validate_native(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 decoded.ir(),
                 None,
             )
@@ -161,7 +161,11 @@ fn unreadable_assets_preserve_the_complete_model_and_exact_archive() {
                 .expect("the loss names the stub");
             // No product definition stands for this document, so no record
             // contains the entry.
-            assert!(decoded.ir().model.product_definitions.is_empty());
+            assert!(cadmpeg_ir::products::stated_definitions(
+                &decoded.ir().model.product_definitions
+            )
+            .next()
+            .is_none());
             assert!(stub.links.is_empty());
             let retained = decoded
                 .source_fidelity()
@@ -194,7 +198,6 @@ fn unreadable_assets_preserve_the_complete_model_and_exact_archive() {
 
 #[test]
 fn an_unreadable_asset_beside_a_stored_frame_root_links_to_the_source_root_definition() {
-    use cadmpeg_ir::products::{OccurrenceParent, PrototypeReference};
     let name = "FusionAssetName[Active]/Previews/thumbnail.png";
     let (bulk, meta) = crate::test_support::component_design::nested_local_component_design(&[]);
     let original = crate::test_support::body_map_test::f3d_with_breps_design_and_assets(
@@ -204,29 +207,29 @@ fn an_unreadable_asset_beside_a_stored_frame_root_links_to_the_source_root_defin
         &[(name, b"preview")],
     );
     let expected = super::decode(original.clone());
-    let roots = |model: &cadmpeg_ir::document::Model, stored_frame: bool| {
-        model
-            .occurrences
-            .iter()
-            .filter(|occurrence| {
-                occurrence.parent == OccurrenceParent::Root {}
-                    && crate::design::components::is_stored_frame_occurrence(occurrence)
-                        == stored_frame
-            })
-            .map(|occurrence| match &occurrence.prototype {
-                PrototypeReference::Local { definition } => definition.as_str().to_owned(),
-                other => panic!("a local root prototype: {other:?}"),
-            })
-            .collect::<std::collections::BTreeSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>()
-    };
+    // §8.1: the root component is the root definition, and the stored-frame
+    // occurrence of the other body-owning definition sits in it.
     let model = &expected.ir().model;
-    let Ok([source_root]) = <[String; 1]>::try_from(roots(model, false)) else {
-        panic!("one source root prototype: {:?}", model.occurrences);
-    };
-    let Ok([stored_root]) = <[String; 1]>::try_from(roots(model, true)) else {
-        panic!("one stored-frame root prototype: {:?}", model.occurrences);
+    let root = model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.is_root())
+        .expect("a root definition");
+    let source_root = root.id.as_str().to_owned();
+    let stored = root
+        .occurrences
+        .iter()
+        .filter_map(|id| {
+            model
+                .occurrences
+                .iter()
+                .find(|occurrence| &occurrence.id == id)
+        })
+        .filter(|occurrence| crate::design::components::is_stored_frame_occurrence(occurrence))
+        .map(|occurrence| occurrence.prototype.as_str().to_owned())
+        .collect::<Vec<_>>();
+    let Ok([stored_root]) = <[String; 1]>::try_from(stored) else {
+        panic!("one stored-frame occurrence: {:?}", model.occurrences);
     };
     assert_ne!(source_root, stored_root, "two root definitions");
 

@@ -57,7 +57,7 @@ fn exhausting_edge_recipe_program() -> Vec<i32> {
 
 #[test]
 fn edge_recipe_side_search_skips_the_structure_past_its_work_cap() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let program = exhausting_edge_recipe_program();
     assert_eq!(edge_recipe_structure(&ctx, &program).unwrap(), None);
     let budget = WorkBudget::new(RECIPE_SIDE_SEARCH_WORK);
@@ -85,7 +85,7 @@ fn edge_recipe_side_search_skips_the_structure_past_its_work_cap() {
 
 #[test]
 fn edge_recipe_admits_variable_preludes_single_headers_and_empty_extended_payloads() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for prelude in [
         vec![-1, -1, 2, 0, 1, 1, 0],
         vec![0, 1, 1, 1, -1],
@@ -122,7 +122,7 @@ fn edge_recipe_admits_variable_preludes_single_headers_and_empty_extended_payloa
 
 #[test]
 fn edge_recipe_requires_valid_prelude_ordinals_tags_and_complete_terminal() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let program = [-1, -1, 2, 0, -1, 1, -1, 1, -1, 1, 0, -1, 0, 0, -1];
     assert!(edge_recipe_structure(&ctx, &program).unwrap().is_some());
     for offset in [0, 1, 2, 3, 4, 5, 6, 8, 11, 14] {
@@ -144,7 +144,7 @@ fn edge_recipe_requires_valid_prelude_ordinals_tags_and_complete_terminal() {
 
 #[test]
 fn face_recipe_retains_its_delimiter_and_header_count_domain() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let program = [
         0, -1, 2, -1, 2, -1, 2, 0, -1, 1, -1, 0, 0, -1, 2, 0, -1, 1, -1, 0, 0, -1,
     ];
@@ -168,7 +168,7 @@ fn face_recipe_retains_its_delimiter_and_header_count_domain() {
 
 #[test]
 fn face_recipe_second_prelude_counts_its_side_clauses() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let single = [
         1, -1, 0, -1, 1, -1, 2, 0, -1, 1, -1, 0, 1, 0, 2, 1, 1, 1, 1, 0, 1, -1,
     ];

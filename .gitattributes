@@ -7,6 +7,9 @@ crates/*/tests/golden/**/*.txt text eol=lf
 crates/*/tests/golden/**/*.step text eol=lf
 crates/*/tests/golden/**/*.bin binary
 
+# The committed JSON Schemas are compared byte for byte with the derived ones.
+crates/cadmpeg-ir/schema/*.json text eol=lf
+
 # Fixture inputs are read as bytes and decoded, so conversion changes the
 # decode, not just the file. IGES cards are 80 columns wide and its reader
 # records which line ending each card carried, so a converted `.igs` decodes
@@ -22,3 +25,6 @@ crates/*/src/**/tests/data/** binary
 # diffs and merges as text.
 corpus/nist-pmi/** binary
 corpus/nist-pmi/**/*.md diff merge text eol=lf
+
+# ISO 10303 short-name list, kept byte for byte as ISO publishes it.
+crates/cadmpeg-codec-step/src/parse/short_names/short-names.txt -text

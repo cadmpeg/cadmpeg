@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::design::decode::scopes::thread::{exact_thread_construction, thread_modeled_flag_loss};
+use crate::design::decode::scopes::thread::{
+    exact_thread_construction, thread_modeled_entries_loss, thread_modeled_flag_loss,
+};
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::thread::{
     DesignThreadConstruction, DesignThreadExtended, DesignThreadForm,
@@ -123,7 +125,15 @@ impl Fixture {
     }
 
     fn decode_bytes(&self, bytes: &[u8]) -> Option<DesignThreadConstruction> {
-        let references = self.references();
+        self.decode_bytes_with_references(bytes, self.references(), 0.0)
+    }
+
+    fn decode_bytes_with_references(
+        &self,
+        bytes: &[u8],
+        references: Vec<u32>,
+        offset: f64,
+    ) -> Option<DesignThreadConstruction> {
         let mut scope = DesignParameterScope::empty(
             "f3d:test:extended-thread#100",
             crate::records::feature::scope::DesignFeatureKind::Thread,
@@ -143,7 +153,7 @@ impl Fixture {
                 draft.layout_fixture_tail();
             })
             .unwrap();
-        let owners = [(OFFSET_OWNER, 0u32, 0.0), (LENGTH_OWNER, 1, 2.0)]
+        let owners = [(OFFSET_OWNER, 0u32, offset), (LENGTH_OWNER, 1, 2.0)]
             .into_iter()
             .map(|(index, ordinal, value)| {
                 let owner = crate::design::decode::parameters::parse_parameter_owner(
@@ -163,6 +173,53 @@ impl Fixture {
             })
             .collect::<Vec<_>>();
         exact_thread_construction(bytes, &scope, &owners)
+    }
+}
+
+#[test]
+fn owned_hole_thread_reads_its_hole_length_and_offset_references() {
+    use crate::layout::thread_extended_standard_trailer as standard_trailer;
+    use crate::layout::thread_standard_construction_tail as scalar;
+
+    let direct = Fixture {
+        compact_owned: Some(1),
+        ..Fixture::cosmetic()
+    };
+    let references = direct.references();
+    let extended = Fixture {
+        external: 0,
+        class: "6H",
+        full_length: 0,
+        ..Fixture::modeled()
+    };
+    for (fixture, omit_prefix_word) in [(&direct, false), (&direct, true), (&extended, false)] {
+        let mut bytes = fixture.bytes();
+        let trailer_at = bytes.len() - (standard_trailer::RIGHT_HANDED + 1);
+        let marker_at = trailer_at - scalar::STANDARD_TRAILER;
+        bytes[marker_at + 1] = 2;
+        bytes[trailer_at] = 1;
+        let hole_reference = trailer_at + 1;
+        bytes.splice(
+            hole_reference..hole_reference,
+            94u32.to_le_bytes().into_iter().chain([0; 6]),
+        );
+        if fixture.compact_owned.is_some() {
+            bytes.drain(20..24);
+            if omit_prefix_word {
+                bytes.drain(29..33);
+            }
+        }
+        let construction = fixture
+            .decode_bytes_with_references(&bytes, references.clone(), 0.25)
+            .expect("owned Hole thread");
+        assert_eq!(construction.form.hole_reference().unwrap().value.get(), 94);
+        assert_eq!(construction.face_group_record_indices, [101]);
+        assert_eq!(construction.modeled, fixture.entries != 0);
+        let length_marker = bytes.len() - 23;
+        bytes[length_marker] = 0;
+        assert!(fixture
+            .decode_bytes_with_references(&bytes, references.clone(), 0.25)
+            .is_none());
     }
 }
 
@@ -244,10 +301,33 @@ fn the_entry_count_and_the_tail_flag_state_a_modeled_thread() {
     let cosmetic = Fixture::cosmetic().decode().expect("cosmetic thread");
     assert!(!cosmetic.modeled);
     assert!(thread_modeled_flag_loss(&scope, &cosmetic).is_none());
-    let mut cases = Vec::new();
     let mut flagged = Fixture::cosmetic();
     flagged.modeled_flag = 1;
-    cases.push(("flag without entry", flagged));
+    let flagged_construction = flagged.decode().expect("flag without entry");
+    assert!(flagged_construction.modeled);
+    assert_eq!(
+        flagged_construction.form,
+        DesignThreadForm::StandardExtended
+    );
+    let mut framed_scope = scope.clone();
+    framed_scope
+        .try_edit(|draft| {
+            draft.frame_length = 600;
+            draft.paired_byte_offset = 600;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    assert_eq!(
+        thread_modeled_entries_loss(&flagged.bytes(), &framed_scope, &flagged_construction)
+            .expect("entries-absent loss")
+            .code,
+        crate::loss::F3dLossCode::ThreadModeledEntriesAbsent.kind()
+    );
+    assert!(
+        thread_modeled_entries_loss(&Fixture::modeled().bytes(), &framed_scope, &construction)
+            .is_none()
+    );
+    let mut cases = Vec::new();
     let mut two = Fixture::modeled();
     two.entries = 2;
     cases.push(("two entries", two));

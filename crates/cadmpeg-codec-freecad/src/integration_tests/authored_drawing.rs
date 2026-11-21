@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::FcstdCodec;
 use cadmpeg_ir::drawings::{DrawingCurveGeometry, DrawingKind};
-use cadmpeg_ir::semantic_annotations::{DimensionKind, SemanticAnnotationKind};
+use cadmpeg_ir::semantic_annotations::{
+    AnnotationDimensionKind as DimensionKind, SemanticAnnotationKind,
+};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 const LENGTH_TOLERANCE: f64 = 1.0e-12;
@@ -104,10 +106,7 @@ fn authored_drawing_keeps_page_view_dimension_and_note() {
         .find(|a| a.object.ends_with("#Dimension"))
         .unwrap();
     assert_eq!(dim.kind, SemanticAnnotationKind::Dimension);
-    assert!(matches!(
-        dim.dimension_kind,
-        Some(DimensionKind::Distance {})
-    ));
+    assert!(matches!(dim.dimension_kind, Some(DimensionKind::Distance)));
     assert_eq!(dim.format.as_deref(), Some("%.2w"));
     assert_eq!(
         dim.references["References2D"][0].native_text(),

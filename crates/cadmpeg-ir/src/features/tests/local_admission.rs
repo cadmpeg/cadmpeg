@@ -1,4 +1,4 @@
-use cadmpeg_test_support::edit;
+use crate::test_support::edit;
 
 use crate::features::FeatureOperation;
 use crate::features::{
@@ -468,12 +468,12 @@ fn selection_operand_parts_move_retained_storage() {
     let replacements_text = String::from("replacements-native");
     let targets_pointer = targets_text.as_ptr();
     let replacements_pointer = replacements_text.as_ptr();
-    let operands = crate::features::ReplaceFaceOperands::new(
+    let operands = crate::features::replace_face::ReplaceFaceOperands::new(
         crate::features::FaceSelection::Native(targets_text),
         crate::features::FaceSelection::Native(replacements_text),
     )
     .unwrap();
-    let (targets, replacements) = operands.into_parts();
+    let (targets, replacements) = (operands.targets(), operands.replacements());
     let crate::features::FaceSelection::Native(targets) = targets else {
         panic!("native targets");
     };
@@ -489,7 +489,7 @@ fn tree_children_wire_and_decode_share_membership_validation() {
     use crate::features::FeatureCollectionError;
     let first = feature_id("first");
     let second = feature_id("second");
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for (children, active, message) in [
         (
             vec![first.clone(), first.clone()],

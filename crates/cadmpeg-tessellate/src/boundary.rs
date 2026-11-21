@@ -12,14 +12,14 @@ use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::decode::pcurve_uv;
 use cadmpeg_ir::eval::{finite_or_refusal, model_curve_point_by_id, nurbs_curve_parameter_domain};
 use cadmpeg_ir::geometry::{PlacedCurve, SolvedCurveGeometry};
-use cadmpeg_ir::ids::CurveId;
+use cadmpeg_ir::ids::{CurveId, EdgeId};
 use cadmpeg_ir::index::{ModelIndex, StandardIndex};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{Coedge, Edge, Sense};
 
 use crate::count::{ceil_count, exceeds_limit};
 use crate::face::Refusal;
-use crate::plane::{distance, dot, mid3, sub, Uv};
+use crate::plane::{distance, dot, length, mid3, sub, Uv};
 use crate::surface::Carrier;
 
 /// Seed segments of a curve of a kind with no seeding rule.
@@ -40,6 +40,26 @@ const NEAREST_SAMPLES: u8 = 64;
 /// Ratio of a pcurve point's distance from its edge point to the surface
 /// size above which the pcurve is not used for that coedge.
 const PCURVE_MISMATCH: f64 = 1e-3;
+/// Ratio of the distance between a loop's end and start points to the
+/// surface size below which they are one point.
+const JUNCTION_POINT_RATIO: f64 = 1e-9;
+/// Ratio of a loop's closing parameter gap to its parameter extent below
+/// which the gap lies between two coedge traces that meet at one vertex.
+const JUNCTION_GAP_RATIO: f64 = 1e-2;
+/// Samples of a parameter segment tested for lying on a pole.
+const POLE_LINE_SAMPLES: u8 = 8;
+/// Ratio of the parameter gap between the traces of two consecutive
+/// coedges to their parameter scale below which they meet at one point.
+const MEET_RATIO: f64 = 1e-7;
+/// Ratio of the across-pole displacement of a loop's closure to its
+/// along-pole displacement below which the closure runs along a pole line.
+const POLE_LINE_SLOPE: f64 = 1e-3;
+/// Factor by which a first coedge traced again from the loop's end must
+/// narrow its widest gap from the surface to replace the first trace.
+const RESEED_GAIN: f64 = 0.5;
+/// Ratio of a half chord's length to the chord tolerance below which the
+/// half chord has no direction for the turn test.
+const TURN_LENGTH_RATIO: f64 = 1e-6;
 
 /// The samples of one edge, from its start vertex to its end vertex.
 #[derive(Debug)]
@@ -80,7 +100,7 @@ fn basis(geometry: &SolvedCurveGeometry) -> &SolvedCurveGeometry {
 }
 
 /// The natural parameter domain of a curve and whether it is periodic.
-fn natural_domain(geometry: &SolvedCurveGeometry) -> Option<([f64; 2], bool)> {
+pub(crate) fn natural_domain(geometry: &SolvedCurveGeometry) -> Option<([f64; 2], bool)> {
     match geometry {
         SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => {
             Some(([0.0, TAU], true))
@@ -305,6 +325,12 @@ impl Sampler<'_, '_> {
                 )));
             }
         }
+        if params.len() == 2 && !matches!(geometry.map(basis), Some(SolvedCurveGeometry::Line(_))) {
+            // A curved edge has at least one interior sample.
+            let middle = low + span / 2.0;
+            params.insert(1, middle);
+            points.insert(1, point(middle)?);
+        }
         Ok(EdgeSamples {
             params,
             points,
@@ -328,7 +354,13 @@ impl Sampler<'_, '_> {
         let sag = distance(on, chord_mid);
         // The two half chords turn by half the turn of the curve between the
         // ends.
-        let turn = 2.0 * crate::plane::angle(sub(on, a.1), sub(b.1, on));
+        let (first, second) = (sub(on, a.1), sub(b.1, on));
+        let floor = TURN_LENGTH_RATIO * self.chord;
+        let turn = if length(first) > floor && length(second) > floor {
+            2.0 * crate::plane::angle(first, second)
+        } else {
+            0.0
+        };
         if depth < MAX_DEPTH && (exceeds_limit(sag, self.chord) || exceeds_limit(turn, self.angle))
         {
             self.bisect(point, a, (middle, on), depth + 1, params, points)?;
@@ -360,6 +392,9 @@ pub(crate) struct TracedLoop<'ir> {
     pub(crate) coedges: Vec<Traced<'ir>>,
     /// The parameter displacement from the loop's start to its end.
     pub(crate) closure: Uv,
+    /// The loop ends and starts on two branches of one pole and has no
+    /// regular junction to start from; it closes along the pole line.
+    pub(crate) closes_at_pole: bool,
 }
 
 /// The directed samples of `coedge`.
@@ -393,19 +428,7 @@ pub(crate) fn trace<'ir>(
         let mut uv = pcurve_trace(sampler, carrier, coedge, &params, &points)?;
         let from_pcurve = uv.is_some();
         if uv.is_none() {
-            let mut lane = Vec::new();
-            let mut seed = previous;
-            for point in &points {
-                let found = carrier.invert(*point, seed)?.ok_or_else(|| {
-                    Refusal::new(format!(
-                        "a sample of edge {} does not invert onto its face",
-                        edge.id
-                    ))
-                })?;
-                lane.push(found);
-                seed = Some(found);
-            }
-            uv = Some(lane);
+            uv = Some(invert_lane(carrier, &points, previous, &coedge.edge)?);
         }
         let uv = uv.unwrap_or_default();
         previous = uv.last().copied();
@@ -418,6 +441,20 @@ pub(crate) fn trace<'ir>(
             from_pcurve,
         });
     }
+    // The loop's first sample has no seed and can land on another turn of
+    // a surface wound many times; the loop's end seeds its first coedge
+    // again, and the trace that lies nearer its samples stands.
+    let end = traced.last().and_then(|last| last.uv.last()).copied();
+    if let (true, Some(end), Some(first)) = (traced.len() > 1, end, traced.first()) {
+        if !first.from_pcurve && !first.degenerate {
+            let again = invert_lane(carrier, &first.points, Some(end), &first.coedge.edge)?;
+            if widest_gap(carrier, &again, &first.points)?
+                < RESEED_GAIN * widest_gap(carrier, &first.uv, &first.points)?
+            {
+                traced[0].uv = again;
+            }
+        }
+    }
     settle(carrier, &mut traced)?;
     let mut closure = closure_of(&traced);
     unwind_at_pole(carrier, &mut traced, closure)?;
@@ -426,9 +463,177 @@ pub(crate) fn trace<'ir>(
         open_at_pole(carrier, &mut traced, left)?;
     }
     closure = closure_of(&traced);
+    let mut closes_at_pole = false;
+    if closure != [0.0, 0.0] && pole_closure(carrier, &traced, closure, sampler.chord)? {
+        // A loop that starts on a pole restarts at a junction off it, so
+        // that its pole crossing joins two coedges inside the loop.
+        if let Some(start) = regular_junction(carrier, &traced)? {
+            traced.rotate_left(start);
+            closure = closure_of(&traced);
+        } else {
+            closes_at_pole = true;
+            closure = [0.0, 0.0];
+            // Every junction lies on a pole, as for a lune between two
+            // meridians: the loop takes the side of the seam its direction
+            // selects.
+            let polygon: Vec<Uv> = traced
+                .iter()
+                .flat_map(|coedge| coedge.uv.iter().copied())
+                .collect();
+            if (crate::plane::signed_area(&polygon) > 0.0) != left {
+                shift_at_pole(carrier, &mut traced, left)?;
+            }
+        }
+    }
+    if closure != [0.0, 0.0] {
+        if let Some(snapped) = junction_closure(&traced, closure, carrier.size, carrier.periods) {
+            closure = snapped;
+        }
+    }
     Ok(TracedLoop {
         coedges: traced,
         closure,
+        closes_at_pole,
+    })
+}
+
+/// The parameters of each of `points` in turn, each projection seeded by the
+/// one before and the first by `seed`.
+fn invert_lane(
+    carrier: &Carrier<'_, '_>,
+    points: &[Point3],
+    seed: Option<Uv>,
+    edge: &EdgeId,
+) -> Result<Vec<Uv>, Refusal> {
+    let mut lane = Vec::with_capacity(points.len());
+    let mut seed = seed;
+    for point in points {
+        let found = carrier.invert(*point, seed)?.ok_or_else(|| {
+            Refusal::new(format!(
+                "a sample of edge {edge} does not invert onto its face"
+            ))
+        })?;
+        lane.push(found);
+        seed = Some(found);
+    }
+    Ok(lane)
+}
+
+/// The largest distance between a sample and the surface point at its
+/// parameters.
+fn widest_gap(carrier: &Carrier<'_, '_>, uv: &[Uv], points: &[Point3]) -> Result<f64, Refusal> {
+    let mut widest = 0.0_f64;
+    for (at, point) in uv.iter().zip(points) {
+        let gap = carrier
+            .point(*at)?
+            .map_or(f64::INFINITY, |on| distance(on, *point));
+        widest = widest.max(gap);
+    }
+    Ok(widest)
+}
+
+/// The closure of a loop that ends `closure` from its start at its start
+/// point, when the displacement is a whole number of periods, zero on an
+/// axis with no period, up to a gap between the traces of two coedges that
+/// meet there: small against the loop's parameter extent.
+fn junction_closure(
+    traced: &[Traced<'_>],
+    closure: Uv,
+    size: f64,
+    periods: [Option<f64>; 2],
+) -> Option<Uv> {
+    let first = traced.first().and_then(|first| first.points.first())?;
+    let last = traced.last().and_then(|last| last.points.last())?;
+    if distance(*first, *last) > JUNCTION_POINT_RATIO * size.max(1.0) {
+        return None;
+    }
+    let mut extent = [0.0_f64; 2];
+    for (axis, span) in extent.iter_mut().enumerate() {
+        let values = traced
+            .iter()
+            .flat_map(|coedge| coedge.uv.iter().map(move |uv| uv[axis]));
+        let (low, high) = values.fold((f64::INFINITY, f64::NEG_INFINITY), |(low, high), value| {
+            (low.min(value), high.max(value))
+        });
+        *span = high - low;
+    }
+    let mut snapped = [0.0; 2];
+    for axis in 0..2 {
+        if let Some(period) = periods[axis] {
+            snapped[axis] = (closure[axis] / period).round() * period;
+        }
+        let gap = closure[axis] - snapped[axis];
+        if gap.abs() > JUNCTION_GAP_RATIO * extent[axis].max(extent[1 - axis]) {
+            return None;
+        }
+    }
+    Some(snapped)
+}
+
+/// The first coedge after the first that starts where its predecessor ends,
+/// at a point where neither surface parameter is singular.
+fn regular_junction(
+    carrier: &Carrier<'_, '_>,
+    traced: &[Traced<'_>],
+) -> Result<Option<usize>, Refusal> {
+    for at in 1..traced.len() {
+        let (Some(end), Some(start)) = (
+            traced[at - 1].uv.last().copied(),
+            traced[at].uv.first().copied(),
+        ) else {
+            continue;
+        };
+        let scale = 1.0 + start[0].abs() + start[1].abs();
+        if (end[0] - start[0]).abs().max((end[1] - start[1]).abs()) > MEET_RATIO * scale {
+            continue;
+        }
+        if !carrier.singular(start, 0)? && !carrier.singular(start, 1)? {
+            return Ok(Some(at));
+        }
+    }
+    Ok(None)
+}
+
+/// Whether a loop whose trace ends `closure` from its start meets its start
+/// along a pole line: the displacement runs along one parameter, and the
+/// surface stays within `chord` of the loop's start point across it.
+fn pole_closure(
+    carrier: &Carrier<'_, '_>,
+    traced: &[Traced<'_>],
+    closure: Uv,
+    chord: f64,
+) -> Result<bool, Refusal> {
+    let (Some(first), Some(point)) = (
+        traced.first().and_then(|first| first.uv.first()).copied(),
+        traced
+            .first()
+            .and_then(|first| first.points.first())
+            .copied(),
+    ) else {
+        return Ok(false);
+    };
+    if !along_one_parameter(closure) {
+        return Ok(false);
+    }
+    for step in 1..POLE_LINE_SAMPLES {
+        let fraction = f64::from(step) / f64::from(POLE_LINE_SAMPLES);
+        let uv = [
+            first[0] + closure[0] * fraction,
+            first[1] + closure[1] * fraction,
+        ];
+        match carrier.point(uv)? {
+            Some(on) if distance(on, point) <= chord => {}
+            _ => return Ok(false),
+        }
+    }
+    Ok(true)
+}
+
+/// Whether `displacement` runs along one surface parameter.
+fn along_one_parameter(displacement: Uv) -> bool {
+    (0..2).any(|axis| {
+        displacement[axis] != 0.0
+            && displacement[1 - axis].abs() <= POLE_LINE_SLOPE * displacement[axis].abs()
     })
 }
 
@@ -499,6 +704,16 @@ fn open_at_pole(
     if crate::plane::signed_area(&polygon).abs() > ZERO_AREA_RATIO * extent * extent {
         return Ok(());
     }
+    shift_at_pole(carrier, traced, left)
+}
+
+/// Moves the coedges after the first pole junction of a periodic parameter
+/// by the period whose sign makes the loop run with the face on its left.
+fn shift_at_pole(
+    carrier: &Carrier<'_, '_>,
+    traced: &mut [Traced<'_>],
+    left: bool,
+) -> Result<(), Refusal> {
     for axis in 0..2 {
         let Some(period) = carrier.periods[axis] else {
             continue;
@@ -685,3 +900,6 @@ fn settle(carrier: &Carrier<'_, '_>, traced: &mut [Traced<'_>]) -> Result<(), Re
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

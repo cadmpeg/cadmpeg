@@ -3,14 +3,108 @@
     "design": {
       "arrangements": [],
       "configurations": [],
-      "containers": [],
+      "containers": [
+        {
+          "kind": "ordered",
+          "value": {
+            "folders": [],
+            "id": "creo:model:timeline#root",
+            "kind": "timeline",
+            "members": [
+              {
+                "kind": "feature",
+                "value": "creo:depdb:curve_expression_feature#7-125"
+              }
+            ],
+            "rollback": {
+              "kind": "end"
+            }
+          }
+        }
+      ],
       "evaluations": [],
-      "features": [],
+      "features": [
+        {
+          "definition": {
+            "operation": {
+              "kind": "native",
+              "value": {
+                "kind": "creo:CurveFromEquation",
+                "native_options": {},
+                "source_settings": {}
+              }
+            }
+          },
+          "id": "creo:depdb:curve_expression_feature#7-125",
+          "name": "Curve Equation 7",
+          "native_ref": "creo:depdb:curve_expression#active-7-125"
+        }
+      ],
       "names": [],
-      "parameters": [],
+      "parameters": [
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "source",
+              "value": {
+                "dialect": {
+                  "kind": "creo"
+                },
+                "tokens": [
+                  {
+                    "kind": "text",
+                    "value": "rel_model_name()"
+                  }
+                ]
+              }
+            }
+          },
+          "id": "creo:depdb:curve_expression_parameter#7-125-0",
+          "kind": {
+            "kind": "text"
+          },
+          "name": "name",
+          "native_options": {},
+          "native_ref": "creo:depdb:curve_expression#active-7-125",
+          "owner": {
+            "kind": "feature",
+            "value": "creo:depdb:curve_expression_feature#7-125"
+          },
+          "scope": "creo:model:product_definition#root",
+          "source_settings": {},
+          "value": {
+            "kind": "text",
+            "value": "widget"
+          }
+        }
+      ],
       "programs": [],
       "publications": [],
-      "scopes": [],
+      "scopes": [
+        {
+          "active_arrangements": [],
+          "current": [
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "creo:depdb:curve_expression_feature#7-125"
+                }
+              },
+              "bodies": [],
+              "poses": [],
+              "status": "current"
+            }
+          ],
+          "definition": "creo:model:product_definition#root",
+          "occurrences": {},
+          "roots": [
+            "creo:model:timeline#root"
+          ]
+        }
+      ],
       "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],
@@ -87,45 +181,7 @@
       ],
       "history_bodies": [],
       "mass_properties": [],
-      "occurrences": [
-        {
-          "id": "creo:model:occurrence#root",
-          "name": "widget.prt ",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "creo:model:product_definition#root",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        }
-      ],
+      "occurrences": [],
       "parameters": [
         {
           "dependencies": [],
@@ -156,11 +212,19 @@
           "bodies": [],
           "bom_properties": {},
           "id": "creo:model:product_definition#root",
+          "instance_bodies": [],
           "kind": "part",
           "label": "widget.prt ",
+          "occurrences": [],
           "part_number": "widget.prt ",
+          "representations": [],
           "sketches": [],
-          "source_name": "widget.prt "
+          "source_name": "widget.prt ",
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],
@@ -740,11 +804,6 @@
           "fields": {},
           "kind": "entity"
         },
-        "creo:model:occurrence#root": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
         "creo:model:product_definition#root": {
           "entity": "derived",
           "fields": {},
@@ -766,11 +825,6 @@
           "offset": 166,
           "stream": "creo:DEPDB_DATA",
           "tag": "curve_expression_assignment"
-        },
-        "creo:model:occurrence#root": {
-          "offset": 22,
-          "stream": "creo:archive_header",
-          "tag": "part_product_occurrence"
         },
         "creo:model:product_definition#root": {
           "offset": 22,

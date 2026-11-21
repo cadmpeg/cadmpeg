@@ -29,6 +29,7 @@ fn style_prefix_versions_preserve_operands_qualifiers_and_opaque_fields() {
         (20, 26, 3),
         (23, 26, 3),
         (29, 30, 3),
+        (30, 30, 3),
         (31, 30, 3),
     ] {
         let mut bytes = fixture_with(prefix, &raw_words(words));
@@ -67,7 +68,7 @@ fn style_prefix_versions_preserve_operands_qualifiers_and_opaque_fields() {
 
 #[test]
 fn style_prefix_rejects_other_version_grammars() {
-    for version in [15, 21, 22, 25, 28, 30, 32] {
+    for version in [15, 21, 22, 25, 28, 32] {
         assert!(prefix_len(version).is_none());
         assert!(with_view(&fixture(30), |ctx, view| parse(ctx, view, version)).is_err());
     }

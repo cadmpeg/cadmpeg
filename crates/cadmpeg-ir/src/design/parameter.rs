@@ -114,7 +114,7 @@ pub struct DesignParameter {
 }
 
 /// The record the source lists a parameter under.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -133,7 +133,7 @@ pub enum ParameterOwner {
 }
 
 /// How a parameter's value is determined.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -152,7 +152,7 @@ pub enum ParameterDefinition {
 }
 
 /// A parameter's cached value; the variant follows the parameter's kind.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -183,7 +183,7 @@ pub enum DimensionDisplay {
 }
 
 /// The tolerance of a dimension: the document's one tolerance type.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -239,10 +239,21 @@ pub struct Deviations {
     pub upper: FiniteReal,
 }
 
+impl Deviations {
+    /// The deviations of the limits `lower` and `upper` about `nominal`.
+    #[must_use]
+    pub fn from_limits(nominal: f64, lower: f64, upper: f64) -> Option<Self> {
+        Some(Self {
+            lower: FiniteReal::new(lower - nominal)?,
+            upper: FiniteReal::new(upper - nominal)?,
+        })
+    }
+}
+
 /// A fit's stored deviations: the designation's published cell (a cache),
 /// the source's own where they differ from it, or deviations no table the
 /// decoder holds checks.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum FitDeviations {

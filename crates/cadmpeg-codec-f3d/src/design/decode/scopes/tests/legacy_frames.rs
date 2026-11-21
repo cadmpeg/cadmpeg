@@ -5,9 +5,7 @@ use cadmpeg_core::decode::u64_from_index;
 use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::decode::parameters::parse_parameter_owner;
 use crate::design::decode::scopes::fixed_parameters::exact_fixed_extrude_parameters;
-use crate::design::decode::scopes::work_geometry::{
-    exact_work_axis_construction, exact_work_plane_frame,
-};
+use crate::design::decode::scopes::work_geometry::exact_work_plane_frame;
 use crate::design::test_support::{parameter_owner_frame, parameter_record};
 use crate::layout::work_plane_legacy_337_matrix_frame as work_plane_337;
 use crate::layout::work_plane_legacy_class_322_332_matrix_frame as work_plane_class_322_332;
@@ -265,6 +263,12 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
             values: [1.5, 2.5, 3.5, 0.0, -3.0, 4.0, 0.0, 0.0],
         },
         Case {
+            scope: ("901", "902"),
+            carrier: ("903", "904"),
+            lengths: (268, 215),
+            values: [1.5, 2.5, 3.5, 0.0, -3.0, 4.0, 0.0, 0.0],
+        },
+        Case {
             scope: ("361", "258"),
             carrier: ("335", "349"),
             lengths: (254, 195),
@@ -328,25 +332,17 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
                 draft.layout_fixture_tail();
             })
             .unwrap();
-        let construction = exact_work_axis_construction(
-            &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            &scope,
-            &std::collections::HashMap::new(),
-        )
-        .expect("direct WorkAxis carrier")
-        .construction;
-        assert_eq!(construction.origin_offset, 25);
-        assert_eq!(construction.displacement_offset, 49);
+        let construction = super::read_work_axis(&bytes, &scope);
         assert!(matches!(
-            construction.source,
+            &construction.candidates[0].source,
             Some(
-                crate::records::feature::work_geometry::DesignWorkAxisSource::DirectCarrier {
-                    carrier_record_index: 100,
+                crate::records::feature::work_axes::DesignWorkAxisSource::DirectCarrier {
                     support_record_index: 200,
+                    ..
                 }
             )
         ));
+        assert_eq!(construction.candidates[0].record_index, Some(100));
         if let crate::records::feature::scope::DesignScopePayloadMut::WorkAxis(slot) =
             scope.payload_mut()
         {
@@ -475,6 +471,7 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
                 side_extent_discriminator_offsets: [77, 90],
                 first_side_target_ordinal: None,
                 distance_tail: None,
+                opaque_distance_word: None,
                 extent: DesignExtrudeExtent::OneSidedDistance,
                 direction_face_extend_offsets: [32, 36],
                 direction_reversed: false,

@@ -16,6 +16,7 @@ use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 
+pub(crate) mod reference_fields;
 pub(crate) mod utf16;
 use utf16::Utf16View;
 
@@ -329,126 +330,9 @@ pub(crate) fn take_reference_lossless<'a>(
     bytes: &'a [u8],
     at: &mut usize,
 ) -> Option<Reference<&'a str, Utf16View<'a>>> {
-    let utf16 = |at, bounds| -> Option<(Utf16View<'a>, usize)> {
-        let (raw, end) = lp_utf16_raw(bytes, at, bounds)?;
-        Utf16View::new(raw).map(|text| (text, end))
-    };
-    let ascii = |at, bounds: RangeInclusive<usize>| -> Option<(&'a str, usize)> {
-        let (raw, end) = lp_u32_bytes_at(bytes, at)?;
-        if !RangeInclusive::contains(&bounds, &raw.len()) {
-            return None;
-        }
-        std::str::from_utf8(raw).ok().map(|text| (text, end))
-    };
-    let mut cursor = *at;
-    let present = *bytes.get(cursor)?;
-    cursor += 1;
-    if present == 0 {
-        *at = cursor;
-        return Some(Reference::Null);
-    }
-    if present != 1 {
-        return None;
-    }
-    let target = View::u64_le_at(bytes, cursor)?;
-    cursor += 8;
-    let inline_type_guid = if View::u32_le_at(bytes, cursor) == Some(36) {
-        let (guid, end) = ascii(cursor, 36..=36)?;
-        if !is_guid_hyphenated(guid) {
-            return None;
-        }
-        cursor = end;
-        Some(guid)
-    } else {
-        None
-    };
-    let reference = match *bytes.get(cursor)? {
-        0 => {
-            cursor += 1;
-            match *bytes.get(cursor)? {
-                0 => {
-                    cursor += 1;
-                    Reference::Local {
-                        target,
-                        inline_type_guid,
-                    }
-                }
-                1 => {
-                    let segment = View::u32_le_at(bytes, cursor + 1)?;
-                    cursor += 5;
-                    Reference::CrossSegment {
-                        target,
-                        inline_type_guid,
-                        segment,
-                        asset_guid: None,
-                    }
-                }
-                _ => return None,
-            }
-        }
-        1 => {
-            cursor += 1;
-            let segment = View::u32_le_at(bytes, cursor)?;
-            cursor += 4;
-            let (asset_guid, end) = utf16(cursor, 0..=64)?;
-            cursor = end;
-            match *bytes.get(cursor)? {
-                1 => {
-                    cursor += 1;
-                    Reference::CrossSegment {
-                        target,
-                        inline_type_guid,
-                        segment,
-                        asset_guid: Some(asset_guid),
-                    }
-                }
-                0 => {
-                    cursor += 1;
-                    let external_type =
-                        ascii(cursor, 36..=36).filter(|(guid, _)| is_guid_hyphenated(guid));
-                    let target_type_guid = match (inline_type_guid, external_type) {
-                        (Some(_), Some((external, end))) => {
-                            cursor = end;
-                            Some(external)
-                        }
-                        (Some(_), None) => None,
-                        (None, Some((external, end))) => {
-                            cursor = end;
-                            Some(external)
-                        }
-                        (None, None) => return None,
-                    };
-                    let (link_name, end) = utf16(cursor, 0..=256)?;
-                    cursor = end;
-                    let version = match *bytes.get(cursor)? {
-                        0 => {
-                            cursor += 1;
-                            None
-                        }
-                        1 => {
-                            let (key, end) = utf16(cursor + 1, 36..=36)?;
-                            let (urn, end) = utf16(end, 0..=256)?;
-                            cursor = end;
-                            Some((key, urn))
-                        }
-                        _ => return None,
-                    };
-                    Reference::CrossDocument {
-                        target,
-                        inline_type_guid,
-                        segment,
-                        asset_guid,
-                        target_type_guid,
-                        link_name,
-                        version,
-                    }
-                }
-                _ => return None,
-            }
-        }
-        _ => return None,
-    };
-    *at = cursor;
+    let read = reference_fields::read_reference_fields(bytes, *at);
+    let reference = read.reference?;
+    *at = read.end;
     Some(reference)
 }
 

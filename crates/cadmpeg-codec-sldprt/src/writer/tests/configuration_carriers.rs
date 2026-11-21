@@ -177,11 +177,10 @@ fn encoder_writes_authored_with_retained_native_envelope_datum_features() {
             )
             .unwrap(),
         }),
-        FeatureDefinition::Operation(FeatureOperation::DatumAxis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0)).unwrap(),
-            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
-                .unwrap(),
-        }),
+        FeatureDefinition::Operation(FeatureOperation::datum_axis(
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0)).unwrap(),
+            cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap(),
+        )),
         FeatureDefinition::Operation(FeatureOperation::DatumPoint {
             position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(7.0, 8.0, 9.0)).unwrap(),
             construction: None,

@@ -168,6 +168,40 @@ impl LaneRefusals {
         )));
     }
 
+    pub(crate) fn push_plane_bounds_not_transferred(&mut self, face: usize, bounds: [[f64; 2]; 2]) {
+        self.notes.push(crate::loss::CatiaLossCode::GeometryPlaneBoundsNotTransferred.note(format!(
+            "The plane carrier for emitted native face {face} retains its origin and axes; native chart bounds {bounds:?} are omitted from the neutral plane support."
+        )));
+    }
+
+    pub(crate) fn push_surface_weights_inferred(&mut self, source: usize) {
+        self.notes.push(crate::loss::CatiaLossCode::GeometrySurfaceWeightsInferred.note(format!(
+            "For the rational A5 surface at offset {source}, interpreted extended row controls as reflected-column masks and command-05 leading repeats; these control meanings are inferred."
+        )));
+    }
+
+    pub(crate) fn push_plane_pcurve_projected(&mut self, source: usize, gap: f64) {
+        self.notes.push(crate::loss::CatiaLossCode::GeometryPlanePcurveProjected.note(format!(
+            "Projected the class-18 model curve at offset {source} onto its compatible plane. Positive rational weights bound the lift discrepancy by the largest control-point distance, {gap:.9} mm."
+        )));
+    }
+
+    pub(crate) fn push_parameter_map_pcurve_accuracy(&mut self, source: usize, tolerance: f64) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::GeometryParameterMapAccuracyInferred.note(format!(
+                "Interpreted class-25 fit tolerance {tolerance} as a model-space bound in mm for the stored plane pcurve at offset {source}; retained its class-20 geometry and the class-18 model curve."
+            )),
+        );
+    }
+
+    pub(crate) fn push_conic_branch_bounds_inferred(&mut self, source: usize, gap: f64) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::GeometryConicBranchBoundsInferred.note(format!(
+                "For conic support at offset {source}, used agreeing cylinder AABB-center azimuth witnesses and inferred the ellipse branch with smaller extrema discrepancy in each contradicting incident face box; largest stored-box excess {gap:.9} mm."
+            )),
+        );
+    }
+
     pub(crate) fn push_sheet_boundary_recovery(
         &mut self,
         code: crate::loss::CatiaLossCode,

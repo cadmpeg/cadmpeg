@@ -28,6 +28,7 @@ use crate::design::options::{BooleanOp, NativeOptions, ProjectionDirection};
 use crate::design::selection::{OrderedSelection, SetSelection};
 use crate::features::{FeatureId, ParameterId};
 use crate::ids::OccurrenceId;
+use crate::products::ExternalDocument;
 use crate::scalar::{Angle, FiniteReal, Length, NonNegativeLength, NonZeroReal, PositiveLength};
 use crate::transform::Transform;
 
@@ -57,7 +58,7 @@ pub struct Pattern {
 }
 
 /// What a pattern repeats.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PatternSeeds {
@@ -92,7 +93,7 @@ pub enum PatternSeeds {
 }
 
 /// How a feature pattern builds its instances.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -136,7 +137,7 @@ pub enum AdjustAgainst {
 
 /// The form of a pattern's instances. An instance is named by its
 /// [`InstanceIndex`].
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -165,7 +166,7 @@ pub struct InstanceOverride {
 }
 
 /// How an override changes its instance.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum InstanceChange {
@@ -277,49 +278,6 @@ pub struct TemplateParameter {
     pub parameter: ParameterId,
 }
 
-/// A document the source links to, by every identity the source records for
-/// the link (§8.1).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-pub struct ExternalDocument {
-    /// The document's path.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_path"
-    )]
-    pub path: Option<NonBlankString>,
-    /// The document's identity.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_document_id"
-    )]
-    pub document_id: Option<NonBlankString>,
-    /// The document's version.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_version"
-    )]
-    pub version: Option<NonBlankString>,
-    /// The document's stamp.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_stamp"
-    )]
-    pub stamp: Option<NonBlankString>,
-    /// The object inside the document that the link names.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_object"
-    )]
-    pub object: Option<NonBlankString>,
-}
-
 /// A Boolean combination of bodies.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -395,7 +353,7 @@ pub struct Split {
 }
 
 /// What a split cuts, and with what.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SplitMode {
@@ -437,7 +395,7 @@ pub enum SplitMode {
 }
 
 /// The tools of a split.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SplitTool {
@@ -448,7 +406,7 @@ pub enum SplitTool {
 }
 
 /// How a split's tools meet its targets.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -613,7 +571,7 @@ pub struct TransformBodies {
 }
 
 /// Whether a transformation moves its bodies or copies them.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum TransformMode {
@@ -654,7 +612,7 @@ pub struct Transformation {
 }
 
 /// One step of a transformation. A reflection is not a step.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -746,7 +704,7 @@ pub struct BodyMate {
 }
 
 /// The factors of a scale step.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -813,7 +771,7 @@ pub struct DeleteFaces {
 }
 
 /// How the gap that deleted faces leave closes.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -921,7 +879,7 @@ pub struct Flex {
 }
 
 /// The deformation of a flex.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -968,7 +926,6 @@ cadmpeg_core::named_optional_field!(deserialize_against<T>, T, "against");
 cadmpeg_core::named_optional_field!(deserialize_alignment<T>, T, "alignment");
 cadmpeg_core::named_optional_field!(deserialize_center<T>, T, "center");
 cadmpeg_core::named_optional_field!(deserialize_divisions<T>, T, "divisions");
-cadmpeg_core::named_optional_field!(deserialize_document_id<T>, T, "document_id");
 cadmpeg_core::named_optional_field!(deserialize_flip<T>, T, "flip");
 cadmpeg_core::named_optional_field!(deserialize_form<T>, T, "form");
 cadmpeg_core::named_optional_field!(deserialize_frame<T>, T, "frame");
@@ -981,9 +938,7 @@ cadmpeg_core::named_optional_field!(deserialize_method<T>, T, "method");
 cadmpeg_core::named_optional_field!(deserialize_mode<T>, T, "mode");
 cadmpeg_core::named_optional_field!(deserialize_name<T>, T, "name");
 cadmpeg_core::named_optional_field!(deserialize_new_component<T>, T, "new_component");
-cadmpeg_core::named_optional_field!(deserialize_object<T>, T, "object");
 cadmpeg_core::named_optional_field!(deserialize_op<T>, T, "op");
-cadmpeg_core::named_optional_field!(deserialize_path<T>, T, "path");
 cadmpeg_core::named_optional_field!(deserialize_radius<T>, T, "radius");
 cadmpeg_core::named_optional_field!(deserialize_remove<T>, T, "remove");
 cadmpeg_core::named_optional_field!(deserialize_resolved<T>, T, "resolved");
@@ -991,9 +946,7 @@ cadmpeg_core::named_optional_field!(deserialize_retain<T>, T, "retain");
 cadmpeg_core::named_optional_field!(deserialize_reversed<T>, T, "reversed");
 cadmpeg_core::named_optional_field!(deserialize_role<T>, T, "role");
 cadmpeg_core::named_optional_field!(deserialize_simplify<T>, T, "simplify");
-cadmpeg_core::named_optional_field!(deserialize_stamp<T>, T, "stamp");
 cadmpeg_core::named_optional_field!(deserialize_tangent<T>, T, "tangent");
 cadmpeg_core::named_optional_field!(deserialize_target<T>, T, "target");
 cadmpeg_core::named_optional_field!(deserialize_tools_after<T>, T, "tools_after");
 cadmpeg_core::named_optional_field!(deserialize_variant<T>, T, "variant");
-cadmpeg_core::named_optional_field!(deserialize_version<T>, T, "version");

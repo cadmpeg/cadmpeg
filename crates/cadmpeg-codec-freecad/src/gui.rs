@@ -3,7 +3,7 @@
 
 mod schema;
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -599,6 +599,7 @@ fn transfer_schema_one(
             base_color: Some(decode_color(packed_color, transparency)?),
             textures: Vec::new(),
             properties: material_properties,
+            native_ref: None,
         });
         for (index, body) in body_ids.into_iter().enumerate() {
             plan.bindings.push(AppearanceBinding {
@@ -611,6 +612,7 @@ fn transfer_schema_one(
                 object_type: Some("ViewProvider".into()),
                 visible: None,
                 channels: BTreeMap::new(),
+                native_ref: None,
             });
         }
     }
@@ -721,6 +723,65 @@ fn transfer_neutral_presentation(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
     let mut state_losses = Vec::new();
+    let expand_present = graph
+        .documents
+        .iter()
+        .flat_map(|document| &document.states)
+        .any(|state| state.kind == "Expand");
+    let mut expanded_names = BTreeSet::new();
+    for value in graph
+        .documents
+        .iter()
+        .flat_map(|document| &document.states)
+        .filter(|state| state.kind == "Expand")
+        .flat_map(|state| &state.values)
+        .filter(|value| value.tag == "Expand")
+    {
+        match value.attributes.get("name") {
+            Some(name) => {
+                expanded_names.insert(name.as_str());
+            }
+            None => state_losses.push(FreecadLossCode::SourceGuiMetadataUnresolved.note(
+                "GUI Expand holds an item without a name; the item stays in the native GUI document record",
+            )),
+        }
+    }
+    let resolved_names = graph
+        .providers
+        .iter()
+        .filter(|provider| provider.object.is_some())
+        .map(|provider| provider.name.as_str())
+        .collect::<HashSet<_>>();
+    for name in expanded_names
+        .iter()
+        .filter(|name| !resolved_names.contains(**name))
+    {
+        state_losses.push(FreecadLossCode::SourceGuiMetadataUnresolved.note(format!(
+            "GUI Expand names {name}, which names no view provider of an object; the name stays in the native GUI document record"
+        )));
+    }
+    for provider in graph.providers.iter().filter(|provider| {
+        provider.object.is_some()
+            && provider.expanded == Some(false)
+            && expanded_names.contains(provider.name.as_str())
+    }) {
+        state_losses.push(FreecadLossCode::SourceGuiMetadataUnresolved.note(format!(
+            "GUI Expand names {}, whose view provider stores expanded=false; the item is read as expanded",
+            provider.name
+        )));
+    }
+    for provider in graph.providers.iter().filter(|provider| {
+        expand_present
+            && provider.object.is_some()
+            && provider.expanded == Some(true)
+            && !expanded_names.contains(provider.name.as_str())
+    }) {
+        state_losses.push(FreecadLossCode::SourceGuiMetadataUnresolved.note(format!(
+            "GUI Expand does not name {}, whose view provider of an object stores expanded=true; the item is read as expanded",
+            provider.name
+        )));
+    }
+    expanded_names.retain(|name| resolved_names.contains(name));
     for document in &graph.documents {
         let mut presentation = PresentationDocument::new(PresentationId::compose(
             &cadmpeg_ir::identity_namespace!("fcstd", "presentation", "document"),
@@ -735,6 +796,9 @@ fn transfer_neutral_presentation(
             .filter(|state| state.kind == "Camera")
             .count();
         for (order, state) in document.states.iter().enumerate() {
+            if state.kind == "Expand" {
+                continue;
+            }
             let (attributes, refused) = gui_named_entries(
                 || format!("the gui {} state", state.kind),
                 state
@@ -842,7 +906,11 @@ fn transfer_neutral_presentation(
                     provider.order
                 ))
             })?,
-            expanded: provider.expanded,
+            expanded: if expanded_names.contains(provider.name.as_str()) {
+                Some(true)
+            } else {
+                provider.expanded
+            },
             visible: property_value("Visibility", "App::PropertyBool").and_then(parse_bool),
             display_mode: property_value("DisplayMode", "App::PropertyEnumeration")
                 .map(ToOwned::to_owned),
@@ -1134,6 +1202,7 @@ fn transfer_primitive_appearance(
         properties: admitted_size
             .map(|width| [(property, width)].into())
             .unwrap_or_default(),
+        native_ref: None,
     });
     for (index, target) in targets.into_iter().enumerate() {
         plan.bindings.push(AppearanceBinding {
@@ -1150,6 +1219,7 @@ fn transfer_primitive_appearance(
                 precedence.into(),
             )]
             .into(),
+            native_ref: None,
         });
     }
     Ok(())
@@ -3833,6 +3903,7 @@ fn transfer_shape_appearances(
                         object_type: Some("ViewProvider ShapeAppearance".into()),
                         visible: None,
                         channels: BTreeMap::new(),
+                        native_ref: None,
                     });
                 }
             } else {
@@ -3978,17 +4049,11 @@ pub(crate) fn select_shape_bodies<'a>(
     ir: &CadIr,
     payload_ids: impl IntoIterator<Item = &'a str>,
 ) -> Vec<cadmpeg_ir::ids::BodyId> {
+    let bodies = IdIndex::new(ir.geometry.bodies.iter().map(|body| body.id.as_str()));
     let mut body_ids = Vec::new();
     for payload_id in payload_ids {
-        let payload_key = crate::native::id_key(payload_id);
-        for body in &ir.geometry.bodies {
-            let body_key = crate::native::id_key(body.id.as_str());
-            if body_key
-                .strip_prefix(payload_key)
-                .is_some_and(|suffix| suffix.starts_with(':'))
-            {
-                body_ids.push(body.id.clone());
-            }
+        for index in bodies.under(&[payload_id]) {
+            body_ids.push(ir.geometry.bodies[index].id.clone());
         }
     }
     body_ids
@@ -4093,6 +4158,7 @@ fn material_appearance(
             ),
         ]
         .into(),
+        native_ref: None,
     })
 }
 
@@ -4129,6 +4195,7 @@ fn bind_material_faces(
                 "face_over_object".into(),
             )]
             .into(),
+            native_ref: None,
         });
     }
     Ok(())
@@ -4310,6 +4377,7 @@ fn transfer_topology_colors(
                     )),
                     textures: Vec::new(),
                     properties: inherited_properties.clone(),
+                    native_ref: None,
                 });
                 emitted_appearance = true;
             }
@@ -4330,6 +4398,7 @@ fn transfer_topology_colors(
                     kind.precedence().into(),
                 )]
                 .into(),
+                native_ref: None,
             });
         }
     }

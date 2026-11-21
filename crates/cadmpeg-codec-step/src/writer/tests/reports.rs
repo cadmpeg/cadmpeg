@@ -187,10 +187,12 @@ fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
             sketches: Vec::default(),
+
+            tessellations: Vec::new(),
             id: "test:model:product#group"
                 .try_into()
                 .expect("valid identity"),
-            kind: cadmpeg_ir::products::ProductDefinitionKind::Group,
+            kind: Some(cadmpeg_ir::products::ProductDefinitionKind::Group),
             source_name: Some("Group".into()),
             label: Some("Group".into()),
             description: None,
@@ -198,6 +200,14 @@ fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
             bom_properties,
             bodies: Vec::new(),
             native_ref: None,
+            generated_from: None,
+            storage: cadmpeg_ir::products::Storage::Embedded,
+            occurrences: Vec::new(),
+            instance_bodies: Vec::new(),
+            representations: Vec::new(),
+            units: None,
+            general_tolerance: None,
+            active: None,
         });
 
     let report = write_step(
@@ -283,41 +293,42 @@ fn writer_reports_unrepresented_topology_metadata() {
 }
 
 #[test]
-fn writer_reports_root_occurrence_scale() {
+fn writer_reports_occurrence_scale() {
+    use cadmpeg_ir::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
+
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let product = cadmpeg_ir::ids::ProductDefinitionId::mint("test:model:product#scaled")
         .expect("identity grammar");
-    ir.model
-        .product_definitions
-        .push(cadmpeg_ir::products::ProductDefinition {
-            sketches: Vec::default(),
-            id: product.clone(),
-            kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
-            source_name: Some("Scaled part".into()),
-            label: Some("Scaled part".into()),
-            description: None,
-            part_number: None,
-            bom_properties: std::collections::BTreeMap::new(),
-            bodies: vec![ir.geometry.bodies[0].id.clone()],
-            native_ref: None,
-        });
-    ir.model.occurrences.push(cadmpeg_ir::products::Occurrence {
-        id: "test:model:occurrence#scaled"
+    let occurrence: cadmpeg_ir::ids::OccurrenceId = "test:model:occurrence#scaled"
+        .try_into()
+        .expect("valid identity");
+    let mut part = ProductDefinition::new(product.clone(), Storage::Embedded);
+    part.kind = Some(cadmpeg_ir::products::ProductDefinitionKind::Part);
+    part.source_name = Some("Scaled part".into());
+    part.label = Some("Scaled part".into());
+    part.bodies = vec![ir.geometry.bodies[0].id.clone()];
+    let mut root = ProductDefinition::root(
+        "test:model:product#root"
             .try_into()
             .expect("valid identity"),
-        prototype: cadmpeg_ir::products::PrototypeReference::Local {
-            definition: product,
-        },
-        parent: cadmpeg_ir::products::OccurrenceParent::Root {},
-        ordinal: 0,
-        transform: Transform::identity(),
-        linked_prototype: None,
-        scale: [2.0, 1.0, 1.0].map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).unwrap()),
-        name: Some("Scaled root".into()),
-        visible: None,
-        link: None,
-        native_ref: None,
-    });
+        ExternalDocument::default(),
+    );
+    root.occurrences.push(occurrence.clone());
+    ir.model.product_definitions.extend([part, root]);
+    let mut scaled = Occurrence::new(
+        occurrence,
+        product,
+        Some(
+            Transform::affine([
+                [2.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ])
+            .expect("finite scale"),
+        ),
+    );
+    scaled.name = Some("Scaled occurrence".into());
+    ir.model.occurrences.push(scaled);
 
     let report = write_step(
         &ir,
@@ -327,8 +338,8 @@ fn writer_reports_root_occurrence_scale() {
     )
     .expect("report mode writes unscaled geometry");
     assert!(report.losses.iter().any(|loss| {
-        loss.code == StepLossCode::RootOccurrencePlacementNotRepresentable.kind()
-            && loss.message.contains("placement or scale")
+        loss.code == StepLossCode::OccurrencePlacementNotRigid.kind()
+            && loss.message.contains("placement is not rigid")
     }));
 }
 
@@ -412,10 +423,10 @@ fn ap242_writer_reports_unrepresented_tessellation_triangle_metadata() {
             Vec::new(),
         )
         .expect("valid tessellation")
-        .with_triangle_groups(vec![TessellationTriangleGroup {
-            source_id: Some("synthetic:test:group#0".into()),
-            triangles: vec![0],
-        }])
+        .with_triangle_groups(vec![TessellationTriangleGroup::new(
+            Some("synthetic:test:group#0".into()),
+            vec![0],
+        )])
         .expect("valid triangle group partition")
         .with_texture_assignments(vec![TessellationTextureAssignment {
             source_id: Some("synthetic:test:texture-resource#0".into()),
@@ -447,56 +458,32 @@ fn ap242_writer_reports_unrepresented_tessellation_triangle_metadata() {
 }
 
 #[test]
-fn writer_reports_occurrence_with_parent_without_local_product() {
+fn writer_reports_occurrence_whose_owner_has_no_local_product() {
+    use cadmpeg_ir::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
+
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let product =
         cadmpeg_ir::ids::ProductDefinitionId::mint("test:model:product-definition#product-child")
             .expect("identity grammar");
-    ir.model
-        .product_definitions
-        .push(cadmpeg_ir::products::ProductDefinition {
-            sketches: Vec::default(),
-            id: product.clone(),
-            kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
-            source_name: Some("Child part".into()),
-            label: Some("Child part".into()),
-            description: None,
-            part_number: None,
-            bom_properties: std::collections::BTreeMap::default(),
-            bodies: vec![ir.geometry.bodies[0].id.clone()],
-            native_ref: None,
-        });
-    let parent = cadmpeg_ir::ids::OccurrenceId::mint("test:model:occurrence#external-parent")
+    let child = cadmpeg_ir::ids::OccurrenceId::mint("test:model:occurrence#local-child")
         .expect("identity grammar");
-    ir.model.occurrences.push(cadmpeg_ir::products::Occurrence {
-        id: parent.clone(),
-        prototype: cadmpeg_ir::products::PrototypeReference::Unresolved {},
-        parent: cadmpeg_ir::products::OccurrenceParent::Root {},
-        ordinal: 0,
-        transform: cadmpeg_ir::transform::Transform::identity(),
-        linked_prototype: None,
-        scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-        name: None,
-        visible: None,
-        link: None,
-        native_ref: None,
-    });
-    ir.model.occurrences.push(cadmpeg_ir::products::Occurrence {
-        id: cadmpeg_ir::ids::OccurrenceId::mint("test:model:occurrence#local-child")
+    let mut part = ProductDefinition::new(product.clone(), Storage::Embedded);
+    part.kind = Some(cadmpeg_ir::products::ProductDefinitionKind::Part);
+    part.source_name = Some("Child part".into());
+    part.label = Some("Child part".into());
+    part.bodies = vec![ir.geometry.bodies[0].id.clone()];
+    // Validation refuses occurrences on an `External` definition (§8.1); the
+    // writer still reports the occurrence it cannot place.
+    let mut unresolved = ProductDefinition::new(
+        cadmpeg_ir::ids::ProductDefinitionId::mint("test:model:product-definition#unresolved")
             .expect("identity grammar"),
-        prototype: cadmpeg_ir::products::PrototypeReference::Local {
-            definition: product,
-        },
-        parent: cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence: parent },
-        ordinal: 1,
-        transform: cadmpeg_ir::transform::Transform::identity(),
-        linked_prototype: None,
-        scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-        name: None,
-        visible: None,
-        link: None,
-        native_ref: None,
-    });
+        Storage::External(ExternalDocument::default()),
+    );
+    unresolved.occurrences.push(child.clone());
+    ir.model.product_definitions.extend([part, unresolved]);
+    ir.model
+        .occurrences
+        .push(Occurrence::new(child, product, Some(Transform::identity())));
 
     let report = write_step(
         &ir,
@@ -669,6 +656,7 @@ fn writer_reports_dangling_appearance_binding() {
         object_type: None,
         visible: None,
         channels: std::collections::BTreeMap::default(),
+        native_ref: None,
     });
 
     let report = write_step(
@@ -706,6 +694,7 @@ fn writer_reports_appearance_without_base_color() {
         base_color: None,
         properties: std::collections::BTreeMap::default(),
         textures: Vec::new(),
+        native_ref: None,
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: binding.try_into().expect("valid identity"),
@@ -715,6 +704,7 @@ fn writer_reports_appearance_without_base_color() {
         object_type: None,
         visible: None,
         channels: std::collections::BTreeMap::default(),
+        native_ref: None,
     });
 
     let report = write_step(
@@ -771,6 +761,7 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
             base_color: Some(color),
             properties: std::collections::BTreeMap::new(),
             textures: Vec::new(),
+            native_ref: None,
         });
     }
     let mut bindings = vec![
@@ -782,6 +773,7 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
             object_type: None,
             visible: None,
             channels: std::collections::BTreeMap::new(),
+            native_ref: None,
         },
         AppearanceBinding {
             id: "test:model:binding#blue"
@@ -793,6 +785,7 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
             object_type: None,
             visible: None,
             channels: std::collections::BTreeMap::new(),
+            native_ref: None,
         },
     ];
     if reverse {
@@ -1181,6 +1174,7 @@ fn ap203e1_reports_hidden_appearance_visibility_loss() {
         ),
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:model:appearance-binding#hidden-face"
@@ -1192,6 +1186,7 @@ fn ap203e1_reports_hidden_appearance_visibility_loss() {
         object_type: None,
         visible: Some(false),
         channels: std::collections::BTreeMap::new(),
+        native_ref: None,
     });
 
     let mut output = Vec::new();

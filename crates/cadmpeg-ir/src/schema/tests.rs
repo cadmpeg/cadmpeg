@@ -16,8 +16,10 @@ fn typed_reference_walk_ignores_id_shaped_plain_strings() {
     let target = crate::ids::BodyId::mint("test:model:body#missing").expect("valid identity");
     ir.model.product_definitions.push(ProductDefinition {
         sketches: Vec::default(),
+
+        tessellations: Vec::new(),
         id: owner.clone(),
-        kind: ProductDefinitionKind::Part,
+        kind: Some(ProductDefinitionKind::Part),
         source_name: Some("test:model:name#not-a-reference".into()),
         label: None,
         description: None,
@@ -25,12 +27,20 @@ fn typed_reference_walk_ignores_id_shaped_plain_strings() {
         bom_properties: std::collections::BTreeMap::new(),
         bodies: vec![target.clone()],
         native_ref: None,
+        generated_from: None,
+        storage: crate::products::Storage::Embedded,
+        occurrences: Vec::new(),
+        instance_bodies: Vec::new(),
+        representations: Vec::new(),
+        units: None,
+        general_tolerance: None,
+        active: None,
     });
 
     let mut references = Vec::new();
     crate::schema::EntitySchema::visit_references(
         &ir.model.product_definitions[0],
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &mut |reference| {
             references.push(reference.to_owned());
             Ok(())
@@ -41,7 +51,7 @@ fn typed_reference_walk_ignores_id_shaped_plain_strings() {
     let mut borrowed_references = Vec::new();
     crate::schema::EntitySchema::visit_references(
         &ir.model.product_definitions[0],
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &mut |reference| {
             borrowed_references.push(reference.to_owned());
             Ok(())
@@ -121,7 +131,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
     let mut state_references = Vec::new();
     state
         .visit_references(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut |reference| {
                 state_references.push(reference.to_owned());
                 Ok(())
@@ -129,7 +139,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
         )
         .expect("state states its typed references");
     assert_eq!(state_references, vec![feature_id.as_str().to_owned()]);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut borrowed_state_references = Vec::new();
     state
         .visit_references(&ctx, &mut |target| {
@@ -142,7 +152,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
     let mut feature_references = Vec::new();
     feature
         .visit_references(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut |reference| {
                 feature_references.push(reference.to_owned());
                 Ok(())
@@ -323,8 +333,10 @@ fn borrowed_reference_walk_refuses_at_the_depth_limit() {
     use cadmpeg_core::CodecError;
     let entity = ProductDefinition {
         sketches: Vec::default(),
+
+        tessellations: Vec::new(),
         id: "test:model:product#owner".try_into().unwrap(),
-        kind: ProductDefinitionKind::Part,
+        kind: Some(ProductDefinitionKind::Part),
         source_name: Some("test:model:name#not-a-reference".into()),
         label: None,
         description: None,
@@ -332,6 +344,14 @@ fn borrowed_reference_walk_refuses_at_the_depth_limit() {
         bom_properties: std::collections::BTreeMap::new(),
         bodies: vec!["test:model:body#target".try_into().unwrap()],
         native_ref: None,
+        generated_from: None,
+        storage: crate::products::Storage::Embedded,
+        occurrences: Vec::new(),
+        instance_bodies: Vec::new(),
+        representations: Vec::new(),
+        units: None,
+        general_tolerance: None,
+        active: None,
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -345,7 +365,7 @@ fn borrowed_reference_walk_refuses_at_the_depth_limit() {
     assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
     );
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut seen = 0;
     entity
         .visit_references(&ctx, &mut |target| {
@@ -368,7 +388,7 @@ fn borrowed_reference_walk_preserves_a_callback_resource_refusal() {
         tolerance: None,
         native_ref: None,
     };
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let limit = ResourceLimit::allocation_failed(
         ResourceDimension::RetainedBytes,
         4096,

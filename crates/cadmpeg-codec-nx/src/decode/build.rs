@@ -1652,6 +1652,10 @@ pub(super) fn topology_body_node_ids(
         let fields = fin.fin_fields()?;
         Some((u32::from(fields.loop_xmt?), (fields.edge, fields.vertex)))
     }));
+    let vertex_loop_fins_by_loop = group_pairs(graph.of_kind(NodeKind::Fin).filter_map(|fin| {
+        let fields = fin.vertex_loop_fin_fields()?;
+        Some((u32::from(fields.loop_xmt?), fields.vertex))
+    }));
     let edges_by_xmt = group_pairs(graph.of_kind(NodeKind::Edge).map(|edge| (edge.xmt(), edge)));
     let vertices_by_xmt = group_pairs(
         graph
@@ -1689,6 +1693,13 @@ pub(super) fn topology_body_node_ids(
             edge_xmts.insert(u32::from(edge));
             vertex_xmts.insert(u32::from(vertex));
         }
+        vertex_xmts.extend(
+            loops
+                .iter()
+                .flat_map(|loop_xmt| vertex_loop_fins_by_loop.get(loop_xmt).into_iter().flatten())
+                .filter_map(|vertex| vertex.map(u32::from))
+                .filter(|vertex| graph.resolved_vertex(*vertex).is_some()),
+        );
         let mut ids = BTreeSet::new();
         for face in faces {
             let Some(id) = face.u32_at(4) else {
@@ -1981,6 +1992,9 @@ fn prune_inactive_topology(ir: &mut CadIr, selected: &BTreeSet<BodyId>) {
     let mut vertices: BTreeSet<VertexId> = BTreeSet::new();
     for edge in &ir.geometry.edges {
         vertices.extend(edge.vertices().cloned());
+    }
+    for loop_ in &ir.geometry.loops {
+        vertices.extend(loop_.singular_vertex().map(|(vertex, _)| vertex.clone()));
     }
     for shell in &ir.geometry.shells {
         for vertex in shell.free_vertices() {

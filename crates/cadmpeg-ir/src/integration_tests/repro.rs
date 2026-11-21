@@ -368,8 +368,8 @@ fn assembly_boundary_document() -> (CadIr, crate::report::check::Finding) {
     }
     value["geometry"]["faces"][6]["surface"] = surface;
     value["model"]["product_definitions"] = serde_json::json!([
-        {"id":"synthetic:assembly:definition#1", "kind":"part", "bom_properties":{}, "bodies":[first_body], "sketches":[]},
-        {"id":"synthetic:assembly:definition#2", "kind":"part", "bom_properties":{}, "bodies":[second_body], "sketches":[]}
+        {"id":"synthetic:assembly:definition#1", "kind":"part", "bom_properties":{}, "storage":{"kind":"embedded"}, "tessellations":[], "occurrences":[], "instance_bodies":[], "representations":[], "bodies":[first_body], "sketches":[]},
+        {"id":"synthetic:assembly:definition#2", "kind":"part", "bom_properties":{}, "storage":{"kind":"embedded"}, "tessellations":[], "occurrences":[], "instance_bodies":[], "representations":[], "bodies":[second_body], "sketches":[]}
     ]);
     value["geometry"]["points"][0]["source_object"] = serde_json::json!({
         "format":"f3d", "object_id":"synthetic:assembly:definition#1",

@@ -883,7 +883,7 @@ impl CodecBackend for FcstdCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let scan = container::scan(ctx, root)?;
-        Ok(container::summarize(&scan))
+        container::summarize(ctx, scan)
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
@@ -943,10 +943,8 @@ impl CodecBackend for FcstdCodec {
                 ctx,
             )?;
         }
-        for given_up in std::mem::take(&mut scan.given_up) {
-            let loss = given_up.commit(ctx, &mut ir, &mut source_fidelity)?;
-            scan.losses.push(loss);
-        }
+        let unreadable_losses_at = scan.losses.len();
+        let mut unreadable_drops = std::collections::BTreeMap::new();
         let namespace = ir.native.namespace_mut("fcstd");
         if let Some(persistence) = &scan.persistence {
             namespace.set_arena(ctx, "document", std::slice::from_ref(&persistence.document))?;
@@ -964,8 +962,15 @@ impl CodecBackend for FcstdCodec {
                 document_xml,
                 persistence::Vocabulary::from_declaration(schema_version)?,
             )?;
-            scan.losses.extend(graph.losses);
-            persistence::resolve_side_entries(&mut graph.properties, &scan.data, &mut scan.losses)?;
+            scan.losses.extend(std::mem::take(&mut graph.losses));
+            unreadable_drops =
+                persistence::drop_unreadable(ctx, &mut graph, &scan.unreadable_names)?;
+            persistence::resolve_side_entries(
+                ctx,
+                &mut graph.properties,
+                &scan.data,
+                &mut scan.losses,
+            )?;
             let mut entry_records = container::entry_records(ctx, &scan, &graph.properties)?;
             let shape_payloads = brep::parse_payloads(ctx, &graph.properties, &entry_records)?;
             let (string_tables, mut element_maps) = element_map::parse(
@@ -1089,7 +1094,7 @@ impl CodecBackend for FcstdCodec {
                 &mut admitted_entities,
                 "admit FCStd link occurrences",
             )?;
-            let (product_definitions, occurrences) = product::transfer_neutral(
+            let products = product::transfer_neutral(
                 ctx,
                 &product_nodes,
                 &joint_records,
@@ -1099,15 +1104,16 @@ impl CodecBackend for FcstdCodec {
                 &ir.geometry.bodies,
             )?;
             product::localize_definition_bodies(
-                &product_definitions,
-                &occurrences,
+                &products.definitions,
+                &products.occurrences,
                 &mut ir.geometry.bodies,
             );
-            ir.model.product_definitions = product_definitions;
-            ir.model.occurrences = occurrences;
+            ir.model.product_definitions = products.definitions;
+            ir.model.occurrences = products.occurrences;
             application_geometry::mesh_placement::project(
                 ctx,
                 &mut ir,
+                &products.parents,
                 &graph.properties,
                 &product_nodes,
                 &mut transfer_losses,
@@ -1250,6 +1256,13 @@ impl CodecBackend for FcstdCodec {
                 std::slice::from_ref(&coverage),
             )?;
         }
+        for (index, entry) in std::mem::take(&mut scan.unreadable).into_iter().enumerate() {
+            let drops = unreadable_drops.get(&entry.name);
+            let loss = entry
+                .give_up(ctx, drops)?
+                .commit(ctx, &mut ir, &mut source_fidelity)?;
+            scan.losses.insert(unreadable_losses_at + index, loss);
+        }
         let mut losses = if ctx.container_only() {
             Vec::new()
         } else {
@@ -1265,6 +1278,18 @@ impl CodecBackend for FcstdCodec {
             .as_ref()
             .and_then(|dialects| dialect::FcstdDialect::dialect_loss(dialects.primary()));
         losses.extend(dialect_losses);
+        ctx.admit_entities(
+            cadmpeg_core::decode::u64_from_index(ir.entity_count()),
+            &mut admitted_entities,
+            "admit FCStd entities",
+        )?;
+        if let Some(root) = ir.state_root_definition(
+            ctx,
+            product::document_definition_id()?,
+            cadmpeg_ir::products::ExternalDocument::default(),
+        )? {
+            root.bodies.retain(product::is_shape_body);
+        }
         // Only the FCStd writer reads this digest, and it admits only a `Full`
         // document. The serialization and hash are too costly to pay below that.
         if ctx.depth() == DecodeDepth::Full {
@@ -1278,11 +1303,6 @@ impl CodecBackend for FcstdCodec {
                 );
             }
         }
-        ctx.admit_entities(
-            cadmpeg_core::decode::u64_from_index(ir.entity_count()),
-            &mut admitted_entities,
-            "admit FCStd entities",
-        )?;
         Ok(Decoded {
             ir,
             body: DecodeBody {

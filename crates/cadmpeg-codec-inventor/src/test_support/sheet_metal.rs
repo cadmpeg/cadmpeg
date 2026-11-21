@@ -398,6 +398,7 @@ impl ContourFixture {
             plate: &self.plate,
             bend: &self.bend,
             corner: &self.corner,
+            attachment_edges: None,
         }
     }
     pub(crate) fn operands(

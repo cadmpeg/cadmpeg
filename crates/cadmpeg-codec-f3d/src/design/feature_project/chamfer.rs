@@ -68,7 +68,8 @@ pub(super) fn prepare<'p, 'data>(
         && scope.chamfer_sets().is_none_or(|sets| {
             sets.sets.first().is_some_and(|first| {
                 sets.sets.iter().all(|set| {
-                    set_form(set.spec) == set_form(first.spec)
+                    !set.distance_reversed
+                        && set_form(set.spec) == set_form(first.spec)
                         && unique_feature_match(inputs.construction_groups.iter().filter(|group| {
                             native_stream(&group.id) == native_stream(&scope.id)
                                 && group.scope_record_index == scope.record_index

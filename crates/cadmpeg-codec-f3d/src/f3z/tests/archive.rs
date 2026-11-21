@@ -131,37 +131,54 @@ fn f3z_archive_merges_identity_occurrences() {
         .all(|id| id.starts_with(&prefix)));
     // A merged F3Z has no retained image of itself, so there is nothing to
     // preserve, and `f3d:f3z-multi-document` is not a row the generator can
-    // synthesize. `Inherit` therefore refuses by name rather than quietly
-    // handing back a single-document archive under the F3Z document's identity.
-    let error = F3dCodec
+    // synthesize. `Inherit` writes the catalog default and says so.
+    let report = crate::test_support::assert_written_with_loss(
+        decoded.ir(),
+        Some(decoded.source_fidelity()),
+        &crate::loss::F3dLossCode::SourceDialectDisplaced
+            .kind()
+            .to_string(),
+        "f3d:f3z-multi-document",
+    );
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::SourcePreservedImageUnavailable.kind()));
+    assert_eq!(
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            &report,
+            "identity/target"
+        )
+        .as_ref()
+        .map(cadmpeg_core::dialect::DialectId::as_str),
+        Some(crate::dialect::TARGETS[0].id.as_str()),
+        "the report names the row the bytes are written as"
+    );
+
+    // An explicit request for the F3Z row is written as the single-document
+    // row, with the request's displacement charged.
+    let mut displaced = Vec::new();
+    let report = F3dCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Explicit("f3d:f3z-multi-document"),
         )
-        .expect_err("the F3Z row is not a synthesis target");
-    let cadmpeg_core::CodecError::UnsupportedTarget(refusal) = &error else {
-        panic!("expected a target refusal, got {error}");
-    };
-    assert_eq!(
-        ({
-            let wire = serde_json::to_value(refusal).expect("serialize refusal");
-            wire["refusal"]
-                .get("requested")
-                .or_else(|| wire["refusal"].get("source"))
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-        })
-        .as_deref(),
-        Some("f3d:f3z-multi-document")
-    );
+        .and_then(|plan| plan.write_to(&mut displaced))
+        .expect("an explicit F3Z request writes the single-document row");
     assert!(
-        refusal
-            .available()
-            .iter()
-            .any(|target| target.id.as_str() == "f3d:manifest-3-2-0-0"),
-        "{:?}",
-        refusal.available()
+        report.losses.iter().any(|loss| {
+            loss.code == crate::loss::F3dLossCode::TargetRequestDisplaced.kind()
+                && loss.message.contains("f3d:manifest-3-2-0-0")
+        }),
+        "{:#?}",
+        report.losses
     );
+    cadmpeg_ir::codec::Codec::decode(
+        &F3dCodec,
+        &mut Cursor::new(&displaced),
+        &DecodeOptions::default(),
+    )
+    .expect("the displaced write decodes");
 
     // Naming the row is the escape, and it still regenerates the merged model
     // as a single-document archive — now with the report saying so.
@@ -526,18 +543,19 @@ fn f3z_archive_composes_nonidentity_nested_occurrence_placements() {
     .expect("nonidentity nested placements decode");
     let outer_id = cadmpeg_ir::ids::OccurrenceId::mint("f3d:model:occurrence#xref-0-0")
         .expect("outer occurrence identity");
-    let child = decoded
-        .ir()
-        .model
+    let model = &decoded.ir().model;
+    let outer_prototype = &model
         .occurrences
         .iter()
-        .find(|occurrence| {
-            matches!(
-                &occurrence.parent,
-                cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence: parent }
-                    if parent == &outer_id
-            )
-        })
+        .find(|occurrence| occurrence.id == outer_id)
+        .expect("outer occurrence")
+        .prototype;
+    let listed = crate::tree::listed(model, outer_prototype);
+    assert_eq!(listed.len(), 1);
+    let child = model
+        .occurrences
+        .iter()
+        .find(|occurrence| &occurrence.id == listed[0])
         .expect("merged component occurrence retains its outer parent");
     let outer_occurrence = decoded
         .ir()
@@ -546,20 +564,16 @@ fn f3z_archive_composes_nonidentity_nested_occurrence_placements() {
         .iter()
         .find(|occurrence| occurrence.id == outer_id)
         .expect("outer occurrence");
-    assert_eq!(outer_occurrence.transform.rows()[0][3], 10.0);
-    assert_eq!(child.transform.rows()[1][3], 20.0);
+    assert_eq!(outer_occurrence.transform.unwrap().rows()[0][3], 10.0);
+    assert_eq!(child.transform.unwrap().rows()[1][3], 20.0);
 
-    let graph = cadmpeg_ir::products::AssemblyGraph::new(&decoded.ir().model.occurrences)
-        .expect("merged occurrence graph");
-    let resolved = assembly::resolved_transform(&graph, &child.id)
+    let resolved = assembly::resolved_transform(decoded.ir(), &child.id)
         .expect("resolved nested occurrence transform");
     assert_eq!(resolved.rows()[0][3], 10.0);
     assert_eq!(resolved.rows()[1][3], 20.0);
     assert_eq!(decoded.ir().geometry.bodies.len(), 1);
     assert!(decoded.ir().geometry.bodies[0].transform.is_none());
-    let cadmpeg_ir::products::PrototypeReference::Local { definition } = &child.prototype else {
-        panic!("merged member must have a local prototype");
-    };
+    let definition = &child.prototype;
     assert_eq!(
         decoded
             .ir()
@@ -638,18 +652,23 @@ fn f3z_archive_preserves_noncommuting_parent_and_child_placements() {
         assert_eq!(ir.model.occurrences.len(), 2);
         let outer_id =
             cadmpeg_ir::ids::OccurrenceId::mint("f3d:model:occurrence#xref-0-0").unwrap();
+        let outer_prototype = &ir
+            .model
+            .occurrences
+            .iter()
+            .find(|occurrence| occurrence.id == outer_id)
+            .unwrap()
+            .prototype;
+        let listed = crate::tree::listed(&ir.model, outer_prototype);
+        assert_eq!(listed.len(), 1);
         let child = ir
             .model
             .occurrences
             .iter()
-            .find(|occurrence| {
-                matches!(&occurrence.parent,
-                cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence: parent }
-                if parent == &outer_id)
-            })
+            .find(|occurrence| &occurrence.id == listed[0])
             .expect("child remains relative to its containing occurrence");
         assert_eq!(
-            child.transform.rows(),
+            child.transform.unwrap().rows(),
             [
                 [1.0, 0.0, 0.0, 20.0],
                 [0.0, 1.0, 0.0, 0.0],
@@ -657,20 +676,13 @@ fn f3z_archive_preserves_noncommuting_parent_and_child_placements() {
                 [0.0, 0.0, 0.0, 1.0],
             ]
         );
-        let graph = cadmpeg_ir::products::AssemblyGraph::new(&ir.model.occurrences)
-            .expect("nested occurrence graph");
         assert_eq!(
-            assembly::resolved_transform(&graph, &child.id)
-                .unwrap()
-                .rows(),
+            assembly::resolved_transform(ir, &child.id).unwrap().rows(),
             expected
         );
         assert_eq!(ir.geometry.bodies.len(), 1);
         assert!(ir.geometry.bodies[0].transform.is_none());
-        let cadmpeg_ir::products::PrototypeReference::Local { definition } = &child.prototype
-        else {
-            panic!("merged member must have a local prototype");
-        };
+        let definition = &child.prototype;
         assert_eq!(
             ir.model
                 .product_definitions

@@ -1250,6 +1250,12 @@ impl ExtendedReal {
         Self(x.0.portable_hypot(y.0))
     }
 
+    /// `-self`.
+    #[must_use]
+    pub(crate) fn negated(self) -> Self {
+        Self(-self.0)
+    }
+
     /// `self - value`: an infinity less a finite length keeps its infinity.
     #[must_use]
     pub(crate) fn minus(self, value: Length) -> Self {

@@ -5,6 +5,7 @@
 mod ceilings;
 mod expressions;
 mod fixtures;
+mod identity_rewrite;
 mod root;
 mod root_fixtures;
 mod round_trip;

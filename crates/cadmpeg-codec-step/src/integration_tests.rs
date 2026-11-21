@@ -3,12 +3,16 @@
 
 mod assembly_bodies;
 mod closed_faces;
+mod context_uncertainties;
 mod csg_solids;
 mod declared_measures;
+mod header_attributes;
 mod partial_geometry;
 mod plant_units;
 mod pmi_scope;
 mod schema_module_edition;
+mod spindle_sheets;
+mod tessellated_parts;
 mod tolerance_zones;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
@@ -48,10 +52,10 @@ use crate::reader::presentation::tests::{
     step_color_assets_round_trip_names_and_tessellation_targets_strictly,
 };
 use crate::reader::product::tests::{
+    a_repeated_subassembly_states_its_children_once,
     ap203_specified_source_formations_build_occurrence_tree,
     decode_builds_occurrence_placement_from_mapped_item,
     decode_builds_product_occurrences_with_relative_placement,
-    repeated_subassembly_instances_each_receive_the_subtree,
 };
 use crate::reader::tessellation::tests::decode_transfers_ap242_one_based_tessellation_indices;
 use crate::reader::tests::{
@@ -123,7 +127,7 @@ fn product_pipeline_composes_body_ownership_occurrences_mappings_and_recursive_a
     writer_round_trips_product_body_ownership();
     decode_builds_product_occurrences_with_relative_placement();
     decode_builds_occurrence_placement_from_mapped_item();
-    repeated_subassembly_instances_each_receive_the_subtree();
+    a_repeated_subassembly_states_its_children_once();
     ap203_specified_source_formations_build_occurrence_tree();
     standalone_geometry_uses_general_shape_representation();
 }

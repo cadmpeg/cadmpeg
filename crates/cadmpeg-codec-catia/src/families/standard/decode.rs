@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Standard nested-stream decode route: B-rep topology attach and geometry.
 
+mod planar_domains;
+
 use cadmpeg_core::convert::f32_from_f64;
 use cadmpeg_core::decode::u64_from_index;
 
@@ -88,7 +90,7 @@ const EPS_ANTIPODAL_CIRCLE: f64 = 2e-3;
 const SPHERE_SECTION_ENDPOINT_TOLERANCE: f64 = 2e-3;
 const SPHERE_CENTER_COINCIDENCE_TOLERANCE: f64 = 2e-3;
 const CYLINDER_PLANE_CONIC_TOLERANCE: f64 = 2e-3;
-const PERPENDICULAR_CYLINDER_CONIC_TOLERANCE: f64 = 2e-3;
+const CYLINDER_CYLINDER_CONIC_TOLERANCE: f64 = 2e-3;
 const LINE_SEGMENT_GEOMETRY_TOLERANCE: f64 = 2e-3;
 const ANALYTIC_CURVE_ENDPOINT_TOLERANCE: f64 = 2e-3;
 const SUPPORT_AGREEMENT_TOLERANCE: f64 = EPS_STANDARD_DECODE_COARSE_GEOMETRY;
@@ -2301,7 +2303,7 @@ fn try_decode_standard_population(
                             let plane = planes.get(&prefix.target)?;
                             let neutral_normal = unit_vector(Vector3::from(plane.normal.get()))?;
                             selected.forward_on(neutral_normal, forward)
-                        }).unwrap_or(forward)
+                        }).unwrap_or(true)
                     } else {
                         forward
                     };
@@ -2783,6 +2785,9 @@ fn try_decode_standard_population(
         Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
         Err(_) => return None,
     };
+    if let Err(error) = planar_domains::repair(ctx, &mut ir, refusal) {
+        return Some(Err(error));
+    }
     consolidated_curve_bindings.standard_edges += weighted.edges;
     consolidated_curve_bindings.standard_face_pcurves += weighted.pcurves;
     consolidated_curve_bindings.widened_vertices = weighted.widened_vertices;
@@ -4673,6 +4678,14 @@ fn attach_standard_topology(
             .get(point)
             .is_some_and(|faces| faces.binary_search(&face).is_ok())
     };
+    let mut face_points = ctx
+        .alloc_filled(bindings.len(), Vec::new(), "catia_face_point_membership")
+        .map_err(StandardTopologyError::Codec)?;
+    for (point, faces) in point_faces.iter().enumerate() {
+        for &face in faces {
+            face_points[face].push(point);
+        }
+    }
     let limit_curve_bindings = standard_limit_curve_bindings(
         ctx,
         ir,
@@ -4710,7 +4723,6 @@ fn attach_standard_topology(
     }
     let mut endpoint_candidates = Vec::new();
     let mut incidence_candidates = HashMap::<[usize; 2], Vec<usize>>::new();
-    let mut face_incidence_candidates = HashMap::<usize, Vec<usize>>::new();
     for support in &supports {
         let Some(surface0) = face_surface(ir, bindings, &surface_indices, support.faces[0]) else {
             return Err(StandardTopologyFailure::MissingFaceSurface.into());
@@ -4747,44 +4759,12 @@ fn attach_standard_topology(
             | crate::families::standard::records::StandardCurveGeometry::Bspline => {
                 let mut faces = support.faces;
                 faces.sort_unstable_by(Ord::cmp);
-                for (face, surface) in [
-                    (support.faces[0], &surface0.geometry),
-                    (support.faces[1], &surface1.geometry),
-                ] {
-                    if let std::collections::hash_map::Entry::Vacant(e) =
-                        face_incidence_candidates.entry(face)
-                    {
-                        let mut points = Vec::new();
-                        for (index, point) in ir.geometry.points.iter().enumerate() {
-                            if point_on_standard_face(
-                                ctx,
-                                point.position().get(),
-                                surface,
-                                face_bounds.as_ref().and_then(|bounds| bounds[face]),
-                            )
-                            .map_err(CodecError::from)
-                            .map_err(StandardTopologyError::Codec)?
-                            {
-                                points.push(index);
-                            }
-                        }
-                        e.insert(points);
-                    }
-                }
                 incidence_candidates.entry(faces).or_insert_with(|| {
-                    let mut right = HashSet::new();
-                    for point in face_incidence_candidates[&faces[1]].iter().copied() {
-                        right.insert(point);
-                    }
-                    let mut shared = Vec::new();
-                    for point in face_incidence_candidates[&faces[0]]
+                    face_points[faces[0]]
                         .iter()
                         .copied()
-                        .filter(|point| right.contains(point))
-                    {
-                        shared.push(point);
-                    }
-                    shared
+                        .filter(|point| point_on_face(faces[1], *point))
+                        .collect()
                 });
                 incidence_candidates[&faces].clone()
             }
@@ -9111,7 +9091,7 @@ mod circle_axis_tests {
         )
         .expect("anisotropic nurbs surface");
         let residual = super::surface_membership::nurbs_surface_witness_distance(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &surface,
             Point3::new(0.3, 0.4, 0.),
         )

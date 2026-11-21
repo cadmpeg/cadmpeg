@@ -2,7 +2,9 @@
 
 use cadmpeg_ir::CadIr;
 
-use super::{measures_agree, measures_decide, RoundTripError, RoundTripFailure};
+use super::{
+    measures_agree, measures_agree_with, measures_decide, RoundTripError, RoundTripFailure,
+};
 use crate::test_support::builders::cuboid;
 
 const LABEL: &str = "fixture";
@@ -39,7 +41,13 @@ fn a_document_agrees_with_itself_over_one_body_pair() {
     assert_eq!(comparison.pairs().len(), 1);
     assert_eq!(before.bodies().len(), 1);
     assert_eq!(after.bodies().len(), 1);
-    assert!(measures_decide(LABEL, &cube).expect("the cube is measured"));
+    let decided = measures_decide(LABEL, &cube)
+        .expect("the cube is measured")
+        .expect("the cube decides");
+    let (comparison, before, _) = measures_agree_with(LABEL, &cube, decided, &cube)
+        .expect("the decided cube agrees with itself");
+    assert_eq!(comparison.pairs().len(), 1);
+    assert_eq!(before.bodies().len(), 1);
 }
 
 #[test]
@@ -59,7 +67,9 @@ fn a_changed_body_fails_with_fixed_text_only() {
 #[test]
 fn a_document_with_no_body_decides_nothing() {
     let empty = CadIr::empty();
-    assert!(!measures_decide(LABEL, &empty).expect("the empty document is measured"));
+    assert!(measures_decide(LABEL, &empty)
+        .expect("the empty document is measured")
+        .is_none());
     let error = measures_agree(LABEL, &empty, &empty).expect_err("no body pair agrees");
     for message in messages(&error) {
         assert!(message.starts_with("fixture: "));

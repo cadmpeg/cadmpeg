@@ -100,6 +100,35 @@ impl TryFrom<SubdCageWire> for SubdCage {
 }
 
 impl SubdCage {
+    #[doc = "Scale control points, secondary grips and symmetry origins in document units."]
+    pub fn scale_lengths(&mut self, scale: PositiveReal) -> Result<(), SubdError> {
+        for vertex in &mut self.vertices {
+            vertex.point = vertex.point.scaled(scale).ok_or_else(|| {
+                SubdError::Admission("scaled subdivision vertex is not finite".into())
+            })?;
+            if let Some(layout) = &mut vertex.secondary_grips {
+                for wedge in &mut layout.wedges {
+                    if let SubdGripWedge::Slot {
+                        spokes, sectors, ..
+                    } = wedge
+                    {
+                        for grip in spokes.iter_mut().chain(sectors.iter_mut()).flatten() {
+                            grip.point = grip.point.scaled(scale).ok_or_else(|| {
+                                SubdError::Admission("scaled subdivision grip is not finite".into())
+                            })?;
+                        }
+                    }
+                }
+            }
+        }
+        for symmetry in &mut self.symmetries {
+            symmetry.plane.origin = symmetry.plane.origin.scaled(scale).ok_or_else(|| {
+                SubdError::Admission("scaled subdivision symmetry origin is not finite".into())
+            })?;
+        }
+        Ok(())
+    }
+
     /// Construct a cage with closed directed rings and valid local payloads.
     pub fn new(
         vertices: Vec<SubdVertex>,
@@ -285,7 +314,9 @@ impl SubdCage {
                         }
                     }
                     if !incident {
-                        return Err(SubdError::Admission(format!("vertices[{index}].secondary_grips sector_face is not incident to its owner")));
+                        return Err(SubdError::Admission(format!(
+                            "vertices[{index}].secondary_grips sector_face is not incident to its owner"
+                        )));
                     }
                 }
                 for grip in spokes.iter().chain(sectors) {
@@ -373,7 +404,7 @@ impl SubdPlaneFrame {
 }
 
 /// Kind-specific controls for a T-spline symmetry block.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SubdSymmetryKind {
@@ -753,7 +784,7 @@ impl SubdVertexGripLayout {
 }
 
 /// One wedge in a secondary-grip layout.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SubdGripWedge {
@@ -1039,7 +1070,7 @@ impl SubdEdge {
 }
 
 /// A user-supplied knot interval layered over an edge's base interval.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",

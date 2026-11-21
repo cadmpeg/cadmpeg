@@ -26,8 +26,8 @@ pub(crate) mod named_parameter_scope_tail {
     pub(crate) const FIRST_REFERENCE: usize = 19;
     /// Offset of `middle_reference` (`u8`). Spec §3.1.
     pub(crate) const MIDDLE_REFERENCE: usize = 30;
-    /// Offset of `opaque_word` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const OPAQUE_WORD: usize = 31;
+    /// Offset of `previous_history_state_id` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PREVIOUS_HISTORY_STATE_ID: usize = 31;
     /// Offset of `lane_word` (`u32`, little-endian). Spec §3.1.
     pub(crate) const LANE_WORD: usize = 35;
     /// Offset of `lane_scalar` (`f64`, little-endian). Spec §3.1.
@@ -232,8 +232,8 @@ pub(crate) mod design_decal_scope_prefix {
     pub(crate) const LEN: usize = 44;
     /// Offset of `asset_reference` (`bytes[5]`). Spec §3.1.
     pub(crate) const ASSET_REFERENCE: usize = 21;
-    /// Offset of `mapping_mode` (`u8`). Spec §3.1.
-    pub(crate) const MAPPING_MODE: usize = 32;
+    /// Offset of `scope_code` (`u8`). Spec §3.1.
+    pub(crate) const SCOPE_CODE: usize = 32;
     /// Offset of `target_group_reference` (`bytes[5]`). Spec §3.1.
     pub(crate) const TARGET_GROUP_REFERENCE: usize = 33;
 }
@@ -252,8 +252,8 @@ pub(crate) mod design_decal_scope_extended_prefix {
     pub(crate) const ZERO: usize = 24;
     /// Offset of `asset_reference` (`bytes[5]`). Spec §3.1.
     pub(crate) const ASSET_REFERENCE: usize = 25;
-    /// Offset of `mapping_mode` (`u8`). Spec §3.1.
-    pub(crate) const MAPPING_MODE: usize = 36;
+    /// Offset of `scope_code` (`u8`). Spec §3.1.
+    pub(crate) const SCOPE_CODE: usize = 36;
     /// Offset of `target_group_reference` (`bytes[5]`). Spec §3.1.
     pub(crate) const TARGET_GROUP_REFERENCE: usize = 37;
 }
@@ -266,8 +266,8 @@ pub(crate) mod design_decal_scope_typed_prefix {
     pub(crate) const LEN: usize = 124;
     /// Offset of `asset_reference` (`bytes[51]`). Spec §3.1.
     pub(crate) const ASSET_REFERENCE: usize = 21;
-    /// Offset of `mapping_mode` (`u8`). Spec §3.1.
-    pub(crate) const MAPPING_MODE: usize = 72;
+    /// Offset of `scope_code` (`u8`). Spec §3.1.
+    pub(crate) const SCOPE_CODE: usize = 72;
     /// Offset of `target_group_reference` (`bytes[51]`). Spec §3.1.
     pub(crate) const TARGET_GROUP_REFERENCE: usize = 73;
 }
@@ -280,10 +280,28 @@ pub(crate) mod design_decal_scope_typed_extended_prefix {
     pub(crate) const LEN: usize = 128;
     /// Offset of `asset_reference` (`bytes[51]`). Spec §3.1.
     pub(crate) const ASSET_REFERENCE: usize = 25;
-    /// Offset of `mapping_mode` (`u8`). Spec §3.1.
-    pub(crate) const MAPPING_MODE: usize = 76;
+    /// Offset of `scope_code` (`u8`). Spec §3.1.
+    pub(crate) const SCOPE_CODE: usize = 76;
     /// Offset of `target_group_reference` (`bytes[51]`). Spec §3.1.
     pub(crate) const TARGET_GROUP_REFERENCE: usize = 77;
+}
+
+/// Byte offsets for the `design_decal_placement_prefix` record.
+///
+/// Spec §3.1. Record length 36 B.
+///
+/// ```text
+/// Fixed prefix through the vertex count. The counted f32 pairs start at byte 36.
+/// ```
+pub(crate) mod design_decal_placement_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 36;
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `leading_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const LEADING_REFERENCE: usize = 21;
+    /// Offset of `vertex_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const VERTEX_COUNT: usize = 32;
 }
 
 /// Byte offsets for the `design_decal_image_asset_record` record.
@@ -493,7 +511,7 @@ pub(crate) mod design_parameter_tail {
 /// Spec §3.1. Record length 11 B.
 ///
 /// ```text
-/// This trailer is relative to the end of the variable LP-UTF16 expression of a wide discriminated parameter with discriminator 0, 5 or 6.
+/// This trailer is relative to the end of the variable LP-UTF16 expression of a wide discriminated parameter with discriminator 0, 4, 5 or 6.
 /// ```
 pub(crate) mod design_parameter_wide_expression_trailer {
     /// Record length in bytes. Spec §3.1.
@@ -528,10 +546,8 @@ pub(crate) mod design_parameter_wide_expression_trailer {
 pub(crate) mod design_parameter_compact_owned_expression_trailer {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 5;
-    /// Offset of `reserved_0` (`u8`). Spec §3.1.
-    pub(crate) const RESERVED_0: usize = 0;
-    /// Stated value of `reserved_0` (`u8`). Spec §3.1.
-    pub(crate) const RESERVED_0_VALUE: u8 = 0;
+    /// Offset of `opaque_flag` (`u8`). Spec §3.1.
+    pub(crate) const OPAQUE_FLAG: usize = 0;
     /// Offset of `driven` (`u8`). Spec §3.1.
     pub(crate) const DRIVEN: usize = 1;
     /// Offset of `zero_run_3` (`bytes[3]`). Spec §3.1.
@@ -652,6 +668,36 @@ pub(crate) mod design_parameter_owner_legacy_88 {
     pub(crate) const ZERO_RUN_6_TAIL: usize = 82;
 }
 
+/// Byte offsets for the `draft_parting_prefix` record.
+///
+/// Spec §3.1. Record length 75 B.
+pub(crate) mod draft_parting_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 75;
+    /// Offset of `first_scalar` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const FIRST_SCALAR: usize = 57;
+    /// Offset of `second_scalar` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const SECOND_SCALAR: usize = 65;
+    /// Offset of `boundary_flag` (`bool8`). Spec §3.1.
+    pub(crate) const BOUNDARY_FLAG: usize = 73;
+    /// Offset of `fixed_edges_present` (`bool8`). Spec §3.1.
+    pub(crate) const FIXED_EDGES_PRESENT: usize = 74;
+}
+
+/// Byte offsets for the `draft_parting_group_suffix` record.
+///
+/// Spec §3.1. Record length 37 B.
+pub(crate) mod draft_parting_group_suffix {
+    /// Offset of `pull_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const PULL_REFERENCE: usize = 0;
+    /// Offset of `tool_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const TOOL_REFERENCE: usize = 11;
+    /// Offset of `constant_one` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const CONSTANT_ONE: usize = 22;
+    /// Offset of `faces_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const FACES_REFERENCE: usize = 26;
+}
+
 /// Byte offsets for the `draft_operation_prefix` record.
 ///
 /// Spec §3.1. Record length 57 B.
@@ -662,8 +708,8 @@ pub(crate) mod draft_operation_prefix {
     pub(crate) const FORM: usize = 21;
     /// Stated value of `form` (`u32`). Spec §3.1.
     pub(crate) const FORM_VALUE: u32 = 0x0000_0003;
-    /// Offset of `constant_one` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const CONSTANT_ONE: usize = 25;
+    /// Offset of `anchor_kind` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ANCHOR_KIND: usize = 25;
     /// Offset of `flipped` (`u8`). Spec §3.1.
     pub(crate) const FLIPPED: usize = 29;
     /// Offset of `tangent_chain` (`u8`). Spec §3.1.
@@ -838,6 +884,8 @@ pub(crate) mod chamfer_set_distance_angle {
     pub(crate) const LEN: usize = 93;
     /// Offset of `flag` (`u8`). Spec §3.1.
     pub(crate) const FLAG: usize = 21;
+    /// Offset of `distance_reversed` (`u8`). Spec §3.1.
+    pub(crate) const DISTANCE_REVERSED: usize = 22;
     /// Offset of `angle_owner_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const ANGLE_OWNER_REFERENCE: usize = 23;
     /// Offset of `distance_owner_reference` (`bytes[11]`). Spec §3.1.
@@ -962,6 +1010,120 @@ pub(crate) mod fillet_set_compact_constant {
     pub(crate) const TANGENCY_WEIGHT_OWNER_REFERENCE: usize = 78;
     /// Offset of `tangency_weight_owner_padding` (`bytes[4]`). Spec §3.1.
     pub(crate) const TANGENCY_WEIGHT_OWNER_PADDING: usize = 89;
+}
+
+/// Byte offsets for the `fillet_set_short_constant` record.
+///
+/// Spec §3.1. Record length 80 B.
+pub(crate) mod fillet_set_short_constant {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 80;
+    /// Offset of `zero_run_at_11` (`bytes[11]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_AT_11: usize = 11;
+    /// Offset of `form_marker` (`u8`). Spec §3.1.
+    pub(crate) const FORM_MARKER: usize = 22;
+    /// Stated value of `form_marker` (`u8`). Spec §3.1.
+    pub(crate) const FORM_MARKER_VALUE: u8 = 1;
+    /// Offset of `zero_run_at_23` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_AT_23: usize = 23;
+    /// Offset of `edge_group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const EDGE_GROUP_REFERENCE: usize = 26;
+    /// Offset of `zero_run_at_37` (`bytes[20]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_AT_37: usize = 37;
+    /// Offset of `radius_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const RADIUS_OWNER_REFERENCE: usize = 57;
+    /// Offset of `zero_run_at_68` (`bytes[12]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_AT_68: usize = 68;
+}
+
+/// Byte offsets for the `fillet_set_asymmetric` record.
+///
+/// Spec §3.1. Record length 97 B.
+///
+/// ```text
+/// Offsets are relative to the set record indexed header; the frame ends at the next indexed header.
+/// ```
+pub(crate) mod fillet_set_asymmetric {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 97;
+    /// Offset of `zero_run_10_at_11` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10_AT_11: usize = 11;
+    /// Offset of `form_marker` (`u8`). Spec §3.1.
+    pub(crate) const FORM_MARKER: usize = 21;
+    /// Stated value of `form_marker` (`u8`). Spec §3.1.
+    pub(crate) const FORM_MARKER_VALUE: u8 = 1;
+    /// Offset of `zero_run_5_at_22` (`bytes[5]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_5_AT_22: usize = 22;
+    /// Offset of `compatibility_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const COMPATIBILITY_WORD: usize = 27;
+    /// Stated value of `compatibility_word` (`u32`). Spec §3.1.
+    pub(crate) const COMPATIBILITY_WORD_VALUE: u32 = 0x0000_0001;
+    /// Offset of `offset_one_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const OFFSET_ONE_OWNER_REFERENCE: usize = 31;
+    /// Offset of `offset_two_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const OFFSET_TWO_OWNER_REFERENCE: usize = 42;
+    /// Offset of `zero_run_19_at_53` (`bytes[19]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_19_AT_53: usize = 53;
+    /// Offset of `edge_group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const EDGE_GROUP_REFERENCE: usize = 72;
+    /// Offset of `zero_run_1_at_83` (`bytes[1]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_1_AT_83: usize = 83;
+    /// Offset of `first_control_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FIRST_CONTROL_WORD: usize = 84;
+    /// Stated value of `first_control_word` (`u32`). Spec §3.1.
+    pub(crate) const FIRST_CONTROL_WORD_VALUE: u32 = 0x0000_0002;
+    /// Offset of `zero_run_5_at_88` (`bytes[5]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_5_AT_88: usize = 88;
+    /// Offset of `second_control_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SECOND_CONTROL_WORD: usize = 93;
+    /// Stated value of `second_control_word` (`u32`). Spec §3.1.
+    pub(crate) const SECOND_CONTROL_WORD_VALUE: u32 = 0x0000_0003;
+}
+
+/// Byte offsets for the `fillet_set_variable` record.
+///
+/// Spec §3.1. Record length 153 B.
+///
+/// ```text
+/// Offsets are relative to the set record indexed header; the frame ends at the next indexed header.
+/// ```
+pub(crate) mod fillet_set_variable {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 153;
+    /// Offset of `zero_run_18_at_11` (`bytes[18]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_18_AT_11: usize = 11;
+    /// Offset of `edge_group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const EDGE_GROUP_REFERENCE: usize = 29;
+    /// Offset of `zero_run_7_at_40` (`bytes[7]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_7_AT_40: usize = 40;
+    /// Offset of `midpoint_parameter_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const MIDPOINT_PARAMETER_COUNT: usize = 47;
+    /// Stated value of `midpoint_parameter_count` (`u32`). Spec §3.1.
+    pub(crate) const MIDPOINT_PARAMETER_COUNT_VALUE: u32 = 0x0000_0002;
+    /// Offset of `midpoint_parameter_one_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const MIDPOINT_PARAMETER_ONE_OWNER_REFERENCE: usize = 51;
+    /// Offset of `midpoint_parameter_two_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const MIDPOINT_PARAMETER_TWO_OWNER_REFERENCE: usize = 62;
+    /// Offset of `zero_run_4_at_73` (`bytes[4]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_4_AT_73: usize = 73;
+    /// Offset of `radius_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const RADIUS_COUNT: usize = 77;
+    /// Stated value of `radius_count` (`u32`). Spec §3.1.
+    pub(crate) const RADIUS_COUNT_VALUE: u32 = 0x0000_0004;
+    /// Offset of `start_radius_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const START_RADIUS_OWNER_REFERENCE: usize = 81;
+    /// Offset of `end_radius_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const END_RADIUS_OWNER_REFERENCE: usize = 92;
+    /// Offset of `middle_radius_one_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const MIDDLE_RADIUS_ONE_OWNER_REFERENCE: usize = 103;
+    /// Offset of `middle_radius_two_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const MIDDLE_RADIUS_TWO_OWNER_REFERENCE: usize = 114;
+    /// Offset of `zero_run_13_at_125` (`bytes[13]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_13_AT_125: usize = 125;
+    /// Offset of `tangency_weight_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const TANGENCY_WEIGHT_OWNER_REFERENCE: usize = 138;
+    /// Offset of `zero_run_4_at_149` (`bytes[4]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_4_AT_149: usize = 149;
 }
 
 /// Byte offsets for the `thicken_scope_prologue` record.
@@ -1128,6 +1290,163 @@ pub(crate) mod design_mirror_scope_class441_count_owner {
     pub(crate) const OWNED_ORDINAL_VALUE: u32 = 0x0000_0001;
 }
 
+/// Byte offsets for the `design_hole_point_data_v1_prefix` record.
+///
+/// Spec §3.1. Record length 97 B.
+///
+/// ```text
+/// Offsets are relative to the version-one Hole point-data primary indexed header. The counted non-null reference run follows the fixed prefix.
+/// ```
+pub(crate) mod design_hole_point_data_v1_prefix {
+    /// Offset of `direction` (`f64[3]`, little-endian). Spec §3.1.
+    pub(crate) const DIRECTION: usize = 49;
+    /// Offset of `input_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const INPUT_COUNT: usize = 93;
+}
+
+/// Byte offsets for the `silhouette_split_scope_header` record.
+///
+/// Spec §3.1. Record length 21 B.
+pub(crate) mod silhouette_split_scope_header {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 21;
+    /// Offset of `zero_run` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `property_flag` (`u8`). Spec §3.1.
+    pub(crate) const PROPERTY_FLAG: usize = 20;
+}
+
+/// Byte offsets for the `silhouette_split_selection_prefix` record.
+///
+/// Spec §3.1. Record length 31 B.
+pub(crate) mod silhouette_split_selection_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 31;
+    /// Offset of `zero_run` (`bytes[8]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 0;
+    /// Offset of `carrier` (`bytes[11]`). Spec §3.1.
+    pub(crate) const CARRIER: usize = 8;
+    /// Offset of `result_mode` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const RESULT_MODE: usize = 19;
+    /// Offset of `zero_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ZERO_WORD: usize = 23;
+    /// Offset of `browser_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const BROWSER_COUNT: usize = 27;
+}
+
+/// Byte offsets for the `scale_modern_operation_prefix` record.
+///
+/// Spec §3.1. Record length 79 B.
+///
+/// ```text
+/// Offsets are relative to the modern Scale scope's primary indexed header. The ordered-reference tail continues after this fixed operation prefix.
+/// ```
+pub(crate) mod scale_modern_operation_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 79;
+}
+
+/// Byte offsets for the `scale_legacy_operation_prefix` record.
+///
+/// Spec §3.1. Record length 75 B.
+///
+/// ```text
+/// Offsets are relative to the legacy Scale scope's primary indexed header. The frame tail carries the ordered-reference members.
+/// ```
+pub(crate) mod scale_legacy_operation_prefix {
+    /// Record length in bytes. Spec §3.1.
+    #[cfg(test)]
+    pub(crate) const LEN: usize = 75;
+    /// Offset of `factor` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const FACTOR: usize = 21;
+    /// Offset of `center_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const CENTER_REFERENCE: usize = 29;
+    /// Offset of `factor_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const FACTOR_REFERENCE: usize = 40;
+}
+
+/// Byte offsets for the `scale_legacy_uniform_head` record.
+///
+/// Spec §3.1. Record length 221 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed header. The LP-UTF16 kind code units start at offset 221, and `scale_legacy_uniform_tail` gives the offsets after them.
+/// ```
+pub(crate) mod scale_legacy_uniform_head {
+    /// Offset of `null_guid_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const NULL_GUID_CODE_UNIT_COUNT: usize = 75;
+    /// Offset of `zero_before_reference_table` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_BEFORE_REFERENCE_TABLE: usize = 151;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 154;
+}
+
+/// Byte offsets for the `scale_counted_group_head` record.
+///
+/// Spec §3.1. Record length 56 B.
+pub(crate) mod scale_counted_group_head {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 56;
+    /// Offset of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER: usize = 51;
+    /// Stated value of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER_VALUE: u8 = 1;
+    /// Offset of `group_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const GROUP_COUNT: usize = 52;
+}
+
+/// Byte offsets for the `scale_counted_group_suffix` record.
+///
+/// Spec §3.1. Record length 8 B.
+pub(crate) mod scale_counted_group_suffix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 8;
+    /// Offset of `one` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ONE: usize = 0;
+    /// Stated value of `one` (`u32`). Spec §3.1.
+    pub(crate) const ONE_VALUE: u32 = 0x0000_0001;
+    /// Offset of `zero` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ZERO: usize = 4;
+    /// Stated value of `zero` (`u32`). Spec §3.1.
+    pub(crate) const ZERO_VALUE: u32 = 0x0000_0000;
+}
+
+/// Byte offsets for the `scale_axis_owner_prefix` record.
+///
+/// Spec §3.1. Record length 95 B.
+pub(crate) mod scale_axis_owner_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 95;
+    /// Offset of `zero_run_18` (`bytes[18]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_18: usize = 11;
+    /// Offset of `center_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const CENTER_REFERENCE: usize = 29;
+    /// Offset of `zero_byte` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_BYTE: usize = 40;
+    /// Stated value of `zero_byte` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_BYTE_VALUE: u8 = 0;
+    /// Offset of `one` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ONE: usize = 41;
+    /// Stated value of `one` (`u32`). Spec §3.1.
+    pub(crate) const ONE_VALUE: u32 = 0x0000_0001;
+    /// Offset of `zero_word` (`u16`, little-endian). Spec §3.1.
+    pub(crate) const ZERO_WORD: usize = 45;
+    /// Stated value of `zero_word` (`u16`). Spec §3.1.
+    pub(crate) const ZERO_WORD_VALUE: u16 = 0x0000;
+    /// Offset of `x_owner` (`bytes[11]`). Spec §3.1.
+    pub(crate) const X_OWNER: usize = 47;
+    /// Offset of `y_owner` (`bytes[11]`). Spec §3.1.
+    pub(crate) const Y_OWNER: usize = 58;
+    /// Offset of `z_owner` (`bytes[11]`). Spec §3.1.
+    pub(crate) const Z_OWNER: usize = 69;
+    /// Offset of `group_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const GROUP_COUNT: usize = 80;
+    /// Stated value of `group_count` (`u32`). Spec §3.1.
+    pub(crate) const GROUP_COUNT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const GROUP_REFERENCE: usize = 84;
+}
+
 /// Byte offsets for the `scale_legacy_uniform_tail` record.
 ///
 /// Spec §3.1. Record length 78 B.
@@ -1136,8 +1455,6 @@ pub(crate) mod design_mirror_scope_class441_count_owner {
 /// Offsets are relative to the first byte after the LP-UTF16 kind code units of the 299-byte-payload legacy uniform Scale form, for any kind spelling. The paired same-index header follows the tail.
 /// ```
 pub(crate) mod scale_legacy_uniform_tail {
-    /// Record length in bytes. Spec §3.1.
-    pub(crate) const LEN: usize = 78;
     /// Offset of `previous_history_state_id` (`u32`, little-endian). Spec §3.1.
     pub(crate) const PREVIOUS_HISTORY_STATE_ID: usize = 31;
 }
@@ -2034,6 +2351,8 @@ pub(crate) mod assembly_variable_reference_operand_path_locator {
 /// Offsets are relative to the count. The run starts at scope offset 47 in the 378- and 399-byte As-built forms, offset 69 in the 422-byte As-built form, offset 80 in the 444-byte As-built form, offset 362 in the 627-, 637-, 692-, and 748-byte forms and the variable-span class-283/264 and class-347/260 forms, offset 358 in the 633-, 732-, and 744-byte forms, offset 537 in the 945-byte form, offset 530 in the 806- and 861-byte forms, and offset 552 in the 850-byte form.
 /// ```
 pub(crate) mod assembly_operand_path_locator_reference_run {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 26;
     /// Offset of `first_locator_reference` (`bytes[11]`). Spec §Assembly operands.
     pub(crate) const FIRST_LOCATOR_REFERENCE: usize = 4;
 }
@@ -2437,6 +2756,62 @@ pub(crate) mod named_solid_primitive_prologue {
     pub(crate) const FORM_MARKER: usize = 25;
 }
 
+/// Byte offsets for the `prefixed_cylinder_header` record.
+///
+/// Spec §3.1. Record length 26 B.
+pub(crate) mod prefixed_cylinder_header {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 26;
+    /// Offset of `zero_prefix` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_PREFIX: usize = 11;
+    /// Offset of `prefix_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PREFIX_WORD: usize = 20;
+    /// Offset of `zero_flag` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_FLAG: usize = 24;
+    /// Offset of `form_marker` (`u8`). Spec §3.1.
+    pub(crate) const FORM_MARKER: usize = 25;
+}
+
+/// Byte offsets for the `counted_cylinder_reference` record.
+///
+/// Spec §3.1. Record length 15 B.
+pub(crate) mod counted_cylinder_reference {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 15;
+    /// Offset of `count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const COUNT: usize = 0;
+    /// Offset of `reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const REFERENCE: usize = 4;
+}
+
+/// Byte offsets for the `typed_cylinder_prefix` record.
+///
+/// Spec §3.1. Record length 506 B.
+pub(crate) mod typed_cylinder_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 506;
+    /// Offset of `nested_marker` (`u8`). Spec §3.1.
+    pub(crate) const NESTED_MARKER: usize = 26;
+    /// Offset of `typed_references` (`bytes[204]`). Spec §3.1.
+    pub(crate) const TYPED_REFERENCES: usize = 27;
+    /// Offset of `matrix_flag` (`u8`). Spec §3.1.
+    pub(crate) const MATRIX_FLAG: usize = 231;
+    /// Offset of `matrix` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const MATRIX: usize = 232;
+    /// Offset of `one_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ONE_COUNT: usize = 360;
+    /// Offset of `tail_reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const TAIL_REFERENCE: usize = 364;
+    /// Offset of `zero_run_8` (`bytes[8]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_8: usize = 415;
+    /// Offset of `guid_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const GUID_CODE_UNIT_COUNT: usize = 423;
+    /// Offset of `zero_run_3` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_3: usize = 499;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 502;
+}
+
 /// Byte offsets for the `shifted_cylinder_primitive_352_frame` record.
 ///
 /// Spec §3.1. Record length 352 B.
@@ -2811,6 +3186,22 @@ pub(crate) mod legacy_pipe_operation_prefix {
     pub(crate) const OPAQUE_POST_OPERATION: usize = 30;
 }
 
+/// Byte offsets for the `legacy_extrude_sketch_profile_tail` record.
+///
+/// Spec §3.1. Record length 93 B.
+pub(crate) mod legacy_extrude_sketch_profile_tail {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 93;
+    /// Offset of `role` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ROLE: usize = 27;
+    /// Stated value of `role` (`u32`). Spec §3.1.
+    pub(crate) const ROLE_VALUE: u32 = 0x0000_0041;
+    /// Offset of `empty_record_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const EMPTY_RECORD_REFERENCE: usize = 57;
+    /// Offset of `zero_flags` (`bytes[2]`). Spec §3.1.
+    pub(crate) const ZERO_FLAGS: usize = 68;
+}
+
 /// Byte offsets for the `sketch_profile_region_selection_prefix` record.
 ///
 /// Spec §3.1. Record length 40 B.
@@ -3120,6 +3511,18 @@ pub(crate) mod timeline_body_owner_marked_prefix {
     pub(crate) const BODY_COUNT: usize = 25;
 }
 
+/// Byte offsets for the `timeline_owned_base_feature_typed_body_entry` record.
+///
+/// Spec §3.1. Record length 55 B.
+pub(crate) mod timeline_owned_base_feature_typed_body_entry {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 55;
+    /// Offset of `reference_value` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_VALUE: usize = 1;
+    /// Offset of `reference_field` (`bytes[6]`). Spec §3.1.
+    pub(crate) const REFERENCE_FIELD: usize = 49;
+}
+
 /// Byte offsets for the `timeline_owned_paste_source_pairs` record.
 ///
 /// Spec §3.1. Record length 9 B.
@@ -3136,6 +3539,22 @@ pub(crate) mod timeline_owned_paste_source_pairs {
     pub(crate) const ZERO_RUN_4: usize = 1;
     /// Offset of `pair_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const PAIR_COUNT: usize = 5;
+}
+
+/// Byte offsets for the `timeline_paste_name_prefix` record.
+///
+/// Spec §3.1. Record length 7 B.
+///
+/// ```text
+/// Offsets are relative to the byte after the null removal key of a paste object that keeps its sources. The same-segment references start at the end of this prefix.
+/// ```
+pub(crate) mod timeline_paste_name_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 7;
+    /// Offset of `zero_run_3` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_3: usize = 0;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 3;
 }
 
 /// Byte offsets for the `base_feature_wide_zero_body` record.
@@ -3240,8 +3659,8 @@ pub(crate) mod base_feature_null_reference_count {
     pub(crate) const NULL_REFERENCE: usize = 1;
     /// Offset of `null_reference_flag` (`u8`). Spec §3.1.
     pub(crate) const NULL_REFERENCE_FLAG: usize = 9;
-    /// Offset of `null_reference_zero` (`u8`). Spec §3.1.
-    pub(crate) const NULL_REFERENCE_ZERO: usize = 10;
+    /// Offset of `null_reference_terminal` (`u8`). Spec §3.1.
+    pub(crate) const NULL_REFERENCE_TERMINAL: usize = 10;
     /// Offset of `body_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const BODY_COUNT: usize = 11;
 }
@@ -4148,6 +4567,76 @@ pub(crate) mod joint_origin_legacy_class_337_266_frame {
     pub(crate) const MATRIX: usize = 49;
 }
 
+/// Byte offsets for the `joint_origin_scope_carrier_separation` record.
+///
+/// Spec §3.1. Record length 30 B.
+///
+/// ```text
+/// Offsets are relative to the paired JointOrigin scope header.
+/// ```
+pub(crate) mod joint_origin_scope_carrier_separation {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 30;
+}
+
+/// Byte offsets for the `joint_origin_direct_carrier_369` record.
+///
+/// Spec §3.1. Record length 369 B.
+///
+/// ```text
+/// Offsets are relative to the primary placement-carrier header.
+/// ```
+pub(crate) mod joint_origin_direct_carrier_369 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 369;
+    /// Offset of `zero_prefix` (`bytes[34]`). Spec §3.1.
+    pub(crate) const ZERO_PREFIX: usize = 11;
+    /// Offset of `construction_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const CONSTRUCTION_REFERENCE: usize = 45;
+    /// Stated value of `zero_after_reference` (`bytes[4]`). Spec §3.1.
+    pub(crate) const ZERO_AFTER_REFERENCE_VALUE: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
+    /// Offset of `matrix` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const MATRIX: usize = 60;
+    /// Offset of `scope_backlink` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SCOPE_BACKLINK: usize = 358;
+}
+
+/// Byte offsets for the `joint_origin_direct_carrier_391` record.
+///
+/// Spec §3.1. Record length 391 B.
+///
+/// ```text
+/// Offsets are relative to the primary placement-carrier header.
+/// ```
+pub(crate) mod joint_origin_direct_carrier_391 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 391;
+    /// Offset of `matrix` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const MATRIX: usize = 60;
+    /// Offset of `scope_backlink` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SCOPE_BACKLINK: usize = 380;
+}
+
+/// Byte offsets for the `joint_origin_direct_carrier_412` record.
+///
+/// Spec §3.1. Record length 412 B.
+///
+/// ```text
+/// Offsets are relative to the primary placement-carrier header.
+/// ```
+pub(crate) mod joint_origin_direct_carrier_412 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 412;
+    /// Offset of `construction_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const CONSTRUCTION_REFERENCE: usize = 46;
+    /// Stated value of `reference_suffix` (`bytes[4]`). Spec §3.1.
+    pub(crate) const REFERENCE_SUFFIX_VALUE: [u8; 4] = [0x00, 0x00, 0x01, 0x00];
+    /// Offset of `matrix` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const MATRIX: usize = 61;
+    /// Offset of `scope_backlink` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SCOPE_BACKLINK: usize = 401;
+}
+
 /// Byte offsets for the `work_plane_legacy_321_opaque_matrix_frame` record.
 ///
 /// Spec §3.1. Record length 321 B.
@@ -4240,14 +4729,10 @@ pub(crate) mod work_plane_direct_374_matrix_frame {
 pub(crate) mod work_axis_direct_carrier_class_297 {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 215;
+    /// Offset of `zero_run` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
     /// Offset of `value_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const VALUE_COUNT: usize = 21;
-    /// Offset of `axis_values` (`f64[8]`, little-endian). Spec §3.1.
-    pub(crate) const AXIS_VALUES: usize = 25;
-    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const REFERENCE_COUNT: usize = 89;
-    /// Offset of `reference_preamble` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const REFERENCE_PREAMBLE: usize = 93;
 }
 
 /// Byte offsets for the `work_axis_direct_carrier_class_335` record.
@@ -4260,14 +4745,30 @@ pub(crate) mod work_axis_direct_carrier_class_297 {
 pub(crate) mod work_axis_direct_carrier_class_335 {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 195;
-    /// Offset of `value_count` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const VALUE_COUNT: usize = 21;
-    /// Offset of `axis_values` (`f64[8]`, little-endian). Spec §3.1.
-    pub(crate) const AXIS_VALUES: usize = 25;
-    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const REFERENCE_COUNT: usize = 89;
-    /// Offset of `reference_preamble` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const REFERENCE_PREAMBLE: usize = 93;
+}
+
+/// Byte offsets for the `work_axis_direct_scope_long` record.
+///
+/// Spec §3.1. Record length 268 B.
+pub(crate) mod work_axis_direct_scope_long {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 268;
+}
+
+/// Byte offsets for the `work_axis_direct_scope_short` record.
+///
+/// Spec §3.1. Record length 254 B.
+pub(crate) mod work_axis_direct_scope_short {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 254;
+}
+
+/// Byte offsets for the `work_axis_direct_support` record.
+///
+/// Spec §3.1. Record length 293 B.
+pub(crate) mod work_axis_direct_support {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 293;
 }
 
 /// Byte offsets for the `coil_compact_placement_matrix_frame` record.
@@ -4478,6 +4979,21 @@ pub(crate) mod shifted_extrude_prologue {
     pub(crate) const ZERO_RUN_3: usize = 24;
     /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
     pub(crate) const OPERATION: usize = 27;
+    /// Offset of `direction` (`u32`, little-endian). Spec §3.1.
+    #[cfg(test)]
+    pub(crate) const DIRECTION: usize = 31;
+    /// Offset of `face_extend` (`u32`, little-endian). Spec §3.1.
+    #[cfg(test)]
+    pub(crate) const FACE_EXTEND: usize = 35;
+    /// Offset of `direction_reversed` (`u8`). Spec §3.1.
+    #[cfg(test)]
+    pub(crate) const DIRECTION_REVERSED: usize = 39;
+    /// Offset of `geometry_kind` (`u8`). Spec §3.1.
+    #[cfg(test)]
+    pub(crate) const GEOMETRY_KIND: usize = 40;
+    /// Offset of `start_support` (`u8`). Spec §3.1.
+    #[cfg(test)]
+    pub(crate) const START_SUPPORT: usize = 41;
 }
 
 /// Byte offsets for the `legacy_class_338_two_sided_distance_extrude_frame` record.
@@ -4648,6 +5164,22 @@ pub(crate) mod shifted_reference_aware_extrude_scope_prefix {
     pub(crate) const SECOND_SIDE_EXTENT: usize = 288;
     /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const REFERENCE_COUNT: usize = 292;
+}
+
+/// Byte offsets for the `legacy_class_330_symmetric_extrude_frame` record.
+///
+/// Spec §3.1. Record length 420 B.
+pub(crate) mod legacy_class_330_symmetric_extrude_frame {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 420;
+    /// Offset of `first_side_extent` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FIRST_SIDE_EXTENT: usize = 106;
+    /// Offset of `second_side_extent` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SECOND_SIDE_EXTENT: usize = 110;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 252;
+    /// Stated value of `reference_count` (`u32`). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT_VALUE: u32 = 0x0000_0005;
 }
 
 /// Byte offsets for the `shifted_reference_aware_extrude_class_323_tail` record.
@@ -5106,6 +5638,56 @@ pub(crate) mod shifted_extrude_offset_283_two_sided_tail {
     pub(crate) const TRAILING_ENTITY_REFERENCE: usize = 185;
     /// Offset of `zero_run_8` (`bytes[8]`). Spec §3.1.
     pub(crate) const ZERO_RUN_8: usize = 196;
+}
+
+/// Byte offsets for the `thread_compact_hole_owners_prefix` record.
+///
+/// Spec §3.1. Record length 42 B.
+///
+/// ```text
+/// Relative to the primary Thread indexed header. The designation starts at offset 42.
+/// ```
+pub(crate) mod thread_compact_hole_owners_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 42;
+    /// Offset of `prefix_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PREFIX_WORD: usize = 29;
+    /// Offset of `form_marker` (`bytes[5]`). Spec §3.1.
+    pub(crate) const FORM_MARKER: usize = 33;
+    /// Offset of `form_token` (`bytes[4]`). Spec §3.1.
+    pub(crate) const FORM_TOKEN: usize = 38;
+}
+
+/// Byte offsets for the `thread_hole_companion_tail` record.
+///
+/// Spec §3.1. Record length 88 B.
+///
+/// ```text
+/// Relative to the end of the LP-UTF16 Thread kind.
+/// ```
+pub(crate) mod thread_hole_companion_tail {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 88;
+    /// Offset of `zero_prefix` (`bytes[15]`). Spec §3.1.
+    pub(crate) const ZERO_PREFIX: usize = 4;
+    /// Offset of `first_companion` (`bytes[11]`). Spec §3.1.
+    pub(crate) const FIRST_COMPANION: usize = 19;
+    /// Offset of `null_reference` (`u8`). Spec §3.1.
+    pub(crate) const NULL_REFERENCE: usize = 30;
+    /// Offset of `previous_history_state` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PREVIOUS_HISTORY_STATE: usize = 31;
+    /// Offset of `evaluation_duration` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const EVALUATION_DURATION: usize = 39;
+    /// Offset of `second_companion` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SECOND_COMPANION: usize = 51;
+    /// Offset of `flags` (`bytes[3]`). Spec §3.1.
+    pub(crate) const FLAGS: usize = 62;
+    /// Offset of `third_companion` (`bytes[11]`). Spec §3.1.
+    pub(crate) const THIRD_COMPANION: usize = 65;
+    /// Offset of `hole` (`bytes[11]`). Spec §3.1.
+    pub(crate) const HOLE: usize = 76;
+    /// Offset of `zero_suffix` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_SUFFIX: usize = 87;
 }
 
 /// Byte offsets for the `thread_standard_scope_prefix` record.
@@ -5813,6 +6395,16 @@ pub(crate) mod modify_marker_one_prologue {
     pub(crate) const FIRST_BODY_GROUP: usize = 40;
 }
 
+/// Byte offsets for the `legacy_extrude_group_tail_marker` record.
+///
+/// Spec §3.1. Record length 29 B.
+pub(crate) mod legacy_extrude_group_tail_marker {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 29;
+    /// Offset of `zero_payload` (`bytes[18]`). Spec §3.1.
+    pub(crate) const ZERO_PAYLOAD: usize = 11;
+}
+
 /// Byte offsets for the `component_insert_identity_scope_compact` record.
 ///
 /// Spec §3.1. Record length 261 B.
@@ -5838,7 +6430,7 @@ pub(crate) mod component_insert_identity_scope_compact {
 /// Spec §3.1. Record length 122 B.
 ///
 /// ```text
-/// Offsets are relative to the primary indexed header. The generation-specific scope tail begins at offset 122.
+/// Offsets are relative to the primary indexed header. The 256-, 257- and 267-byte identity forms share this prefix. The generation-specific scope tail begins at offset 122.
 /// ```
 pub(crate) mod component_insert_identity_scope_shifted_prefix {
     /// Record length in bytes. Spec §3.1.
@@ -5939,20 +6531,14 @@ pub(crate) mod component_insert_relation_child_393_58 {
 /// Offsets are relative to the primary class-283 indexed header. The paired class-262 indexed header begins at offset 257. The final fixed tail contains generation state bytes between the typed lanes and the paired header.
 /// ```
 pub(crate) mod component_insert_scope_283_262_257 {
-    /// Offset of `occurrence_identity` (`u64`, little-endian). Spec §3.1.
-    pub(crate) const OCCURRENCE_IDENTITY: usize = 21;
-    /// Offset of `relation_marker` (`u8`). Spec §3.1.
-    pub(crate) const RELATION_MARKER: usize = 33;
-    /// Offset of `relation_record_index` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const RELATION_RECORD_INDEX: usize = 34;
-    /// Offset of `null_guid_code_unit_count` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const NULL_GUID_CODE_UNIT_COUNT: usize = 46;
     /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const REFERENCE_COUNT: usize = 125;
     /// Offset of `reference_marker` (`u8`). Spec §3.1.
     pub(crate) const REFERENCE_MARKER: usize = 129;
     /// Offset of `reference_record_index` (`u32`, little-endian). Spec §3.1.
     pub(crate) const REFERENCE_RECORD_INDEX: usize = 130;
+    /// Offset of `feature_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FEATURE_ORDINAL: usize = 180;
     /// Offset of `previous_history_state_id` (`u32`, little-endian). Spec §3.1.
     pub(crate) const PREVIOUS_HISTORY_STATE_ID: usize = 211;
 }
@@ -5971,6 +6557,8 @@ pub(crate) mod component_insert_scope_283_262_385 {
     pub(crate) const RELATION_MARKER: usize = 33;
     /// Offset of `relation_record_index` (`u32`, little-endian). Spec §3.1.
     pub(crate) const RELATION_RECORD_INDEX: usize = 34;
+    /// Offset of `transform_markers` (`bytes[2]`). Spec §3.1.
+    pub(crate) const TRANSFORM_MARKERS: usize = 44;
     /// Offset of `transform` (`f64[16]`, little-endian). Spec §3.1.
     pub(crate) const TRANSFORM: usize = 46;
     /// Offset of `null_guid_code_unit_count` (`u32`, little-endian). Spec §3.1.
@@ -5981,6 +6569,8 @@ pub(crate) mod component_insert_scope_283_262_385 {
     pub(crate) const REFERENCE_MARKER: usize = 257;
     /// Offset of `reference_record_index` (`u32`, little-endian). Spec §3.1.
     pub(crate) const REFERENCE_RECORD_INDEX: usize = 258;
+    /// Offset of `feature_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FEATURE_ORDINAL: usize = 308;
     /// Offset of `previous_history_state_id` (`u32`, little-endian). Spec §3.1.
     pub(crate) const PREVIOUS_HISTORY_STATE_ID: usize = 339;
 }
@@ -6055,6 +6645,22 @@ pub(crate) mod placement_indexed_prefix {
     pub(crate) const ZERO_PREFIX: usize = 11;
 }
 
+/// Byte offsets for the `surface_extend_scope_prologue` record.
+///
+/// Spec §3.1. Record length 44 B.
+pub(crate) mod surface_extend_scope_prologue {
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_9: usize = 11;
+    /// Offset of `prologue_marker` (`u8`). Spec §3.1.
+    pub(crate) const PROLOGUE_MARKER: usize = 20;
+    /// Offset of `zero_run_8` (`bytes[8]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_8: usize = 21;
+    /// Offset of `extension_method` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const EXTENSION_METHOD: usize = 29;
+    /// Offset of `distance_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const DISTANCE_REFERENCE: usize = 33;
+}
+
 /// Byte offsets for the `surface_untrim_prologue` record.
 ///
 /// Spec §3.1. Record length 25 B.
@@ -6103,12 +6709,24 @@ pub(crate) mod surface_patch_v7_normal_flip_prefix {
     pub(crate) const FOLLOWING_WORD_VALUE: u32 = 0x0000_0004;
 }
 
+/// Byte offsets for the `surface_patch_v5_compact_selection_frame` record.
+///
+/// Spec §3.1. Record length 39 B.
+///
+/// ```text
+/// The compact version-5 form has the same selection, interior-list and tool-reference prefixes as the regular version-5 form.
+/// ```
+pub(crate) mod surface_patch_v5_compact_selection_frame {
+    /// Offset of `selection_prefix` (`bytes[12]`). Spec §3.1.
+    pub(crate) const SELECTION_PREFIX: usize = 27;
+}
+
 /// Byte offsets for the `surface_patch_v5_selection_frame` record.
 ///
 /// Spec §3.1. Record length 43 B.
 ///
 /// ```text
-/// Type versions 5 and 6 start the selection prefix at primary-scope offset 31. Version 7 starts it at the following word of surface_patch_v7_normal_flip_prefix.
+/// Regular version-5 and version-6 forms start the selection prefix at primary-scope offset 31. Version 7 starts it at the following word of surface_patch_v7_normal_flip_prefix.
 /// ```
 pub(crate) mod surface_patch_v5_selection_frame {
     /// Offset of `selection_prefix` (`bytes[12]`). Spec §3.1.
@@ -7229,6 +7847,18 @@ pub(crate) mod typed_reference_profile_chain_record {
     pub(crate) const SKETCH_SCOPE_REFERENCE: usize = 31;
 }
 
+/// Byte offsets for the `typed_reference_sketchless_profile_chain_record` record.
+///
+/// Spec §3.1. Record length 82 B.
+pub(crate) mod typed_reference_sketchless_profile_chain_record {
+    /// Offset of `zero_run_14` (`bytes[14]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_14: usize = 11;
+    /// Offset of `chain_marker` (`bytes[6]`). Spec §3.1.
+    pub(crate) const CHAIN_MARKER: usize = 25;
+    /// Offset of `selection_reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const SELECTION_REFERENCE: usize = 31;
+}
+
 /// Byte offsets for the `typed_reference_profile_identity_record` record.
 ///
 /// Spec §3.1. Record length 76 B.
@@ -7847,43 +8477,25 @@ pub(crate) mod rectangular_pattern_payload_prefix {
 /// Spec §Assembly operands. Record length 29 B.
 ///
 /// ```text
-/// Offsets are relative to the byte after the leading zero byte or V-direction reference.
+/// Offsets are relative to the byte after the leading zero byte or V-direction reference. Each body reference moves every field after `body_count` eleven bytes later.
 /// ```
 pub(crate) mod rectangular_pattern_payload_distribution {
     /// Record length in bytes. Spec §Assembly operands.
     pub(crate) const LEN: usize = 29;
-    /// Offset of `zero_run` (`bytes[12]`). Spec §Assembly operands.
-    pub(crate) const ZERO_RUN: usize = 0;
-    /// Offset of `fixed_two` (`u32`, little-endian). Spec §Assembly operands.
-    pub(crate) const FIXED_TWO: usize = 12;
-    /// Stated value of `fixed_two` (`u32`). Spec §Assembly operands.
-    pub(crate) const FIXED_TWO_VALUE: u32 = 0x0000_0002;
+    /// Offset of `body_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const BODY_COUNT: usize = 0;
+    /// Offset of `zero_run` (`bytes[8]`). Spec §Assembly operands.
+    pub(crate) const ZERO_RUN: usize = 4;
+    /// Offset of `compute_option` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const COMPUTE_OPTION: usize = 12;
+    /// Offset of `seed_kind` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const SEED_KIND: usize = 16;
     /// Offset of `sentinel` (`u32`, little-endian). Spec §Assembly operands.
     pub(crate) const SENTINEL: usize = 20;
     /// Offset of `distance_type` (`u8`). Spec §Assembly operands.
     pub(crate) const DISTANCE_TYPE: usize = 24;
     /// Offset of `entry_count` (`u32`, little-endian). Spec §Assembly operands.
     pub(crate) const ENTRY_COUNT: usize = 25;
-}
-
-/// Byte offsets for the `rectangular_pattern_payload_counted_head` record.
-///
-/// Spec §Assembly operands. Record length 19 B.
-///
-/// ```text
-/// Offsets are relative to the byte after the leading zero byte of the distribution block.
-/// ```
-pub(crate) mod rectangular_pattern_payload_counted_head {
-    /// Record length in bytes. Spec §Assembly operands.
-    pub(crate) const LEN: usize = 19;
-    /// Offset of `count` (`u32`, little-endian). Spec §Assembly operands.
-    pub(crate) const COUNT: usize = 0;
-    /// Stated value of `count` (`u32`). Spec §Assembly operands.
-    pub(crate) const COUNT_VALUE: u32 = 0x0000_0001;
-    /// Offset of `reference` (`bytes[11]`). Spec §Assembly operands.
-    pub(crate) const REFERENCE: usize = 4;
-    /// Offset of `zero_run` (`bytes[4]`). Spec §Assembly operands.
-    pub(crate) const ZERO_RUN: usize = 15;
 }
 
 /// Byte offsets for the `rectangular_pattern_payload_suffix` record.
@@ -7952,10 +8564,14 @@ pub(crate) mod sketch_folder_prefix {
 /// Offsets are relative to the primary indexed header. K = 0.
 /// ```
 pub(crate) mod assembly_as_built_scope_378 {
+    /// Offset of `locator_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const LOCATOR_COUNT: usize = 47;
     /// Offset of `first_locator_reference` (`bytes[11]`). Spec §Assembly operands.
     pub(crate) const FIRST_LOCATOR_REFERENCE: usize = 51;
     /// Offset of `second_locator_reference` (`bytes[11]`). Spec §Assembly operands.
     pub(crate) const SECOND_LOCATOR_REFERENCE: usize = 62;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const REFERENCE_COUNT: usize = 163;
 }
 
 /// Byte offsets for the `assembly_as_built_scope_422` record.
@@ -8976,6 +9592,66 @@ pub(crate) mod align_constructor {
         [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
 }
 
+/// Byte offsets for the `sketch_null_explicit_member_head` record.
+///
+/// Spec §3.1. Record length 152 B.
+///
+/// ```text
+/// Offsets are relative to the indexed head-placement header.
+/// ```
+pub(crate) mod sketch_null_explicit_member_head {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 152;
+    /// Offset of `zero_run` (`bytes[11]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `transform` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const TRANSFORM: usize = 22;
+    /// Offset of `padding` (`u8`). Spec §3.1.
+    pub(crate) const PADDING: usize = 150;
+    /// Offset of `closing_reference` (`u8`). Spec §3.1.
+    pub(crate) const CLOSING_REFERENCE: usize = 151;
+}
+
+/// Byte offsets for the `sketch_explicit_member_head` record.
+///
+/// Spec §3.1. Record length 162 B.
+///
+/// ```text
+/// Offsets are relative to the indexed head-placement header.
+/// ```
+pub(crate) mod sketch_explicit_member_head {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 162;
+    /// Offset of `zero_run` (`bytes[11]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `transform` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const TRANSFORM: usize = 22;
+    /// Offset of `padding` (`u8`). Spec §3.1.
+    pub(crate) const PADDING: usize = 150;
+    /// Offset of `closing_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const CLOSING_REFERENCE: usize = 151;
+}
+
+/// Byte offsets for the `sketch_typed_explicit_member_head` record.
+///
+/// Spec §3.1. Record length 202 B.
+///
+/// ```text
+/// Offsets are relative to the indexed head-placement header.
+/// ```
+pub(crate) mod sketch_typed_explicit_member_head {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 202;
+    /// Offset of `zero_run` (`bytes[11]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `transform` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const TRANSFORM: usize = 22;
+    /// Offset of `padding` (`u8`). Spec §3.1.
+    pub(crate) const PADDING: usize = 150;
+    /// Offset of `closing_reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const CLOSING_REFERENCE: usize = 151;
+}
+
 /// Byte offsets for the `sketch_typed_compact_member_head` record.
 ///
 /// Spec §3.1. Record length 74 B.
@@ -8997,6 +9673,583 @@ pub(crate) mod sketch_typed_compact_member_head {
     pub(crate) const FLAGS_VALUE: [u8; 2] = [0x01, 0x00];
     /// Offset of `reference` (`bytes[51]`). Spec §3.1.
     pub(crate) const REFERENCE: usize = 23;
+}
+
+/// Byte offsets for the `base_feature_component_aggregate_prefix` record.
+///
+/// Spec §Records of a Base Feature design. Record length 892 B.
+///
+/// ```text
+/// Component aggregate of type `E03784ED-5E19-4E14-B9F2-3B07017018CD`, type version `23`, with property-group count `G = 0`, through the code-unit count of the component name. A property group is inserted at offset 122 and moves every later offset by its length.
+/// ```
+pub(crate) mod base_feature_component_aggregate_prefix {
+    /// Offset of `record_8ef00d65` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_8EF00D65: usize = 30;
+    /// Offset of `record_878c70a7` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_878C70A7: usize = 41;
+    /// Offset of `record_1e650ea7` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_1E650EA7: usize = 52;
+    /// Offset of `record_f670456d` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_F670456D: usize = 63;
+    /// Offset of `record_b4cde096` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_B4CDE096: usize = 74;
+    /// Offset of `origin_container` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const ORIGIN_CONTAINER: usize = 85;
+    /// Offset of `record_64435f6e` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_64435F6E: usize = 96;
+    /// Offset of `record_bf7a6b8b` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_BF7A6B8B: usize = 107;
+    /// Offset of `next_persistent_identity` (`u64`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const NEXT_PERSISTENT_IDENTITY: usize = 122;
+    /// Offset of `record_ad3f9695` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_AD3F9695: usize = 130;
+    /// Offset of `parameter_body_owner` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const PARAMETER_BODY_OWNER: usize = 141;
+    /// Offset of `record_91461d14` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_91461D14: usize = 152;
+    /// Offset of `arrangements_container_code_units` (`bytes[42]`). Spec §Records of a Base Feature design.
+    pub(crate) const ARRANGEMENTS_CONTAINER_CODE_UNITS: usize = 171;
+    /// Offset of `record_60f93de2` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_60F93DE2: usize = 213;
+    /// Offset of `timeline_context` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const TIMELINE_CONTEXT: usize = 224;
+    /// Offset of `record_7e84430b` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_7E84430B: usize = 235;
+    /// Offset of `record_fa21074e` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_FA21074E: usize = 247;
+    /// Offset of `record_3978701c` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_3978701C: usize = 259;
+    /// Offset of `paired_header` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const PAIRED_HEADER: usize = 276;
+    /// Offset of `record_0c5dab90` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_0C5DAB90: usize = 295;
+    /// Offset of `record_47c245a2` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_47C245A2: usize = 306;
+    /// Offset of `minus_one` (`f64[4]`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const MINUS_ONE: usize = 317;
+    /// Offset of `record_ac202226` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_AC202226: usize = 349;
+    /// Offset of `record_596c8b98` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_596C8B98: usize = 360;
+    /// Offset of `design_body_owner` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const DESIGN_BODY_OWNER: usize = 371;
+    /// Offset of `record_0dbf95ed` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_0DBF95ED: usize = 382;
+    /// Offset of `record_fcb17d75` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_FCB17D75: usize = 393;
+    /// Offset of `record_77ef6384` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_77EF6384: usize = 404;
+    /// Offset of `parameter_collection` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const PARAMETER_COLLECTION: usize = 415;
+    /// Offset of `record_30dcfc57` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_30DCFC57: usize = 427;
+    /// Offset of `sketch_collection` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const SKETCH_COLLECTION: usize = 438;
+    /// Offset of `record_372234a0` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_372234A0: usize = 449;
+    /// Offset of `record_a8635b5f` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_A8635B5F: usize = 460;
+    /// Offset of `colour` (`f32[4]`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const COLOUR: usize = 476;
+    /// Offset of `material_asset_manager` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const MATERIAL_ASSET_MANAGER: usize = 492;
+    /// Offset of `material_guid_code_units` (`bytes[72]`). Spec §Records of a Base Feature design.
+    pub(crate) const MATERIAL_GUID_CODE_UNITS: usize = 507;
+    /// Offset of `material_library_code_units` (`bytes[72]`). Spec §Records of a Base Feature design.
+    pub(crate) const MATERIAL_LIBRARY_CODE_UNITS: usize = 583;
+    /// Offset of `material_name_code_units` (`bytes[34]`). Spec §Records of a Base Feature design.
+    pub(crate) const MATERIAL_NAME_CODE_UNITS: usize = 663;
+    /// Offset of `record_f9cb8717` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_F9CB8717: usize = 698;
+    /// Offset of `first_lowercase_guid_code_units` (`bytes[72]`). Spec §Records of a Base Feature design.
+    pub(crate) const FIRST_LOWERCASE_GUID_CODE_UNITS: usize = 713;
+    /// Offset of `act_component_record` (`bytes[15]`). Spec §Records of a Base Feature design.
+    pub(crate) const ACT_COMPONENT_RECORD: usize = 785;
+    /// Offset of `component_naming_space` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const COMPONENT_NAMING_SPACE: usize = 800;
+    /// Offset of `second_lowercase_guid_code_units` (`bytes[72]`). Spec §Records of a Base Feature design.
+    pub(crate) const SECOND_LOWERCASE_GUID_CODE_UNITS: usize = 816;
+    /// Offset of `component_name_length` (`u32`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const COMPONENT_NAME_LENGTH: usize = 888;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 892] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x80, 0x3f,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00,
+        0x00, 0x00, 0x15, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 45] = [
+        (0, 11),
+        (30, 11),
+        (41, 11),
+        (52, 11),
+        (63, 11),
+        (74, 11),
+        (85, 11),
+        (96, 11),
+        (107, 11),
+        (122, 8),
+        (130, 11),
+        (141, 11),
+        (152, 11),
+        (171, 42),
+        (213, 11),
+        (224, 11),
+        (235, 11),
+        (247, 11),
+        (259, 11),
+        (276, 11),
+        (295, 11),
+        (306, 11),
+        (317, 32),
+        (349, 11),
+        (360, 11),
+        (371, 11),
+        (382, 11),
+        (393, 11),
+        (404, 11),
+        (415, 11),
+        (427, 11),
+        (438, 11),
+        (449, 11),
+        (460, 11),
+        (476, 16),
+        (492, 11),
+        (507, 72),
+        (583, 72),
+        (663, 34),
+        (698, 11),
+        (713, 72),
+        (785, 15),
+        (800, 11),
+        (816, 72),
+        (888, 4),
+    ];
+}
+
+/// Byte offsets for the `base_feature_origin_point` record.
+///
+/// Spec §Records of a Base Feature design. Record length 165 B.
+///
+/// ```text
+/// Origin record with the shared head and tail of the origin records and its geometry.
+/// ```
+pub(crate) mod base_feature_origin_point {
+    /// Offset of `point` (`f64[3]`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const POINT: usize = 77;
+    /// Offset of `name_code_units` (`bytes[2]`). Spec §Records of a Base Feature design.
+    pub(crate) const NAME_CODE_UNITS: usize = 115;
+    /// Offset of `asset_settings` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const ASSET_SETTINGS: usize = 128;
+    /// Offset of `origin_container` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const ORIGIN_CONTAINER: usize = 154;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 165] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x0d, 0x00, 0x00, 0x00, 0x45,
+        0x6e, 0x74, 0x69, 0x74, 0x79, 0x47, 0x65, 0x6e, 0x65, 0x73, 0x69, 0x73, 0x17, 0x00, 0x00,
+        0x00, 0x49, 0x6e, 0x74, 0x72, 0x69, 0x6e, 0x73, 0x69, 0x63, 0x4d, 0x65, 0x74, 0x61, 0x54,
+        0x79, 0x70, 0x65, 0x75, 0x69, 0x6e, 0x74, 0x36, 0x34, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0xff, 0xff, 0xff, 0xff, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x3f, 0x00, 0x00, 0x80, 0x3f, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 5] =
+        [(0, 11), (77, 24), (115, 2), (128, 11), (154, 11)];
+}
+
+/// Byte offsets for the `base_feature_origin_axis` record.
+///
+/// Spec §Records of a Base Feature design. Record length 205 B.
+///
+/// ```text
+/// Origin record with the shared head and tail of the origin records and its geometry.
+/// ```
+pub(crate) mod base_feature_origin_axis {
+    /// Offset of `origin` (`f64[3]`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const ORIGIN: usize = 77;
+    /// Offset of `direction` (`f64[3]`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const DIRECTION: usize = 101;
+    /// Offset of `name_code_units` (`bytes[2]`). Spec §Records of a Base Feature design.
+    pub(crate) const NAME_CODE_UNITS: usize = 155;
+    /// Offset of `asset_settings` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const ASSET_SETTINGS: usize = 168;
+    /// Offset of `origin_container` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const ORIGIN_CONTAINER: usize = 194;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 205] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x0d, 0x00, 0x00, 0x00, 0x45,
+        0x6e, 0x74, 0x69, 0x74, 0x79, 0x47, 0x65, 0x6e, 0x65, 0x73, 0x69, 0x73, 0x17, 0x00, 0x00,
+        0x00, 0x49, 0x6e, 0x74, 0x72, 0x69, 0x6e, 0x73, 0x69, 0x63, 0x4d, 0x65, 0x74, 0x61, 0x54,
+        0x79, 0x70, 0x65, 0x75, 0x69, 0x6e, 0x74, 0x36, 0x34, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0xc6, 0x3f, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x02, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff,
+        0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x80, 0x3f, 0x66, 0x66, 0xa6, 0x3f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 6] =
+        [(0, 11), (77, 24), (101, 24), (155, 2), (168, 11), (194, 11)];
+}
+
+/// Byte offsets for the `base_feature_origin_plane` record.
+///
+/// Spec §Records of a Base Feature design. Record length 252 B.
+///
+/// ```text
+/// Origin record with the shared head and tail of the origin records and its geometry.
+/// ```
+pub(crate) mod base_feature_origin_plane {
+    /// Offset of `origin` (`f64[3]`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const ORIGIN: usize = 98;
+    /// Offset of `u_direction` (`f64[3]`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const U_DIRECTION: usize = 122;
+    /// Offset of `v_direction` (`f64[3]`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const V_DIRECTION: usize = 146;
+    /// Offset of `name_code_units` (`bytes[4]`). Spec §Records of a Base Feature design.
+    pub(crate) const NAME_CODE_UNITS: usize = 200;
+    /// Offset of `asset_settings` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const ASSET_SETTINGS: usize = 215;
+    /// Offset of `origin_container` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const ORIGIN_CONTAINER: usize = 241;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 252] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x0d, 0x00, 0x00, 0x00, 0x45,
+        0x6e, 0x74, 0x69, 0x74, 0x79, 0x47, 0x65, 0x6e, 0x65, 0x73, 0x69, 0x73, 0x17, 0x00, 0x00,
+        0x00, 0x49, 0x6e, 0x74, 0x72, 0x69, 0x6e, 0x73, 0x69, 0x63, 0x4d, 0x65, 0x74, 0x61, 0x54,
+        0x79, 0x70, 0x65, 0x75, 0x69, 0x6e, 0x74, 0x36, 0x34, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xd0, 0x3f, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0xd0, 0x3f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff,
+        0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x3f, 0x00, 0x00, 0x80, 0x3f, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 7] = [
+        (0, 11),
+        (98, 24),
+        (122, 24),
+        (146, 24),
+        (200, 4),
+        (215, 11),
+        (241, 11),
+    ];
+}
+
+/// Byte offsets for the `base_feature_act_table_prefix` record.
+///
+/// Spec §Records of a Base Feature design. Record length 33 B.
+///
+/// ```text
+/// ACT table of type `8EF12734-4D22-4F6A-8A80-1462E6B40A13`, through its entry count. The entries and the aspect block follow.
+/// ```
+pub(crate) mod base_feature_act_table_prefix {
+    /// Offset of `entry_count` (`u32`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const ENTRY_COUNT: usize = 29;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 33] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x08, 0x00, 0x00, 0x00, 0x41, 0x43, 0x54, 0x54, 0x61, 0x62, 0x6c, 0x65, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 2] = [(0, 11), (29, 4)];
+}
+
+/// Byte offsets for the `base_feature_act_components_root` record.
+///
+/// Spec §Records of a Base Feature design. Record length 75 B.
+///
+/// ```text
+/// ACT components root of type `596618BE-CD74-4BC9-A627-2DA799696C2D`.
+/// ```
+pub(crate) mod base_feature_act_components_root {
+    /// Offset of `component_record` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const COMPONENT_RECORD: usize = 63;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 75] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x11, 0x00, 0x00, 0x00, 0x41, 0x43, 0x54, 0x43, 0x6f, 0x6d, 0x70, 0x6f, 0x6e, 0x65, 0x6e,
+        0x74, 0x73, 0x52, 0x6f, 0x6f, 0x74, 0x00, 0x00, 0x11, 0x00, 0x00, 0x00, 0x41, 0x43, 0x54,
+        0x43, 0x6f, 0x6d, 0x70, 0x6f, 0x6e, 0x65, 0x6e, 0x74, 0x73, 0x52, 0x6f, 0x6f, 0x74, 0x01,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 2] = [(0, 11), (63, 11)];
+}
+
+/// Byte offsets for the `base_feature_act_component_record_prefix` record.
+///
+/// Spec §Records of a Base Feature design. Record length 61 B.
+///
+/// ```text
+/// ACT component record of type `D956D02C-2806-4E57-8B2E-EFA323A5C2B8`, through the code-unit count of the component name.
+/// ```
+pub(crate) mod base_feature_act_component_record_prefix {
+    /// Offset of `naming_space_link` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const NAMING_SPACE_LINK: usize = 21;
+    /// Offset of `key_code_units` (`bytes[6]`). Spec §Records of a Base Feature design.
+    pub(crate) const KEY_CODE_UNITS: usize = 36;
+    /// Offset of `design_component_aggregate` (`bytes[15]`). Spec §Records of a Base Feature design.
+    pub(crate) const DESIGN_COMPONENT_AGGREGATE: usize = 42;
+    /// Offset of `component_name_length` (`u32`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const COMPONENT_NAME_LENGTH: usize = 57;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 61] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 5] =
+        [(0, 11), (21, 11), (36, 6), (42, 15), (57, 4)];
+}
+
+/// Byte offsets for the `base_feature_act_naming_space_link` record.
+///
+/// Spec §Records of a Base Feature design. Record length 56 B.
+///
+/// ```text
+/// ACT naming-space link of type `F01D16CF-95D5-4239-A488-00448AC88023`.
+/// ```
+pub(crate) mod base_feature_act_naming_space_link {
+    /// Offset of `design_naming_space` (`bytes[15]`). Spec §Records of a Base Feature design.
+    pub(crate) const DESIGN_NAMING_SPACE: usize = 21;
+    /// Offset of `component_record` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const COMPONENT_RECORD: usize = 45;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 56] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 3] = [(0, 11), (21, 15), (45, 11)];
+}
+
+/// Byte offsets for the `base_feature_act_instances_root` record.
+///
+/// Spec §Records of a Base Feature design. Record length 96 B.
+///
+/// ```text
+/// ACT instances root of type `F3E2665C-F3E1-4BA7-8676-8B90579B56D3`.
+/// ```
+pub(crate) mod base_feature_act_instances_root {
+    /// Offset of `instance_root` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const INSTANCE_ROOT: usize = 45;
+    /// Offset of `instance_root_repeat` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const INSTANCE_ROOT_REPEAT: usize = 84;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 96] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x10, 0x00, 0x00, 0x00, 0x41, 0x43, 0x54, 0x49, 0x6e, 0x73, 0x74, 0x61, 0x6e, 0x63, 0x65,
+        0x73, 0x52, 0x6f, 0x6f, 0x74, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+        0x10, 0x00, 0x00, 0x00, 0x41, 0x43, 0x54, 0x49, 0x6e, 0x73, 0x74, 0x61, 0x6e, 0x63, 0x65,
+        0x73, 0x52, 0x6f, 0x6f, 0x74, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 3] = [(0, 11), (45, 11), (84, 11)];
+}
+
+/// Byte offsets for the `base_feature_act_instance_root` record.
+///
+/// Spec §Records of a Base Feature design. Record length 200 B.
+///
+/// ```text
+/// ACT instance root of type `96E1B59A-1989-4493-AA92-67E6072135F6`.
+/// ```
+pub(crate) mod base_feature_act_instance_root {
+    /// Offset of `instance_root_self` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const INSTANCE_ROOT_SELF: usize = 134;
+    /// Offset of `component_record` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const COMPONENT_RECORD: usize = 146;
+    /// Offset of `key_code_units` (`bytes[6]`). Spec §Records of a Base Feature design.
+    pub(crate) const KEY_CODE_UNITS: usize = 161;
+    /// Offset of `design_root_instance` (`bytes[15]`). Spec §Records of a Base Feature design.
+    pub(crate) const DESIGN_ROOT_INSTANCE: usize = 168;
+    /// Offset of `component_record_repeat` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const COMPONENT_RECORD_REPEAT: usize = 187;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 200] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x0f, 0x00, 0x00, 0x00, 0x41, 0x43, 0x54, 0x49, 0x6e, 0x73, 0x74, 0x61, 0x6e, 0x63, 0x65,
+        0x52, 0x6f, 0x6f, 0x74, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00,
+        0x41, 0x70, 0x70, 0x65, 0x61, 0x72, 0x61, 0x6e, 0x63, 0x65, 0x08, 0x00, 0x00, 0x00, 0x47,
+        0x65, 0x6f, 0x6d, 0x65, 0x74, 0x72, 0x79, 0x10, 0x00, 0x00, 0x00, 0x50, 0x68, 0x79, 0x73,
+        0x69, 0x63, 0x61, 0x6c, 0x4d, 0x61, 0x74, 0x65, 0x72, 0x69, 0x61, 0x6c, 0x0a, 0x00, 0x00,
+        0x00, 0x50, 0x72, 0x6f, 0x70, 0x65, 0x72, 0x74, 0x69, 0x65, 0x73, 0x0f, 0x00, 0x00, 0x00,
+        0x53, 0x74, 0x72, 0x75, 0x63, 0x74, 0x75, 0x72, 0x65, 0x43, 0x68, 0x61, 0x6e, 0x67, 0x65,
+        0x09, 0x00, 0x00, 0x00, 0x54, 0x72, 0x61, 0x6e, 0x73, 0x66, 0x6f, 0x72, 0x6d, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 6] = [
+        (0, 11),
+        (134, 11),
+        (146, 11),
+        (161, 6),
+        (168, 15),
+        (187, 11),
+    ];
+}
+
+/// Byte offsets for the `base_feature_act_aspect_entry_prefix` record.
+///
+/// Spec §Records of a Base Feature design. Record length 25 B.
+///
+/// ```text
+/// ACT aspect entry through its aspect count. The aspect pairs and the key follow.
+/// ```
+pub(crate) mod base_feature_act_aspect_entry_prefix {
+    /// Offset of `aspect_count` (`u32`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const ASPECT_COUNT: usize = 21;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 25] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 2] = [(0, 11), (21, 4)];
+}
+
+/// Byte offsets for the `derived_base_owner_reference` record.
+///
+/// Spec §3.1. Record length 70 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed header of a derived base scope whose references use the eleven-byte form; the 711-, 707-, and 491-byte typed-reference forms store other fields here. The same eleven bytes repeat twelve bytes before the frame end, followed by u8 0.
+/// ```
+pub(crate) mod derived_base_owner_reference {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 70;
+    /// Offset of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER: usize = 59;
+    /// Stated value of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER_VALUE: u8 = 1;
+    /// Offset of `record_index` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const RECORD_INDEX: usize = 60;
+    /// Offset of `zero_run_2` (`bytes[2]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_2: usize = 68;
+}
+
+/// Byte offsets for the `derived_base_mirror_scope` record.
+///
+/// Spec §3.1. Record length 664 B.
+pub(crate) mod derived_base_mirror_scope {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 664;
+    /// Offset of `body_reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const BODY_REFERENCE_COUNT: usize = 20;
+    /// Stated value of `body_reference_count` (`u32`). Spec §3.1.
+    pub(crate) const BODY_REFERENCE_COUNT_VALUE: u32 = 0x0000_0002;
+    /// Offset of `first_body_reference` (`bytes[15]`). Spec §3.1.
+    pub(crate) const FIRST_BODY_REFERENCE: usize = 24;
+    /// Offset of `result_body_reference` (`bytes[15]`). Spec §3.1.
+    pub(crate) const RESULT_BODY_REFERENCE: usize = 39;
+    /// Offset of `companion_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const COMPANION_REFERENCE: usize = 621;
+    /// Offset of `closing_zeroes` (`bytes[2]`). Spec §3.1.
+    pub(crate) const CLOSING_ZEROES: usize = 632;
+    /// Offset of `paired_header` (`bytes[30]`). Spec §3.1.
+    pub(crate) const PAIRED_HEADER: usize = 634;
+}
+
+/// Byte offsets for the `derived_base_mirror_companion` record.
+///
+/// Spec §3.1. Record length 115 B.
+pub(crate) mod derived_base_mirror_companion {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 115;
+    /// Offset of `owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const OWNER_REFERENCE: usize = 31;
+    /// Offset of `scope_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SCOPE_REFERENCE: usize = 69;
+    /// Offset of `repeated_scope_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const REPEATED_SCOPE_REFERENCE: usize = 88;
 }
 
 /// Byte offsets for the `local_component_occurrence_empty_attributes_prefix` record.
@@ -9603,8 +10856,8 @@ pub(crate) mod reverse_normal_prefix {
     pub(crate) const GROUP_COUNT_VALUE: u32 = 0x0000_0001;
     /// Offset of `group_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const GROUP_REFERENCE: usize = 25;
-    /// Offset of `null_guid` (`bytes[76]`). Spec §3.1.
-    pub(crate) const NULL_GUID: usize = 36;
+    /// Offset of `link_guid` (`bytes[76]`). Spec §3.1.
+    pub(crate) const LINK_GUID: usize = 36;
     /// Offset of `zero_tail` (`bytes[3]`). Spec §3.1.
     pub(crate) const ZERO_TAIL: usize = 112;
 }
@@ -9629,8 +10882,8 @@ pub(crate) mod shifted_reverse_normal_prefix {
     pub(crate) const GROUP_COUNT_VALUE: u32 = 0x0000_0001;
     /// Offset of `group_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const GROUP_REFERENCE: usize = 29;
-    /// Offset of `null_guid` (`bytes[76]`). Spec §3.1.
-    pub(crate) const NULL_GUID: usize = 40;
+    /// Offset of `link_guid` (`bytes[76]`). Spec §3.1.
+    pub(crate) const LINK_GUID: usize = 40;
     /// Offset of `zero_tail` (`bytes[3]`). Spec §3.1.
     pub(crate) const ZERO_TAIL: usize = 116;
 }
@@ -10168,6 +11421,45 @@ pub(crate) mod captured_position_suffix {
     pub(crate) const ZERO_TAIL_VALUE: [u8; 3] = [0x00, 0x00, 0x00];
 }
 
+/// Byte offsets for the `captured_position_v4` record.
+///
+/// Spec §Captured component positions. Record length 319 B.
+pub(crate) mod captured_position_v4 {
+    /// Record length in bytes. Spec §Captured component positions.
+    pub(crate) const LEN: usize = 319;
+    /// Offset of `row_count` (`u32`, little-endian). Spec §Captured component positions.
+    pub(crate) const ROW_COUNT: usize = 95;
+    /// Stated value of `row_count` (`u32`). Spec §Captured component positions.
+    pub(crate) const ROW_COUNT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `row` (`bytes[141]`). Spec §Captured component positions.
+    pub(crate) const ROW: usize = 99;
+    /// Offset of `identity_length` (`u32`, little-endian). Spec §Captured component positions.
+    pub(crate) const IDENTITY_LENGTH: usize = 240;
+}
+
+/// Byte offsets for the `captured_position_v4_identity_locator` record.
+///
+/// Spec §Captured component positions. Record length 62 B.
+pub(crate) mod captured_position_v4_identity_locator {
+    /// Record length in bytes. Spec §Captured component positions.
+    pub(crate) const LEN: usize = 62;
+    /// Stated value of `discriminator` (`u32`). Spec §Captured component positions.
+    pub(crate) const DISCRIMINATOR_VALUE: u32 = 0x0000_0001;
+}
+
+/// Byte offsets for the `captured_position_v4_path_wrapper` record.
+///
+/// Spec §Captured component positions. Record length 37 B.
+pub(crate) mod captured_position_v4_path_wrapper {
+    /// Record length in bytes. Spec §Captured component positions.
+    #[cfg(test)]
+    pub(crate) const LEN: usize = 37;
+    /// Offset of `marker` (`u8`). Spec §Captured component positions.
+    pub(crate) const MARKER: usize = 21;
+    /// Stated value of `marker` (`u8`). Spec §Captured component positions.
+    pub(crate) const MARKER_VALUE: u8 = 0;
+}
+
 /// Byte offsets for the `unmarked_sphere_local_frame` record.
 ///
 /// Spec §3.1. Record length 128 B.
@@ -10352,6 +11644,54 @@ pub(crate) mod sheet_metal_contour_compact_carrier {
     pub(crate) const CARRIER_REFERENCE: usize = 5;
 }
 
+/// Byte offsets for the `split_body_scope_prefix` record.
+///
+/// Spec §3.1. Record length 20 B.
+///
+/// ```text
+/// The common parameter-scope prologue begins at the leading-block presence byte.
+/// ```
+pub(crate) mod split_body_scope_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 20;
+    /// Offset of `zero_run` (`bytes[8]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `leading_block_presence` (`u8`). Spec §3.1.
+    pub(crate) const LEADING_BLOCK_PRESENCE: usize = 19;
+    /// Stated value of `leading_block_presence` (`u8`). Spec §3.1.
+    pub(crate) const LEADING_BLOCK_PRESENCE_VALUE: u8 = 0;
+}
+
+/// Byte offsets for the `split_body_extension` record.
+///
+/// Spec §3.1. Record length 5 B.
+///
+/// ```text
+/// Offsets start at the end of the parameter-scope prologue. A nullable local record reference follows this control.
+/// ```
+pub(crate) mod split_body_extension {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 5;
+    /// Offset of `extend_tool` (`u8`). Spec §3.1.
+    pub(crate) const EXTEND_TOOL: usize = 0;
+    /// Offset of `following_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FOLLOWING_WORD: usize = 1;
+    /// Stated value of `following_word` (`u32`). Spec §3.1.
+    pub(crate) const FOLLOWING_WORD_VALUE: u32 = 0x0000_0001;
+}
+
+/// Byte offsets for the `split_body_compact_group_prefix` record.
+///
+/// Spec §3.1. Record length 25 B.
+///
+/// ```text
+/// Counted member references follow this prefix.
+/// ```
+pub(crate) mod split_body_compact_group_prefix {
+    /// Offset of `member_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const MEMBER_COUNT: usize = 21;
+}
+
 /// Byte offsets for the `mesh_plane_cut_scope_prefix` record.
 ///
 /// Spec §3.1. Record length 162 B.
@@ -10364,4 +11704,1642 @@ pub(crate) mod mesh_plane_cut_scope_prefix {
     pub(crate) const MATRIX: usize = 29;
     /// Offset of `fill_selector` (`u32`, little-endian). Spec §3.1.
     pub(crate) const FILL_SELECTOR: usize = 157;
+}
+
+/// Byte offsets for the `split_face_scope_prefix` record.
+///
+/// Spec §3.1. Record length 19 B.
+pub(crate) mod split_face_scope_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 19;
+    /// Offset of `zero_run` (`bytes[8]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+}
+
+/// Byte offsets for the `split_face_method_flags` record.
+///
+/// Spec §3.1. Record length 6 B.
+pub(crate) mod split_face_method_flags {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 6;
+    /// Offset of `family` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FAMILY: usize = 0;
+    /// Offset of `projection` (`u8`). Spec §3.1.
+    pub(crate) const PROJECTION: usize = 4;
+    /// Offset of `extension` (`u8`). Spec §3.1.
+    pub(crate) const EXTENSION: usize = 5;
+}
+
+/// Byte offsets for the `boundary_fill_scope_prefix_plain` record.
+///
+/// Spec §3.1. Record length 25 B.
+///
+/// ```text
+/// This form uses property flag zero and operation at offset 21.
+/// ```
+pub(crate) mod boundary_fill_scope_prefix_plain {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 25;
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_9: usize = 11;
+    /// Offset of `property_flag` (`u8`). Spec §3.1.
+    pub(crate) const PROPERTY_FLAG: usize = 20;
+    /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERATION: usize = 21;
+}
+
+/// Byte offsets for the `boundary_fill_scope_prefix_property` record.
+///
+/// Spec §3.1. Record length 29 B.
+///
+/// ```text
+/// This form uses property flag one, a zero word at offset 21, and operation at offset 25.
+/// ```
+pub(crate) mod boundary_fill_scope_prefix_property {
+    /// Stated value of `optional_property_word` (`u32`). Spec §3.1.
+    pub(crate) const OPTIONAL_PROPERTY_WORD_VALUE: u32 = 0x0000_0000;
+    /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERATION: usize = 25;
+}
+
+#[doc = "Byte offsets for the `replace_face_fixed_prefix` record."]
+#[doc = ""]
+#[doc = "Spec §3.1. Record length 26 B."]
+#[doc = ""]
+#[doc = "```text"]
+#[doc = "Flag-00 fixed prefix. Flag 01 inserts a u32 word before the Boolean control; its fixed prefix is 30 bytes. Counted group references and the identifier follow."]
+#[doc = "```"]
+pub(crate) mod replace_face_fixed_prefix {
+    #[doc = "Offset of `zero_run` (`bytes[9]`). Spec §3.1."]
+    pub(crate) const ZERO_RUN: usize = 11;
+    #[doc = "Offset of `prefix_flag` (`u8`). Spec §3.1."]
+    pub(crate) const PREFIX_FLAG: usize = 20;
+    #[doc = "Offset of `tangent_chain` (`u8`). Spec §3.1."]
+    pub(crate) const TANGENT_CHAIN: usize = 21;
+    #[doc = "Offset of `replacement_group_count` (`u32`, little-endian). Spec §3.1."]
+    pub(crate) const REPLACEMENT_GROUP_COUNT: usize = 22;
+}
+
+#[doc = "Byte offsets for the `replace_face_flagged_prefix` record."]
+#[doc = ""]
+#[doc = "Spec §3.1. Record length 30 B."]
+#[doc = ""]
+#[doc = "```text"]
+#[doc = "Flag-01 fixed prefix. Flag 00 omits the u32 word and has a 26-byte fixed prefix. Counted group references and the identifier follow."]
+#[doc = "```"]
+pub(crate) mod replace_face_flagged_prefix {
+    #[doc = "Offset of `word` (`u32`, little-endian). Spec §3.1."]
+    pub(crate) const WORD: usize = 21;
+    #[doc = "Offset of `tangent_chain` (`u8`). Spec §3.1."]
+    pub(crate) const TANGENT_CHAIN: usize = 25;
+    #[doc = "Offset of `replacement_group_count` (`u32`, little-endian). Spec §3.1."]
+    pub(crate) const REPLACEMENT_GROUP_COUNT: usize = 26;
+}
+
+/// Byte offsets for the `work_axis_two_point_carrier` record.
+///
+/// Spec §3.1. Record length 232 B.
+pub(crate) mod work_axis_two_point_carrier {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 232;
+    /// Offset of `zero_run` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `value_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const VALUE_COUNT: usize = 21;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 118;
+}
+
+/// Byte offsets for the `work_axis_endpoint_carrier` record.
+///
+/// Spec §3.1. Record length 197 B.
+pub(crate) mod work_axis_endpoint_carrier {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 197;
+    /// Offset of `zero_run` (`bytes[31]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `position` (`f64[3]`, little-endian). Spec §3.1.
+    pub(crate) const POSITION: usize = 42;
+}
+
+/// Byte offsets for the `derived_base_source_pair_prefix` record.
+///
+/// Spec §3.1. Record length 97 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed header of a one-body source-pair derived base scope.
+/// ```
+pub(crate) mod derived_base_source_pair_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 97;
+    /// Offset of `body_marker` (`u8`). Spec §3.1.
+    pub(crate) const BODY_MARKER: usize = 19;
+    /// Stated value of `body_marker` (`u8`). Spec §3.1.
+    pub(crate) const BODY_MARKER_VALUE: u8 = 1;
+    /// Offset of `body_reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const BODY_REFERENCE_COUNT: usize = 20;
+    /// Stated value of `body_reference_count` (`u32`). Spec §3.1.
+    pub(crate) const BODY_REFERENCE_COUNT_VALUE: u32 = 0x0000_0002;
+    /// Offset of `parameter_body_record` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const PARAMETER_BODY_RECORD: usize = 25;
+    /// Offset of `result_body_record` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const RESULT_BODY_RECORD: usize = 40;
+    /// Offset of `copy_marker` (`u8`). Spec §3.1.
+    pub(crate) const COPY_MARKER: usize = 54;
+    /// Stated value of `copy_marker` (`u8`). Spec §3.1.
+    pub(crate) const COPY_MARKER_VALUE: u8 = 1;
+    /// Offset of `copy_zero` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const COPY_ZERO: usize = 55;
+    /// Stated value of `copy_zero` (`u32`). Spec §3.1.
+    pub(crate) const COPY_ZERO_VALUE: u32 = 0x0000_0000;
+    /// Offset of `owner_record` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const OWNER_RECORD: usize = 60;
+    /// Offset of `source_pair_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SOURCE_PAIR_COUNT: usize = 70;
+    /// Stated value of `source_pair_count` (`u32`). Spec §3.1.
+    pub(crate) const SOURCE_PAIR_COUNT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `source_record` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const SOURCE_RECORD: usize = 75;
+    /// Offset of `repeat_record` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const REPEAT_RECORD: usize = 86;
+    /// Offset of `terminator` (`u8`). Spec §3.1.
+    pub(crate) const TERMINATOR: usize = 96;
+    /// Stated value of `terminator` (`u8`). Spec §3.1.
+    pub(crate) const TERMINATOR_VALUE: u8 = 0;
+}
+
+/// Byte offsets for the `assembly_motion_parent_run` record.
+///
+/// Spec §Assembly operands.
+pub(crate) mod assembly_motion_parent_run {
+    /// Offset of `count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const COUNT: usize = 20;
+    /// Offset of `first_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const FIRST_REFERENCE: usize = 24;
+}
+
+/// Byte offsets for the `assembly_motion_parent_entry` record.
+///
+/// Spec §Assembly operands. Record length 15 B.
+pub(crate) mod assembly_motion_parent_entry {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 15;
+    /// Offset of `reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const REFERENCE: usize = 0;
+}
+
+/// Byte offsets for the `motion_link_rotation_scope` record.
+///
+/// Spec §Assembly operands. Record length 297 B.
+pub(crate) mod motion_link_rotation_scope {
+    /// Record length in bytes. Spec §Assembly operands.
+    #[cfg(test)]
+    pub(crate) const LEN: usize = 297;
+    /// Offset of `relation` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const RELATION: usize = 43;
+}
+
+/// Byte offsets for the `motion_link_rotation_relation` record.
+///
+/// Spec §Assembly operands. Record length 166 B.
+pub(crate) mod motion_link_rotation_relation {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 166;
+    /// Offset of `parent_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const PARENT_COUNT: usize = 20;
+    /// Offset of `first_parent` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const FIRST_PARENT: usize = 24;
+    /// Offset of `second_parent` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SECOND_PARENT: usize = 39;
+    /// Offset of `first_joint` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const FIRST_JOINT: usize = 63;
+    /// Offset of `second_joint` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SECOND_JOINT: usize = 74;
+    /// Offset of `first_axis` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const FIRST_AXIS: usize = 85;
+    /// Offset of `second_axis` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const SECOND_AXIS: usize = 89;
+    /// Offset of `phase` (`f64`, little-endian). Spec §Assembly operands.
+    pub(crate) const PHASE: usize = 93;
+    /// Offset of `flags` (`bytes[6]`). Spec §Assembly operands.
+    pub(crate) const FLAGS: usize = 101;
+    /// Stated value of `flags` (`bytes[6]`). Spec §Assembly operands.
+    pub(crate) const FLAGS_VALUE: [u8; 6] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    /// Offset of `first_angle` (`f64`, little-endian). Spec §Assembly operands.
+    pub(crate) const FIRST_ANGLE: usize = 107;
+    /// Offset of `second_angle` (`f64`, little-endian). Spec §Assembly operands.
+    pub(crate) const SECOND_ANGLE: usize = 115;
+}
+
+/// Byte offsets for the `sketch_item_geometry_member_run_head` record.
+///
+/// Spec §Records of a Sketch item. Record length 5 B.
+///
+/// ```text
+/// Offsets are relative to the end of the display name. The `N` member references and the closing reference follow. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
+/// ```
+pub(crate) mod sketch_item_geometry_member_run_head {
+    /// Record length in bytes. Spec §Records of a Sketch item.
+    pub(crate) const LEN: usize = 5;
+    /// Offset of `zero_byte` (`u8`). Spec §Records of a Sketch item.
+    pub(crate) const ZERO_BYTE: usize = 0;
+    /// Stated value of `zero_byte` (`u8`). Spec §Records of a Sketch item.
+    pub(crate) const ZERO_BYTE_VALUE: u8 = 0;
+    /// Offset of `member_count` (`u32`, little-endian). Spec §Records of a Sketch item.
+    pub(crate) const MEMBER_COUNT: usize = 1;
+}
+
+/// Byte offsets for the `base_feature_zero_record` record.
+///
+/// Spec §Records of a Base Feature design. Record length 22 B.
+///
+/// ```text
+/// Record 2, type `3B9288E7-E1DE-414D-90BD-1C0CDAC77EB1`.
+/// ```
+pub(crate) mod base_feature_zero_record {
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 22] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 1] = [(0, 11)];
+}
+
+/// Byte offsets for the `base_feature_components_root` record.
+///
+/// Spec §Records of a Base Feature design. Record length 77 B.
+///
+/// ```text
+/// Record 4, the components root.
+/// ```
+pub(crate) mod base_feature_components_root {
+    /// Offset of `aggregate` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const AGGREGATE: usize = 65;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 77] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x0e, 0x00, 0x00, 0x00, 0x43, 0x6f, 0x6d, 0x70, 0x6f, 0x6e, 0x65, 0x6e, 0x74, 0x73, 0x52,
+        0x6f, 0x6f, 0x74, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0e, 0x00,
+        0x00, 0x00, 0x43, 0x6f, 0x6d, 0x70, 0x6f, 0x6e, 0x65, 0x6e, 0x74, 0x73, 0x52, 0x6f, 0x6f,
+        0x74, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 2] = [(0, 11), (65, 11)];
+}
+
+/// Byte offsets for the `base_feature_aggregate_link_25` record.
+///
+/// Spec §Records of a Base Feature design. Record length 36 B.
+///
+/// ```text
+/// Record 5, type `F9CB8717-EB86-47F2-AAA7-39E142C57A09`.
+/// ```
+pub(crate) mod base_feature_aggregate_link_25 {
+    /// Offset of `aggregate` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const AGGREGATE: usize = 25;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 36] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 2] = [(0, 11), (25, 11)];
+}
+
+/// Byte offsets for the `base_feature_component_naming_space` record.
+///
+/// Spec §Records of a Base Feature design. Record length 52 B.
+///
+/// ```text
+/// Record 6, the component naming space.
+/// ```
+pub(crate) mod base_feature_component_naming_space {
+    /// Offset of `act_naming_space_link` (`bytes[15]`). Spec §Records of a Base Feature design.
+    pub(crate) const ACT_NAMING_SPACE_LINK: usize = 21;
+    /// Offset of `aggregate` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const AGGREGATE: usize = 41;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 52] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 3] = [(0, 11), (21, 15), (41, 11)];
+}
+
+/// Byte offsets for the `base_feature_sketch_collection` record.
+///
+/// Spec §Records of a Base Feature design. Record length 115 B.
+///
+/// ```text
+/// Record 10, the sketch collection.
+/// ```
+pub(crate) mod base_feature_sketch_collection {
+    /// Offset of `curve_collection` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const CURVE_COLLECTION: usize = 88;
+    /// Offset of `aggregate` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const AGGREGATE: usize = 104;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 115] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x0e, 0x00, 0x00, 0x00, 0x63,
+        0x72, 0x76, 0x5f, 0x74, 0x61, 0x67, 0x5f, 0x69, 0x64, 0x5f, 0x69, 0x64, 0x78, 0x17, 0x00,
+        0x00, 0x00, 0x49, 0x6e, 0x74, 0x72, 0x69, 0x6e, 0x73, 0x69, 0x63, 0x4d, 0x65, 0x74, 0x61,
+        0x54, 0x79, 0x70, 0x65, 0x75, 0x69, 0x6e, 0x74, 0x36, 0x34, 0x64, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 3] = [(0, 11), (88, 11), (104, 11)];
+}
+
+/// Byte offsets for the `base_feature_record_11` record.
+///
+/// Spec §Records of a Base Feature design. Record length 70 B.
+///
+/// ```text
+/// Record 11, type `A8635B5F-1E2C-45FD-8BA9-0173B0FEB75E`.
+/// ```
+pub(crate) mod base_feature_record_11 {
+    /// Offset of `record_21` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_21: usize = 43;
+    /// Offset of `aggregate` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const AGGREGATE: usize = 59;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 70] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 3] = [(0, 11), (43, 11), (59, 11)];
+}
+
+/// Byte offsets for the `base_feature_flagged_aggregate_link_42` record.
+///
+/// Spec §Records of a Base Feature design. Record length 42 B.
+///
+/// ```text
+/// Records 12 and 37.
+/// ```
+pub(crate) mod base_feature_flagged_aggregate_link_42 {
+    /// Offset of `aggregate` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const AGGREGATE: usize = 31;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 42] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 2] = [(0, 11), (31, 11)];
+}
+
+/// Byte offsets for the `base_feature_flagged_aggregate_link_46` record.
+///
+/// Spec §Records of a Base Feature design. Record length 46 B.
+///
+/// ```text
+/// Record 13.
+/// ```
+pub(crate) mod base_feature_flagged_aggregate_link_46 {
+    /// Offset of `aggregate` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const AGGREGATE: usize = 35;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 46] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 2] = [(0, 11), (35, 11)];
+}
+
+/// Byte offsets for the `base_feature_aggregate_link_41` record.
+///
+/// Spec §Records of a Base Feature design. Record length 41 B.
+///
+/// ```text
+/// Records 14, 16, 20, 21, and 22.
+/// ```
+pub(crate) mod base_feature_aggregate_link_41 {
+    /// Offset of `aggregate` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const AGGREGATE: usize = 30;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 41] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 2] = [(0, 11), (30, 11)];
+}
+
+/// Byte offsets for the `base_feature_aggregate_link_45` record.
+///
+/// Spec §Records of a Base Feature design. Record length 45 B.
+///
+/// ```text
+/// Record 15.
+/// ```
+pub(crate) mod base_feature_aggregate_link_45 {
+    /// Offset of `aggregate` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const AGGREGATE: usize = 34;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 45] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 2] = [(0, 11), (34, 11)];
+}
+
+/// Byte offsets for the `base_feature_alternate_owner_list_empty` record.
+///
+/// Spec §Records of a Base Feature design. Record length 42 B.
+///
+/// ```text
+/// Record 19 with no sheet body.
+/// ```
+pub(crate) mod base_feature_alternate_owner_list_empty {
+    /// Offset of `aggregate` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const AGGREGATE: usize = 31;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 42] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 2] = [(0, 11), (31, 11)];
+}
+
+/// Byte offsets for the `base_feature_paired_record_23` record.
+///
+/// Spec §Records of a Base Feature design. Record length 59 B.
+///
+/// ```text
+/// Record 23.
+/// ```
+pub(crate) mod base_feature_paired_record_23 {
+    /// Offset of `paired_header` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const PAIRED_HEADER: usize = 25;
+    /// Offset of `aggregate` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const AGGREGATE: usize = 48;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 59] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 3] = [(0, 11), (25, 11), (48, 11)];
+}
+
+/// Byte offsets for the `base_feature_paired_aggregate_link_55` record.
+///
+/// Spec §Records of a Base Feature design. Record length 55 B.
+///
+/// ```text
+/// Records 32 and 33.
+/// ```
+pub(crate) mod base_feature_paired_aggregate_link_55 {
+    /// Offset of `paired_header` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const PAIRED_HEADER: usize = 21;
+    /// Offset of `aggregate` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const AGGREGATE: usize = 44;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 55] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 3] = [(0, 11), (21, 11), (44, 11)];
+}
+
+/// Byte offsets for the `base_feature_record_34` record.
+///
+/// Spec §Records of a Base Feature design. Record length 80 B.
+///
+/// ```text
+/// Record 34.
+/// ```
+pub(crate) mod base_feature_record_34 {
+    /// Offset of `record_39` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_39: usize = 21;
+    /// Offset of `paired_header` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const PAIRED_HEADER: usize = 46;
+    /// Offset of `aggregate` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const AGGREGATE: usize = 69;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 80] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x80,
+        0x3f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 4] = [(0, 11), (21, 11), (46, 11), (69, 11)];
+}
+
+/// Byte offsets for the `base_feature_record_36` record.
+///
+/// Spec §Records of a Base Feature design. Record length 60 B.
+///
+/// ```text
+/// Record 36.
+/// ```
+pub(crate) mod base_feature_record_36 {
+    /// Offset of `paired_header` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const PAIRED_HEADER: usize = 26;
+    /// Offset of `aggregate` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const AGGREGATE: usize = 49;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 60] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x80, 0x3f, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 3] = [(0, 11), (26, 11), (49, 11)];
+}
+
+/// Byte offsets for the `base_feature_record_38` record.
+///
+/// Spec §Records of a Base Feature design. Record length 62 B.
+///
+/// ```text
+/// Record 38.
+/// ```
+pub(crate) mod base_feature_record_38 {
+    /// Offset of `paired_header` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const PAIRED_HEADER: usize = 27;
+    /// Offset of `aggregate` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const AGGREGATE: usize = 51;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 62] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 3] = [(0, 11), (27, 11), (51, 11)];
+}
+
+/// Byte offsets for the `base_feature_record_39` record.
+///
+/// Spec §Records of a Base Feature design. Record length 60 B.
+///
+/// ```text
+/// Record 39.
+/// ```
+pub(crate) mod base_feature_record_39 {
+    /// Offset of `paired_header` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const PAIRED_HEADER: usize = 21;
+    /// Offset of `aggregate` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const AGGREGATE: usize = 49;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 60] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 3] = [(0, 11), (21, 11), (49, 11)];
+}
+
+/// Byte offsets for the `base_feature_record_40` record.
+///
+/// Spec §Records of a Base Feature design. Record length 61 B.
+///
+/// ```text
+/// Record 40.
+/// ```
+pub(crate) mod base_feature_record_40 {
+    /// Offset of `paired_header` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const PAIRED_HEADER: usize = 27;
+    /// Offset of `aggregate` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const AGGREGATE: usize = 50;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 61] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 3] = [(0, 11), (27, 11), (50, 11)];
+}
+
+/// Byte offsets for the `base_feature_record_41` record.
+///
+/// Spec §Records of a Base Feature design. Record length 72 B.
+///
+/// ```text
+/// Record 41.
+/// ```
+pub(crate) mod base_feature_record_41 {
+    /// Offset of `paired_header` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const PAIRED_HEADER: usize = 26;
+    /// Offset of `record_42` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_42: usize = 50;
+    /// Offset of `aggregate` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const AGGREGATE: usize = 61;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 72] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 4] = [(0, 11), (26, 11), (50, 11), (61, 11)];
+}
+
+/// Byte offsets for the `base_feature_record_42` record.
+///
+/// Spec §Records of a Base Feature design. Record length 67 B.
+///
+/// ```text
+/// Record 42.
+/// ```
+pub(crate) mod base_feature_record_42 {
+    /// Offset of `asset_manager` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const ASSET_MANAGER: usize = 21;
+    /// Offset of `paired_header` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const PAIRED_HEADER: usize = 36;
+    /// Offset of `record_41` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_41: usize = 56;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 67] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 4] = [(0, 11), (21, 11), (36, 11), (56, 11)];
+}
+
+/// Byte offsets for the `base_feature_component_instances_root` record.
+///
+/// Spec §Records of a Base Feature design. Record length 85 B.
+///
+/// ```text
+/// Record 44.
+/// ```
+pub(crate) mod base_feature_component_instances_root {
+    /// Offset of `root_instance` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const ROOT_INSTANCE: usize = 73;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 85] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x16, 0x00, 0x00, 0x00, 0x43, 0x6f, 0x6d, 0x70, 0x6f, 0x6e, 0x65, 0x6e, 0x74, 0x49, 0x6e,
+        0x73, 0x74, 0x61, 0x6e, 0x63, 0x65, 0x73, 0x52, 0x6f, 0x6f, 0x74, 0x00, 0x00, 0x16, 0x00,
+        0x00, 0x00, 0x43, 0x6f, 0x6d, 0x70, 0x6f, 0x6e, 0x65, 0x6e, 0x74, 0x49, 0x6e, 0x73, 0x74,
+        0x61, 0x6e, 0x63, 0x65, 0x73, 0x52, 0x6f, 0x6f, 0x74, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 2] = [(0, 11), (73, 11)];
+}
+
+/// Byte offsets for the `base_feature_visual_analyses` record.
+///
+/// Spec §Records of a Base Feature design. Record length 114 B.
+///
+/// ```text
+/// Record 45.
+/// ```
+pub(crate) mod base_feature_visual_analyses {
+    /// Offset of `record_0_a` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_0_A: usize = 35;
+    /// Offset of `record_0_b` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_0_B: usize = 56;
+    /// Offset of `paired_header` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const PAIRED_HEADER: usize = 76;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 114] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x0e, 0x00, 0x00, 0x00, 0x56, 0x69, 0x73, 0x75, 0x61, 0x6c, 0x41, 0x6e, 0x61, 0x6c, 0x79,
+        0x73, 0x65, 0x73, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x0e, 0x00, 0x00, 0x00, 0x56, 0x69, 0x73, 0x75, 0x61, 0x6c, 0x41, 0x6e, 0x61, 0x6c,
+        0x79, 0x73, 0x65, 0x73, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 4] = [(0, 11), (35, 11), (56, 11), (76, 11)];
+}
+
+/// Byte offsets for the `base_feature_unit_system_root` record.
+///
+/// Spec §Records of a Base Feature design. Record length 103 B.
+///
+/// ```text
+/// Record 46.
+/// ```
+pub(crate) mod base_feature_unit_system_root {
+    /// Offset of `cm_mks` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const CM_MKS: usize = 36;
+    /// Offset of `mm_mks` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const MM_MKS: usize = 47;
+    /// Offset of `m_mks` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const M_MKS: usize = 58;
+    /// Offset of `inch_imperial` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const INCH_IMPERIAL: usize = 69;
+    /// Offset of `imperial` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const IMPERIAL: usize = 80;
+    /// Offset of `custom` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const CUSTOM: usize = 91;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 103] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x0b, 0x00, 0x00, 0x00, 0x55, 0x6e, 0x69, 0x74, 0x53, 0x79, 0x73, 0x74, 0x65, 0x6d, 0x73,
+        0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 7] = [
+        (0, 11),
+        (36, 11),
+        (47, 11),
+        (58, 11),
+        (69, 11),
+        (80, 11),
+        (91, 11),
+    ];
+}
+
+/// Byte offsets for the `base_feature_named_tracked_entity_set` record.
+///
+/// Spec §Records of a Base Feature design. Record length 48 B.
+///
+/// ```text
+/// Record 161.
+/// ```
+pub(crate) mod base_feature_named_tracked_entity_set {
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 48] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x15, 0x00, 0x00, 0x00, 0x4e, 0x61, 0x6d, 0x65, 0x64, 0x54, 0x72, 0x61, 0x63, 0x6b, 0x65,
+        0x64, 0x45, 0x6e, 0x74, 0x69, 0x74, 0x79, 0x53, 0x65, 0x74, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 1] = [(0, 11)];
+}
+
+/// Byte offsets for the `base_feature_record_162` record.
+///
+/// Spec §Records of a Base Feature design. Record length 51 B.
+///
+/// ```text
+/// Record 162.
+/// ```
+pub(crate) mod base_feature_record_162 {
+    /// Offset of `paired_header` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const PAIRED_HEADER: usize = 21;
+    /// Offset of `aggregate` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const AGGREGATE: usize = 40;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 51] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 3] = [(0, 11), (21, 11), (40, 11)];
+}
+
+/// Byte offsets for the `base_feature_named_view_list` record.
+///
+/// Spec §Records of a Base Feature design. Record length 70 B.
+///
+/// ```text
+/// Record 163.
+/// ```
+pub(crate) mod base_feature_named_view_list {
+    /// Offset of `top` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const TOP: usize = 25;
+    /// Offset of `front` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const FRONT: usize = 36;
+    /// Offset of `right` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RIGHT: usize = 47;
+    /// Offset of `home` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const HOME: usize = 58;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 70] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 5] =
+        [(0, 11), (25, 11), (36, 11), (47, 11), (58, 11)];
+}
+
+/// Byte offsets for the `base_feature_camera` record.
+///
+/// Spec §Records of a Base Feature design. Record length 153 B.
+///
+/// ```text
+/// Records 164, 166, 168, and 170. Values are stated where every camera of every design agrees; the `HOME` camera fields depend on the body.
+/// ```
+pub(crate) mod base_feature_camera {
+    /// Offset of `extent_0` (`f64`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const EXTENT_0: usize = 43;
+    /// Offset of `extent_1` (`f64`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const EXTENT_1: usize = 51;
+    /// Offset of `eye` (`f64[3]`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const EYE: usize = 77;
+    /// Offset of `target` (`f64[3]`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const TARGET: usize = 105;
+    /// Offset of `up` (`f64[3]`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const UP: usize = 129;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 153] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x41, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x80, 0x3f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0c, 0x26, 0xf7, 0xf8, 0x41, 0x44,
+        0xd9, 0x3f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 6] =
+        [(0, 11), (43, 8), (51, 8), (77, 24), (105, 24), (129, 24)];
+}
+
+/// Byte offsets for the `base_feature_view_name_prefix` record.
+///
+/// Spec §Records of a Base Feature design. Record length 22 B.
+///
+/// ```text
+/// Records 165, 167, 169, and 171; the LP-UTF16 view name, the camera, and the named-view list follow.
+/// ```
+pub(crate) mod base_feature_view_name_prefix {
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 22] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 1] = [(0, 11)];
+}
+
+/// Byte offsets for the `base_feature_lighting_environment` record.
+///
+/// Spec §Records of a Base Feature design. Record length 261 B.
+///
+/// ```text
+/// Record 172.
+/// ```
+pub(crate) mod base_feature_lighting_environment {
+    /// Offset of `name` (`bytes[36]`). Spec §Records of a Base Feature design.
+    pub(crate) const NAME: usize = 21;
+    /// Offset of `colour` (`f32[3]`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const COLOUR: usize = 69;
+    /// Offset of `record_0` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_0: usize = 135;
+    /// Offset of `environment` (`bytes[18]`). Spec §Records of a Base Feature design.
+    pub(crate) const ENVIRONMENT: usize = 148;
+    /// Offset of `entry_175` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const ENTRY_175: usize = 175;
+    /// Offset of `entry_176` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const ENTRY_176: usize = 186;
+    /// Offset of `entry_173` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const ENTRY_173: usize = 197;
+    /// Offset of `entry_174` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const ENTRY_174: usize = 208;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 261] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x3f, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x7a, 0x44, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0xe4, 0xcb, 0x16, 0xc0, 0x00, 0x00, 0x18, 0x41, 0x00, 0x00, 0x80, 0x3f, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x42, 0x44, 0xd9, 0x3f, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0xc0, 0x62, 0x40, 0xcd, 0xcc, 0xcc, 0x3d, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 9] = [
+        (0, 11),
+        (21, 36),
+        (69, 12),
+        (135, 11),
+        (148, 18),
+        (175, 11),
+        (186, 11),
+        (197, 11),
+        (208, 11),
+    ];
+}
+
+/// Byte offsets for the `base_feature_archive_entry_name` record.
+///
+/// Spec §Records of a Base Feature design. Record length 25 B.
+///
+/// ```text
+/// Records 173 to 176.
+/// ```
+pub(crate) mod base_feature_archive_entry_name {
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 25] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 1] = [(0, 11)];
+}
+
+/// Byte offsets for the `base_feature_working_model_placeholder_root` record.
+///
+/// Spec §Records of a Base Feature design. Record length 99 B.
+///
+/// ```text
+/// Record 177.
+/// ```
+pub(crate) mod base_feature_working_model_placeholder_root {
+    /// Offset of `paired_header` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const PAIRED_HEADER: usize = 48;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 99] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x1b, 0x00, 0x00, 0x00, 0x57, 0x6f, 0x72, 0x6b, 0x69, 0x6e, 0x67, 0x4d, 0x6f, 0x64, 0x65,
+        0x6c, 0x50, 0x6c, 0x61, 0x63, 0x65, 0x68, 0x6f, 0x6c, 0x64, 0x65, 0x72, 0x52, 0x6f, 0x6f,
+        0x74, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x1b, 0x00, 0x00, 0x00, 0x57, 0x6f, 0x72, 0x6b, 0x69, 0x6e, 0x67, 0x4d,
+        0x6f, 0x64, 0x65, 0x6c, 0x50, 0x6c, 0x61, 0x63, 0x65, 0x68, 0x6f, 0x6c, 0x64, 0x65, 0x72,
+        0x52, 0x6f, 0x6f, 0x74, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 2] = [(0, 11), (48, 11)];
+}
+
+/// Byte offsets for the `base_feature_record_178` record.
+///
+/// Spec §Records of a Base Feature design. Record length 57 B.
+///
+/// ```text
+/// Record 178.
+/// ```
+pub(crate) mod base_feature_record_178 {
+    /// Offset of `paired_header` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const PAIRED_HEADER: usize = 22;
+    /// Offset of `aggregate` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const AGGREGATE: usize = 46;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 57] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 3] = [(0, 11), (22, 11), (46, 11)];
+}
+
+/// Byte offsets for the `base_feature_ogs_serializer` record.
+///
+/// Spec §Records of a Base Feature design. Record length 38 B.
+///
+/// ```text
+/// Record 184.
+/// ```
+pub(crate) mod base_feature_ogs_serializer {
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 38] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x0d, 0x00, 0x00, 0x00, 0x4f, 0x47, 0x53, 0x53, 0x65, 0x72, 0x69, 0x61, 0x6c, 0x69, 0x7a,
+        0x65, 0x72, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 1] = [(0, 11)];
+}
+
+/// Byte offsets for the `base_feature_configuration_table_trigger` record.
+///
+/// Spec §Records of a Base Feature design. Record length 202 B.
+///
+/// ```text
+/// Record 185; the basename holds a 36-character UUID.
+/// ```
+pub(crate) mod base_feature_configuration_table_trigger {
+    /// Offset of `basename` (`bytes[136]`). Spec §Records of a Base Feature design.
+    pub(crate) const BASENAME: usize = 66;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 202] = *b"\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0)\0\0\0DesignConfigurationTableSerializerTrigger\0\0D\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 2] = [(0, 11), (66, 136)];
+}
+
+/// Byte offsets for the `base_feature_configuration_rule_trigger` record.
+///
+/// Spec §Records of a Base Feature design. Record length 207 B.
+///
+/// ```text
+/// Record 186; the basename holds a 36-character UUID.
+/// ```
+pub(crate) mod base_feature_configuration_rule_trigger {
+    /// Offset of `basename` (`bytes[142]`). Spec §Records of a Base Feature design.
+    pub(crate) const BASENAME: usize = 65;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 207] = *b"\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0(\0\0\0DesignConfigurationRuleSerializerTrigger\0\0G\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 2] = [(0, 11), (65, 142)];
+}
+
+/// Byte offsets for the `base_feature_record_194` record.
+///
+/// Spec §Records of a Base Feature design. Record length 60 B.
+///
+/// ```text
+/// Record 194.
+/// ```
+pub(crate) mod base_feature_record_194 {
+    /// Offset of `paired_header` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const PAIRED_HEADER: usize = 25;
+    /// Offset of `aggregate` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const AGGREGATE: usize = 49;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 60] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 3] = [(0, 11), (25, 11), (49, 11)];
+}
+
+/// Byte offsets for the `base_feature_snapshot_map_companion` record.
+///
+/// Spec §Records of a Base Feature design. Record length 39 B.
+///
+/// ```text
+/// Record 196.
+/// ```
+pub(crate) mod base_feature_snapshot_map_companion {
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 39] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 1] = [(0, 11)];
+}
+
+/// Byte offsets for the `base_feature_scene_node` record.
+///
+/// Spec §Records of a Base Feature design. Record length 133 B.
+///
+/// ```text
+/// Records 188 and 220.
+/// ```
+pub(crate) mod base_feature_scene_node {
+    /// Offset of `box_record` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const BOX_RECORD: usize = 33;
+    /// Offset of `auxiliary` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const AUXILIARY: usize = 48;
+    /// Offset of `box` (`f64[6]`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const BOX: usize = 84;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 133] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x02,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 4] = [(0, 11), (33, 11), (48, 11), (84, 48)];
+}
+
+/// Byte offsets for the `base_feature_scene_box` record.
+///
+/// Spec §Records of a Base Feature design. Record length 95 B.
+///
+/// ```text
+/// Records 189 and 221.
+/// ```
+pub(crate) mod base_feature_scene_box {
+    /// Offset of `box` (`f64[6]`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const BOX: usize = 46;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 95] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x01,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 2] = [(0, 11), (46, 48)];
+}
+
+/// Byte offsets for the `base_feature_scene_auxiliary` record.
+///
+/// Spec §Records of a Base Feature design. Record length 144 B.
+///
+/// ```text
+/// Records 190 and 222.
+/// ```
+pub(crate) mod base_feature_scene_auxiliary {
+    /// Offset of `record_0` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_0: usize = 69;
+    /// Offset of `box` (`f64[6]`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const BOX: usize = 95;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 144] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 3] = [(0, 11), (69, 11), (95, 48)];
+}
+
+/// Byte offsets for the `base_feature_root_instance` record.
+///
+/// Spec §Records of a Base Feature design. Record length 252 B.
+///
+/// ```text
+/// Record 43 with no properties.
+/// ```
+pub(crate) mod base_feature_root_instance {
+    /// Offset of `aggregate` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const AGGREGATE: usize = 36;
+    /// Offset of `guid_a` (`bytes[76]`). Spec §Records of a Base Feature design.
+    pub(crate) const GUID_A: usize = 62;
+    /// Offset of `guid_b` (`bytes[76]`). Spec §Records of a Base Feature design.
+    pub(crate) const GUID_B: usize = 138;
+    /// Offset of `act_instance_root` (`bytes[15]`). Spec §Records of a Base Feature design.
+    pub(crate) const ACT_INSTANCE_ROOT: usize = 214;
+    /// Offset of `aggregate_repeat` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const AGGREGATE_REPEAT: usize = 230;
+    /// Offset of `record_0` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_0: usize = 241;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 252] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x0c, 0x00, 0x00, 0x00, 0x72, 0x6f, 0x6f, 0x74, 0x49, 0x6e, 0x73, 0x74, 0x61, 0x6e, 0x63,
+        0x65, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 7] = [
+        (0, 11),
+        (36, 11),
+        (62, 76),
+        (138, 76),
+        (214, 15),
+        (230, 11),
+        (241, 11),
+    ];
+}
+
+/// Byte offsets for the `base_feature_protein_asset_manager` record.
+///
+/// Spec §Records of a Base Feature design. Record length 334 B.
+///
+/// ```text
+/// Record 1 with one appearance (`a = 1`) and a basename of 57 code units.
+/// ```
+pub(crate) mod base_feature_protein_asset_manager {
+    /// Offset of `material_guid` (`bytes[76]`). Spec §Records of a Base Feature design.
+    pub(crate) const MATERIAL_GUID: usize = 44;
+    /// Offset of `material_references` (`u32`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const MATERIAL_REFERENCES: usize = 124;
+    /// Offset of `appearance_guid` (`bytes[76]`). Spec §Records of a Base Feature design.
+    pub(crate) const APPEARANCE_GUID: usize = 132;
+    /// Offset of `appearance_references` (`u32`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const APPEARANCE_REFERENCES: usize = 212;
+    /// Offset of `basename` (`bytes[114]`). Spec §Records of a Base Feature design.
+    pub(crate) const BASENAME: usize = 220;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 334] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x13, 0x00, 0x00, 0x00, 0x50, 0x72, 0x6f, 0x74, 0x65, 0x69, 0x6e, 0x41, 0x73, 0x73, 0x65,
+        0x74, 0x4d, 0x61, 0x6e, 0x61, 0x67, 0x65, 0x72, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x39, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 6] =
+        [(0, 11), (44, 76), (124, 4), (132, 76), (212, 4), (220, 114)];
+}
+
+/// Byte offsets for the `base_feature_asset_settings` record.
+///
+/// Spec §Records of a Base Feature design. Record length 494 B.
+///
+/// ```text
+/// Record 0. Values are stated where every design agrees; the view block and the scene fields depend on the body.
+/// ```
+pub(crate) mod base_feature_asset_settings {
+    /// Offset of `unit_system` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const UNIT_SYSTEM: usize = 38;
+    /// Offset of `view_a_extent_0` (`f64`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const VIEW_A_EXTENT_0: usize = 58;
+    /// Offset of `view_b_extent_0` (`f64`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const VIEW_B_EXTENT_0: usize = 154;
+    /// Offset of `front_a` (`f64[3]`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const FRONT_A: usize = 246;
+    /// Offset of `up_a` (`f64[3]`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const UP_A: usize = 270;
+    /// Offset of `named_views` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const NAMED_VIEWS: usize = 350;
+    /// Offset of `lighting` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const LIGHTING: usize = 367;
+    /// Offset of `scene_centre` (`f64[3]`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const SCENE_CENTRE: usize = 378;
+    /// Offset of `scene_scale` (`f64[3]`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const SCENE_SCALE: usize = 402;
+    /// Offset of `scene_radius` (`f64`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const SCENE_RADIUS: usize = 426;
+    /// Offset of `front_b` (`f64[3]`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const FRONT_B: usize = 434;
+    /// Offset of `up_b` (`f64[3]`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const UP_B: usize = 458;
+    /// Offset of `record_2` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_2: usize = 483;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 494] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x0d, 0x00, 0x00, 0x00, 0x41, 0x73, 0x73, 0x65, 0x74, 0x53, 0x65, 0x74, 0x74, 0x69, 0x6e,
+        0x67, 0x73, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0xcd, 0xcc, 0xcc, 0xcc,
+        0xcc, 0xcc, 0xfc, 0x3f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0xf0, 0x3f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 22] = [
+        (0, 11),
+        (38, 11),
+        (58, 8),
+        (66, 8),
+        (74, 24),
+        (102, 24),
+        (126, 24),
+        (154, 8),
+        (162, 8),
+        (170, 24),
+        (198, 24),
+        (222, 24),
+        (246, 24),
+        (270, 24),
+        (350, 11),
+        (367, 11),
+        (378, 24),
+        (402, 24),
+        (426, 8),
+        (434, 24),
+        (458, 24),
+        (483, 11),
+    ];
+}
+
+/// Byte offsets for the `base_feature_browser_entry` record.
+///
+/// Spec §Records of a Base Feature design. Record length 115 B.
+///
+/// ```text
+/// Browser records with no children and no kind name; the counts shift later fields by eleven bytes per child and by the kind-name length.
+/// ```
+pub(crate) mod base_feature_browser_entry {
+    /// Offset of `design_record` (`bytes[15]`). Spec §Records of a Base Feature design.
+    pub(crate) const DESIGN_RECORD: usize = 24;
+    /// Offset of `position` (`u32`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const POSITION: usize = 39;
+    /// Offset of `child_count` (`u32`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const CHILD_COUNT: usize = 54;
+    /// Offset of `design_record_repeat` (`bytes[15]`). Spec §Records of a Base Feature design.
+    pub(crate) const DESIGN_RECORD_REPEAT: usize = 58;
+    /// Offset of `parent` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const PARENT: usize = 85;
+    /// Offset of `browser_root` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const BROWSER_ROOT: usize = 96;
+    /// Offset of `kind_length` (`u32`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const KIND_LENGTH: usize = 107;
+    /// Offset of `terminator` (`u32`, little-endian). Spec §Records of a Base Feature design.
+    pub(crate) const TERMINATOR: usize = 111;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 115] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+        0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 5] =
+        [(0, 11), (24, 15), (58, 15), (85, 11), (96, 11)];
+}
+
+/// Byte offsets for the `base_feature_browser_document_structure_entry` record.
+///
+/// Spec §Records of a Base Feature design. Record length 153 B.
+///
+/// ```text
+/// Browser record 29.
+/// ```
+pub(crate) mod base_feature_browser_document_structure_entry {
+    /// Offset of `design_record` (`bytes[15]`). Spec §Records of a Base Feature design.
+    pub(crate) const DESIGN_RECORD: usize = 24;
+    /// Offset of `extra_design_record` (`bytes[15]`). Spec §Records of a Base Feature design.
+    pub(crate) const EXTRA_DESIGN_RECORD: usize = 49;
+    /// Offset of `parent` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const PARENT: usize = 86;
+    /// Offset of `browser_root` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const BROWSER_ROOT: usize = 97;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 153] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x01,
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x25, 0x00, 0x00, 0x00, 0x4e, 0x61, 0x3a, 0x3a, 0x44, 0x6f, 0x63, 0x75,
+        0x6d, 0x65, 0x6e, 0x74, 0x53, 0x74, 0x72, 0x75, 0x63, 0x74, 0x75, 0x72, 0x65, 0x54, 0x79,
+        0x70, 0x65, 0x42, 0x72, 0x6f, 0x77, 0x73, 0x65, 0x72, 0x45, 0x6e, 0x74, 0x72, 0x79, 0x00,
+        0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 5] =
+        [(0, 11), (24, 15), (49, 15), (86, 11), (97, 11)];
+}
+
+/// Byte offsets for the `base_feature_browser_component_node` record.
+///
+/// Spec §Records of a Base Feature design. Record length 464 B.
+///
+/// ```text
+/// Browser record 1.
+/// ```
+pub(crate) mod base_feature_browser_component_node {
+    /// Offset of `aggregate` (`bytes[15]`). Spec §Records of a Base Feature design.
+    pub(crate) const AGGREGATE: usize = 24;
+    /// Offset of `naming_space` (`bytes[15]`). Spec §Records of a Base Feature design.
+    pub(crate) const NAMING_SPACE: usize = 43;
+    /// Offset of `record_23` (`bytes[15]`). Spec §Records of a Base Feature design.
+    pub(crate) const RECORD_23: usize = 62;
+    /// Offset of `root_instance` (`bytes[15]`). Spec §Records of a Base Feature design.
+    pub(crate) const ROOT_INSTANCE: usize = 81;
+    /// Offset of `act_instance_root` (`bytes[15]`). Spec §Records of a Base Feature design.
+    pub(crate) const ACT_INSTANCE_ROOT: usize = 102;
+    /// Offset of `design_aggregate` (`bytes[15]`). Spec §Records of a Base Feature design.
+    pub(crate) const DESIGN_AGGREGATE: usize = 122;
+    /// Offset of `design_naming_space` (`bytes[15]`). Spec §Records of a Base Feature design.
+    pub(crate) const DESIGN_NAMING_SPACE: usize = 137;
+    /// Offset of `design_record_23` (`bytes[15]`). Spec §Records of a Base Feature design.
+    pub(crate) const DESIGN_RECORD_23: usize = 152;
+    /// Offset of `children` (`bytes[242]`). Spec §Records of a Base Feature design.
+    pub(crate) const CHILDREN: usize = 176;
+    /// Offset of `root_instance_repeat` (`bytes[15]`). Spec §Records of a Base Feature design.
+    pub(crate) const ROOT_INSTANCE_REPEAT: usize = 418;
+    /// Offset of `browser_root` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const BROWSER_ROOT: usize = 433;
+    /// Offset of `browser_root_repeat` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const BROWSER_ROOT_REPEAT: usize = 445;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 464] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x01, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x03, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x16, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 13] = [
+        (0, 11),
+        (24, 15),
+        (43, 15),
+        (62, 15),
+        (81, 15),
+        (102, 15),
+        (122, 15),
+        (137, 15),
+        (152, 15),
+        (176, 242),
+        (418, 15),
+        (433, 11),
+        (445, 11),
+    ];
+}
+
+/// Byte offsets for the `base_feature_browser_root_prefix` record.
+///
+/// Spec §Records of a Base Feature design. Record length 696 B.
+///
+/// ```text
+/// Browser record 0 through the component-node reference; the entry-map pairs are in any order, and the named-entry map follows.
+/// ```
+pub(crate) mod base_feature_browser_root_prefix {
+    /// Offset of `root_instance` (`bytes[15]`). Spec §Records of a Base Feature design.
+    pub(crate) const ROOT_INSTANCE: usize = 41;
+    /// Offset of `entry_pairs` (`bytes[624]`). Spec §Records of a Base Feature design.
+    pub(crate) const ENTRY_PAIRS: usize = 61;
+    /// Offset of `component_node` (`bytes[11]`). Spec §Records of a Base Feature design.
+    pub(crate) const COMPONENT_NODE: usize = 685;
+    /// The record with each stated field value at its offset and zero bytes elsewhere. Spec §Records of a Base Feature design.
+    pub(crate) const TEMPLATE: [u8; 696] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x14, 0x00, 0x00, 0x00, 0x50, 0x65, 0x72, 0x73, 0x69, 0x73, 0x74, 0x42, 0x72, 0x6f, 0x77,
+        0x73, 0x65, 0x72, 0x52, 0x6f, 0x6f, 0x74, 0x49, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x18, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
+    pub(crate) const UNSTATED: [(usize, usize); 4] = [(0, 11), (41, 15), (61, 624), (685, 11)];
 }

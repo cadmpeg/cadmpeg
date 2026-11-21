@@ -92,8 +92,14 @@ fn transforms_are_written_as_row_vector_matrices() {
     ));
     let (text, _) = encode(source.ir());
     let round = decode(&text);
-    let original = &source.ir().model.occurrences[0].transform.affine_rows();
-    let written = &round.ir().model.occurrences[0].transform.affine_rows();
+    let original = &source.ir().model.occurrences[0]
+        .transform
+        .unwrap()
+        .affine_rows();
+    let written = &round.ir().model.occurrences[0]
+        .transform
+        .unwrap()
+        .affine_rows();
     assert_eq!(original, written);
     assert!(text.contains("(0.001, 0.002, 0.003, 1))"), "{text}");
 }
@@ -190,6 +196,33 @@ fn a_solid_with_no_tessellation_is_written_as_a_brep_array_and_a_mesh() {
     };
     assert_eq!(mesh.triangles().len(), 12);
     assert_eq!(mesh.body.as_ref(), Some(&geometry.bodies[0].id));
+}
+
+#[test]
+fn a_document_root_is_the_layer_and_no_prim() {
+    let bare = cadmpeg_ir::examples::unit_cube().unwrap();
+    let mut rooted = bare.clone();
+    rooted
+        .state_root_definition(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "test:model:product-definition#root".try_into().unwrap(),
+            cadmpeg_ir::products::ExternalDocument::default(),
+        )
+        .unwrap();
+    assert_eq!(rooted.model.product_definitions[0].bodies.len(), 1);
+    let (text, report) = encode(&rooted);
+    let (bare_text, bare_report) = encode(&bare);
+    assert_eq!(text, bare_text);
+    assert_eq!(report.losses, bare_report.losses);
+    let round = decode(&text);
+    let roots = round
+        .ir()
+        .model
+        .product_definitions
+        .iter()
+        .filter(|definition| definition.is_root())
+        .count();
+    assert_eq!((roots, round.ir().geometry.bodies.len()), (1, 1));
 }
 
 #[test]

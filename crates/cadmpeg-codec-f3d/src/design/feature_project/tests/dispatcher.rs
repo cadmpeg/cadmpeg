@@ -970,6 +970,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         thread.payload_mut()
     {
         *slot = Some(DesignThreadConstruction {
+            angle: crate::records::feature::thread::DesignThreadAngle::SIXTY,
             form: DesignThreadForm::Compact(None),
             designation_offset: 0,
             designation: cadmpeg_core::text::NonBlankString::new("M3.5x0.6").unwrap(),
@@ -1084,7 +1085,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     assert!(ruled_projection.unruled_flange_thickness_loss().is_none());
     assert!(ruled_projection.features.iter().any(|feature| matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange { thickness, .. })
+        FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange { thickness: Some(thickness), .. })
             if thickness.get() == 2.5
     )));
     let definition = |kind: &str| {
@@ -1101,8 +1102,8 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         definition("BaseFlange"),
         FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
             profile: cadmpeg_ir::features::PlanarProfileRef::Sketch(neutral_sketch_id(&placement)),
-            thickness: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
-            side: SheetMetalThicknessSide::Forward,
+            thickness: cadmpeg_ir::scalar::PositiveLength::new(2.0),
+            side: Some(SheetMetalThicknessSide::Forward),
         })
     );
     assert_eq!(

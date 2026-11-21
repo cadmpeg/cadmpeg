@@ -150,39 +150,28 @@ fn quantities_that_do_not_apply_are_absent() {
     let definition =
         cadmpeg_ir::ids::ProductDefinitionId::mint("test:model:product-definition#empty")
             .expect("identity");
-    assembly
-        .model
-        .product_definitions
-        .push(cadmpeg_ir::products::ProductDefinition {
-            sketches: Vec::default(),
-            id: definition.clone(),
-            kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
-            source_name: None,
-            label: None,
-            description: None,
-            part_number: None,
-            bom_properties: std::collections::BTreeMap::default(),
-            bodies: Vec::new(),
-            native_ref: None,
-        });
     let occurrence =
         cadmpeg_ir::ids::OccurrenceId::mint("test:model:occurrence#empty").expect("identity");
+    let mut empty = cadmpeg_ir::products::ProductDefinition::new(
+        definition.clone(),
+        cadmpeg_ir::products::Storage::Embedded,
+    );
+    empty.kind = Some(cadmpeg_ir::products::ProductDefinitionKind::Part);
+    let mut root = cadmpeg_ir::products::ProductDefinition::root(
+        cadmpeg_ir::ids::ProductDefinitionId::mint("test:model:product-definition#root")
+            .expect("identity"),
+        cadmpeg_ir::products::ExternalDocument::default(),
+    );
+    root.occurrences.push(occurrence.clone());
+    assembly.model.product_definitions.extend([empty, root]);
     assembly
         .model
         .occurrences
-        .push(cadmpeg_ir::products::Occurrence {
-            id: occurrence.clone(),
-            prototype: cadmpeg_ir::products::PrototypeReference::Local { definition },
-            parent: cadmpeg_ir::products::OccurrenceParent::Root {},
-            ordinal: 0,
-            transform: cadmpeg_ir::transform::Transform::identity(),
-            linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-            name: None,
-            visible: None,
-            link: None,
-            native_ref: None,
-        });
+        .push(cadmpeg_ir::products::Occurrence::new(
+            occurrence.clone(),
+            definition,
+            Some(cadmpeg_ir::transform::Transform::identity()),
+        ));
     assembly.finalize();
     let unplaced = serde_json::to_value(measure(
         &assembly,

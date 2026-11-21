@@ -6,6 +6,8 @@
 //! convert model lengths before insertion into the IR.
 //! Unit directions, angles, ratios, and source-native arenas are not scaled.
 
+mod design;
+
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, FiniteVector3, WrapMode};
@@ -223,8 +225,8 @@ fn scale_feature_operation(
             })?;
             *frame = frame.with_origin(origin);
         }
-        FeatureOperation::DatumAxis { origin, .. }
-        | FeatureOperation::MirrorShape {
+        FeatureOperation::DatumAxis { .. } => design::axis(ctx, definition, scale)?,
+        FeatureOperation::MirrorShape {
             plane_origin: origin,
             ..
         } => {
@@ -463,7 +465,7 @@ fn scale_feature_operation(
             scale_optional_positive_length(&mut construction.thickness, scale)?;
         }
         FeatureOperation::SheetMetalBaseFlange { thickness, .. } => {
-            scale_positive_length(thickness, scale)?;
+            scale_optional_positive_length(thickness, scale)?;
         }
         FeatureOperation::SheetMetalAttachedPlate { thickness, .. } => {
             scale_positive_length(thickness, scale)?;
@@ -764,6 +766,7 @@ fn scale_angular_termination(
         AngularTermination::OffsetFromFace { offset, .. } => {
             scale_positive_length(offset, scale)?;
         }
+        AngularTermination::ToPlane { plane, .. } => scale_support_plane_frame(plane, scale)?,
         AngularTermination::Unresolved {}
         | AngularTermination::ThroughAll {}
         | AngularTermination::ThroughNext {}

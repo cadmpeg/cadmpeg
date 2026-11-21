@@ -79,12 +79,15 @@ pub mod kinds {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(
     feature = "schema",
-    schemars(bound = "K: JsonSchema, K::Value: JsonSchema")
+    schemars(
+        bound = "K: JsonSchema, K::Value: JsonSchema",
+        with = "ConstructionWire<K>"
+    )
 )]
 #[serde(
-    bound(serialize = "K: Clone", deserialize = ""),
-    try_from = "ConstructionWire<K>",
-    into = "ConstructionWire<K>"
+    bound = "",
+    rename(serialize = "ConstructionWire"),
+    try_from = "ConstructionWire<K>"
 )]
 pub struct Construction<K: ConstructionKind> {
     /// The constraints the source stores, in the source's priority order.
@@ -94,22 +97,38 @@ pub struct Construction<K: ConstructionKind> {
     pub after: Vec<PostStep>,
     /// The selector the source stores for its choice among the solutions
     /// that the inputs admit.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub solution: Option<u32>,
     /// The source's name for its construction method, with the method
     /// options the source stores beside it.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mode: Option<SourceMode>,
     /// The construction's value in its anchored state, for the active
     /// configuration, after the steps of `after`.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub resolved: Option<K::Value>,
     /// The construction's value in each other configuration for which the
     /// source stores one.
     pub resolved_in: BTreeMap<ConfigurationId, K::Value>,
 }
 
+impl<K: ConstructionKind> Default for Construction<K> {
+    fn default() -> Self {
+        Self {
+            inputs: Vec::new(),
+            after: Vec::new(),
+            solution: None,
+            mode: None,
+            resolved: None,
+            resolved_in: BTreeMap::new(),
+        }
+    }
+}
+
 /// The wire form of [`Construction`]. Each construction nested in its
 /// inputs has passed the construction ceiling; reading admits this one
 /// level above the deepest of them.
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(
     feature = "schema",
@@ -178,27 +197,6 @@ impl<K: ConstructionKind> TryFrom<ConstructionWire<K>> for Construction<K> {
     }
 }
 
-impl<K: ConstructionKind> From<Construction<K>> for ConstructionWire<K> {
-    fn from(construction: Construction<K>) -> Self {
-        let Construction {
-            inputs,
-            after,
-            solution,
-            mode,
-            resolved,
-            resolved_in,
-        } = construction;
-        Self {
-            inputs,
-            after,
-            solution,
-            mode,
-            resolved,
-            resolved_in,
-        }
-    }
-}
-
 impl<K: ConstructionKind> Construction<K> {
     /// The levels of this construction and the constructions nested in its
     /// inputs.
@@ -254,7 +252,7 @@ pub struct ConstructionInput {
 }
 
 /// The reference of a construction input.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -271,7 +269,7 @@ pub enum InputReference {
 }
 
 /// A construction of any kind.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum AnyConstruction {
@@ -331,7 +329,7 @@ pub enum Subject {
 }
 
 /// How an input constrains its subject.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -403,7 +401,7 @@ pub enum Relation {
 }
 
 /// The value of a construction input.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -460,7 +458,7 @@ pub enum ScalarDimension {
 
 /// A step on a construction's result after the inputs. Each step acts in the
 /// result's frame as the earlier steps leave it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -570,7 +568,7 @@ pub struct FrameValue {
 }
 
 /// A curve that a construction resolves to.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CurveValue {
@@ -613,3 +611,6 @@ cadmpeg_core::named_optional_field!(deserialize_reversed, bool, "reversed");
 cadmpeg_core::named_optional_field!(deserialize_role, InputRole, "role");
 cadmpeg_core::named_optional_field!(deserialize_solution, u32, "solution");
 cadmpeg_core::named_optional_field!(deserialize_value, ScalarDimension, "value");
+
+#[cfg(test)]
+mod tests;
