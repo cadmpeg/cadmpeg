@@ -43,6 +43,11 @@ control character. Read the changed spans with `cadmpeg inspect hex`, `find`,
 width, byte order, count, reference scope and unit, and check it against every
 attached file.
 
+`inspect extract` does not overwrite an existing output file; use a new name or
+delete the old one first. Save noise changes several streams on every save. A
+second save of the base file with no edit shows which spans are noise; compare
+each variant against both saves.
+
 ## Verify against STEP
 
 After implementing the reading, decode and check both native files and their
@@ -62,6 +67,14 @@ cadmpeg diff after.native.json after.step.json --geometry
 Body and face counts, volume and bounding box must agree within the
 allowances in [docs/measurement.md](../measurement.md), and the issue's How to
 verify procedure must pass. Tests are synthetic, built from the specification.
+There is no shared builder for a compound file with named streams; extend the
+crate's `test_support.rs`, starting from `cadmpeg_test_support::compound`.
+
+The layout generator emits only the constants the crate reads, and its test
+compiles the crate. For a new record in `docs/layouts/solidedge.toml`, write its
+module in `src/layout.rs` by hand in the generated form, then regenerate. A new
+production `MAX_*` constant needs a row, the totals and the crate count in
+`docs/decode-resource-caps.md`.
 
 ## When to ask
 
