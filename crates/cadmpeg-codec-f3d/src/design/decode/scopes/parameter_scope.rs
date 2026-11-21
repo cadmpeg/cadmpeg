@@ -3,6 +3,10 @@
 
 pub(crate) mod family;
 
+pub(crate) fn scan_kind(guid: &str) -> Option<crate::records::feature::scope::DesignFeatureKind> {
+    family::from_type_guid(guid)
+}
+
 use crate::bytes::lp_utf16_bounded;
 use cadmpeg_core::decode::u64_from_index;
 

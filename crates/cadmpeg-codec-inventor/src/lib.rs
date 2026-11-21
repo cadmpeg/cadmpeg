@@ -38,6 +38,7 @@ mod record_identity;
 mod record_issue;
 mod records;
 mod rse;
+mod scan;
 mod sketch;
 mod validate;
 

@@ -197,7 +197,7 @@ fn zip64_sizes(extra: &mut View<'_>, record: &mut EntryRecord) -> Result<(), &'s
     Ok(())
 }
 
-fn decode_name(bytes: &[u8], utf8: bool) -> String {
+pub(crate) fn decode_name(bytes: &[u8], utf8: bool) -> String {
     // ZIP's legacy filename encoding is IBM code page 437. ASCII controls keep
     // their byte values, as in the directory parser.
     const HIGH: [char; 128] = [

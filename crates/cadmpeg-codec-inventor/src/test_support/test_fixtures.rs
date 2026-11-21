@@ -202,6 +202,22 @@ pub(crate) fn primary_envelope_fixture_with_design(
     primary_envelope_fixture_with_design_version(kernel, design, 18)
 }
 
+pub(crate) fn primary_envelope_fixture_with_design_compression(
+    kernel: &[u8],
+    design: &[([u8; 16], Vec<u8>)],
+    methods: [u8; 2],
+) -> Vec<u8> {
+    primary_envelope_fixture_with_carrier_and_failures(
+        EnvelopeDeclarations::default(),
+        &kernel_carrier_fixture(kernel),
+        design,
+        false,
+        false,
+        methods,
+        None,
+    )
+}
+
 pub(crate) fn primary_envelope_fixture_with_design_version(
     kernel: &[u8],
     design: &[([u8; 16], Vec<u8>)],

@@ -66,6 +66,48 @@ impl InputDescriptor {
         }
     }
 
+    pub(crate) fn scan_zip_match(&self, name: &str) -> bool {
+        match &self.kind {
+            InputKind::Native { native, .. } => {
+                native.zip_scan_probe.is_some_and(|probe| probe(name))
+            }
+            InputKind::Neutral { .. } => false,
+        }
+    }
+
+    pub(crate) fn scan_compound_match(
+        &self,
+        entries: &[cadmpeg_container::compound::scan::ScanCompoundEntry],
+        budget: &cadmpeg_core::scan::ScanBudget<'_>,
+    ) -> Result<bool, cadmpeg_core::scan::StopReason> {
+        if let InputKind::Native { native, .. } = &self.kind {
+            if let Some(probe) = native.compound_scan_probe {
+                return probe(entries, budget);
+            }
+        }
+        Ok(false)
+    }
+
+    pub(crate) fn scan(
+        &self,
+        input: View<'_>,
+        budget: &cadmpeg_core::scan::ScanBudget<'_>,
+    ) -> cadmpeg_core::scan::DesignScan {
+        if let InputKind::Native { native, .. } = &self.kind {
+            if let Some(scan) = native.scanner {
+                return scan(input, budget);
+            }
+        }
+        let mut scan = cadmpeg_core::scan::DesignScan::new(Some(self.format_id().as_str()));
+        scan.finish(
+            budget,
+            Err(cadmpeg_core::scan::StopReason::Unsupported(
+                "reader has no design scan".into(),
+            )),
+        );
+        scan
+    }
+
     /// Decoder and inspector implementation for a native format.
     pub fn codec(&self) -> Option<&dyn Codec> {
         match &self.kind {

@@ -19,7 +19,7 @@ impl SpaceId {
     pub const ROOT: SpaceId = SpaceId(0);
 
     /// Creates a session-local address-space identifier.
-    pub(super) const fn from_index(index: usize) -> Self {
+    pub(crate) const fn from_index(index: usize) -> Self {
         Self(index)
     }
 

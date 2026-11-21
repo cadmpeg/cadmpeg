@@ -13,6 +13,8 @@ mod encoders;
 mod format;
 mod identify;
 mod registry;
+mod scan;
+pub use scan::scan_design;
 mod views;
 
 #[cfg(test)]

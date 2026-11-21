@@ -113,6 +113,7 @@ mod paramesh;
 mod records;
 mod report;
 mod repro;
+mod scan;
 mod scene;
 mod tree;
 mod tsm;
