@@ -283,3 +283,107 @@ fn a_consumed_history_resource_refusal_in_finalize_refuses_the_document() {
         DecodeFailure::Codec(CodecError::ResourceLimit(_))
     ));
 }
+
+#[test]
+fn an_unread_configuration_keeps_timeline_sketches_and_geometry() {
+    use std::io::Write;
+    let source =
+        include_bytes!("../../tests/golden/fixtures/design_sketch_constraints.f3d").to_vec();
+    let full = decode(source.clone());
+    assert!(!full.ir().model.features.is_empty());
+    assert!(!full.ir().model.sketches.is_empty());
+    let mut zip = zip::ZipWriter::new_append(Cursor::new(source)).unwrap();
+    let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    zip.start_file("FusionAssetName[Active]/DesignConfigurationTable.BlobParts/DesignConfigurationTable.unread.dsgcfg", stored).unwrap();
+    zip.write_all(b"[").unwrap();
+    let source = zip.finish().unwrap().into_inner();
+    let recovered = decode(source.clone());
+    assert_eq!(recovered.ir().model.features, full.ir().model.features);
+    assert_eq!(recovered.ir().model.sketches, full.ir().model.sketches);
+    assert_eq!(recovered.ir().geometry, full.ir().geometry);
+    assert!(f3d_native(recovered.ir()).design_intent_failures.is_empty());
+    assert_eq!(
+        recovered
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == F3dLossCode::ConfigurationDocumentUndecoded.kind())
+            .count(),
+        1
+    );
+    assert!(recovered
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code != F3dLossCode::DesignIntentUndecoded.kind()));
+    assert_valid(&recovered);
+    let mut replayed = Vec::new();
+    crate::test_support::plan_inherited_write(
+        recovered.ir(),
+        recovered.source_fidelity(),
+        &mut replayed,
+    )
+    .unwrap();
+    assert_eq!(replayed, source);
+}
+
+#[test]
+fn an_unread_primary_header_keeps_the_other_design_stream() {
+    use std::io::Write;
+    let source =
+        include_bytes!("../../tests/golden/fixtures/design_sketch_constraints.f3d").to_vec();
+    let full = decode(source.clone());
+    let mut bulk = Vec::new();
+    crate::test_support::lp_ascii(&mut bulk, "bad");
+    bulk.extend_from_slice(&41u32.to_le_bytes());
+    let sibling_start = bulk.len();
+    crate::test_support::lp_ascii(&mut bulk, "256");
+    bulk.extend_from_slice(&42u32.to_le_bytes());
+    let meta = crate::test_support::streams_test::design_metastream_with_records(
+        &[(
+            "00000000-0000-0000-0000-000000000001",
+            "",
+            0,
+            "Test",
+            &[41, 42],
+        )],
+        &[
+            (41, 0),
+            (42, cadmpeg_core::decode::u64_from_index(sibling_start)),
+        ],
+    );
+    let mut zip = zip::ZipWriter::new_append(Cursor::new(source)).unwrap();
+    let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    zip.start_file(
+        "FusionAssetName[Active]/FusionDesignSegmentType2/BulkStream.dat",
+        stored,
+    )
+    .unwrap();
+    zip.write_all(&bulk).unwrap();
+    zip.start_file(
+        "FusionAssetName[Active]/FusionDesignSegmentType2/MetaStream.dat",
+        stored,
+    )
+    .unwrap();
+    zip.write_all(&meta).unwrap();
+    let recovered = decode(zip.finish().unwrap().into_inner());
+    assert_eq!(recovered.ir().model.features, full.ir().model.features);
+    assert_eq!(recovered.ir().model.sketches, full.ir().model.sketches);
+    assert_eq!(recovered.ir().geometry, full.ir().geometry);
+    assert!(f3d_native(recovered.ir()).design_intent_failures.is_empty());
+    assert_eq!(
+        recovered
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == F3dLossCode::PrimaryRecordUndecoded.kind())
+            .count(),
+        1
+    );
+    assert!(recovered
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code != F3dLossCode::DesignIntentUndecoded.kind()));
+    assert_valid(&recovered);
+}

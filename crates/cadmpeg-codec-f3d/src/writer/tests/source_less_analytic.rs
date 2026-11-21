@@ -35,8 +35,8 @@ fn finite_tolerance_pair(values: [f64; 2]) -> [cadmpeg_ir::scalar::FiniteReal; 2
     values.map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).unwrap())
 }
 
-/// An invalid configuration payload drops design intent and keeps geometry.
-/// Strict mode still refuses the document with the parser's message.
+/// An invalid configuration payload keeps the geometry and Design layer.
+/// Strict mode refuses the document with the parser's message.
 fn assert_invalid_configuration_is_contained(name: &str, payload: &[u8], expected: &str) {
     let bytes = f3d_with_configuration(&synthetic_geometry_smbh(), name, payload);
     let contained = F3dCodec
@@ -46,7 +46,7 @@ fn assert_invalid_configuration_is_contained(name: &str, payload: &[u8], expecte
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == crate::loss::F3dLossCode::DesignIntentUndecoded.kind())
+        .filter(|loss| loss.code == crate::loss::F3dLossCode::ConfigurationDocumentUndecoded.kind())
         .collect::<Vec<_>>();
     assert_eq!(undecoded.len(), 1, "{expected}");
     assert!(

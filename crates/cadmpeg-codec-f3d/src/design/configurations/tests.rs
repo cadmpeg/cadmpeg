@@ -372,8 +372,20 @@ fn configuration_tables_with_rows_supply_one_list() {
         document().as_object().unwrap().clone(),
     )
     .unwrap();
-    let error = project_configurations(&[table(&document()), other], &natives.targets())
-        .expect_err("two populated tables");
+    let native = [table(&document()), other];
+    let mut losses = Vec::new();
+    let projected =
+        super::project_configurations_with_losses(&native, &natives.targets(), &mut losses)
+            .unwrap();
+    assert!(projected.is_empty());
+    assert_eq!(native.len(), 2);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::ConfigurationProjectionNative.kind()
+    );
+    let error =
+        project_configurations(&native, &natives.targets()).expect_err("two populated tables");
     assert!(error
         .to_string()
         .contains("configuration tables have no shared authored order"));
@@ -559,4 +571,33 @@ fn an_inferred_suppressed_state_names_its_assumption_when_a_column_is_unresolved
         .evaluation
         .is_suppressed());
     assert_eq!(inferred_configuration_suppression_count(&configurations), 1);
+}
+
+#[test]
+fn unreadable_configuration_document_keeps_its_sibling_document() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use std::io::{Cursor, Write};
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    let bad = "FusionAssetName[Active]/DesignConfigurationTable.BlobParts/DesignConfigurationTable.bad.dsgcfg";
+    zip.start_file(bad, stored).unwrap();
+    zip.write_all(b"[").unwrap();
+    zip.start_file(ENTRY, stored).unwrap();
+    zip.write_all(&serde_json::to_vec(&document()).unwrap())
+        .unwrap();
+    let bytes = zip.finish().unwrap().into_inner();
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let scan = crate::container::scan(&ctx, root).unwrap();
+    let mut losses = Vec::new();
+    let decoded = super::decode_configurations(&ctx, &scan, &mut losses).unwrap();
+    assert_eq!(decoded.documents.len(), 1);
+    assert_eq!(decoded.documents[0].entry_name().as_str(), ENTRY);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::ConfigurationDocumentUndecoded.kind()
+    );
 }

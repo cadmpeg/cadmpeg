@@ -22,7 +22,14 @@ fn tested_bind_sketch_graph(
     surfaces: &mut [crate::records::sketch_geometry::SketchSurface],
     relations: &mut [crate::records::sketch_relations::SketchRelation],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    bind_sketch_graph(entities, points, curves, surfaces, relations)
+    bind_sketch_graph(
+        entities,
+        points,
+        curves,
+        surfaces,
+        relations,
+        &mut Vec::new(),
+    )
 }
 
 fn tested_parse_sketch_member_run(
@@ -644,7 +651,7 @@ fn text_frame_line_decodes_after_point_references() {
     }
 
     let (geometry, end) =
-        crate::design::decode::sketch::decode_text_frame_line(&bytes, 52, 2403, 0)
+        crate::design::decode::sketch::decode_text_frame_line(&bytes, 52, 2403, 0, &mut 0)
             .expect("line parse")
             .expect("text-frame boundary line");
     assert_eq!(end, bytes.len());
@@ -1198,19 +1205,27 @@ fn sketch_member_run_backfills_relation_free_owners() {
     assert_eq!(points[1].owner_reference, Some(100));
     assert_eq!(points[2].owner_reference, None);
 
-    // Two sketches claiming one record is a structural conflict.
-    let mut points = [sketch_graph_point(20)];
-    assert!(tested_bind_sketch_graph(
+    let mut points = [sketch_graph_point(20), sketch_graph_point(21)];
+    let mut losses = Vec::new();
+    bind_sketch_graph(
         &[
-            sketch_graph_header(100, vec![20]),
-            sketch_graph_header(101, vec![20])
+            sketch_graph_header(100, vec![20, 21]),
+            sketch_graph_header(101, vec![20]),
         ],
         &mut points,
         &mut [],
         &mut [],
         &mut [],
+        &mut losses,
     )
-    .is_err());
+    .unwrap();
+    assert_eq!(points[0].owner_reference, None);
+    assert_eq!(points[1].owner_reference, Some(100));
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::SketchOwnerConflict.kind()
+    );
 }
 
 fn typed_sketch_reference(bytes: &mut Vec<u8>, target: u32) {
