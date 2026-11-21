@@ -294,62 +294,31 @@ fn dropped_input_notes(result: &EditableDecodeResult) -> Vec<&cadmpeg_ir::report
         .collect()
 }
 
-/// The decoder admits only a formula whose type its signature declares, so
-/// no decode reaches a whole-text input with no neutral reading. The
-/// projection is run on decoded records whose output is retyped as a length,
-/// which a dimensionless integer input cannot be.
 #[test]
 fn a_formula_that_is_one_input_with_no_neutral_reading_is_named_as_dropping_it() {
     let result = decode(standard_catpart_with_typed_formula_relation(
-        4, false, "Integer", "Integer", 2.0, 2.0, "#1_ /2",
+        4, false, "Real", "Integer", 2.0, 2.0, "#1_ /2",
     ));
-    let scope = parameter(&result, "Result").scope.clone();
-    let mut ir = result.ir().clone();
-    ir.design.parameters.clear();
-    let [input, output] = ir.model.parameters.as_mut_slice() else {
-        panic!("an input and a formula");
-    };
-    let input = input.id.clone();
-    let kind = output
-        .properties
-        .iter_mut()
-        .find(|(key, _)| key.as_str() == "value_type")
-        .map(|(_, kind)| kind)
-        .unwrap();
-    *kind = "LENGTH".into();
-    let output = output.id.clone();
-    let mut losses = Vec::new();
-    crate::test_support::with_service_context(|ctx| {
-        super::project(ctx, &mut ir, &scope, &mut losses)
-    })
-    .unwrap();
-    let projected = ir
-        .design
-        .parameters
-        .iter()
-        .find(|parameter| parameter.id == output)
-        .unwrap();
-    assert_eq!(projected.kind, ValueKind::Quantity(Quantity::LENGTH));
+    let output = parameter(&result, "Result");
     assert_eq!(
-        projected.definition,
+        output.definition,
         ParameterDefinition::Expression(Expression::Source {
             dialect: ExpressionDialect::Catia,
             tokens: vec![ExpressionToken::Text("#1_ /2".into())],
         })
     );
-    let [note] = losses.as_slice() else {
-        panic!("one note: {losses:?}");
+    let input = &parameter(&result, "Thickness").id;
+    let notes = dropped_input_notes(&result);
+    let [note] = notes.as_slice() else {
+        panic!("one note: {:?}", result.report().losses);
     };
-    assert_eq!(
-        note.code,
-        crate::loss::CatiaLossCode::DesignParameterReferenceAsText.kind()
-    );
     assert_eq!(
         note.message,
         format!(
             "1 parameters hold an input parameter the decoder resolved as text, or omit it, and \
              state no dependency on that parameter (each with the inputs it loses): \
-             {output} ({input})"
+             {} ({input})",
+            output.id
         )
     );
 }

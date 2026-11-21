@@ -365,7 +365,7 @@ fn expression(
 /// A relation whose whole text is one resolved parameter is that reference
 /// where the parameter has the same kind, one with a neutral value. Otherwise
 /// the name stays text: a `Source` expression holds a `Text` token (part 10),
-/// and [`drops_dependency`] names the parameter.
+/// and [`dropped_dependencies`] names the parameter.
 fn whole_reference(
     reference: &ParameterRef,
     text: &str,
