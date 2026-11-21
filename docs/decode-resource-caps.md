@@ -204,6 +204,8 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-ir`             | `src/math/sum.rs`                                  | `MAX_BIASED_SIGNIFICAND_EXPONENT`         | `0x7fe - 1`                                             | N    | `f64` exponent-field limit for exact summation.                                                                                                                                                                                                                              |
 | `cadmpeg-ir`             | `src/math/sum.rs`                                  | `MAX_SIGNIFICAND_BITS`                    | `53`                                                    | N    | `f64` significand width.                                                                                                                                                                                                                                                     |
 | `cadmpeg-ir`             | `src/math/sum.rs`                                  | `MAX_SCALED_EXPONENT`                     | `EXACT_PRODUCT_EXPONENT + EXACT_SUM_WORDS_I32 * 64 + 1` | N    | Accumulator exponent range.                                                                                                                                                                                                                                                  |
+| `cadmpeg-measure` | `src/face/nurbs_box.rs` | `MAX_NURBS_BOX_WORK` | `1 << 20` | 4 | Local trimmed surface box work, limited further to one sixteenth of the remaining face allowance. Exhaustion retains the conservative control hull. |
+| `cadmpeg-measure` | `src/face/nurbs_box.rs` | `MAX_NURBS_BOX_PATCHES` | `65_536` | 4 | Bézier patches created during extraction or visited during trimmed face box refinement. Excess retains the conservative control hull. |
 | `cadmpeg-measure`        | `src/budget.rs`                                   | `MAX_MEASURE_PASS_WORK_PER_ITEM`         | `1 << 22`                                              | 4    | Measurement pass allowance per face and edge of the document under `--limits desktop`. The allowance is `max(MEASURE_PASS_WORK_FLOOR, k × (faces + edges))`. An item that finds the pass empty makes its remaining quantities `evaluation.work-exhausted`, and `document.work.exhausted` is true; measurement continues. The `check` findings pass draws the same allowance; an item that finds it empty is not checked, and the pass adds one `measurement_incomplete` info finding. |
 | `cadmpeg-measure`        | `src/budget.rs`                                   | `MAX_MEASURE_PASS_WORK_PER_ITEM_SERVICE` | `1 << 18`                                              | 4    | The same per-item allowance under `--limits service`. |
 | `cadmpeg-measure`        | `src/budget.rs`                                   | `MAX_COMPARE_PAIR_WORK_PER_BODY`         | `1 << 12`                                              | N    | Pair allowance of an ID-free comparison (`diff --geometry`) per body of both documents under `--limits desktop`. The allowance is `max(COMPARE_PAIR_WORK_FLOOR, k × bodies)`, `COMPARE_PAIR_WORK_FLOOR = 1 << 20`. Each evaluation of a body pair that can be compatible charges one unit. Exhaustion refuses the comparison at the `measure` stage; it is not a decode bound. |
@@ -572,21 +574,21 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 350.
+Production `MAX_*` constants: 352.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 42    |
 | 2    | Per-input bound            | 78    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 175   |
+| 4    | Local work cap             | 177   |
 | N    | Not a decode bound         | 55    |
-|      | Total                      | 350   |
+|      | Total                      | 352   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
 
-By crate: `cadmpeg-core` 3, `cadmpeg-ir` 19, `cadmpeg-parasolid` 1, `cadmpeg-measure` 21, `cadmpeg-asm` 4,
+By crate: `cadmpeg-core` 3, `cadmpeg-ir` 19, `cadmpeg-parasolid` 1, `cadmpeg-measure` 23, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 4, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 8,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 30,
