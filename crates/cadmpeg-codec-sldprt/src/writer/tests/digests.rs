@@ -82,7 +82,7 @@ fn metadata_digest_preserves_recursion_refusal() {
 }
 
 #[test]
-fn enclosure_metadata_generation_requires_retained_opaque_prologue() {
+fn enclosure_metadata_is_not_generated_without_a_retained_opaque_prologue() {
     use cadmpeg_ir::attributes::AttributeValue;
     let mut ir = CadIr::empty();
     ir.model.attributes.push(SourceAttribute {
@@ -97,11 +97,20 @@ fn enclosure_metadata_generation_requires_retained_opaque_prologue() {
         ],
         native_ref: None,
     });
-    assert!(matches!(
-        crate::writer::metadata_payloads(&ir, 0.001, false),
-        Err(CodecError::NotImplemented(_))
-    ));
-    let (objects, units) = crate::writer::metadata_payloads(&ir, 0.001, true).unwrap();
+    let mut unwritten = crate::writer::UnwrittenAttributes::default();
+    let (objects, units) = crate::writer::metadata_payloads(&ir, 0.001, false, &mut unwritten);
     assert!(objects.is_empty());
     assert!(units.is_none());
+    assert_eq!(
+        unwritten.reason("sldprt:metadata:transformed_reference_enclosure#0:6"),
+        Some(crate::writer::Unwritten::NoSerializer)
+    );
+    let mut retained = crate::writer::UnwrittenAttributes::default();
+    let (objects, units) = crate::writer::metadata_payloads(&ir, 0.001, true, &mut retained);
+    assert!(objects.is_empty());
+    assert!(units.is_none());
+    assert_eq!(
+        retained.reason("sldprt:metadata:transformed_reference_enclosure#0:6"),
+        None
+    );
 }

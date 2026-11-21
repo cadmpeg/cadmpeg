@@ -5,6 +5,9 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::ids::AttributeId;
 use cadmpeg_test_support::EditableDecodeResult;
+
+use crate::writer::Held;
+
 const MEMBER: &str = "docProps/ISolidWorksInformation.xml";
 const XML:&[u8]=br#"<p:Properties xmlns:p="http://schemas.openxmlformats.org/officeDocument/2006/SolidworksInformation-properties" xmlns:v="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes" SW_UnitsLinear="0"><propertySection fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}"><property pid="2" name="bounding_envelope"><v:lpstr/></property><property pid="3" name="SavedName"><v:r8>-0.0</v:r8></property></propertySection></p:Properties>"#;
 fn fixture() -> EditableDecodeResult {
@@ -116,8 +119,22 @@ fn semantic_metadata_edit_retains_saved_default_bytes_and_aliases() {
         &before
     );
 }
+/// The one saved-property carrier in `bytes`.
+fn carrier(bytes: &[u8]) -> Vec<u8> {
+    let scan = crate::test_support::container::scan(bytes);
+    let members = scan
+        .sections()
+        .filter(|s| s.name() == Some(MEMBER))
+        .collect::<Vec<_>>();
+    assert_eq!(members.len(), 1);
+    members[0].payload().to_vec()
+}
+
+/// Every saved-property edit writes the part with the carrier as the source
+/// stored it. `export:edit.dropped` names an edited or removed property, and
+/// `WriterAttributesOmitted` an added one.
 #[test]
-fn inherited_writer_refuses_every_saved_property_edit() {
+fn inherited_writer_keeps_the_carrier_and_names_every_saved_property_edit() {
     for mutation in 0..7 {
         let mut decoded = fixture();
         let mut ir = decoded.ir_mut();
@@ -127,6 +144,8 @@ fn inherited_writer_refuses_every_saved_property_edit() {
             .iter()
             .position(crate::metadata::default_properties::is_attribute)
             .unwrap();
+        let mut edited = ir.model.attributes[i].id.as_str().to_owned();
+        let mut held = Held::Source;
         match mutation {
             0 => {
                 ir.model.attributes.remove(i);
@@ -134,6 +153,8 @@ fn inherited_writer_refuses_every_saved_property_edit() {
             1 => {
                 let mut row = ir.model.attributes[i].clone();
                 row.id = AttributeId::mint("sldprt:metadata:default_property#8:4:Added").unwrap();
+                edited = row.id.as_str().to_owned();
+                held = Held::Nothing;
                 ir.model.attributes.push(row);
             }
             2 => ir.model.attributes[i].name = "Renamed".into(),
@@ -151,17 +172,19 @@ fn inherited_writer_refuses_every_saved_property_edit() {
                     .filter(is_property)
                     .find(|row| row.name == "SavedName")
                     .unwrap();
+                edited = row.id.as_str().to_owned();
                 row.values = vec![Some(AttributeValue::float(1.0).unwrap())];
             }
             _ => unreachable!(),
         }
         drop(ir);
-        let written = write(&decoded);
-        assert!(
-            matches!(&written, Err(CodecError::NotImplemented(message)) if message == "SLDPRT saved-property edits require a retained property serializer"),
-            "mutation {mutation}: {:?}",
-            written.map(|bytes| bytes.len())
-        );
+        let (bytes, losses) = crate::test_support::write_with_unwritten_attributes(
+            decoded.ir(),
+            decoded.source_fidelity(),
+        )
+        .unwrap_or_else(|error| panic!("mutation {mutation}: {error}"));
+        assert_eq!(carrier(&bytes), XML, "mutation {mutation}");
+        losses.assert_charged(held, "saved-property edits", &edited);
     }
 }
 #[test]
@@ -190,8 +213,10 @@ fn saved_negative_zero_and_zero_are_one_property_value() {
     assert_eq!(members.len(), 1);
     assert_eq!(members[0].payload(), XML);
 }
+/// A unit mirror the default carrier owns is a saved property: the carrier
+/// keeps the stored code, and `export:edit.dropped` names the mirror.
 #[test]
-fn inherited_writer_refuses_changed_unit_mirrors_in_the_saved_carrier() {
+fn inherited_writer_keeps_the_saved_carrier_and_names_a_changed_unit_mirror() {
     let mut decoded = fixture();
     let mut ir = decoded.ir_mut();
     let owner = ir
@@ -217,24 +242,41 @@ fn inherited_writer_refuses_changed_unit_mirrors_in_the_saved_carrier() {
         .find(|row| row.id.as_str().starts_with(&prefix))
         .unwrap();
     mirror.values = vec![Some(AttributeValue::Integer(3))];
+    let mirror = mirror.id.as_str().to_owned();
     drop(ir);
-    assert!(
-        matches!(write(&decoded), Err(CodecError::NotImplemented(message)) if message == "SLDPRT saved-property edits require a retained property serializer")
-    );
+    let (bytes, losses) = crate::test_support::write_with_unwritten_attributes(
+        decoded.ir(),
+        decoded.source_fidelity(),
+    )
+    .unwrap();
+    assert_eq!(carrier(&bytes), XML);
+    losses.assert_charged(Held::Source, "saved-property edits", &mirror);
 }
+
+/// A document with no source states saved properties no carrier holds: the
+/// part is written without them, and the loss names each.
 #[test]
-fn source_less_writer_refuses_saved_properties() {
+fn source_less_writer_writes_the_part_and_names_its_saved_properties() {
     let mut ir = crate::test_support::ir::source_less_cube();
+    let id = "sldprt:metadata:default_property#8:2:Saved";
     ir.model.attributes.push(SourceAttribute {
-        id: AttributeId::mint("sldprt:metadata:default_property#8:2:Saved").unwrap(),
+        id: AttributeId::mint(id).unwrap(),
         target: AttributeTarget::Document.into(),
         name: "Saved".into(),
         values: vec![Some(AttributeValue::Integer(7))],
         native_ref: None,
     });
-    let mut bytes = Vec::new();
-    assert!(
-        matches!(crate::writer::write_semantic_with_records(&ir, &cadmpeg_ir::annotations::Annotations::default(), &[], &mut bytes), Err(CodecError::NotImplemented(message)) if message == "SLDPRT saved properties require their retained source carrier")
+    let plan = crate::test_support::plan_fixture_with_native_envelope(
+        cadmpeg_ir::codec::write::EncodeInput::new(&ir, None),
+        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+    )
+    .unwrap();
+    crate::test_support::UnwrittenLosses::of(&plan.report().losses).assert_charged(
+        Held::Nothing,
+        "saved-property edits",
+        id,
     );
-    assert!(bytes.is_empty());
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    assert!(!bytes.is_empty());
 }

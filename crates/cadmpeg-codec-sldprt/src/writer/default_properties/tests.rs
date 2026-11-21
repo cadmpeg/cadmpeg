@@ -4,7 +4,7 @@ use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::AttributeId;
 
-use super::{is_property, requires_guard, same_attribute, validate};
+use super::{edited_properties, is_property, requires_guard, same_attribute};
 use crate::test_support::container::{make_block, outer_header, scan};
 
 fn property(id: &str, name: &str, value: AttributeValue) -> SourceAttribute {
@@ -36,15 +36,15 @@ fn configuration_carrier_facts_are_guarded_even_when_removed_or_forged() {
     let mut forged = original.clone();
     forged.model.attributes.push(row.clone());
     assert!(requires_guard(&forged, None));
-    assert!(validate(&forged, &original, &source_scan).is_err());
+    assert!(!edited_properties(&forged, &original, &source_scan).is_empty());
     original.model.attributes.push(row);
-    assert!(validate(&original, &original, &source_scan).is_ok());
+    assert!(edited_properties(&original, &original, &source_scan).is_empty());
     let mut removed = original.clone();
     removed.model.attributes.clear();
-    assert!(validate(&removed, &original, &source_scan).is_err());
+    assert!(!edited_properties(&removed, &original, &source_scan).is_empty());
     let mut changed = original.clone();
     changed.model.attributes[0].values.clear();
-    assert!(validate(&changed, &original, &source_scan).is_err());
+    assert!(!edited_properties(&changed, &original, &source_scan).is_empty());
 }
 
 #[test]
@@ -119,19 +119,19 @@ fn empty_saved_property_remains_read_only_and_distinct_from_a_blank_string() {
     );
     row.values.clear();
     original.model.attributes.push(row);
-    assert!(validate(&original, &original, &source_scan).is_ok());
+    assert!(edited_properties(&original, &original, &source_scan).is_empty());
     assert!(requires_guard(&original, None));
     let mut changed = original.clone();
     changed.model.attributes[0]
         .values
         .push(Some(AttributeValue::String(String::new())));
-    assert!(validate(&changed, &original, &source_scan).is_err());
+    assert!(!edited_properties(&changed, &original, &source_scan).is_empty());
     changed = original.clone();
     changed.model.attributes[0].name = "Other".into();
-    assert!(validate(&changed, &original, &source_scan).is_err());
+    assert!(!edited_properties(&changed, &original, &source_scan).is_empty());
     changed = original.clone();
     changed.model.attributes.clear();
-    assert!(validate(&changed, &original, &source_scan).is_err());
+    assert!(!edited_properties(&changed, &original, &source_scan).is_empty());
 }
 
 #[test]
@@ -144,7 +144,7 @@ fn retained_guard_detects_removed_added_renamed_and_reidentified_properties() {
         "Name",
         AttributeValue::String("saved".into()),
     ));
-    assert!(validate(&original, &original, &source_scan).is_ok());
+    assert!(edited_properties(&original, &original, &source_scan).is_empty());
     assert!(requires_guard(&original, None));
     for mutation in 0..6 {
         let mut current = original.clone();
@@ -167,7 +167,7 @@ fn retained_guard_detects_removed_added_renamed_and_reidentified_properties() {
                 .push(current.model.attributes[0].clone()),
             _ => unreachable!(),
         }
-        assert!(validate(&current, &original, &source_scan).is_err());
+        assert!(!edited_properties(&current, &original, &source_scan).is_empty());
     }
 }
 
@@ -195,7 +195,10 @@ fn only_exact_default_carrier_owns_the_unit_mirror_guard() {
         );
         let mut current = original.clone();
         current.model.attributes[0].values = vec![Some(AttributeValue::Integer(3))];
-        assert_eq!(validate(&current, &original, &source_scan).is_err(), owned);
+        assert_eq!(
+            !edited_properties(&current, &original, &source_scan).is_empty(),
+            owned
+        );
         assert!(!is_property(&original.model.attributes[0]));
     }
 }

@@ -128,6 +128,7 @@ fn finish(
     if let Written::Semantic {
         coverage,
         omitted_envelope_bytes,
+        unwritten,
         ..
     } = written
     {
@@ -138,6 +139,7 @@ fn finish(
             != cadmpeg_ir::codec::write::ArenaDisposition::Written
             && !super::requires_native_partition(input.ir);
         losses.extend(super::accounting::losses(input.ir, regenerated_brep));
+        losses.extend(unwritten.notes());
     }
     if let Some(message) = displacement {
         losses.push(SldprtLossCode::SourceDialectDisplaced.note(message));
