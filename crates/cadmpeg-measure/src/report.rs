@@ -1088,7 +1088,7 @@ accessors!(BodyMeasures {
     name: Option<String>;
     /// The stored kind.
     kind: cadmpeg_ir::topology::BodyKind;
-    /// The stored visibility.
+    /// The effective display state in the selected assembly instances.
     visible: Option<bool>;
     /// The number of faces.
     faces: usize;

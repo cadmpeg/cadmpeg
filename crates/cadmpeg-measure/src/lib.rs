@@ -59,6 +59,7 @@ mod surface;
 mod tolerance;
 mod traversal;
 pub mod value;
+mod visibility;
 mod witness;
 
 mod bbox;
