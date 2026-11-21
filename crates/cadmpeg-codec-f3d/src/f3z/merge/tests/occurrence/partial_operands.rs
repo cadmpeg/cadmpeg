@@ -80,10 +80,10 @@ fn partial_connector_objects_follow_their_archive_source_scope() {
 #[test]
 fn form_occurrences_rewrite_every_typed_identity_with_absent_native_targets() {
     use cadmpeg_ir::document::EntityRewrite;
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
     use cadmpeg_ir::features::form::*;
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureEvaluation, FeatureOperation, NonEmptyMembers,
-    };
+    use cadmpeg_ir::features::selections::NonEmptyMembers;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::ids::{BodyId, NativeId, SubdId};
     let mut feature = super::feature("f3d:model:feature#form", 0);
     let native = NativeId::mint("f3d:Design1/BulkStream.dat:design-record#99").unwrap();

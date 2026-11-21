@@ -1,5 +1,5 @@
-use crate::features::PlanarProfileRef;
-use crate::features::{
+use crate::features::profiles::PlanarProfileRef;
+use crate::features::profiles::{
     ProfileRef, SketchProfileBoundaryUse, SketchProfileLoops, SketchProfileRegion,
     SketchProfileRegions,
 };

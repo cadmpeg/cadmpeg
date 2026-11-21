@@ -28,10 +28,10 @@ use crate::loss::NxLossCode;
 use crate::parasolid::StreamKind;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{
-    BodySelection, BooleanOp, DatumPlaneReference, Feature, FeatureDefinition, FeatureOperation,
-    UnresolvedFamily,
-};
+use cadmpeg_ir::features::datums::DatumPlaneReference;
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation, UnresolvedFamily};
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display};

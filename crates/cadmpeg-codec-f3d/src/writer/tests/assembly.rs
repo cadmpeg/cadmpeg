@@ -220,3 +220,111 @@ fn writer_accepts_a_standalone_joint_nested_below_a_component_insert_key() {
         &joint,
     );
 }
+
+#[test]
+fn writer_checks_the_insertion_selected_by_a_shared_occurrence_path() {
+    use crate::records::feature::assembly_features::{
+        DesignComponentOccurrence, DesignComponentOccurrenceDraft,
+        DesignComponentOccurrencePlacement,
+    };
+    use cadmpeg_ir::products::{ProductDefinition, Storage};
+    let carrier_id = format!("{STREAM}:design-component-occurrence#7");
+    let native = crate::native::F3dNative {
+        design_parameter_scopes: vec![insert_scope(), assemble_scope()],
+        design_types: vec![assemble_type()],
+        design_component_occurrences: vec![DesignComponentOccurrence::try_new(
+            DesignComponentOccurrenceDraft {
+                id: carrier_id.clone(),
+                class_tag: "290".to_owned().try_into().unwrap(),
+                record_index: 7,
+                byte_offset: 0,
+                component_record_index: 1,
+                component_guid: NESTED_KEY.to_owned().try_into().unwrap(),
+                occurrence_guid: NESTED_KEY.to_owned().try_into().unwrap(),
+                placement: DesignComponentOccurrencePlacement::Base,
+                owner_entity: 1,
+            },
+        )
+        .unwrap()],
+        ..Default::default()
+    };
+    let insertion = insert_occurrence();
+    let mut second = insertion.clone();
+    second.id = OccurrenceId::mint("f3d:model:occurrence#second").unwrap();
+    second.native_ref = Some(format!("{STREAM}:design-parameter-scope#101"));
+    let part_id = cadmpeg_ir::ids::ProductDefinitionId::mint("f3d:model:component#part").unwrap();
+    let mut child = Occurrence::new(
+        OccurrenceId::mint(format!("f3d:model:occurrence#{NESTED_KEY}")).unwrap(),
+        part_id.clone(),
+        Some(cadmpeg_ir::transform::Transform::identity()),
+    );
+    child.native_ref = Some(carrier_id);
+    let mut prototype = ProductDefinition::new(insertion.prototype.clone(), Storage::Embedded);
+    prototype.occurrences.push(child.id.clone());
+    let mut target = CadIr::empty();
+    target.model.product_definitions = vec![
+        prototype,
+        ProductDefinition::new(part_id, Storage::Embedded),
+    ];
+    target.model.occurrences = vec![insertion.clone(), second.clone(), child];
+    crate::tree::place_top_level(&mut target.model, insertion.id.clone());
+    crate::tree::place_top_level(&mut target.model, second.id.clone());
+    let expanded = crate::tree::expand(
+        &cadmpeg_core::decode::ResourceLimits::default(),
+        &target.model.product_definitions,
+        &target.model.occurrences,
+        &std::collections::BTreeMap::new(),
+    )
+    .unwrap();
+    let mut inserts = crate::design::components::ComponentInserts::decide(
+        &native.design_parameter_scopes,
+        &[],
+        &[],
+    );
+    inserts.bind_external_paths(&[], &expanded.occurrences);
+    let mut projected = crate::design::assembly::project_assembly_joints_with_paths(
+        &native.design_parameter_scopes,
+        &native.design_component_occurrences,
+        &inserts,
+        &[],
+        &crate::design::components::paths::LocalOccurrencePaths::new(
+            &native.design_component_occurrences,
+            &[],
+            &expanded.definitions,
+            &expanded.occurrences,
+            &native.design_parameter_scopes,
+        ),
+    );
+    crate::f3z::merge::rebind_standalone_projected_joints(
+        &native,
+        &expanded.definitions,
+        &expanded.occurrences,
+        &mut projected.joints,
+    );
+    assert_eq!(projected.joints.len(), 1);
+    for connector in projected.joints[0].connectors_mut() {
+        assert_eq!(
+            connector.operand.container,
+            OperandContainer::Occurrence {
+                occurrence: OccurrenceId::mint(format!("f3d:model:occurrence#insert:{NESTED_KEY}"))
+                    .unwrap(),
+                occurrence_path: Vec::new(),
+            }
+        );
+        connector.operand.container = OperandContainer::Occurrence {
+            occurrence: insertion.id.clone(),
+            occurrence_path: vec![NESTED_KEY.to_owned()],
+        };
+    }
+    target.model.assembly_joints = projected.joints;
+    crate::writer::primitives::validate_assembly_projection(&target, Some(&native)).unwrap();
+    for connector in target.model.assembly_joints[0].connectors_mut() {
+        connector.operand.container = OperandContainer::Occurrence {
+            occurrence: second.id.clone(),
+            occurrence_path: vec![NESTED_KEY.to_owned()],
+        };
+    }
+    assert!(
+        crate::writer::primitives::validate_assembly_projection(&target, Some(&native)).is_err()
+    );
+}

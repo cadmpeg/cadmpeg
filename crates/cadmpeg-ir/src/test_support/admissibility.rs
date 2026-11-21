@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Accept/reject fixtures for the full validator and the admission subsets.
 
-use crate::features::FinitePoint3;
+use crate::features::geometry::FinitePoint3;
 use crate::ids::{IdentityError, PointId, RegionId, ShellId, VertexId};
 use crate::math::Point3;
 use crate::topology::{Point, Shell, Vertex};

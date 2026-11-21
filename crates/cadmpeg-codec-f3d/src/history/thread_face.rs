@@ -7,9 +7,9 @@ use crate::history_records::{
     AsmHistory,
 };
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
-use cadmpeg_ir::features::{
-    FaceSelection, Feature, FeatureDefinition, FeatureInputTopology, FeatureOperation,
-};
+use cadmpeg_ir::features::evaluation::FeatureInputTopology;
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::Face;

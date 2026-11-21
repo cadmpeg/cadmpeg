@@ -12,7 +12,7 @@ use crate::layout::e5_rolling_ball_tail as d8_tail;
 use crate::math::distance;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::{
     nurbs::NurbsSurface, CurveGeometry, ProceduralSurfaceDefinition, RollingBallJetSite,
     SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,

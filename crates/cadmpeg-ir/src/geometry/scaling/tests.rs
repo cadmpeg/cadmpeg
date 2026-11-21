@@ -344,7 +344,7 @@ fn a_scaled_polyline_keeps_its_parameters_and_refuses_only_overflow() {
         SolvedCurveGeometry::Polyline(
             PolylineCurve::new(
                 PolylineSamples::Parameterized {
-                    vertices: crate::features::NonEmptyMembers::try_from(vec![
+                    vertices: crate::features::selections::NonEmptyMembers::try_from(vec![
                         PolylineVertex {
                             parameter: 3.0,
                             point: Point3::new(point, 0.0, 0.0),
@@ -380,7 +380,7 @@ fn a_scaled_polyline_keeps_its_parameters_and_refuses_only_overflow() {
     assert_eq!(
         scaled
             .points()
-            .map(crate::features::FinitePoint3::get)
+            .map(crate::features::geometry::FinitePoint3::get)
             .collect::<Vec<_>>(),
         vec![Point3::new(25.4, 0.0, 0.0), Point3::new(0.0, 25.4, 0.0)]
     );

@@ -10,7 +10,7 @@ use crate::classification::{classify, FeatureClass};
 use crate::records::{FeatureInputComponentPathEntry, FeatureInputLane};
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::FeatureDirection3;
+use cadmpeg_ir::features::geometry::FeatureDirection3;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::units::UnitVector3;
 
@@ -517,13 +517,14 @@ mod tests {
     use crate::records::ObjectId;
     use crate::records::{Feature, FeatureHistory, FeatureInputClass, FeatureInputName};
     use cadmpeg_core::decode::u64_from_index;
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureId, FeatureOperation};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::math::Vector3;
     use std::collections::BTreeMap;
 
     fn unique_draft_direction(payload: &[u8], start: usize, end: usize) -> Option<Vector3> {
         typed_unique_draft_direction(payload, start, end)
-            .map(cadmpeg_ir::features::FeatureDirection3::get)
+            .map(cadmpeg_ir::features::geometry::FeatureDirection3::get)
     }
 
     fn component(instance: u16, source: u32, identity: u32, local_id: u32) -> Vec<u8> {
@@ -768,7 +769,7 @@ mod tests {
             .expect("neutral-plane record");
         assert_eq!(
             super::unique_declared_draft_direction(&lane.native_payload, neutral.2, first_face)
-                .map(cadmpeg_ir::features::FeatureDirection3::get),
+                .map(cadmpeg_ir::features::geometry::FeatureDirection3::get),
             Some(Vector3::new(0.0, 0.0, 1.0))
         );
         let operands = draft_operands(&feature, &lane, object_start, class_offset)
@@ -818,15 +819,15 @@ mod tests {
             ordinal: 0,
             name: Some("Draft1".into()),
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: Some("Draft".into()),
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Draft {
                     faces: FaceSelection::Unresolved,
-                    anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                    anchor: cadmpeg_ir::features::direct_edit::DraftAnchor::NeutralPlane {
                         plane: FaceSelection::Unresolved,
                         pull: None,
                     },
@@ -847,9 +848,9 @@ mod tests {
             projected[0].evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Draft {
                 faces: FaceSelection::Native(faces),
-                anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                anchor: cadmpeg_ir::features::direct_edit::DraftAnchor::NeutralPlane {
                     plane: FaceSelection::Native(neutral_plane),
-                    pull: Some(cadmpeg_ir::features::DraftPull {
+                    pull: Some(cadmpeg_ir::features::direct_edit::DraftPull {
                         direction: geometry_1,
                         ..
                     }),
@@ -865,15 +866,17 @@ mod tests {
                 panic!("typed draft");
             };
             *faces = FaceSelection::Native("explicit-faces".into());
-            let (cadmpeg_ir::features::DraftAnchor::NeutralPlane {
-                pull: Some(pull), ..
+            let (cadmpeg_ir::features::direct_edit::DraftAnchor::NeutralPlane {
+                pull: Some(pull),
+                ..
             }
-            | cadmpeg_ir::features::DraftAnchor::PartingLine { pull, .. }) = anchor
+            | cadmpeg_ir::features::direct_edit::DraftAnchor::PartingLine { pull, .. }) = anchor
             else {
                 panic!("draft pull fixture");
             };
             pull.direction =
-                cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap();
+                cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
+                    .unwrap();
         });
         super::super::projections::project_draft_operands(
             &mut projected,
@@ -885,8 +888,8 @@ mod tests {
             projected[0].evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Draft {
                 faces: FaceSelection::Native(faces),
-                anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
-                    pull: Some(cadmpeg_ir::features::DraftPull {
+                anchor: cadmpeg_ir::features::direct_edit::DraftAnchor::NeutralPlane {
+                    pull: Some(cadmpeg_ir::features::direct_edit::DraftPull {
                         direction: geometry_1,
                         ..
                     }),

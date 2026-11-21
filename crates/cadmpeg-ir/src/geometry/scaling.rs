@@ -15,7 +15,7 @@ use super::analytic::{
 use super::nurbs::NurbsError;
 use super::sampled::GeometryLayoutError;
 use super::{PlacedCurve, PlacedSurface, SolvedCurveGeometry, SolvedSurfaceGeometry};
-use crate::features::FinitePoint3;
+use crate::features::geometry::FinitePoint3;
 use crate::scalar::{NonZeroLength, PositiveLength, PositiveReal};
 
 /// A unit scaling that a solved carrier refuses.

@@ -36,7 +36,8 @@ use crate::design::refs::{ConfigurationRef, EntityRef, Evaluated, Member, Positi
 use crate::design::scope::{DesignScope, OccurrenceDesign};
 use crate::design::selection::{Anchor, Members, PickTarget, Picked, Picks, Selection};
 use crate::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKind};
-use crate::features::{ConfigurationId, FeatureId, FinitePoint3, ParameterId};
+use crate::features::geometry::FinitePoint3;
+use crate::features::{ConfigurationId, FeatureId, ParameterId};
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
 use crate::pmi::LimitsAndFits;
 use crate::scalar::{FiniteReal, Length};
@@ -1545,6 +1546,7 @@ fn removing_an_unordered_member_removes_its_own_result() {
         target: body_target(2),
         name: "on two".to_owned(),
         values: Vec::new(),
+        native_ref: None,
     }];
     document.model.presentation_layers = vec![crate::presentation::PresentationLayer {
         id: id("layer", 1),

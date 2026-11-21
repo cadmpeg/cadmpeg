@@ -729,7 +729,7 @@ pub(crate) enum DesignHemParameterOwners {
 #[serde(try_from = "DesignHemOperationWire", into = "DesignHemOperationWire")]
 pub(crate) struct DesignHemOperation {
     /// Placement of the bend against the selected edge.
-    pub(crate) bend_position: cadmpeg_ir::features::SheetMetalHemBendPosition,
+    pub(crate) bend_position: cadmpeg_ir::features::sheet_metal_forms::SheetMetalHemBendPosition,
     /// Native Flip flag; false is forward, true is reverse.
     pub(crate) flipped: bool,
     /// Selection-wrapper record for the hem edge.
@@ -751,7 +751,7 @@ pub(crate) struct DesignHemOperation {
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct DesignHemOperationWire {
-    bend_position: cadmpeg_ir::features::SheetMetalHemBendPosition,
+    bend_position: cadmpeg_ir::features::sheet_metal_forms::SheetMetalHemBendPosition,
     flipped: bool,
     /// Selection-wrapper record for the hem edge.
     edge_wrapper_record_index: u32,
@@ -786,7 +786,9 @@ impl TryFrom<DesignHemOperationWire> for DesignHemOperation {
     type Error = String;
 
     fn try_from(wire: DesignHemOperationWire) -> Result<Self, Self::Error> {
-        if wire.bend_position != cadmpeg_ir::features::SheetMetalHemBendPosition::Adjacent {
+        if wire.bend_position
+            != cadmpeg_ir::features::sheet_metal_forms::SheetMetalHemBendPosition::Adjacent
+        {
             return Err("unsupported native Hem bend position".into());
         }
         if Some(wire.edge_operand_record_index) != wire.edge_group_record_index.checked_add(3) {

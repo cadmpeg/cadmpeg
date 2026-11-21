@@ -4,9 +4,8 @@
 use std::collections::HashSet;
 
 use cadmpeg_ir::document::Model;
-use cadmpeg_ir::features::{
-    Feature, FeatureDefinition, FeatureId, FeatureOperation, PlanarProfileRef, ProfileRef,
-};
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
 pub(crate) struct FeatureProfileData<'a> {

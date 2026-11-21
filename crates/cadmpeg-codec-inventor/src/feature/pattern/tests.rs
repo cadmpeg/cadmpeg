@@ -6,7 +6,7 @@ use crate::feature::tests::{
 };
 use crate::record_identity::{Located, RecordTypeId};
 use crate::test_support::test_fixtures::{content_at, parse as with_bytes};
-use cadmpeg_ir::features::ParameterValue;
+use cadmpeg_ir::features::parameters::ParameterValue;
 use cadmpeg_ir::scalar::Length;
 
 #[test]
@@ -32,7 +32,7 @@ fn is_linear_pattern_accepts_linear_and_rejects_mirror_and_native_features() {
         ),
         (
             PatternTransform::Mirror {
-                plane_origin: cadmpeg_ir::features::FinitePoint3::new(
+                plane_origin: cadmpeg_ir::features::geometry::FinitePoint3::new(
                     cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 )
                 .expect("finite origin"),
@@ -42,7 +42,7 @@ fn is_linear_pattern_accepts_linear_and_rejects_mirror_and_native_features() {
             false,
         ),
     ] {
-        feature.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        feature.evaluation = cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: vec![PatternSeed::Feature(feature.id.clone())],
                 pattern: PatternKind::new(transform).expect("valid synthetic pattern"),
@@ -496,7 +496,7 @@ fn project_fixture_with_spacings(
         feature.evaluation.definition()
     {
         if let [PatternSeed::Bodies(source_selection)] = seeds.as_slice() {
-            use cadmpeg_ir::features::BodySelection;
+            use cadmpeg_ir::features::selections::BodySelection;
             let BodySelection::Local {
                 bodies: selections,
                 native,
@@ -536,7 +536,7 @@ fn project_fixture_with_spacings(
             let mut definition = resolved.evaluation.definition().clone();
             super::super::body_selection::definition(&mut definition, &bodies, None);
             resolved.evaluation =
-                cadmpeg_ir::features::FeatureEvaluation::from_definition(definition);
+                cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(definition);
             assert!(matches_source(
                 source,
                 &resolved,
@@ -589,16 +589,17 @@ fn project_fixture_with_spacings(
                 );
             }
             "sketch" => {
-                altered[0].evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                    FeatureDefinition::Operation(FeatureOperation::Sketch {
-                        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
-                            cadmpeg_ir::sketches::SketchId::mint(
-                                "inventor:design:sketch#synthetic",
-                            )
-                            .expect("sketch identity"),
-                        )),
-                    }),
-                );
+                altered[0].evaluation =
+                    cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+                        FeatureDefinition::Operation(FeatureOperation::Sketch {
+                            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                                cadmpeg_ir::sketches::SketchId::mint(
+                                    "inventor:design:sketch#synthetic",
+                                )
+                                .expect("sketch identity"),
+                            )),
+                        }),
+                    );
             }
             "native_binding" => altered[0].native_ref = Some(source.id()),
             _ => unreachable!(),
@@ -832,7 +833,7 @@ fn project_fixture_with_spacings(
             _ => unreachable!(),
         }
         let mut changed = feature.clone();
-        changed.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        changed.evaluation = cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: seeds.clone(),
                 pattern: PatternKind::new(transform).expect("pattern"),
@@ -1050,7 +1051,7 @@ fn project_fixture_with_spacings(
         panic!("linear");
     };
     *count += 1;
-    changed.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+    changed.evaluation = cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             seeds: seeds.clone(),
             pattern: PatternKind::new(transform).expect("valid synthetic pattern fixture"),
@@ -1070,7 +1071,7 @@ fn project_fixture_with_spacings(
     } else {
         changed_seeds.reverse();
     }
-    changed.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+    changed.evaluation = cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             seeds: changed_seeds,
             pattern: pattern.clone(),
