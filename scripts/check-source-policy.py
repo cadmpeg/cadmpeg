@@ -793,6 +793,12 @@ def scan_patterns(path: Path, source: str) -> list[Finding]:
                     report("foreign_native_namespace", code.count("\n", 0, access.start()) + 1,
                            "Codec crates read only their own native namespace; the convert gate assumes it (ExportPlan::carried_errors).")
 
+    if codec is not None and not relative_path(path).startswith(MEASUREMENT_WRITER_ROOT):
+        for use in re.finditer(r"\bcadmpeg_measure\b", code):
+            report("measurement_use", code.count("\n", 0, use.start()) + 1,
+                   f"Codec production code uses cadmpeg_measure only under {MEASUREMENT_WRITER_ROOT}; "
+                   "a decoder selects its layout, carrier and interpretation from format semantics.")
+
     layout_source = re.match(
         r"// SPDX-License-Identifier: Apache-2\.0\n"
         r"//! Byte-offset and value constants generated from `(docs/layouts/[A-Za-z0-9_-]+\.toml)`\.\n",
@@ -1611,30 +1617,48 @@ def scan_authoring_paths() -> list[Finding]:
 
 
 MEASUREMENT_CRATE = "cadmpeg-measure"
-MEASUREMENT_CONSUMERS = {"cadmpeg", "cadmpeg-registry"}
+MEASUREMENT_WRITER_CRATE = "cadmpeg-codec-f3d"
+MEASUREMENT_CONSUMERS = {"cadmpeg", "cadmpeg-registry", MEASUREMENT_WRITER_CRATE}
+MEASUREMENT_WRITER_ROOT = f"crates/{MEASUREMENT_WRITER_CRATE}/src/writer/"
 PRODUCTION_DEPENDENCY_HEADER = re.compile(
     r"^\s*\[\s*(?:target\.[^\]]+?\.)?(?:build-)?dependencies\s*(?:\.|\])"
 )
 TABLE_HEADER = re.compile(r"^\s*\[")
+DEPENDENCY_KEY = re.compile(r"^\s*([A-Za-z0-9_-]+)\s*[.=]")
 
 
-def dependency_packages(table: object) -> set[str]:
-    """The package names a dependency table lists, following `package` renames."""
+def dependency_package(key: str, value: object, workspace: dict[str, str]) -> str:
+    """The package one dependency entry names: its `package`, else the package of the
+    `[workspace.dependencies]` entry it inherits, else its key."""
+    if isinstance(value, dict):
+        package = value.get("package")
+        if isinstance(package, str):
+            return package
+        if value.get("workspace") is True:
+            return workspace.get(key, key)
+    return key
+
+
+def workspace_packages() -> dict[str, str]:
+    """The package each key of the root manifest's `[workspace.dependencies]` names."""
+    try:
+        data = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8", errors="replace"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return {}
+    workspace = data.get("workspace")
+    table = workspace.get("dependencies") if isinstance(workspace, dict) else None
     if not isinstance(table, dict):
-        return set()
-    packages = set()
-    for key, value in table.items():
-        package = value.get("package") if isinstance(value, dict) else None
-        packages.add(package if isinstance(package, str) else key)
-    return packages
+        return {}
+    return {key: dependency_package(key, value, {}) for key, value in table.items()}
 
 
 def scan_measurement_dependency() -> list[Finding]:
-    """Report a production dependency on the measurement crate outside document-check consumers."""
+    """Report a production dependency on the measurement crate outside MEASUREMENT_CONSUMERS,
+    and one the writer crate renames, which `measurement_use` would not see."""
     findings: list[Finding] = []
+    workspace = workspace_packages()
     for manifest in sorted((ROOT / "crates").glob("*/Cargo.toml")):
-        if manifest.parent.name in MEASUREMENT_CONSUMERS:
-            continue
+        crate = manifest.parent.name
         text = manifest.read_text(encoding="utf-8", errors="replace")
         try:
             data = tomllib.loads(text)
@@ -1646,22 +1670,31 @@ def scan_measurement_dependency() -> list[Finding]:
             for target in targets.values():
                 if isinstance(target, dict):
                     tables += [target.get(name) for name in ("dependencies", "build-dependencies")]
-        if not any(MEASUREMENT_CRATE in dependency_packages(table) for table in tables):
+        keys = {key for table in tables if isinstance(table, dict) for key, value in table.items()
+                if dependency_package(key, value, workspace) == MEASUREMENT_CRATE}
+        if not keys:
+            continue
+        renamed = crate == MEASUREMENT_WRITER_CRATE and keys != {MEASUREMENT_CRATE}
+        if crate in MEASUREMENT_CONSUMERS and not renamed:
             continue
         line = 1
         production = False
         for number, content in enumerate(text.splitlines(), start=1):
             if TABLE_HEADER.match(content):
                 production = bool(PRODUCTION_DEPENDENCY_HEADER.match(content))
-            if production and MEASUREMENT_CRATE in content:
+            entry = DEPENDENCY_KEY.match(content)
+            if production and (MEASUREMENT_CRATE in content or entry and entry.group(1) in keys):
                 line = number
                 break
         findings.append(Finding(
             "measurement_dependency",
             manifest.relative_to(ROOT).as_posix(),
             line,
-            f"The cadmpeg CLI and cadmpeg-registry can list {MEASUREMENT_CRATE} outside [dev-dependencies]; "
-            "a decoder or encoder never consumes measurement.",
+            f"{MEASUREMENT_WRITER_CRATE} lists {MEASUREMENT_CRATE} under no other name: "
+            "measurement_use reads the name cadmpeg_measure." if renamed else
+            f"The cadmpeg CLI, cadmpeg-registry and {MEASUREMENT_WRITER_CRATE} can list "
+            f"{MEASUREMENT_CRATE} outside [dev-dependencies]; a codec selects its layout, carrier "
+            "and interpretation from format semantics.",
         ))
     return findings
 

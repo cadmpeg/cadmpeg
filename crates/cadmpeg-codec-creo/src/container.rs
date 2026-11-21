@@ -1608,23 +1608,70 @@ fn loop_array_sections<'a>(
     selected
 }
 
-fn surface_rows(sections: &[ScannedSection<'_>]) -> Result<Vec<SurfaceRow>, CodecError> {
-    collect_section_records_result(
-        sections.iter(),
-        |bytes| Ok(surface::rows(bytes)),
-        |row, base| row.offset += base,
-        |row| row.offset,
-    )
+type RowsWithPackedReadings = (Vec<SurfaceRow>, Vec<surface::PackedRowReading>);
+
+/// Charge the passed-over surface-row reading of the section at `base`.
+pub(crate) fn charge_packed_row_readings(
+    base: usize,
+    readings: Vec<surface::PackedRowReading>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    for reading in readings {
+        let place = match reading.frame_start {
+            Some(start) => format!("srf_array frame at byte {}", base + start),
+            None => format!("surface rows outside counted frames in the section at byte {base}"),
+        };
+        losses.push(match reading.kept {
+            surface::KeptRowReading::Packed => {
+                crate::loss::CreoLossCode::SurfaceRowPackedReading.note(format!(
+                    "{place} read packed c0..df XX YY row fields in place of {} one- and two-byte row readings",
+                    reading.replaced
+                ))
+            }
+            surface::KeptRowReading::Compact => {
+                crate::loss::CreoLossCode::SurfaceRowCompactReading.note(format!(
+                    "{place} read one- and two-byte row fields and dropped {} rows of the packed c0..df XX YY reading",
+                    reading.replaced
+                ))
+            }
+        });
+    }
+}
+
+fn charged_surface_rows<'a, 'data: 'a>(
+    sections: impl Iterator<Item = &'a ScannedSection<'data>>,
+    read: impl Fn(&[u8]) -> RowsWithPackedReadings,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Vec<SurfaceRow> {
+    let mut rows = Vec::new();
+    for section in sections {
+        let base = section.section.offset();
+        let (section_rows, readings) = read(section.region);
+        charge_packed_row_readings(base, readings, losses);
+        rows.extend(section_rows.into_iter().map(|mut row| {
+            row.offset += base;
+            row
+        }));
+    }
+    rows.as_mut_slice().sort_by_key(|left| left.offset);
+    rows
+}
+
+fn surface_rows(
+    sections: &[ScannedSection<'_>],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Vec<SurfaceRow> {
+    charged_surface_rows(sections.iter(), surface::rows_with_packed_readings, losses)
 }
 
 fn cross_section_surface_rows(
     sections: &[ScannedSection<'_>],
-) -> Result<Vec<SurfaceRow>, CodecError> {
-    collect_section_records_result(
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Vec<SurfaceRow> {
+    charged_surface_rows(
         cross_sections(sections),
-        |bytes| Ok(surface::cross_section_rows(bytes)),
-        |record, base| record.offset += base,
-        |record| record.offset,
+        surface::cross_section_rows_with_packed_readings,
+        losses,
     )
 }
 
@@ -2010,11 +2057,21 @@ fn cross_section_curve_prototypes(
     )
 }
 
-fn datum_planes(sections: &[ScannedSection<'_>]) -> Result<Vec<DatumPlaneRecord>, CodecError> {
-    collect_section_records_result(
+fn datum_planes(
+    sections: &[ScannedSection<'_>],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<Vec<DatumPlaneRecord>, CodecError> {
+    let datum_sections = || {
         sections
             .iter()
-            .filter(|section| section.section.name() == "ActDatums"),
+            .filter(|section| section.section.name() == "ActDatums")
+    };
+    for section in datum_sections() {
+        let (_, readings) = surface::rows_with_packed_readings(section.region);
+        charge_packed_row_readings(section.section.offset(), readings, losses);
+    }
+    collect_section_records_result(
+        datum_sections(),
         |bytes| {
             let mut planes = datum::planes(bytes);
             if let Some(plane) = datum::named_plane(bytes) {
@@ -2876,12 +2933,13 @@ pub(crate) fn scan_bytes<'a>(
         sections,
     );
     let loop_arrays = loop_array_scan(&loop_array_sections);
-    let mut nonvisible_surface_rows = surface_rows(&nonvisible_geometry_sections)?;
+    let mut nonvisible_surface_rows =
+        surface_rows(&nonvisible_geometry_sections, &mut local_work_cap_losses);
     nonvisible_surface_rows.extend(legacy_geometry.nonvisible_rows);
     nonvisible_surface_rows
         .as_mut_slice()
         .sort_by_key(|left| left.offset);
-    let mut surface_rows = surface_rows(&model_geometry_sections)?;
+    let mut surface_rows = surface_rows(&model_geometry_sections, &mut local_work_cap_losses);
     surface_rows.extend(legacy_geometry.rows);
     let surface_row_owners = collect_section_records_result(
         model_geometry_sections.iter(),
@@ -2890,7 +2948,8 @@ pub(crate) fn scan_bytes<'a>(
         |record| record.offset,
     )?;
     surface_rows.as_mut_slice().sort_by_key(|left| left.offset);
-    let cross_section_surface_rows = cross_section_surface_rows(sections)?;
+    let cross_section_surface_rows =
+        cross_section_surface_rows(sections, &mut local_work_cap_losses);
     let nonvisible_surface_parameters = surface_parameters(
         ctx,
         &nonvisible_geometry_sections,
@@ -3034,7 +3093,7 @@ pub(crate) fn scan_bytes<'a>(
     let (half_edges, loops) = topology::build(&curve_topology_rows)?;
     let vertex_orbits = topology::vertex_orbits(&half_edges)?;
     let face_components = topology::face_components(&curve_topology_rows)?;
-    let datum_planes = datum_planes(sections)?;
+    let datum_planes = datum_planes(sections, &mut local_work_cap_losses)?;
     let feature_operation_states = feature_operation_states(sections)?;
     let model_dimensions = model_dimensions(sections)?;
     let feature_operations = feature_operations(sections)?;

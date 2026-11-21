@@ -89,7 +89,10 @@ pub(super) fn input_edge_bodies<'a>(
             (
                 selected.history,
                 Want {
-                    feature,
+                    origin: feature,
+                    producer: None,
+                    consumer: Some(feature),
+                    identity: None,
                     state: state.state_id,
                     slot,
                     consumed: true,
@@ -110,7 +113,7 @@ pub(super) fn input_bindings(
     let Some(input) = want.input else {
         return Vec::new();
     };
-    let prefix = crate::ids::feature_input_prefix(&want.feature.id, want.state);
+    let prefix = crate::ids::feature_input_prefix(&want.origin.id, want.state);
     let mut edges = BTreeMap::<i64, Option<&cadmpeg_ir::topology::Edge>>::new();
     for edge in &nest.edges {
         if let Some(slot) = super::super::stable_ref(edge.id.as_str()) {
@@ -123,7 +126,7 @@ pub(super) fn input_bindings(
     let mut bindings = Vec::new();
     for geometry in &input.edge_geometry {
         let Some(slot) =
-            crate::ids::feature_input_edge_slot(&want.feature.id, want.state, &geometry.edge)
+            crate::ids::feature_input_edge_slot(&want.origin.id, want.state, &geometry.edge)
         else {
             continue;
         };

@@ -20,6 +20,7 @@ fn parameter_scope_parses_named_variable_tail() {
     bytes.extend_from_slice(&[0; 6]);
     bytes.extend_from_slice(&7u32.to_le_bytes());
     lp_utf16(&mut bytes, "Draft");
+    let kind_end = bytes.len();
     bytes.extend_from_slice(&1u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 4]);
     lp_utf16(&mut bytes, "draft-name");
@@ -68,8 +69,11 @@ fn parameter_scope_parses_named_variable_tail() {
     );
     assert_eq!(scope.feature_ordinal.get(), 1);
     assert_eq!(scope.history_state_id(), Some(7));
-    assert_eq!(scope.previous_history_state_id(), None);
-    assert_eq!(scope.previous_history_state_id_offset(), None);
+    assert_eq!(scope.previous_history_state_id(), Some(9));
+    assert_eq!(
+        scope.previous_history_state_id_offset(),
+        Some(u64_from_index(kind_end + 31 + 2 * "draft-name".len()))
+    );
     assert_eq!(
         scope
             .reference_members()

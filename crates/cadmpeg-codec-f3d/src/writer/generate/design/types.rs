@@ -242,3 +242,165 @@ pub(super) const ANCESTORS: [TypeRow; 7] = [
         "Body",
     ),
 ];
+
+/// The `Sketch` scope.
+pub(super) const SKETCH_SCOPE: TypeRow = row(
+    "8DA771B7-52ED-42FC-94E2-2353FE141373",
+    "A2052F46-21B4-4AAA-9AF1-C371F0AB6CAB",
+    5,
+    "Fusion",
+);
+/// The sketch container; its Geometry member has the container's index.
+pub(super) const SKETCH_CONTAINER: TypeRow = row(
+    "44A64366-4BD3-4B24-881A-F94C206E8F2D",
+    SKETCH_GEOMETRY_MEMBER_GUID,
+    18,
+    "MSketch",
+);
+/// The sketch frame record.
+pub(super) const SKETCH_FRAME: TypeRow = row(
+    "F47A46FB-DA27-4AFA-8A72-1B38FA596E23",
+    PROPERTY_OWNER_GUID,
+    0,
+    "Geometry",
+);
+pub(super) const SKETCH_POINT: TypeRow = row(
+    "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB",
+    "8E9D588C-28EF-43C4-B9A6-AA5430A68D4B",
+    11,
+    "Geometry",
+);
+pub(super) const SKETCH_POINT_COMPANION: TypeRow = row(
+    "362B7EC3-0F09-47C8-A3BE-DC066715CDAE",
+    PROPERTY_OWNER_GUID,
+    0,
+    "Geometry",
+);
+pub(super) const SKETCH_LINE: TypeRow = row(
+    "DCA267ED-D615-4934-B64F-AD805E8003E2",
+    SKETCH_CURVE_GUID,
+    2,
+    "Geometry",
+);
+pub(super) const SKETCH_CIRCULAR_CURVE: TypeRow = row(
+    "F0130424-8B7E-4092-93C9-1CA807482534",
+    SKETCH_CURVE_GUID,
+    0,
+    "Geometry",
+);
+pub(super) const SKETCH_RELATION: TypeRow =
+    row(SKETCH_RELATION_GUID, DATA_MODEL_ROOT_GUID, 3, "MSketch");
+pub(super) const SKETCH_TANGENCY: TypeRow = row(
+    "24DB790E-3DCD-4336-AFA3-6F119EF2239B",
+    SKETCH_RELATION_GUID,
+    0,
+    "MSketch",
+);
+pub(super) const SKETCH_PLACEMENT: TypeRow = row(
+    "7B6C3C2D-4096-4E6D-B225-699E8C2D9355",
+    "2CA5A1CD-C99B-4C9B-91AF-57989148E841",
+    14,
+    "Fusion",
+);
+pub(super) const PLACEMENT_PATH: TypeRow = row(
+    "5A1BF548-241F-46FD-9FB5-E4B05126EB9D",
+    "6144EA59-3ACA-4172-9F14-A6531E94D69B",
+    1,
+    "Fusion",
+);
+pub(super) const TRACKED_IDENTITY: TypeRow = row(
+    "90055C05-546C-4EE7-B3C9-3DD922AD0C9C",
+    "70F5E801-1E8E-436E-8A09-36487F8A2859",
+    0,
+    "EntityTracking",
+);
+pub(super) const PLACEMENT_TRANSFORM: TypeRow = row(
+    "CC54ECAD-6DE8-4DE1-803D-BBE0E751975B",
+    "9A171A9A-5599-4872-987C-9B5E8E2A6C9C",
+    0,
+    "EntityTracking",
+);
+pub(super) const TRANSFORM_TARGET: TypeRow = row(
+    "CB4F4CC2-9D6F-48BA-9B1F-20C1992C9C9C",
+    "5C069ACB-169F-4555-9792-815B4671DDA0",
+    2,
+    "EntityTracking",
+);
+pub(super) const PLACEMENT_TRACKING_FLAG: TypeRow = row(
+    "2DF7DA30-A4E4-4260-AFD1-D9C7154CB44B",
+    "872045B4-F653-4691-9752-ABC7684834BF",
+    0,
+    "EntityTracking",
+);
+pub(super) const SKETCHES_ROOT: TypeRow = row(
+    "3A7E4411-2E8A-4FA8-96A3-9902E1ACAF2F",
+    "5EAF2F0F-4AEE-4f20-B569-119A7BD1F36D",
+    0,
+    "Geometry",
+);
+/// The type of a sketch container's Geometry member.
+pub(super) const SKETCH_GEOMETRY_MEMBER: TypeRow = row(
+    SKETCH_GEOMETRY_MEMBER_GUID,
+    COMMON_DATA_COLLECTION_GUID,
+    4,
+    "Geometry",
+);
+
+const SKETCH_GEOMETRY_MEMBER_GUID: &str = "37AD519C-AFB3-4CE2-9E6D-E3269FC6CDB9";
+const SKETCH_CURVE_GUID: &str = "9FF71F46-205F-484B-A2B5-A245D0D8FE33";
+const SKETCH_RELATION_GUID: &str = "60403D47-0C49-49B0-BDE8-1679608164A2";
+
+/// The ancestors of the records of a `Sketch` item that a design with
+/// `Sketch` items lists with an empty entity-ID run (f3d.md §3.1, "Records
+/// of a Sketch item").
+pub(super) const SKETCH_ANCESTORS: [TypeRow; 9] = [
+    SKETCH_GEOMETRY_MEMBER,
+    row(
+        SKETCH_CURVE_GUID,
+        "8E9D588C-28EF-43C4-B9A6-AA5430A68D4B",
+        9,
+        "Geometry",
+    ),
+    row(
+        "2CA5A1CD-C99B-4C9B-91AF-57989148E841",
+        "F8CD0BB3-2CE6-4236-8C1B-6D0638BF215F",
+        1,
+        "Fusion",
+    ),
+    row(
+        "F8CD0BB3-2CE6-4236-8C1B-6D0638BF215F",
+        "E8BDB9D4-2E39-405C-B05E-E2206AD3F125",
+        2,
+        "Fusion",
+    ),
+    row(
+        "6144EA59-3ACA-4172-9F14-A6531E94D69B",
+        "F8CD0BB3-2CE6-4236-8C1B-6D0638BF215F",
+        0,
+        "Fusion",
+    ),
+    row(
+        "70F5E801-1E8E-436E-8A09-36487F8A2859",
+        DATA_MODEL_ROOT_GUID,
+        0,
+        "EntityTracking",
+    ),
+    row(
+        "9A171A9A-5599-4872-987C-9B5E8E2A6C9C",
+        "872045B4-F653-4691-9752-ABC7684834BF",
+        0,
+        "EntityTracking",
+    ),
+    row(
+        "872045B4-F653-4691-9752-ABC7684834BF",
+        "FA85BB02-9D57-4E5E-A3A1-3D150C7ED082",
+        1,
+        "EntityTracking",
+    ),
+    row(
+        "FA85BB02-9D57-4E5E-A3A1-3D150C7ED082",
+        DATA_MODEL_ROOT_GUID,
+        1,
+        "EntityTracking",
+    ),
+];

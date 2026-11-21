@@ -288,7 +288,7 @@ fn each_form_rejects_a_nonzero_unnamed_byte_and_a_second_frame() {
         let set_start =
             crate::design::test_support::indexed_record_offsets_for_test(&bytes).offsets(SET)[0];
         let mut mutated = bytes.clone();
-        mutated[set_start + 22] = if matches!(form, Form::DistanceAngle) {
+        mutated[set_start + 22] = if matches!(form, Form::TwoDistances | Form::DistanceAngle) {
             2
         } else {
             1
@@ -499,6 +499,39 @@ fn recognized_sets_keep_references_whose_definitions_or_generic_members_are_miss
             distance_owner_record_index: FIRST_OWNER
         }
     );
+}
+
+#[test]
+fn two_distances_reversal_is_independent_of_tangent_chain_and_keeps_its_owners() {
+    let (bytes, scope) = stream(Form::TwoDistances, false);
+    let set_start =
+        crate::design::test_support::indexed_record_offsets_for_test(&bytes).offsets(SET)[0];
+    for tangent in [0, 1] {
+        for reversed in [0, 1] {
+            let mut changed = bytes.clone();
+            changed[set_start + 21] = tangent;
+            changed[set_start + 22] = reversed;
+            let list = decode_bytes(&changed, &scope).unwrap();
+            let [set] = list.sets.as_slice() else {
+                panic!("one two-distances set");
+            };
+            assert_eq!(set.tangent_chain, tangent == 1);
+            assert_eq!(set.distance_reversed, reversed == 1);
+            assert_eq!(set.group_record_index, GROUP);
+            assert_eq!(
+                set.spec,
+                DesignChamferSetSpec::TwoDistances {
+                    first_owner_record_index: FIRST_OWNER,
+                    second_owner_record_index: SECOND_OWNER,
+                }
+            );
+        }
+    }
+    for invalid in 2..=u8::MAX {
+        let mut changed = bytes.clone();
+        changed[set_start + 22] = invalid;
+        assert!(decode_bytes(&changed, &scope).is_none());
+    }
 }
 
 #[test]

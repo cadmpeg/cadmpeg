@@ -776,3 +776,67 @@ fn datum_outline_constructor_requires_one_plane() {
         ]
     );
 }
+
+#[test]
+fn positional_plane_reads_packed_row_fields() {
+    let mut data = b"srf_array\0\xf8\x01".to_vec();
+    data.extend([0xc0, 0x4e, 0x20, 0x22, 0xc0, 0x42, 0x68, 1, 1, 0]);
+    data.extend([0x0f; 4]);
+    data.extend(ieee8(2.0));
+    data.push(0x0f);
+    data.extend(ieee8(3.0));
+    data.extend(ieee8(-2.0));
+    data.push(0x0f);
+    data.extend(ieee8(-3.0));
+    assert_eq!(
+        planes(&data),
+        vec![DatumPlaneRecord::new(
+            20_000,
+            17_000,
+            DatumPlane::new(Axis::Y, 0.0).expect("valid datum fixture"),
+            0.0,
+            [[Some(2.0), Some(3.0)], [Some(-2.0), Some(-3.0)]],
+            12
+        )
+        .expect("valid datum fixture")]
+    );
+}
+
+#[test]
+fn named_plane_reads_packed_row_fields() {
+    let data = b"\xe0\x01geom_id\0\xc0\x4e\x20\xe0\x01feat_id\0\xc0\x42\x68outline\0\xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0";
+    let plane = named_plane(data).expect("named plane");
+    assert_eq!((plane.id, plane.feature_id), (20_000, 17_000));
+}
+
+#[test]
+fn named_plane_packed_id_stops_at_a_named_record_header() {
+    let data = b"\xe0\x01geom_id\0\xc0\xe0\x01geom_type\0\x22\xe0\x01feat_id\0\x04outline\0\xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0";
+    assert!(named_plane(data).is_none());
+}
+
+#[test]
+fn named_plane_keeps_reference_identifiers_when_the_payload_keeps_the_compact_reading() {
+    // The packed feat_id c5 10 20 overfills the two-slot frame, so the payload
+    // keeps the one- and two-byte reading.
+    let mut data =
+        b"srf_array\0\xf8\x02\x07\x22\x04\x01\x00\x00\x05\x22\xc5\x10\x20\x01\x00\x00".to_vec();
+    data.extend_from_slice(
+        b"\xe0\x01geom_id\0\xc0\x4e\x20\xe0\x01geom_type\0\x22\
+        \xe0\x01feat_id\0\xc0\x42\x68\xe0\x01orient\0\x01\
+        \xe0\x01boundary_type\0\x00\xe0\x01next_geom_ptr\0\x00\
+        \xe0\x01outline\0\xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0\
+        \x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0",
+    );
+    assert!(!crate::surface::packed_reading_chosen(&data));
+    assert!(named_plane(&data).is_none());
+}
+
+#[test]
+fn named_plane_packed_id_stops_at_a_frame_label() {
+    let data = b"srf_array\0\xf8\x01\xe0\x01geom_id\0\xc5srf_array\0\xf8\x01\
+        \xe0\x01feat_id\0\x04\xe0\x01outline\0\xf9\x02\x03\
+        \x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0\
+        \x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0";
+    assert!(named_plane(data).is_none());
+}

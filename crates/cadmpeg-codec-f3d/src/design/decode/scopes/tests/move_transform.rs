@@ -410,6 +410,26 @@ fn move_transform_is_selected_by_the_marked_prologue_reference() {
 }
 
 #[test]
+fn a_marked_move_transform_can_be_the_first_ordered_reference() {
+    let (bytes, scope) = marked_move_fixture("332", 256);
+    let start = usize::try_from(scope.byte_offset()).unwrap();
+    let mut transform_first = scope.clone();
+    lay_out_move_face(&mut transform_first, start, 126, vec![71, 50, 60]);
+    assert_eq!(
+        decoded_move(&bytes, &transform_first)
+            .unwrap()
+            .transform_record_index,
+        71
+    );
+    let mut neither_first = scope.clone();
+    lay_out_move_face(&mut neither_first, start, 126, vec![60, 50, 71]);
+    assert!(decoded_move(&bytes, &neither_first).is_none());
+    let mut group_is_transform = bytes.clone();
+    group_is_transform[start + 37..start + 41].copy_from_slice(&71u32.to_le_bytes());
+    assert!(decoded_move(&group_is_transform, &transform_first).is_none());
+}
+
+#[test]
 fn a_broken_marked_prologue_leaves_an_unlisted_transform_unselected() {
     let (bytes, scope) = marked_move_fixture("332", 256);
     let start = usize::try_from(scope.byte_offset()).unwrap();

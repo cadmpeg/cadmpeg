@@ -41,7 +41,7 @@ pub(crate) struct DesignExtrudeSelectionGroup {
     /// Opaque scalar between the repeated u32 copies.
     opaque_scalar: cadmpeg_ir::scalar::FiniteReal,
     /// Boolean byte between the two nested-record references; the
-    /// typed-reference form stores two zero bytes there and no variant.
+    /// two-zero-byte separator form has no variant.
     pub(crate) variant: Option<bool>,
     /// Whether every reference uses the 51-byte typed spelling.
     pub(crate) typed_references: bool,
@@ -154,7 +154,7 @@ pub(crate) struct DesignExtrudeSelectionGroupWire {
     /// Byte offset of `opaque_scalar`.
     pub(crate) opaque_scalar_offset: u64,
     /// Boolean byte between the two nested-record references; absent in the
-    /// typed-reference form.
+    /// two-zero-byte separator form.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -175,13 +175,14 @@ impl DesignExtrudeSelectionGroup {
         if wire.members.len() != wire.member_offsets.len() {
             return Err("members and member_offsets must have equal lengths".into());
         }
-        if wire.typed_references != wire.variant.is_none() {
-            return Err("variant is present exactly in the plain-reference form".into());
+        if wire.typed_references && wire.variant.is_some() {
+            return Err("variant is present only in the plain-reference form".into());
         }
         let offsets = DesignExtrudeSelectionGroup::offsets(
             wire.byte_offset,
             wire.members.len(),
             wire.typed_references,
+            wire.variant.is_some(),
         )?;
         let stride = if wire.typed_references { 51 } else { 11 };
         let mut unique = std::collections::HashSet::new();
@@ -286,22 +287,27 @@ impl DesignExtrudeSelectionGroup {
     /// Field offsets of a group with `count` members. Each typed reference is
     /// forty bytes wider: the scope reference before the count, every member,
     /// and the three references after the opaque scalar lane.
-    fn offsets(byte_offset: u64, count: usize, typed: bool) -> Result<[u64; 4], String> {
+    fn offsets(
+        byte_offset: u64,
+        count: usize,
+        typed: bool,
+        has_variant: bool,
+    ) -> Result<[u64; 4], String> {
         if count == 0 {
             return Err("members must not be empty".into());
         }
         // The tail runs from the opaque index to the paired header: u32 +
         // f64 + u32, three references, and the separator bytes between them
-        // (three typed, four plain with the variant byte).
-        let (count_at, stride, separators) = if typed {
+        // (four with the variant byte, three without it).
+        let (count_at, stride) = if typed {
             (
                 typed_group::MEMBER_COUNT,
                 crate::bytes::TYPED_LOCAL_REFERENCE_LEN,
-                3,
             )
         } else {
-            (32, 11, 4)
+            (32, 11)
         };
+        let separators = if has_variant { 4 } else { 3 };
         let tail = u64_from_index(16 + 3 * stride + separators);
         let member_count_offset = byte_offset
             .checked_add(u64_from_index(count_at))
@@ -347,7 +353,12 @@ impl DesignExtrudeSelectionGroup {
     }
     #[cfg(test)]
     pub(crate) fn try_set_members(&mut self, members: Vec<u32>) -> Result<(), String> {
-        let offsets = Self::offsets(self.byte_offset, members.len(), self.typed_references)?;
+        let offsets = Self::offsets(
+            self.byte_offset,
+            members.len(),
+            self.typed_references,
+            self.variant.is_some(),
+        )?;
         let stride = if self.typed_references { 51 } else { 11 };
         let mut wire = DesignExtrudeSelectionGroupWire::from(self.clone());
         wire.member_offsets = (0..members.len())

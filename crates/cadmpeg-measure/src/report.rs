@@ -1136,6 +1136,30 @@ accessors!(BodyMeasures {
     status: RowStatus;
 });
 
+/// The boxes of one body from [`crate::body_boxes`], in millimetres with the
+/// body transform applied.
+#[derive(Debug, Clone)]
+pub struct BodyBox {
+    pub(crate) body: String,
+    pub(crate) bbox: Quantity<BoxValue>,
+    pub(crate) vertex_box: Option<Quantity<BoxValue>>,
+}
+
+accessors!(BodyBox {
+    /// The body ID.
+    body: String;
+    /// Union of member boxes, as [`BodyMeasures::bbox`] reports it. When
+    /// its [`reading`](crate::value::Measured::reading) is
+    /// [`Reading::Declared`](crate::value::Reading::Declared), the box rests
+    /// on a declared face orientation that no witness confirmed, and it can
+    /// be smaller than the body whatever its [`BoxKind`](crate::value::BoxKind).
+    /// Its union with its [`Reading::Complement`](crate::value::Reading::Complement)
+    /// candidate, when it has one, contains the body.
+    bbox: Quantity<BoxValue>;
+    /// Box of the vertex points; absent for a body with no vertex.
+    vertex_box: Option<Quantity<BoxValue>>;
+});
+
 /// The work the pass used.
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct WorkReport {

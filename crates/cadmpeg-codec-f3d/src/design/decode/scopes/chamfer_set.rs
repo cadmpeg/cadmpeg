@@ -216,7 +216,7 @@ const SET_FORMS: [SetForm; 4] = [
     SetForm {
         len: two_distances::LEN,
         tangent_chain: two_distances::FLAG,
-        distance_reversed: None,
+        distance_reversed: Some(two_distances::DISTANCE_REVERSED),
         spec: SpecForm::TwoDistances,
         owners: [
             two_distances::FIRST_DISTANCE_OWNER_REFERENCE,

@@ -165,7 +165,7 @@ fn recipe_sketch_bspline_knots_and_points() {
                 profile: ProfileRef::Planar(PlanarProfileRef::Sketch(profile)),
                 direction,
                 extent: ExtrudeExtent::OneSided { side },
-                op: BooleanOp::Join,
+                op: BooleanOp::NewBody,
                 length_along_profile_normal: Some(true),
                 allow_multi_profile_faces: Some(true),
                 ..

@@ -142,7 +142,7 @@ Strict decode evaluates `LossNote::strict_consequence` once in `DecodeResult::ne
 
 `RadialStatus` (`Closed(n)` \| `DoesNotClose` \| `CrossesEdge`) is the topology-graph classifier in `validate/topology/graphs.rs`. `Sense` is a static bit.
 
-Measurement `RowStatus` is derived (`Measured` \| `Partial` \| `Unavailable`). Face orientation `Verdict`: `Settled` \| `Confirmed` \| `Conflict` \| `Unconfirmed` → witness → `Confirmed` \| `Contradicted`. Codecs do not depend on `cadmpeg-measure` in production; the crate is an oracle.
+Measurement `RowStatus` is derived (`Measured` \| `Partial` \| `Unavailable`). Face orientation `Verdict`: `Settled` \| `Confirmed` \| `Conflict` \| `Unconfirmed` → witness → `Confirmed` \| `Contradicted`. The crate is an oracle. Of the codecs, the source policy admits a production dependency on `cadmpeg-measure` only in the Fusion codec, for the body boxes its writer writes.
 
 ## Container parsers
 
@@ -208,7 +208,7 @@ Ranked by user-visible impact. “Reachable” means a constructor, deserializer
 | Inventor container transfers B-rep | Depth harness: non-design arenas match Full. Container bulk frames stay `Unavailable` without a kernel stream. README “does not inflate bulk geometry streams” refers to those frames. |
 | FreeCAD `TopologyOccurrence.source_index` starts at 1 | Bind tests pad `names[0]` and index from 1. Legacy maps pad to the parsed index. |
 | `validate_neutral().is_ok()` ignores `losses` | Documented: findings vs decode losses are separate. |
-| Measurement feeds codecs | Production codec crates list `cadmpeg-measure` only in `[dev-dependencies]`. |
+| Measurement feeds codecs | Codec crates list `cadmpeg-measure` in `[dev-dependencies]`. The source-policy rule `measurement_dependency` also admits it in the `[dependencies]` of `cadmpeg-codec-f3d`, for its writer's body boxes. The rule `measurement_use` fails the name `cadmpeg_measure` in production code of a codec crate outside `crates/cadmpeg-codec-f3d/src/writer/`; it does not follow a re-export or an included file out of the writer. |
 | Mutex / retry races into illegal states | No conflicting transition found. |
 
 ## Issues

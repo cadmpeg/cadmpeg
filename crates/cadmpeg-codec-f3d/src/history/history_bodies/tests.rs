@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
+
+mod historical_split;
+mod input_edges;
+use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+use cadmpeg_ir::attributes::{AttributeTarget, SourceAttribute};
 use cadmpeg_ir::document::Model;
 use cadmpeg_ir::features::{
     BodySelection, DistinctMembers, FeatureContent, FeatureDefinition, FeatureEvaluation,
@@ -258,6 +263,17 @@ fn run_bytes(
     count: usize,
     work: usize,
 ) -> (Vec<HistoryBody>, Vec<cadmpeg_ir::report::loss::LossNote>) {
+    run_roles(bytes, width, count, work, (true, false), 1)
+}
+
+fn run_roles(
+    bytes: &[u8],
+    width: RefWidth,
+    count: usize,
+    work: usize,
+    roles: (bool, bool),
+    slot: i64,
+) -> (Vec<HistoryBody>, Vec<cadmpeg_ir::report::loss::LossNote>) {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::default()).unwrap();
     let mut allowance = u64::MAX;
@@ -274,9 +290,12 @@ fn run_bytes(
     let feature = feature("base");
     let wants = (0..count)
         .map(|_| Want {
-            feature: &feature,
+            origin: &feature,
+            producer: roles.0.then_some(&feature),
+            consumer: roles.1.then_some(&feature),
             state: 12,
-            slot: 1,
+            slot,
+            identity: None,
             capture_current: false,
             consumed: false,
             input: None,
@@ -613,7 +632,10 @@ fn a_consumed_snapshot_keeps_the_input_geometry_and_consumer() {
                 &bytes,
                 &history,
                 &[Want {
-                    feature: &cut,
+                    origin: &cut,
+                    producer: None,
+                    consumer: Some(&cut),
+                    identity: None,
                     state: 12,
                     slot: 1,
                     consumed: true,
@@ -785,6 +807,9 @@ fn initial_cut_snapshot_requires_one_input_body_and_an_unbuilt_component() {
             histories: &histories,
             bindings: &bindings,
             primary_brep: None,
+            groups: &[],
+            operands: &[],
+            recipes: &[],
         };
         let mut losses = Vec::new();
         let wanted = initial_cut_body(&features[1], inputs, &mut losses);
@@ -850,6 +875,9 @@ fn initial_cut_snapshot_requires_one_input_body_and_an_unbuilt_component() {
             histories: &histories,
             bindings: &bindings,
             primary_brep: None,
+            groups: &[],
+            operands: &[],
+            recipes: &[],
         };
         let mut losses = Vec::new();
         assert!(initial_cut_body(&candidate, inputs, &mut losses).is_none());
@@ -912,6 +940,9 @@ fn initial_cut_snapshot_requires_one_input_body_and_an_unbuilt_component() {
         histories: &histories,
         bindings: &bindings,
         primary_brep: None,
+        groups: &[],
+        operands: &[],
+        recipes: &[],
     };
     assert!(initial_cut_body(&unowned, inputs, &mut Vec::new()).is_none());
     let previous = histories[0]
@@ -938,6 +969,9 @@ fn initial_cut_snapshot_requires_one_input_body_and_an_unbuilt_component() {
         histories: std::slice::from_ref(&ambiguous),
         bindings: &bindings,
         primary_brep: None,
+        groups: &[],
+        operands: &[],
+        recipes: &[],
     };
     assert!(initial_cut_body(&cut, inputs, &mut Vec::new()).is_none());
 }
@@ -967,7 +1001,10 @@ fn a_captured_derived_result_preserves_the_current_body() {
         &bytes,
         &history,
         &[Want {
-            feature: &feature,
+            origin: &feature,
+            producer: Some(&feature),
+            consumer: None,
+            identity: None,
             state: 13,
             slot: 1,
             capture_current: true,
@@ -1220,430 +1257,667 @@ fn a_wrapped_surface_preserves_the_base_feature_geometry() {
     }
 }
 
+/// The final state deletes the body of slots 6 through 10 that the state
+/// before it holds.
+fn deleted_bytes(width: RefWidth) -> Vec<u8> {
+    let mut out = Vec::new();
+    put_header(&mut out, width);
+    put_plain(&mut out, width, "asmheader", &[]);
+    put_sphere_solid(&mut out, width, 1, 7, -1, [10.0, 0.0, 0.0]);
+    let deleted = (6..=10).map(|slot| (slot, -1)).collect::<Vec<_>>();
+    put_state(&mut out, width, (13, -1, 1, 0), &deleted);
+    put_sphere_solid(&mut out, width, 6, 8, -1, [10.0, 0.0, 0.0]);
+    put_state(
+        &mut out,
+        width,
+        (12, 0, -1, 1),
+        &[(-1, 1), (-1, 2), (-1, 3), (-1, 4), (-1, 5)],
+    );
+    out
+}
+
 #[test]
-fn input_edge_bindings_scope_repeated_slots_and_refuse_sample_identity() {
-    use cadmpeg_ir::features::{
-        FeatureInputTopology, FinitePoint3, HistoricalEdgeGeometry, HistoricalEdgePath,
-    };
-    let first = feature("first");
-    let second = feature("second");
-    let cube = cadmpeg_ir::examples::unit_cube().unwrap().geometry;
-    let mut nest = BodyTopology::new(cube.bodies[0].clone());
-    nest.edges = cube.edges;
-    nest.curves = cube.curves;
-    nest.faces = cube.faces;
-    let input = |owner: &Feature, state, slot| {
-        let prefix = crate::ids::feature_input_prefix(&owner.id, state);
-        let geometry = HistoricalEdgeGeometry::new(
-            crate::ids::history_input_edge_id(&prefix, slot),
-            FinitePoint3::ZERO,
-        );
-        FeatureInputTopology {
-            id: crate::ids::history_input_state_id(&prefix),
-            input_of: owner.id.clone(),
-            bodies: DistinctMembers::default(),
-            faces: DistinctMembers::default(),
-            edges: DistinctMembers::try_from(vec![geometry.edge.clone()]).unwrap(),
-            vertices: DistinctMembers::default(),
-            edge_geometry: vec![geometry],
-            native_ref: None,
-        }
-    };
-    for (owner, state, nest_index) in [(&first, 12, 0), (&second, 12, 1), (&first, 13, 2)] {
-        let input = input(owner, state, 0);
-        let want = Want {
-            feature: owner,
-            state,
-            slot: 0,
-            capture_current: false,
-            consumed: true,
-            input: Some(&input),
-            bindings: RefCell::default(),
+fn a_consumed_body_the_final_state_lacks_is_a_history_body() {
+    for width in [RefWidth::Four, RefWidth::Eight] {
+        let bytes = deleted_bytes(width);
+        let (bodies, losses) = run_roles(&bytes, width, 1, MAX_HISTORY_BODY_WORK, (false, true), 6);
+        assert!(losses.is_empty(), "{losses:?}");
+        let [body] = bodies.as_slice() else {
+            panic!("one history body")
         };
-        let bindings = input_bindings(&want, &nest, nest_index);
-        assert_eq!(bindings.len(), 1);
-        assert_eq!(bindings[0].0, input.edge_geometry[0].edge);
+        assert_eq!(body.produced_by, None);
+        assert_eq!(body.consumed_by, Some(feature("base").id));
+        assert_eq!(body.state.identifier, 12);
+        // The body keeps the geometry of the state that holds it, in
+        // millimetres from the stored centimetre length.
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere)) =
+            &body.topology.surfaces[0].geometry
+        else {
+            panic!("sphere")
+        };
         assert_eq!(
-            bindings[0].1.path,
-            HistoricalEdgePath::Edge {
-                edge: nest.edges[0].id.clone()
-            }
+            sphere.center().get(),
+            cadmpeg_ir::math::Point3::new(10.0 * 10.0, 0.0, 0.0)
         );
-        assert_eq!(
-            bindings[0].1.history_body.as_str(),
-            format!("f3d:history-body:nest#h{nest_index:04}")
-        );
+        let (both, _) = run_roles(&bytes, width, 1, MAX_HISTORY_BODY_WORK, (true, true), 6);
+        let [both] = both.as_slice() else {
+            panic!("one history body")
+        };
+        assert_eq!(both.produced_by, Some(feature("base").id));
+        assert_eq!(both.consumed_by, Some(feature("base").id));
     }
-    let input = input(&first, 12, 0);
-    let wrong_state = Want {
-        feature: &first,
-        state: 13,
-        slot: 0,
-        capture_current: false,
-        consumed: true,
-        input: Some(&input),
-        bindings: RefCell::default(),
-    };
-    assert!(input_bindings(&wrong_state, &nest, 0).is_empty());
-    let wrong_history = Want {
-        feature: &second,
-        state: 12,
-        ..wrong_state
-    };
-    assert!(input_bindings(&wrong_history, &nest, 0).is_empty());
 }
 
 #[test]
-fn two_closed_carriers_with_equal_samples_require_the_native_edge_slot() {
-    use cadmpeg_ir::features::{
-        FeatureInputTopology, FinitePoint3, HistoricalEdgeGeometry, HistoricalEdgePath,
-    };
-    use cadmpeg_ir::geometry::analytic::CircleCurve;
-    use cadmpeg_ir::math::{Point3, Vector3};
-    let owner = feature("closed");
-    let cube = cadmpeg_ir::examples::unit_cube().unwrap().geometry;
-    let mut nest = BodyTopology::new(cube.bodies[0].clone());
-    nest.edges = cube.edges[..2].to_vec();
-    nest.curves = cube.curves[..2].to_vec();
-    for (index, sign) in [(0, 1.0), (1, -1.0)] {
-        nest.curves[index].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            CircleCurve::try_new(
-                Point3::new(sign, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(sign, 0.0, 0.0),
-                1.0,
-            )
-            .unwrap(),
-        ));
-        nest.edges[index].ends = None;
-        nest.edges[index].carrier = cadmpeg_ir::topology::EdgeCarrier::new(
-            Some(nest.curves[index].id.clone()),
-            Some([0.0, std::f64::consts::TAU]),
-        )
-        .unwrap();
-    }
-    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    for curve in &nest.curves {
-        let point = cadmpeg_ir::eval::decode::curve_point_solved(
-            &ctx,
-            curve.geometry.solved().unwrap(),
-            std::f64::consts::PI,
-        )
-        .unwrap();
-        assert!(point.get().vector_from(Point3::new(0.0, 0.0, 0.0)).norm() <= EPS_CLOSED_SAMPLE);
-    }
-    let prefix = crate::ids::feature_input_prefix(&owner.id, 12);
-    let geometry = HistoricalEdgeGeometry::new(
-        crate::ids::history_input_edge_id(&prefix, 0),
-        FinitePoint3::ZERO,
+fn a_consumed_body_a_later_state_revises_is_a_history_body() {
+    let (bodies, losses) = run_roles(
+        &carrier_bytes(RefWidth::Eight, true),
+        RefWidth::Eight,
+        1,
+        MAX_HISTORY_BODY_WORK,
+        (false, true),
+        1,
     );
-    let mut input = FeatureInputTopology {
-        id: crate::ids::history_input_state_id(&prefix),
-        input_of: owner.id.clone(),
-        bodies: DistinctMembers::default(),
-        faces: DistinctMembers::default(),
-        edges: DistinctMembers::try_from(vec![geometry.edge.clone()]).unwrap(),
-        vertices: DistinctMembers::default(),
-        edge_geometry: vec![geometry],
-        native_ref: None,
+    assert!(losses.is_empty(), "{losses:?}");
+    let [body] = bodies.as_slice() else {
+        panic!("one history body")
     };
-    let bind = |input: &FeatureInputTopology| {
-        input_bindings(
-            &Want {
-                feature: &owner,
-                state: 12,
-                slot: 0,
-                capture_current: false,
-                consumed: true,
-                input: Some(input),
-                bindings: RefCell::default(),
-            },
-            &nest,
-            0,
-        )
-    };
-    assert_eq!(
-        bind(&input)[0].1.path,
-        HistoricalEdgePath::Edge {
-            edge: nest.edges[0].id.clone()
-        }
-    );
-    input.edge_geometry[0].edge = crate::ids::history_input_edge_id(&prefix, 99);
-    assert!(bind(&input).is_empty());
+    assert_eq!(body.consumed_by, Some(feature("base").id));
+    assert_eq!(body.produced_by, None);
 }
 
 #[test]
-fn treatment_snapshot_requests_join_history_state_and_body_membership() {
-    use crate::history_records::{
-        AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalEdge,
-        AsmHistoricalOptionalCarrierBinding, AsmHistoricalRelation, AsmHistoricalTopology,
-    };
-    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
-    use cadmpeg_ir::features::{
-        FeatureInputTopology, FinitePoint3, HistoricalEdgeGeometry, NonEmptyMembers,
-    };
-    let relation = |owner_ref, member_refs| AsmHistoricalRelation {
-        owner_ref,
-        member_refs,
-    };
-    let topology = AsmHistoricalTopology {
-        bodies: vec![1],
-        regions: vec![2],
-        shells: vec![3],
-        edges: vec![4],
-        vertices: vec![5, 6],
-        points: vec![7, 8],
-        curves: vec![9],
-        body_regions: vec![relation(1, vec![2])],
-        region_shells: vec![relation(2, vec![3])],
-        shell_faces: vec![relation(3, Vec::new())],
-        shell_wire_edges: vec![relation(3, vec![4])],
-        shell_free_vertices: vec![relation(3, Vec::new())],
-        edge_vertices: vec![AsmHistoricalEdge {
-            edge: 4,
-            start_vertex: 5,
-            end_vertex: 6,
-        }],
-        vertex_points: vec![
-            AsmHistoricalCarrierBinding {
-                entity: 5,
-                carrier: 7,
-            },
-            AsmHistoricalCarrierBinding {
-                entity: 6,
-                carrier: 8,
-            },
-        ],
-        edge_curves: vec![AsmHistoricalOptionalCarrierBinding {
-            entity: 4,
-            carrier: Some(9),
-        }],
-        ..AsmHistoricalTopology::default()
-    };
-    let history = |source: &str| {
-        crate::test_support::history::history(
-            format!("f3d:{source}:asm-history#0"),
-            0,
-            None,
-            false,
-            [14, 13, 12]
-                .into_iter()
-                .map(|value| {
-                    (
-                        AsmDeltaState {
-                            id: format!("f3d:{source}:state#{value}"),
-                            parent: format!("f3d:{source}:asm-history#0"),
-                            byte_offset: 0,
-                            state_id: value,
-                            version_flag: 1,
-                            state_flag: 0,
-                            previous_ref: None,
-                            next_ref: None,
-                            node_index: 14 - value,
-                            partner_ref: None,
-                            owner_ref: 0,
-                            bulletin_boards: Vec::new(),
-                            records: Vec::new(),
-                            transition: None,
-                        },
-                        Some(topology.clone()),
-                        Vec::new(),
-                    )
-                })
-                .collect(),
-        )
-    };
-    let histories = [history("a"), history("b")];
-    let mut scope =
-        DesignParameterScope::empty("f3d:design:scope#treatment", DesignFeatureKind::Fillet, 1);
+fn a_consumed_body_no_later_state_changes_needs_no_history_body() {
+    let (bodies, losses) = run_roles(
+        &carrier_bytes(RefWidth::Eight, false),
+        RefWidth::Eight,
+        1,
+        MAX_HISTORY_BODY_WORK,
+        (false, true),
+        1,
+    );
+    assert!(bodies.is_empty());
+    assert!(losses.is_empty());
+}
+
+fn split_fixture() -> (Feature, DesignParameterScope, AsmHistory) {
+    use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
+    use crate::records::feature::scope::DesignFeatureKind;
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#2",
+        DesignFeatureKind::BaseFeature,
+        1,
+    );
     scope
         .try_edit(|draft| {
-            draft.history_state_id = Some(13);
-            draft.previous_history_state_id = Some(12);
+            draft.history_state_id = Some(2);
+            draft.previous_history_state_id = Some(1);
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let mut feature = feature("treatment");
+    let mut feature = feature("split");
     feature.native_ref = Some(scope.id.clone());
-    let prefix = crate::ids::feature_input_prefix(&feature.id, 12);
-    let edge = crate::ids::history_input_edge_id(&prefix, 4);
-    feature.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
-        FeatureOperation::Fillet {
-            groups: NonEmptyMembers::try_from(vec![
-                cadmpeg_ir::features::edge_treatments::FilletGroup {
-                    edges: cadmpeg_ir::features::EdgeSelection::historical(
-                        crate::ids::history_input_state_id(&prefix),
-                        vec![edge.clone()],
-                        "native-group".into(),
-                    )
-                    .unwrap(),
-                    radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Unresolved {
-                        form: None,
-                    },
-                    tangency_weight: None,
-                },
-            ])
-            .unwrap(),
-        },
-    ));
-    let mut input = FeatureInputTopology {
-        id: crate::ids::history_input_state_id(&prefix),
-        input_of: feature.id.clone(),
-        bodies: DistinctMembers::try_from(vec![crate::ids::history_input_body_id(&prefix, 1)])
-            .unwrap(),
-        faces: DistinctMembers::default(),
-        edges: DistinctMembers::try_from(vec![edge.clone()]).unwrap(),
-        vertices: DistinctMembers::default(),
-        edge_geometry: vec![HistoricalEdgeGeometry::new(edge, FinitePoint3::ZERO)],
-        native_ref: Some("f3d:b:state#12".into()),
-    };
-    let bindings = HashMap::from([(scope.id.clone(), histories[1].id.clone())]);
-    let features = [feature.clone()];
-    let scopes = [scope];
-    let inputs = Inputs {
-        features: &features,
-        scopes: &scopes,
-        histories: &histories,
-        bindings: &bindings,
-        primary_brep: None,
-    };
-    let wants = input_edge_bodies(&feature, inputs, std::slice::from_ref(&input));
-    assert_eq!(wants.len(), 1);
-    assert_eq!(
+    let prefix = crate::ids::feature_input_prefix(&feature.id, 1);
+    let targets = BodySelection::historical(
+        crate::ids::history_input_state_id(&prefix),
+        vec![crate::ids::history_input_body_id(&prefix, 7)],
+        "f3d:test:scope#split".to_owned(),
+    )
+    .unwrap();
+    feature
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            extend_tool: None,
+            targets,
+            tool: cadmpeg_ir::features::SplitBodyTool::Faces(
+                cadmpeg_ir::features::FaceSelection::Unresolved,
+            ),
+        }));
+    let state = |state_id, node_index, next_ref| {
         (
-            wants[0].0,
-            wants[0].1.state,
-            wants[0].1.slot,
-            wants[0].1.consumed
-        ),
-        (1, 12, 1, true)
+            AsmDeltaState {
+                id: format!("f3d:asm-delta-state#{state_id}"),
+                parent: "f3d:asm-history#1".into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref,
+                node_index,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(AsmHistoricalTopology::default()),
+            Vec::new(),
+        )
+    };
+    let history = crate::test_support::history::history(
+        "f3d:asm-history#1".into(),
+        0,
+        None,
+        false,
+        vec![state(2, 1, Some(0)), state(1, 0, None)],
     );
-    drop(wants);
-    input.bodies.clear();
-    assert!(input_edge_bodies(&feature, inputs, std::slice::from_ref(&input)).is_empty());
-    input
-        .bodies
-        .insert(crate::ids::history_input_body_id(&prefix, 1));
-    let other = HashMap::from([(scopes[0].id.clone(), histories[0].id.clone())]);
-    let inputs = Inputs {
-        bindings: &other,
-        ..inputs
-    };
-    assert!(input_edge_bodies(&feature, inputs, std::slice::from_ref(&input)).is_empty());
-    let unbound = HashMap::new();
-    let inputs = Inputs {
-        bindings: &unbound,
-        ..inputs
-    };
-    assert!(input_edge_bodies(&feature, inputs, std::slice::from_ref(&input)).is_empty());
+    (feature, scope, history)
 }
 
 #[test]
-fn source_procedural_curve_with_a_solved_cache_keeps_the_sample_representation() {
-    use cadmpeg_ir::features::{HistoricalEdgePath, HistoricalEdgeTopologyRef};
-    let mut source = cadmpeg_ir::examples::unit_cube().unwrap().geometry;
-    let reference = HistoricalEdgeTopologyRef {
-        history_body: HistoryBodyId::mint("test:history-body:nest#input").unwrap(),
-        path: HistoricalEdgePath::Edge {
-            edge: source.edges[0].id.clone(),
-        },
-        faces: Vec::new(),
-    };
-    assert!(source_carriers_solved(&source, &reference));
-    let cache = source.curves[0].geometry.solved().cloned();
-    source.curves[0].geometry = CurveGeometry::Procedural {
-        construction: cadmpeg_ir::ids::ProceduralCurveId::mint("test:history:construction#curve")
-            .unwrap(),
-        cache,
-    };
-    assert!(!source_carriers_solved(&source, &reference));
-}
-
-#[test]
-fn failed_input_binding_preserves_samples_supports_and_operands_with_a_loss() {
-    use cadmpeg_ir::features::{
-        EdgeSelection, EdgeSupport, FeatureInputTopology, FinitePoint3, HistoricalEdgeGeometry,
-        NonEmptyMembers,
-    };
-    use std::io::{Cursor, Write};
-    let mut ir = CadIr::empty();
-    let mut feature = feature("unbound-treatment");
-    let prefix = crate::ids::feature_input_prefix(&feature.id, 12);
-    let edge = crate::ids::history_input_edge_id(&prefix, 4);
-    let face = crate::ids::history_input_face_id(&prefix, 10);
-    feature.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
-        FeatureOperation::Fillet {
-            groups: NonEmptyMembers::try_from(vec![
-                cadmpeg_ir::features::edge_treatments::FilletGroup {
-                    edges: EdgeSelection::historical(
-                        crate::ids::history_input_state_id(&prefix),
-                        vec![edge.clone()],
-                        "native-group".into(),
-                    )
-                    .unwrap(),
-                    radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Unresolved {
-                        form: None,
-                    },
-                    tangency_weight: None,
-                },
-            ])
-            .unwrap(),
+fn a_split_names_the_slots_of_its_input_state_in_the_history_that_holds_both_states() {
+    let (feature, scope, history) = split_fixture();
+    let histories = [history];
+    let scopes = [scope];
+    let none = HashMap::new();
+    assert_eq!(
+        split_targets(&feature, &scopes, &histories, &none),
+        Some((0, 1, vec![7]))
+    );
+    let bound = HashMap::from([(scopes[0].id.clone(), histories[0].id.clone())]);
+    assert_eq!(
+        split_targets(&feature, &scopes, &histories, &bound),
+        Some((0, 1, vec![7]))
+    );
+    let elsewhere = HashMap::from([(scopes[0].id.clone(), "f3d:asm-history#9".to_owned())]);
+    assert_eq!(
+        split_targets(&feature, &scopes, &histories, &elsewhere),
+        None
+    );
+    // A Base Feature selects no body from an input state.
+    let mut base = feature.clone();
+    base.evaluation.set_definition(FeatureDefinition::Operation(
+        FeatureOperation::BaseFeature {
+            bodies: BodySelection::Unresolved,
         },
     ));
-    let mut geometry = HistoricalEdgeGeometry::new(edge.clone(), FinitePoint3::ZERO);
-    geometry.start = Some(FinitePoint3::ZERO);
-    geometry.end = Some(FinitePoint3::ZERO);
-    geometry.tangent = Some(cadmpeg_ir::units::UnitVector3::X_AXIS);
-    geometry.faces.insert(face.clone());
-    geometry.supports.push(EdgeSupport {
-        face: face.clone(),
-        normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
-        with_edge: true,
-    });
-    ir.model
-        .feature_input_topologies
-        .push(FeatureInputTopology {
-            id: crate::ids::history_input_state_id(&prefix),
-            input_of: feature.id.clone(),
-            bodies: DistinctMembers::default(),
-            faces: DistinctMembers::try_from(vec![face]).unwrap(),
-            edges: DistinctMembers::try_from(vec![edge.clone()]).unwrap(),
-            vertices: DistinctMembers::default(),
-            edge_geometry: vec![geometry.clone()],
-            native_ref: Some("f3d:native:state#12".into()),
-        });
-    let evaluation = feature.evaluation.clone();
-    ir.model.features.push(feature.clone());
-    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, options);
-    zip.start_file("marker", options).unwrap();
-    zip.write_all(b"fixture").unwrap();
-    let archive = zip.finish().unwrap().into_inner();
-    let mut losses = Vec::new();
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
-        fill_consumed(
-            &cadmpeg_core::decode::test_support::service_decode_context(),
-            scan,
-            &mut ir,
-            &F3dNative::default(),
-            None,
-            &ConsumerContext::default(),
-            &mut losses,
-        )
+    assert_eq!(split_targets(&base, &scopes, &histories, &none), None);
+}
+
+fn link_attribute(body: i64, design_id: &str, design_reference: i64) -> SourceAttribute {
+    use cadmpeg_ir::attributes::AttributeValue;
+    SourceAttribute {
+        id: format!("f3d:history:attribute#{body}")
+            .try_into()
+            .expect("valid identity"),
+        target: cadmpeg_ir::references::InstanceTarget::new(AttributeTarget::Body(
+            cadmpeg_ir::ids::BodyId::mint(format!("f3d:history:body#{body}"))
+                .expect("identity grammar"),
+        )),
+        name: "ATTRIB_CUSTOM-attrib".into(),
+        values: vec![
+            Some(AttributeValue::String("generic_tag_attrib_def".into())),
+            Some(AttributeValue::Integer(2)),
+            Some(AttributeValue::Integer(2)),
+            Some(AttributeValue::Integer(-1)),
+            Some(AttributeValue::String("generic_tag_attrib_def ".into())),
+            Some(AttributeValue::Integer(1)),
+            Some(AttributeValue::Integer(3)),
+            Some(AttributeValue::String(design_id.into())),
+            Some(AttributeValue::Integer(design_reference)),
+            Some(AttributeValue::Integer(0)),
+        ],
+        native_ref: None,
+    }
+}
+
+fn identity(revised: &[i64]) -> BodyIdentity {
+    BodyIdentity {
+        design_id: "626".into(),
+        selector: 1,
+        revised: revised.to_vec(),
+    }
+}
+
+#[test]
+fn a_body_identity_names_the_one_revised_body_that_carries_the_design_link() {
+    let brep = |attributes| cadmpeg_asm::brep::AsmBrep {
+        attributes,
+        ..cadmpeg_asm::brep::AsmBrep::default()
+    };
+    let linked = brep(vec![
+        link_attribute(4, "626", 1),
+        link_attribute(5, "627", 1),
+        link_attribute(6, "626", 3),
+    ]);
+    assert_eq!(identity_slot(&linked, &identity(&[4, 9])).unwrap(), Some(4));
+    assert_eq!(identity_slot(&linked, &identity(&[9])).unwrap(), None);
+    let twice = brep(vec![
+        link_attribute(4, "626", 1),
+        link_attribute(5, "626", 1),
+    ]);
+    assert_eq!(identity_slot(&twice, &identity(&[4, 5])).unwrap(), None);
+    assert_eq!(
+        identity_slot(&brep(Vec::new()), &identity(&[4])).unwrap(),
+        None
+    );
+}
+
+#[test]
+fn a_split_identity_that_matches_two_bodies_reports_the_undecoded_input() {
+    let width = RefWidth::Eight;
+    let mut bytes = Vec::new();
+    put_header(&mut bytes, width);
+    bytes[39] = 1;
+    put_plain(&mut bytes, width, "asmheader", &[]);
+    for slot in [1, 2] {
+        put_plain(
+            &mut bytes,
+            width,
+            "body",
+            &[
+                (REF, slot + 2),
+                (INT, slot),
+                (REF, -1),
+                (REF, -1),
+                (REF, -1),
+                (REF, -1),
+            ],
+        );
+    }
+    for _ in 0..2 {
+        put_fields(&mut bytes, width, "ATTRIB_CUSTOM-attrib", &[(REF, -1)]);
+        for value in link_attribute(1, "626", 1).values.into_iter().flatten() {
+            match value {
+                cadmpeg_ir::attributes::AttributeValue::String(value) => {
+                    bytes.extend_from_slice(&[
+                        0x07,
+                        u8::try_from(value.len()).expect("short fixture string"),
+                    ]);
+                    bytes.extend_from_slice(value.as_bytes());
+                }
+                cadmpeg_ir::attributes::AttributeValue::Integer(value) => {
+                    put_ref(&mut bytes, width, INT, value);
+                }
+                _ => panic!("identity fixture value"),
+            }
+        }
+        bytes.push(0x11);
+    }
+    put_state(&mut bytes, width, (13, -1, 1, 0), &[]);
+    put_state(
+        &mut bytes,
+        width,
+        (12, 0, -1, 1),
+        &[(-1, 1), (-1, 2), (-1, 3), (-1, 4)],
+    );
+    put_name(&mut bytes, "End-of-ASM-data");
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
+    let mut allowance = u64::MAX;
+    let history = super::super::decode(
+        &ctx,
+        &bytes,
+        "test",
+        width,
+        &mut allowance,
+        &WorkBudget::new(1 << 20),
+    )
+    .unwrap()
+    .unwrap();
+    let archive = super::super::decode_record_archive(&ctx, history.states(), &bytes, width)
+        .unwrap()
         .unwrap();
-    });
+    let versions = (0..5).map(|slot| (slot, slot)).collect();
+    let table =
+        cadmpeg_asm::history::materialize_record_table(&versions, |id| archive.get(&id)).unwrap();
+    let header = cadmpeg_asm::asm_header::parse(&bytes).unwrap();
+    let subtypes = archive_subtypes(&archive, header.metadata.save_format_version);
+    let brep = cadmpeg_asm::brep::decode_with_table(
+        &ctx,
+        &table,
+        &bytes,
+        (Some(&header.metadata), &subtypes),
+        "f3d:history",
+        crate::ids::ID_FORMAT,
+        cadmpeg_asm::brep::DecodePurpose::Model,
+    )
+    .unwrap();
+    let identity = identity(&[1, 2]);
+    assert_eq!(brep.bodies.len(), 2);
+    assert_eq!(identity_slot(&brep, &identity).unwrap(), None);
+    for slot in [1, 2] {
+        let single = cadmpeg_asm::brep::AsmBrep {
+            attributes: brep
+                .attributes
+                .iter()
+                .filter(|attribute| {
+                    matches!(&attribute.target.entity, AttributeTarget::Body(body)
+                        if super::super::stable_ref(body.as_str()) == Some(slot))
+                })
+                .cloned()
+                .collect(),
+            ..cadmpeg_asm::brep::AsmBrep::default()
+        };
+        assert_eq!(identity_slot(&single, &identity).unwrap(), Some(slot));
+    }
+    let feature = feature("split");
+    let mut bodies = Vec::new();
+    let mut losses = Vec::new();
+    fill_history(
+        &ctx,
+        &bytes,
+        &history,
+        &[Want {
+            origin: &feature,
+            producer: None,
+            consumer: Some(&feature),
+            state: 12,
+            slot: -1,
+            identity: Some(identity),
+            capture_current: false,
+            consumed: true,
+
+            input: None,
+            bindings: RefCell::default(),
+        }],
+        &mut bodies,
+        &WorkBudget::new(MAX_HISTORY_BODY_WORK),
+        &mut losses,
+    )
+    .unwrap();
+    assert!(bodies.is_empty());
     assert_eq!(
-        ir.model.feature_input_topologies[0].edge_geometry,
-        vec![geometry]
+        losses,
+        vec![F3dLossCode::FeatureHistoryBodyUndecoded
+            .note("f3d:model:feature#split state 12 has an unresolved body identity")]
     );
-    assert_eq!(ir.model.features[0].evaluation, evaluation);
-    assert_eq!(losses.len(), 1);
+}
+
+fn nest(id: &str, produced_by: Option<&str>, consumed_by: Option<&str>, state: i64) -> HistoryBody {
+    HistoryBody {
+        produced_by: produced_by.map(|native| feature(native).id),
+        consumed_by: consumed_by.map(|native| feature(native).id),
+        state: HistoryStateRef {
+            ordinal: u32::try_from(state).expect("small"),
+            identifier: state,
+        },
+        id: HistoryBodyId::mint(format!("test:history-body:nest#{id}")).expect("identity"),
+        ..cube_candidate()
+    }
+}
+
+#[test]
+fn a_producer_of_equal_records_joins_the_nest_of_the_consumer() {
+    let records = *cube_candidate().topology;
+    let built = |body, records: Option<&BodyTopology>| Built {
+        body,
+        records: records.cloned(),
+    };
+    let mut bodies = Vec::new();
+    let mut joinable = Vec::new();
+    place(
+        &mut bodies,
+        &mut joinable,
+        built(nest("a", None, Some("split"), 4), Some(&records)),
+        7,
+        (true, None),
+    );
+    assert_eq!((bodies.len(), joinable.len()), (1, 1));
+    // A producer whose records differ keeps a nest of its own.
+    let mut changed = records.clone();
+    changed.points.clear();
+    place(
+        &mut bodies,
+        &mut joinable,
+        Built {
+            body: nest("b", Some("base"), None, 1),
+            records: Some(changed),
+        },
+        7,
+        (false, Some(0)),
+    );
+    assert_eq!((bodies.len(), joinable.len()), (2, 1));
+    assert_eq!(bodies[0].produced_by, None);
+    // A producer of equal records joins the consumer nest at its own state.
+    place(
+        &mut bodies,
+        &mut joinable,
+        built(nest("c", Some("base"), None, 1), Some(&records)),
+        7,
+        (false, Some(0)),
+    );
+    assert_eq!((bodies.len(), joinable.len()), (2, 0));
+    assert_eq!(bodies[0].produced_by, Some(feature("base").id));
+    assert_eq!(bodies[0].consumed_by, Some(feature("split").id));
+    assert_eq!(bodies[0].state.identifier, 1);
+}
+
+fn leak<T>(value: T) -> &'static T {
+    Box::leak(Box::new(value))
+}
+
+fn identity_split_fixture() -> (Feature, Inputs<'static>) {
+    use crate::history_records::{AsmDeltaState, AsmEntityVersion, AsmHistoricalTopology};
+    use crate::records::feature::scope::DesignFeatureKind;
+    use crate::records::identity::{Located, RecordedValue};
+    use crate::records::recipes::{ConstructionRecipeDesign, ConstructionRecipeSelector};
+    use crate::records::topology::body_recipe::{
+        DesignBodyRecipeOperandDraft, DesignBodyRecipeReference, DesignOperandOwner,
+    };
+    use crate::records::topology::construction::{
+        DesignConstructionOperandGroupDraft, DesignConstructionOperandGroupFrame,
+        DesignConstructionOperandGroupFrameDraft,
+    };
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+        DesignFeatureKind::Split,
+        10,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(2);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let mut feature = feature("split");
+    feature.native_ref = Some(scope.id.clone());
+    let group_id = "f3d:Design/BulkStream.dat:design-construction-operand-group#100";
+    feature
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            extend_tool: None,
+            targets: BodySelection::Native(group_id.into()),
+            tool: cadmpeg_ir::features::SplitBodyTool::Faces(
+                cadmpeg_ir::features::FaceSelection::Unresolved,
+            ),
+        }));
+    let group = DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
+        id: group_id.into(),
+        scope_record_index: 10,
+        scope_reference_ordinal: 2,
+        record_index: 100,
+        byte_offset: 0,
+        class_tag: crate::records::references::DesignClassTag::try_from("280".to_owned()).unwrap(),
+        members: vec![Located {
+            value: 200,
+            offset: 0,
+        }],
+        lost_edge_references: Vec::new(),
+        frame: DesignConstructionOperandGroupFrame::try_from(
+            DesignConstructionOperandGroupFrameDraft {
+                member_count_offset: 0,
+                auxiliary_records: Vec::new(),
+                auxiliary_paths: Vec::new(),
+                trailing_records: Vec::new(),
+                trailing_transforms: Vec::new(),
+                trailing_dual_transforms: Vec::new(),
+                trailing_flags: Vec::new(),
+                opaque_index: 88,
+                opaque_index_offset: 18,
+                opaque_scalar: 0.0,
+                opaque_scalar_offset: 22,
+                variant: false,
+                closing_flag: false,
+            },
+        )
+        .unwrap(),
+        operand_role: crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::BODIES_A,
+        ),
+        role_offset: 0,
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("267".to_owned())
+            .unwrap(),
+        paired_byte_offset: 0,
+    })
+    .unwrap();
+    let operand = DesignBodyRecipeOperand::try_new(DesignBodyRecipeOperandDraft {
+        id: "f3d:Design/BulkStream.dat:design-body-recipe-operand#200".into(),
+        scope_record_index: 10,
+        owner: DesignOperandOwner::Group {
+            group_record_index: 100,
+            group_member_ordinal: 0,
+        },
+        record_index: 200,
+        byte_offset: 0,
+        class_tag: crate::records::references::DesignClassTag::try_from("476".to_owned()).unwrap(),
+        asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
+        asset_id_offset: 56,
+        context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+        )
+        .unwrap(),
+        context_id_offset: 132,
+        selector_tail: None,
+        references: vec![DesignBodyRecipeReference {
+            design_reference: 626,
+            design_reference_offset: 25,
+            form: 3,
+            form_offset: 33,
+            candidate_faces: Vec::new(),
+            preceding_candidate_faces: Vec::new(),
+            preceding_body_slots: Vec::new(),
+        }],
+        nested_record_index: 203,
+        nested_record_index_offset: 38,
+        recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#202".into(),
+        resolved_face_slot: None,
+        resolved_body_state_id: None,
+        resolved_body_slot: None,
+        resolved_body_face_slots: Vec::new(),
+        next_record_index: 204,
+        next_byte_offset: 256,
+    })
+    .unwrap();
+    let recipe = ConstructionRecipe {
+        id: operand.recipe_id.clone(),
+        byte_offset: 0,
+        kind: ConstructionRecipeKind::Body,
+        design: Some(ConstructionRecipeDesign {
+            id: RecordedValue {
+                value: "626".into(),
+                offset: 0,
+            },
+            selector: Some(ConstructionRecipeSelector {
+                value: 1,
+                byte_offset: 0,
+            }),
+        }),
+        recipe_index: 0,
+        record_index: Some(RecordedValue {
+            value: 0,
+            offset: 0,
+        }),
+    };
+    // The Split state revises the body of slot 7 and inserts the body of slot 8.
+    let state = |state_id, node_index, next_ref, bodies: Vec<i64>, revision: i64| {
+        (
+            AsmDeltaState {
+                id: format!("f3d:asm-delta-state#{state_id}"),
+                parent: "f3d:asm-history#1".into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref,
+                node_index,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(AsmHistoricalTopology {
+                bodies: bodies.clone(),
+                ..AsmHistoricalTopology::default()
+            }),
+            bodies
+                .into_iter()
+                .map(|entity_ref| AsmEntityVersion {
+                    entity_ref,
+                    record_ref: 100 * revision + entity_ref,
+                })
+                .collect::<Vec<_>>(),
+        )
+    };
+    let history = crate::test_support::history::history(
+        "f3d:asm-history#1".into(),
+        0,
+        None,
+        false,
+        vec![
+            state(2, 1, Some(0), vec![7, 8], 2),
+            state(1, 0, None, vec![7], 1),
+        ],
+    );
+    (
+        feature,
+        Inputs {
+            features: &[],
+            scopes: std::slice::from_ref(leak(scope)),
+            histories: std::slice::from_ref(leak(history)),
+            bindings: leak(HashMap::new()),
+            primary_brep: None,
+            groups: std::slice::from_ref(leak(group)),
+            operands: std::slice::from_ref(leak(operand)),
+            recipes: std::slice::from_ref(leak(recipe)),
+        },
+    )
+}
+
+#[test]
+fn a_native_split_target_names_its_body_by_the_recipe_identity() {
+    let (feature, inputs) = identity_split_fixture();
+    let (index, state, found) = split_identity_target(&feature, inputs).expect("identity target");
+    assert_eq!((index, state), (0, 1));
     assert_eq!(
-        losses[0].code,
-        F3dLossCode::FeatureHistoricalEdgeTopologyUnbound.kind()
+        found,
+        BodyIdentity {
+            design_id: "626".into(),
+            selector: 1,
+            revised: vec![7],
+        }
     );
-    assert!(losses[0].message.contains(feature.id.as_str()));
-    assert!(losses[0].message.contains("f3d:native:state#12"));
-    assert!(losses[0].message.contains(edge.as_str()));
+    // A Split that selects bodies of its input state needs no identity.
+    let mut historical = feature.clone();
+    let prefix = crate::ids::feature_input_prefix(&historical.id, 1);
+    historical
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            extend_tool: None,
+            targets: BodySelection::historical(
+                crate::ids::history_input_state_id(&prefix),
+                vec![crate::ids::history_input_body_id(&prefix, 7)],
+                "f3d:test:scope#split".to_owned(),
+            )
+            .unwrap(),
+            tool: cadmpeg_ir::features::SplitBodyTool::Faces(
+                cadmpeg_ir::features::FaceSelection::Unresolved,
+            ),
+        }));
+    assert!(split_identity_target(&historical, inputs).is_none());
+    // A recipe without a selector names no body.
+    let mut bare = inputs.recipes[0].clone();
+    bare.design.as_mut().unwrap().selector = None;
+    let bare = Inputs {
+        recipes: std::slice::from_ref(Box::leak(Box::new(bare))),
+        ..inputs
+    };
+    assert!(split_identity_target(&feature, bare).is_none());
 }

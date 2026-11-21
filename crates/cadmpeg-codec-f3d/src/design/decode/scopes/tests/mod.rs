@@ -22,6 +22,7 @@ mod fixed_kind_tail;
 mod fixed_scalar_frames;
 mod flange;
 mod history_admission;
+mod labeled_tail;
 mod legacy_class_397;
 mod legacy_frames;
 mod legacy_work_planes;

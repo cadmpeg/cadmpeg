@@ -136,6 +136,8 @@ pub(super) struct Reduction<'a> {
     losses: Vec<LossNote>,
     design_dropped: bool,
     neutral_dropped: bool,
+    /// Why the design scope is written without its `Sketch` items.
+    sketch_failure: Option<String>,
     /// The faces omitted from each opened body, charged at [`Self::finish`]
     /// for the bodies still written.
     opened: BTreeMap<String, Vec<String>>,
@@ -148,6 +150,7 @@ impl<'a> Reduction<'a> {
             losses: Vec::new(),
             design_dropped: false,
             neutral_dropped: false,
+            sketch_failure: None,
             opened: BTreeMap::new(),
         }
     }
@@ -174,6 +177,12 @@ impl<'a> Reduction<'a> {
     /// Whether a fallback dropped the root definition's design scope.
     pub(super) fn drops_neutral_design(&self) -> bool {
         self.neutral_dropped
+    }
+
+    /// Why the design scope is written without its `Sketch` items, after a
+    /// failure with them.
+    pub(super) fn sketch_failure(&self) -> Option<&str> {
+        self.sketch_failure.as_deref()
     }
 
     /// The losses, with `export:output.empty` when no geometry is written.
@@ -266,7 +275,9 @@ impl<'a> Reduction<'a> {
         let reason = error.to_string();
         let progressed = match stage {
             Stage::Archive => false,
-            Stage::NeutralDesign => self.drop_neutral_design(&reason),
+            Stage::NeutralDesign => {
+                self.drop_sketches(&reason) || self.drop_neutral_design(&reason)
+            }
             Stage::Brep => {
                 self.drop_unwritable_bodies(&reason, Stage::Brep, &writes_alone)?
                     || self.drop_native_design(&reason)
@@ -1364,6 +1375,19 @@ impl<'a> Reduction<'a> {
             &format!("of the Design stream, because the source-less generator cannot write them consistently ({reason})"),
             dropped,
         ));
+        true
+    }
+
+    /// Write the design scope without its `Sketch` items: the design plan
+    /// charges each sketch it drops.
+    fn drop_sketches(&mut self, reason: &str) -> bool {
+        if !self.writes_neutral_design()
+            || self.sketch_failure.is_some()
+            || !super::design::writes_sketches(&self.ir)
+        {
+            return false;
+        }
+        self.sketch_failure = Some(reason.to_owned());
         true
     }
 

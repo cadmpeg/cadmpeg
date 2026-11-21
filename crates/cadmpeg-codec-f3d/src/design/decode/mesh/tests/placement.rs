@@ -42,7 +42,6 @@ fn reflected_mesh_placement_preserves_triangle_and_corner_order() {
     let transform = mesh_body_transform(&mesh_body_payload(cells), PLAIN).expect("reflected map");
     let container = MeshContainer {
         split_streams: Vec::new(),
-        history_streams: Vec::new(),
         face_group_metadata: None,
         fusion_uuid: "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE".into(),
         mesh_uuid: crate::records::mesh::DesignMeshUuid::try_from(
@@ -101,7 +100,6 @@ fn mesh_placement_transforms_corner_normals_with_oriented_cofactors() {
     let transform = mesh_body_transform(&mesh_body_payload(cells), PLAIN).expect("affine map");
     let container = MeshContainer {
         split_streams: Vec::new(),
-        history_streams: Vec::new(),
         face_group_metadata: None,
         fusion_uuid: "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE".into(),
         mesh_uuid: crate::records::mesh::DesignMeshUuid::try_from(

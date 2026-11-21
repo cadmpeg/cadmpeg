@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Edges that a `Fillet` feature rounds, from the blend faces of its transition.
+//! Edges that a `Fillet` feature rounds, from the blend faces of its transition,
+//! and the binding of `Fillet` and `Chamfer` edges from their transitions.
 
 use super::blend_spine::{
-    blend_spines, cylinder_axes, edge_ends, edge_geometry, edge_points, plane_rows, BlendSpine,
-    CylinderAxis, EdgeGeometry,
+    blend_spines, cylinder_axes, edge_ends, edge_geometry, edge_points, plane_rows, same_surface,
+    BlendSpine, CylinderAxis, EdgeGeometry,
 };
 use crate::history_records::{AsmHistoricalTopology, AsmHistoricalTransition, AsmHistory};
 use crate::loss::F3dLossCode;
@@ -69,7 +70,7 @@ struct SharedEdge {
 }
 
 /// The boundary edges of each face whose boundary rebuilds.
-type Boundaries = HashMap<i64, HashSet<i64>>;
+pub(super) type Boundaries = HashMap<i64, HashSet<i64>>;
 
 /// The spine, axis, radius, and axial extent of one cylinder blend.
 #[derive(Clone, Copy)]
@@ -304,25 +305,28 @@ impl<'a> BlendRows<'a> {
     }
 }
 
-/// The blend faces that a transition inserts on new carriers, each with the
-/// one deleted edge that it replaces, or `None` when a face of either state
-/// has no rebuilt boundary or no single carrier, a result face on a new
-/// carrier persists or is not listed as inserted, a new carrier has no spine
-/// or finite positive radius row, an adjacent face of a blend maps to no single input
-/// face or has no rebuilt boundary, a support has no input boundary, an edge
-/// that two supports share has no axis row or tangent, a blend's supports
-/// share more than one edge along its spine and the blend is not a cylinder
-/// whose row radius is its radius and for which `BlendRows::covering_edge`
-/// reads an edge, or none and the blend is not such a cylinder for which
-/// `BlendRows::rounded_edge` reads an edge, the transition keeps that edge,
-/// two blends replace one edge, or a deleted edge that the covering reading
-/// of a blend assumes the blend consumes is replaced by a blend or consumed
-/// by another blend.
-fn transition_blends(
+/// The faces that a transition inserts on new carriers, with the face
+/// boundaries and carriers of both states.
+pub(super) struct TreatmentFaces {
+    pub(super) input_boundaries: Boundaries,
+    pub(super) output_boundaries: Boundaries,
+    pub(super) input_carriers: HashMap<i64, Option<i64>>,
+    /// Each inserted face on a new carrier, with its carrier, its input
+    /// supports, and whether those supports are complete.
+    pub(super) supports: Vec<(i64, i64, Vec<i64>, bool)>,
+}
+
+/// The inserted faces on new carriers of a transition with their supports,
+/// or `None` when a face of either state has no rebuilt boundary or no single
+/// carrier, a result face on a new carrier is not listed as inserted or
+/// persists with a carrier of other geometry than before, the transition
+/// inserts no face on a new carrier, or an inserted
+/// face on a new carrier has no supports.
+pub(super) fn treatment_faces(
     transition: &AsmHistoricalTransition,
     input: &AsmHistoricalTopology,
     output: &AsmHistoricalTopology,
-) -> Option<Vec<Blend>> {
+) -> Option<TreatmentFaces> {
     let inserted = &transition.topology.faces.inserted;
     let carriers = super::unique_face_carriers(output);
     let input_surfaces = input.surfaces.iter().copied().collect::<HashSet<_>>();
@@ -331,11 +335,23 @@ fn transition_blends(
     // an unlisted blend.
     let input_faces = input.faces.iter().copied().collect::<HashSet<_>>();
     let listed = inserted.iter().copied().collect::<HashSet<_>>();
+    let preceding_carriers = super::unique_face_carriers(input);
     for face in &output.faces {
         let carrier = carriers.get(face).copied().flatten()?;
         if !input_surfaces.contains(&carrier)
             && (input_faces.contains(face) || !listed.contains(face))
         {
+            // A face that persists with a new carrier of its old geometry
+            // is no blend: the transition only recorded the surface again.
+            let rerecorded = !listed.contains(face)
+                && preceding_carriers
+                    .get(face)
+                    .copied()
+                    .flatten()
+                    .is_some_and(|before| same_surface((input, before), (output, carrier)));
+            if rerecorded {
+                continue;
+            }
             return None;
         }
     }
@@ -370,6 +386,39 @@ fn transition_blends(
     if supports.len() != blend_faces.len() {
         return None;
     }
+    Some(TreatmentFaces {
+        input_boundaries,
+        output_boundaries,
+        input_carriers,
+        supports,
+    })
+}
+
+/// The blend faces that a transition inserts on new carriers, each with the
+/// one deleted edge that it replaces, or `None` when a face of either state
+/// has no rebuilt boundary or no single carrier, a result face on a new
+/// carrier persists or is not listed as inserted, a new carrier has no spine
+/// or finite positive radius row, an adjacent face of a blend maps to no single input
+/// face or has no rebuilt boundary, a support has no input boundary, an edge
+/// that two supports share has no axis row or tangent, a blend's supports
+/// share more than one edge along its spine and the blend is not a cylinder
+/// whose row radius is its radius and for which `BlendRows::covering_edge`
+/// reads an edge, or none and the blend is not such a cylinder for which
+/// `BlendRows::rounded_edge` reads an edge, the transition keeps that edge,
+/// two blends replace one edge, or a deleted edge that the covering reading
+/// of a blend assumes the blend consumes is replaced by a blend or consumed
+/// by another blend.
+fn transition_blends(
+    transition: &AsmHistoricalTransition,
+    input: &AsmHistoricalTopology,
+    output: &AsmHistoricalTopology,
+) -> Option<Vec<Blend>> {
+    let TreatmentFaces {
+        input_boundaries,
+        output_boundaries,
+        input_carriers,
+        supports,
+    } = treatment_faces(transition, input, output)?;
     let spines = blend_spines(output);
     let mut radii = HashMap::<i64, Option<f64>>::new();
     for row in &output.surface_radii {
@@ -487,7 +536,7 @@ fn group_edges(radii: &[Option<f64>], blends: &[Blend]) -> Option<Vec<Vec<i64>>>
 /// selection agrees when every edge it states is in `slots`, and a complete
 /// selection when it states exactly `slots`. A selection of edges outside the
 /// input topology states edges that `slots` cannot confirm.
-fn agrees(
+pub(super) fn agrees(
     selection: &EdgeSelection,
     feature_id: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
@@ -515,7 +564,7 @@ fn agrees(
 /// The native group reference of a selection that the blend edges replace,
 /// or `None` when the selection stays. A complete selection that agrees
 /// already states the blend edges, in its operand order.
-fn replaceable_native(selection: &EdgeSelection) -> Option<&str> {
+pub(super) fn replaceable_native(selection: &EdgeSelection) -> Option<&str> {
     match selection {
         EdgeSelection::Native(native) => Some(native.as_str()),
         EdgeSelection::HistoricalPartial { native, .. } => Some(native.as_str()),
@@ -757,7 +806,7 @@ fn covering_edge_note(at: &str, shared: &[SharedEdge]) -> LossNote {
 }
 
 /// Design records that `Fillet` binding reads.
-pub(crate) struct FilletBlendInputs<'a> {
+pub(crate) struct TreatmentBlendInputs<'a> {
     pub(crate) scopes: &'a [crate::records::feature::scope::DesignParameterScope],
     pub(crate) groups:
         &'a [crate::records::topology::construction::DesignConstructionOperandGroup],
@@ -765,8 +814,8 @@ pub(crate) struct FilletBlendInputs<'a> {
     pub(crate) scope_histories: &'a std::collections::HashMap<String, String>,
 }
 
-/// Loss notes and inferred history bindings of `bind_fillet_blend_edges`.
-pub(crate) struct FilletBlendBindings {
+/// Loss notes and inferred history bindings of `bind_treatment_edges`.
+pub(crate) struct TreatmentBlendBindings {
     pub(crate) notes: Vec<LossNote>,
     /// Each unbound scope that took the one history in which its edges
     /// resolve, with that history's id.
@@ -774,12 +823,13 @@ pub(crate) struct FilletBlendBindings {
 }
 
 /// Bind the edges of each `Fillet` feature from the blend faces of its
+/// transition and of each `Chamfer` feature from the bevel faces of its
 /// transition, with a note for each edge that the binding infers.
-pub(crate) fn bind_fillet_blend_edges(
+pub(crate) fn bind_treatment_edges(
     features: &mut [cadmpeg_ir::features::Feature],
-    input: FilletBlendInputs<'_>,
-) -> FilletBlendBindings {
-    let FilletBlendInputs {
+    input: TreatmentBlendInputs<'_>,
+) -> TreatmentBlendBindings {
+    let TreatmentBlendInputs {
         scopes,
         groups,
         histories,
@@ -788,7 +838,9 @@ pub(crate) fn bind_fillet_blend_edges(
     let is_fillet = |feature: &cadmpeg_ir::features::Feature| {
         matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::Fillet { .. })
+            FeatureDefinition::Operation(
+                FeatureOperation::Fillet { .. } | FeatureOperation::Chamfer { .. }
+            )
         )
     };
     let states = features
@@ -845,7 +897,7 @@ pub(crate) fn bind_fillet_blend_edges(
                 continue;
             };
             feature.evaluation.edit(|definition, _| {
-                bind_fillet_groups(
+                bind_treatment_groups(
                     definition,
                     &feature_id,
                     state.scope,
@@ -871,7 +923,7 @@ pub(crate) fn bind_fillet_blend_edges(
             };
             let mut definition = feature.evaluation.definition().clone();
             let mut candidate_notes = Vec::new();
-            let binding = bind_fillet_groups(
+            let binding = bind_treatment_groups(
                 &mut definition,
                 &feature_id,
                 state.scope,
@@ -880,7 +932,7 @@ pub(crate) fn bind_fillet_blend_edges(
                 states,
                 &mut candidate_notes,
             );
-            if binding != GroupBinding::Unbound && every_fillet_group_historical(&definition) {
+            if binding != GroupBinding::Unbound && every_treatment_group_historical(&definition) {
                 resolved.push((
                     state.history,
                     state.scope,
@@ -926,14 +978,14 @@ pub(crate) fn bind_fillet_blend_edges(
             }
         }
     }
-    FilletBlendBindings {
+    TreatmentBlendBindings {
         notes,
         inferred_scope_histories,
     }
 }
 
 /// The transition, input topology and output topology of a fillet state.
-fn fillet_states<'a>(
+pub(super) fn fillet_states<'a>(
     histories: &'a [AsmHistory],
     state: &super::FaceSelectionState<'_>,
 ) -> Option<(
@@ -951,17 +1003,63 @@ fn fillet_states<'a>(
     ))
 }
 
-/// Whether every group of a Fillet definition names historical edges.
-fn every_fillet_group_historical(definition: &FeatureDefinition) -> bool {
-    let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) = definition else {
-        return false;
-    };
-    groups.iter().all(|group| {
+/// Whether every group of a Fillet or Chamfer definition names historical
+/// edges.
+fn every_treatment_group_historical(definition: &FeatureDefinition) -> bool {
+    let historical = |edges: &EdgeSelection| {
         matches!(
-            group.edges,
+            edges,
             EdgeSelection::Historical { .. } | EdgeSelection::HistoricalPartial { .. }
         )
-    })
+    };
+    match definition {
+        FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) => {
+            groups.iter().all(|group| historical(&group.edges))
+        }
+        FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) => {
+            groups.iter().all(|group| historical(&group.edges))
+        }
+        _ => false,
+    }
+}
+
+/// Bind the groups of a Fillet or Chamfer definition from the blends or
+/// bevels of its transition. Only a Fillet reports notes.
+fn bind_treatment_groups(
+    definition: &mut FeatureDefinition,
+    feature_id: &cadmpeg_ir::features::FeatureId,
+    scope: &crate::records::feature::scope::DesignParameterScope,
+    groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
+    previous_state_id: i64,
+    states: (
+        &AsmHistoricalTransition,
+        &AsmHistoricalTopology,
+        &AsmHistoricalTopology,
+    ),
+    notes: &mut Vec<LossNote>,
+) -> GroupBinding {
+    if matches!(
+        definition,
+        FeatureDefinition::Operation(FeatureOperation::Chamfer { .. })
+    ) {
+        return super::chamfer_blends::bind_chamfer_groups(
+            definition,
+            feature_id,
+            scope,
+            groups,
+            previous_state_id,
+            states,
+        );
+    }
+    bind_fillet_groups(
+        definition,
+        feature_id,
+        scope,
+        groups,
+        previous_state_id,
+        states,
+        notes,
+    )
 }
 
 #[cfg(test)]

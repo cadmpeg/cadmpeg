@@ -1172,4 +1172,19 @@ fn a_parameter_display_flag_and_unstated_body_visibility_are_charged() {
     );
 }
 
+#[test]
+fn a_hidden_body_of_a_base_feature_design_is_charged_as_written_visible() {
+    let mut ir = scoped_cube();
+    let body = ir.geometry.bodies[0].id.to_string();
+    for (visible, charged) in [(Some(false), true), (Some(true), false)] {
+        ir.geometry.bodies[0].visible = visible;
+        let (report, _) = write(&ir);
+        let named = loss(&report, "export/value.unwritable")
+            .into_iter()
+            .any(|message| message.contains("as visible") && message.contains(&body));
+        assert_eq!(named, charged, "{visible:?}: {:#?}", report.losses);
+    }
+}
+
 mod roster;
+mod sketch;

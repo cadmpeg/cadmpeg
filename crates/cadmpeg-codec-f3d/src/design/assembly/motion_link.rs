@@ -85,7 +85,7 @@ pub(super) fn project(
                 PairedJointKind::Gears {
                     distance: None,
                     distance2: None,
-                    ratio: Some(link.ratio()?),
+                    ratio: Some(link.ratio()?.into()),
                     coupled_joints: vec![first_id, second_id],
                 },
                 [first_connector, second_connector],

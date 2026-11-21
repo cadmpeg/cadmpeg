@@ -16,6 +16,9 @@ pub(crate) enum Work {
     /// readings, edge lengths, and, for a face that needs fluxes, its area
     /// readings and fluxes.
     Orientation,
+    /// What body boxes read: edge boxes and lengths, boundaries, regions,
+    /// orientation readings and witnesses.
+    Box,
 }
 
 /// What one item's evaluator calls run under.

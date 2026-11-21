@@ -1625,12 +1625,12 @@ fn whole_sphere_pole_loops(
         )) else {
             return Ok(Vec::new());
         };
-        let label = format_args!("sphere-pole-{}-{name}", node.xmt());
+        let label = format!("sphere-pole-{}-{name}", node.xmt());
         let point: PointId =
-            scope.id_from_display(&cadmpeg_ir::identity_component!("point"), label)?;
+            scope.id_from_display(&cadmpeg_ir::identity_component!("point"), &label)?;
         let vertex: VertexId =
-            scope.id_from_display(&cadmpeg_ir::identity_component!("vertex"), label)?;
-        let id: LoopId = scope.id_from_display(&cadmpeg_ir::identity_component!("loop"), label)?;
+            scope.id_from_display(&cadmpeg_ir::identity_component!("vertex"), &label)?;
+        let id: LoopId = scope.id_from_display(&cadmpeg_ir::identity_component!("loop"), &label)?;
         let offset = cadmpeg_core::decode::u64_from_index(node.pos());
         annotations.note(
             point.as_str(),

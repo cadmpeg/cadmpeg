@@ -76,6 +76,35 @@ class MeasurementDependencyTests(TempSourceCase):
         self.manifest("cadmpeg", "[dependencies]\ncadmpeg-measure.workspace = true\n")
         self.assertEqual(self.findings("measurement_dependency"), [])
 
+    def test_fusion_codec_production_dependency_passes(self) -> None:
+        self.manifest("cadmpeg-codec-f3d", "[dependencies]\ncadmpeg-measure.workspace = true\n")
+        self.assertEqual(self.findings("measurement_dependency"), [])
+
+    def test_fusion_codec_renamed_production_dependency_fails(self) -> None:
+        self.manifest("cadmpeg-codec-f3d",
+                      '[dependencies]\nmeasure = { package = "cadmpeg-measure", workspace = true }\n')
+        findings = self.findings("measurement_dependency")
+        self.assertEqual([(item.path, item.line) for item in findings],
+                         [("crates/cadmpeg-codec-f3d/Cargo.toml", 5)])
+
+    def workspace_renames_measure(self) -> None:
+        self.write("Cargo.toml", '[workspace.dependencies]\n'
+                   'measure = { package = "cadmpeg-measure", path = "crates/cadmpeg-measure" }\n')
+
+    def test_workspace_renamed_codec_dependency_fails(self) -> None:
+        self.workspace_renames_measure()
+        self.manifest("cadmpeg-codec-step", "[dependencies]\nmeasure.workspace = true\n")
+        findings = self.findings("measurement_dependency")
+        self.assertEqual([(item.path, item.line) for item in findings],
+                         [("crates/cadmpeg-codec-step/Cargo.toml", 5)])
+
+    def test_fusion_codec_workspace_renamed_dependency_fails(self) -> None:
+        self.workspace_renames_measure()
+        self.manifest("cadmpeg-codec-f3d", "[dependencies]\nmeasure.workspace = true\n")
+        findings = self.findings("measurement_dependency")
+        self.assertEqual([(item.path, item.line) for item in findings],
+                         [("crates/cadmpeg-codec-f3d/Cargo.toml", 5)])
+
     def test_test_support_production_dependency_fails(self) -> None:
         self.manifest("cadmpeg-test-support",
                       '[dependencies]\ncadmpeg-measure = { path = "../cadmpeg-measure" }\n')
@@ -91,6 +120,26 @@ class MeasurementDependencyTests(TempSourceCase):
         self.manifest("cadmpeg-codec-nx",
                       '[dependencies]\nmeasure = { package = "cadmpeg-measure", version = "0" }\n')
         self.assertEqual(len(self.findings("measurement_dependency")), 1)
+
+    def test_fusion_writer_use_passes(self) -> None:
+        self.write("crates/cadmpeg-codec-f3d/src/writer/generate/values.rs",
+                   "use cadmpeg_measure::body_boxes;\n")
+        self.assertEqual(self.findings("measurement_use"), [])
+
+    def test_fusion_decoder_use_fails(self) -> None:
+        self.write("crates/cadmpeg-codec-f3d/src/reader/body.rs",
+                   "fn f() {}\nuse cadmpeg_measure::body_boxes;\n")
+        findings = self.findings("measurement_use")
+        self.assertEqual([(item.path, item.line) for item in findings],
+                         [("crates/cadmpeg-codec-f3d/src/reader/body.rs", 2)])
+
+    def test_codec_test_and_comment_uses_pass(self) -> None:
+        self.write("crates/cadmpeg-codec-step/src/reader.rs",
+                   "// cadmpeg_measure reads the output.\n"
+                   "#[cfg(test)]\nmod tests {\n    use cadmpeg_measure::body_boxes;\n}\n")
+        self.write("crates/cadmpeg-codec-f3d/src/integration_tests/boxes.rs",
+                   "use cadmpeg_measure::body_boxes;\n")
+        self.assertEqual(self.findings("measurement_use"), [])
 
 
 class ForeignNativeNamespaceTests(TempSourceCase):

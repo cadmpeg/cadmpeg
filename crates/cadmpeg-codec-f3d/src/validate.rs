@@ -82,11 +82,17 @@ fn design_stream_contains_entry(stream: &str, entry: &str) -> bool {
     ids::native_scope_matches(stream, entry)
 }
 
-/// Admit the empty reference table used by a legacy Combine tool operand.
 fn body_recipe_reference_table_is_admitted(
-    scope: Option<&records::feature::scope::DesignParameterScope>,
+    scope: Option<&DesignParameterScope>,
     operand: &records::topology::body_recipe::DesignBodyRecipeOperand,
 ) -> bool {
+    if operand.has_legacy_cut_frame() {
+        return operand.owner.group().is_some_and(|(group, _)| {
+            scope.and_then(|scope| {
+                scope.legacy_class_330_body_recipe_close(group, operand.record_index())
+            }) == Some(operand.next_record_index())
+        });
+    }
     !operand.references().is_empty()
         || matches!(
             operand.owner,
@@ -1889,61 +1895,6 @@ fn validate_body_bounds(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     }
 }
 
-fn placement_ordered_references_hold(
-    scope: &records::feature::scope::DesignParameterScope,
-    alignment: &records::feature::assembly::DesignAssemblyAlignment,
-    owners: &[(u32, u32)],
-) -> bool {
-    use crate::layout::assembly_as_built_scope_owner_run as layout;
-    let Some(count) = design::assembly::as_built_additional_owner_count(scope) else {
-        return false;
-    };
-    let Some(run) = &alignment.additional_owner_run else {
-        return false;
-    };
-    let table = scope.reference_members();
-    usize::try_from(run.count.value) == Ok(count)
-        && run.count.offset == scope.byte_offset() + u64_from_index(layout::ADDITIONAL_OWNER_COUNT)
-        && run.references.len() == count
-        && owners.len() == 4 + count
-        && owners
-            .iter()
-            .enumerate()
-            .all(|(ordinal, (local, _))| usize::try_from(*local) == Ok(ordinal))
-        && alignment.owners.len() == 4
-        && alignment
-            .owners
-            .iter()
-            .zip(owners)
-            .all(|(reference, (_, index))| reference.value == *index)
-        && (design::assembly::compact_placement_as_built_scope(scope)
-            || (table.len() == 9 + count
-                && (count != 0
-                    || table.values_in(5..9).is_some_and(|values| {
-                        values.eq(alignment.owners.iter().map(|owner| &owner.value))
-                    }))))
-        && run
-            .references
-            .iter()
-            .zip(owners.iter().skip(4))
-            .enumerate()
-            .all(|(ordinal, (reference, (_, index)))| {
-                reference.value == *index
-                    && reference.offset
-                        == scope.byte_offset()
-                            + u64_from_index(layout::ADDITIONAL_OWNER_REFERENCES + 11 * ordinal)
-                    && table.values().any(|value| value == index)
-            })
-        && (0..table.len())
-            .filter(|&start| {
-                table.values_in(start..start + 4).is_some_and(|values| {
-                    values.eq(alignment.owners.iter().map(|owner| &owner.value))
-                })
-            })
-            .count()
-            == 1
-}
-
 /// Validate feature parameter scopes and their paired feature-operation frames.
 /// The links resolve into design-intent records, so a document without them
 /// has nothing to check.
@@ -2899,7 +2850,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         .map(|owner| (owner.local_ordinal(), owner.record_index()))
                         .collect::<Vec<_>>();
                     owners.sort_unstable();
-                    placement_ordered_references_hold(scope, alignment, &owners)
+                    design::assembly::placement_ordered_references_hold(scope, alignment, &owners)
                 } else {
                     scope
                         .reference_members()
@@ -3432,6 +3383,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 == 1
         };
         let valid = match scope.extrude_prologue() {
+            Some(_) if scope.is_legacy_class_330_blind_cut() => true,
             Some(prologue) if through_all::matches_scope(scope) => {
                 through_all::valid_prologue(scope, prologue)
             }

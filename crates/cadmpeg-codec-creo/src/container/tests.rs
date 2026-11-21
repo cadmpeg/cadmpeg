@@ -75,7 +75,8 @@ fn named_datum_plane_aggregates_one_plane() {
     let payload = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0";
     let section = super::Section::scan("ActDatums".to_string(), 0, payload.len(), None, payload)
         .expect("bounded datum section");
-    let planes = super::datum_planes(std::slice::from_ref(&section)).expect("named plane");
+    let planes =
+        super::datum_planes(std::slice::from_ref(&section), &mut Vec::new()).expect("named plane");
     assert_eq!(planes.len(), 1);
 }
 
@@ -366,3 +367,51 @@ fn expanded_section_above_the_local_ceiling_stays_compressed() {
 
 mod parent_features;
 mod unit_selection;
+
+#[test]
+fn packed_row_reading_loss_states_the_file_byte() {
+    let mut losses = Vec::new();
+    container::charge_packed_row_readings(
+        100,
+        vec![crate::surface::PackedRowReading {
+            frame_start: Some(12),
+            kept: crate::surface::KeptRowReading::Packed,
+            replaced: 1,
+        }],
+        &mut losses,
+    );
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::CreoLossCode::SurfaceRowPackedReading
+            .note(String::new())
+            .code
+    );
+    assert!(losses[0]
+        .message
+        .starts_with("srf_array frame at byte 112 "));
+}
+
+#[test]
+fn compact_row_reading_loss_names_the_passed_over_packed_rows() {
+    let mut losses = Vec::new();
+    container::charge_packed_row_readings(
+        100,
+        vec![crate::surface::PackedRowReading {
+            frame_start: None,
+            kept: crate::surface::KeptRowReading::Compact,
+            replaced: 2,
+        }],
+        &mut losses,
+    );
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::CreoLossCode::SurfaceRowCompactReading
+            .note(String::new())
+            .code
+    );
+    assert!(losses[0]
+        .message
+        .ends_with("dropped 2 rows of the packed c0..df XX YY reading"));
+}

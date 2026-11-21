@@ -1559,6 +1559,7 @@ mod direction_records;
 mod distance_type_ten;
 mod inactive_direction_one;
 mod rectangular_instance_caps;
+mod symmetric_two;
 
 fn spacing_payload() -> Vec<u8> {
     let mut bytes = Vec::new();
@@ -1649,18 +1650,20 @@ fn rectangular_pattern_payload_binds_secondary_vector_to_owners_and_seed() {
             crate::test_support::reals([0.0, 0.0, -3.0])
         );
         for offset in [
-            11, 19, 20, 24, 25, 35, 39, 40, 50, 59, 87, 88, 98, 99, 110, 111, 112, 122, 123, 140,
-            141, 151, 152, 162, 163, 173,
+            11, 19, 20, 24, 25, 35, 39, 40, 50, 59, 87, 88, 98, 99, 111, 112, 122, 123, 140, 141,
+            151, 152, 162, 163, 173,
         ] {
             let mut corrupt = bytes.clone();
             corrupt[offset] ^= 1;
             assert!(parse(&corrupt).is_none(), "offset {offset}");
         }
-        let mut symmetric = bytes.clone();
-        symmetric[109] = 1;
-        assert_eq!(parse(&symmetric), Some(secondary));
-        symmetric[109] = 2;
-        assert!(parse(&symmetric).is_none());
+        for offset in [109, 110] {
+            let mut symmetric = bytes.clone();
+            symmetric[offset] = 1;
+            assert_eq!(parse(&symmetric), Some(secondary), "offset {offset}");
+            symmetric[offset] = 2;
+            assert!(parse(&symmetric).is_none(), "offset {offset}");
+        }
         let mut zero = bytes.clone();
         zero[63..87].fill(0);
         assert!(parse(&zero).is_none());

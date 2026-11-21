@@ -100,10 +100,10 @@ pub(super) fn profile_region_link(
     let selection_index_matches = profile.record_index.checked_add(3)
         == Some(selection.record_index)
         || (profile.record_index.checked_add(2) == Some(selection.record_index)
-            && profile.scope_reference_ordinal == 1
+            && scope.legacy_class_330_profile_member_ordinal()
+                == Some(profile.scope_reference_ordinal)
             && profile.class_tag.as_str() == "272"
-            && profile.paired_class_tag().as_str() == "262"
-            && scope.is_legacy_class_330_symmetric_distance());
+            && profile.paired_class_tag().as_str() == "262");
     if !selection_index_matches
         || selection.byte_offset <= profile.paired_byte_offset()
         || selection.region_count_offset != expected_region_count_offset

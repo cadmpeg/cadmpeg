@@ -32,6 +32,7 @@ pub(crate) struct DesignBodyRecipeOperand {
     pub(crate) context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
     context_id_offset: u64,
+    nested_index_delta: u32,
     /// Serialization form after the fixed `u32 2`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     selector_tail: Option<Located<NativeBytes<[u8; 4]>>>,
@@ -75,6 +76,7 @@ impl Clone for DesignBodyRecipeOperand {
             asset_id: self.asset_id.clone(),
             context_id: self.context_id.clone(),
             context_id_offset: self.context_id_offset,
+            nested_index_delta: self.nested_index_delta,
             selector_tail: (self.selector_tail),
             references: self.references.clone(),
             recipe_id: self.recipe_id.clone(),
@@ -121,17 +123,33 @@ impl DesignBodyRecipeOperand {
                 return Err("references contain an invalid identity or offset".into());
             }
         }
+        let legacy_cut_frame = draft
+            .nested_record_index
+            .checked_sub(u64::from(draft.record_index))
+            == Some(2)
+            && draft.next_record_index.checked_sub(draft.record_index) == Some(3)
+            && draft.class_tag.as_str() == "311"
+            && matches!(
+                draft.owner,
+                DesignOperandOwner::Group {
+                    group_member_ordinal: 0,
+                    ..
+                }
+            )
+            && draft.references.is_empty()
+            && draft.selector_tail.is_some_and(|tail| tail.value == [0; 4]);
+        let nested_index_delta = if legacy_cut_frame { 2 } else { 3 };
         if draft
             .next_record_index
             .checked_sub(draft.record_index)
-            .is_some_and(|delta| delta < 4)
+            .is_some_and(|delta| delta <= nested_index_delta)
         {
             return Err("next_record_index names a record of the operand prologue".into());
         }
         let frame = crate::records::frame_chain::RecordFrameChain::try_new(
             draft.record_index,
             draft.byte_offset,
-            3,
+            nested_index_delta,
             u64::try_from(draft.references.len())
                 .ok()
                 .and_then(|count| count.checked_mul(12))
@@ -147,6 +165,7 @@ impl DesignBodyRecipeOperand {
             asset_id: draft.asset_id,
             context_id: draft.context_id,
             context_id_offset: draft.context_id_offset,
+            nested_index_delta,
             selector_tail: draft.selector_tail.map(|tail| Located {
                 value: tail.value.into(),
                 offset: tail.offset,
@@ -222,7 +241,10 @@ impl DesignBodyRecipeOperand {
         &self.references
     }
     pub(crate) fn nested_record_index(&self) -> u64 {
-        u64::from(self.frame.index(3))
+        u64::from(self.frame.index(self.nested_index_delta))
+    }
+    pub(crate) fn has_legacy_cut_frame(&self) -> bool {
+        self.nested_index_delta == 2
     }
     fn nested_record_index_offset(&self) -> u64 {
         self.frame

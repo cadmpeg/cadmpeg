@@ -95,6 +95,7 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
                 bodies_touching(topology, &face_slots.iter().collect::<Vec<_>>())
             }
             .map(Vec::into_iter);
+            let closures_read = body_slots.is_some();
             let mut complete_bodies = None;
             for position in bound {
                 let Some(operand) = operands.get_mut(position) else {
@@ -106,15 +107,21 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
                     }
                 }
                 resolve_body_recipe_operand_preceding_body(operand);
-                // When every face clause reaches a body of this state, the
-                // body whose last persistent design link is the recipe's
-                // design pair is the selected body.
-                let clauses_reach_state = !operand.references().is_empty()
-                    && operand
-                        .references()
+                // When every face clause reaches a body of this state, or every
+                // clause has candidate faces and all of them are outside it, the
+                // body whose last persistent design link is the recipe's design
+                // pair is the selected body.
+                let references = operand.references();
+                let design_link_applies = closures_read
+                    && !references.is_empty()
+                    && (references
                         .iter()
-                        .all(|reference| !reference.preceding_body_slots.is_empty());
-                if let Some(body) = clauses_reach_state
+                        .all(|reference| !reference.preceding_body_slots.is_empty())
+                        || references.iter().all(|reference| {
+                            !reference.candidate_faces.is_empty()
+                                && reference.preceding_candidate_faces.is_empty()
+                        }));
+                if let Some(body) = design_link_applies
                     .then(|| design_linked_body_slot(operand, &recipes_by_id, topology))
                     .flatten()
                 {

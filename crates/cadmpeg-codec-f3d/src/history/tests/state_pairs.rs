@@ -11,6 +11,7 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+mod base_feature_history;
 mod edge_recipe_faces;
 mod treatment;
 

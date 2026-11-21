@@ -166,7 +166,7 @@ fn named_legacy_scale_projects_one_body_group_member() {
     let bytes = labeled_scale_fixture(prefix, &[101, 102, 103, 104, 105]);
     let scope = parse_scope(&bytes, 0).unwrap();
     assert_eq!(scope.label.as_ref().unwrap().value, "Example");
-    assert_eq!(scope.previous_history_state_id(), None);
+    assert_eq!(scope.previous_history_state_id(), Some(17));
     let operation = decode_scale(&bytes, 0, &HashMap::new()).expect("named uniform Scale");
     assert_eq!(operation.body_group_record_index, 102);
     assert_eq!(operation.center_record_index, 105);

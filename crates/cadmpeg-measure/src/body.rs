@@ -20,7 +20,7 @@ use crate::geom::Aabb;
 use crate::owners::Owners;
 use crate::reason::{CaveatCode, UnavailableReason};
 use crate::report::{
-    BodyMeasures, BodyOrientation, CaveatCount, ShellMeasures, ShellRole, StatusTally,
+    BodyBox, BodyMeasures, BodyOrientation, CaveatCount, ShellMeasures, ShellRole, StatusTally,
 };
 use crate::tolerance::model_tolerance;
 use crate::value::{
@@ -246,6 +246,18 @@ impl<'a> BodyInput<'a, '_> {
             message: failure.message,
             related,
         })
+    }
+
+    /// The body's member box and vertex box.
+    pub(crate) fn boxes(&self, body: &Body) -> BodyBox {
+        let id = body.id.as_str();
+        let face_ids: Vec<&str> = self.owners.body_faces(id).collect();
+        let edge_ids: Vec<&str> = self.owners.body_edges(id).collect();
+        BodyBox {
+            body: id.to_owned(),
+            bbox: self.bbox(id, &face_ids, &edge_ids),
+            vertex_box: self.vertex_box(body),
+        }
     }
 
     /// The union of the face boxes, else of the edge boxes.

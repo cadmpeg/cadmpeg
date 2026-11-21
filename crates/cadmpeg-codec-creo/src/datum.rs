@@ -9,6 +9,7 @@ use cadmpeg_core::CodecError;
 
 use crate::scalar;
 use crate::surface::cylinder_frame_readers::positional_cylinder_frames_agree;
+use crate::surface::row_prefix::named_row_identifier;
 use crate::surface::{PositionalCylinderFrame, SurfaceKind, SurfaceParameterRecord, SurfaceRow};
 
 const EPS_ACTIVE_CYLINDER_RELATIVE: f64 = 1.0e-9;
@@ -344,15 +345,8 @@ fn positional_plane(
     cache: &scalar::ScalarCache,
 ) -> Option<DatumPlaneRecord> {
     let id_start = row.offset;
-    let body_start = (|| {
-        if payload.get(id_start).copied()? > 0xbf {
-            return None;
-        }
-        let (_, after_id) = crate::psb::compact_int(payload, id_start);
-        (payload.get(after_id) == Some(&0x22)).then_some(())?;
-        let (_, after_feature) = crate::psb::compact_int(payload, after_id + 1);
-        Some(crate::psb::compact_int(payload, after_feature + 2).1)
-    })()?;
+    (row.kind == SurfaceKind::Plane).then_some(())?;
+    let body_start = crate::surface::row_prefix::positional_body_start(payload, row)?;
     let values = datum_slots(payload, body_start, 10, row_end, cache)?;
     let outline = &values[4..];
     let equal = [
@@ -385,6 +379,7 @@ fn positional_plane(
 /// Decode a named datum from its matching outline coordinates.
 pub(crate) fn named_plane(payload: &[u8]) -> Option<DatumPlaneRecord> {
     let marker = b"outline\0\xf9\x02\x03";
+    let packed = crate::surface::packed_reading_chosen(payload);
     let (outline, id, feature_id) = (|| {
         let outline = find(payload, marker, 0)?;
         let id_marker = b"\xe0\x01geom_id\0";
@@ -403,10 +398,10 @@ pub(crate) fn named_plane(payload: &[u8]) -> Option<DatumPlaneRecord> {
             .checked_sub(2)
             .filter(|start| payload.get(*start) == Some(&crate::psb::token::NAMED_RECORD))
             .unwrap_or(outline);
-        let (id, id_end) = crate::psb::reference_id(payload, id_start).ok()?;
+        let (id, id_end) = named_row_identifier(payload, id_start, packed)?;
         (id_end <= feature_field_start).then_some(())?;
         let feature_start = feature_at + feature_marker.len();
-        let (feature_id, feature_end) = crate::psb::reference_id(payload, feature_start).ok()?;
+        let (feature_id, feature_end) = named_row_identifier(payload, feature_start, packed)?;
         (feature_end <= outline_field_start).then_some(())?;
         Some((outline, id, feature_id))
     })()?;

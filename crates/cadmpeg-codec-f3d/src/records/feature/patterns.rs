@@ -506,6 +506,8 @@ pub(crate) struct DesignRectangularPatternDistribution {
     pub(crate) record_index: u32,
     /// Direction one places its instances on both sides of the seed.
     pub(crate) symmetric: Located<bool>,
+    /// Direction two places its instances on both sides of the seed.
+    pub(crate) symmetric_two: Located<bool>,
     /// Each distance owner stores the seed-to-final-instance extent; adjacent spacing otherwise.
     pub(crate) total_extent: Located<bool>,
     /// Compute option: `0` Optimized, `1` Identical, `2` Adjust.
@@ -1370,6 +1372,10 @@ mod tests {
             symmetric: Located {
                 value: true,
                 offset: 109,
+            },
+            symmetric_two: Located {
+                value: false,
+                offset: 110,
             },
             total_extent: Located {
                 value: false,

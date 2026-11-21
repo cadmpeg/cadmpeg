@@ -135,7 +135,7 @@ fn authored_design_history_keeps_sketches_constraints_and_operations() {
         }
     };
     for (name, expected_sketch, expected_op, expected_length) in [
-        ("Pad", &pad.id, BooleanOp::Join, 10.0),
+        ("Pad", &pad.id, BooleanOp::NewBody, 10.0),
         ("Pocket", &pocket.id, BooleanOp::Cut, 6.0),
     ] {
         assert!(

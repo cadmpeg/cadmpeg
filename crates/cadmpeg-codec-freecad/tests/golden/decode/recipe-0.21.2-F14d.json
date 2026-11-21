@@ -2247,7 +2247,7 @@
               "operation": {
                 "kind": "primitive",
                 "value": {
-                  "op": "join",
+                  "op": "new_body",
                   "placement": [
                     [
                       1.0,

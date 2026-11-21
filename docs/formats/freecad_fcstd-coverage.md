@@ -273,6 +273,14 @@ attachment properties keep an absent neutral placement and emit the same loss. T
 attachment summary product is separate from the neutral primitive frame. Multiple parent
 containers violate product or feature-tree ownership and refuse the document.
 
+## First body feature
+
+The first solid feature of a `PartDesign::Body` decodes with a new-body operation when it adds
+material and both the body and feature `BaseFeature` links are empty. When that first solid feature
+removes material, it keeps its typed removal operation with an empty input solid and emits
+`fcstd/feature.removal-without-base`. Each body owns its result;
+a feature outside every body keeps its additive operation.
+
 ## Revolution admission
 
 The neutral revolution axis retains the normalized resolved direction, origin, and native

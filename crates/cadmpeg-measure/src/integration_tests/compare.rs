@@ -325,7 +325,7 @@ fn a_nested_override_places_its_instance() {
 /// The bilinear NURBS patch `(x, y) = (2u, v)` on `[0, 1]²` at `z = 0`,
 /// bounded by its four domain edges: a 2 × 1 rectangle whose box is the
 /// conservative control hull.
-fn nurbs_rectangle(transform: Option<Transform>) -> CadIr {
+pub(super) fn nurbs_rectangle(transform: Option<Transform>) -> CadIr {
     let mut builder = Builder::new();
     let surface = builder.nurbs(
         (1, vec![0.0, 0.0, 1.0, 1.0]),

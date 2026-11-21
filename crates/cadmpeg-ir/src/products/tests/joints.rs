@@ -185,6 +185,47 @@ fn a_joint_family_refuses_a_scalar_outside_it_by_name() {
     }
 }
 
+/// A gear or rack-and-pinion ratio is signed: external gears turn opposite
+/// ways (a negative ratio) and an internal gear the same way. A zero ratio
+/// couples nothing and is refused.
+#[test]
+fn a_coupling_ratio_keeps_its_sign_and_refuses_zero() {
+    for kind in [
+        PairedJointKind::Gears {
+            distance: None,
+            distance2: None,
+            ratio: None,
+            coupled_joints: Vec::new(),
+        },
+        PairedJointKind::RackPinion {
+            distance: None,
+            distance2: None,
+            ratio: None,
+            coupled_joints: Vec::new(),
+        },
+    ] {
+        let joint =
+            AssemblyJoint::paired(joint_id(), kind.clone(), [connector(), connector()], None);
+        let wire = serde_json::to_value(&joint).unwrap();
+        for ratio in [-0.5, 2.0] {
+            let mut candidate = wire.clone();
+            candidate["operands"]["value"]["kind"]["ratio"] = serde_json::json!(ratio);
+            let decoded = serde_json::from_value::<AssemblyJoint>(candidate.clone()).unwrap();
+            assert_eq!(
+                serde_json::to_value(decoded).unwrap(),
+                candidate,
+                "{kind:?}: {ratio}"
+            );
+        }
+        let mut zero = wire.clone();
+        zero["operands"]["value"]["kind"]["ratio"] = serde_json::json!(0.0);
+        assert!(
+            serde_json::from_value::<AssemblyJoint>(zero).is_err(),
+            "{kind:?}"
+        );
+    }
+}
+
 /// The deleted parallel arrays and the read-and-dropped `properties` key are
 /// refused at the level they were deleted from.
 #[test]

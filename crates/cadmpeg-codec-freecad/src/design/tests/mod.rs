@@ -3,6 +3,7 @@
 
 pub(crate) mod booleans_patterns;
 pub(crate) mod construction;
+mod first_feature;
 mod history;
 pub(crate) mod holes_extrude;
 mod ordering;

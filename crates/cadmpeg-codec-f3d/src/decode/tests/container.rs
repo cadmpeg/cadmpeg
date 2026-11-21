@@ -477,15 +477,16 @@ fn empty_model_maps_do_not_decode_or_blame_a_sketch_snapshot() {
         .unwrap();
     assert!(decoded.ir().geometry.bodies.is_empty());
     assert!(decoded.ir().geometry.curves.is_empty());
-    let geometry = decoded
+    assert!(decoded
         .report()
         .losses
         .iter()
-        .find(|loss| loss.code == F3dLossCode::GeometryNotTransferred.kind())
-        .unwrap();
-    assert!(geometry
-        .message
-        .contains("No physical model BREP was selected"));
+        .any(|loss| loss.code == F3dLossCode::EmptyDesign.kind()));
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code != F3dLossCode::GeometryNotTransferred.kind()));
     assert!(decoded
         .report()
         .losses

@@ -1903,9 +1903,9 @@ fn bind_feature(native_ref: Option<&str>) -> EdgeSelection {
         )),
         native_ref: native_ref.map(str::to_owned),
     };
-    super::bind_fillet_blend_edges(
+    super::bind_treatment_edges(
         std::slice::from_mut(&mut feature),
-        super::FilletBlendInputs {
+        super::TreatmentBlendInputs {
             scopes: &[scope(42)],
             groups: &[group(42, &[7])],
             histories: &mut [history()],
@@ -1924,7 +1924,7 @@ fn bind_feature(native_ref: Option<&str>) -> EdgeSelection {
 /// binding from `histories`, and the bindings.
 fn bind_unbound(
     histories: &mut [crate::history_records::AsmHistory],
-) -> (EdgeSelection, super::FilletBlendBindings) {
+) -> (EdgeSelection, super::TreatmentBlendBindings) {
     bind_unbound_fillet(fillet(native(), three_mm()), histories)
 }
 
@@ -1933,7 +1933,7 @@ fn bind_unbound(
 fn bind_unbound_fillet(
     definition: FeatureDefinition,
     histories: &mut [crate::history_records::AsmHistory],
-) -> (EdgeSelection, super::FilletBlendBindings) {
+) -> (EdgeSelection, super::TreatmentBlendBindings) {
     let mut feature = cadmpeg_ir::features::Feature {
         product_definition: None,
         id: FeatureId::mint("f3d:test:feature#42").expect("identity grammar"),
@@ -1948,9 +1948,9 @@ fn bind_unbound_fillet(
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(SCOPE_ID.to_owned()),
     };
-    let bindings = super::bind_fillet_blend_edges(
+    let bindings = super::bind_treatment_edges(
         std::slice::from_mut(&mut feature),
-        super::FilletBlendInputs {
+        super::TreatmentBlendInputs {
             scopes: &[scope(42)],
             groups: &[group(42, &[7])],
             histories,
@@ -1995,6 +1995,6 @@ fn a_fillet_binds_from_the_transition_of_its_scope() {
     assert_eq!(slots(&bind_feature(Some(SCOPE_ID))), ["17"]);
     assert_eq!(bind_feature(None), native());
 }
-
 mod covering;
 mod fragment_precedence;
+mod rerecorded_carrier;

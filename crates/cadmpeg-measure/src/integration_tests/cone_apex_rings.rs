@@ -110,7 +110,7 @@ fn an_edge_with_no_curve_at_the_apex_is_an_apex_ring() {
 
 /// A spike: the tip below `z = 20`, a cylinder to `z = 40`, and a cap. The apex
 /// ring lies beside ordinary loops in one closed body.
-fn spike() -> CadIr {
+pub(super) fn spike() -> CadIr {
     let mut builder = Builder::new();
     let rim = section(&mut builder, 20.0);
     let top_vertex = builder.vertex([10.0, 0.0, 40.0]);

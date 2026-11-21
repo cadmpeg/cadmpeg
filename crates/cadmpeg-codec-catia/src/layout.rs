@@ -509,7 +509,7 @@ pub(crate) mod b5_loop_numeric_terminal {
 /// Spec §6.6. Record length 141 B.
 ///
 /// ```text
-/// Tail-relative offsets. The generic 133-byte and 142-byte surface tails share the prefix through offset 71.
+/// Fixed terminal-span production in section 6.6, with one-byte identifiers and a six-byte suffix. The surface_owned_tail slot layout in section 6.1 describes sheet-owned tails: compact identifier widths shift the following fields, and descriptor widths determine the suffix length.
 /// ```
 pub(crate) mod surface_terminal_span_tail {
     /// Record length in bytes. Spec §6.6.

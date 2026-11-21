@@ -509,7 +509,7 @@ fn an_unbound_fillet_takes_a_covering_history_only_when_no_other_history_binds()
         history_between(id, input, spanned_output())
     };
     let unresolved = || history_between("f3d:unresolved", input(z()), input(z()));
-    let history_notes = |bindings: &crate::history::fillet_blends::FilletBlendBindings| {
+    let history_notes = |bindings: &crate::history::fillet_blends::TreatmentBlendBindings| {
         bindings
             .notes
             .iter()

@@ -2080,7 +2080,7 @@ pub(crate) fn bind_sketch_profiles(
             };
             let profile =
                 parse_sketch_profile(bytes, stream, ordinal, header, entities).or_else(|| {
-                    if ordinal != 1 || !scope.is_legacy_class_330_symmetric_distance() {
+                    if scope.legacy_class_330_profile_member_ordinal() != Some(ordinal) {
                         return None;
                     }
                     parse_sketch_profile_frame(
@@ -3486,14 +3486,26 @@ fn parse_construction_operand_group_in_stream(
                             | DesignOperandRole::ROLE_0X12
                     )
                 } else {
-                    role == DesignOperandRole::PROFILE
-                        && scope_reference_ordinal == 0
+                    let ordinal = index_from_u32(scope_reference_ordinal);
+                    let matching_role = if scope.is_legacy_class_330_blind_cut() {
+                        paired_class_tag == "262"
+                            && header.class_tag.as_str() == "291"
+                            && matches!(
+                                (ordinal, role),
+                                (0, DesignOperandRole::BODIES_A) | (2, DesignOperandRole::PROFILE)
+                            )
+                    } else {
+                        ordinal == 0
+                            && role == DesignOperandRole::PROFILE
+                            && scope.is_legacy_class_330_symmetric_distance()
+                    };
+                    matching_role
                         && member_count == 1
-                        && scope.is_legacy_class_330_symmetric_distance()
                         && marked_record_reference(record_bytes, members_at).is_some_and(|member| {
                             scope
                                 .reference_members()
                                 .values()
+                                .skip(ordinal)
                                 .take(2)
                                 .copied()
                                 .eq([header.record_index, member])
@@ -4407,22 +4419,13 @@ fn parse_extrude_selection_group(
         {
             return None;
         }
-        // The plain form stores `01 + u8 variant + 00` after the first nested
-        // reference; the typed form stores two zero bytes and no variant.
+        // Two zero bytes or, in the plain form, `01 + u8 variant + 00`
+        // follow the first nested reference.
         let after_first = position + 16 + width;
-        let (variant, second_at) = if typed {
-            if bytes.get(after_first..after_first + 2)? != [0; 2] {
-                return None;
-            }
-            (None, after_first + 2)
-        } else {
-            if bytes.get(after_first) != Some(&1)
-                || !matches!(bytes.get(after_first + 1), Some(0 | 1))
-                || bytes.get(after_first + 2) != Some(&0)
-            {
-                return None;
-            }
-            (Some(bytes[after_first + 1] != 0), after_first + 3)
+        let (variant, second_at) = match bytes.get(after_first..after_first + 3)? {
+            [0, 0, _] => (None, after_first + 2),
+            [1, variant @ (0 | 1), 0] if !typed => (Some(*variant != 0), after_first + 3),
+            _ => return None,
         };
         let scope_at = second_at + width + 1;
         if reference(second_at)? != header.record_index.checked_add(1)?
@@ -5103,6 +5106,11 @@ pub(crate) fn decode_body_recipe_operands(
     for stream_recipes in body_recipes_by_stream.values_mut() {
         stream_recipes.sort_by_key(|recipe| recipe.byte_offset);
     }
+    let cut_scopes: HashMap<_, _> = scopes
+        .iter()
+        .filter(|scope| scope.is_legacy_class_330_blind_cut())
+        .map(|scope| ((native_stream(&scope.id), scope.record_index), scope))
+        .collect();
     let mut record_offset_index: HashMap<&str, IndexedRecordOffsets> = HashMap::new();
     let mut out = Vec::new();
     for group in groups {
@@ -5134,19 +5142,40 @@ pub(crate) fn decode_body_recipe_operands(
             let Some(Some(header)) = headers_by_identity.get(&(stream, record_index)) else {
                 continue;
             };
+            let mut frame = BodyRecipeFrame::Standard;
+            if group.extrude_role() == Some(DesignExtrudeOperandRole::Bodies)
+                && group.scope_reference_ordinal == 0
+                && group.members().len() == 1
+                && header.class_tag.as_str() == "311"
+            {
+                if let Some(scope) = cut_scopes.get(&(Some(stream), group.scope_record_index)) {
+                    let Some(closing_index) =
+                        scope.legacy_class_330_body_recipe_close(group.record_index, record_index)
+                    else {
+                        continue;
+                    };
+                    let Some(legacy) =
+                        BodyRecipeFrame::legacy_cut(bytes, records, header, closing_index)
+                    else {
+                        continue;
+                    };
+                    frame = legacy;
+                }
+            }
             let Some(recipe) = unique_body_recipe_with_index(
                 bytes,
                 records,
                 header,
+                frame,
                 body_recipes_by_stream
                     .get(stream)
                     .map_or(&[], Vec::as_slice),
             ) else {
                 continue;
             };
-            if let Some(operand) =
-                parse_body_recipe_operand_with_index(bytes, records, group, ordinal, header, recipe)
-            {
+            if let Some(operand) = parse_body_recipe_operand_with_index(
+                bytes, records, group, ordinal, header, recipe, frame,
+            ) {
                 push_body_recipe_operand(&mut out, operand, &entry.name, header.byte_offset);
             }
         }
@@ -5201,6 +5230,7 @@ pub(crate) fn decode_body_recipe_operands(
                 bytes,
                 records,
                 header,
+                BodyRecipeFrame::Standard,
                 body_recipes_by_stream
                     .get(stream)
                     .map_or(&[], Vec::as_slice),
@@ -5217,6 +5247,7 @@ pub(crate) fn decode_body_recipe_operands(
                 owner,
                 header,
                 recipe,
+                BodyRecipeFrame::Standard,
             ) {
                 push_body_recipe_operand(&mut out, operand, &entry.name, header.byte_offset);
             }
@@ -5250,6 +5281,68 @@ fn push_body_recipe_operand(
     out.push(operand);
 }
 
+#[derive(Clone, Copy)]
+enum BodyRecipeFrame {
+    Standard,
+    LegacyCut {
+        prologue_end: usize,
+        next_index: u32,
+        next_at: usize,
+    },
+}
+
+impl BodyRecipeFrame {
+    fn legacy_cut(
+        bytes: &[u8],
+        records: &IndexedRecordOffsets,
+        header: &DesignRecordHeader,
+        next_index: u32,
+    ) -> Option<Self> {
+        if header.class_tag.as_str() != "311" || header.record_index.checked_add(3)? != next_index {
+            return None;
+        }
+        let start = usize::try_from(header.byte_offset).ok()?;
+        let [primary, paired] = records.offsets(header.record_index) else {
+            return None;
+        };
+        let [first] = records.offsets(header.record_index.checked_add(1)?) else {
+            return None;
+        };
+        let [nested] = records.offsets(header.record_index.checked_add(2)?) else {
+            return None;
+        };
+        let next_at = records.first_at_or_after(*nested, next_index)?;
+        let expected = [
+            (*paired, b"262"),
+            (*first, b"328"),
+            (*nested, b"301"),
+            (next_at, b"291"),
+        ];
+        if *primary != start
+            || [start, *paired, *first, *nested, next_at]
+                .windows(2)
+                .any(|pair| {
+                    pair[0]
+                        .checked_add(indexed_header::LEN)
+                        .is_none_or(|end| end > pair[1])
+                })
+            || expected.into_iter().any(|(offset, class)| {
+                offset
+                    .checked_add(indexed_header::CLASS_TAG)
+                    .and_then(|tag| bytes.get(tag..tag + class.len()))
+                    != Some(class.as_slice())
+            })
+        {
+            return None;
+        }
+        Some(Self::LegacyCut {
+            prologue_end: nested.checked_add(indexed_header::LEN)?,
+            next_index,
+            next_at,
+        })
+    }
+}
+
 /// Select the sole body recipe in the structural interval after the `N+3`
 /// header and before the enclosing `N+4` header. The bounded Design stream,
 /// rather than an arbitrary byte distance, limits the interval. A stream with
@@ -5262,22 +5355,34 @@ fn unique_body_recipe<'a>(
     recipes: &'a [&'a ConstructionRecipe],
 ) -> Option<&'a ConstructionRecipe> {
     let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
-    unique_body_recipe_with_index(bytes, &records, header, recipes)
+    unique_body_recipe_with_index(bytes, &records, header, BodyRecipeFrame::Standard, recipes)
 }
 
 fn unique_body_recipe_with_index<'a>(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     header: &DesignRecordHeader,
+    frame: BodyRecipeFrame,
     recipes: &'a [&'a ConstructionRecipe],
 ) -> Option<&'a ConstructionRecipe> {
     let start = usize::try_from(header.byte_offset).ok()?;
-    let prologue_end = body_recipe_prologue_end_with_index(records, start, header.record_index)?;
+    let (prologue_end, next_at) = match frame {
+        BodyRecipeFrame::Standard => {
+            let end = body_recipe_prologue_end_with_index(records, start, header.record_index)?;
+            (
+                end,
+                records.first_at_or_after(end, header.record_index.checked_add(4)?),
+            )
+        }
+        BodyRecipeFrame::LegacyCut {
+            prologue_end,
+            next_at,
+            ..
+        } => (prologue_end, Some(next_at)),
+    };
     let lower = u64::try_from(prologue_end).ok()?;
     let first = recipes.partition_point(|recipe| recipe.byte_offset < lower);
-    let Some(next_at) =
-        records.first_at_or_after(prologue_end, header.record_index.checked_add(4)?)
-    else {
+    let Some(next_at) = next_at else {
         let recipe = recipes.get(first)?;
         let recipe_at = usize::try_from(recipe.byte_offset).ok()?;
         body_recipe_operand_end_with_index(
@@ -5387,6 +5492,7 @@ fn parse_body_recipe_operand(
         group_member_ordinal,
         header,
         recipe,
+        BodyRecipeFrame::Standard,
     )
 }
 
@@ -5397,6 +5503,7 @@ fn parse_body_recipe_operand_with_index(
     group_member_ordinal: u32,
     header: &DesignRecordHeader,
     recipe: &ConstructionRecipe,
+    frame: BodyRecipeFrame,
 ) -> Option<DesignBodyRecipeOperand> {
     parse_body_recipe_operand_frame_with_index(
         bytes,
@@ -5408,6 +5515,7 @@ fn parse_body_recipe_operand_with_index(
         },
         header,
         recipe,
+        frame,
     )
 }
 
@@ -5418,23 +5526,43 @@ fn parse_body_recipe_operand_frame_with_index(
     owner: DesignOperandOwner,
     header: &DesignRecordHeader,
     recipe: &ConstructionRecipe,
+    frame: BodyRecipeFrame,
 ) -> Option<DesignBodyRecipeOperand> {
     let start = usize::try_from(header.byte_offset).ok()?;
     let recipe_at = usize::try_from(recipe.byte_offset).ok()?;
-    let prologue_end = body_recipe_prologue_end_with_index(records, start, header.record_index)?;
-    let (next_record_index, next_at) = body_recipe_operand_end_with_index(
-        bytes,
-        records,
-        prologue_end,
-        header.record_index,
-        recipe_at,
-    )?;
+    let (nested_delta, next_record_index, next_at) = match frame {
+        BodyRecipeFrame::Standard => {
+            let prologue_end =
+                body_recipe_prologue_end_with_index(records, start, header.record_index)?;
+            let (next, at) = body_recipe_operand_end_with_index(
+                bytes,
+                records,
+                prologue_end,
+                header.record_index,
+                recipe_at,
+            )?;
+            (3, next, at)
+        }
+        BodyRecipeFrame::LegacyCut {
+            prologue_end,
+            next_index,
+            next_at,
+        } => {
+            if recipe_at < prologue_end
+                || recipe_at.checked_add(body_recipe_end::LEN)? != next_at
+                || recipe.design.as_ref()?.selector?.value != next_index
+            {
+                return None;
+            }
+            (2, next_index, next_at)
+        }
+    };
     let reference_count = usize::try_from(View::u32_le_at(bytes, start + 21)?).ok()?;
-    // The legacy Combine form permits an empty persistent-reference table;
-    // its marker then starts at the ordinary post-count cursor. The history
-    // binder keeps that operand native because an empty identity cannot prove
-    // a body selection.
-    if start >= recipe_at || recipe_at >= next_at || bytes.get(start + 11..start + 21)? != [0; 10] {
+    if (matches!(frame, BodyRecipeFrame::LegacyCut { .. }) && reference_count != 0)
+        || start >= recipe_at
+        || recipe_at >= next_at
+        || bytes.get(start + 11..start + 21)? != [0; 10]
+    {
         return None;
     }
     let mut cursor = start.checked_add(25)?;
@@ -5475,7 +5603,7 @@ fn parse_body_recipe_operand_frame_with_index(
     if !is_guid_relaxed(&asset_id)
         || !is_guid_relaxed(&context_id)
         || View::u32_le_at(bytes, after_context_id)? != 2
-        || nested_record_index != u64::from(header.record_index.checked_add(3)?)
+        || nested_record_index != u64::from(header.record_index.checked_add(nested_delta)?)
     {
         return None;
     }
