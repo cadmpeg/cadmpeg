@@ -1690,3 +1690,86 @@ fn arrangement_focus_keeps_only_curves_with_connected_boxes() {
         std::collections::HashSet::from([entities[0].id().clone(), entities[3].id().clone()]);
     assert!(super::arrangement_focus(&sketch, &entities, &focus, 1.0e-7).is_none());
 }
+
+fn boundary_overlap_entity(name: &str, geometry: SketchGeometryDefinition) -> SketchEntity {
+    SketchEntity::new(
+        SketchEntityId::mint(format!("synthetic:test:id#{name}")).unwrap(),
+        SketchId::mint("synthetic:test:id#boundary-overlap").unwrap(),
+        SketchGeometry::try_from(geometry).unwrap(),
+    )
+}
+
+#[test]
+fn coincident_line_boundary_requires_positive_length_overlap() {
+    let line = |name, start, end| {
+        boundary_overlap_entity(
+            name,
+            SketchGeometryDefinition::Line {
+                start: Point2::new(start, 0.0),
+                end: Point2::new(end, 0.0),
+            },
+        )
+    };
+    let carrier = line("carrier", 0.0, 2.0);
+    let boundary = cadmpeg_ir::features::SketchProfileBoundaryUse {
+        entity: carrier.id().clone(),
+        parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new([0.25, 0.75]).unwrap(),
+        reversed: false,
+    };
+    let entities = [carrier];
+    for (name, start, end, expected) in [
+        ("reversed", 1.25, 0.75, true),
+        ("partial", 1.0, 3.0, true),
+        ("touching", 1.5, 2.0, false),
+        ("apart", 2.0, 3.0, false),
+    ] {
+        assert_eq!(
+            super::curve_overlaps_boundary_use(
+                &line(name, start, end),
+                &boundary,
+                &entities,
+                EPS_ARRANGEMENT_SESSION
+            ),
+            expected
+        );
+    }
+}
+
+#[test]
+fn coincident_circle_boundary_checks_center_radius_and_arc_length() {
+    let circle = |name, u, radius| {
+        boundary_overlap_entity(
+            name,
+            SketchGeometryDefinition::Circle {
+                center: Point2::new(u, 0.0),
+                radius: Length::new(radius).unwrap(),
+            },
+        )
+    };
+    let carrier = circle("carrier", 0.0, 2.0);
+    let boundary = cadmpeg_ir::features::SketchProfileBoundaryUse {
+        entity: carrier.id().clone(),
+        parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new([
+            0.0,
+            std::f64::consts::FRAC_PI_2,
+        ])
+        .unwrap(),
+        reversed: false,
+    };
+    let entities = [carrier];
+    for (name, center, radius, expected) in [
+        ("coincident", 0.0, 2.0, true),
+        ("other-center", 1.0, 2.0, false),
+        ("other-radius", 0.0, 3.0, false),
+    ] {
+        assert_eq!(
+            super::curve_overlaps_boundary_use(
+                &circle(name, center, radius),
+                &boundary,
+                &entities,
+                EPS_ARRANGEMENT_SESSION
+            ),
+            expected
+        );
+    }
+}
