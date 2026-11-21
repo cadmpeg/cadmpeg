@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: Apache-2.0
+schema = 1
+format = "solidedge"
+spec = "docs/formats/solidedge.md"
+endianness = "little"
+
+[[record]]
+name = "property_set_header"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/settings.rs"
+section = "2.1"
+anchor = "A property set starts with a 16-byte header."
+size = 16
+
+[[record.field]]
+name = "zero"
+offset = 0
+type = "u32"
+value = 0
+source = "spec"
+anchor = "| 0 | `u32` zero word | `0` |"
+
+[[record.field]]
+name = "tag"
+offset = 4
+type = "u16"
+value = 0x5151
+source = "spec"
+anchor = "| 4 | `u16` set tag | `0x5151` |"
+
+[[record.field]]
+name = "form"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "| 6 | `u16` set form | |"
+
+[[record.field]]
+name = "index"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "| 8 | `u32` set index | |"
+
+[[record.field]]
+name = "count"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "| 12 | `u32` record count `N` | |"
