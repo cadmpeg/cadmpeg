@@ -3,12 +3,14 @@
 //! own where it states one, else its parent's resolved value, else the
 //! base's.
 
+use std::collections::BTreeMap;
+
 use serde::de::DeserializeOwned;
 use serde_json::Value as Json;
 
 use super::EditError;
 use crate::design::configuration::{
-    Arrangement, DesignConfiguration, Overrides, ParameterOverride,
+    own_value_holds, Arrangement, DesignConfiguration, Overrides, ParameterOverride, Stated,
 };
 use crate::design::dimension::Dimension;
 use crate::design::feature::{Feature, FeatureDefinition, FeatureOperation};
@@ -21,6 +23,9 @@ use crate::design::selection::{OccurrencePath, StepRef};
 use crate::features::{ConfigurationId, FeatureId, ParameterId};
 use crate::ids::{OccurrenceId, ProductDefinitionId};
 use crate::CadIr;
+
+/// The parameter overrides of one configuration, arrangement, or occurrence.
+pub(super) type ParameterOverrides = BTreeMap<ParameterId, ParameterOverride>;
 
 impl CadIr {
     pub(super) fn design_feature(&self, id: &FeatureId) -> Result<&Feature, EditError> {
@@ -69,25 +74,12 @@ impl CadIr {
         Ok(chain)
     }
 
-    /// The override of a parameter that applies in a configuration: the
-    /// nearest of the configuration and its ancestors that states one.
-    pub(super) fn parameter_override_in(
-        &self,
-        parameter: &ParameterId,
-        configuration: Option<&ConfigurationId>,
-    ) -> Result<Option<&ParameterOverride>, EditError> {
-        let Some(configuration) = configuration else {
-            return Ok(None);
-        };
-        Ok(self
-            .configuration_chain(configuration)?
-            .into_iter()
-            .find_map(|level| level.overrides.parameters.get(parameter)))
-    }
-
-    /// A parameter's cache in a configuration: the value of the override that
-    /// applies there, else the parameter's own value. `None` in `configuration`
-    /// reads the base.
+    /// A parameter's cache in a configuration (§5.13): the value of the
+    /// nearest override that states the parameter, its own or an ancestor's.
+    /// Where none states it, and in the base, it is the parameter's own
+    /// value, which holds in a configuration only where nothing it rests on
+    /// can differ there from the base. `None` in `configuration` reads the
+    /// base.
     ///
     /// # Errors
     ///
@@ -101,12 +93,44 @@ impl CadIr {
         configuration: Option<&ConfigurationId>,
     ) -> Result<Option<&ParameterValue>, EditError> {
         let record = self.design_parameter(parameter)?;
-        Ok(
-            match self.parameter_override_in(parameter, configuration)? {
-                Some(applied) => applied.value.as_ref(),
-                None => record.value.as_ref(),
+        let chain = match configuration {
+            Some(configuration) => self.configuration_chain(configuration)?,
+            None => Vec::new(),
+        };
+        let levels: Vec<&ParameterOverrides> = chain
+            .iter()
+            .map(|level| &level.overrides.parameters)
+            .collect();
+        Ok(self.cache_over(record, &levels, Stated::of(&chain)))
+    }
+
+    /// A parameter's cache where `levels` are the parameter overrides that
+    /// apply, nearest first, and `stated` what else they state: the value of
+    /// the nearest that states the parameter, else the parameter's own value
+    /// where it holds there ([`own_value_holds`]).
+    pub(super) fn cache_over<'a>(
+        &'a self,
+        record: &'a DesignParameter,
+        levels: &[&'a ParameterOverrides],
+        stated: Stated,
+    ) -> Option<&'a ParameterValue> {
+        if let Some(entry) = levels.iter().find_map(|level| level.get(&record.id)) {
+            return entry.value.as_ref();
+        }
+        own_value_holds(
+            record,
+            stated,
+            &|target| levels.iter().any(|level| level.contains_key(target)),
+            &|target| self.design_parameter(target).ok(),
+            &|program| {
+                self.design
+                    .programs
+                    .iter()
+                    .find(|candidate| &candidate.id == program)
             },
         )
+        .then_some(record.value.as_ref())
+        .flatten()
     }
 
     /// The configuration that the current geometry holds for a definition's
