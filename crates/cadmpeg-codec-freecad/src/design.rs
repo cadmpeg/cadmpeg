@@ -48,6 +48,7 @@ use crate::layout::fillet_edge_item;
 use crate::brep::ShapePayloadRecord;
 use crate::native::{malformed, EntryRecord, ObjectRecord, PropertyRecord};
 
+mod first_feature;
 pub(crate) mod primitive_placement;
 mod sketch_cache;
 
@@ -543,6 +544,7 @@ pub(crate) fn transfer(
             native_ref: Some(object.id().to_owned()),
         });
     }
+    first_feature::bind_first_features(ir, objects, &properties_by_owner, &mut losses);
     let mut initial_cycle_affected_features = BTreeSet::new();
     for object in objects
         .iter()
@@ -9343,7 +9345,7 @@ pub(crate) fn census(
             FeatureDefinition::PostProcess { operation, .. } => (operation, true),
             FeatureDefinition::Operation(operation) => (operation, false),
         };
-        let value = serde_json::to_value(definition).map_err(|error| {
+        let value = cadmpeg_ir::hash::finite_json::to_json_value(definition).map_err(|error| {
             CodecError::malformed(format_args!(
                 "cannot classify design feature {}: {error}",
                 feature.id

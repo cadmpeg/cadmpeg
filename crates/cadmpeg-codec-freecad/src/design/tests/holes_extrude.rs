@@ -1894,7 +1894,7 @@ fn transfers_sketch_pad_and_pocket_design_history() {
                     ..
                 }
             },
-            op: cadmpeg_ir::features::BooleanOp::Join,
+            op: cadmpeg_ir::features::BooleanOp::NewBody,
             ..
         }) if actual_length.get() == 10.0
     ));

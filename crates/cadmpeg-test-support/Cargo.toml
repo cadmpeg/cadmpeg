@@ -21,8 +21,6 @@ thiserror.workspace = true
 
 [dev-dependencies]
 cadmpeg-derive.workspace = true
-# The golden schema sweep reads `cadmpeg_ir::cadir_json_schema()`.
-cadmpeg-ir = { workspace = true, features = ["examples", "schema"] }
 
 [lints]
 workspace = true
