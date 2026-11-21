@@ -1978,7 +1978,9 @@ impl DesignMeshCollection {
     /// received. A count equal to the listed bodies records nothing.
     pub(crate) fn with_received_count(mut self, count: u32) -> Result<Self, String> {
         if self.flagged || count < self.body_count {
-            return Err("a received count is at least the listed bodies of a plain collection".into());
+            return Err(
+                "a received count is at least the listed bodies of a plain collection".into(),
+            );
         }
         self.received_count = (count > self.body_count).then_some(count);
         Ok(self)

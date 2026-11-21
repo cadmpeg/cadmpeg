@@ -128,7 +128,8 @@ fn a_later_mesh_operation_takes_the_produced_body() {
             "mesh-conversion-body:0:0",
         ),
     ] {
-        let produced = tessellate_feature(bytes)["source_properties"]["mesh-tessellate-body:0"].clone();
+        let produced =
+            tessellate_feature(bytes)["source_properties"]["mesh-tessellate-body:0"].clone();
         let later = features_by_tag(bytes, tag);
         assert_eq!(later.len(), 1, "{tag}");
         assert_eq!(later[0]["source_properties"][key], produced, "{tag}");
@@ -136,7 +137,7 @@ fn a_later_mesh_operation_takes_the_produced_body() {
 }
 
 /// A Convert Mesh of the one produced body leaves the collection listing no
-/// body, an empty ParaMesh registry.
+/// body, an empty `ParaMesh` registry.
 #[test]
 fn a_converted_produced_body_leaves_an_empty_collection() {
     let result = F3dCodec
@@ -151,6 +152,12 @@ fn a_converted_produced_body_leaves_an_empty_collection() {
         .iter()
         .map(|loss| loss.code.local_code().to_owned())
         .collect::<Vec<_>>();
-    assert!(!codes.contains(&"mesh.container-undecoded".to_owned()), "{codes:?}");
-    assert!(codes.contains(&"mesh.container-unjoined".to_owned()), "{codes:?}");
+    assert!(
+        !codes.contains(&"mesh.container-undecoded".to_owned()),
+        "{codes:?}"
+    );
+    assert!(
+        codes.contains(&"mesh.container-unjoined".to_owned()),
+        "{codes:?}"
+    );
 }

@@ -966,18 +966,18 @@ fn parse_mesh_collection_record(
             return Some(None);
         }
         let collection = DesignMeshCollection::new(
-                identity,
-                base_record,
-                u32::try_from(body_records.len()).ok()?,
-                if flagged {
-                    Some(DesignMeshFlaggedCollection {
-                        word: View::u32_le_at(record, flagged_collection::FLAGGED_WORD)?,
-                        word_offset: source_offset(frame.start, flagged_collection::FLAGGED_WORD)?,
-                        entries: flagged_entries,
-                    })
-                } else {
-                    None
-                },
+            identity,
+            base_record,
+            u32::try_from(body_records.len()).ok()?,
+            if flagged {
+                Some(DesignMeshFlaggedCollection {
+                    word: View::u32_le_at(record, flagged_collection::FLAGGED_WORD)?,
+                    word_offset: source_offset(frame.start, flagged_collection::FLAGGED_WORD)?,
+                    entries: flagged_entries,
+                })
+            } else {
+                None
+            },
         )
         .ok()?;
         let collection = if flagged {
