@@ -142,7 +142,7 @@ pub(super) fn rolling(
         |u, v| {
             eval::rolling_ball_jet_point(definition, u, v)
                 .ok()
-                .map(cadmpeg_ir::features::FinitePoint3::get)
+                .map(cadmpeg_ir::features::geometry::FinitePoint3::get)
         },
     )
 }

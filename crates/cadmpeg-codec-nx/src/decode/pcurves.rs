@@ -40,7 +40,7 @@ use cadmpeg_ir::eval::nurbs_surface_parameter_within_nonnegative_tolerance_with_
 use cadmpeg_ir::eval::pcurve_tangent;
 use cadmpeg_ir::eval::surface_second_partials;
 use cadmpeg_ir::eval::EvaluationFailure;
-use cadmpeg_ir::features::FiniteVector3;
+use cadmpeg_ir::features::geometry::FiniteVector3;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface, SurfaceParameterAxis},
     pcurve::{PcurveGeometry, PcurveNurbs, PcurveNurbsPoles, PolarNurbsPoles, PolarPcurveNurbs},
@@ -580,7 +580,8 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
                         support: &supports[side],
                         pcurve: &carriers[side].geometry,
                         range: first_range,
-                        endpoints: (*endpoints).map(cadmpeg_ir::features::FinitePoint3::get),
+                        endpoints: (*endpoints)
+                            .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
                         tolerance: endpoint_tolerance,
                     },
                     geometry_budget,
@@ -1576,7 +1577,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                 };
                 (
                     supports.each_ref(),
-                    (*endpoints).map(cadmpeg_ir::features::FinitePoint3::get),
+                    (*endpoints).map(cadmpeg_ir::features::geometry::FinitePoint3::get),
                     range,
                     tolerance,
                 )
@@ -3377,7 +3378,7 @@ fn transferred_pcurve_sample_with_budget<'a>(
                     model_curve_point_by_id(admission, index, curve, parameter)
                 }),
         )?
-        .map(cadmpeg_ir::features::FinitePoint3::get);
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get);
     }
     let Some(point) = point else {
         return Ok(None);
@@ -3802,7 +3803,7 @@ fn append_transferred_pcurve_segment_with_budget<'a>(
                             model_curve_point_by_id(admission, index, curve, parameter)
                         }),
                     )?
-                    .map(cadmpeg_ir::features::FinitePoint3::get);
+                    .map(cadmpeg_ir::features::geometry::FinitePoint3::get);
                 }
                 let Some(source_point) = source_point else {
                     return Ok(false);

@@ -6,13 +6,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::{DecodeContext, DecodeDepth};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::VertexSelection;
-use cadmpeg_ir::features::{
-    patterns::{PatternKind, PatternTransform},
-    AngularTermination, BodySelection, EdgeSelection, FaceSelection, LinearTermination, PathRef,
-    SurfaceBoundary,
-};
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::extents::{AngularTermination, LinearTermination};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::patterns::{PatternKind, PatternTransform};
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::selections::VertexSelection;
+use cadmpeg_ir::features::selections::{BodySelection, EdgeSelection, FaceSelection};
+use cadmpeg_ir::features::surface_inputs::SurfaceBoundary;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };

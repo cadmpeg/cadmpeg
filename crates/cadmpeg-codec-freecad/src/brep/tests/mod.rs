@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -56,7 +56,7 @@ fn test_parse_payloads(
 
 #[test]
 fn indexed_polygon_admits_only_aligned_parameters() {
-    let node = cadmpeg_ir::features::FinitePoint3::ZERO;
+    let node = cadmpeg_ir::features::geometry::FinitePoint3::ZERO;
     let mut facts = super::ShapeSet {
         locations: Vec::new(),
         curve2ds: Vec::new(),

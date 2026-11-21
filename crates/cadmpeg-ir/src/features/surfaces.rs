@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{EdgeSelection, FaceSelection, FeatureOperation, FiniteVector3, ThickenSide};
+use super::FeatureOperation;
+use crate::features::direct_edit::ThickenSide;
+use crate::features::geometry::FiniteVector3;
+use crate::features::selections::{EdgeSelection, FaceSelection};
 use crate::scalar::PositiveLength;
 use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]

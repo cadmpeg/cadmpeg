@@ -16,7 +16,7 @@ pub(in crate::design) fn resolve(
     tolerance: f64,
     work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
-) -> Result<Option<Vec<cadmpeg_ir::features::SketchProfileRegion>>, CodecError> {
+) -> Result<Option<Vec<cadmpeg_ir::features::profiles::SketchProfileRegion>>, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
     if entities.iter().any(|entity| {
         entity.sketch == sketch.id
@@ -89,7 +89,7 @@ pub(in crate::design) fn resolve(
         };
         if inside {
             regions.push(geometric!(
-                cadmpeg_ir::features::SketchProfileRegion::trimmed(
+                cadmpeg_ir::features::profiles::SketchProfileRegion::trimmed(
                     face.ring.boundary.clone(),
                     Vec::new(),
                 )

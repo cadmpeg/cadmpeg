@@ -101,7 +101,7 @@ fn fixture(scope: Vec<u8>, second_member: u32) -> (Vec<u8>, Vec<u8>) {
 }
 
 fn feature() -> Feature {
-    let mut evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+    let mut evaluation = cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
         FeatureDefinition::Operation(FeatureOperation::Native {
             kind: "MeshPlaneCut".into(),
             parameters: [(cadmpeg_core::nonblank_literal!("distance"), "6 mm".into())].into(),

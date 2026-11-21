@@ -3,7 +3,8 @@
 use std::io::Cursor;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_measure::{MeasureInput, MeasureOptions, Measurer, Selection};

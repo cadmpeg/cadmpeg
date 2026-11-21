@@ -26,7 +26,7 @@ use crate::records::topology::face::DesignFaceRecipeNode;
 use crate::records::topology::face::DesignFaceRecipeStructure;
 use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_ir::attributes::AttributeTarget;
-use cadmpeg_ir::features::FaceSelection;
+use cadmpeg_ir::features::selections::FaceSelection;
 use cadmpeg_ir::ids::FaceId;
 
 #[test]
@@ -485,7 +485,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     .unwrap();
     assert!(matches!(
         recovered,
-        cadmpeg_ir::features::EdgeSelection::Unresolved
+        cadmpeg_ir::features::selections::EdgeSelection::Unresolved
     ));
     let mut terminal_group = recovered_group.clone();
     terminal_group.lost_edge_references.clear();
@@ -538,7 +538,10 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     })
     .unwrap();
     assert!(
-        matches!(terminal, cadmpeg_ir::features::EdgeSelection::Native(_)),
+        matches!(
+            terminal,
+            cadmpeg_ir::features::selections::EdgeSelection::Native(_)
+        ),
         "{terminal:?}"
     );
     let identity = |record_index, ordinal, edge| {
@@ -593,7 +596,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     .unwrap();
     assert!(matches!(
         merged,
-        cadmpeg_ir::features::EdgeSelection::Native(_)
+        cadmpeg_ir::features::selections::EdgeSelection::Native(_)
     ));
     let complete = crate::test_support::with_decode_context(|decode_ctx| {
         crate::design::edge_resolve::resolved_edge_group(
@@ -610,7 +613,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     .unwrap();
     assert!(matches!(
         complete,
-        cadmpeg_ir::features::EdgeSelection::Native(_)
+        cadmpeg_ir::features::selections::EdgeSelection::Native(_)
     ));
     let mut first_rule = identity(100, 0, None);
     first_rule.resolved_edge_slots = vec![17, 18];
@@ -631,7 +634,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     .unwrap();
     assert!(matches!(
         face_rules,
-        cadmpeg_ir::features::EdgeSelection::Historical { ref edges, .. }
+        cadmpeg_ir::features::selections::EdgeSelection::Historical { ref edges, .. }
             if edges.as_slice() == [
                 cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#6:fillet:8:17").expect("identity grammar"),
                 cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#6:fillet:8:18").expect("identity grammar"),
@@ -668,7 +671,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     .unwrap();
     assert!(matches!(
         chain,
-        cadmpeg_ir::features::EdgeSelection::Native(_)
+        cadmpeg_ir::features::selections::EdgeSelection::Native(_)
     ));
     assert_eq!(
         edge_operand.recipe_program_offset,
@@ -1085,7 +1088,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     .unwrap();
     assert!(matches!(
         surface_selection,
-        cadmpeg_ir::features::EdgeSelection::Historical { ref edges, .. }
+        cadmpeg_ir::features::selections::EdgeSelection::Historical { ref edges, .. }
             if edges.as_slice() == [cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#13:surface-patch:8:17").expect("identity grammar")]
     ));
     surface_patch_operand.resolved_edge_slot = None;
@@ -1103,7 +1106,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             )
         })
         .unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Native(_)
+        cadmpeg_ir::features::selections::EdgeSelection::Native(_)
     ));
     let face = crate::test_support::with_decode_context(|ctx| {
         crate::design::decode::operands::face_recipe_structure(

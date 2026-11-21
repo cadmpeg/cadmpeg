@@ -9,7 +9,8 @@ use super::blend_spine::{
 use crate::history_records::{AsmHistoricalTopology, AsmHistoricalTransition, AsmHistory};
 use crate::loss::F3dLossCode;
 use cadmpeg_ir::features::edge_treatments::RadiusSpec;
-use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::selections::EdgeSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};

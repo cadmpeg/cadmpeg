@@ -25,18 +25,18 @@ use crate::records::Feature;
 use crate::records::FeatureContent;
 use crate::records::FeatureHistory;
 use crate::records::ObjectId;
+use cadmpeg_ir::features::extents::ExtrudeExtent;
+use cadmpeg_ir::features::extents::ExtrudeSide;
+use cadmpeg_ir::features::extents::LinearTermination;
 use cadmpeg_ir::features::holes::HoleBottom;
 use cadmpeg_ir::features::holes::HoleKind;
-use cadmpeg_ir::features::BooleanOp;
-use cadmpeg_ir::features::ExtrudeExtent;
-use cadmpeg_ir::features::ExtrudeSide;
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::ProfileRef;
+use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::features::FeatureSourceContent;
-use cadmpeg_ir::features::FeatureTreeNodeRole;
-use cadmpeg_ir::features::LinearTermination;
 use cadmpeg_ir::features::ParameterId;
-use cadmpeg_ir::features::ProfileRef;
 use cadmpeg_ir::features::UnresolvedFamily;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
@@ -88,7 +88,7 @@ fn configuration_dependencies_participate_in_the_shared_regeneration_order() {
     let consumer = ir.model.features[0].id.clone();
     ir.model
         .configurations
-        .push(cadmpeg_ir::features::DesignConfiguration {
+        .push(cadmpeg_ir::features::parameters::DesignConfiguration {
             id: cadmpeg_ir::features::ConfigurationId::mint("synthetic:test:id#configuration")
                 .expect("identity grammar"),
             ordinal: 0,
@@ -102,13 +102,13 @@ fn configuration_dependencies_participate_in_the_shared_regeneration_order() {
             parameter_values: BTreeMap::new(),
             feature_states: BTreeMap::from([(
                 consumer.clone(),
-                cadmpeg_ir::features::ConfigurationFeatureState {
-                    evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                        outputs: cadmpeg_ir::features::DistinctMembers::default(),
+                cadmpeg_ir::features::parameters::ConfigurationFeatureState {
+                    evaluation: cadmpeg_ir::features::parameters::ConfigurationEvaluation::Active {
+                        outputs: cadmpeg_ir::features::selections::DistinctMembers::default(),
                     },
-                    dependencies: cadmpeg_ir::features::DistinctMembers::try_from(vec![
-                        predecessor.clone(),
-                    ])
+                    dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(
+                        vec![predecessor.clone()],
+                    )
                     .unwrap(),
                     definition: ir.model.features[0].evaluation.definition().clone(),
                 },
@@ -230,7 +230,7 @@ fn legacy_history_extrusion_keeps_depth_without_guessing_a_profile() {
     assert!(matches!(
         extrusion.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
-            profile: ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Unresolved(_)),
+            profile: ProfileRef::Planar(cadmpeg_ir::features::profiles::PlanarProfileRef::Unresolved(_)),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind { length: actual_length },
@@ -298,7 +298,7 @@ fn root_history_extrusion_keeps_cut_without_guessing_a_profile() {
     assert!(matches!(
         extrusion.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
-            profile: ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Unresolved(_)),
+            profile: ProfileRef::Planar(cadmpeg_ir::features::profiles::PlanarProfileRef::Unresolved(_)),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind { length: actual_length },
@@ -1085,7 +1085,7 @@ fn angular_plane_parameter_does_not_claim_offset_semantics() {
         )
         .unwrap(),
         FeatureDefinition::Operation(FeatureOperation::DatumPlane {
-            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+            frame: cadmpeg_ir::features::geometry::FeatureDatumPlaneFrame::new(
                 Point3::new(0.0, 70.0, 0.0),
                 Vector3::new(0.0, 1.0, 0.0),
                 Vector3::new(-1.0, 0.0, 0.0)
@@ -1293,7 +1293,7 @@ fn configuration_snapshots_preserve_base_tree_node_roles() {
         .evaluation
         .set_definition(FeatureDefinition::Operation(FeatureOperation::TreeNode {
             role: FeatureTreeNodeRole::DirectionalLight,
-            children: cadmpeg_ir::features::TreeChildren::default(),
+            children: cadmpeg_ir::features::tree::TreeChildren::default(),
         }));
 
     restore_configuration_tree_node_definitions(&mut configured, &base);
@@ -1396,7 +1396,9 @@ fn extrusion_profile_does_not_follow_source_identifier_order() {
         assert!(matches!(
             projected,
             FeatureDefinition::Operation(FeatureOperation::Extrude {
-                profile: ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Unresolved(_)),
+                profile: ProfileRef::Planar(
+                    cadmpeg_ir::features::profiles::PlanarProfileRef::Unresolved(_)
+                ),
                 ..
             })
         ));
@@ -1406,7 +1408,7 @@ fn extrusion_profile_does_not_follow_source_identifier_order() {
         let projected =
             project_definition(&extrusion, &HashMap::new(), &names, &sources, &candidates).unwrap();
         assert!(
-            matches!(projected, FeatureDefinition::Operation(FeatureOperation::Extrude { profile: ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Native(ref native)), .. }) if native == "sketch-one")
+            matches!(projected, FeatureDefinition::Operation(FeatureOperation::Extrude { profile: ProfileRef::Planar(cadmpeg_ir::features::profiles::PlanarProfileRef::Native(ref native)), .. }) if native == "sketch-one")
         );
     }
 }

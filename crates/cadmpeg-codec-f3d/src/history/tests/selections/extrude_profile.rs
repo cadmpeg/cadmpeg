@@ -12,7 +12,7 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         feature::scope::DesignParameterScope,
         topology::{construction::DesignConstructionOperandGroup, face::DesignFaceOperand},
     };
-    use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
 
     let group = |record_index, scope_reference_ordinal, members: Vec<u32>| {
         let member_offsets = (0..members.len())

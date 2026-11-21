@@ -150,9 +150,9 @@ pub(super) fn fixed_kind_path_operations(
             group
         };
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_sweep(&sweep_scope, &[profile.clone(), path.clone()], &[], &[], &[], &[], decode_ctx)).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::sweep_loft::project_fixed_sweep(&sweep_scope, &[profile.clone(), path.clone()], &[], &[], &[], &[], decode_ctx)).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
-            path_extent: Some(cadmpeg_ir::features::SweepPathExtent {
+            path_extent: Some(cadmpeg_ir::features::sweeps::SweepPathExtent {
                 along_fraction: fraction_0,
                 against_fraction: fraction_1,
             }),
@@ -182,16 +182,16 @@ pub(super) fn fixed_kind_path_operations(
             .unwrap();
     }
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_sweep(&sweep_scope, &[profile.clone(), path.clone(), rail], &[], &[], &[], &[], decode_ctx)).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::sweep_loft::project_fixed_sweep(&sweep_scope, &[profile.clone(), path.clone(), rail], &[], &[], &[], &[], decode_ctx)).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
-            path: Some(cadmpeg_ir::features::PathRef::Native(path)),
-            path_extent: Some(cadmpeg_ir::features::SweepPathExtent {
+            path: Some(cadmpeg_ir::features::profiles::PathRef::Native(path)),
+            path_extent: Some(cadmpeg_ir::features::sweeps::SweepPathExtent {
                 along_fraction: fraction_2,
                 against_fraction: fraction_3,
             }),
-            guide_rail: Some(cadmpeg_ir::features::SweepGuideRail {
-                path: cadmpeg_ir::features::PathRef::Native(rail),
-                extent: cadmpeg_ir::features::SweepPathExtent {
+            guide_rail: Some(cadmpeg_ir::features::sweeps::SweepGuideRail {
+                path: cadmpeg_ir::features::profiles::PathRef::Native(rail),
+                extent: cadmpeg_ir::features::sweeps::SweepPathExtent {
                     along_fraction: fraction_4,
                     against_fraction: fraction_5,
                 },
@@ -220,13 +220,13 @@ pub(super) fn fixed_kind_path_operations(
             .unwrap();
     }
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_sweep(&sweep_scope, &[profile.clone(), path.clone()], &[], &[], &[], &[], decode_ctx)).unwrap(), Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::sweep_loft::project_fixed_sweep(&sweep_scope, &[profile.clone(), path.clone()], &[], &[], &[], &[], decode_ctx)).unwrap(), Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
             shape,
             ..
-        })) if matches!((&shape.mode(),), (cadmpeg_ir::features::SweepMode::Solid { op: cadmpeg_ir::features::SolidSweepOperation::NewBody },))));
+        })) if matches!((&shape.mode(),), (cadmpeg_ir::features::sweeps::SweepMode::Solid { op: cadmpeg_ir::features::sweeps::SolidSweepOperation::NewBody },))));
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::feature_project::project_fixed_sweep(
+            crate::design::feature_project::sweep_loft::project_fixed_sweep(
                 &sweep_scope,
                 &[profile.clone(), path.clone(), body.clone()],
                 &[],
@@ -339,14 +339,14 @@ pub(super) fn fixed_kind_path_operations(
         )
         .unwrap();
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_sweep(&sweep_scope, &[selected_profile, profile_carrier, path.clone(), guide_surface], &[], &[], &[entity_selection], &[], decode_ctx)).unwrap(), Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::sweep_loft::project_fixed_sweep(&sweep_scope, &[selected_profile, profile_carrier, path.clone(), guide_surface], &[], &[], &[entity_selection], &[], decode_ctx)).unwrap(), Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
             shape,
-            orientation: Some(cadmpeg_ir::features::SweepOrientation::GuideSurface {
-                faces: cadmpeg_ir::features::FaceSelection::Native(faces),
+            orientation: Some(cadmpeg_ir::features::sweeps::SweepOrientation::GuideSurface {
+                faces: cadmpeg_ir::features::selections::FaceSelection::Native(faces),
             }),
             guide_rail: None,
             ..
-        })) if matches!((shape.referenced_profile(),), (Some(cadmpeg_ir::features::PlanarProfileRef::Native(profile)),) if profile == "stream:sweep-group-0" && faces == "stream:sweep-guide-surface")));
+        })) if matches!((shape.referenced_profile(),), (Some(cadmpeg_ir::features::profiles::PlanarProfileRef::Native(profile)),) if profile == "stream:sweep-group-0" && faces == "stream:sweep-guide-surface")));
     if let crate::records::feature::scope::DesignScopePayloadMut::Sweep(slot) =
         sweep_scope.payload_mut()
     {
@@ -372,11 +372,11 @@ pub(super) fn fixed_kind_path_operations(
             .unwrap();
     }
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_sweep(&sweep_scope, &[body, after_body(&profile), after_body(&path)], &[], &[], &[], &[], decode_ctx)).unwrap(), Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::sweep_loft::project_fixed_sweep(&sweep_scope, &[body, after_body(&profile), after_body(&path)], &[], &[], &[], &[], decode_ctx)).unwrap(), Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
             shape,
             ..
-        })) if matches!((&shape.mode(),), (cadmpeg_ir::features::SweepMode::Solid {
-                op: cadmpeg_ir::features::SolidSweepOperation::Cut
+        })) if matches!((&shape.mode(),), (cadmpeg_ir::features::sweeps::SweepMode::Solid {
+                op: cadmpeg_ir::features::sweeps::SolidSweepOperation::Cut
             },))));
 
     let companion = DesignParameterCompanion::unbound(

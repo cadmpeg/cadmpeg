@@ -147,12 +147,14 @@ pub(super) fn pattern_group_seeds(
                 group,
                 face_operands,
             )
-            .unwrap_or_else(|| cadmpeg_ir::features::FaceSelection::Native(group.id.clone())),
+            .unwrap_or_else(|| {
+                cadmpeg_ir::features::selections::FaceSelection::Native(group.id.clone())
+            }),
         )];
     }
     if group.role() != DesignOperandRole::BODIES_A {
         return vec![PatternSeed::Bodies(
-            cadmpeg_ir::features::BodySelection::Native(group.id.clone()),
+            cadmpeg_ir::features::selections::BodySelection::Native(group.id.clone()),
         )];
     }
     if let Some(selection) = resolved_historical_face_group(
@@ -166,7 +168,7 @@ pub(super) fn pattern_group_seeds(
     entity_selection_feature_seeds(scope, group, entity_selection_operands, scopes).unwrap_or_else(
         || {
             vec![PatternSeed::Faces(
-                cadmpeg_ir::features::FaceSelection::Native(group.id.clone()),
+                cadmpeg_ir::features::selections::FaceSelection::Native(group.id.clone()),
             )]
         },
     )
