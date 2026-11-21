@@ -48064,6 +48064,7 @@ anchor = "DR-917 the ordinal of the null locus"
 
 [[record]]
 name = "sketch_item_dimension_frame_linear"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/dimensions.rs"
 kind = "byte"
 section = "Records of a Sketch item"
 anchor = "The measurement of a linear frame is 129 bytes"
@@ -48121,6 +48122,7 @@ anchor = "the f64 measured value, and the first anchor `A1`"
 
 [[record]]
 name = "sketch_item_dimension_frame_radial"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/dimensions.rs"
 kind = "byte"
 section = "Records of a Sketch item"
 anchor = "The measurement of a radial or diameter frame is 153 bytes"
@@ -48164,6 +48166,7 @@ anchor = "a flag byte, and the f64 radius"
 
 [[record]]
 name = "sketch_item_dimension_frame_angular"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/dimensions.rs"
 kind = "byte"
 section = "Records of a Sketch item"
 anchor = "The measurement of an angular frame is 146 bytes"
@@ -48243,6 +48246,7 @@ anchor = "the arc point, and the f64 arc radius"
 
 [[record]]
 name = "sketch_item_dimension_frame_text"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/dimensions.rs"
 kind = "byte"
 section = "Records of a Sketch item"
 anchor = "The text frame is 91 bytes"

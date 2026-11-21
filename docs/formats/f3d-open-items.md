@@ -1438,6 +1438,14 @@ The first closing reference run identifies a direct contained child by its local
 
 **Conflict.** If the first flag byte of the ten-byte trailer and the opaque flag of the compact owned trailer state the same property, the trailers align at that byte, and the second flag byte is the driven flag.
 
+### DR-1006. Type version of the wide discriminated parameter form
+
+**Question.** Which version of the parameter type registers a parameter record in the wide discriminated form?
+
+**Known.** `f3d.md` §3.1 "An indexed parameter record has three fixed header forms" gives the form of each parameter type version from 4 to 8, and the wide discriminated form. No record of these versions closes only in the wide form: a version-5 frame with fifteen zero bytes and a value at offset 26 also closes as a compact null-owner frame. The wide expression trailer is the ten-byte trailer with one further zero byte before its first flag byte, and its driven flag is the byte that DR-144 asks about.
+
+**Need.** A parameter record that closes only in the wide form, with the version of its type.
+
 ### DR-222. `MoveFace` and `OffsetFaces` member recipes that resolve no face
 
 **Question.** Which face does a `MoveFace` or `OffsetFaces` bounded-face member select when the `DeleteFace` bounded-face rule resolves no unique face for its recipe?

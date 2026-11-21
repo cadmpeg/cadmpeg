@@ -86,6 +86,8 @@ pub(in crate::writer::generate::design) struct SketchRecords {
     second_identity: u32,
     /// Each dimension's frame, parameter, owner and companion.
     dimensions: Vec<[u32; 4]>,
+    /// The frame and parameter of each driven dimension.
+    driven: Vec<[u32; 2]>,
 }
 
 impl SketchRecords {
@@ -188,14 +190,22 @@ impl SketchRoster {
             target: take(types::TRANSFORM_TARGET)?,
             second_identity: take(types::TRACKED_IDENTITY)?,
             dimensions: Vec::new(),
+            driven: Vec::new(),
         };
         for dimension in &planned.dimensions {
-            records.dimensions.push([
+            let [frame, parameter] = [
                 take(dimensions::frame_row(dimension.kind))?,
                 take(types::PARAMETER)?,
+            ];
+            records.dimensions.push([
+                frame,
+                parameter,
                 take(types::PARAMETER_OWNER)?,
                 take(types::RECORD_TIMESTAMPS)?,
             ]);
+            if dimension.driven {
+                records.driven.push([frame, parameter]);
+            }
         }
         self.items.push(records);
         Ok(next)

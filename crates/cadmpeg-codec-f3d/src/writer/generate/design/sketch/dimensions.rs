@@ -255,13 +255,13 @@ impl Candidate<'_> {
         } = self;
         let quantity = kind.quantity();
         let driven = match &binding {
-            Binding::Parameter(id) => parameters.driven(id, quantity).transpose()?,
+            Binding::Parameter(id) => parameters.driven(id, quantity)?,
             Binding::Literal(_) => None,
         };
         // The stated value in Fusion's database units; a driven parameter
         // without a cached value is its measurement.
-        let value = match (&binding, driven) {
-            (_, Some(cached)) => cached,
+        let value = match (&binding, &driven) {
+            (_, Some(driven)) => driven.evaluated,
             (Binding::Parameter(parameter), None) => {
                 if !parameters.states(parameter) {
                     return Err(
@@ -297,28 +297,19 @@ impl Candidate<'_> {
             return Err("its value disagrees with its written geometry");
         }
         let value = value.unwrap_or(measured);
-        let parameter = match binding {
-            Binding::Parameter(id) if driven.is_some() => {
+        let is_driven = driven.is_some();
+        let parameter = match (binding, driven) {
+            (_, Some(driven)) => {
                 let canonical = if kind == DimensionKind::Angle {
                     value
                 } else {
                     value * MM_PER_CM
                 };
-                let expression = expression::quantity_literal(canonical, Some(kind.unit()))
+                let expression = expression::quantity_literal(canonical, Some(driven.unit))
                     .ok_or("its value has no Fusion literal")?;
-                let name = parameters
-                    .take_driven(id)
-                    .ok_or("an earlier dimension owns its driven parameter")?;
-                OwnedParameter {
-                    name,
-                    expression,
-                    unit: kind.unit(),
-                    value,
-                    ordinal,
-                    names_parameter: false,
-                }
+                parameters.take_driven(&driven, expression, value, ordinal)
             }
-            Binding::Parameter(id) => match parameters.claim(id, quantity, ordinal) {
+            (Binding::Parameter(id), None) => match parameters.claim(id, quantity, ordinal) {
                 Some(claimed) => claimed,
                 None => {
                     let name = parameters
@@ -328,7 +319,7 @@ impl Candidate<'_> {
                     parameters.owned(ordinal, name, kind.unit(), value, true)
                 }
             },
-            Binding::Literal(literal) => {
+            (Binding::Literal(literal), None) => {
                 let text = expression::quantity_literal(literal, Some(kind.unit()))
                     .ok_or("its value has no Fusion literal")?;
                 parameters.owned(ordinal, text, kind.unit(), value, false)
@@ -339,7 +330,7 @@ impl Candidate<'_> {
             members,
             measure,
             parameter,
-            driven: driven.is_some(),
+            driven: is_driven,
         })
     }
 }

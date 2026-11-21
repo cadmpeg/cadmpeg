@@ -2,7 +2,8 @@
 //! The records of a parameter a timeline item owns (f3d.md §3.1, "Owned
 //! parameters", "Sketch dimensions" and §3.1's parameter record forms): the
 //! 104-byte scalar owner with its paired part, the parameter in the
-//! discriminated form, and the owner's 58-byte parameter companion.
+//! discriminated form of its type version 8, and the owner's 58-byte
+//! parameter companion.
 
 use cadmpeg_core::CodecError;
 
@@ -81,7 +82,7 @@ pub(super) fn write(
         .zeros(11)
         .u32(DISCRIMINATOR)
         .byte(0)
-        .u32(0)
+        .lp_utf16(value.comment.as_deref().unwrap_or_default())?
         .u32(value.ordinal)
         .reference(owner)
         .lp_utf16(&value.expression)?

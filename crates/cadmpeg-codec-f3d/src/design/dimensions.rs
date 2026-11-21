@@ -5,6 +5,13 @@ use crate::design::constraints::scalar_close;
 use crate::design::feature_project::{design_dimension_unit, design_length};
 use crate::design::geometry::{angle_in_sweep, sketch_entity_endpoints};
 use crate::ids::native_stream;
+use crate::layout::dimension_annotation_absent_metadata as annotation_absent_metadata;
+use crate::layout::dimension_annotation_genesis_metadata as annotation_genesis;
+use crate::layout::dimension_annotation_metadata_header as annotation_metadata;
+use crate::layout::sketch_item_dimension_frame_angular as angular_measurement;
+use crate::layout::sketch_item_dimension_frame_linear as linear_measurement;
+use crate::layout::sketch_item_dimension_frame_radial as radial_measurement;
+use crate::layout::sketch_item_dimension_frame_text as text_frame;
 use crate::records::{
     dimensions::{
         DesignDimensionAnnotationFrame, DesignDimensionLocusGroup, DesignDimensionLocusPair,
@@ -17,7 +24,7 @@ use crate::records::{
     sketch_placement::DesignSketchPlacement,
     sketch_relations::{SketchConstraintKind, SketchRelation, SketchRelationOperand},
 };
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::pcurve::evaluator::PcurveEvaluatorLanes;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -26,6 +33,9 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// Kind stem of an angular dimension.
 const ANGULAR_DIMENSION_KIND: &str = "Angular Dimension";
+
+/// The text-frame style byte of a driven dimension.
+const DRIVEN_TEXT_STYLE: u8 = 1;
 
 /// Native property that holds a dimension's instance name.
 const DIMENSION_INSTANCE_NAME: &str = "instance_name";
@@ -44,7 +54,7 @@ fn dimension_constraint(
     id: cadmpeg_ir::sketches::SketchConstraintId,
     sketch: cadmpeg_ir::sketches::SketchId,
     definition: cadmpeg_ir::sketches::SketchConstraintDefinition,
-    parameter: &DesignParameter,
+    driving: Option<bool>,
     native_ref: String,
 ) -> cadmpeg_ir::sketches::SketchConstraint {
     cadmpeg_ir::sketches::SketchConstraint {
@@ -52,7 +62,7 @@ fn dimension_constraint(
         sketch,
         definition,
         name: None,
-        driving: parameter.driving(),
+        driving,
         active: None,
         virtual_space: None,
         visible: None,
@@ -309,6 +319,15 @@ fn project_all_dimension_constraints(
         }
     }
     let parameters = parameters_by_record;
+    let frame_driven =
+        frame_driven_parameters(presentation_frames, annotation_frames, owners, &parameters);
+    let driving = |parameter: &DesignParameter| {
+        parameter.driving().or_else(|| {
+            native_stream(&parameter.id)
+                .is_some_and(|scope| frame_driven.contains(&(scope, parameter.record_index)))
+                .then_some(false)
+        })
+    };
     let mut parameter_by_companion = HashMap::new();
     for owner in owners {
         if let Some(scope) = native_stream(owner.id()) {
@@ -841,7 +860,7 @@ fn project_all_dimension_constraints(
                 crate::ids::neutral_sketch_constraint_id(&group.id, group.record_index),
                 sketch,
                 definition,
-                parameter,
+                driving(parameter),
                 native_ref,
             ))
         })();
@@ -911,7 +930,7 @@ fn project_all_dimension_constraints(
             constraint_id,
             sketch,
             definition,
-            parameter,
+            driving(parameter),
             pair.id.clone(),
         ));
     }
@@ -1007,7 +1026,7 @@ fn project_all_dimension_constraints(
                 constraint_id,
                 sketch,
                 definition,
-                parameter,
+                driving(parameter),
                 native_ref,
             ))
         }))
@@ -1043,7 +1062,7 @@ fn project_all_dimension_constraints(
                             constraint_id,
                             sketch,
                             definition,
-                            parameter,
+                            driving(parameter),
                             native_ref,
                         ));
                     }
@@ -1089,7 +1108,7 @@ fn project_all_dimension_constraints(
                 constraint_id,
                 sketch,
                 definition,
-                parameter,
+                driving(parameter),
                 pair.id.clone(),
             ))
         }));
@@ -1218,7 +1237,7 @@ fn project_all_dimension_constraints(
             constraint_id,
             sketch,
             definition,
-            parameter,
+            driving(parameter),
             native_ref,
         ));
     }
@@ -1415,7 +1434,7 @@ fn project_all_dimension_constraints(
                 crate::ids::neutral_dimension_constraint_id(&parameter_id, "companion-payload"),
                 sketch,
                 definition,
-                parameter,
+                driving(parameter),
                 native_ref,
             ))
         })();
@@ -1433,6 +1452,83 @@ fn project_all_dimension_constraints(
 /// assigning a nearby entity with the same source sketch.
 /// The definition of the one presentation frame among `frames` whose operand
 /// measurement equals the parameter.
+/// The parameters whose dimension frame stores the text-frame style byte of
+/// a driven dimension (f3d.md §3.1, "Sketch dimensions"), by stream and
+/// record index.
+fn frame_driven_parameters<'a>(
+    presentation_frames: &'a [crate::records::dimensions::DesignDimensionPresentationFrame],
+    annotation_frames: &'a [DesignDimensionAnnotationFrame],
+    owners: &[DesignParameterOwner],
+    parameters: &HashMap<(&'a str, u32), &DesignParameter>,
+) -> HashSet<(&'a str, u32)> {
+    let mut owned = HashMap::new();
+    for owner in owners {
+        if let Some(scope) = native_stream(owner.id()) {
+            owned.insert(
+                (scope, owner.record_index()),
+                owner.parameter_record_index(),
+            );
+        }
+    }
+    let presentations = presentation_frames.iter().filter_map(|frame| {
+        Some((
+            native_stream(&frame.id)?,
+            frame.governing_parameter_record_index,
+            after_properties(&frame.presentation_bytes)?,
+        ))
+    });
+    let annotations = annotation_frames.iter().filter_map(|frame| {
+        let scope = native_stream(&frame.id)?;
+        Some((
+            scope,
+            *owned.get(&(scope, frame.governing_owner_record_index))?,
+            frame.annotation_bytes(),
+        ))
+    });
+    let mut driven = HashSet::new();
+    for (scope, record_index, bytes) in presentations.chain(annotations) {
+        if parameters
+            .get(&(scope, record_index))
+            .is_some_and(|parameter| text_style(bytes, parameter) == Some(DRIVEN_TEXT_STYLE))
+        {
+            driven.insert((scope, record_index));
+        }
+    }
+    driven
+}
+
+/// The bytes after the property block that starts `bytes`.
+fn after_properties(bytes: &[u8]) -> Option<&[u8]> {
+    let len = match *bytes.first()? {
+        annotation_absent_metadata::PRESENT_VALUE => annotation_absent_metadata::LEN,
+        annotation_metadata::PRESENT_VALUE => {
+            match View::u32_le_at(bytes, annotation_metadata::ENTRY_COUNT)? {
+                0 => annotation_metadata::LEN,
+                annotation_genesis::ENTRY_COUNT_VALUE => annotation_genesis::LEN,
+                _ => return None,
+            }
+        }
+        _ => return None,
+    };
+    bytes.get(len..)
+}
+
+/// The style byte of a dimension frame's text frame, where `bytes` start
+/// with the measurement of the kind of `parameter`'s dimension.
+fn text_style(bytes: &[u8], parameter: &DesignParameter) -> Option<u8> {
+    let at = match parameter.dimension_kind().as_str() {
+        "Linear Dimension" => linear_measurement::LEN,
+        "Angular Dimension" => angular_measurement::LEN,
+        "Diameter Dimension" | "Radial Dimension" => radial_measurement::LEN,
+        _ => return None,
+    };
+    let style = *bytes.get(at + text_frame::STYLE_BYTE)?;
+    (style <= DRIVEN_TEXT_STYLE
+        && matches!(bytes.get(at + text_frame::MARKER), Some(0 | 1))
+        && bytes.get(at + text_frame::ZERO_BYTE) == Some(&0))
+    .then_some(style)
+}
+
 fn governing_presentation_definition<'a>(
     frames: impl Iterator<Item = &'a crate::records::dimensions::DesignDimensionPresentationFrame>,
     scope: &str,

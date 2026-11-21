@@ -270,18 +270,19 @@ pub(in crate::writer::generate::design::roster) fn losses(ctx: &Context<'_>) -> 
     let mut frames = Vec::new();
     let mut parameters = Vec::new();
     let mut driven = Vec::new();
-    for (records, planned) in ctx.roster.sketches.items.iter().zip(ctx.sketches) {
+    for records in &ctx.roster.sketches.items {
         related.extend(records.relations.iter().map(u32::to_string));
-        for ([frame, parameter, _, _], dimension) in
-            records.dimensions.iter().zip(&planned.dimensions)
-        {
+        for [frame, parameter, _, _] in &records.dimensions {
             related.push(frame.to_string());
             frames.push(frame.to_string());
             parameters.push(parameter.to_string());
-            if dimension.driven {
-                driven.push(format!("{frame} {parameter}"));
-            }
         }
+        driven.extend(
+            records
+                .driven
+                .iter()
+                .map(|[frame, parameter]| format!("{frame} {parameter}")),
+        );
     }
     if related.is_empty() {
         return Vec::new();
@@ -303,7 +304,7 @@ pub(in crate::writer::generate::design::roster) fn losses(ctx: &Context<'_>) -> 
         ]);
         if !driven.is_empty() {
             values.push(format!(
-                "driven dimension frames and parameters {} (the parameter in the wide discriminated form with no comment beside parameters in the discriminated form in one Design stream; the display text with {DRIVEN_DECIMALS} decimals)",
+                "driven dimension frames and parameters {} (the first flag byte of the parameter's expression trailer `1` as its driven flag, f3d-open-items.md DR-144; the display text with {DRIVEN_DECIMALS} decimals and the unit of the parameter, DR-917)",
                 driven.join(", ")
             ));
         }
