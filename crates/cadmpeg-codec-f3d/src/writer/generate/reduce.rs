@@ -594,6 +594,9 @@ impl<'a> Reduction<'a> {
     /// against. A vertex farther from its carrier than its own allowance
     /// (f3d.md §2: the edge's, its own and the cache-fit tolerances) is raised
     /// to that distance, with `geometry.vertex-tolerance-widened` naming it.
+    /// On a curve other than a line, conic or point, each end also inverts
+    /// from the other end's seed; an edge whose two witnesses of one end lie on
+    /// different arcs of a self-crossing curve keeps no range.
     /// An edge that runs against its line is written with its ends exchanged.
     /// A line or conic carrier that a vertex lies beyond the edge's allowance
     /// from is ranged between the vertices' feet on it, with a loss naming the
@@ -704,6 +707,17 @@ impl<'a> Reduction<'a> {
                     solved,
                     Some(SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_))
                 );
+                let freeform = !matches!(
+                    solved,
+                    Some(
+                        SolvedCurveGeometry::Line(_)
+                            | SolvedCurveGeometry::Circle(_)
+                            | SolvedCurveGeometry::Ellipse(_)
+                            | SolvedCurveGeometry::Parabola(_)
+                            | SolvedCurveGeometry::Hyperbola(_)
+                            | SolvedCurveGeometry::Degenerate(_)
+                    )
+                );
                 let (within, [first, last]) = match parameters(allowance)? {
                     Some(range) => (true, range),
                     None if line || conic => match parameters(f64::MAX)? {
@@ -720,25 +734,52 @@ impl<'a> Reduction<'a> {
                 if last <= first && conic {
                     range[1] += std::f64::consts::TAU;
                 }
+                if freeform {
+                    // A freeform curve can pass a point on two arcs, and the
+                    // seed picks the witness: each end inverts from the other
+                    // end's seed as well, and an edge whose two witnesses of an
+                    // end lie on different arcs keeps no range. On a periodic
+                    // curve the witnesses split the loop into two arcs, and the
+                    // seam's two witnesses bound a short one across the seam.
+                    let seam = match solved {
+                        Some(SolvedCurveGeometry::Nurbs(nurbs)) if nurbs.periodic() => {
+                            cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs)
+                                .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
+                        }
+                        _ => None,
+                    };
+                    let one_arc =
+                        |point: Point3, seed: f64, witness: f64| -> Result<bool, CodecError> {
+                            let near = |parameter| -> Result<bool, CodecError> {
+                                Ok(gap(point, parameter)?
+                                    .is_some_and(|distance| distance <= allowance))
+                            };
+                            let Some(other) = invert(point, seed, allowance)? else {
+                                return Ok(false);
+                            };
+                            let middle = 0.5 * witness + 0.5 * other;
+                            if near(middle)? {
+                                return Ok(true);
+                            }
+                            let Some([low, high]) = seam else {
+                                return Ok(false);
+                            };
+                            let half = 0.5 * (high - low);
+                            near(if middle + half <= high {
+                                middle + half
+                            } else {
+                                middle - half
+                            })
+                        };
+                    if !(one_arc(start, domain.map_or(last, |[_, high]| high), first)?
+                        && one_arc(end, domain.map_or(0.0, |[low, _]| low), last)?)
+                    {
+                        continue;
+                    }
+                }
                 let exchange = (line || aperiodic_nurbs) && last < first;
                 if exchange {
-                    // A self-crossing curve passes a point on two arcs, and
-                    // the seed picks the witness: each end inverts from the
-                    // other end's seed as well, and an edge whose witnesses
-                    // lie on different arcs keeps no range.
-                    let tolerance = if within { allowance } else { f64::MAX };
-                    let mut one_arc = true;
-                    for (point, seed, witness) in [
-                        (start, domain.map_or(first, |[_, high]| high), first),
-                        (end, domain.map_or(0.0, |[low, _]| low), last),
-                    ] {
-                        one_arc &= match invert(point, seed, tolerance)? {
-                            Some(other) => gap(point, 0.5 * witness + 0.5 * other)?
-                                .is_some_and(|distance| distance <= tolerance),
-                            None => false,
-                        };
-                    }
-                    if !one_arc || self.names_edge_uses(edge) {
+                    if self.names_edge_uses(edge) {
                         continue;
                     }
                     range = [last, first];

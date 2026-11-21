@@ -521,6 +521,53 @@ fn an_open_edge_ending_where_its_nurbs_curve_crosses_itself_keeps_its_stand_in_a
 }
 
 #[test]
+fn an_open_edge_starting_where_its_nurbs_curve_crosses_itself_keeps_its_stand_in_and_is_named() {
+    // Edge 0 is reversed to run from (10,0,0) to (0,0,0) on the curve of the
+    // test above. Seeded from the curve's start, its start inverts to 0.5 and
+    // the edge would take [0.5, 3] over (10,10,0) and (20,0,0); seeded from
+    // its end, to 2.5, where the edge takes [2.5, 3]. The ends need no
+    // exchange, and the writer cannot tell which arc the edge runs over.
+    let mut ir = cube_with_unranged_nurbs_edge(
+        vec![0.0, 0.0, 1.0, 2.0, 3.0, 3.0],
+        vec![
+            Point3::new(10.0, -10.0, 0.0),
+            Point3::new(10.0, 10.0, 0.0),
+            Point3::new(20.0, 0.0, 0.0),
+            Point3::new(0.0, 0.0, 0.0),
+        ],
+        false,
+    );
+    let edge = ir.geometry.edges[0].id.clone();
+    let ends = ir.geometry.edges[0].ends.take().expect("edge ends");
+    ir.geometry.edges[0].ends = Some(EdgeEnds::new(ends.end, ends.start));
+    for coedge in ir
+        .geometry
+        .coedges
+        .iter_mut()
+        .filter(|row| row.edge == edge)
+    {
+        coedge.sense = match coedge.sense {
+            Sense::Forward => Sense::Reversed,
+            Sense::Reversed => Sense::Forward,
+        };
+    }
+    let (report, decoded) = write(&ir);
+    assert!(
+        record_invalid_names(&report, edge.as_str()),
+        "{:#?}",
+        report.losses
+    );
+    assert!(start_position(&decoded, 0).distance(Point3::new(10.0, 0.0, 0.0)) < EPS_PARAMETER);
+    if let Some(range) = decoded.geometry.edges[0].param_range() {
+        let [start, end] = range.get();
+        assert!(
+            (start - 0.5).abs() > EPS_PARAMETER || (end - 3.0).abs() > EPS_PARAMETER,
+            "[{start}, {end}]"
+        );
+    }
+}
+
+#[test]
 fn an_open_edge_off_its_curve_is_ranged_between_the_feet_with_a_loss() {
     let ir = cube_with_unranged_edge(Point3::new(10.0, 5.0, 0.0));
     let edge = ir.geometry.edges[0].id.to_string();
