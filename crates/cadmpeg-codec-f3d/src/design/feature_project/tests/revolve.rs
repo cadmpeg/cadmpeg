@@ -84,7 +84,7 @@ fn revolve_projects_with_native_profile() {
     .unwrap();
     let Some(cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::Revolve { construction, .. },
-    )) = super::super::project_fixed_revolve_with_entities(
+    )) = crate::design::feature_project::revolve::project_fixed_revolve_with_entities(
         &scope,
         &groups,
         std::slice::from_ref(&axis),
@@ -113,7 +113,7 @@ fn revolve_projects_with_native_profile() {
             construction: unresolved,
             ..
         },
-    )) = super::super::project_fixed_revolve_with_entities(
+    )) = crate::design::feature_project::revolve::project_fixed_revolve_with_entities(
         &scope,
         &groups,
         &[unresolved_axis],
@@ -214,7 +214,7 @@ fn revolve_projects_design_geometry_origin_axis_selections() {
         .unwrap()
     };
     let project = |selection: &DesignEntitySelectionOperand| {
-        super::super::project_fixed_revolve_with_entities(
+        crate::design::feature_project::revolve::project_fixed_revolve_with_entities(
             &scope,
             &groups,
             &[],
@@ -311,7 +311,7 @@ fn revolve_projects_design_geometry_origin_axis_selections() {
                     },
                 ..
             },
-        )) = super::super::project_fixed_revolve_with_entities(
+        )) = crate::design::feature_project::revolve::project_fixed_revolve_with_entities(
             &two_sided,
             &groups,
             &[],
@@ -514,7 +514,7 @@ fn oriented_direction_for_selection(
         native_ref: reversed.then(|| scope.id.clone()),
         product_definition: None,
     }];
-    super::super::orient_revolve_axes(
+    crate::design::feature_project::revolve::orient_revolve_axes(
         &mut features,
         std::slice::from_ref(&scope),
         &[sketch],

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::design::feature_project::{closed_spatial_sketch_profiles, SPATIAL_PROFILE_SEARCH_WORK};
+use crate::design::feature_project::sweep_loft::closed_spatial_sketch_profiles;
+use crate::design::feature_project::SPATIAL_PROFILE_SEARCH_WORK;
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::Length;

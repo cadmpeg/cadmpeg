@@ -91,7 +91,7 @@ fn modify_projects_a_move_of_its_listed_body_groups() {
         translation,
         rotation,
         copies,
-    })) = super::super::project_modify(&scope, &groups, &mut losses)
+    })) = crate::design::feature_project::body_ops::project_modify(&scope, &groups, &mut losses)
     else {
         panic!("MoveBody");
     };
@@ -137,7 +137,11 @@ fn modify_with_one_listed_group_selects_that_group() {
         bodies,
         rotation: Some(rotation),
         ..
-    })) = super::super::project_modify(&scope, std::slice::from_ref(&group), &mut losses)
+    })) = crate::design::feature_project::body_ops::project_modify(
+        &scope,
+        std::slice::from_ref(&group),
+        &mut losses,
+    )
     else {
         panic!("MoveBody");
     };
@@ -150,13 +154,13 @@ fn modify_with_one_listed_group_selects_that_group() {
 fn modify_stays_native_without_each_listed_body_group_or_with_a_reflection() {
     let mut losses = Vec::new();
     let scope = modify_scope(TRANSLATION, vec![54, 56]);
-    assert!(super::super::project_modify(
+    assert!(crate::design::feature_project::body_ops::project_modify(
         &scope,
         &[group(54, DesignOperandRole::BODIES_A)],
         &mut losses
     )
     .is_none());
-    assert!(super::super::project_modify(
+    assert!(crate::design::feature_project::body_ops::project_modify(
         &scope,
         &[
             group(54, DesignOperandRole::BODIES_A),
@@ -172,7 +176,7 @@ fn modify_stays_native_without_each_listed_body_group_or_with_a_reflection() {
         [0., 0., 0., 1.],
     ];
     let scope = modify_scope(reflection, vec![54]);
-    assert!(super::super::project_modify(
+    assert!(crate::design::feature_project::body_ops::project_modify(
         &scope,
         &[group(54, DesignOperandRole::BODIES_A)],
         &mut losses
@@ -185,7 +189,7 @@ fn modify_stays_native_without_each_listed_body_group_or_with_a_reflection() {
 fn modify_keeps_its_move_when_a_table_position_breaks_the_body_group_run() {
     let scope = modify_scope(TRANSLATION, vec![54]);
     let mut losses = Vec::new();
-    let projected = super::super::project_modify(
+    let projected = crate::design::feature_project::body_ops::project_modify(
         &scope,
         &[
             group(52, DesignOperandRole::BODIES_A),
@@ -225,7 +229,7 @@ fn modify_keeps_its_move_when_it_commits_a_history_state() {
         })
         .unwrap();
     let mut losses = Vec::new();
-    assert!(super::super::project_modify(
+    assert!(crate::design::feature_project::body_ops::project_modify(
         &scope,
         &[
             group(50, DesignOperandRole::BODIES_A),
