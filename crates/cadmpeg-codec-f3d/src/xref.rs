@@ -59,6 +59,7 @@ pub(crate) const COMPONENT_PATH_TYPE_GUID: &str = "3B6814F4-D87B-46BD-AD9D-0BE07
 pub(crate) struct XrefTable {
     /// Design entries in source order; entry 0 is the document itself.
     pub(crate) designs: Vec<XrefDesign>,
+    pub(crate) identity_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) documents: std::collections::BTreeMap<String, ExternalDocument>,
     /// Outgoing XREF placements in source order; empty for a leaf document.
     pub(crate) references: Vec<XrefReference>,
@@ -562,7 +563,7 @@ pub(crate) fn project_occurrences(
         definitions: Vec::new(),
         occurrences: Vec::new(),
         placements: Vec::new(),
-        losses: Vec::new(),
+        losses: table.identity_losses.clone(),
     };
     for reference in &table.references {
         let path = reference.relative_path.as_str();

@@ -53544,6 +53544,7 @@ note = "Offsets are relative to the generation extension after the capability re
 name = "zero_run"
 offset = 0
 type = "bytes[4]"
+value = [0, 0, 0, 0]
 source = "spec"
 anchor = "starts with four zero bytes and a u8 reference flag"
 

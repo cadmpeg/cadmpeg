@@ -15491,7 +15491,7 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 4 | `zero_run` | `bytes[4]` | little | spec | starts with four zero bytes and a u8 reference flag |
+| 0 | 4 | `zero_run` | `bytes[4]` | little | spec | starts with four zero bytes and a u8 reference flag · value `[0, 0, 0, 0]` |
 | 4 | 1 | `reference_flag` | `u8` | little | spec | The reference-bearing prefix has flag `1` · value `1` |
 | 5 | 4 | `reference_count` | `u32` | little | spec | followed by a nonzero u32 reference count |
 

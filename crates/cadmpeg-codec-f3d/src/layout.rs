@@ -13455,8 +13455,8 @@ pub(crate) mod base_feature_browser_root_prefix {
 pub(crate) mod manifest_reference_extension_prefix {
     /// Record length in bytes. Spec §1.4.
     pub(crate) const LEN: usize = 9;
-    /// Offset of `reference_flag` (`u8`). Spec §1.4.
-    pub(crate) const REFERENCE_FLAG: usize = 4;
+    /// Stated value of `zero_run` (`bytes[4]`). Spec §1.4.
+    pub(crate) const ZERO_RUN_VALUE: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
     /// Stated value of `reference_flag` (`u8`). Spec §1.4.
     pub(crate) const REFERENCE_FLAG_VALUE: u8 = 1;
 }

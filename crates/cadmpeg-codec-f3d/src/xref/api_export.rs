@@ -11,6 +11,7 @@ use super::{PropertyJson, ReferenceFieldsJson, StringProperty, XrefTable};
 use crate::bytes::utf16::Utf16View;
 use crate::container::ContainerScan;
 use crate::layout::manifest_reference_extension_prefix as prefix;
+use crate::loss::F3dLossCode;
 
 const MIN_REFERENCE_BYTES: usize = 76 + 12 + 16 + 4 + 48;
 
@@ -74,7 +75,7 @@ pub(super) fn decode(
 fn parse(ctx: &DecodeContext<'_>, mut view: View<'_>) -> Result<XrefTable, ReferenceError> {
     let mut header = view.req_take_child(prefix::LEN)?;
     require(
-        header.req_take(prefix::REFERENCE_FLAG)? == [0, 0, 0, 0],
+        header.req_take(prefix::ZERO_RUN_VALUE.len())? == prefix::ZERO_RUN_VALUE,
         "invalid reference prologue",
     )?;
     require(
@@ -92,7 +93,8 @@ fn parse(ctx: &DecodeContext<'_>, mut view: View<'_>) -> Result<XrefTable, Refer
         .get();
     require(count != 0, "empty reference run")?;
     let mut references = ctx.alloc_filled(count, None, "F3D manifest references")?;
-    let mut documents = BTreeMap::new();
+    let mut documents = BTreeMap::<String, ExternalDocument>::new();
+    let mut identity_losses = Vec::new();
     let mut source_path = None;
     for (ordinal, slot) in references.iter_mut().enumerate() {
         let role = text(&mut view)?;
@@ -131,7 +133,12 @@ fn parse(ctx: &DecodeContext<'_>, mut view: View<'_>) -> Result<XrefTable, Refer
             })
         };
         let lineage = field("LineageUrn")?;
-        let _lineage_id = field("LineageId")?;
+        let lineage_id = field("LineageId")?;
+        if lineage_id != lineage {
+            identity_losses.push(F3dLossCode::XrefLineageDisagrees.note(format!(
+                "reference {ordinal} ({path}): LineageId {lineage_id:?} disagrees with LineageUrn {lineage:?}; LineageUrn supplies the document identity"
+            )));
+        }
         let version = field("URL")?;
         let asset = field("linkedAssetGUID")?;
         require(
@@ -148,12 +155,27 @@ fn parse(ctx: &DecodeContext<'_>, mut view: View<'_>) -> Result<XrefTable, Refer
             version: NonBlankString::new(version.clone()),
             ..ExternalDocument::default()
         };
-        require(
-            document.document_id.is_some() && document.version.is_some(),
-            "empty document identity",
-        )?;
-        if let Some(previous) = documents.insert(path.clone(), document.clone()) {
-            require(previous == document, "target identities disagree")?;
+        for (field, value) in [
+            ("LineageUrn", &document.document_id),
+            ("URL", &document.version),
+        ] {
+            if value.is_none() {
+                identity_losses.push(F3dLossCode::XrefIdentityBlank.note(format!(
+                    "reference {ordinal} ({path}): blank {field} is absent"
+                )));
+            }
+        }
+        let previous = documents.entry(path.clone()).or_default();
+        for (stored, incoming) in [
+            (&mut previous.document_id, document.document_id),
+            (&mut previous.version, document.version),
+        ] {
+            if let (Some(previous), Some(value)) = (stored.as_ref(), incoming.as_ref()) {
+                require(previous == value, "target identities disagree")?;
+            }
+            if stored.is_none() {
+                *stored = incoming;
+            }
         }
         *slot = Some(
             ReferenceFieldsJson {
@@ -173,6 +195,7 @@ fn parse(ctx: &DecodeContext<'_>, mut view: View<'_>) -> Result<XrefTable, Refer
     Ok(XrefTable {
         references: references.into_iter().flatten().collect(),
         documents,
+        identity_losses,
         ..XrefTable::default()
     })
 }

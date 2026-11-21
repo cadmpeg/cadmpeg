@@ -58,6 +58,7 @@ struct DesignObjectReference {
 pub(super) fn document_identities(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<BTreeMap<String, cadmpeg_ir::products::ExternalDocument>, CodecError> {
     use cadmpeg_core::text::NonBlankString;
     use cadmpeg_ir::products::ExternalDocument;
@@ -67,7 +68,8 @@ pub(super) fn document_identities(
         CodecError::malformed(format_args!("{DESIGN_DESCRIPTION_ENTRY}: {error}"))
     })?;
     let description = ctx.parse_json_value(text, "read F3Z document identities")?;
-    let mut identities = BTreeMap::new();
+    let mut identities = BTreeMap::<String, ExternalDocument>::new();
+    let mut conflicts = std::collections::BTreeSet::new();
     if let Some(graphs) = description
         .pointer("/designDescription/designGraphs")
         .and_then(serde_json::Value::as_array)
@@ -95,18 +97,43 @@ pub(super) fn document_identities(
                             .and_then(NonBlankString::new),
                         ..ExternalDocument::default()
                     };
-                    if let Some(previous) = identities.insert(path.to_owned(), identity.clone()) {
-                        if previous != identity {
-                            return Err(CodecError::malformed(format_args!(
-                                "conflicting F3Z document identities for {path}"
-                            )));
-                        }
+                    let previous = identities.entry(path.to_owned()).or_default();
+                    for (field, stored, incoming) in [
+                        ("lineage", &mut previous.document_id, identity.document_id),
+                        ("about", &mut previous.version, identity.version),
+                    ] {
+                        merge_identity_field(path, field, stored, incoming, &mut conflicts, losses);
                     }
                 }
             }
         }
     }
     Ok(identities)
+}
+
+fn merge_identity_field(
+    path: &str,
+    field: &str,
+    stored: &mut Option<cadmpeg_core::text::NonBlankString>,
+    incoming: Option<cadmpeg_core::text::NonBlankString>,
+    conflicts: &mut std::collections::BTreeSet<(String, String)>,
+    losses: &mut Vec<LossNote>,
+) {
+    let key = (path.to_owned(), field.to_owned());
+    if conflicts.contains(&key) {
+        return;
+    }
+    match (stored.as_ref(), incoming) {
+        (Some(previous), Some(value)) if previous != &value => {
+            losses.push(F3dLossCode::XrefArchiveIdentityDisagrees.note(format!(
+                "{path}: conflicting {field} identities {previous:?} and {value:?}; the member supplies its own {field}"
+            )));
+            *stored = None;
+            conflicts.insert(key);
+        }
+        (None, value) => *stored = value,
+        _ => {}
+    }
 }
 
 /// Retains member classification and the checkpoints used to reopen each scan.
@@ -449,6 +476,9 @@ fn model_root_member(
 
 #[cfg(test)]
 mod tests {
+    use super::merge_identity_field;
+    use cadmpeg_core::text::NonBlankString;
+
     #[test]
     fn manifest_extensions_preserve_depth_refusal() {
         let bytes = crate::test_support::assembly_test::f3z_archive(
@@ -473,5 +503,50 @@ mod tests {
                 assert_eq!(Some(limit), ctx.resource_refusal());
             });
         });
+    }
+
+    #[test]
+    fn f3z_document_identity_blank_and_present_keep_present() {
+        for reverse in [false, true] {
+            let present = NonBlankString::new("urn:lineage:target");
+            let mut stored = if reverse { present.clone() } else { None };
+            let incoming = if reverse { None } else { present.clone() };
+            let mut conflicts = std::collections::BTreeSet::new();
+            let mut losses = Vec::new();
+            merge_identity_field(
+                "target.f3d",
+                "lineage",
+                &mut stored,
+                incoming,
+                &mut conflicts,
+                &mut losses,
+            );
+            assert_eq!(stored, present);
+            assert!(losses.is_empty());
+        }
+    }
+
+    #[test]
+    fn f3z_document_identity_conflict_defers_to_member() {
+        let mut stored = NonBlankString::new("urn:lineage:first");
+        let mut conflicts = std::collections::BTreeSet::new();
+        let mut losses = Vec::new();
+        for value in ["urn:lineage:second", "urn:lineage:first"] {
+            merge_identity_field(
+                "target.f3d",
+                "lineage",
+                &mut stored,
+                NonBlankString::new(value),
+                &mut conflicts,
+                &mut losses,
+            );
+            assert!(stored.is_none());
+        }
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code.local_code(),
+            "xref.archive-identity-disagrees"
+        );
+        assert!(losses[0].message.contains("target.f3d"));
     }
 }

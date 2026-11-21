@@ -66,3 +66,119 @@ fn manifest_reference_truncation_keeps_source_location() {
         matches!(error.0, CodecError::Truncated { location, .. } if location == view.location())
     );
 }
+
+fn replace_property(bytes: &mut Vec<u8>, field: &str, value: &str) {
+    let mut key = Vec::new();
+    crate::test_support::lp_utf16(&mut key, field);
+    let at = bytes
+        .windows(key.len())
+        .position(|window| window == key)
+        .unwrap()
+        + key.len();
+    let count = View::u32_le_at(bytes, at).unwrap();
+    let mut replacement = Vec::new();
+    crate::test_support::lp_utf16(&mut replacement, value);
+    bytes.splice(
+        at..at + 4 + usize::try_from(count).unwrap() * 2,
+        replacement,
+    );
+}
+
+#[test]
+fn manifest_reference_lineage_disagreement_keeps_lineage_urn() {
+    let mut bytes = api_reference_extension(&[(
+        "11111111-2222-4333-8444-555555555555",
+        "Target",
+        "target.f3d",
+    )]);
+    replace_property(&mut bytes, "LineageId", "urn:adsk.wipprod:dm.lineage:Other");
+    crate::test_support::with_decode_context(|ctx| {
+        let table = parse(ctx, View::over_retained(&bytes)).unwrap();
+        assert_eq!(
+            table.documents["target.f3d"]
+                .document_id
+                .as_ref()
+                .unwrap()
+                .as_str(),
+            "urn:adsk.wipprod:dm.lineage:Target"
+        );
+        assert_eq!(table.identity_losses.len(), 1);
+        assert_eq!(
+            table.identity_losses[0].code.local_code(),
+            "xref.lineage-disagrees"
+        );
+        assert!(table.identity_losses[0].message.contains("LineageId"));
+        assert!(table.identity_losses[0].message.contains("LineageUrn"));
+    });
+}
+
+#[test]
+fn manifest_reference_blank_identity_preserves_table() {
+    for field in ["LineageUrn", "URL"] {
+        let mut bytes = api_reference_extension(&[
+            ("11111111-2222-4333-8444-555555555555", "First", "first.f3d"),
+            (
+                "66666666-7777-4888-8999-aaaaaaaaaaaa",
+                "Second",
+                "second.f3d",
+            ),
+        ]);
+        replace_property(&mut bytes, field, "  ");
+        crate::test_support::with_decode_context(|ctx| {
+            let table = parse(ctx, View::over_retained(&bytes)).unwrap();
+            assert_eq!(table.references.len(), 2);
+            let first = &table.documents["first.f3d"];
+            assert_eq!(first.document_id.is_none(), field == "LineageUrn");
+            assert_eq!(first.version.is_none(), field == "URL");
+            assert!(table.documents["second.f3d"].document_id.is_some());
+            assert!(table.documents["second.f3d"].version.is_some());
+            assert!(table
+                .identity_losses
+                .iter()
+                .any(|loss| loss.code.local_code() == "xref.identity-blank"
+                    && loss.message.contains(field)));
+        });
+    }
+}
+
+#[test]
+fn manifest_reference_zero_run_requires_four_zero_bytes() {
+    let mut bytes = api_reference_extension(&[(
+        "11111111-2222-4333-8444-555555555555",
+        "Target",
+        "target.f3d",
+    )]);
+    for at in 0..prefix::ZERO_RUN_VALUE.len() {
+        bytes[at] = 1;
+        crate::test_support::with_decode_context(|ctx| {
+            let error = parse(ctx, View::over_retained(&bytes)).unwrap_err();
+            assert!(matches!(error.0, CodecError::Malformed(_)));
+        });
+        bytes[at] = 0;
+    }
+}
+
+#[test]
+fn manifest_reference_blank_identity_shares_present_target_identity() {
+    for field in ["LineageUrn", "URL"] {
+        let mut bytes = api_reference_extension(&[
+            (
+                "11111111-2222-4333-8444-555555555555",
+                "Target",
+                "target.f3d",
+            ),
+            (
+                "66666666-7777-4888-8999-aaaaaaaaaaaa",
+                "Target",
+                "target.f3d",
+            ),
+        ]);
+        replace_property(&mut bytes, field, "");
+        crate::test_support::with_decode_context(|ctx| {
+            let table = parse(ctx, View::over_retained(&bytes)).unwrap();
+            assert_eq!(table.references.len(), 2);
+            assert!(table.documents["target.f3d"].document_id.is_some());
+            assert!(table.documents["target.f3d"].version.is_some());
+        });
+    }
+}

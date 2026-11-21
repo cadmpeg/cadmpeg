@@ -216,6 +216,14 @@ fn archive_merge_keeps_redirections_member_identity() {
 }
 
 fn api_export_with_placements(linked: bool, terminal: Option<(u8, &str)>) -> Vec<u8> {
+    api_export_with_identity_fields(linked, terminal, None)
+}
+
+fn api_export_with_identity_fields(
+    linked: bool,
+    terminal: Option<(u8, &str)>,
+    blank: Option<&str>,
+) -> Vec<u8> {
     use std::io::Read;
     let bytes = f3d_with_identity_xrefs("assembly-design", "root.f3d", &[("child.f3d", XREF_ROLE)]);
     let mut source = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
@@ -231,12 +239,23 @@ fn api_export_with_placements(linked: bool, terminal: Option<(u8, &str)>) -> Vec
         entry.read_to_end(&mut bytes).unwrap();
         if name == "Manifest.dat" {
             let manifest = crate::manifest::parse_top_level(&bytes).unwrap();
-            let extension =
+            let mut extension =
                 crate::test_support::manifest_test::api_reference_extension(if linked {
                     &[(XREF_ROLE, "ChildKey", "child.f3d")]
                 } else {
                     &[]
                 });
+            if let Some(field) = blank {
+                let mut key = Vec::new();
+                crate::test_support::lp_utf16(&mut key, field);
+                let at = extension
+                    .windows(key.len())
+                    .position(|window| window == key)
+                    .unwrap()
+                    + key.len();
+                let count = cadmpeg_core::decode::View::u32_le_at(&extension, at).unwrap();
+                extension.splice(at..at + 4 + usize::try_from(count).unwrap() * 2, [0; 4]);
+            }
             bytes.splice(manifest.reference_extension, extension);
             if let Some((flag, lineage)) = terminal {
                 let mut marker = vec![1];
@@ -372,4 +391,113 @@ fn api_export_manifest_save_markers_keep_root_lineage_unassigned() {
             assert!(document.version.is_none());
         }
     }
+}
+
+#[test]
+fn api_export_blank_document_identity_keeps_placements_and_occurrences() {
+    for field in ["LineageUrn", "URL"] {
+        let bytes = api_export_with_identity_fields(true, None, Some(field));
+        let decoded = F3dCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(decoded.ir().model.occurrences.len(), 1);
+        assert_eq!(f3d_native(decoded.ir()).xref_references.len(), 1);
+        let child = decoded
+            .ir()
+            .model
+            .product_definitions
+            .iter()
+            .find_map(|row| match &row.storage {
+                Storage::External(document) => Some(document),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(child.document_id.is_none(), field == "LineageUrn");
+        assert_eq!(child.version.is_none(), field == "URL");
+        assert!(decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "xref.identity-blank"
+                && loss.message.contains(field)));
+    }
+}
+
+#[test]
+fn f3z_conflicting_description_identity_keeps_member_geometry_and_identity() {
+    let targets = [
+        ("child.f3d", XREF_ROLE),
+        ("missing.f3d", "66666666-7777-4888-8999-aaaaaaaaaaaa"),
+    ];
+    let mut table: serde_json::Value =
+        serde_json::from_str(&redirections_json("root.f3d", &targets)).unwrap();
+    table["designs"][2]["lineageUrn"] = "".into();
+    table["designs"][2]["versionUrn"] = "".into();
+    let root = crate::test_support::assembly_test::f3d_with_reference_table_and_identity_xrefs(
+        "assembly-design",
+        "root.f3d",
+        &targets,
+        &serde_json::to_vec(&table).unwrap(),
+    );
+    let child = include_bytes!("../../tests/golden/fixtures/generated_unit_cube.f3d");
+    let description = serde_json::json!({"designDescription":{"designGraphs":[{"designObjects":[
+        {"relativePath":"root.f3d", "lineage":"urn:first", "about":"urn:version:first"},
+        {"relativePath":"root.f3d", "lineage":"urn:second", "about":"urn:version:second"},
+        {"relativePath":"missing.f3d", "lineage":"", "about":""},
+        {"relativePath":"missing.f3d", "lineage":"urn:present", "about":"urn:version:present"}
+    ]}]}});
+    let bytes = f3z_archive_with_design_description(
+        "root.f3d",
+        &[("root.f3d", &root), ("child.f3d", child)],
+        &serde_json::to_vec(&description).unwrap(),
+    );
+    let decoded = crate::test_support::archive_session::decode(
+        &mut Cursor::new(bytes),
+        &DecodeOptions::default(),
+    )
+    .unwrap();
+    let root = decoded
+        .ir()
+        .model
+        .product_definitions
+        .iter()
+        .find(|row| row.is_root())
+        .unwrap();
+    let Storage::File { document, .. } = &root.storage else {
+        panic!("file root")
+    };
+    assert_identity(document, "RootKey");
+    let missing = decoded
+        .ir()
+        .model
+        .product_definitions
+        .iter()
+        .find_map(|row| match &row.storage {
+            Storage::External(document)
+                if document.path.as_ref().map(NonBlankString::as_str) == Some("missing.f3d") =>
+            {
+                Some(document)
+            }
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(
+        missing.document_id.as_ref().unwrap().as_str(),
+        "urn:present"
+    );
+    assert_eq!(
+        missing.version.as_ref().unwrap().as_str(),
+        "urn:version:present"
+    );
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.faces.len(), 6);
+    assert_eq!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.local_code() == "xref.archive-identity-disagrees")
+            .count(),
+        2
+    );
 }
