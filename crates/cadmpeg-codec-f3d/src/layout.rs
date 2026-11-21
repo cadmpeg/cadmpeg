@@ -894,6 +894,8 @@ pub(crate) mod chamfer_set_two_distances {
     pub(crate) const LEN: usize = 93;
     /// Offset of `flag` (`u8`). Spec §3.1.
     pub(crate) const FLAG: usize = 21;
+    /// Offset of `distance_reversed` (`u8`). Spec §3.1.
+    pub(crate) const DISTANCE_REVERSED: usize = 22;
     /// Offset of `first_distance_owner_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const FIRST_DISTANCE_OWNER_REFERENCE: usize = 24;
     /// Offset of `second_distance_owner_reference` (`bytes[11]`). Spec §3.1.
