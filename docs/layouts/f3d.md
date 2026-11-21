@@ -14317,7 +14317,7 @@ Offsets are relative to the end of the Design entity ID, for an empty display na
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `construction_collection` | `bytes[11]` | little | spec | After the name follow the construction collection reference |
+| 0 | 11 | `construction_collection` | `bytes[11]` | little | spec | After the entity ID follow the construction collection reference |
 | 11 | 4 | `family_ordinal` | `u32` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, the LP-UTF16 display name, u32 `0`, a flag byte `0` or `1`, twelve zero bytes |
 | 15 | 5 | `zero_run` | `bytes[5]` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, the LP-UTF16 display name, u32 `0`, a flag byte `0` or `1`, twelve zero bytes · value `[0, 0, 0, 0, 0]` |
 | 20 | 11 | `scope` | `bytes[11]` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, the LP-UTF16 display name, u32 `0`, a flag byte `0` or `1`, twelve zero bytes |
