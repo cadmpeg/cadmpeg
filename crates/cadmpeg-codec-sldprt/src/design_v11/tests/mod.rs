@@ -16,6 +16,7 @@ use cadmpeg_ir::design::refs::{EntityRef, Member, Position};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::check::Check;
 
+use crate::loss::SldprtLossCode;
 use crate::test_support::container::{make_block, native_envelope_fixture, sldprt_with_body};
 use crate::test_support::history::resolved_feature_classes_with_ids;
 use crate::test_support::parasolid::triangle_body;
@@ -389,7 +390,7 @@ fn a_bare_display_is_no_cache() {
 
 /// The v11 parameters of a part whose decoder read each dimension named in
 /// `readings` as the value and bound scalar given there, with the scalar
-/// classes `classes`.
+/// classes `classes`, and the notes of their reading.
 fn parameters_with_readings(
     keywords: &[u8],
     readings: &[(
@@ -403,7 +404,7 @@ fn parameters_with_readings(
 ) -> (
     CadIr,
     Vec<cadmpeg_ir::design::parameter::DesignParameter>,
-    Option<cadmpeg_ir::report::loss::LossNote>,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
     let ir = part_with_history(keywords, &[]);
     let native = crate::native::SldprtNative::load(ir.native.namespace("sldprt").unwrap()).unwrap();
@@ -434,20 +435,27 @@ fn parameters_with_readings(
             .collect(),
     };
     let timeline = super::tree::timeline(&native.feature_histories).unwrap();
-    let (parameters, rounded) =
-        super::parameters::Entries::new(&native.feature_histories, &timeline)
-            .unwrap()
-            .parameters(
-                &ir.design.scopes[0].definition,
-                &super::parameters::Readings {
-                    decoded,
-                    length_unit,
-                    bound: std::collections::HashMap::new(),
-                    measured: std::collections::HashMap::new(),
-                    driven: std::collections::HashSet::new(),
-                },
-            );
-    (ir, parameters, rounded)
+    let (parameters, notes) = super::parameters::Entries::new(&native.feature_histories, &timeline)
+        .unwrap()
+        .parameters(
+            &ir.design.scopes[0].definition,
+            &super::parameters::Readings {
+                decoded,
+                length_unit,
+                bound: std::collections::HashMap::new(),
+                measured: std::collections::HashMap::new(),
+                driven: std::collections::HashSet::new(),
+            },
+        );
+    (ir, parameters, notes)
+}
+
+/// The note of `code` among `notes`.
+fn note_of(
+    notes: &[cadmpeg_ir::report::loss::LossNote],
+    code: crate::loss::SldprtLossCode,
+) -> Option<&cadmpeg_ir::report::loss::LossNote> {
+    notes.iter().find(|note| note.code == code.kind())
 }
 
 #[test]
@@ -459,7 +467,7 @@ fn a_dimension_caches_the_stored_value_not_its_display() {
     use cadmpeg_ir::scalar::Length;
 
     let length = |millimetres: f64| V10::Length(Length::new(millimetres).unwrap());
-    let (ir, parameters, rounded) = parameters_with_readings(
+    let (ir, parameters, notes) = parameters_with_readings(
         br#"<Keywords Name="Bracket">
             <Extrusion Name="Inch" Type="BossExtrude" id="7">
                 <Dimension Name="D1">1</Dimension>
@@ -539,7 +547,92 @@ fn a_dimension_caches_the_stored_value_not_its_display() {
     let unread = named("Pattern", "D2");
     assert!(matches!(&unread.kind, ValueKind::Native(kind) if kind.as_str() == "sldprt:dimension"));
     assert_eq!(unread.value, None);
-    assert!(rounded.is_none(), "{rounded:?}");
+    assert!(
+        note_of(&notes, SldprtLossCode::DesignParameterDisplayRounded).is_none(),
+        "{notes:?}"
+    );
+    let unvalued = note_of(&notes, SldprtLossCode::DesignParameterValueUnread)
+        .expect("the dimensions with no value are named");
+    assert_eq!(
+        unvalued.message,
+        format!(
+            "Parameters whose dimension text is a bare number hold no value: 1 whose dimension \
+             no record types or binds to a stored value of its kind ({}); 1 lengths in a part \
+             whose length unit is not read ({})",
+            unread.id.as_str(),
+            named("Display", "D1").id.as_str()
+        )
+    );
+}
+
+#[test]
+fn an_unread_kind_keeps_the_number_its_bound_scalar_stores() {
+    use cadmpeg_ir::design::parameter::ParameterValue;
+    use cadmpeg_ir::design::units::{UnitSymbol, ValueKind};
+    use cadmpeg_ir::features::ParameterValue as V10;
+
+    let (_, parameters, notes) = parameters_with_readings(
+        br#"<Keywords Name="Bracket">
+            <Feature Name="Pattern" Type="LPattern" id="12">
+                <Dimension Name="D2">12.7</Dimension>
+                <Dimension Name="D4">3</Dimension>
+                <Dimension Name="D5">7</Dimension>
+            </Feature>
+        </Keywords>"#,
+        &[
+            (
+                "Pattern",
+                "D2",
+                V10::Real(0.0127.try_into().unwrap()),
+                Some("scalar-spacing"),
+            ),
+            ("Pattern", "D4", V10::Integer(3), Some("scalar-count")),
+            ("Pattern", "D5", V10::Integer(7), None),
+        ],
+        &[],
+        Some(UnitSymbol::Mm),
+    );
+    let named = |name: &str| {
+        parameters
+            .iter()
+            .find(|parameter| {
+                parameter
+                    .name
+                    .as_ref()
+                    .map(cadmpeg_core::text::NonBlankString::as_str)
+                    == Some(name)
+            })
+            .unwrap_or_else(|| panic!("{name}: {parameters:#?}"))
+    };
+    for (name, text, value) in [
+        (
+            "D2",
+            "12.7",
+            Some(ParameterValue::Number(0.0127.try_into().unwrap())),
+        ),
+        ("D4", "3", Some(ParameterValue::Integer(3))),
+        ("D5", "7", None),
+    ] {
+        let parameter = named(name);
+        assert!(
+            matches!(&parameter.kind, ValueKind::Native(kind) if kind.as_str() == "sldprt:dimension"),
+            "{name}"
+        );
+        assert_eq!(parameter.value, value, "{name}");
+        let expression = expression_json(parameter);
+        assert_eq!(expression["kind"], "source", "{name}");
+        assert_eq!(expression["value"]["tokens"][0]["value"], text, "{name}");
+    }
+    let unvalued = note_of(&notes, SldprtLossCode::DesignParameterValueUnread)
+        .expect("the dimension with no value is named");
+    assert!(
+        unvalued.message.ends_with(&format!(
+            ": 1 whose dimension no record types or binds to a stored value of its kind ({})",
+            named("D5").id.as_str()
+        )),
+        "{}",
+        unvalued.message
+    );
 }
 
 #[test]
@@ -551,7 +644,7 @@ fn a_length_display_is_a_literal_in_the_part_length_unit() {
     use cadmpeg_ir::scalar::Length;
 
     let length = |millimetres: f64| V10::Length(Length::new(millimetres).unwrap());
-    let (ir, parameters, rounded) = parameters_with_readings(
+    let (ir, parameters, notes) = parameters_with_readings(
         br#"<Keywords Name="Bracket">
             <Extrusion Name="Stored" Type="BossExtrude" id="7">
                 <Dimension Name="D1">1</Dimension>
@@ -616,7 +709,8 @@ fn a_length_display_is_a_literal_in_the_part_length_unit() {
     }
     assert_eq!(named("Round").display, Some(DimensionDisplay::Radius));
     assert_eq!(expression_json(named("Pattern"))["kind"], "source");
-    let rounded = rounded.expect("the displayed literal is charged");
+    let rounded = note_of(&notes, SldprtLossCode::DesignParameterDisplayRounded)
+        .expect("the displayed literal is charged");
     assert_eq!(
         rounded.code,
         crate::loss::SldprtLossCode::DesignParameterDisplayRounded.kind()

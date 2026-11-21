@@ -70,8 +70,9 @@ pub(crate) struct Part<'a> {
 /// Project the design of a part document into `ir.design`, beside its v10
 /// records, and state the part's root definition. A rollback reading that
 /// does not fix the position, a configuration whose state cannot be stated, a
-/// sketch or extrude that cannot be typed, and a parameter whose literal is a
-/// rounded display add their reasons to `losses`. Returns the number of
+/// sketch or extrude that cannot be typed, a parameter whose literal is a
+/// rounded display, and a dimension whose bare-number text has no value add
+/// their reasons to `losses`. Returns the number of
 /// records added.
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
@@ -111,8 +112,8 @@ pub(crate) fn project(
         measured: typed.measured,
         driven: typed.references,
     };
-    let (mut parameters, rounded) = entries.parameters(&definition, &readings);
-    losses.extend(rounded);
+    let (mut parameters, notes) = entries.parameters(&definition, &readings);
+    losses.extend(notes);
     let sketches = typed.sketches;
     parameters.extend(sketches.driven);
     let configurations =
