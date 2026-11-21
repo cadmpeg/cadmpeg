@@ -29,6 +29,7 @@ use crate::history::selection::bind_edge_identity_history;
 use crate::history::selection::bind_hole_selection_history;
 use crate::history::selection::complete_compact_edge_treatment_deletions;
 use crate::history::selection::entity_selection_face_candidates;
+use crate::history::selection::per_history_identities;
 use crate::history::singleton_body_revision_across_state_chain;
 use crate::history::singleton_revised_input_body_across_state_chain;
 use crate::history::TopologyStableBodyRevision;
@@ -107,7 +108,10 @@ fn entity_selection_face_proofs_preserve_history_namespaces() {
     );
 
     assert_eq!(
-        entity_selection_face_candidates(18044, &[unrelated, selected]),
+        entity_selection_face_candidates(
+            18044,
+            &per_history_identities(&[unrelated, selected], &[18044])
+        ),
         [
             crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate {
                 history_id: "selected".into(),
@@ -120,6 +124,71 @@ fn entity_selection_face_proofs_preserve_history_namespaces() {
             }
         ]
     );
+}
+
+#[test]
+fn entity_selection_face_candidates_do_not_depend_on_other_requested_identities() {
+    let state = |state_id, record_ref| {
+        (
+            AsmDeltaState {
+                id: format!("history-state-{state_id}"),
+                parent: "history".into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref: None,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(AsmHistoricalTopology {
+                faces: vec![30],
+                ..AsmHistoricalTopology::default()
+            }),
+            vec![AsmEntityVersion {
+                entity_ref: 30,
+                record_ref,
+            }],
+        )
+    };
+    let histories = [crate::test_support::history::history(
+        "history".into(),
+        0,
+        None,
+        false,
+        vec![state(2, 800), state(1, 700)],
+    )];
+    let candidate =
+        |state_id| crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate {
+            history_id: "history".into(),
+            historical: crate::records::topology::fillet::HistoricalBinding {
+                kind: AsmHistoricalEntityKind::Face,
+                entity_ref: 30,
+                state_ids: vec![state_id],
+            },
+            face_slot: 30,
+        };
+    for (local_id, expected) in [(700, candidate(1)), (800, candidate(2))] {
+        assert_eq!(
+            entity_selection_face_candidates(
+                local_id,
+                &per_history_identities(&histories, &[local_id])
+            ),
+            [expected.clone()]
+        );
+        assert_eq!(
+            entity_selection_face_candidates(
+                local_id,
+                &per_history_identities(&histories, &[700, 800])
+            ),
+            [expected]
+        );
+    }
 }
 
 #[test]
@@ -1017,7 +1086,7 @@ fn insert_only_history_uses_the_active_record_table_as_revisions() {
 
     assert_eq!(insert_only_active_record_count(&states), Some(4));
     admit_history_binding(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &states,
         &mut { u64::MAX },
     )
@@ -1401,7 +1470,7 @@ fn reverse_history_builds_complete_entity_version_maps() {
         .into();
 
     admit_history_binding(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &states,
         &mut { u64::MAX },
     )

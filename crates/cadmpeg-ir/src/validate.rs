@@ -22,6 +22,7 @@ use cadmpeg_core::CodecError;
 /// Narrow admissibility predicates as documented `Check` subsets.
 pub mod admit;
 mod annotations_native;
+mod appearance_attributes;
 mod carriers_parameterization;
 mod design;
 mod drawings;
@@ -162,6 +163,7 @@ fn validate_model_with_index<'ir>(
     physics::check_physics(ir, &mut findings);
     point_clouds::check_point_clouds(ir, &mut findings);
     check_presentation(ids, &mut findings);
+    appearance_attributes::check_appearance_attributes(ir, ids, &mut findings);
     check_drawings(ir, ids, &mut findings);
     check_semantic_annotations(ir, ids, &mut findings);
     check_typed_references(ctx, ir, ids, &mut findings)?;
@@ -313,7 +315,7 @@ mod tests {
 
     #[test]
     fn validation_finding_keeps_absent_identity_and_formatted_message() {
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut findings = Vec::new();
         for entity in [None, Some("test:model:point#missing")] {
             super::record_finding(

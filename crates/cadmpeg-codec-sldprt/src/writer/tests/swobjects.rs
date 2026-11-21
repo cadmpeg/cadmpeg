@@ -984,9 +984,10 @@ fn the_metadata_projection_refuses_a_length_that_overflows_in_source_units() {
         target: AttributeTarget::Document.into(),
         name: "default_reference_plane".into(),
         values: vec![
-            AttributeValue::vector([1.0e10, 2.0, 3.0]).unwrap(),
-            AttributeValue::vector([0.0, 0.0, 1.0, 1.0, 0.0, 0.0]).unwrap(),
+            Some(AttributeValue::vector([1.0e10, 2.0, 3.0]).unwrap()),
+            Some(AttributeValue::vector([0.0, 0.0, 1.0, 1.0, 0.0, 0.0]).unwrap()),
         ],
+        native_ref: None,
     };
     assert!(crate::writer::MetadataRecord::project(&attribute, 0.001, |_| Ok(())).is_ok());
     let Err(error) = crate::writer::MetadataRecord::project(&attribute, 1.0e300, |_| Ok(())) else {
@@ -1013,7 +1014,8 @@ fn patched_retained_metadata(
         id: cadmpeg_ir::ids::AttributeId::mint(&id).unwrap(),
         target: AttributeTarget::Document.into(),
         name: name.into(),
-        values,
+        values: values.into_iter().map(Some).collect(),
+        native_ref: None,
     });
     let mut annotations = cadmpeg_ir::annotations::Annotations::default();
     crate::annotations::note(
@@ -1119,7 +1121,8 @@ fn configuration_manager_metadata_cannot_be_patched_or_generated() {
             .unwrap(),
         target: AttributeTarget::Document.into(),
         name: "configuration_manager".into(),
-        values,
+        values: values.into_iter().map(Some).collect(),
+        native_ref: None,
     };
     assert!(matches!(
         crate::writer::MetadataRecord::project(&attribute, 0.001, |_| {
@@ -1155,7 +1158,8 @@ fn retained_part_edits_require_root_ownership_and_preserve_scalar_form() {
             id: cadmpeg_ir::ids::AttributeId::mint(id).unwrap(),
             target: AttributeTarget::Document.into(),
             name: "part_record".into(),
-            values,
+            values: values.into_iter().map(Some).collect(),
+            native_ref: None,
         });
         let mut annotations = cadmpeg_ir::annotations::Annotations::default();
         crate::annotations::note(
@@ -1184,7 +1188,8 @@ fn generated_part_metadata_requires_retained_root_serializer() {
         id: cadmpeg_ir::ids::AttributeId::mint("sldprt:metadata:part_record#0:6").unwrap(),
         target: AttributeTarget::Document.into(),
         name: "part_record".into(),
-        values: vec![AttributeValue::Integer(17)],
+        values: vec![Some(AttributeValue::Integer(17))],
+        native_ref: None,
     });
     let error = crate::writer::metadata_payloads(&ir, 1.0, false).unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
@@ -1193,6 +1198,86 @@ fn generated_part_metadata_requires_retained_root_serializer() {
         .unwrap()
         .0
         .is_empty());
+}
+
+/// A generated metadata record that states no value at a position is not
+/// written, and the others still are.
+#[test]
+fn generated_metadata_skips_a_record_with_a_null_value() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+    let attribute = |name: &str, values: Vec<Option<AttributeValue>>| SourceAttribute {
+        id: cadmpeg_ir::ids::AttributeId::mint(format!("sldprt:metadata:{name}#0:0")).unwrap(),
+        target: AttributeTarget::Document.into(),
+        name: name.into(),
+        values,
+        native_ref: None,
+    };
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model
+        .attributes
+        .push(attribute("bounding_envelope", vec![None]));
+    ir.model.attributes.push(attribute(
+        "source_linear_unit_name",
+        vec![Some(AttributeValue::String("mm".into()))],
+    ));
+    let (objects, units) = crate::writer::metadata_payloads(&ir, 1.0, false).unwrap();
+    assert_eq!(objects, b"moLengthUserUnits_c\xff\xfe\xff\x04m\x00m\x00");
+    assert_eq!(units, None);
+}
+
+/// A decoded part whose metadata attributes state a null value writes a file:
+/// each record keeps its retained bytes, and the export names the attributes
+/// in one `WriterAttributesOmitted` loss.
+#[test]
+fn a_null_metadata_value_keeps_the_retained_record_and_charges_a_loss() {
+    use crate::test_support::container::{native_envelope_fixture, sldprt_with_body_and_envelope};
+    let source = native_envelope_fixture(&sldprt_with_body_and_envelope(&triangle_body()));
+    let swobjects = |bytes: &[u8]| {
+        crate::test_support::container::scan(bytes)
+            .blocks
+            .into_iter()
+            .find(|block| block.section.name() == Some("SWObjects"))
+            .unwrap()
+            .payload
+    };
+    let original = swobjects(&source);
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let (mut ir, _, fidelity) = decoded.into_parts();
+    for name in ["bounding_envelope", "configuration_manager"] {
+        ir.model
+            .attributes
+            .iter_mut()
+            .find(|attribute| attribute.name == name)
+            .unwrap()
+            .values[0] = None;
+    }
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(&ir, Some(&fidelity)),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    let loss = plan
+        .report()
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code == crate::loss::SldprtLossCode::WriterAttributesOmitted.kind()
+                && loss.message.contains("null value")
+        })
+        .unwrap();
+    assert!(
+        loss.message
+            .starts_with("2 sldprt metadata attribute record(s) state a null value"),
+        "{}",
+        loss.message
+    );
+    assert!(loss.message.contains("sldprt:metadata:bounding_envelope#"));
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    assert_eq!(swobjects(&written), original);
 }
 
 #[test]
@@ -1254,7 +1339,7 @@ fn configuration_manager_retention_is_checked_at_the_writer_entry() {
                 .iter_mut()
                 .find(|a| a.name == "bounding_envelope")
                 .unwrap();
-            let AttributeValue::Vector(values) = &mut bbox.values[0] else {
+            let Some(AttributeValue::Vector(values)) = &mut bbox.values[0] else {
                 panic!("vector")
             };
             values[0] = cadmpeg_ir::scalar::FiniteReal::new(11.0).unwrap();
@@ -1265,7 +1350,7 @@ fn configuration_manager_retention_is_checked_at_the_writer_entry() {
                 .iter_mut()
                 .find(|a| a.name == "configuration_manager")
                 .unwrap();
-            let AttributeValue::Integer(value) = &mut manager.values[change - 2] else {
+            let Some(AttributeValue::Integer(value)) = &mut manager.values[change - 2] else {
                 panic!("integer")
             };
             *value += 1;

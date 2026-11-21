@@ -293,7 +293,7 @@ mod tests {
         point: impl Fn(f64) -> Option<Point3>,
         range: [f64; 2],
     ) -> f64 {
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         (0..=10_007)
             .map(|i| range[0] + (range[1] - range[0]) * f64::from(i) / 10_007.0)
             .map(|t| {
