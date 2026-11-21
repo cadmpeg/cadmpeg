@@ -138,6 +138,32 @@ pub(super) fn clear_foreign_native_refs(ir: &mut CadIr, native: Option<&SldprtNa
     }
 }
 
+/// Drop each `Native` operation of another format, with every record that
+/// needs it, and name them: only the operation's own codec writes it (§3.4).
+pub(super) fn foreign_native_operations(ir: &mut CadIr) -> Vec<LossNote> {
+    let seeds = Removed {
+        features: ir
+            .model
+            .features
+            .iter()
+            .filter(|feature| {
+                !feature.id.as_str().starts_with("sldprt:")
+                    && matches!(
+                        feature.evaluation.definition(),
+                        FeatureDefinition::Operation(FeatureOperation::Native { .. })
+                    )
+            })
+            .map(|feature| feature.id.as_str().to_owned())
+            .collect(),
+        ..Removed::default()
+    };
+    if seeds.is_empty() {
+        return Vec::new();
+    }
+    remove(ir, &seeds)
+        .notes("a native operation of another format, which only its own codec writes")
+}
+
 impl Removed {
     fn is_empty(&self) -> bool {
         self.features.is_empty()

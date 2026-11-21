@@ -169,12 +169,102 @@ fn fixtures_survive_the_semantic_write_path() {
         }
         if name == "body_history" {
             assert_legacy_history_preconditions(&bytes);
+            // The source states no active configuration. The writer writes its
+            // only configuration active, names that assumption, and generates
+            // the envelope that states it; the history is the source's.
+            let history = |ir: &cadmpeg_ir::CadIr| {
+                (
+                    ir.model
+                        .features
+                        .iter()
+                        .map(|feature| {
+                            (
+                                feature.ordinal,
+                                feature.name.clone(),
+                                feature.source_tag.clone(),
+                                feature.suppressed,
+                            )
+                        })
+                        .collect::<Vec<_>>(),
+                    ir.model
+                        .parameters
+                        .iter()
+                        .map(|parameter| (parameter.name.clone(), parameter.expression.clone()))
+                        .collect::<Vec<_>>(),
+                    ir.geometry.faces.len(),
+                )
+            };
+            let source = decode_container(&bytes).expect("legacy history decodes");
+            assert!(!source.ir().model.configurations[0].active);
             semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| match outcome {
-                SemanticOutcome::Refused { error } => assert!(
-                    matches!(error, CodecError::NotImplemented(detail) if detail == "semantic SLDPRT writing requires a B-rep"),
-                    "legacy history holds no face"
-                ),
-                SemanticOutcome::Written { .. } => panic!("legacy history holds no face"),
+                SemanticOutcome::Written { report, bytes, .. } => {
+                    written_count += 1;
+                    assert!(
+                        report
+                            .losses
+                            .iter()
+                            .any(|loss| loss.code.local_code()
+                                == "writer.active-configuration-assumed"),
+                        "{:#?}",
+                        report.losses
+                    );
+                    let written = decode_container(bytes).expect("the written part decodes");
+                    let [configuration] = written.ir().model.configurations.as_slice() else {
+                        panic!("fixture `{name}`: one configuration");
+                    };
+                    assert_eq!(configuration.name.as_deref(), Some("Default"));
+                    assert!(configuration.active);
+                    assert_eq!(configuration.source_index, Some(0));
+                    assert_eq!(history(written.ir()), history(source.ir()));
+                }
+                SemanticOutcome::Refused { error } => {
+                    panic!("fixture `{name}`: a faceless part writes from its partition: {error}")
+                }
+            });
+            continue;
+        }
+        if name == "document_envelope" {
+            // The decode retains no record of the faceless part's `SWObjects`
+            // member, so the writer generates it and names the record it has
+            // no serializer for; the other metadata keeps its values.
+            let values = |ir: &cadmpeg_ir::CadIr| {
+                ir.model
+                    .attributes
+                    .iter()
+                    .map(|attribute| (attribute.name.clone(), attribute.values.clone()))
+                    .collect::<Vec<_>>()
+            };
+            let source = decode_container(&bytes).expect("the envelope decodes");
+            let omitted = source
+                .ir()
+                .model
+                .attributes
+                .iter()
+                .find(|attribute| attribute.name == "configuration_manager")
+                .expect("the configuration manager record")
+                .id
+                .as_str()
+                .to_owned();
+            let mut expected = values(source.ir());
+            expected.retain(|(name, _)| name != "configuration_manager");
+            semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| match outcome {
+                SemanticOutcome::Written { report, bytes, .. } => {
+                    written_count += 1;
+                    assert!(
+                        report
+                            .losses
+                            .iter()
+                            .any(|loss| loss.code.local_code() == "writer.attributes-omitted"
+                                && loss.message.contains(&omitted)),
+                        "{:#?}",
+                        report.losses
+                    );
+                    let written = decode_container(bytes).expect("the written part decodes");
+                    assert_eq!(values(written.ir()), expected);
+                }
+                SemanticOutcome::Refused { error } => {
+                    panic!("fixture `{name}`: a faceless part writes: {error}")
+                }
             });
             continue;
         }

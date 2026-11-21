@@ -12,13 +12,10 @@ use cadmpeg_ir::report::loss::LossNote;
 
 use crate::loss::SldprtLossCode;
 
-/// Named sections of the generated partitions.
-pub(super) type Partitions = Vec<(String, Vec<u8>)>;
-
 /// The encoded partitions, the reduced document when bodies were left out,
 /// and the losses that name them.
-pub(super) struct Encoded {
-    pub(super) partitions: Partitions,
+pub(super) struct Encoded<T> {
+    pub(super) partitions: T,
     pub(super) reduced: Option<CadIr>,
     pub(super) losses: Vec<LossNote>,
 }
@@ -27,10 +24,10 @@ pub(super) struct Encoded {
 /// names. A failure that names no body's record first leaves out the geometry
 /// no body owns, then every body. A resource or I/O failure, and a failure
 /// with nothing left to leave out, is returned.
-pub(super) fn encode_without_unwritable_bodies(
+pub(super) fn encode_without_unwritable_bodies<T>(
     ir: &CadIr,
-    encode: impl Fn(&CadIr) -> Result<Partitions, CodecError>,
-) -> Result<Encoded, CodecError> {
+    encode: impl Fn(&CadIr) -> Result<T, CodecError>,
+) -> Result<Encoded<T>, CodecError> {
     let mut reduced: Option<CadIr> = None;
     let mut entries = Vec::new();
     loop {
@@ -46,8 +43,8 @@ pub(super) fn encode_without_unwritable_bodies(
                         entries.join("; ")
                     )));
                 }
-                if reduced.is_some() && current.geometry.faces.is_empty() {
-                    losses.extend(super::reduce::empty_brep(current));
+                if reduced.is_some() {
+                    losses.extend(super::reduce::empty_output(current));
                 }
                 return Ok(Encoded {
                     partitions,
