@@ -14,7 +14,7 @@ Writing:
 
 Code:
 
-- For issue work, follow [docs/agents/README.md](docs/agents/README.md) and the applicable format guide.
+- For Solid Edge reader issues (#1862), follow [docs/agents/solid-edge.md](docs/agents/solid-edge.md).
 - A comment states only intent that the code cannot show. Do not use comments to hedge, justify, narrate history, or record invariants; enforce an invariant with code or a test.
 - When you move code, update callers to import from the owning module. Do not keep old paths through re-exports.
 - Codec crate roots are facades. Their `pub` names must match `docs/codec-facade.toml` (`scripts/check-codec-facade.py`). Read-only codecs have no encoder.
