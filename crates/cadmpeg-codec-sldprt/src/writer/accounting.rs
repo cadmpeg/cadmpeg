@@ -13,6 +13,11 @@ use cadmpeg_ir::{
 };
 
 pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
+    let unwritten_bindings = if regenerated_brep {
+        super::face_colors_and_unwritten_bindings(ir).1
+    } else {
+        Vec::new()
+    };
     let mut losses = Vec::new();
     let mut charge = |count: usize, code: SldprtLossCode, records: &str| {
         if count != 0 {
@@ -181,6 +186,16 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
         SldprtLossCode::WriterTessellationMetadataOmitted,
         "tessellation feature edge",
     );
+    if !unwritten_bindings.is_empty() {
+        losses.push(
+            SldprtLossCode::WriterAppearanceBindingsOmitted.note(format!(
+                "{} face appearance binding(s) state no colour, or a colour other than the one \
+             the face already has; the face is written with that one: {}",
+                unwritten_bindings.len(),
+                unwritten_bindings.join(", ")
+            )),
+        );
+    }
     losses
 }
 

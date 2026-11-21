@@ -3127,7 +3127,7 @@ pub(crate) fn brep_body(
             &mut out,
             kind,
             surfaces[&surface.id],
-            SURFACE_MARKER,
+            surface_marker(solved),
             &values,
         );
     }
@@ -3172,7 +3172,7 @@ pub(crate) fn brep_body(
         .iter()
         .map(|face| Ok((face.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
-    let face_colors = face_colors(ir)?;
+    let face_colors = face_colors(ir);
     let mut colored_faces = face_colors.keys().collect::<Vec<_>>();
     colored_faces.sort();
     let color_attrs = colored_faces
@@ -3774,9 +3774,18 @@ fn fixed_refs(values: &[u16], message: &str) -> Result<[u16; 6], CodecError> {
     Ok(refs)
 }
 
-pub(crate) fn face_colors(
+/// The colour of each face that states one: its own colour, else that of its
+/// first face appearance binding with a base colour.
+pub(crate) fn face_colors(ir: &CadIr) -> HashMap<cadmpeg_ir::ids::FaceId, Color> {
+    face_colors_and_unwritten_bindings(ir).0
+}
+
+/// The face colours, and the face appearance bindings the colours do not
+/// hold: one whose appearance is missing or states no base colour, or whose
+/// colour differs from one the face already states.
+pub(super) fn face_colors_and_unwritten_bindings(
     ir: &CadIr,
-) -> Result<HashMap<cadmpeg_ir::ids::FaceId, Color>, CodecError> {
+) -> (HashMap<cadmpeg_ir::ids::FaceId, Color>, Vec<String>) {
     let appearances = ir
         .model
         .appearances
@@ -3789,26 +3798,23 @@ pub(crate) fn face_colors(
         .iter()
         .filter_map(|face| face.color.map(|color| (face.id.clone(), color)))
         .collect::<HashMap<_, _>>();
+    let mut unwritten = Vec::new();
     for binding in &ir.model.appearance_bindings {
         let AppearanceTarget::Face(face) = &binding.target.entity else {
             continue;
         };
-        let appearance = appearances.get(&binding.appearance).ok_or_else(|| {
-            CodecError::Malformed("face binding references missing appearance".into())
-        })?;
-        let color = appearance.base_color.ok_or_else(|| {
-            CodecError::NotImplemented("SLDPRT face appearance has no base color".into())
-        })?;
-        if colors
-            .insert(face.clone(), color)
-            .is_some_and(|old| old != color)
-        {
-            return Err(CodecError::Malformed(
-                "face has conflicting appearance colors".into(),
-            ));
+        let Some(color) = appearances
+            .get(&binding.appearance)
+            .and_then(|appearance| appearance.base_color)
+        else {
+            unwritten.push(binding.id.as_str().to_owned());
+            continue;
+        };
+        if *colors.entry(face.clone()).or_insert(color) != color {
+            unwritten.push(binding.id.as_str().to_owned());
         }
     }
-    Ok(colors)
+    (colors, unwritten)
 }
 
 fn entity53(out: &mut Vec<u8>, attr: u16, color: Color) {
@@ -3983,12 +3989,9 @@ pub(super) fn surface_values(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
             let center = sphere_surface.center().get();
             let axis = sphere_surface.frame().axis().as_raw();
-            let radius = sphere_surface.radius().get();
-            if radius < 0.0 {
-                return Err(CodecError::NotImplemented(
-                    "SLDPRT compact sphere carriers require a positive radius".into(),
-                ));
-            }
+            // A negative radius is the same sphere with its normal reversed,
+            // which the orientation marker states (`surface_marker`).
+            let radius = sphere_surface.radius().get().abs();
             let axis = *axis;
             (
                 0x35,
@@ -4010,12 +4013,9 @@ pub(super) fn surface_values(
             let center = torus_surface.center().get();
             let axis = torus_surface.frame().axis().as_raw();
             let major_radius = torus_surface.major_radius().get();
-            let minor_radius = torus_surface.minor_radius().get();
-            if !(major_radius > minor_radius && minor_radius > 0.0) {
-                return Err(CodecError::NotImplemented(
-                    "SLDPRT compact torus carriers require major > minor > 0".into(),
-                ));
-            }
+            // A negative tube radius is the same torus with its normal
+            // reversed, which the orientation marker states (`surface_marker`).
+            let minor_radius = torus_surface.minor_radius().get().abs();
             (
                 0x36,
                 vec![
@@ -4535,6 +4535,23 @@ pub(super) fn surface_reference(geometry: &SolvedSurfaceGeometry) -> cadmpeg_ir:
 
 /// Orientation marker of a written compact surface.
 const SURFACE_MARKER: u8 = 0x2b;
+const SURFACE_REVERSED_MARKER: u8 = 0x2d;
+
+/// The orientation marker of a compact surface record (sldprt.md §7.1):
+/// `0x2d` reverses the natural normal of the stored carrier, which holds
+/// the magnitude of a signed sphere or tube radius.
+fn surface_marker(surface: &SolvedSurfaceGeometry) -> u8 {
+    let reversed = match surface {
+        SolvedSurfaceGeometry::Sphere(sphere) => sphere.radius().get() < 0.0,
+        SolvedSurfaceGeometry::Torus(torus) => torus.minor_radius().get() < 0.0,
+        _ => false,
+    };
+    if reversed {
+        SURFACE_REVERSED_MARKER
+    } else {
+        SURFACE_MARKER
+    }
+}
 
 /// Orientation marker of a written compact curve whose stored edges run along
 /// its parameter.

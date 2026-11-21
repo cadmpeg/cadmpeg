@@ -635,16 +635,6 @@ fn unwritable_surface(geometry: &SurfaceGeometry) -> Option<String> {
                 None
             }
         }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere))
-            if sphere.radius().get() < 0.0 =>
-        {
-            Some(format!("signed sphere radius {}", sphere.radius().get()))
-        }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus)) => {
-            let major = torus.major_radius().get();
-            let minor = torus.minor_radius().get();
-            (!(major > minor && minor > 0.0)).then(|| format!("torus radii ({major}, {minor})"))
-        }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => {
             Some("a surface the writer has no record for".to_owned())
         }

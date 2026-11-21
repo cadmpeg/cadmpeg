@@ -572,3 +572,138 @@ fn two_coincident_circles_are_written_without_a_shared_seam_vertex() {
         .collect::<Vec<_>>();
     assert!(incompatible.is_empty(), "{incompatible:#?}");
 }
+
+#[test]
+fn signed_spheres_and_spindle_or_signed_tori_are_written_with_their_orientation() {
+    use cadmpeg_ir::geometry::analytic::{SphereSurface, TorusSurface};
+    use cadmpeg_ir::math::Vector3;
+    use cadmpeg_ir::topology::Sense;
+    let origin = Point3::new(0.0, 0.0, 0.0);
+    let axis = Vector3::new(0.0, 0.0, 1.0);
+    let reference = Vector3::new(1.0, 0.0, 0.0);
+    let cases = [
+        (
+            SolvedSurfaceGeometry::Sphere(
+                SphereSurface::try_new(origin, axis, reference, -2.0).unwrap(),
+            ),
+            true,
+        ),
+        (
+            SolvedSurfaceGeometry::Torus(
+                TorusSurface::try_new(origin, axis, reference, 2.0, -0.5).unwrap(),
+            ),
+            true,
+        ),
+        (
+            SolvedSurfaceGeometry::Torus(
+                TorusSurface::try_new(origin, axis, reference, 2.0, 3.0).unwrap(),
+            ),
+            false,
+        ),
+    ];
+    for (geometry, reversed) in cases {
+        let mut ir = cube();
+        let surface = ir.geometry.surfaces[0].id.clone();
+        ir.geometry.surfaces[0].geometry = SurfaceGeometry::Solved(geometry.clone());
+        let sense = ir
+            .geometry
+            .faces
+            .iter()
+            .find(|face| face.surface == surface)
+            .unwrap()
+            .sense;
+        let losses = plan_losses(&ir);
+        assert!(
+            loss(&losses, "writer.bodies-omitted").is_none(),
+            "{losses:#?}"
+        );
+        let decoded = crate::test_support::ir::encode_decode(&ir);
+        let (written, face) =
+            decoded
+                .geometry
+                .faces
+                .iter()
+                .find_map(|face| {
+                    let surface = decoded
+                        .geometry
+                        .surfaces
+                        .iter()
+                        .find(|row| row.id == face.surface)?;
+                    match surface.geometry.solved()? {
+                        found @ (SolvedSurfaceGeometry::Sphere(_)
+                        | SolvedSurfaceGeometry::Torus(_)) => Some((found.clone(), face)),
+                        _ => None,
+                    }
+                })
+                .unwrap();
+        match (&geometry, &written) {
+            (SolvedSurfaceGeometry::Sphere(stated), SolvedSurfaceGeometry::Sphere(read)) => {
+                assert!((read.radius().get() - stated.radius().get().abs()).abs() < 1.0e-9);
+            }
+            (SolvedSurfaceGeometry::Torus(stated), SolvedSurfaceGeometry::Torus(read)) => {
+                assert!(
+                    (read.minor_radius().get() - stated.minor_radius().get().abs()).abs() < 1.0e-9
+                );
+                assert!((read.major_radius().get() - stated.major_radius().get()).abs() < 1.0e-9);
+            }
+            other => panic!("{other:?}"),
+        }
+        let expected = if reversed {
+            match sense {
+                Sense::Forward => Sense::Reversed,
+                Sense::Reversed => Sense::Forward,
+            }
+        } else {
+            sense
+        };
+        assert_eq!(face.sense, expected);
+    }
+}
+
+#[test]
+fn a_face_binding_whose_colour_differs_from_the_face_colour_is_named_and_the_body_written() {
+    use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+    use cadmpeg_ir::topology::Color;
+    let mut ir = cube();
+    let face = ir.geometry.faces[0].id.clone();
+    ir.geometry.faces[0].color = Color::new(1.0, 0.0, 0.0, 1.0);
+    let appearance = Appearance {
+        id: cadmpeg_ir::ids::AppearanceId::mint("other:model:appearance#blue").unwrap(),
+        name: Some("Blue".into()),
+        asset_guid: None,
+        library_id: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: Color::new(0.0, 0.0, 1.0, 1.0),
+        properties: std::collections::BTreeMap::new(),
+        textures: Vec::new(),
+        native_ref: None,
+    };
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        id: "other:model:appearance-binding#blue".try_into().unwrap(),
+        target: AppearanceTarget::Face(face).into(),
+        appearance: appearance.id.clone(),
+        source_entity_id: None,
+        object_type: None,
+        visible: None,
+        channels: std::collections::BTreeMap::default(),
+        native_ref: None,
+    });
+    ir.model.appearances.push(appearance);
+    let losses = plan_losses(&ir);
+    assert!(
+        loss(&losses, "writer.bodies-omitted").is_none(),
+        "{losses:#?}"
+    );
+    assert!(
+        losses.iter().any(
+            |loss| loss.code.local_code() == "writer.appearance-bindings-omitted"
+                && loss.message.contains("other:model:appearance-binding#blue")
+        ),
+        "{losses:#?}"
+    );
+    let decoded = crate::test_support::ir::encode_decode(&ir);
+    assert_eq!(decoded.geometry.faces.len(), 6);
+}
