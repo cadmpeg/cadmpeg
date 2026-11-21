@@ -42,7 +42,8 @@ pub(super) fn project(
             })?;
         let target = &mut ir.design.features[index];
         ctx.charge_entities(1, "project Inventor v11 operation")?;
-        let (definition, reason) = definition(source, ir.model.sketches.as_slice())?;
+        let (definition, reason) =
+            definition(source, ir.model.sketches.as_slice(), &ir.model.features)?;
         target.definition = definition;
         if let Some(reason) = reason {
             losses.push(InventorLossCode::FeatureDesignOperationNative.note(format!(
@@ -76,9 +77,10 @@ fn projects(operation: &LegacyOperation) -> bool {
 fn definition(
     source: &cadmpeg_ir::features::Feature,
     sketches: &[cadmpeg_ir::sketches::Sketch],
+    features: &[cadmpeg_ir::features::Feature],
 ) -> Result<(FeatureDefinition, Option<&'static str>), CodecError> {
     let operation = source.evaluation.definition().operation();
-    let (mut operation, reason) = match typed(operation, sketches) {
+    let (mut operation, reason) = match typed(operation, sketches, features) {
         Ok(value) => (value, None),
         Err(reason) => (retained(operation)?, Some(reason)),
     };
@@ -124,7 +126,7 @@ pub(super) fn validate(ir: &CadIr) -> Result<Vec<cadmpeg_ir::report::check::Find
         if !projects(source.evaluation.definition().operation()) {
             continue;
         }
-        let (expected, _) = definition(source, &ir.model.sketches)?;
+        let (expected, _) = definition(source, &ir.model.sketches, &ir.model.features)?;
         let target = targets.get(&source.id).and_then(|target| *target);
         if target.is_none_or(|target| target.definition != expected) {
             findings.push(Finding {
@@ -147,6 +149,7 @@ type Projected<T> = Result<T, &'static str>;
 fn typed(
     operation: &LegacyOperation,
     sketches: &[cadmpeg_ir::sketches::Sketch],
+    features: &[cadmpeg_ir::features::Feature],
 ) -> Projected<FeatureOperation> {
     if let Some(value) = swept::operation(operation, sketches) {
         return value;
@@ -157,7 +160,7 @@ fn typed(
     if let Some(value) = body::operation(operation) {
         return value;
     }
-    if let Some(value) = sheet_metal::operation(operation, sketches) {
+    if let Some(value) = sheet_metal::operation(operation, sketches, features) {
         return value;
     }
     match operation {

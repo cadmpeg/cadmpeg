@@ -24,7 +24,7 @@ fn legacy(kind: &str, value: Value) -> LegacyOperation {
 }
 
 fn project_value(kind: &str, value: Value) -> FeatureOperation {
-    let operation = typed(&legacy(kind, value), &[]).expect("typed projection");
+    let operation = typed(&legacy(kind, value), &[], &[]).expect("typed projection");
     let wire = serde_json::to_value(&operation).expect("v11 wire");
     let decoded: FeatureOperation = serde_json::from_value(wire).expect("admitted v11 operation");
     assert_eq!(operation, decoded);
@@ -53,7 +53,7 @@ fn extrude() -> LegacyOperation {
 
 #[test]
 fn extrude_keeps_direction_sides_and_output() {
-    let FeatureOperation::Extrude(value) = typed(&extrude(), &[]).expect("extrude") else {
+    let FeatureOperation::Extrude(value) = typed(&extrude(), &[], &[]).expect("extrude") else {
         panic!("extrude");
     };
     assert_eq!(value.output.body, Some(BodyForm::Solid));
@@ -92,7 +92,7 @@ fn symmetric_extrude_keeps_total_travel() {
             draft: None,
         },
     };
-    let FeatureOperation::Extrude(value) = typed(&operation, &[]).expect("extrude") else {
+    let FeatureOperation::Extrude(value) = typed(&operation, &[], &[]).expect("extrude") else {
         panic!("extrude");
     };
     assert_eq!(
@@ -425,6 +425,19 @@ fn project_part(ir: &mut CadIr) -> Vec<LossNote> {
 #[test]
 fn unsupported_operands_keep_the_full_native_operation_and_pin_loss() {
     let cases = [
+        legacy(
+            "sheet_metal_attached_plate",
+            json!({"profile":profile(),"thickness":2.0,"side":"forward","attachment":native_selection()}),
+        ),
+        legacy(
+            "sheet_metal_bend",
+            json!({
+                "plate":"inventor:design:feature#plate",
+                "attachment":native_selection(),"inside_radius":1.0,
+                "relief":{"form":"style_default","width":2.0,"depth":3.0,"minimum_remnant":4.0,"seam_gap":0.5},
+                "transition":{"form":"style_default","radius":6.0}
+            }),
+        ),
         legacy(
             "sheet_metal_contour_flange",
             json!({"construction":{"profile":profile(),"direction":[0.0,0.0,1.0],"thickness":2.0,"neutral_factor":0.4}}),
@@ -818,7 +831,7 @@ fn whole_profile_regions_keep_outer_and_hole_members() {
         .expect("regions"),
     );
     let FeatureOperation::Extrude(value) =
-        typed(&operation, &[source]).expect("profile projection")
+        typed(&operation, &[source], &[]).expect("profile projection")
     else {
         panic!("extrude");
     };
@@ -1019,7 +1032,7 @@ fn extrude_plane_targets_keep_frames_native_names_and_source_modes() {
             draft: None,
         },
     };
-    let FeatureOperation::Extrude(value) = typed(&operation, &[]).expect("extrude") else {
+    let FeatureOperation::Extrude(value) = typed(&operation, &[], &[]).expect("extrude") else {
         panic!("extrude");
     };
     let Some(cadmpeg_ir::design::ops::swept::ExtrudeOrigin::Plane(start)) = value.origin else {

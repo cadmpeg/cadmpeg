@@ -18,6 +18,7 @@ use crate::design::expr::Expression;
 use crate::design::ids::SheetMetalRuleId;
 use crate::design::options::{NativeOptions, ProfileRef, Thickness};
 use crate::design::selection::{DefinitionRef, OrderedSelection, SetSelection};
+use crate::features::FeatureId;
 use crate::ids::ProductDefinitionId;
 use crate::scalar::{
     Angle, FiniteReal, Length, NonNegativeLength, NonNegativeReal, PositiveLength, PositiveReal,
@@ -386,6 +387,37 @@ pub struct KFactorRow {
     deny_unknown_fields
 )]
 pub enum SheetMetalKind {
+    /// A flat plate whose separate bend joins it to existing sheet edges.
+    AttachedPlate {
+        /// The closed profile in the plate's plane.
+        profile: ProfileRef,
+        /// The sheet thickness.
+        thickness: Dimension<PositiveLength>,
+        /// Where the thickness lies against the profile normal.
+        side: NormalSide,
+        /// The edges of the existing sheet.
+        attachment: OrderedSelection,
+    },
+    /// The bend that joins a preceding attached plate to existing sheet edges.
+    AttachedBend {
+        /// The preceding attached plate.
+        plate: FeatureId,
+        /// The edges in this bend's input state.
+        attachment: OrderedSelection,
+        /// The inside radius.
+        inside_radius: Dimension<PositiveLength>,
+        /// The bend relief.
+        relief: AttachedRelief,
+        /// The transition form.
+        transition_form: TransitionForm,
+        /// The transition radius.
+        transition_radius: Dimension<NonNegativeLength>,
+    },
+    /// A corner child that preserves its preceding bend's geometry and topology.
+    UnchangedCorner {
+        /// The preceding bend.
+        bend: FeatureId,
+    },
     /// A rule made to govern bodies from its position on.
     ApplyRule {
         /// The rule.
@@ -1227,6 +1259,41 @@ pub enum ReliefShape {
     Obround,
     /// A source shape whose meaning is not established.
     Native(NonBlankString),
+}
+
+/// The relief operands of an attached bend.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct AttachedRelief {
+    /// The source relief form.
+    pub form: AttachedReliefForm,
+    /// The width.
+    pub width: Dimension<PositiveLength>,
+    /// The depth.
+    pub depth: Dimension<PositiveLength>,
+    /// The minimum material remnant.
+    pub minimum_remnant: Dimension<NonNegativeLength>,
+    /// The gap between adjacent sheet edges.
+    pub seam_gap: Dimension<NonNegativeLength>,
+}
+
+/// The construction form of an attached bend's relief.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum AttachedReliefForm {
+    /// The source document's sheet-metal style relief.
+    StyleDefault,
+}
+
+/// The transition at the end of an attached bend.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum TransitionForm {
+    /// The source document's sheet-metal style transition.
+    StyleDefault,
 }
 
 /// A wall grown from sheet edges.
