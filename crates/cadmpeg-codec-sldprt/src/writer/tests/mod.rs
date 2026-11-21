@@ -9,6 +9,7 @@ mod digests;
 mod flex_history;
 mod helix_surfaces;
 mod homogeneous_poles;
+mod lane_members;
 mod metadata_members;
 mod normalization;
 mod parameters_extrude;
