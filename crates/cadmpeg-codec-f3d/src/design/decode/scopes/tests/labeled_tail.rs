@@ -324,6 +324,8 @@ fn scope_wire_refuses_tail_flags_outside_the_tail() {
     for offset in [
         scope.feature_ordinal_offset() - 1,
         scope.paired_byte_offset() - 1,
+        u64::MAX - 1,
+        u64::MAX,
     ] {
         let mut moved = wire.clone();
         moved["tail_flags"]["suppressed_offset"] = offset.into();
@@ -336,7 +338,7 @@ fn scope_wire_refuses_tail_flags_outside_the_tail() {
 }
 
 /// A scope reads flags that an earlier envelope of its record stores when they
-/// lie after the start of that envelope and before its own paired header.
+/// lie after the start of that envelope and before its own start.
 #[test]
 fn scope_wire_admits_the_flags_of_an_earlier_envelope() {
     use crate::records::feature::scope::{DesignParameterScope, DesignScopeTailFlags};
@@ -376,14 +378,83 @@ fn scope_wire_admits_the_flags_of_an_earlier_envelope() {
             ..flags
         })
     );
+    assert!(carried(earlier.byte_offset(), later.byte_offset() - 2).is_ok());
+    let own = later.tail_flags.expect("later flags").suppressed_offset;
     for (envelope_offset, suppressed_offset) in [
         (later.byte_offset(), flags.suppressed_offset),
         (flags.suppressed_offset, flags.suppressed_offset),
+        (earlier.byte_offset(), later.byte_offset() - 1),
+        (earlier.byte_offset(), own),
         (earlier.byte_offset(), later.paired_byte_offset() - 1),
+        (earlier.byte_offset(), u64::MAX - 1),
+        (earlier.byte_offset(), u64::MAX),
     ] {
         assert!(
             carried(envelope_offset, suppressed_offset).is_err(),
             "envelope {envelope_offset}, flags {suppressed_offset}"
         );
+    }
+}
+
+/// The decoder gives a later envelope that stores no flags the flags of the
+/// latest earlier envelope that stores them, located at those flag bytes, and
+/// the kept scope reloads unchanged.
+#[test]
+fn carried_flags_of_an_earlier_envelope_reload() {
+    use crate::design::decode::scopes::parameter_scope::{
+        admit_history_bound_scope_variants, parse_parameter_scope,
+    };
+    use crate::records::feature::scope::{DesignParameterScope, DesignScopeTailFlags};
+
+    let frames = [(1, 0), (0, 1), (1, 1)].map(|flags| {
+        plain_labeled_frame(&PlainTail {
+            flags,
+            ..PlainTail::default()
+        })
+        .0
+    });
+    let bytes = frames.concat();
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let tag = crate::records::references::DesignClassTag::try_from("378".to_owned()).unwrap();
+    let scopes = [0, frames[0].len(), frames[0].len() + frames[1].len()].map(|start| {
+        parse_parameter_scope(&bytes, &records, 12, &tag, u64_from_index(start))
+            .unwrap()
+            .expect("envelope")
+    });
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test decode context");
+    // The envelopes whose tails are left unread, and the one whose flags the
+    // last envelope takes.
+    for (unread, source) in [(&[2][..], 1), (&[1, 2][..], 0)] {
+        let mut variants = scopes.to_vec();
+        for index in unread {
+            variants[*index].tail_flags = None;
+        }
+        admit_history_bound_scope_variants(&ctx, &mut variants, &[], &Default::default())
+            .expect("the document decodes");
+        let [kept] = variants.as_slice() else {
+            panic!("one retained envelope")
+        };
+        let flags = scopes[source].tail_flags.expect("source flags");
+        assert_eq!(kept.byte_offset(), scopes[2].byte_offset());
+        assert_eq!(
+            kept.tail_flags,
+            Some(DesignScopeTailFlags {
+                envelope_offset: Some(scopes[source].byte_offset()),
+                ..flags
+            }),
+            "unread {unread:?}"
+        );
+        let at = usize::try_from(flags.suppressed_offset).unwrap();
+        assert_eq!(
+            &bytes[at..at + 2],
+            &[u8::from(flags.suppressed), u8::from(flags.rolled_back)]
+        );
+        let reloaded =
+            serde_json::from_value::<DesignParameterScope>(serde_json::to_value(kept).unwrap())
+                .expect("the kept scope reloads");
+        assert_eq!(&reloaded, kept, "unread {unread:?}");
     }
 }

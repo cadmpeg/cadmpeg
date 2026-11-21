@@ -1087,7 +1087,9 @@ pub(crate) fn design_primary_frame_offsets(
 /// primary-indexed envelope; else, with none history-bound, the later envelope
 /// when the envelopes differ only in their tail flags. Where that later
 /// envelope stores no flags, it takes the flags of the latest earlier envelope
-/// that stores them. An unresolved group remains an error.
+/// that stores them before its own start. Groups are resolved in record order,
+/// so their notes and the first unresolved group are the same on every decode.
+/// An unresolved group remains an error.
 pub(crate) fn admit_history_bound_scope_variants(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scopes: &mut Vec<DesignParameterScope>,
@@ -1097,7 +1099,7 @@ pub(crate) fn admit_history_bound_scope_variants(
     let mut admitted = vec![true; scopes.len()];
     let mut superseded = SupersededScopeEnvelopes::default();
     let mut carried_flags = Vec::new();
-    let mut groups = HashMap::<(&str, u32), Vec<usize>>::new();
+    let mut groups = std::collections::BTreeMap::<(&str, u32), Vec<usize>>::new();
     for (index, scope) in scopes.iter().enumerate() {
         let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
         let key = (stream, scope.record_index);
@@ -1233,16 +1235,13 @@ pub(crate) fn admit_history_bound_scope_variants(
 }
 
 /// The flags that the `keep` envelope of a group that differs only in its tail
-/// flags takes from the latest earlier envelope that stores them, where `keep`
-/// stores none, and the loss note of the group.
+/// flags takes from the latest earlier envelope that stores them before the
+/// start of `keep`, where `keep` stores none, and the loss note of the group.
 fn flags_only_group(
     scopes: &[DesignParameterScope],
     indices: &[usize],
     keep: usize,
-) -> (
-    Option<crate::records::feature::scope::DesignScopeTailFlags>,
-    String,
-) {
+) -> (Option<scope::DesignScopeTailFlags>, String) {
     let kept = &scopes[keep];
     let kept_at = kept.byte_offset();
     let carried = match kept.tail_flags {
@@ -1250,11 +1249,17 @@ fn flags_only_group(
         None => indices
             .iter()
             .map(|index| &scopes[*index])
-            .filter(|scope| scope.byte_offset() < kept_at)
-            .filter_map(|scope| scope.tail_flags.map(|flags| (scope.byte_offset(), flags)))
+            .filter_map(|copy| {
+                let at = copy.byte_offset();
+                let flags = scope::DesignScopeTailFlags {
+                    envelope_offset: Some(at),
+                    ..copy.tail_flags?
+                };
+                flags.lie_within(kept).then_some((at, flags))
+            })
             .max_by_key(|(at, _)| *at),
     };
-    let values = |flags: Option<crate::records::feature::scope::DesignScopeTailFlags>| {
+    let values = |flags: Option<scope::DesignScopeTailFlags>| {
         flags.map(|flags| (flags.suppressed, flags.rolled_back))
     };
     let spell = |(suppressed, rolled_back): (bool, bool)| {
@@ -1271,7 +1276,7 @@ fn flags_only_group(
             spell((flags.suppressed, flags.rolled_back))
         ),
         (None, None) => format!(
-            "its later envelope at byte {kept_at} and the envelopes before it store no suppressed or rolled-back flags"
+            "its later envelope at byte {kept_at} stores no suppressed or rolled-back flags, and no earlier envelope stores them before that byte"
         ),
     };
     let differing = indices
@@ -1297,13 +1302,7 @@ fn flags_only_group(
         "Feature scope {} (record {}): {kept_clause} (open item DR-1005).{others}",
         kept.id, kept.record_index
     );
-    let carried = carried.map(
-        |(at, flags)| crate::records::feature::scope::DesignScopeTailFlags {
-            envelope_offset: Some(at),
-            ..flags
-        },
-    );
-    (carried, note)
+    (carried.map(|(_, flags)| flags), note)
 }
 
 /// Duplicate scope envelopes that admission did not decode.
