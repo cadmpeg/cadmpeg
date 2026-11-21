@@ -3063,7 +3063,7 @@ The type table can also register the types below with a nonempty entity-ID run. 
 | the scope's record-timestamp table (type `6CCF41D5-40BE-48ED-A834-18F3EAED6C57`) | reference | 65 | 64 | 143 |
 | `00 00` | 2 × u8 | 76 | 75 | 194 |
 
-In every form, the state bytes are `00 00 00` when `s0` is `0`, and `s0` and `s1` are each `0` or `1`. `s0` is `1` for a suppressed feature. `s1` is `1` for a feature after the saved rollback marker of its timeline: the items with `s1 = 1` are the last items of the timeline, the marker stands before the first of them, and the stored geometry is the history state at the marker. With no such item, the marker stands after the last item. The current history-state identity is the u32 immediately before the LP-UTF16 family name.
+In every form, the state bytes are `00 00 00` when `s0` is `0`, and `s0` and `s1` are each `0` or `1`. `s0` is `1` for a suppressed feature. `s1` is `1` for a feature after the saved rollback marker of its timeline: the items with `s1 = 1` are the last items of the timeline, the marker stands before the first of them, and the stored geometry is the history state at the marker. With no such item, the marker stands after the last item; DR-523 records the evidence for this rule. The current history-state identity is the u32 immediately before the LP-UTF16 family name.
 
 The paired scope record is the paired indexed header, eight zero bytes, and a reference to the owner collection (type `3A6D1E62-99F8-4E32-BAAA-DBA0A2CFB27C`). It is 30 bytes in the plain form.
 

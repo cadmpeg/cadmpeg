@@ -132,7 +132,8 @@ pub(super) fn project(
 /// The rollback marker of the timeline `id` from the rolled-back flag of each
 /// of its `members` (`None` where the flags are unread): before the first
 /// rolled-back item when no later item is read as built, else after the last
-/// item. A loss names a marker the flags leave open.
+/// item. A loss names a marker the flags leave open: an unread item before the
+/// first rolled-back item, or after it.
 fn rollback(
     id: &ContainerId,
     members: &[Member],
@@ -164,6 +165,11 @@ fn rollback(
     {
         losses.push(F3dLossCode::HistoryRollbackBoundUnread.note(format!(
             "timeline {id}: the item before the first rolled-back item is unread; the rollback marker can stand before it"
+        )));
+    }
+    if rolled_back.iter().skip(first).any(Option::is_none) {
+        losses.push(F3dLossCode::HistoryRollbackUnread.note(format!(
+            "timeline {id}: an item after the first rolled-back item is unread; stated rolled back from the first rolled-back item"
         )));
     }
     members
