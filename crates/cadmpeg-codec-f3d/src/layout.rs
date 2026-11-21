@@ -7879,6 +7879,18 @@ pub(crate) mod compact_reference_profile_chain_record {
     pub(crate) const SKETCH_SCOPE_REFERENCE: usize = 31;
 }
 
+/// Byte offsets for the `compact_reference_sketchless_profile_chain_record` record.
+///
+/// Spec §3.1. Record length 42 B.
+pub(crate) mod compact_reference_sketchless_profile_chain_record {
+    /// Offset of `zero_run_14` (`bytes[14]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_14: usize = 11;
+    /// Offset of `chain_marker` (`bytes[6]`). Spec §3.1.
+    pub(crate) const CHAIN_MARKER: usize = 25;
+    /// Offset of `selection_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SELECTION_REFERENCE: usize = 31;
+}
+
 /// Byte offsets for the `compact_reference_profile_identity_record` record.
 ///
 /// Spec §3.1. Record length 36 B.

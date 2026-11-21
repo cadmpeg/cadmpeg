@@ -599,6 +599,74 @@ fn sketchless_chain_record_must_name_its_own_selection() {
     assert!(sketchless_asset(&bytes).is_none());
 }
 
+/// The `compact_chain` records with owner text `owner` and a compact
+/// sketchless chain record 101 whose reference to selection record 100 has
+/// the compact spelling, or the typed spelling when `typed_reference_back`.
+fn compact_sketchless_chain(owner: &str, typed_reference_back: bool) -> Vec<u8> {
+    let plain = compact_chain();
+    let owner_at = plain
+        .windows(6)
+        .position(|window| window == [2, 0, 0, 0, b'7', 0])
+        .unwrap();
+    let chain_at = plain
+        .windows(7)
+        .position(|window| window == [3, 0, 0, 0, b'2', b'7', b'7'])
+        .unwrap();
+    let next_at = plain
+        .windows(7)
+        .position(|window| window == [3, 0, 0, 0, b'2', b'7', b'3'])
+        .unwrap();
+    let mut bytes = plain[..owner_at].to_vec();
+    lp_utf16(&mut bytes, owner);
+    bytes.extend_from_slice(&plain[owner_at + 8..chain_at]);
+    header(&mut bytes, b"277", 101);
+    bytes.extend_from_slice(&[0; 14]);
+    bytes.extend_from_slice(&[1, 1, 0, 0, 0, 0]);
+    if typed_reference_back {
+        typed_reference(&mut bytes, 100);
+    } else {
+        bytes.push(1);
+        bytes.extend_from_slice(&100u64.to_le_bytes());
+        bytes.extend_from_slice(&[0; 2]);
+    }
+    bytes.extend_from_slice(&[0xd2, 0x0c, 0x8f, 0x2a, 0xeb, 0x7f, 0x05, 0x00]);
+    bytes.extend_from_slice(&plain[next_at..]);
+    bytes
+}
+
+#[test]
+fn compact_sketchless_chain_record_names_the_selection_and_no_sketch_scope() {
+    for owner in ["75", "e57eeaa6-ede5-4d34-9f6f-80ee1dad42ca"] {
+        let bytes = compact_sketchless_chain(owner, false);
+        assert_eq!(
+            sketchless_asset(&bytes).as_deref(),
+            Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+        );
+        assert!(parse(&bytes).is_none());
+    }
+}
+
+#[test]
+fn compact_sketchless_chain_record_keeps_the_selection_spelling() {
+    assert!(sketchless_asset(&compact_sketchless_chain("75", true)).is_none());
+}
+
+#[test]
+fn sketchless_owner_text_is_a_decimal_suffix_or_a_guid() {
+    for owner in [
+        "7a",
+        "e57eeaa6-ede5-4d34-9f6f-80ee1dad42",
+        "e57eeaa6_ede5_4d34_9f6f_80ee1dad42ca",
+    ] {
+        assert!(sketchless_asset(&compact_sketchless_chain(owner, false)).is_none());
+    }
+}
+
+#[test]
+fn compact_profile_chain_with_a_sketch_scope_is_not_sketchless() {
+    assert!(sketchless_asset(&compact_chain()).is_none());
+}
+
 #[test]
 fn sketchless_selection_of_another_asset_names_its_asset_guid() {
     let note = super::super::sketchless_profile_selection_loss(

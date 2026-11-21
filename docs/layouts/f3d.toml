@@ -28651,6 +28651,40 @@ source = "spec"
 anchor = "The compact profile-loop selection uses eleven-byte local references."
 
 [[record]]
+name = "compact_reference_sketchless_profile_chain_record"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A compact sketchless chain record stores fourteen zero bytes"
+size = 42
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed header precedes this field run."
+
+[[record.field]]
+name = "zero_run_14"
+offset = 11
+type = "bytes[14]"
+source = "spec"
+anchor = "A compact sketchless chain record stores fourteen zero bytes"
+
+[[record.field]]
+name = "chain_marker"
+offset = 25
+type = "bytes[6]"
+source = "spec"
+anchor = "A compact sketchless chain record stores fourteen zero bytes"
+
+[[record.field]]
+name = "selection_reference"
+offset = 31
+type = "bytes[11]"
+source = "spec"
+anchor = "A compact sketchless chain record stores fourteen zero bytes"
+
+[[record]]
 name = "compact_reference_profile_identity_record"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
 kind = "byte"
