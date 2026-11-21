@@ -526,6 +526,33 @@ impl<'a> DecodeContext<'a> {
         self.session.unknowns().len()
     }
 
+    /// The bodies each object committed, for the objects whose UUID no other
+    /// object holds.
+    fn object_bodies(&self) -> crate::history::v11::ObjectBodies {
+        let document = self.session.document();
+        let bodies = document
+            .geometry
+            .bodies
+            .iter()
+            .map(|body| (body.id.as_str(), &body.id))
+            .collect::<HashMap<_, _>>();
+        let unknowns = self.session.unknowns();
+        self.object_candidates
+            .iter()
+            .filter_map(|(object, orders)| {
+                let [order] = orders.as_slice() else {
+                    return None;
+                };
+                let links = unknowns.get(*order)?.links();
+                let committed = links
+                    .iter()
+                    .filter_map(|link| bodies.get(link.as_str()).map(|id| (*id).clone()))
+                    .collect::<Vec<_>>();
+                (!committed.is_empty()).then_some((*object, committed))
+            })
+            .collect()
+    }
+
     /// Appends a later geometry-phase link to an object record.
     fn append_link(
         &mut self,
@@ -2630,7 +2657,13 @@ impl<'a> DecodeContext<'a> {
         for source in views.opaque_records {
             self.retain_opaque_record(&source)?;
         }
-        self.session.document_mut()?.finalize();
+        let document = self.session.document_mut()?;
+        document.state_root_definition(
+            ctx,
+            crate::product::root_definition_id(),
+            cadmpeg_ir::products::ExternalDocument::default(),
+        )?;
+        document.finalize();
         let mut losses: Vec<LossNote> = Vec::new();
         let outcomes = self.class_outcomes()?;
         let decoded = outcomes
@@ -3874,7 +3907,7 @@ fn append_record_links(ir: &mut CadIr, unknown: &UnknownId, links: &[String]) {
     record.links.sort();
     record.links.dedup();
     ir.set_native_unknowns(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         "rhino",
         &unknowns,
     )
@@ -5115,13 +5148,14 @@ fn finish_brep_fallback(mut staged: BrepDraft, cause: impl std::fmt::Display) ->
 /// Projects one embedded Brep into a self-contained semantic topology value.
 pub(crate) fn embedded_brep_json(
     expand: crate::mesh::MeshExpand<'_>,
-    data: &[u8],
     range: std::ops::Range<usize>,
     archive: ArchiveVersion,
     writer_version: Option<i64>,
     scale: MillimeterScale,
+    mesh_budget: &mut crate::mesh::MeshBudget,
     refusal: &mut Option<cadmpeg_core::CodecError>,
 ) -> Option<String> {
+    let data = expand.data();
     let parsed = match crate::brep::parse(expand.ctx(), data, range, archive, writer_version, &[]) {
         Ok(value) => value,
         Err(crate::curves::GeometryError::Codec(error)) => {
@@ -5148,7 +5182,6 @@ pub(crate) fn embedded_brep_json(
         &cadmpeg_ir::identity_namespace!("rhino", "history", "brep"),
         cadmpeg_ir::identity_key!("embedded"),
     );
-    let mut mesh_budget = crate::mesh::MeshBudget::new();
     let staged = match stage_brep(BrepTransferInput {
         expand,
         data,
@@ -5159,7 +5192,7 @@ pub(crate) fn embedded_brep_json(
         association: &association,
         unknown: &unknown,
         scale,
-        mesh_budget: &mut mesh_budget,
+        mesh_budget,
     }) {
         Ok(value) => value,
         Err(crate::curves::GeometryError::Codec(error)) => {
@@ -6397,16 +6430,20 @@ pub(crate) fn decode(
         )
     });
     let mut history_warnings = Diagnostics::new();
+    let mut mesh_budget = context.mesh_budget.clone();
     let untyped = context.validate_candidate_fallible(|candidate, _annotations| {
         crate::history::project(
             expand.ctx(),
             &scan.history,
             geometry_context,
+            &mut mesh_budget,
             candidate,
             &mut history_warnings,
         )
     });
+    context.mesh_budget = mesh_budget;
     context.report.phase_warnings.append(&mut history_warnings);
+    let history_projected = untyped.is_ok();
     match untyped {
         Ok((0, 0, 0, 0)) => {}
         Ok((untyped, failed, dropped_dependencies, redundant_repairs)) => {
@@ -6442,7 +6479,19 @@ pub(crate) fn decode(
             format_args!("history projection rejected atomically by IR validation: {error}"),
         ),
     }
-    context.commit()
+    let objects = history_projected.then(|| context.object_bodies());
+    let mut decoded = context.commit()?;
+    if let Some(objects) = objects {
+        let root = decoded
+            .ir
+            .model
+            .product_definitions
+            .iter()
+            .find(|definition| definition.is_root())
+            .map(|definition| definition.id.clone());
+        crate::history::v11::project(expand.ctx(), &scan.history, &objects, root, &mut decoded.ir)?;
+    }
+    Ok(decoded)
 }
 
 #[cfg(test)]

@@ -49,8 +49,19 @@ fn scope() -> ProductDefinitionId {
 }
 
 fn project_one(parameter: &LegacyParameter) -> DesignParameter {
-    let names = BTreeMap::from([(parameter.id.clone(), parameter.name.as_str())]);
-    project_parameter(parameter, &scope(), &names)
+    project_with(parameter, &[parameter])
+}
+
+fn project_with(parameter: &LegacyParameter, all: &[&LegacyParameter]) -> DesignParameter {
+    let names = all
+        .iter()
+        .map(|parameter| (parameter.id.clone(), parameter.name.as_str()))
+        .collect();
+    let kinds = all
+        .iter()
+        .map(|parameter| (parameter.id.clone(), kind_and_value(parameter).0))
+        .collect();
+    project_parameter(parameter, &scope(), &names, &kinds)
 }
 
 fn neutral_text(parameter: &DesignParameter) -> String {
@@ -135,11 +146,7 @@ fn resolved_dependencies_are_references_matched_without_case() {
     let target = parameter("1", "span", "2", Some(length(2.0)));
     let mut relation = parameter("2", "copy", "SPAN+d3:1+1[span]", Some(length(3.0)));
     relation.dependencies = DistinctMembers::try_from(vec![target.id.clone()]).expect("deps");
-    let names = BTreeMap::from([
-        (target.id.clone(), target.name.as_str()),
-        (relation.id.clone(), relation.name.as_str()),
-    ]);
-    let projected = project_parameter(&relation, &scope(), &names);
+    let projected = project_with(&relation, &[&target, &relation]);
     assert_eq!(
         source_tokens(&projected),
         [
@@ -149,6 +156,32 @@ fn resolved_dependencies_are_references_matched_without_case() {
             }),
             ExpressionToken::Text("+d3:1+1[span]".to_owned()),
         ]
+    );
+}
+
+#[test]
+fn a_relation_that_is_one_reference_is_neutral_where_the_kinds_agree() {
+    let target = parameter("1", "span", "2", Some(length(2.0)));
+    let mut copy = parameter("2", "copy", "SPAN", Some(length(2.0)));
+    copy.dependencies = DistinctMembers::try_from(vec![target.id.clone()]).expect("deps");
+    let projected = project_with(&copy, &[&target, &copy]);
+    assert_eq!(
+        projected.definition,
+        ParameterDefinition::Expression(Expression::Neutral(Neutral(Node::Reference(
+            ParameterRef {
+                target: RefTarget::Parameter(target.id.clone()),
+                through: None,
+            }
+        ))))
+    );
+
+    let mut turn = parameter("3", "turn", "SPAN", Some(angle(2.0)));
+    turn.dependencies = DistinctMembers::try_from(vec![target.id.clone()]).expect("deps");
+    let projected = project_with(&turn, &[&target, &turn]);
+    assert_eq!(
+        source_tokens(&projected),
+        [ExpressionToken::Text("SPAN".to_owned())],
+        "a reference of another kind stays text, so the source holds a text token"
     );
 }
 

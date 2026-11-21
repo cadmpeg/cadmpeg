@@ -546,3 +546,56 @@ fn a_one_clause_node_leaves_the_bounded_face_member_unresolved() {
     structure.sides.truncate(1);
     assert_eq!(FaceRecipeIndex::new(&topology).resolve(&operand), None);
 }
+
+#[test]
+fn counted_shell_program_binds_aliased_neighbor_faces() {
+    let index = FaceRecipeIndex::new(&topology());
+    let mut operand = operand();
+    let neighbors = vec![crate::ids::brep_face_id(101), crate::ids::brep_face_id(102)];
+    operand.recipe_references[1].candidate_faces = neighbors.clone();
+    operand.recipe_references[2].candidate_faces = neighbors;
+    assert_eq!(index.resolve_loop(&operand), None);
+    assert_eq!(
+        index
+            .resolve_loop_program(
+                &operand,
+                &cadmpeg_core::decode::WorkBudget::new(super::MAX_FACE_RECIPE_MATCH_WORK),
+            )
+            .unwrap(),
+        Some(100)
+    );
+}
+
+#[test]
+fn counted_shell_program_reports_work_exhaustion() {
+    let index = FaceRecipeIndex::new(&topology());
+    assert!(index
+        .resolve_loop_program(&operand(), &cadmpeg_core::decode::WorkBudget::new(0))
+        .is_err());
+}
+
+#[test]
+fn complete_assignment_reassigns_an_earlier_node() {
+    assert!(super::complete_assignment(
+        &[vec![10, 11], vec![10]],
+        &cadmpeg_core::decode::WorkBudget::new(100),
+    )
+    .unwrap());
+}
+
+#[test]
+fn complete_assignment_rejects_a_shared_single_edge() {
+    assert!(!super::complete_assignment(
+        &[vec![10], vec![10]],
+        &cadmpeg_core::decode::WorkBudget::new(100),
+    )
+    .unwrap());
+}
+
+#[test]
+fn complete_assignment_reports_work_exhaustion() {
+    assert!(
+        super::complete_assignment(&[vec![10]], &cadmpeg_core::decode::WorkBudget::new(0),)
+            .is_err()
+    );
+}

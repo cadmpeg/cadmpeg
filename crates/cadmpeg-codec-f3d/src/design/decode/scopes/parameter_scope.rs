@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode parameter scopes and parse one scope payload.
 
-pub(super) mod family;
+pub(crate) mod family;
 
 use crate::bytes::lp_utf16_bounded;
 use cadmpeg_core::decode::u64_from_index;
@@ -62,7 +62,7 @@ use super::surfaces::exact_surface_untrim_operation;
 use super::surfaces::surface_extend_loss;
 use super::thicken_shell::exact_thicken_operation;
 use super::thread::exact_thread_construction;
-use super::thread::thread_modeled_flag_loss;
+use super::thread::{thread_modeled_entries_loss, thread_modeled_flag_loss};
 use super::work_geometry::{
     direct_joint_origin_frame, exact_joint_origin_frame, exact_work_plane_frame,
 };
@@ -173,13 +173,22 @@ pub(crate) fn decode_parameter_scopes(
                 crate::design::decode::meta::unambiguous_design_primary_frames(bytes, metadata).ok()
             })
             .unwrap_or_default();
-        let browser_nodes = metadata
-            .as_ref()
-            .filter(|_| needs_browser_metadata)
-            .and_then(|metadata| {
-                crate::design::decode::presentation::browser_node_suffixes(bytes, metadata).ok()
-            })
-            .unwrap_or_default();
+        let paste_metadata = metadata.as_ref().filter(|_| needs_browser_metadata);
+        let paste_nodes = super::base_feature::PasteNodes {
+            sources: paste_metadata
+                .and_then(|metadata| {
+                    crate::design::decode::presentation::browser_node_suffixes(bytes, metadata).ok()
+                })
+                .unwrap_or_default(),
+            copies: paste_metadata
+                .and_then(|metadata| {
+                    crate::design::decode::presentation::presentation_scene_node_guids(
+                        bytes, metadata,
+                    )
+                    .ok()
+                })
+                .unwrap_or_default(),
+        };
         let stream_scope_start = out.len();
         let mut direct_joint_origin_offsets = HashSet::new();
         let mut mesh_scope_ranges = HashMap::new();
@@ -693,13 +702,18 @@ pub(crate) fn decode_parameter_scopes(
                     losses.extend(three_flag_loft_settings_loss(bytes, &scope, value));
                     losses.extend(loft_lists_loss(&scope, value));
                 }
+                if let crate::records::feature::path_features::DesignPathFeatureConstruction::Revolve(
+                    value,
+                ) = &construction
+                {
+                    losses.extend(referenced_revolve_reference_loss(bytes, &scope, value));
+                }
                 match (scope.payload_mut(), construction) {
                     (
                         scope::DesignScopePayloadMut::Revolve(slot),
                         crate::records::feature::path_features::DesignPathFeatureConstruction::Revolve(value),
                     ) => {
                         *slot = Some(value);
-                        losses.extend(referenced_revolve_reference_loss(bytes, &scope));
                         if let Some(length) = marker_one_revolve_assumed_length(bytes, &scope) {
                             losses.push(crate::loss::F3dLossCode::FeatureRevolveLayoutAssumed.note(
                                 format!("Revolve scope {} reads its {length}-byte token-independent frame with the marker-one field offsets (DR-269).", scope.id),
@@ -745,6 +759,9 @@ pub(crate) fn decode_parameter_scopes(
                         .as_ref()
                         .and_then(|construction| thread_modeled_flag_loss(&scope, construction)),
                 );
+                losses.extend(construction.as_ref().and_then(|construction| {
+                    thread_modeled_entries_loss(bytes, &scope, construction)
+                }));
                 if let scope::DesignScopePayloadMut::Thread(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
@@ -901,7 +918,7 @@ pub(crate) fn decode_parameter_scopes(
                         stream_view,
                         &scope,
                         owners,
-                        &browser_nodes,
+                        &paste_nodes,
                         &mut losses,
                     )?,
                     None => None,
@@ -1825,9 +1842,16 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
             } else {
                 false
             };
+            // An empty label with no extra references is the 78-byte fixed
+            // tail byte for byte, so it reads as that tail whatever its epoch.
+            let named_form = if tail_length == named_tail::LEN {
+                ScopeTailForm::Fixed
+            } else {
+                ScopeTailForm::Named
+            };
             if named_tail
                 && named_candidate
-                    .replace((at, kind_end, tail_length, ScopeTailForm::Named))
+                    .replace((at, kind_end, tail_length, named_form))
                     .is_some()
             {
                 named_ambiguous = true;
@@ -2446,8 +2470,8 @@ fn exact_canvas_scope_tail(tail: &[u8], record_index: u32) -> bool {
 
 /// Largest repeated lane value of a named-scope lane block with a nonempty
 /// label: the high byte of the three descending 16-bit field targets. An empty
-/// label takes only the values zero and one with class word 252, because that
-/// tail is also the 78-byte fixed tail.
+/// label takes only the values zero and one with epoch 252; that match ranks
+/// the candidate, and the tail reads as the 78-byte fixed tail.
 const NAMED_LANE_VALUE_MAX: u64 = 0xff;
 /// Three-digit dynamic class numbers admitted for the two equal class words of
 /// a named-scope lane block.
@@ -2524,20 +2548,21 @@ fn named_parameter_scope_references(
     let middle = named_scope_reference(bytes, &mut cursor)?.into_local();
     let word = View::u32_le_at(
         bytes,
-        cursor.checked_add(named_tail::LANE_WORD - named_tail::OPAQUE_WORD)?,
+        cursor.checked_add(named_tail::LANE_WORD - named_tail::PREVIOUS_HISTORY_STATE_ID)?,
     )?;
     let repeated = View::u32_le_at(
         bytes,
-        cursor.checked_add(named_tail::REPEATED_WORD - named_tail::OPAQUE_WORD)?,
+        cursor.checked_add(named_tail::REPEATED_WORD - named_tail::PREVIOUS_HISTORY_STATE_ID)?,
     )?;
     let scalar = View::f64_le_at(
         bytes,
-        cursor.checked_add(named_tail::LANE_SCALAR - named_tail::OPAQUE_WORD)?,
+        cursor.checked_add(named_tail::LANE_SCALAR - named_tail::PREVIOUS_HISTORY_STATE_ID)?,
     )?;
     if word != repeated || !scalar.is_finite() {
         return None;
     }
-    cursor = cursor.checked_add(named_tail::SECOND_REFERENCE - named_tail::OPAQUE_WORD)?;
+    cursor =
+        cursor.checked_add(named_tail::SECOND_REFERENCE - named_tail::PREVIOUS_HISTORY_STATE_ID)?;
     named_scope_reference(bytes, &mut cursor)?.into_local()?;
     let flags_end = cursor.checked_add(named_tail::THIRD_REFERENCE - named_tail::LANE_FLAGS)?;
     if bytes.get(cursor..flags_end)? != [1, 0, 0] {

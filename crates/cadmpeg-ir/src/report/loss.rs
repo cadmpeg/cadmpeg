@@ -31,6 +31,8 @@ pub enum LossCategory {
     DesignIntent,
     /// Product structure, component occurrences, placements, or external dependencies.
     Product,
+    /// Manufacturing process records not transferred.
+    Process,
     /// Anything else.
     Other,
 }
@@ -45,6 +47,7 @@ impl fmt::Display for LossCategory {
             Self::Attribute => "attribute",
             Self::DesignIntent => "design_intent",
             Self::Product => "product",
+            Self::Process => "process",
             Self::Other => "other",
         })
     }
@@ -257,6 +260,7 @@ impl LossTaxonomy {
             Self::AssemblyComponentsExternal
             | Self::AssemblyPlacementsNotTransferred
             | Self::PhysicsNotTransferred => LossCategory::Product,
+            Self::ProcessRecordOmitted => LossCategory::Process,
             Self::RecordNotTyped
             | Self::DecodeDiagnostic
             | Self::IntegrityFailure
@@ -265,8 +269,7 @@ impl LossTaxonomy {
             | Self::SourceDialectDisplaced
             | Self::AssetNotTransferred
             | Self::PassthroughRecordOmitted
-            | Self::PreservedSourceUnavailable
-            | Self::ProcessRecordOmitted => LossCategory::Other,
+            | Self::PreservedSourceUnavailable => LossCategory::Other,
             Self::MissingGeometryStream
             | Self::GeometryNotTransferred
             | Self::GeometryAgreementSampled
@@ -336,7 +339,9 @@ pub const SHARED_LOSS_NAMESPACE: &str = "shared";
 /// one is `{ "kind": "namespaced", "value": { "namespace": "rhino", "code":
 /// "brep.trim-pcurve-dropped", "kind": "pcurve_omitted" } }`, carrying
 /// `strict_floor` exactly when the code pins one.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, cadmpeg_derive::DeserializeTagged,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",

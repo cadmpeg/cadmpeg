@@ -1647,3 +1647,156 @@ fn a_loop_start_on_a_closely_folded_surface_inverts_from_the_loop_end() {
         );
     }
 }
+
+const SEGMENT_RADIUS: f64 = 30.0;
+const SEGMENT_HALF_ANGLE: f64 = 0.015;
+
+/// The circular segment of `z = 0` between the arc of radius
+/// `SEGMENT_RADIUS` about the origin from angle `-SEGMENT_HALF_ANGLE` to
+/// `SEGMENT_HALF_ANGLE` and its chord: one loop of an arc and a line.
+fn circular_segment() -> (cadmpeg_ir::CadIr, cadmpeg_ir::ids::FaceId) {
+    use cadmpeg_ir::geometry::analytic::{CircleCurve, LineCurve, PlaneSurface};
+    use cadmpeg_ir::geometry::{
+        Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    };
+    use cadmpeg_ir::ids::{
+        CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, ShellId, SurfaceId, VertexId,
+    };
+    use cadmpeg_ir::topology::{
+        Coedge, Edge, EdgeCarrier, Face, FaceLoops, Loop, LoopBoundary, LoopRing, Point, Sense,
+        Vertex,
+    };
+
+    let (r, a) = (SEGMENT_RADIUS, SEGMENT_HALF_ANGLE);
+    let ends = [
+        Point3::new(r * a.cos(), -r * a.sin(), 0.0),
+        Point3::new(r * a.cos(), r * a.sin(), 0.0),
+    ];
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let surface = SurfaceId::mint("test:model:surface#plane").unwrap();
+    let face = FaceId::mint("test:model:face#segment").unwrap();
+    let loop_id = LoopId::mint("test:model:loop#segment").unwrap();
+    ir.geometry.surfaces.push(Surface {
+        id: surface.clone(),
+        source_object: None,
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        )),
+        native_ref: None,
+    });
+    let vertex = |index: usize| VertexId::mint(format!("test:model:vertex#{index}")).unwrap();
+    for (index, end) in ends.iter().enumerate() {
+        let point = PointId::mint(format!("test:model:point#{index}")).unwrap();
+        ir.geometry.points.push(Point::new(
+            point.clone(),
+            cadmpeg_ir::features::FinitePoint3::new(*end).unwrap(),
+            None,
+        ));
+        ir.geometry.vertices.push(Vertex {
+            id: vertex(index),
+            point,
+            tolerance: None,
+            native_ref: None,
+        });
+    }
+    // The arc rises from end 0 to end 1 and the chord falls back, so the
+    // loop runs counterclockwise about `+z`.
+    let sides = [
+        (
+            SolvedCurveGeometry::Circle(
+                CircleCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new((-a).cos(), (-a).sin(), 0.0),
+                    r,
+                )
+                .unwrap(),
+            ),
+            [0.0, 2.0 * a],
+            [0, 1],
+        ),
+        (
+            SolvedCurveGeometry::Line(
+                LineCurve::try_new(ends[1], Vector3::new(0.0, -1.0, 0.0)).unwrap(),
+            ),
+            [0.0, 2.0 * r * a.sin()],
+            [1, 0],
+        ),
+    ];
+    let mut ring = Vec::new();
+    for (index, (geometry, range, [start, end])) in sides.into_iter().enumerate() {
+        let curve = CurveId::mint(format!("test:model:curve#{index}")).unwrap();
+        let edge = EdgeId::mint(format!("test:model:edge#{index}")).unwrap();
+        let coedge = CoedgeId::mint(format!("test:model:coedge#{index}")).unwrap();
+        ir.geometry.curves.push(Curve {
+            id: curve.clone(),
+            source_object: None,
+            parameter_range: None,
+            geometry: CurveGeometry::Solved(geometry),
+            native_ref: None,
+        });
+        ir.geometry.edges.push(Edge {
+            id: edge.clone(),
+            carrier: EdgeCarrier::new(Some(curve), Some(range)).unwrap(),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                vertex(start),
+                vertex(end),
+            )),
+            tolerance: None,
+            native_ref: None,
+        });
+        ir.geometry.coedges.push(Coedge {
+            id: coedge.clone(),
+            owner_loop: loop_id.clone(),
+            edge,
+            radial_next: coedge.clone(),
+            sense: Sense::Forward,
+            pcurves: Vec::new(),
+            use_curve: None,
+            native_ref: None,
+        });
+        ring.push(coedge);
+    }
+    ir.geometry.loops.push(Loop {
+        id: loop_id.clone(),
+        face: face.clone(),
+        boundary: LoopBoundary::Ring(LoopRing::new(ring, Vec::new()).unwrap()),
+        native_ref: None,
+    });
+    ir.geometry.faces.push(Face {
+        id: face.clone(),
+        shell: ShellId::mint("test:model:shell#segment").unwrap(),
+        surface,
+        sense: Sense::Forward,
+        loops: FaceLoops::classified(loop_id, Vec::new()),
+        name: None,
+        color: None,
+        tolerance: None,
+        native_ref: None,
+    });
+    (ir, face)
+}
+
+/// The arc's sagitta is below the chord tolerance, so its one interior
+/// sample is its midpoint: the mesh is the triangle on the chord with that
+/// apex, of area `chord · sagitta / 2`.
+#[test]
+fn a_circular_segment_flatter_than_the_chord_tolerance_meshes_its_triangle() {
+    let (ir, face) = circular_segment();
+    let options = Options::default();
+    let (r, a) = (SEGMENT_RADIUS, SEGMENT_HALF_ANGLE);
+    let sagitta = r * (1.0 - a.cos());
+    assert!(sagitta < options.chord);
+    let mesh = Tessellator::new(&ir, options).face(&face).unwrap();
+    let triangle = r * a.sin() * sagitta;
+    assert!(
+        (area(&mesh) - triangle).abs() <= AREA_TOLERANCE * triangle,
+        "area {} against {triangle}",
+        area(&mesh)
+    );
+}

@@ -322,6 +322,40 @@ fn decode_synthesizes_vertex_for_closed_null_vertex_fin() {
 }
 
 #[test]
+fn decode_keeps_a_closed_edge_whose_partner_fin_has_no_links() {
+    let mut stream = topology_partition_stream();
+    let fin = stream
+        .windows(4)
+        .position(|window| window == [0, 17, 0, 7])
+        .expect("fin record");
+    put_ref(&mut stream, fin + 12, 1);
+    put_ref(&mut stream, fin + 14, 20);
+
+    let mut partner = record(17, 23);
+    put_ref(&mut partner, 2, 20);
+    put_ref(&mut partner, 6, 1); // not a loop member
+    put_ref(&mut partner, 8, 1); // no forward link
+    put_ref(&mut partner, 10, 1); // no backward link
+    put_ref(&mut partner, 12, 1); // null vertex
+    put_ref(&mut partner, 14, 7); // partner fin
+    put_ref(&mut partner, 16, 8); // same edge
+    put_ref(&mut partner, 18, 9); // same curve
+    partner[22] = b'-';
+    stream.extend(partner);
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .unwrap();
+
+    let edge = result.ir().geometry.edges.first().expect("closed edge");
+    assert!(edge.start().is_some());
+    assert_eq!(edge.start(), edge.end());
+    assert_eq!(result.ir().geometry.loops.len(), 1);
+    assert_eq!(result.ir().geometry.coedges.len(), 1);
+}
+
+#[test]
 fn decode_aliases_partner_closed_null_vertex_fin_to_edge_start() {
     let mut stream = topology_partition_stream();
     let fin = stream
@@ -1328,7 +1362,10 @@ fn decode_reports_untransferred_assembly_placement() {
         .unwrap();
 
     assert!(result.ir().model.occurrences.is_empty());
-    assert!(result.ir().model.product_definitions.is_empty());
+    assert!(matches!(
+        result.ir().model.product_definitions.as_slice(),
+        [root] if root.is_root() && root.occurrences.is_empty()
+    ));
     let namespace = result.ir().native.namespace("nx").unwrap();
     let placements: Vec<serde_json::Value> = namespace.arena_as("assembly_placements").unwrap();
     assert_eq!(placements.len(), 1);

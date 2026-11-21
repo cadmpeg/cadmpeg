@@ -3,6 +3,7 @@
 
 #![allow(clippy::unwrap_used)]
 
+use std::collections::BTreeMap;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -215,4 +216,64 @@ fn a_formula_whose_tree_disagrees_with_its_stored_value_keeps_its_source_text() 
             ],
         })
     );
+}
+
+#[test]
+fn a_formula_that_is_one_text_input_is_its_reference() {
+    let result = decode(
+        standard_catpart_with_typed_formula_inputs_and_object_payload(
+            4,
+            false,
+            &[("#1_", "String", "Value", "#1_", 1.0)],
+            "String",
+            None,
+            "#1_",
+            (&[0xfe], Some(0)),
+        ),
+    );
+    let [input, formula] = result.ir().model.parameters.as_slice() else {
+        panic!("an input and a formula");
+    };
+    let output = result
+        .ir()
+        .design
+        .parameters
+        .iter()
+        .find(|parameter| parameter.id == formula.id)
+        .unwrap();
+    assert_eq!(output.kind, ValueKind::Text);
+    assert_eq!(
+        output.definition,
+        ParameterDefinition::Expression(Expression::Neutral(Neutral(Node::Reference(reference(
+            &input.id
+        )))))
+    );
+}
+
+#[test]
+fn a_formula_that_is_one_input_of_another_kind_keeps_its_text() {
+    let result = decode(
+        standard_catpart_with_typed_formula_inputs_and_object_payload(
+            4,
+            false,
+            &[("#1_", "String", "Value", "#1_", 1.0)],
+            "String",
+            None,
+            "#1_",
+            (&[0xfe], Some(0)),
+        ),
+    );
+    let [input, _] = result.ir().model.parameters.as_slice() else {
+        panic!("an input and a formula");
+    };
+    let parameters = BTreeMap::from([(&input.id, input)]);
+    for kind in [ValueKind::Boolean, ValueKind::Quantity(Quantity::LENGTH)] {
+        assert_eq!(
+            super::whole_reference(&reference(&input.id), "#1_", &kind, &parameters),
+            Expression::Source {
+                dialect: ExpressionDialect::Catia,
+                tokens: vec![ExpressionToken::Text("#1_".into())],
+            }
+        );
+    }
 }

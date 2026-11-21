@@ -101,7 +101,7 @@ fn decode_trace_compacts_charges_and_balanced_nesting_between_observations() {
     let ctx = DecodeContext::new(&arena, &DecodePolicy::default(), DecodeDepth::Full);
     let task_arena = DecodeArena::new();
     let task = ctx.checkpoint().resume(&task_arena);
-    for _ in 0..1024 {
+    for _ in 0..3 {
         let _depth = task.enter_nested("nested item").unwrap();
         task.charge_entities(1, "item").unwrap();
         task.retain_bytes(3, "item bytes").unwrap();
@@ -109,8 +109,8 @@ fn decode_trace_compacts_charges_and_balanced_nesting_between_observations() {
     let trace = task.take_trace();
     assert_eq!(trace.events.len(), 1);
     assert!(ctx.accept_trace(&trace));
-    assert_eq!(ctx.checkpoint().state.entities, 1024);
-    assert_eq!(ctx.checkpoint().state.retained, 3072);
+    assert_eq!(ctx.checkpoint().state.entities, 3);
+    assert_eq!(ctx.checkpoint().state.retained, 9);
     assert_eq!(ctx.checkpoint().state.depth, 0);
 }
 

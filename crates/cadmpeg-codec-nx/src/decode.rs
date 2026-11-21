@@ -10,7 +10,7 @@
 //! selection and other loss.
 
 use cadmpeg_core::decode::ArenaClass;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::StreamHandle;
@@ -31,6 +31,7 @@ use crate::parasolid::{self, Stream, StreamKind};
 
 mod blend;
 mod build;
+mod design_v11;
 pub(crate) mod emit;
 pub(crate) mod feature_completeness;
 mod geometry_work;
@@ -194,10 +195,29 @@ fn decoded(
     unknowns: Vec<UnknownRecord>,
     admitted_entities: &mut u64,
 ) -> Result<Decoded, CodecError> {
+    let annotations = if ctx.depth() >= DecodeDepth::Geometry {
+        let (definition, minted) = design_v11::root_definition(&mut ir)?;
+        if ctx.depth() >= DecodeDepth::Design {
+            design_v11::project(&mut ir, definition.clone())?;
+        }
+        let mut builder = AnnotationBuilder::resume(annotations);
+        if minted {
+            builder.exactness(definition, Exactness::Derived);
+        }
+        builder.build()
+    } else {
+        annotations
+    };
     ctx.admit_entities(
         cadmpeg_core::decode::u64_from_index(ir.entity_count()),
         admitted_entities,
         "admit NX entities",
+    )?;
+    ir.state_root_definition(
+        ctx,
+        cadmpeg_ir::ids::ProductDefinitionId::mint(design_v11::PART_ROOT)
+            .map_err(CodecError::malformed)?,
+        cadmpeg_ir::products::ExternalDocument::default(),
     )?;
     let mut source_fidelity =
         cadmpeg_ir::SourceFidelity::with_annotations(annotations, decode_digest);

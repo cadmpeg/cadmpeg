@@ -346,16 +346,42 @@ fn formula(
     if let Some(rest) = text.get(text_start..).filter(|rest| !rest.is_empty()) {
         tokens.push(ExpressionToken::Text(rest.to_owned()));
     }
-    neutral
+    if let Some(tree) = neutral
         .and_then(|neutral| expr::parse(&neutral, &refs, &[]).ok())
         .filter(|tree| agrees(tree, parameter, parameters, kind))
-        .map_or(
-            Expression::Source {
-                dialect: ExpressionDialect::Catia,
-                tokens,
-            },
-            |tree| Expression::Neutral(Neutral(tree)),
-        )
+    {
+        return Expression::Neutral(Neutral(tree));
+    }
+    if let [ExpressionToken::Reference(reference)] = tokens.as_slice() {
+        return whole_reference(reference, text, kind, parameters);
+    }
+    Expression::Source {
+        dialect: ExpressionDialect::Catia,
+        tokens,
+    }
+}
+
+/// A formula whose whole text is one resolved input of the same `Boolean` or
+/// `Text` kind, which [`agrees`] cannot evaluate, is that reference. Any other
+/// such formula keeps its text whole: a `Source` expression holds a `Text`
+/// token (part 10).
+fn whole_reference(
+    reference: &ParameterRef,
+    text: &str,
+    kind: &ValueKind,
+    parameters: &BTreeMap<&ParameterId, &LegacyParameter>,
+) -> Expression {
+    let input_kind = match &reference.target {
+        RefTarget::Parameter(id) => parameters.get(id).copied().and_then(kind_of),
+        RefTarget::External { .. } => None,
+    };
+    if matches!(kind, ValueKind::Boolean | ValueKind::Text) && input_kind.as_ref() == Some(kind) {
+        return Expression::Neutral(Neutral(Node::Reference(reference.clone())));
+    }
+    Expression::Source {
+        dialect: ExpressionDialect::Catia,
+        tokens: vec![ExpressionToken::Text(text.to_owned())],
+    }
 }
 
 /// Whether `tree` evaluates to `kind`, and to the parameter's stored value

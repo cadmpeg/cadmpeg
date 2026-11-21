@@ -279,7 +279,7 @@ fn sketch_baselines_cover_final_relation_binding_and_arena_order() {
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .unwrap();
         assert!(!decoded.ir().model.sketch_constraints.is_empty());
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let baselines = &decoded.ir().source.as_ref().unwrap().attributes;
         assert_eq!(
             baselines["sldprt_neutral_sketch_local_sha256"],

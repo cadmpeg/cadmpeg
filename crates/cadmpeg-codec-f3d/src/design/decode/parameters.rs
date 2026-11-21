@@ -7,7 +7,7 @@ use cadmpeg_core::container::ContainerRole;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 use crate::design::decode::body::decode_stream;
-use crate::design::decode::dimension_frames::companion_owned_interval;
+use crate::design::decode::dimension_frames::CompanionBounds;
 use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOffsets};
 use crate::design::decode::text::design_record_id;
 use crate::ids::{self, native_stream};
@@ -504,7 +504,7 @@ fn parse_header_form(
         && payload.get(expression_end..expression_end + 10)
             == Some(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
     let wide_flags = (shift == WIDE_DISCRIMINATED_SHIFT
-        && family_discriminator.is_some_and(|value| matches!(value.code(), 0 | 5 | 6)))
+        && family_discriminator.is_some_and(|value| matches!(value.code(), 0 | 4 | 5 | 6)))
     .then(|| wide_expression_trailer_flags(payload.get(expression_end..)?))
     .flatten()
     .filter(|wide| wide.document == owner_record_index.is_none());
@@ -2120,9 +2120,15 @@ pub(crate) fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
     companions: Vec<DesignParameterCompanion>,
     inputs: &ParameterCompanionInputs<'_, S>,
 ) -> Result<Vec<DesignParameterCompanion>, CodecError> {
+    let bounds = CompanionBounds::new(
+        inputs.parameters,
+        inputs.owners,
+        inputs.scopes,
+        inputs.headers,
+    );
     let mut bound = Vec::new();
     for companion in companions {
-        bound.push(match companion_payload(&companion, inputs)? {
+        bound.push(match companion_payload(&companion, inputs, &bounds)? {
             Some(payload) => companion.bound(payload),
             None => companion,
         });
@@ -2134,15 +2140,14 @@ pub(crate) fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
 fn companion_payload<S: std::hash::BuildHasher>(
     companion: &DesignParameterCompanion,
     inputs: &ParameterCompanionInputs<'_, S>,
+    bounds: &CompanionBounds<'_>,
 ) -> Result<Option<crate::records::parameters::DesignCompanionPayload>, CodecError> {
     let ParameterCompanionInputs {
-        parameters,
-        owners,
         scopes,
         entities,
-        headers,
         recipes,
         stream_lengths,
+        ..
     } = inputs;
     let Some(stream) = native_stream(companion.id()) else {
         return Ok(None);
@@ -2150,14 +2155,7 @@ fn companion_payload<S: std::hash::BuildHasher>(
     let Some(stream_length) = stream_lengths.get(stream).copied() else {
         return Ok(None);
     };
-    let Some((start, mut end)) = companion_owned_interval(
-        companion,
-        parameters.iter(),
-        owners,
-        scopes,
-        headers,
-        stream_length,
-    ) else {
+    let Some((start, mut end)) = bounds.interval(companion, stream_length) else {
         return Ok(None);
     };
     // Entity headers precede their owning scope record. A parameter companion
