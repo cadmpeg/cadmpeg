@@ -21,6 +21,7 @@ mod body_candidates;
 mod body_index;
 pub(crate) mod body_recipe_operands;
 mod cache;
+pub(crate) mod chamfer_blends;
 mod combine_binding;
 pub(crate) mod combine_history_tools;
 mod combine_selection;
@@ -5305,26 +5306,36 @@ pub(crate) fn bind_scope_histories(
         let Some(construction) = scope.base_feature_construction() else {
             continue;
         };
-        let mut referenced_histories = construction.body_reference_records().filter_map(|suffix| {
-            let mut bindings = body_bindings.iter().filter(|binding| {
-                crate::ids::same_native_occurrence(binding.id(), &scope.id)
-                    && binding.entity_suffix == u64::from(suffix)
-            });
-            let binding = bindings.next()?;
-            if bindings.next().is_some() {
-                return None;
-            }
-            let mut matching = candidates.iter().filter(|history| {
-                historical_brep_source(&history.id)
-                    .is_some_and(|source| binding.blob_name().strip_prefix("BREP.") == Some(source))
-            });
-            let history = matching.next()?;
-            matching.next().is_none().then_some(history.id.as_str())
-        });
-        let Some(history_id) = referenced_histories.next() else {
+        let Some(referenced_histories) = construction
+            .body_entity_suffixes()
+            .map(|suffix| {
+                let mut bindings = body_bindings.iter().filter(|binding| {
+                    crate::ids::same_native_occurrence(binding.id(), &scope.id)
+                        && binding.entity_suffix == suffix
+                });
+                let binding = bindings.next()?;
+                if bindings.next().is_some() {
+                    return None;
+                }
+                let mut matching = candidates.iter().filter(|history| {
+                    historical_brep_source(&history.id).is_some_and(|source| {
+                        binding.blob_name().strip_prefix("BREP.") == Some(source)
+                    })
+                });
+                let history = matching.next()?;
+                matching.next().is_none().then_some(history.id.as_str())
+            })
+            .collect::<Option<Vec<&str>>>()
+        else {
             continue;
         };
-        if referenced_histories.all(|candidate| candidate == history_id) {
+        let Some(&history_id) = referenced_histories.first() else {
+            continue;
+        };
+        if referenced_histories
+            .iter()
+            .all(|&candidate| candidate == history_id)
+        {
             insert_scope_history_binding(&mut resolved, &scope.id, history_id);
         }
     }
@@ -8739,7 +8750,20 @@ fn treatment_face_supports(
             let persists = preceding_faces.contains(&face);
             let source = loop_ancestry(face).and_then(|ancestry| {
                 let source = if persists {
-                    (preceding_carriers.get(&face).copied().flatten() == Some(carrier))
+                    // A persisting face whose carrier the transition recorded
+                    // again with the same geometry keeps its support role.
+                    preceding_carriers
+                        .get(&face)
+                        .copied()
+                        .flatten()
+                        .is_some_and(|before| {
+                            before == carrier
+                                || (!preceding_surfaces.contains(&carrier)
+                                    && blend_spine::same_surface(
+                                        (preceding, before),
+                                        (result, carrier),
+                                    ))
+                        })
                         .then_some(face)?
                 } else if let Some(only) = preceding_carrier_faces.get(&carrier).copied().flatten()
                 {

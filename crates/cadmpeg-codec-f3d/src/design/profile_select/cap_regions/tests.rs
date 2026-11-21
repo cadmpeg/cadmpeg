@@ -1355,13 +1355,56 @@ fn compact_cut_certificate_checks_region_side_carriers_and_stored_travel() {
     assert!(!certify(before, after, &selected, 3.0));
 }
 
+#[test]
+fn region_sampler_finds_a_band_between_grid_points() {
+    let square = |low: f64, high: f64| {
+        vec![
+            Point2::new(low, low),
+            Point2::new(high, low),
+            Point2::new(high, high),
+            Point2::new(low, high),
+        ]
+    };
+    let ring = |polyline| AtomicSketchRegion {
+        boundary: Vec::new(),
+        polyline,
+        encloses_island: false,
+        island_absence_assumed: false,
+    };
+    // A frame one unit wide around a square: no grid point lies in the frame.
+    let regions = [ring(square(0.0, 100.0)), ring(square(1.0, 99.0))];
+    let sampled = sample_regions(&regions, TOLERANCE, &ProfileGeometryWork::new())
+        .expect("each region has a point");
+    assert_eq!(sampled[0].nested, vec![1]);
+    let point = sampled[0].point;
+    let in_frame = |p: f64| (0.0..1.0).contains(&p) || (99.0..100.0).contains(&p);
+    assert!((0.0..=100.0).contains(&point.u) && (0.0..=100.0).contains(&point.v));
+    assert!(in_frame(point.u) || in_frame(point.v));
+    let inner = sampled[1].point;
+    assert!((1.0..=99.0).contains(&inner.u) && (1.0..=99.0).contains(&inner.v));
+}
+
 /// The hole-ring counts of the trimmed regions that `selected` makes from a
 /// square face with a circle face nested directly in it.
 fn square_and_nested_circle_holes(selected: &[usize]) -> Vec<usize> {
     let square = polygon("square", &[(0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (0.0, 4.0)]);
     let disk = circle("disk", (2.0, 2.0), 1.0);
-    let outer = region(&square, &[[0.0, 1.0]; 4]);
-    let inner = region(std::slice::from_ref(&disk), &[[0.0, TAU]]);
+    let mut outer = region(&square, &[[0.0, 1.0]; 4]);
+    let mut inner = region(std::slice::from_ref(&disk), &[[0.0, TAU]]);
+    crate::test_support::with_decode_context(|ctx| {
+        for (region, entities) in [
+            (&mut outer, square.as_slice()),
+            (&mut inner, std::slice::from_ref(&disk)),
+        ] {
+            for use_ in &region.boundary {
+                region.polyline.extend(
+                    super::boundary_use_samples(use_, entities, super::CURVE_SAMPLES, ctx)
+                        .unwrap()
+                        .unwrap(),
+                );
+            }
+        }
+    });
     let sampled = vec![
         Sampled {
             region: &outer,
@@ -1374,7 +1417,8 @@ fn square_and_nested_circle_holes(selected: &[usize]) -> Vec<usize> {
             nested: Vec::new(),
         },
     ];
-    let Some(ResolvedProfileSelection::Regions(regions)) = trimmed_selection(&sampled, selected)
+    let Some(ResolvedProfileSelection::Regions(regions)) =
+        trimmed_selection(&sampled, selected, TOLERANCE)
     else {
         panic!("trimmed regions");
     };
@@ -1400,6 +1444,46 @@ fn a_selected_region_keeps_a_selected_nested_region_as_a_hole() {
 }
 
 #[test]
+fn a_narrow_region_with_a_clear_interior_point_keeps_its_certified_outline() {
+    let width = 12.0 * TOLERANCE;
+    let corners = [(0.0, 0.0), (1.0, 0.0), (1.0, width), (0.0, width)];
+    let entities = polygon("narrow-cap", &corners);
+    let mut atomic = region(&entities, &[[0.0, 1.0]; 4]);
+    atomic.polyline = corners.iter().map(|&(u, v)| Point2::new(u, v)).collect();
+    let regions = [atomic];
+    let samples = sample_regions(&regions, TOLERANCE, &ProfileGeometryWork::new())
+        .expect("an interior point clear of the boundary");
+    let point = samples[0].point;
+    assert!(point.u > TOLERANCE && point.u < 1.0 - TOLERANCE);
+    assert!(point.v > TOLERANCE && point.v < width - TOLERANCE);
+    let mut topology = loop_topology(&corners, &[(0, 1), (1, 2), (2, 3), (3, 0)]);
+    straight_carriers(&mut topology);
+    let cap = face_cap(&xy_frame(), &topology, CAP, TOLERANCE).unwrap();
+    let agreement = crate::test_support::with_decode_context(|ctx| {
+        outlines_agree(&cap, &samples, &[0], &entities, TOLERANCE, ctx)
+    })
+    .unwrap();
+    assert!(matches!(agreement, Agreement::Exact));
+}
+
+#[test]
+fn a_region_without_a_point_clear_of_the_tolerance_stays_unsampled() {
+    let width = 1.5 * TOLERANCE;
+    let atomic = AtomicSketchRegion {
+        boundary: Vec::new(),
+        polyline: vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(1.0, width),
+            Point2::new(0.0, width),
+        ],
+        encloses_island: false,
+        island_absence_assumed: false,
+    };
+    assert!(sample_regions(&[atomic], TOLERANCE, &ProfileGeometryWork::new()).is_none());
+}
+
+#[test]
 fn each_sketch_region_is_sampled_at_its_grid_point_farthest_from_its_boundary() {
     let work = ProfileGeometryWork::new();
     for side in [10.0, 20.0, 10.0] {
@@ -1419,4 +1503,45 @@ fn each_sketch_region_is_sampled_at_its_grid_point_farthest_from_its_boundary() 
         assert_eq!(sampled[0].point, Point2::new(side / 2.0, side / 2.0));
         assert!(sampled[0].nested.is_empty());
     }
+}
+
+#[test]
+fn selected_nested_interiors_without_a_hole_stay_native() {
+    let corners = [(0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (0.0, 4.0)];
+    let inner_corners = [(1.0, 1.0), (3.0, 1.0), (3.0, 3.0), (1.0, 3.0)];
+    let outer_entities = polygon("outer-overlap", &corners);
+    let inner_entities = polygon("inner-overlap", &inner_corners);
+    let mut outer = region(&outer_entities, &[[0.0, 1.0]; 4]);
+    let mut inner = region(&inner_entities, &[[0.0, 1.0]; 4]);
+    outer.polyline = corners.iter().map(|(u, v)| Point2::new(*u, *v)).collect();
+    inner.polyline = inner_corners
+        .iter()
+        .map(|(u, v)| Point2::new(*u, *v))
+        .collect();
+    let regions = [outer, inner];
+    let mut sampled = sample_regions(&regions, TOLERANCE, &ProfileGeometryWork::new()).unwrap();
+    let Some(ResolvedProfileSelection::Regions(selected)) =
+        trimmed_selection(&sampled, &[0, 1], TOLERANCE)
+    else {
+        panic!("nested region with a hole resolves");
+    };
+    let entities: Vec<_> = outer_entities.into_iter().chain(inner_entities).collect();
+    crate::test_support::with_decode_context(|ctx| {
+        assert!(
+            super::overlap::regions_are_disjoint(&selected, &entities, TOLERANCE, ctx).unwrap()
+        );
+        let mut overlapping = selected.clone();
+        let SketchProfileRegion::Trimmed {
+            hole_boundaries, ..
+        } = &mut overlapping[0]
+        else {
+            panic!("trimmed region");
+        };
+        hole_boundaries.clear();
+        assert!(
+            !super::overlap::regions_are_disjoint(&overlapping, &entities, TOLERANCE, ctx).unwrap()
+        );
+    });
+    sampled[0].nested.clear();
+    assert!(trimmed_selection(&sampled, &[0, 1], TOLERANCE).is_none());
 }
