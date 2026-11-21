@@ -1828,7 +1828,7 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 ### DR-170. Unresolved DeleteFace operand bindings
 
-**Question.** When the transition deletes more faces than the group has members, which deleted faces does the group select? Which native rules bind DeleteFace operands with a one-clause node, an empty live prefix-face lane, repeated edge-incidence matches, or a prefix-fragment face fan that fails the live topology match?
+**Question.** When the transition deletes more faces than the group has members, which deleted faces does the group select? Which native rules bind DeleteFace operands with an empty live prefix-face lane, repeated edge-incidence matches, or a prefix-fragment face fan that fails the live topology match?
 
 **Known.** `f3d.md` §3.1 "The scope's preceding and current state identities delimit" settles a group whose member count equals the deleted-face count. Healing can delete a further face, so a larger deleted set does not separate selected faces from healed faces. Such a group resolves only through the complete-boundary rule in `f3d.md` §3.1. Some of its operands have ten opener-framed nodes whose second prelude scalar is `1`, and the two-clause structure parser retains their raw programs. `f3d.md` §3.1 "Each endpoint clause stores a cyclic face fan" gives the closed edge that a one-clause node binds. Some have a referenced prefix ordinal with an empty face lane in the preceding topology. Some have multiple boundary-edge matches after incident-pair and cyclic endpoint-fan matching. Some have prefix lanes that repeat a face fragment while the boundary endpoint fans require another face.
 
@@ -3146,7 +3146,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Known.** A two-sided termination stores two bounded-face recipes with Design reference `302`. One program has five nodes, of which four have a parsed two-clause structure. The other has four parsed two-clause nodes; its first prefix operand names face slot `50`, whose preceding loop has eight edges. Its aggregate candidate lane contains four side faces. A further termination program has eight parsed nodes and two empty prefix-face lanes. Two further programs have five nodes each, including a node with one side clause (`f3d.md` §3.1). Their remaining candidates include several preceding faces.
 
-**Need.** The mapping of a saved boundary edge to a chain of preceding edges, the edge that a one-clause node binds (DR-170), and the binding of empty prefix-face lanes. Independent selections before and after a boundary split must distinguish a selected face from its adjacent faces.
+**Need.** The mapping of a saved boundary edge to a chain of preceding edges and the binding of empty prefix-face lanes. Independent selections before and after a boundary split must distinguish a selected face from its adjacent faces.
 
 **Conflict.** None.
 
