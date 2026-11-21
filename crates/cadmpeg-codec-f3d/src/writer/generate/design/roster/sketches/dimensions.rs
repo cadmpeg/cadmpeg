@@ -13,7 +13,7 @@ use super::super::super::sketch::dimensions::{
     DimensionKind, Measure, PlannedDimension, DRIVEN_DECIMALS,
 };
 use super::super::super::types;
-use super::super::owned::{Form, Owned, DISCRIMINATOR};
+use super::super::owned::{Owned, DISCRIMINATOR};
 use super::super::{count, Context};
 use super::{curve_payload, Item};
 use crate::writer::generate::presentation::TypeRow;
@@ -136,12 +136,8 @@ impl Item<'_> {
                     scope: records.scope,
                     local,
                     kind: &kind,
-                    form: if dimension.driven {
-                        Form::Driven
-                    } else {
-                        Form::Owned
-                    },
                     value: &dimension.parameter,
+                    driven: dimension.driven,
                 },
             )?;
         }

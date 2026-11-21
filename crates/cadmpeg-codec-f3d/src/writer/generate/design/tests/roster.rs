@@ -147,6 +147,15 @@ impl Segment {
                 |row| (row.0.as_str(), row.2),
             )
     }
+
+    /// The record indices of the type `guid`, each with the type's version.
+    pub(super) fn records_of(&self, guid: &str) -> Vec<(u64, u32)> {
+        self.types
+            .iter()
+            .filter(|row| row.0.eq_ignore_ascii_case(guid))
+            .flat_map(|row| row.4.iter().map(|index| (*index, row.2)))
+            .collect()
+    }
 }
 
 fn design() -> (Segment, Vec<u8>) {
