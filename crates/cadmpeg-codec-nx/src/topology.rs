@@ -11,7 +11,7 @@
 
 use crate::framing::node_kind::NodeKind;
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::Sense;

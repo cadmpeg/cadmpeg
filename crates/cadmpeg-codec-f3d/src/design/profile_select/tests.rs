@@ -31,7 +31,7 @@ use crate::records::{
         sketch_profile::DesignSketchProfileRegionSelection,
     },
 };
-use cadmpeg_ir::features::{PathRef, SketchProfileRegion};
+use cadmpeg_ir::features::profiles::{PathRef, SketchProfileRegion};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::{
@@ -873,9 +873,12 @@ fn entity_selection_profile_requires_unique_profile_membership() {
     };
     assert_eq!(
         resolve_entity_selection_profile(&group, &resolution),
-        Some(cadmpeg_ir::features::ProfileRef::Planar(
-            cadmpeg_ir::features::PlanarProfileRef::sketch_profiles(sketch.clone(), vec![1],)
-                .unwrap()
+        Some(cadmpeg_ir::features::profiles::ProfileRef::Planar(
+            cadmpeg_ir::features::profiles::PlanarProfileRef::sketch_profiles(
+                sketch.clone(),
+                vec![1],
+            )
+            .unwrap()
         ))
     );
 
@@ -956,9 +959,12 @@ fn entity_selection_profile_retains_an_open_curve_as_ordered_entities() {
 
     assert_eq!(
         resolve_entity_selection_profile(&group, &resolution),
-        Some(cadmpeg_ir::features::ProfileRef::Planar(
-            cadmpeg_ir::features::PlanarProfileRef::sketch_entities(sketch, vec![entity_id],)
-                .unwrap()
+        Some(cadmpeg_ir::features::profiles::ProfileRef::Planar(
+            cadmpeg_ir::features::profiles::PlanarProfileRef::sketch_entities(
+                sketch,
+                vec![entity_id],
+            )
+            .unwrap()
         ))
     );
 }
@@ -1285,33 +1291,42 @@ fn historical_selection_preserves_first_member_region_order() {
 fn multiple_extrude_profile_groups_merge_only_exact_same_kind_selections() {
     let sketch = SketchId::mint("f3d:model:sketch#multi-profile").unwrap();
     let loops = [
-        cadmpeg_ir::features::ProfileRef::Planar(
-            cadmpeg_ir::features::PlanarProfileRef::sketch_profiles(sketch.clone(), vec![3, 1])
-                .unwrap(),
+        cadmpeg_ir::features::profiles::ProfileRef::Planar(
+            cadmpeg_ir::features::profiles::PlanarProfileRef::sketch_profiles(
+                sketch.clone(),
+                vec![3, 1],
+            )
+            .unwrap(),
         ),
-        cadmpeg_ir::features::ProfileRef::Planar(
-            cadmpeg_ir::features::PlanarProfileRef::sketch_profiles(sketch.clone(), vec![1, 2])
-                .unwrap(),
+        cadmpeg_ir::features::profiles::ProfileRef::Planar(
+            cadmpeg_ir::features::profiles::PlanarProfileRef::sketch_profiles(
+                sketch.clone(),
+                vec![1, 2],
+            )
+            .unwrap(),
         ),
     ];
     assert_eq!(
         crate::design::profile_select::merge_resolved_profile_selections(&sketch, &loops,),
-        Some(cadmpeg_ir::features::ProfileRef::Planar(
-            cadmpeg_ir::features::PlanarProfileRef::sketch_profiles(sketch.clone(), vec![3, 1, 2],)
-                .unwrap()
+        Some(cadmpeg_ir::features::profiles::ProfileRef::Planar(
+            cadmpeg_ir::features::profiles::PlanarProfileRef::sketch_profiles(
+                sketch.clone(),
+                vec![3, 1, 2],
+            )
+            .unwrap()
         ))
     );
 
     let regions = [
-        cadmpeg_ir::features::ProfileRef::Planar(
-            cadmpeg_ir::features::PlanarProfileRef::sketch_regions(
+        cadmpeg_ir::features::profiles::ProfileRef::Planar(
+            cadmpeg_ir::features::profiles::PlanarProfileRef::sketch_regions(
                 sketch.clone(),
                 vec![SketchProfileRegion::loops(4, vec![5]).unwrap()],
             )
             .unwrap(),
         ),
-        cadmpeg_ir::features::ProfileRef::Planar(
-            cadmpeg_ir::features::PlanarProfileRef::sketch_regions(
+        cadmpeg_ir::features::profiles::ProfileRef::Planar(
+            cadmpeg_ir::features::profiles::PlanarProfileRef::sketch_regions(
                 sketch.clone(),
                 vec![SketchProfileRegion::loops(2, Vec::new()).unwrap()],
             )
@@ -1320,8 +1335,8 @@ fn multiple_extrude_profile_groups_merge_only_exact_same_kind_selections() {
     ];
     assert_eq!(
         crate::design::profile_select::merge_resolved_profile_selections(&sketch, &regions,),
-        Some(cadmpeg_ir::features::ProfileRef::Planar(
-            cadmpeg_ir::features::PlanarProfileRef::sketch_regions(
+        Some(cadmpeg_ir::features::profiles::ProfileRef::Planar(
+            cadmpeg_ir::features::profiles::PlanarProfileRef::sketch_regions(
                 sketch.clone(),
                 vec![
                     SketchProfileRegion::loops(4, vec![5],).unwrap(),
@@ -1344,8 +1359,8 @@ fn multiple_extrude_profile_groups_merge_only_exact_same_kind_selections() {
             &sketch,
             &[
                 loops[0].clone(),
-                cadmpeg_ir::features::ProfileRef::Planar(
-                    cadmpeg_ir::features::PlanarProfileRef::sketch_selection(
+                cadmpeg_ir::features::profiles::ProfileRef::Planar(
+                    cadmpeg_ir::features::profiles::PlanarProfileRef::sketch_selection(
                         sketch.clone(),
                         vec!["native-group".into()],
                     )

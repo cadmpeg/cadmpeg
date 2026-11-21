@@ -6,7 +6,9 @@ use crate::records::feature::derived_base::{
 };
 use crate::records::feature::scope::DesignFeatureKind;
 use crate::records::identity::Located;
-use cadmpeg_ir::features::{DistinctMembers, FeatureContent, FeatureEvaluation};
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::selections::DistinctMembers;
+use cadmpeg_ir::features::FeatureContent;
 use std::collections::BTreeMap;
 
 fn fixture(captured: bool) -> (Feature, DesignParameterScope) {

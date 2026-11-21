@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::features::{FeatureOperation, SheetMetalRelief, SheetMetalTransition};
+use crate::features::sheet_metal_forms::{SheetMetalRelief, SheetMetalTransition};
+use crate::features::FeatureOperation;
 use serde_json::json;
 
 #[test]

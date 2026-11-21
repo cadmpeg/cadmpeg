@@ -357,7 +357,7 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
                 model_surface_point_by_id(admission, self.index, self.id, u, v)
             },
         ))
-        .map(|point| point.map(cadmpeg_ir::features::FinitePoint3::get))
+        .map(|point| point.map(cadmpeg_ir::features::geometry::FinitePoint3::get))
         .map_err(resource)?;
         self.points.borrow_mut().insert(bits(uv), point);
         Ok(point)
@@ -600,7 +600,7 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
                 }),
             )
             .map_err(resource)?;
-            let Some(on) = on.map(cadmpeg_ir::features::FinitePoint3::get) else {
+            let Some(on) = on.map(cadmpeg_ir::features::geometry::FinitePoint3::get) else {
                 continue;
             };
             let (gap, uv) = match sweep.motion {

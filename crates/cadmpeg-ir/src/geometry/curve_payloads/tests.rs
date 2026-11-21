@@ -393,7 +393,7 @@ fn a_direction_offset_from_admitted_parts_matches_its_raw_admission() {
 #[test]
 fn admitted_finite_direction_offset_matches_raw_without_a_range() {
     use super::OffsetCurveConstruction;
-    use crate::features::FiniteVector3;
+    use crate::features::geometry::FiniteVector3;
     use crate::geometry::OffsetSide;
     use crate::ids::CurveId;
     use crate::math::Vector3;

@@ -10,10 +10,9 @@ use crate::records::parameters::{DesignParameter, DesignParameterOwner};
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{
-    edge_treatments::{ChamferForm, ChamferGroup, ChamferSpec},
-    EdgeSelection, FeatureDefinition, FeatureOperation,
-};
+use cadmpeg_ir::features::edge_treatments::{ChamferForm, ChamferGroup, ChamferSpec};
+use cadmpeg_ir::features::selections::EdgeSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 
 type Specification = (ChamferSpec, Vec<LossNote>);
@@ -206,7 +205,7 @@ impl Projection<'_, '_> {
             });
         }
         let groups = groups.try_into().unwrap_or_else(|_| {
-            cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
+            cadmpeg_ir::features::selections::NonEmptyMembers::one(ChamferGroup {
                 edges: unresolved_selection(scope, None, losses),
                 spec: ChamferSpec::Unresolved { form: None },
             })

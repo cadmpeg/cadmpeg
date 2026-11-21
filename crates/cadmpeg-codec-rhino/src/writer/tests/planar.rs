@@ -293,7 +293,7 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
     ]);
     ir.geometry.points.push(Point::new(
         PointId::mint("cadir:model:point#free").expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(5.0, 6.0, 7.0))
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(5.0, 6.0, 7.0))
             .expect("a finite position is a point"),
         None,
     ));

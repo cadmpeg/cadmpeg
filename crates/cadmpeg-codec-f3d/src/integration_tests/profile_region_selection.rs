@@ -3,7 +3,8 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_ir::features::{Feature, PlanarProfileRef, ProfileRef, SketchProfileRegion};
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef, SketchProfileRegion};
+use cadmpeg_ir::features::Feature;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchGeometry, SketchPlacement};
 use serde_json::json;

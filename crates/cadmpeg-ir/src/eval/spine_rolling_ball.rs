@@ -14,7 +14,7 @@ use super::surface_first_order;
 use super::surface_jet;
 use super::EvaluationFailure;
 use super::UNREACHED_POINT;
-use crate::features::{FinitePoint3, FiniteVector3};
+use crate::features::geometry::{FinitePoint3, FiniteVector3};
 use crate::geometry::nurbs::NurbsSurface;
 use crate::geometry::surface_payloads::BlendSurfacePayload;
 use crate::geometry::{

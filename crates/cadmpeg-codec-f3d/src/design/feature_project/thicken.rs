@@ -6,10 +6,10 @@ use crate::records::feature::scope::{DesignParameterScope, DesignScopePayload};
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use crate::records::topology::face::DesignFaceOperand;
-use cadmpeg_ir::features::{
-    BodySelection, BooleanKind, FaceSelection, FeatureDefinition, FeatureOperation,
-    SolidFeatureResult, ThickenSide,
-};
+use cadmpeg_ir::features::direct_edit::ThickenSide;
+use cadmpeg_ir::features::operation_settings::{BooleanKind, SolidFeatureResult};
+use cadmpeg_ir::features::selections::{BodySelection, FaceSelection};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::PositiveLength;
 

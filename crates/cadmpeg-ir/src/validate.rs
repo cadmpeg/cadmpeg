@@ -303,10 +303,11 @@ pub fn validate_neutral_with_source_fidelity_for_decode(
 #[cfg(test)]
 mod tests {
     use super::validate_neutral;
+    use crate::features::direct_edit::{SplitBodyTool, SplitFaceTool};
+    use crate::features::parameters::{ConfigurationFeatureState, DesignConfiguration};
+    use crate::features::selections::{BodySelection, FaceSelection};
     use crate::features::{
-        BodySelection, ConfigurationFeatureState, ConfigurationId, DesignConfiguration,
-        FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureOperation, PrincipalPlane,
-        SplitBodyTool, SplitFaceTool,
+        ConfigurationId, Feature, FeatureDefinition, FeatureId, FeatureOperation, PrincipalPlane,
     };
     use crate::math::{Point3, Vector3};
     use crate::sketches::{Sketch, SketchId};
@@ -354,13 +355,13 @@ mod tests {
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            dependencies: crate::features::DistinctMembers::default(),
+            dependencies: crate::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: crate::features::FeatureContent::default(),
 
-            evaluation: crate::features::FeatureEvaluation::from_definition(
+            evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: crate::features::SketchFeatureBinding::Unresolved,
                 }),
@@ -391,15 +392,15 @@ mod tests {
             material: None,
             properties: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
-            bodies: Some(crate::features::DistinctMembers::default()),
+            bodies: Some(crate::features::selections::DistinctMembers::default()),
             parameter_values: BTreeMap::new(),
             feature_states: BTreeMap::from([(
                 feature_id,
                 ConfigurationFeatureState {
-                    evaluation: crate::features::ConfigurationEvaluation::Active {
-                        outputs: crate::features::DistinctMembers::default(),
+                    evaluation: crate::features::parameters::ConfigurationEvaluation::Active {
+                        outputs: crate::features::selections::DistinctMembers::default(),
                     },
-                    dependencies: crate::features::DistinctMembers::default(),
+                    dependencies: crate::features::selections::DistinctMembers::default(),
                     definition: FeatureDefinition::Operation(FeatureOperation::Sketch {
                         sketch: crate::features::SketchFeatureBinding::Planar(Some(sketch_id)),
                     }),
@@ -424,13 +425,14 @@ mod tests {
             ordinal,
             name: None,
             suppressed: Some(false),
-            dependencies: crate::features::DistinctMembers::try_from(dependencies).unwrap(),
+            dependencies: crate::features::selections::DistinctMembers::try_from(dependencies)
+                .unwrap(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: crate::features::FeatureContent::default(),
 
-            evaluation: crate::features::FeatureEvaluation::from_definition(definition),
+            evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         };
         let first = FeatureId::mint("test:model:feature#plane-a").expect("identity grammar");
@@ -503,13 +505,13 @@ mod tests {
                     ordinal: 0,
                     name: None,
                     suppressed: Some(false),
-                    dependencies: crate::features::DistinctMembers::default(),
+                    dependencies: crate::features::selections::DistinctMembers::default(),
                     source_properties: BTreeMap::default(),
                     source_tag: None,
                     source_text: None,
                     source_content: crate::features::FeatureContent::default(),
                     native_ref: None,
-                    evaluation: crate::features::FeatureEvaluation::from_definition(
+                    evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
                         if configuration_local {
                             FeatureDefinition::Operation(FeatureOperation::SplitFace {
                                 targets: FaceSelection::Unresolved,
@@ -531,15 +533,18 @@ mod tests {
                         material: None,
                         properties: BTreeMap::default(),
                         parameter_overrides: BTreeMap::default(),
-                        bodies: Some(crate::features::DistinctMembers::default()),
+                        bodies: Some(crate::features::selections::DistinctMembers::default()),
                         parameter_values: BTreeMap::default(),
                         feature_states: BTreeMap::from([(
                             feature_id.clone(),
                             ConfigurationFeatureState {
-                                evaluation: crate::features::ConfigurationEvaluation::Active {
-                                    outputs: crate::features::DistinctMembers::default(),
-                                },
-                                dependencies: crate::features::DistinctMembers::default(),
+                                evaluation:
+                                    crate::features::parameters::ConfigurationEvaluation::Active {
+                                        outputs:
+                                            crate::features::selections::DistinctMembers::default(),
+                                    },
+                                dependencies: crate::features::selections::DistinctMembers::default(
+                                ),
                                 definition,
                             },
                         )]),
@@ -582,12 +587,13 @@ mod tests {
             ordinal,
             name: None,
             suppressed: Some(false),
-            dependencies: crate::features::DistinctMembers::try_from(dependencies).unwrap(),
+            dependencies: crate::features::selections::DistinctMembers::try_from(dependencies)
+                .unwrap(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: crate::features::FeatureContent::default(),
-            evaluation: crate::features::FeatureEvaluation::from_definition(definition),
+            evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         };
         let plane = FeatureId::mint("test:model:feature#a-plane").expect("identity grammar");
@@ -651,12 +657,13 @@ mod tests {
             ordinal,
             name: None,
             suppressed: Some(false),
-            dependencies: crate::features::DistinctMembers::try_from(dependencies).unwrap(),
+            dependencies: crate::features::selections::DistinctMembers::try_from(dependencies)
+                .unwrap(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: crate::features::FeatureContent::default(),
-            evaluation: crate::features::FeatureEvaluation::from_definition(definition),
+            evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         };
         let plane = FeatureId::mint("test:model:feature#a-plane").expect("identity grammar");
@@ -690,7 +697,7 @@ mod tests {
                     FeatureDefinition::Operation(FeatureOperation::TrimBodiesAtPlane {
                         targets: BodySelection::Unresolved,
                         plane: tool,
-                        keep: crate::features::BodyTrimSide::Reverse,
+                        keep: crate::features::operation_settings::BodyTrimSide::Reverse,
                     }),
                 ),
             ];

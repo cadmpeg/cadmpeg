@@ -1,10 +1,8 @@
 use crate::design::components::paths::LocalOccurrencePaths;
 use crate::loss::F3dLossCode;
 use crate::records::feature::scope::DesignParameterScope;
-use cadmpeg_ir::features::{
-    CapturedComponentPosition, CapturedPositionTransform, Feature, FeatureDefinition,
-    FeatureOperation,
-};
+use cadmpeg_ir::features::tree::{CapturedComponentPosition, CapturedPositionTransform};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
 

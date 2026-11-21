@@ -462,18 +462,19 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
         ordinal,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies).unwrap(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(dependencies)
+            .unwrap(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::History,
-                children: cadmpeg_ir::features::TreeChildren::default(),
+                children: cadmpeg_ir::features::tree::TreeChildren::default(),
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(outputs).unwrap(),
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(outputs).unwrap(),
         ),
         native_ref: None,
     };
@@ -898,8 +899,8 @@ fn nx_intersection_labels_project_without_fabricating_construction_fields() {
         }) if matches!(
             (operands.first(), operands.second(),),
             (
-                cadmpeg_ir::features::BodySelection::Unresolved,
-                cadmpeg_ir::features::BodySelection::Unresolved,
+                cadmpeg_ir::features::selections::BodySelection::Unresolved,
+                cadmpeg_ir::features::selections::BodySelection::Unresolved,
             )
         )));
     }
@@ -965,15 +966,19 @@ fn boolean_target_is_an_independent_intermediate_result_writer() {
 
 #[test]
 fn boolean_target_output_requires_one_resolved_segment_body() {
-    use cadmpeg_ir::features::{BodySelection, BooleanKind, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::operation_settings::BooleanKind;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::ids::BodyId;
 
     let body = BodyId::mint("nx:s0:body#0").expect("identity grammar");
     let definition = FeatureDefinition::Operation(FeatureOperation::Combine {
         operands: cadmpeg_ir::features::CombineOperands::new(
             BodySelection::Resolved {
-                bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![body.clone()])
-                    .expect("distinct bodies"),
+                bodies: cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+                    body.clone()
+                ])
+                .expect("distinct bodies"),
                 native: "target".into(),
             },
             BodySelection::Unresolved,
@@ -983,7 +988,7 @@ fn boolean_target_output_requires_one_resolved_segment_body() {
         op: BooleanKind::Join,
         keep_tools: false,
 
-        destination: cadmpeg_ir::features::CombineDestination::default(),
+        destination: cadmpeg_ir::features::operation_settings::CombineDestination::default(),
     });
     assert_eq!(boolean_target_output(Some(&definition)), Some(&body));
 
@@ -997,7 +1002,7 @@ fn boolean_target_output_requires_one_resolved_segment_body() {
         op: BooleanKind::Join,
         keep_tools: false,
 
-        destination: cadmpeg_ir::features::CombineDestination::default(),
+        destination: cadmpeg_ir::features::operation_settings::CombineDestination::default(),
     });
     assert!(boolean_target_output(Some(&ambiguous)).is_none());
 }
@@ -1015,8 +1020,8 @@ fn topology_inferred_hole_axis_is_not_an_authored_direction() {
                 None,
                 HoleProjection {
                     placements: vec![HolePlacement::Axis {
-                        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
-                        axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
+                        origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
+                        axis: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
                     }],
                     ..HoleProjection::default()
                 },
@@ -1026,8 +1031,8 @@ fn topology_inferred_hole_axis_is_not_an_authored_direction() {
                 placements,
                 ..
             }) if placements.as_deref() == Some(&[HolePlacement::Axis {
-                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
-                axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
+                origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
+                axis: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
             }][..])
         ));
     }
@@ -1035,10 +1040,10 @@ fn topology_inferred_hole_axis_is_not_an_authored_direction() {
 
 #[test]
 fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
-    use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureOperation,
-        LinearTermination, PlanarProfileRef, ProfileRef,
-    };
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     assert_eq!(
         extrude_feature_definition(
@@ -1049,7 +1054,7 @@ fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
         ),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: ProfileRef::Planar(PlanarProfileRef::Native("nx:profile#1".to_string())),
-            direction: cadmpeg_ir::features::ExtrudeDirection::Unresolved {},
+            direction: cadmpeg_ir::features::extents::ExtrudeDirection::Unresolved {},
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Unresolved {},
@@ -1057,7 +1062,7 @@ fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
                 },
             },
             op: BooleanOp::NewBody,
-            start: cadmpeg_ir::features::ExtrudeStart::Unresolved {},
+            start: cadmpeg_ir::features::extents::ExtrudeStart::Unresolved {},
             solid: Some(true),
             face_maker: None,
             inner_wire_taper: None,
@@ -1098,7 +1103,7 @@ fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
 
 #[test]
 fn extrusion_is_new_body_only_for_one_first_written_surface_or_solid_output() {
-    use cadmpeg_ir::features::BooleanOp;
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
     use cadmpeg_ir::topology::BodyKind;
 
     ({

@@ -5,8 +5,8 @@ use super::normalize;
 use cadmpeg_ir::{document::CadIr, features::ParameterId};
 use std::collections::BTreeMap;
 
-fn parameter(id: &str, native_ref: &str) -> cadmpeg_ir::features::DesignParameter {
-    cadmpeg_ir::features::DesignParameter {
+fn parameter(id: &str, native_ref: &str) -> cadmpeg_ir::features::parameters::DesignParameter {
+    cadmpeg_ir::features::parameters::DesignParameter {
         product_definition: None,
         id: ParameterId::mint(format!("synthetic:test:id#{id}")).expect("identity grammar"),
         owner: None,
@@ -14,10 +14,10 @@ fn parameter(id: &str, native_ref: &str) -> cadmpeg_ir::features::DesignParamete
         name: id.to_string(),
         expression: "1 mm".to_string(),
         display: None,
-        value: Some(cadmpeg_ir::features::ParameterValue::Length(
+        value: Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
         )),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some(native_ref.to_string()),
