@@ -21,35 +21,21 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::ids::{BodyId, CoedgeId, EdgeId, FaceId};
-use cadmpeg_ir::math::portable::Portable;
 use cadmpeg_ir::topology::Sense;
 
 use super::expression;
 use super::parameters::{OwnedParameter, ParameterPlan};
 use super::sketch::{CurveGeometry, PlannedSketch, SketchPlan};
 
+use profile::{profile, ProfileLoop};
+
+pub(super) mod profile;
+
 /// The smallest linear tolerance the profile and the faces are checked
 /// with, in mm: the decoder's linear resolution.
 const MIN_LINEAR_TOLERANCE: f64 = 1e-5;
 /// Millimetres per Fusion length unit (cm).
 const MM_PER_CM: f64 = 10.0;
-
-/// One entry of the profile loop: a curve of the planned sketch, and whether
-/// the ring runs it from its end point to its start point.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct LoopEntry {
-    pub(super) curve: usize,
-    pub(super) reversed: bool,
-}
-
-impl LoopEntry {
-    /// The entry's traversal flag: `1` when the ring runs the curve from
-    /// its end point (f3d.md §3.1, "Side-face walk"). The loop entry and
-    /// the sketch links of its side face's start-cap edges store it.
-    pub(super) fn traversal_flag(self) -> u32 {
-        u32::from(self.reversed)
-    }
-}
 
 /// The extrude the design writes as an `Extrude` item.
 #[derive(Debug)]
@@ -59,18 +45,35 @@ pub(super) struct ExtrudePlan<'a> {
     pub(super) sketch: usize,
     /// The number of `Sketch` items before it in the timeline.
     pub(super) after: usize,
-    /// The profile loop in ring order, from the curve of side token `3`.
-    pub(super) ring: Vec<LoopEntry>,
+    /// The loops of the profile region in stored order: the exterior loop
+    /// in ring order from the curve of side token `3`, then the holes.
+    pub(super) profile: Vec<ProfileLoop>,
     pub(super) along: OwnedParameter,
     pub(super) taper: OwnedParameter,
     pub(super) body: &'a BodyId,
     pub(super) start_cap: &'a FaceId,
     pub(super) end_cap: &'a FaceId,
-    /// The side face of each ring entry.
+    /// The side face of each loop entry, in [`ExtrudePlan::entries`] order.
     pub(super) sides: Vec<&'a FaceId>,
-    /// For each ring entry, the coedges of its side face and of the start
+    /// For each loop entry, the coedges of its side face and of the start
     /// cap on the edges the two faces share.
     pub(super) links: Vec<Vec<&'a CoedgeId>>,
+}
+
+impl ExtrudePlan<'_> {
+    /// Each loop entry with its loop and its position in the loop, in
+    /// side-token order.
+    pub(super) fn entries(&self) -> impl Iterator<Item = (&ProfileLoop, usize)> {
+        entries(&self.profile)
+    }
+}
+
+/// Each entry of `profile` with its loop and its position in the loop: the
+/// loops in stored order, each loop's entries in run order.
+fn entries(profile: &[ProfileLoop]) -> impl Iterator<Item = (&ProfileLoop, usize)> {
+    profile
+        .iter()
+        .flat_map(|profile_loop| (0..profile_loop.entries.len()).map(move |at| (profile_loop, at)))
 }
 
 /// What the design writes for the scope's extrude.
@@ -193,7 +196,7 @@ impl<'a> Input<'a, '_> {
         let (sketch, after) = self.sketch()?;
         let planned = &self.sketches.items[sketch];
         let linear = target.tolerances.linear.get().max(MIN_LINEAR_TOLERANCE);
-        let ring = ring(planned, linear / MM_PER_CM)?;
+        let loops = profile(planned, linear / MM_PER_CM)?;
         if planned.mirrored {
             return Err("its sketch is written mirrored on its origin plane");
         }
@@ -210,7 +213,7 @@ impl<'a> Input<'a, '_> {
         }
         self.output()?;
         let faces = Faces::new(target, &body.id, linear, target.tolerances.angular.get())
-            .matched(planned, &ring, distance)
+            .matched(planned, &loops, distance)
             .ok_or("its faces do not match its profile")?;
         let taper_ordinal = ordinal
             .checked_add(1)
@@ -244,7 +247,7 @@ impl<'a> Input<'a, '_> {
             feature: self.feature,
             sketch,
             after,
-            ring,
+            profile: loops,
             along,
             taper,
             body: &body.id,
@@ -409,119 +412,6 @@ impl<'a> Input<'a, '_> {
     }
 }
 
-const NOT_A_LOOP: &str = "its profile is not one loop of lines or one circle";
-
-/// Row 5: the profile loop of `sketch`'s non-construction curves, in ring
-/// order from the curve of side token `3` (f3d.md §3.1, "Side-face walk"),
-/// with endpoints joined within `tolerance` cm. One circle is one entry.
-pub(super) fn ring(
-    sketch: &PlannedSketch<'_>,
-    tolerance: f64,
-) -> Result<Vec<LoopEntry>, &'static str> {
-    let profile = sketch
-        .curves
-        .iter()
-        .enumerate()
-        .filter(|(_, curve)| !curve.construction)
-        .collect::<Vec<_>>();
-    if let [(curve, only)] = profile.as_slice() {
-        if matches!(only.geometry, CurveGeometry::Circle { .. }) {
-            return Ok(vec![LoopEntry {
-                curve: *curve,
-                reversed: false,
-            }]);
-        }
-    }
-    let point = |index: usize| sketch.points.get(index).copied().ok_or(NOT_A_LOOP);
-    let mut lines = Vec::with_capacity(profile.len());
-    for (curve, planned) in &profile {
-        let CurveGeometry::Line { start, end } = planned.geometry else {
-            return Err(NOT_A_LOOP);
-        };
-        lines.push((*curve, point(start)?, point(end)?));
-    }
-    if lines.len() < 3 {
-        return Err(NOT_A_LOOP);
-    }
-    let near = |a: [f64; 2], b: [f64; 2]| (a[0] - b[0]).portable_hypot(a[1] - b[1]) <= tolerance;
-    // Each joint is the end of exactly two lines.
-    for (position, (_, start, end)) in lines.iter().enumerate() {
-        for at in [*start, *end] {
-            let meeting = lines
-                .iter()
-                .enumerate()
-                .filter(|(other, _)| *other != position)
-                .map(|(_, (_, s, e))| usize::from(near(*s, at)) + usize::from(near(*e, at)))
-                .sum::<usize>();
-            if meeting != 1 {
-                return Err(NOT_A_LOOP);
-            }
-        }
-    }
-    let mut used = vec![false; lines.len()];
-    used[0] = true;
-    let mut entries = vec![LoopEntry {
-        curve: lines[0].0,
-        reversed: false,
-    }];
-    let mut corners = vec![lines[0].1];
-    let mut at = lines[0].2;
-    while entries.len() < lines.len() {
-        let (index, reversed, start, end) = lines
-            .iter()
-            .enumerate()
-            .filter(|(index, _)| !used[*index])
-            .find_map(|(index, (_, s, e))| {
-                if near(*s, at) {
-                    Some((index, false, *s, *e))
-                } else if near(*e, at) {
-                    Some((index, true, *e, *s))
-                } else {
-                    None
-                }
-            })
-            .ok_or(NOT_A_LOOP)?;
-        used[index] = true;
-        entries.push(LoopEntry {
-            curve: lines[index].0,
-            reversed,
-        });
-        corners.push(start);
-        at = end;
-    }
-    if !near(at, corners[0]) {
-        return Err(NOT_A_LOOP);
-    }
-    // Twice the signed area: positive for a counterclockwise ring.
-    let area = corners
-        .iter()
-        .zip(corners.iter().cycle().skip(1))
-        .map(|(a, b)| a[0] * b[1] - b[0] * a[1])
-        .sum::<f64>();
-    if area == 0.0 {
-        return Err(NOT_A_LOOP);
-    }
-    if area < 0.0 {
-        entries.reverse();
-        for entry in &mut entries {
-            entry.reversed = !entry.reversed;
-        }
-    }
-    // `C`, the line of the largest record index, is the curve written last.
-    let last = entries
-        .iter()
-        .enumerate()
-        .max_by_key(|(_, entry)| entry.curve)
-        .map(|(position, entry)| (position, entry.reversed))
-        .ok_or(NOT_A_LOOP)?;
-    let first = match last {
-        (position, false) => position,
-        (position, true) => (position + 1) % entries.len(),
-    };
-    entries.rotate_left(first);
-    Ok(entries)
-}
-
 /// A face of the body, as the matching reads it.
 #[derive(Clone, Copy)]
 enum Shape {
@@ -614,12 +504,12 @@ impl<'a> Faces<'a> {
     }
 
     /// Row 10: the start cap, the end cap at `distance` mm and one side face
-    /// per ring entry of the sketch on its origin plane, each the one face
+    /// per loop entry of the sketch on its origin plane, each the one face
     /// of its shape; `None` where a face is missing, ambiguous or left over.
     fn matched(
         &self,
         sketch: &PlannedSketch<'_>,
-        ring: &[LoopEntry],
+        profile: &[ProfileLoop],
         distance: f64,
     ) -> Option<Matched<'a>> {
         let [u_axis, v_axis, normal] = sketch.plane.axes();
@@ -642,9 +532,9 @@ impl<'a> Faces<'a> {
         };
         let start_cap = cap(scale(normal, -1.0), 0.0)?;
         let end_cap = cap(normal, distance)?;
-        let mut sides = Vec::with_capacity(ring.len());
-        for entry in ring {
-            let curve = sketch.curves.get(entry.curve)?;
+        let mut sides = Vec::new();
+        for (profile_loop, at) in entries(profile) {
+            let curve = sketch.curves.get(profile_loop.entries[at].curve)?;
             let side = match curve.geometry {
                 CurveGeometry::Line { start, end } => {
                     let (a, b) = (model(start)?, model(end)?);
@@ -765,12 +655,13 @@ const LINK_CLOSURE: i64 = 1;
 const BODY_REFERENCE: i64 = 1;
 
 /// Name the result body and its faces in `native` (f3d.md §3.1, "Side
-/// faces" and "Side-face walk"; f3d-open-items.md DR-916): the body group
-/// `(3, "E", 1, 0, 0)`, the caps `(1, "1", [E])` and `(1, "2", [E])`, side
-/// token `t` `(digits(t), t, [E])` in ring order from `3`, and on each side
-/// face's edge with the start cap the sketch link of its curve, whose sense
-/// is the traversal flag of its exterior loop entry (f3d.md §3.1, "Sketch
-/// links of the start cap").
+/// faces", "Side-face walk" and "Profile with circular holes";
+/// f3d-open-items.md DR-916): the body group `(3, "E", 1, 0, 0)`, the caps
+/// `(1, "1", [E])` and `(1, "2", [E])`, side token `t` `(digits(t), t, [E])`
+/// in entry order from `3`, and on each side face's edge with the start cap
+/// the sketch link of its curve, whose sense is the traversal flag of an
+/// exterior loop entry and the all-ones word of a hole entry (f3d.md §3.1,
+/// "Sketch links of the start cap").
 pub(super) fn stamp(
     plan: &ExtrudePlan<'_>,
     sketches: &[PlannedSketch<'_>],
@@ -812,9 +703,16 @@ pub(super) fn stamp(
                 ordinal: 0,
             });
     }
-    for (entry, coedges) in plan.ring.iter().zip(&plan.links) {
-        let sense = SketchLinkSense::try_from(i64::from(entry.traversal_flag()))
-            .map_err(|error| CodecError::Malformed(error.into()))?;
+    for ((profile_loop, at), coedges) in plan.entries().zip(&plan.links) {
+        let entry = profile_loop.entries[at];
+        let sense = if profile_loop.exterior {
+            Some(
+                SketchLinkSense::try_from(i64::from(entry.traversal_flag()))
+                    .map_err(|error| CodecError::Malformed(error.into()))?,
+            )
+        } else {
+            None
+        };
         let curve = super::roster::sketches::curve_identity(sketches, plan.sketch, entry.curve)?;
         let curve = i64::try_from(curve)
             .map_err(|_| CodecError::NotImplemented("sketch curve identity".into()))?;
@@ -823,8 +721,8 @@ pub(super) fn stamp(
                 id: format!("f3d:generated:extrude-link#{coedge}"),
                 target: AttributeTarget::Coedge((*coedge).clone()),
                 sketch_curve_id: curve,
-                ref_b: 0,
-                sense: Some(sense),
+                ref_b: super::roster::sketches::CURVE_SECONDARY_IDENTITY,
+                sense,
                 role: LINK_ROLE,
                 closure: LINK_CLOSURE,
             });
