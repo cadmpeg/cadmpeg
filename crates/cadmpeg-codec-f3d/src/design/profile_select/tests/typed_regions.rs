@@ -459,8 +459,8 @@ fn typed_profile_regions_omit_members_whose_profile_reference_is_lost() {
     );
     assert_eq!(
         resolve(&live.group, &live.profile_curves),
-        Some(cadmpeg_ir::features::ProfileRef::Planar(
-            cadmpeg_ir::features::PlanarProfileRef::sketch_regions(
+        Some(cadmpeg_ir::features::profiles::ProfileRef::Planar(
+            cadmpeg_ir::features::profiles::PlanarProfileRef::sketch_regions(
                 sketch_id.clone(),
                 vec![SketchProfileRegion::loops(0, vec![]).unwrap()],
             )
@@ -477,8 +477,8 @@ fn typed_profile_regions_omit_members_whose_profile_reference_is_lost() {
     assert_eq!(live.profile_curves[0].group_member_ordinal, 0);
     assert_eq!(
         resolve(&live.group, &live.profile_curves),
-        Some(cadmpeg_ir::features::ProfileRef::Planar(
-            cadmpeg_ir::features::PlanarProfileRef::sketch_regions(
+        Some(cadmpeg_ir::features::profiles::ProfileRef::Planar(
+            cadmpeg_ir::features::profiles::PlanarProfileRef::sketch_regions(
                 sketch_id,
                 vec![SketchProfileRegion::loops(1, vec![]).unwrap()],
             )
