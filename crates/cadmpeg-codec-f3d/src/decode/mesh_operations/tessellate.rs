@@ -103,9 +103,6 @@ pub(in crate::decode) fn bind_features(
                 }
                 if let Some(count) = parsed.operand_count {
                     notes.property("mesh-tessellate-operand-count", count);
-                    notes.losses.push(F3dLossCode::FeatureMeshTessellateOperandsAssumed.note(format!(
-                        "Mesh tessellation {source} reads the u32 {count} before its operand references as their count."
-                    )));
                 }
                 let mut deviations = parsed.deviations;
                 for (ordinal, operand) in parsed.operands.into_iter().enumerate() {

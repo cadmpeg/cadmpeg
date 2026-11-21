@@ -6,6 +6,13 @@ use cadmpeg_core::CodecError;
 
 const TAIL: [u8; 6] = [1, 1, 0, 0, 0, 0];
 
+pub(crate) const SCOPE_TYPE_GUID: &str = "86133A9B-B604-4283-B9BA-C5D365F72763";
+pub(crate) const SCOPE_BASE_TYPE_GUID: &str = "95644CD5-1338-40F2-8016-1FB68DB06296";
+pub(crate) const SCOPE_TYPE_VERSION: u32 = 3;
+pub(crate) const OPERAND_TYPE_GUID: &str = "7102E543-AD48-4709-B559-286F5F3A7189";
+pub(crate) const OPERAND_BASE_TYPE_GUID: &str = "D0D7E795-ECF7-48A8-A7A3-F983C5A29F8B";
+pub(crate) const OPERAND_TYPE_VERSION: u32 = 1;
+
 /// The parameter-owner slots of a `MeshTessellate` scope, in scope order.
 pub(crate) const OWNER_ROLES: [&str; 4] = [
     "maximum-edge-length",
@@ -27,6 +34,7 @@ pub(crate) struct MeshTessellateScope {
 pub(crate) struct MeshTessellateOperand {
     pub(crate) group: u32,
     pub(crate) body: u32,
+    pub(crate) end: usize,
     pub(crate) deviations: Vec<(&'static str, u32)>,
 }
 
@@ -39,10 +47,10 @@ impl MeshOperationRecords<'_> {
         let record = match self.record(
             index,
             "tessellate scope record",
-            "86133A9B-B604-4283-B9BA-C5D365F72763",
-            "95644CD5-1338-40F2-8016-1FB68DB06296",
+            SCOPE_TYPE_GUID,
+            SCOPE_BASE_TYPE_GUID,
             "Fusion",
-            Some(3),
+            Some(SCOPE_TYPE_VERSION),
         ) {
             Ok(record) => record,
             Err(error) => return Ok(Err(error)),
@@ -58,13 +66,17 @@ impl MeshOperationRecords<'_> {
             .record(
                 index,
                 "tessellation operand record",
-                "7102E543-AD48-4709-B559-286F5F3A7189",
-                "D0D7E795-ECF7-48A8-A7A3-F983C5A29F8B",
+                OPERAND_TYPE_GUID,
+                OPERAND_BASE_TYPE_GUID,
                 "Fusion",
-                Some(1),
+                Some(OPERAND_TYPE_VERSION),
             )?
             .window();
-        read_operand(record)
+        let operand = read_operand(record)?;
+        if record.len() != operand.end {
+            return Err(MeshOperationFraming("tessellation operand length"));
+        }
+        Ok(operand)
     }
 }
 
@@ -173,12 +185,10 @@ pub(crate) fn read_operand(bytes: &[u8]) -> Result<MeshTessellateOperand, MeshOp
             "tessellation-operand-tail-byte:5",
         ],
     )?;
-    if cursor.at != bytes.len() {
-        return Err(MeshOperationFraming("tessellation operand length"));
-    }
     Ok(MeshTessellateOperand {
         group,
         body,
+        end: cursor.at,
         deviations: cursor.deviations,
     })
 }

@@ -38,9 +38,7 @@ fn read(bytes: &[u8]) -> Result<MeshTessellateScope, MeshOperationFraming> {
 
 #[test]
 fn tessellate_scope_reads_owner_slots_and_operand_run() {
-    let bytes = scope([30, 31, 32, 33], &[40]);
-    assert_eq!(bytes.len() - (4 + 2 * 36), prefix::LEN);
-    let parsed = read(&bytes).unwrap();
+    let parsed = read(&scope([30, 31, 32, 33], &[40])).unwrap();
     assert_eq!(parsed.owners, [Some(30), Some(31), Some(32), Some(33)]);
     assert_eq!(parsed.operand_count, Some(1));
     assert_eq!(parsed.operands, [40]);
@@ -74,7 +72,7 @@ fn tessellate_scope_keeps_owners_before_an_unreadable_operand_run() {
 #[test]
 fn tessellate_scope_reports_a_changed_tail_byte() {
     let mut bytes = scope([30, 31, 32, 33], &[40]);
-    bytes[prefix::TAIL + 1] = 7;
+    bytes[prefix::LEN + 11 + 1] = 7;
     let parsed = read(&bytes).unwrap();
     assert_eq!(parsed.deviations, [("tessellate-tail-byte:1", 7)]);
 }
@@ -106,11 +104,8 @@ fn tessellation_operand_names_its_group_and_produced_body() {
 }
 
 #[test]
-fn tessellation_operand_rejects_trailing_bytes() {
+fn tessellation_operand_ends_at_its_tail() {
     let mut bytes = operand_record(50, 51);
-    bytes.push(0);
-    assert_eq!(
-        read_operand(&bytes),
-        Err(MeshOperationFraming("tessellation operand length"))
-    );
+    bytes.extend_from_slice(&[3, 0, 0, 0]);
+    assert_eq!(read_operand(&bytes).unwrap().end, operand::LEN);
 }

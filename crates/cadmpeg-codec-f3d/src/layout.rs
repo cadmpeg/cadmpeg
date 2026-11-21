@@ -1623,15 +1623,15 @@ pub(crate) mod mesh_convert_output_prefix {
 
 /// Byte offsets for the `mesh_tessellate_scope_prefix` record.
 ///
-/// Spec §3.1. Record length 86 B.
+/// Spec §3.1. Record length 69 B.
 ///
 /// ```text
-/// The scope envelope follows the six tail bytes.
+/// The counted operand references and the six tail bytes follow the count.
 /// ```
 pub(crate) mod mesh_tessellate_scope_prefix {
     /// Record length in bytes. Spec §3.1.
     #[cfg(test)]
-    pub(crate) const LEN: usize = 86;
+    pub(crate) const LEN: usize = 69;
     /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
     pub(crate) const ZERO_RUN_9: usize = 11;
     /// Offset of `flag` (`u8`). Spec §3.1.
@@ -1642,9 +1642,6 @@ pub(crate) mod mesh_tessellate_scope_prefix {
     pub(crate) const EDGE_LENGTH_OWNER: usize = 21;
     /// Offset of `operand_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const OPERAND_COUNT: usize = 65;
-    /// Offset of `tail` (`bytes[6]`). Spec §3.1.
-    #[cfg(test)]
-    pub(crate) const TAIL: usize = 80;
 }
 
 /// Byte offsets for the `mesh_tessellate_operand` record.

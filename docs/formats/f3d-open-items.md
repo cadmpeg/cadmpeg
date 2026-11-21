@@ -3969,12 +3969,22 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Note.** When the distinct members of the one selection group of an Extrude match no Sketch point, Sketch curve, or history binding and outnumber the atomic regions of the line, arc, and circle curves of a Sketch with non-construction text, the decoder takes the excess members as glyph picks. When the member count equals the count of non-whitespace characters of the Sketch text, the profile names the text entities and the decoder reports `feature.profile-text-glyphs-assumed`. Otherwise a Sketch with one profile loop selects that loop, any other Sketch keeps the group as a native selection within the Sketch, and the decoder reports `feature.profile-text-glyphs-native`. A Sketch with text and exactly one profile loop resolves to that loop when the distinct members are at most its atomic regions.
 
-### DR-893. `MeshTessellate` operand run and produced mesh body
+### DR-893. Collection listing of a tessellated mesh body
 
-**Question.** Is the u32 at offset 65 of a `MeshTessellate` scope the count of its tessellation-operand references, and how does the mesh body that an operand names join its mesh collection?
+**Question.** Which later operation removes a `MeshTessellate` produced body from its mesh collection's body list?
 
-**Known.** The u32 is `1`, and one tessellation-operand reference follows it. Each operand names one group record and one produced mesh body. The produced mesh body record stores a reference to the `MeshTessellate` scope. Every mesh collection of the design lists no body. The GUID record of the produced body is the output-geometry reference of a later mesh operation scope.
+**Known.** A produced body that no later mesh operation names is listed by its collection. In a design where `MeshRepair`, `MeshReduce`, and `Convert Mesh` follow the `MeshTessellate` feature, the GUID record of the produced body is the output geometry of the `MeshReduce` scope, and every mesh collection lists no body.
 
-**Need.** A `MeshTessellate` feature over two bodies, and a `MeshTessellate` feature with no later mesh operation.
+**Need.** A `MeshTessellate` feature followed by a `MeshReduce` feature and no conversion, and one followed by a `Convert Mesh` feature alone.
 
-**Note.** The decoder reads the u32 as the operand count and reports `feature.mesh-tessellate-operands-assumed`. The mesh graph joins no body of a collection that lists no body; such a design reports `mesh.container-unjoined`.
+**Note.** The mesh graph joins no body that names a `MeshTessellate` scope. A design whose collection lists such a body reports `mesh.container-undecoded`; a design whose collections list no body reports `mesh.container-unjoined`.
+
+### DR-920. Scene slot of a tessellated mesh body
+
+**Question.** What does the Scene-node slot of a `MeshTessellate` produced body name, and which Scene node displays the body?
+
+**Known.** The slot names a record of type `4912A0EC-8A3D-4FE2-9F0F-A5C2CB493A07`, base-type GUID `804A1AC8-DCA8-4204-AED5-1E64BE8B7CAB`, type version `0`, and add-in name `Scene`. Each record is 95 bytes: its indexed header, 34 zero bytes, byte `01`, six f64 values, and byte `01`, the form of the Scene-state record. The six values are the maximum and minimum corners of the body in centimetres. The design's Scene nodes of type `702B9CD2-537C-429E-8CC4-22BEEEB98C37` are as many as the source bodies. The produced bodies were saved by Fusion 2706.1.17.
+
+**Need.** A mesh import saved by Fusion 2706.1.17, and a `MeshTessellate` feature saved by an earlier Fusion version.
+
+**Note.** The mesh graph requires a Scene node in that slot; such a design reports `mesh.container-undecoded`.
