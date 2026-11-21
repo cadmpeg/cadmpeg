@@ -213,6 +213,43 @@ A condition this document states on the content of a document is a condition of 
 - **What a checked type states.** A checked type states only a condition that its value decides from its own content, its fields and the records it holds, with no id, name, path, or state resolved against another record. It states only a condition every decoder can meet for every source: where a source states content that breaks it, the decoder gives that content up (§3.3) or states it in another form this document defines. Every other condition is a rule of part 10.
 - **Rules.** A document can hold a value that breaks a rule of part 10: reading admits it, and validation reports it at the rule's severity and never refuses the document (§3.3). Part 10 restates no condition of a checked type.
 
+### 2.9 Historical input-edge geometry
+
+`HistoricalEdgeGeometry` holds one input-state edge's interior sample, tangent,
+endpoints, adjacent local faces, and support normals. Its optional `topology`
+field is a `HistoricalEdgeTopologyRef`; an absent field is omitted.
+
+```text
+HistoricalEdgeTopologyRef { history_body: HistoryBodyId,
+  path: HistoricalEdgePath, faces: [HistoricalFaceTopologyRef] }
+HistoricalEdgePath = Edge { edge: EdgeId } | Loop { loop_id: LoopId }
+HistoricalFaceTopologyRef { face: HistoricalFaceId,
+  topology_faces: NonEmptyMembers<FaceId> }
+```
+
+The path tags are `edge` and `loop`. `history_body` resolves in
+`model.history_bodies`; its `consumed_by` equals the input state's `input_of`.
+The source history, previous state and body slot identify that snapshot. State
+identifiers are scoped to their source history. The path and its face targets
+resolve inside the selected body's topology nest. Each reached record passes the
+nest's reference and geometry checks.
+
+An edge path selects one solved curve with a finite admitted parameter interval.
+A loop path selects one closed ordered coedge ring. Its edge domains cover the
+source outline once in its segment order and direction. Each selected
+edge has two incident coedge uses. Seam uses retain their multiplicity. Each
+adjacent face has a solved surface. Face binding keys are distinct, belong to the
+sample's local adjacent faces, and cover that set. Targets within each binding
+are distinct. Their union equals the selected path's adjacent-face incidence.
+Several target faces represent the parts of one split source face.
+
+Samples agree with the referenced carriers and mapped surfaces within the
+document's geometric tolerances. The referenced body transform maps carrier
+positions into the comparison frame. The carrier identities and parameter
+domains are those of the source state. Body, path and topology-face targets are
+typed identity references. Local edge and face keys are members of the input
+state.
+
 ## 3. The contract
 
 ### 3.1 Decode

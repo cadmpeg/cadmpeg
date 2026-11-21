@@ -11,8 +11,9 @@ use super::{
     FeatureResultTopology, FeatureTreeNodeRole, FeatureUnitPlaneFrame,
     FilledSurfaceBoundaryCondition, FlexForm, FlexMode, FuzzyTolerance, GeometryImportFormat,
     HelicalSweepLaw, HelicalSweepTravel, HelixConstructionStyle, HelixShape,
-    HistoricalEdgeGeometry, InnerWireTaper, NoGeneratedSection, ParameterPmi, PmiDimensionSubtype,
-    PolygonSideCount, PrincipalPlane, RevolutionFuseOrder, RibDraft, RibSide,
+    HistoricalEdgeGeometry, HistoricalEdgePath, HistoricalEdgeTopologyRef,
+    HistoricalFaceTopologyRef, InnerWireTaper, NoGeneratedSection, ParameterPmi,
+    PmiDimensionSubtype, PolygonSideCount, PrincipalPlane, RevolutionFuseOrder, RibDraft, RibSide,
     RuledCurveOrientation, RuledSurfaceCorner, ScaleFactors, SheetMetalBendPosition,
     SheetMetalHeightDatum, SheetMetalHemBendPosition, SheetMetalHemDirection,
     SheetMetalThicknessSide, ShellJoin, ShellMode, SolidSweepOperation, SurfaceContinuity,
@@ -45,7 +46,7 @@ rewrite_scalar!(FeatureEllipticArc);
 rewrite_scalar!(FeatureImageBounds);
 rewrite_record!(FeatureInputTopology, []; {id, input_of, bodies, faces, edges, vertices, edge_geometry, native_ref});
 rewrite_record!(EdgeSupport, []; {face, normal, with_edge});
-rewrite_record!(HistoricalEdgeGeometry, []; {edge, interior, tangent, start, end, faces, supports});
+rewrite_record!(HistoricalEdgeGeometry, []; {edge, topology, interior, tangent, start, end, faces, supports});
 rewrite_scalar!(FeatureLineSegment);
 rewrite_record!(FeatureResultMembers, []; {bodies, faces, edges, vertices});
 rewrite_record!(FeatureResultTopology, []; {id, output_of, members, native_ref});
@@ -100,3 +101,7 @@ rewrite_record!(super::SheetMetalRelief, []; {form, width, depth, minimum_remnan
 rewrite_record!(super::SheetMetalTransition, []; {form, radius});
 
 rewrite_scalar!(super::sheet_metal::SheetMetalContourThicknessSide);
+
+rewrite_record!(HistoricalEdgeTopologyRef, []; {history_body, path, faces});
+rewrite_record!(HistoricalFaceTopologyRef, []; {face, topology_faces});
+rewrite_enum!(HistoricalEdgePath, []; {Edge {edge}, Loop {loop_id}});

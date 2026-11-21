@@ -60,6 +60,7 @@ constants below.
 | Rhino draft                                      | `RHINO_DRAFT_CHECKS` = core + `Annotations` | `ArenaOrder` excluded (pre-finalize)                                                                                                    |
 | Rhino instance                                   | `RHINO_INSTANCE_CHECKS` = core              | `ArenaOrder` excluded; no mid-expansion finalize                                                                                        |
 | CATIA admission                                  | `CATIA_ADMISSION_CHECKS` = core             | finalize first; pending native identities via admit helper                                                                              |
+| Fusion history-body and input-edge admission | full `validate_neutral_for_decode` on a body nest and its origin identity; binding admission adds the owning input state and its referenced bodies | A failed input-edge binding retains its samples and operands and reports `feature.historical-edge-topology-unbound`. Independent admitted bindings remain present. |
 | IGES rejection                                   | full `validate_neutral`                     | classified keep-full: `DRAFT_CORE_CHECKS` ≡ full errors on all 78 IGES golden fixtures, every one of them `iges:5.3-fixed-ascii`        |
 | SLDPRT export precondition (`writer` input)      | full `validate_neutral`                     | keep-full: refusal depends on non-core Checks (`Counts`, …); `SLDPRT_EXPORT_PRECONDITION_CHECKS` is the documented draft/topology floor |
 | SLDPRT writer postcondition (after bake/prepare) | full `validate_neutral`                     | postcondition on the writer's own transform; not replaced                                                                               |
@@ -72,8 +73,7 @@ native validators).
 
 No route differs per dialect. A route is selected by the pipeline stage that
 reaches it — draft candidate, mid-expansion instance, admission after
-finalize, export precondition, writer postcondition — and every one of the six
-gates above runs the same check set for every dialect of its format. There is
+finalize, export precondition, writer postcondition — and each gate above runs the same check set for every dialect of its format. There is
 no per-dialect row here because there is no per-dialect route.
 
 What is dialect-keyed is the evidence each classification rests on. Fixture

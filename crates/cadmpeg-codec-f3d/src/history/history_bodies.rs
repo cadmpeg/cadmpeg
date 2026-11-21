@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Stored feature results and bodies consumed by initial cuts.
+//! Stored feature results and consumed input-body states.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use cadmpeg_core::decode::{work_units, DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::{CadIr, Model, Topology};
+use cadmpeg_ir::document::{CadIr, Topology};
 use cadmpeg_ir::features::{
     BodySelection, BooleanOp, DistinctMembers, Feature, FeatureContent, FeatureDefinition,
     FeatureEvaluation, FeatureOperation,
@@ -28,6 +29,11 @@ use crate::records::topology::body_recipe::DesignBodyRecipeOperand;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 
+mod input_edges;
+use input_edges::{
+    admit_bound_edges, binding_findings, input_bindings, input_edge_bodies, source_carriers_solved,
+};
+
 const MAX_HISTORY_BODIES: usize = 64;
 const MAX_HISTORY_BODY_WORK: usize = 1 << 21;
 
@@ -41,6 +47,13 @@ struct Want<'a> {
     slot: i64,
     capture_current: bool,
     consumed: bool,
+    input: Option<&'a cadmpeg_ir::features::FeatureInputTopology>,
+    bindings: RefCell<
+        Vec<(
+            cadmpeg_ir::ids::HistoricalEdgeId,
+            cadmpeg_ir::features::HistoricalEdgeTopologyRef,
+        )>,
+    >,
     /// A slot that the state names only by the persistent design identity of
     /// its body. `slot` is not read while this is present.
     identity: Option<BodyIdentity>,
@@ -183,6 +196,8 @@ pub(crate) fn derived_base_snapshots(
                 slot,
                 capture_current: true,
                 consumed: false,
+                input: None,
+                bindings: RefCell::default(),
             }],
             &mut bodies,
             &work,
@@ -253,6 +268,9 @@ pub(crate) fn fill(
                 identity: None,
                 capture_current: false,
                 consumed: false,
+
+                input: None,
+                bindings: RefCell::default(),
             });
         }
     }
@@ -278,6 +296,9 @@ pub(crate) fn fill(
                     identity: None,
                     capture_current: false,
                     consumed: false,
+
+                    input: None,
+                    bindings: RefCell::default(),
                 }),
             }
         }
@@ -295,6 +316,9 @@ pub(crate) fn fill(
             identity: Some(identity),
             capture_current: false,
             consumed: false,
+
+            input: None,
+            bindings: RefCell::default(),
         });
     }
     let work = WorkBudget::new(MAX_HISTORY_BODY_WORK);
@@ -358,6 +382,8 @@ fn result_state_wants<'a>(
                 slot: super::stable_ref(body.as_str())?,
                 capture_current,
                 consumed: false,
+                input: None,
+                bindings: RefCell::default(),
             })
         })
         .collect();
@@ -481,12 +507,13 @@ pub(crate) fn inject_consumed_failure(failure: fn() -> CodecError) {
 pub(crate) fn fill_consumed(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
-    model: &mut Model,
+    ir: &mut CadIr,
     native: &F3dNative,
     primary_brep: Option<&str>,
     context: &ConsumerContext,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
+    let model = &mut ir.model;
     let inputs = Inputs {
         features: &model.features,
         scopes: &native.design_parameter_scopes,
@@ -498,7 +525,11 @@ pub(crate) fn fill_consumed(
         recipes: &native.construction_recipes,
     };
     let mut wants = BTreeMap::<usize, Vec<Want<'_>>>::new();
+    let mut edge_wants = BTreeMap::<usize, Vec<Want<'_>>>::new();
     for feature in &model.features {
+        for (history, want) in input_edge_bodies(feature, inputs, &model.feature_input_topologies) {
+            edge_wants.entry(history).or_default().push(want);
+        }
         if let Some((history, want)) = initial_cut_body(feature, inputs, losses) {
             wants.entry(history).or_default().push(want);
         }
@@ -517,7 +548,53 @@ pub(crate) fn fill_consumed(
         &work,
         losses,
     );
-    contain_consumed_failure(ctx, result, losses)
+    contain_consumed_failure(ctx, result, losses)?;
+    let result = fill_requests(
+        ctx,
+        scan,
+        inputs.histories,
+        &edge_wants,
+        &mut model.history_bodies,
+        &work,
+        losses,
+    );
+    contain_consumed_failure(ctx, result, losses)?;
+    let candidates = edge_wants
+        .values()
+        .flatten()
+        .filter_map(|want| want.input.map(|input| (&input.id, want.bindings.take())))
+        .flat_map(|(state, bindings)| {
+            bindings
+                .into_iter()
+                .map(move |(edge, reference)| (state.clone(), edge, reference))
+        })
+        .collect::<Vec<_>>();
+    drop(wants);
+    drop(edge_wants);
+    if candidates.is_empty() {
+        admit_bound_edges(
+            &model.features,
+            &mut model.feature_input_topologies,
+            &[],
+            losses,
+        );
+        return Ok(());
+    }
+    let mut input_topologies = model.feature_input_topologies.clone();
+    for state in &mut input_topologies {
+        for geometry in &mut state.edge_geometry {
+            let mut matches = candidates
+                .iter()
+                .filter(|(input, edge, _)| *input == state.id && *edge == geometry.edge);
+            if let (Some((_, _, reference)), None) = (matches.next(), matches.next()) {
+                geometry.topology = Some(reference.clone());
+            }
+        }
+    }
+    let findings = binding_findings(ctx, model, &input_topologies, ir.tolerances)?;
+    admit_bound_edges(&model.features, &mut input_topologies, &findings, losses);
+    model.feature_input_topologies = input_topologies;
+    Ok(())
 }
 
 fn contain_consumed_failure(
@@ -634,6 +711,8 @@ fn initial_cut_body<'a>(
             identity: None,
             state: previous.state_id,
             slot: *slot,
+            input: None,
+            bindings: RefCell::default(),
             consumed: true,
             capture_current: false,
         },
@@ -996,6 +1075,9 @@ fn fill_history(
                                     identity: None,
                                     capture_current: false,
                                     consumed: false,
+
+                                    input: None,
+                                    bindings: RefCell::default(),
                                 };
                                 &resolved
                             }
@@ -1104,6 +1186,17 @@ fn build(
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => return Ok(None),
     };
+    if want.input.is_some()
+        && brep
+            .bodies
+            .iter()
+            .filter(|body| super::stable_ref(body.id.as_str()) == Some(want.slot))
+            .take(2)
+            .count()
+            != 1
+    {
+        return Ok(None);
+    }
     let Some(body) = brep
         .bodies
         .iter()
@@ -1117,6 +1210,8 @@ fn build(
     let Extract::Nest(topology) = extract(ctx, &scratch.geometry, body.as_str())? else {
         return Ok(None);
     };
+    let mut bindings = input_bindings(want, &topology, nest_index);
+    bindings.retain(|(_, reference)| source_carriers_solved(&scratch.geometry, reference));
     let records = keep_records.then(|| (*topology).clone());
     let mut map = IdentityMap::new(|id: &str| {
         let (_, rest) = id
@@ -1131,6 +1226,15 @@ fn build(
         Ok(format!("f3d:history-body:{kind}#h{nest_index:04}-{key}"))
     });
     let mut topology = topology.rewrite_identities(ctx, &mut map)?;
+    for (_, reference) in &mut bindings {
+        reference.path = reference.path.clone().rewrite_identities(ctx, &mut map)?;
+        for face in &mut reference.faces {
+            face.topology_faces = face
+                .topology_faces
+                .clone()
+                .rewrite_identities(ctx, &mut map)?;
+        }
+    }
     map.finish()?;
     sort_by_identity(&mut topology);
     ctx.charge_entities(
@@ -1153,6 +1257,9 @@ fn build(
         },
         want.origin,
     )?;
+    if body.is_some() {
+        want.bindings.borrow_mut().extend(bindings);
+    }
     Ok(body.map(|body| Built { body, records }))
 }
 
@@ -1230,9 +1337,21 @@ fn admit(
     origin: &Feature,
 ) -> Result<Option<HistoryBody>, CodecError> {
     let mut scratch = CadIr::empty();
-    // Admission checks the nest and the link to the origin. The stub carries
-    // only the identity, so no operand of the real feature is validated here.
-    scratch.model.features.push(Feature {
+    scratch.model.features.push(origin_stub(origin));
+    scratch.model.history_bodies.push(body);
+    let report = cadmpeg_ir::validate::validate_neutral_for_decode(ctx, &scratch, Vec::new())?;
+    let valid = !report
+        .findings
+        .iter()
+        .any(|finding| finding.severity == cadmpeg_ir::report::Severity::Error);
+    let Some(body) = scratch.model.history_bodies.pop() else {
+        return Err(CodecError::malformed("history body admission"));
+    };
+    Ok(valid.then_some(body))
+}
+
+fn origin_stub(origin: &Feature) -> Feature {
+    Feature {
         product_definition: None,
         id: origin.id.clone(),
         ordinal: 0,
@@ -1249,17 +1368,7 @@ fn admit(
             },
         )),
         native_ref: None,
-    });
-    scratch.model.history_bodies.push(body);
-    let report = cadmpeg_ir::validate::validate_neutral_for_decode(ctx, &scratch, Vec::new())?;
-    let valid = !report
-        .findings
-        .iter()
-        .any(|finding| finding.severity == cadmpeg_ir::report::Severity::Error);
-    let Some(body) = scratch.model.history_bodies.pop() else {
-        return Err(CodecError::malformed("history body admission"));
-    };
-    Ok(valid.then_some(body))
+    }
 }
 
 enum Extract {

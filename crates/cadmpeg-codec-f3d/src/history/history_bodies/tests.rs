@@ -2,14 +2,18 @@
 use super::*;
 
 mod historical_split;
+mod input_edges;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 use cadmpeg_ir::attributes::{AttributeTarget, SourceAttribute};
+use cadmpeg_ir::document::Model;
 use cadmpeg_ir::features::{
     BodySelection, DistinctMembers, FeatureContent, FeatureDefinition, FeatureEvaluation,
     FeatureId, FeatureOperation,
 };
+
+const EPS_CLOSED_SAMPLE: f64 = 1.0e-12;
 
 fn feature(native: &str) -> Feature {
     Feature {
@@ -294,6 +298,8 @@ fn run_roles(
             identity: None,
             capture_current: false,
             consumed: false,
+            input: None,
+            bindings: RefCell::default(),
         })
         .collect::<Vec<_>>();
     let mut bodies = Vec::new();
@@ -633,6 +639,8 @@ fn a_consumed_snapshot_keeps_the_input_geometry_and_consumer() {
                     state: 12,
                     slot: 1,
                     consumed: true,
+                    input: None,
+                    bindings: RefCell::default(),
                     capture_current: false,
                 }],
                 &mut bodies,
@@ -686,15 +694,15 @@ fn consumed_fixture(
         design_parameter_scopes: vec![scope.clone()],
         ..F3dNative::default()
     };
-    let mut model = Model::default();
-    model.features = features;
+    let mut ir = CadIr::empty();
+    ir.model.features = features;
     let mut losses = Vec::new();
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         assert_eq!(container::history_breps(scan).count(), 1);
         fill_consumed(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             scan,
-            &mut model,
+            &mut ir,
             &native,
             Some(name),
             &ConsumerContext {
@@ -705,7 +713,7 @@ fn consumed_fixture(
         )
         .unwrap();
     });
-    (model, losses)
+    (ir.model, losses)
 }
 
 #[test]
@@ -1001,6 +1009,8 @@ fn a_captured_derived_result_preserves_the_current_body() {
             slot: 1,
             capture_current: true,
             consumed: false,
+            input: None,
+            bindings: RefCell::default(),
         }],
         &mut bodies,
         &WorkBudget::new(MAX_HISTORY_BODY_WORK),
@@ -1599,6 +1609,9 @@ fn a_split_identity_that_matches_two_bodies_reports_the_undecoded_input() {
             identity: Some(identity),
             capture_current: false,
             consumed: true,
+
+            input: None,
+            bindings: RefCell::default(),
         }],
         &mut bodies,
         &WorkBudget::new(MAX_HISTORY_BODY_WORK),

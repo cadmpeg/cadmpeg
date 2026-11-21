@@ -7,8 +7,8 @@ use crate::assets::AssetId;
 use crate::ids::ProductDefinitionId;
 use crate::ids::{
     BodyId, CurveId, EdgeId, FaceId, FeatureInputTopologyId, FeatureResultTopologyId,
-    HistoricalBodyId, HistoricalEdgeId, HistoricalFaceId, HistoricalVertexId, OccurrenceId,
-    VertexId,
+    HistoricalBodyId, HistoricalEdgeId, HistoricalFaceId, HistoricalVertexId, HistoryBodyId,
+    LoopId, OccurrenceId, VertexId,
 };
 use crate::math::{Point2, Point3, Vector3};
 use crate::products::JointId;
@@ -1839,6 +1839,14 @@ pub struct EdgeSupport {
 pub struct HistoricalEdgeGeometry {
     /// Edge of the owning input state.
     pub edge: HistoricalEdgeId,
+    /// Exact topology in the consumed history-body nest.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_edge_geometry_topology"
+    )]
+    #[cfg_attr(feature = "schema", schemars(with = "HistoricalEdgeTopologyRef"))]
+    pub topology: Option<HistoricalEdgeTopologyRef>,
     /// Point on the edge at the midpoint of its carrier parameter interval.
     pub interior: FinitePoint3,
     /// Unit carrier tangent at `interior`, in the carrier's parameter
@@ -1868,6 +1876,68 @@ pub struct HistoricalEdgeGeometry {
     /// Support faces of an unequal two-distance chamfer that selects this edge.
     /// Empty for every other edge.
     pub supports: Vec<EdgeSupport>,
+}
+
+impl HistoricalEdgeGeometry {
+    /// Construct a sampled edge with its local identity and interior point.
+    #[must_use]
+    pub fn new(edge: HistoricalEdgeId, interior: FinitePoint3) -> Self {
+        Self {
+            edge,
+            topology: None,
+            interior,
+            tangent: None,
+            start: None,
+            end: None,
+            faces: DistinctMembers::default(),
+            supports: Vec::new(),
+        }
+    }
+}
+
+/// Exact carrier path and adjacent-face correspondence in a consumed body.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct HistoricalEdgeTopologyRef {
+    /// Body that holds the selected input state.
+    #[cfg_attr(feature = "schema", schemars(extend("x-cadir-reference" = "model.history_bodies")))]
+    pub history_body: HistoryBodyId,
+    /// Exact edge or ordered outline.
+    pub path: HistoricalEdgePath,
+    /// Correspondence of state-local support faces to nest faces.
+    pub faces: Vec<HistoricalFaceTopologyRef>,
+}
+
+/// Exact edge or ordered coedge ring inside one history-body nest.
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum HistoricalEdgePath {
+    /// One edge and its admitted carrier interval.
+    Edge {
+        /// Edge in the selected nest.
+        #[cfg_attr(feature = "schema", schemars(extend("x-cadir-reference" = "history_body.topology.edges")))]
+        edge: EdgeId,
+    },
+    /// One closed ordered ring.
+    Loop {
+        /// Loop in the selected nest.
+        #[cfg_attr(feature = "schema", schemars(extend("x-cadir-reference" = "history_body.topology.loops")))]
+        loop_id: LoopId,
+    },
+}
+
+/// Topology faces that represent one historical adjacent face.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct HistoricalFaceTopologyRef {
+    /// Face in the owning input state.
+    pub face: HistoricalFaceId,
+    /// Faces in the selected history-body nest.
+    #[cfg_attr(feature = "schema", schemars(extend("x-cadir-reference" = "history_body.topology.faces")))]
+    pub topology_faces: NonEmptyMembers<FaceId>,
 }
 
 /// One member of a feature result state: a body, face, edge, or vertex.
@@ -9770,3 +9840,9 @@ cadmpeg_core::named_optional_field!(
 cadmpeg_core::named_optional_field!(deserialize_dimensions, [PositiveLength; 3], "dimensions");
 cadmpeg_core::named_optional_field!(deserialize_suppressed, bool, "suppressed");
 cadmpeg_core::named_optional_field!(deserialize_feature_row_wire_suppressed, bool, "suppressed");
+
+cadmpeg_core::named_optional_field!(
+    deserialize_edge_geometry_topology,
+    HistoricalEdgeTopologyRef,
+    "topology"
+);
