@@ -43,6 +43,7 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::FinitePoint2;
 use cadmpeg_ir::CadIr;
 
+use crate::brep::patch::Trims;
 use crate::layers::Resource;
 use crate::loss::UsdLossCode;
 use crate::schema::curves::Curves;
@@ -208,7 +209,12 @@ struct Tallies {
     /// `UsdPhysics` body properties that were not carried, by attribute
     /// path.
     physics_properties: Vec<String>,
-    trims: usize,
+    /// Patches whose trim loops do not bound a face, with the reason.
+    trims: Vec<String>,
+    /// Patches whose trim loop directions disagree with their nesting.
+    trim_regions: Vec<String>,
+    /// Patches whose faces have no loop, with the reason.
+    boundaries: Vec<String>,
     ranges: usize,
     display_colors: usize,
     materials: BTreeSet<String>,
@@ -1280,16 +1286,67 @@ impl Builder<'_, '_, '_, '_> {
             self.tallies.rejected_patches.push(prim.path.clone());
             return Ok(None);
         };
-        if !patch.trims.is_empty() || patch.trims_malformed {
-            self.tallies.trims += 1;
-        }
-        if patch.range_narrowed {
-            self.tallies.ranges += 1;
-        }
         let Some(surface) = self.patch_surface(&patch) else {
             self.tallies.rejected_patches.push(prim.path.clone());
             return Ok(None);
         };
+        let reason = match crate::brep::patch::bounded(&patch) {
+            Ok(bounded) => {
+                match bounded.trims {
+                    Trims::Absent => {}
+                    Trims::Read { region_assumed } => {
+                        if region_assumed {
+                            self.tallies.trim_regions.push(prim.path.clone());
+                        }
+                    }
+                    Trims::Dropped(reason) => {
+                        self.tallies.trims.push(format!("{}: {reason}", prim.path));
+                    }
+                }
+                if bounded.range_ignored {
+                    self.tallies.ranges += 1;
+                }
+                let first = self.ir.geometry.faces.len();
+                match self.brep_body(prim, key, &bounded.brep)? {
+                    Ok(body) => {
+                        let faces: Vec<_> = self
+                            .ir
+                            .geometry
+                            .faces
+                            .get(first..)
+                            .unwrap_or_default()
+                            .iter()
+                            .map(|face| face.id.clone())
+                            .collect();
+                        for (ordinal, face) in faces.into_iter().enumerate() {
+                            let binding = if ordinal == 0 {
+                                key.to_owned()
+                            } else {
+                                format!("{key}#face{ordinal}")
+                            };
+                            self.material(prim, &binding, AppearanceTarget::Face(face))?;
+                        }
+                        return Ok(Some(body));
+                    }
+                    Err(reason) => reason,
+                }
+            }
+            Err(reason) => reason,
+        };
+        self.tallies
+            .boundaries
+            .push(format!("{}: {reason}", prim.path));
+        self.unbounded_patch(prim, key, &patch, surface)
+    }
+
+    /// Adds the sheet body of `patch` as one face with no loop.
+    fn unbounded_patch(
+        &mut self,
+        prim: &Prim<'_>,
+        key: &str,
+        patch: &PatchData,
+        surface: NurbsSurface,
+    ) -> Result<Option<cadmpeg_ir::ids::BodyId>, CodecError> {
         let surface_id = crate::ids::surface(key);
         self.ir.geometry.surfaces.push(Surface {
             id: surface_id.clone(),
@@ -1787,19 +1844,39 @@ fn tally_losses(tallies: &Tallies, issues: &Issues, metrics: &Metrics) -> Vec<Lo
     );
     push(
         UsdLossCode::NurbsTrimNotTransferred,
-        tallies.trims > 0,
+        !tallies.trims.is_empty(),
         format!(
-            "trim curves of {} NURBS patches were not transferred; each face covers its \
-             whole patch",
-            tallies.trims
+            "trim curves of {} NURBS patches were not transferred; each face is bounded by \
+             the sides of its parameter range: {}",
+            tallies.trims.len(),
+            joined(tallies.trims.iter().cloned())
+        ),
+    );
+    push(
+        UsdLossCode::NurbsTrimRegionAssumed,
+        !tallies.trim_regions.is_empty(),
+        format!(
+            "the trim loops of {} NURBS patches run against the direction of their nesting \
+             depth; each face keeps the region inside an odd number of loops: {}",
+            tallies.trim_regions.len(),
+            joined(tallies.trim_regions.iter().cloned())
+        ),
+    );
+    push(
+        UsdLossCode::NurbsBoundaryNotTransferred,
+        !tallies.boundaries.is_empty(),
+        format!(
+            "{} NURBS patches have no boundary; each is one face with no loop: {}",
+            tallies.boundaries.len(),
+            joined(tallies.boundaries.iter().cloned())
         ),
     );
     push(
         UsdLossCode::NurbsRangeNotTransferred,
         tallies.ranges > 0,
         format!(
-            "{} NURBS patches state a range narrower than their knot domain; each face covers \
-             the knot domain",
+            "{} NURBS patches state a range outside their knot domain; each face is bounded \
+             by the knot domain on that axis",
             tallies.ranges
         ),
     );

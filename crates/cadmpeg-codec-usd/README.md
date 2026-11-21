@@ -26,7 +26,7 @@ prototypes, and sublayers are not composed.
 | `Mesh` | general body and tessellation, fan-triangulated |
 | face `GeomSubset` | tessellation triangle group |
 | `BasisCurves`, `NurbsCurves` | wire body: NURBS curve carriers, edges, vertices |
-| `NurbsPatch` | sheet body: one face on a NURBS surface |
+| `NurbsPatch` | sheet body: faces on a NURBS surface, bounded by the trim loops or by the sides of the parameter range |
 | constant `primvars:displayColor` | body color |
 | `UsdPreviewSurface` material | appearance bound to the tessellation |
 | `metersPerUnit`, `upAxis`, `defaultPrim` | source attributes; lengths in millimetres |
@@ -40,7 +40,8 @@ that the scene options of the write (`EncodeInput::scene`) select, with one
 root prim per root occurrence. Each occurrence becomes an `Xform` prim with a `matrix4d` placement, and a
 definition placed more than once is written once under the abstract
 `Prototypes` prim. Tessellations become `Mesh` prims, faces on NURBS surfaces
-of untessellated bodies become `NurbsPatch` prims, wire edges and free curves
+of untessellated bodies become `NurbsPatch` prims (a body with no `BrepArray`
+prim writes its trimmed faces with their classified loops as trim curves), wire edges and free curves
 become `NurbsCurves` prims, and appearances become `UsdPreviewSurface`
 materials. What the layer cannot carry is reported as a `usd/export.*` loss.
 

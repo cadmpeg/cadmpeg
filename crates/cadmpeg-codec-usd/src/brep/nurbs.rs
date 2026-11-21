@@ -5,6 +5,124 @@ use cadmpeg_ir::math::portable::Portable;
 
 /// Ternary-search steps that refine a nearest-point parameter.
 const NEAREST_ITERATIONS: usize = 80;
+/// Samples of each knot span that compare a curve with its knots removed
+/// against the original.
+const REMOVAL_CHECKS: usize = 8;
+
+/// The distance between two homogeneous rows.
+fn row_distance(a: &[f64], b: &[f64]) -> f64 {
+    a.iter()
+        .zip(b)
+        .map(|(x, y)| (x - y).powi(2))
+        .sum::<f64>()
+        .sqrt()
+}
+
+/// `a · x + b · y` of two homogeneous rows.
+fn combined(a: f64, x: &[f64], b: f64, y: &[f64]) -> Vec<f64> {
+    x.iter().zip(y).map(|(x, y)| a * x + b * y).collect()
+}
+
+/// Removes the knot at index `last` (its last occurrence, of multiplicity
+/// `multiplicity`) up to `multiplicity` times from `knots` and `rows`, while
+/// each removal changes the homogeneous control polygon by at most
+/// `tolerance` (The NURBS Book, A5.8). Returns the number of removals.
+fn remove_knot(
+    degree: usize,
+    knots: &mut Vec<f64>,
+    rows: &mut Vec<Vec<f64>>,
+    last: usize,
+    multiplicity: usize,
+    tolerance: f64,
+) -> Option<usize> {
+    let value = *knots.get(last)?;
+    let order = degree + 1;
+    let mut first = last.checked_sub(degree)?;
+    let mut end = last.checked_sub(multiplicity)?;
+    if first == 0 || end + 1 >= rows.len() {
+        return Some(0);
+    }
+    let mut removed = 0;
+    while removed < multiplicity {
+        let offset = first - 1;
+        let width = end + 2 - offset;
+        let mut temp: Vec<Vec<f64>> = (0..width).map(|_| Vec::new()).collect();
+        temp[0].clone_from(&rows[offset]);
+        temp[width - 1].clone_from(&rows[end + 1]);
+        let (mut i, mut j) = (first, end);
+        let (mut ii, mut jj) = (1, end - offset);
+        while j > i + removed {
+            let alpha_i = (value - knots[i]) / (knots[i + order + removed] - knots[i]);
+            let alpha_j = (value - knots[j - removed]) / (knots[j + order] - knots[j - removed]);
+            temp[ii] = combined(
+                1.0 / alpha_i,
+                &rows[i],
+                -(1.0 - alpha_i) / alpha_i,
+                &temp[ii - 1],
+            );
+            temp[jj] = combined(
+                1.0 / (1.0 - alpha_j),
+                &rows[j],
+                -alpha_j / (1.0 - alpha_j),
+                &temp[jj + 1],
+            );
+            i += 1;
+            ii += 1;
+            j -= 1;
+            jj -= 1;
+        }
+        let removable = if j < i + removed {
+            row_distance(&temp[ii - 1], &temp[jj + 1]) <= tolerance
+        } else {
+            let alpha_i = (value - knots[i]) / (knots[i + order + removed] - knots[i]);
+            let blend = combined(
+                alpha_i,
+                temp.get(ii + removed + 1)?,
+                1.0 - alpha_i,
+                &temp[ii - 1],
+            );
+            row_distance(&rows[i], &blend) <= tolerance
+        };
+        if !removable {
+            break;
+        }
+        let (mut i, mut j) = (first, end);
+        while j > i + removed {
+            rows[i].clone_from(&temp[i - offset]);
+            rows[j].clone_from(&temp[j - offset]);
+            i += 1;
+            j -= 1;
+        }
+        removed += 1;
+        first = first.checked_sub(1)?;
+        end += 1;
+        if first == 0 || end + 1 >= rows.len() {
+            break;
+        }
+    }
+    if removed == 0 {
+        return Some(0);
+    }
+    for index in last + 1..knots.len() {
+        knots[index - removed] = knots[index];
+    }
+    knots.truncate(knots.len() - removed);
+    let fout = (2 * last - multiplicity - degree) / 2;
+    let (mut i, mut j) = (fout, fout);
+    for step in 1..removed {
+        if step % 2 == 1 {
+            i += 1;
+        } else {
+            j -= 1;
+        }
+    }
+    for index in i + 1..rows.len() {
+        rows[j] = rows[index].clone();
+        j += 1;
+    }
+    rows.truncate(j);
+    Some(removed)
+}
 
 /// A NURBS curve of `N` coordinates with one weight per control point.
 #[derive(Debug, Clone, PartialEq)]
@@ -113,6 +231,74 @@ impl<const N: usize> Nurbs<N> {
             *rows = inserted;
             knots.insert(span + 1, value);
         }
+    }
+
+    /// The same curve with each interior knot removed as often as the curve
+    /// allows within `tolerance`, or the curve itself when no knot can be
+    /// removed or the reduced curve departs from it by more than
+    /// `tolerance`.
+    pub(crate) fn without_knots(&self, tolerance: f64) -> Self {
+        self.reduced(tolerance).unwrap_or_else(|| self.clone())
+    }
+
+    fn reduced(&self, tolerance: f64) -> Option<Self> {
+        let [low, high] = self.domain()?;
+        let mut knots = self.knots.clone();
+        let mut rows = self.homogeneous();
+        let lightest = self.weights.iter().copied().fold(f64::INFINITY, f64::min);
+        let largest = self
+            .points
+            .iter()
+            .map(|point| point.iter().map(|value| value * value).sum::<f64>().sqrt())
+            .fold(0.0, f64::max);
+        let row_tolerance = tolerance * lightest / (1.0 + largest);
+        let mut interior: Vec<f64> = knots
+            .iter()
+            .copied()
+            .filter(|knot| low < *knot && *knot < high)
+            .collect();
+        interior.dedup();
+        let mut removed = 0;
+        for value in interior {
+            let last = knots.iter().rposition(|knot| *knot == value)?;
+            let multiplicity = knots.iter().filter(|knot| **knot == value).count();
+            removed += remove_knot(
+                self.degree,
+                &mut knots,
+                &mut rows,
+                last,
+                multiplicity,
+                row_tolerance,
+            )?;
+        }
+        if removed == 0 {
+            return None;
+        }
+        let reduced = Self::from_homogeneous(self.degree, knots, &rows)?;
+        if reduced.knots.len() != reduced.points.len() + self.degree + 1 {
+            return None;
+        }
+        let spans = self.points.len().checked_sub(self.degree)?.max(1);
+        let count = spans.checked_mul(REMOVAL_CHECKS)?;
+        let count_value = cadmpeg_core::convert::f64_from_index(count)?;
+        for index in 0..=count {
+            let t =
+                low + (high - low) * cadmpeg_core::convert::f64_from_index(index)? / count_value;
+            let (a, b) = (self.point_at(t)?, reduced.point_at(t)?);
+            let gap = a
+                .iter()
+                .zip(b)
+                .map(|(x, y)| (x - y).powi(2))
+                .sum::<f64>()
+                .sqrt();
+            if !matches!(
+                gap.partial_cmp(&tolerance),
+                Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
+            ) {
+                return None;
+            }
+        }
+        Some(reduced)
     }
 
     /// The part of the curve on `[start, end]`, `start < end`, clamped at
