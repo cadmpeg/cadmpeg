@@ -1238,6 +1238,12 @@ In a result-body envelope, the passive body-reference run names Body presentatio
 
 A Base Feature result uses its current ASM state's records and transform, with subtype ordinals from the complete stream. Later changes to the body slot retain the earlier geometry and topology in the record archive.
 
+A Base Feature scope whose stored bodies match no body of the final model stores the bodies its history state inserts, one for each stored body entity suffix. The stored bodies of such a scope are the bodies of that state alone.
+
+A Split Body feature that selects its target bodies in its input state names state-local body slots of the preceding history state. A selected slot that a later state deletes or revises holds that body only in the preceding state. That body is the complete reference-closed body its slot has in the preceding state's record table.
+
+A Split Body feature whose target is one body-recipe operand names its target body by the recipe Design id and selector. The target is the body slot of the input state whose body generic-tag group of entity kind `3` stores that Design id and a Design reference equal to the selector. The input state is the state that the Split state's transition names as its predecessor. A body slot that carries the group is the target only when no other body slot of the input state carries an equal pair and the Split transition updates or deletes the slot.
+
 A solid cut `Extrude` that changes the sole body of its preceding ASM state and retains its slot in the same BREP history cuts that body. The preceding state's records and transform give the body before the cut. Subtype ordinals come from the complete BREP stream.
 
 The ordered body entity suffixes define the stored result-body set. A body reference retains its role in the result set when its target is unresolved. This set defines the Base Feature results independently of the historical affected-body set. Each suffix belongs to the Design stream that contains the scope and joins that stream's active BREP body map. A zero body count defines an empty result set. It does not select all bodies in the stream. The current and previous ASM identities define the result transition independently of the specialized scope payload. Each body entity reference in the transition belongs to the BREP blob that contains the history. Equal entity references in different BREP blobs have separate identities. A unique transition identifies the bodies that it changes; a body-map entry identifies the active solved body in its BREP namespace.

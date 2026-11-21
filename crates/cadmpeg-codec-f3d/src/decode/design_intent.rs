@@ -876,21 +876,6 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             }
         }
     }
-    let (history_bodies, remaining_work) = crate::history::history_bodies::fill(
-        ctx,
-        scan,
-        crate::history::history_bodies::Inputs {
-            features: &model.features,
-            scopes: &design.design_parameter_scopes,
-            histories: &design.asm_histories,
-            bindings: &scope_histories,
-            primary_brep: geometry.primary_brep,
-        },
-        derived_snapshots,
-        &mut losses,
-    )?;
-    model.history_bodies = history_bodies;
-    design.history_body_consumers.remaining_work = remaining_work;
     crate::history::bind_sweep_result_modes(&mut model.features, geometry.bodies);
     losses.extend(crate::design::feature_project::sweep_fallback::project(
         &mut model.features,
@@ -953,6 +938,25 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             geometry.primary_brep,
             &mut losses,
         ));
+    // After the body selections: a Split names its input-state bodies there.
+    let (history_bodies, remaining_work) = crate::history::history_bodies::fill(
+        ctx,
+        scan,
+        crate::history::history_bodies::Inputs {
+            features: &model.features,
+            scopes: &design.design_parameter_scopes,
+            histories: &design.asm_histories,
+            bindings: &scope_histories,
+            primary_brep: geometry.primary_brep,
+            groups: &design.design_construction_operand_groups,
+            operands: &design.design_body_recipe_operands,
+            recipes: &prereqs.construction_recipes,
+        },
+        derived_snapshots,
+        &mut losses,
+    )?;
+    model.history_bodies = history_bodies;
+    design.history_body_consumers.remaining_work = remaining_work;
     losses.extend(crate::history::bind_feature_face_selections(
         &mut model.features,
         &mut model.feature_input_topologies,
