@@ -562,7 +562,9 @@ fn a_named_or_pcurve_bearing_curve_bounded_face_keeps_the_sheet_a_shell() {
 /// The disc of `ap242_geometric_set.p21`, its loop split into two
 /// half-circle edges on the one boundary circle.
 fn disc_split_into_two_edges() -> CadIr {
+    use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::ids::{CoedgeId, EdgeId, PointId, VertexId};
+    use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::topology::{EdgeCarrier, EdgeEnds, Point, Vertex};
     let source = StepCodec::default()
         .decode(
@@ -598,8 +600,7 @@ fn disc_split_into_two_edges() -> CadIr {
     let middle = VertexId::mint("test:surface-set:vertex#half").unwrap();
     geometry.points.push(Point::new(
         point.clone(),
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(-5.0, 0.0, 0.0))
-            .unwrap(),
+        FinitePoint3::new(Point3::new(-5.0, 0.0, 0.0)).unwrap(),
         None,
     ));
     geometry.vertices.push(Vertex {
