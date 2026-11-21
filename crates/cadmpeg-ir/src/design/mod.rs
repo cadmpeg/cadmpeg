@@ -23,6 +23,7 @@ pub mod feature;
 mod identity_rewrite;
 pub mod ids;
 pub mod names;
+pub(crate) mod normalize;
 pub mod ops;
 pub mod options;
 pub mod parameter;

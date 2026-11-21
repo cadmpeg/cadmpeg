@@ -343,7 +343,8 @@ impl CadIr {
         scope: &ProductDefinitionId,
         at: &Position,
     ) -> Option<&CurrentState> {
-        self.design_scope(scope)?
+        self.design
+            .design_scope(scope)?
             .current
             .iter()
             .find(|current| &current.at == at)
