@@ -693,6 +693,30 @@ and reports that choice. A header metadata loss, an unverified implementation
 level, or an out-of-range schema object identifier retains every header record
 as exact source-fidelity bytes under `step:file:header#<byte-offset>`.
 
+CADIR decision: the first `FILE_DESCRIPTION`, `FILE_NAME`, and `FILE_SCHEMA`
+records supply source attributes. A key names the record and its EXPRESS
+attribute:
+
+| Key                                      | Header attribute                        |
+| ---------------------------------------- | --------------------------------------- |
+| `file_description.description.<n>`      | `FILE_DESCRIPTION.description[n]`       |
+| `file_description.implementation_level`  | `FILE_DESCRIPTION.implementation_level` |
+| `file_name.name`                         | `FILE_NAME.name`                        |
+| `file_name.time_stamp`                   | `FILE_NAME.time_stamp`                  |
+| `file_name.author.<n>`                   | `FILE_NAME.author[n]`                   |
+| `file_name.organization.<n>`             | `FILE_NAME.organization[n]`             |
+| `file_name.preprocessor_version`         | `FILE_NAME.preprocessor_version`        |
+| `file_name.originating_system`           | `FILE_NAME.originating_system`          |
+| `file_name.authorization`                | `FILE_NAME.authorization`               |
+| `file_schema.schema_identifiers.<n>`     | `FILE_SCHEMA.schema_identifiers[n]`     |
+
+`<n>` is the zero-based position in the source list, and every list member
+holding a non-blank decodable string supplies an attribute. A value is the
+whole string after §4 escape decoding, with control characters left out; a
+string longer than its effective length below keeps every character. A string
+that is omitted, does not decode, or holds no non-whitespace character
+supplies no attribute.
+
 `FILE_DESCRIPTION` strings and every `FILE_NAME` string attribute have an
 effective length of at most 256 characters. A non-empty `FILE_NAME` timestamp
 uses the complete extended calendar-date and time-of-day form

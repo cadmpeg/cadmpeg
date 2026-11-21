@@ -136,7 +136,7 @@ fn check_owner(
                 .find(|record| record.id == *attribute)
                 .is_some_and(|record| {
                     record.values.iter().any(|value| {
-                        matches!(value, AttributeValue::Parameter(named) if *named == parameter.id)
+                        matches!(value, Some(AttributeValue::Parameter(named)) if *named == parameter.id)
                     })
                 });
             if !names {

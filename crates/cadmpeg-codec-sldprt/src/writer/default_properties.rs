@@ -128,10 +128,10 @@ fn same_attribute(left: &SourceAttribute, right: &SourceAttribute) -> bool {
             .iter()
             .zip(&right.values)
             .all(|(left, right)| match (left, right) {
-                (AttributeValue::Float(left), AttributeValue::Float(right)) => {
+                (Some(AttributeValue::Float(left)), Some(AttributeValue::Float(right))) => {
                     left.get().to_bits() == right.get().to_bits()
                 }
-                (AttributeValue::Vector(left), AttributeValue::Vector(right)) => {
+                (Some(AttributeValue::Vector(left)), Some(AttributeValue::Vector(right))) => {
                     left.len() == right.len()
                         && left
                             .iter()
