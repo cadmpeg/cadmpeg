@@ -2791,7 +2791,16 @@ fn bind_operand_list_combine_bodies(
         }
     };
     let mut tool_slots = Some(Vec::new());
+    let mut tool_nodes = std::collections::HashSet::new();
+    let mut distinct_tools = Vec::new();
     for tool in operation.tools.iter() {
+        if tool
+            .body_node
+            .is_some_and(|node| !tool_nodes.insert(node.record_index))
+        {
+            continue;
+        }
+        distinct_tools.push(tool);
         match body_slot(tool.body_node) {
             Ok(slot) if Some(slot) == target_slot => {
                 refuse(
@@ -2823,7 +2832,7 @@ fn bind_operand_list_combine_bodies(
         .ok()?;
     }
     let mut rows = Vec::new();
-    for (slot, tool) in tool_slots?.into_iter().zip(operation.tools.iter()) {
+    for (slot, tool) in tool_slots?.into_iter().zip(distinct_tools) {
         rows.push(body_member(
             crate::ids::history_input_body_id(&prefix, slot),
             design_record(tool.record_index),

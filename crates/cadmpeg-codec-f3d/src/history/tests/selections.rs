@@ -1864,6 +1864,19 @@ mod operand_list_combine {
         assert_eq!(input_body_slots(&tools), [3, 1]);
     }
 
+    #[test]
+    fn tools_that_name_one_browser_node_select_one_body() {
+        let history = history(&[&[], &[1], &[1, 2], &[1, 2, 3], &[2]]);
+        let ((target, tools), losses) = bind_with_losses(
+            operation(node(200), &[node(300), node(100), node(300)]),
+            &history,
+            &creators(),
+        );
+        assert_eq!(input_body_slots(&target), [2]);
+        assert_eq!(input_body_slots(&tools), [3, 1]);
+        assert_eq!(operand_refusals(&losses), 0);
+    }
+
     fn assert_target_only(selections: &(BodySelection, BodySelection), slot: i64) {
         assert_eq!(input_body_slots(&selections.0), [slot], "{selections:?}");
         assert!(
@@ -1888,7 +1901,6 @@ mod operand_list_combine {
             (node(200), vec![None, node(100)], 2),
             (node(200), vec![node(300), None], 2),
             (node(200), vec![node(300), node(999)], 2),
-            (node(200), vec![node(300), node(300)], 2),
         ] {
             let (selections, losses, shared_body) =
                 bind_with_outcome(operation(target, &tools), &history, &creators());

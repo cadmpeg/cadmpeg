@@ -64,19 +64,27 @@ fn resolve_tool(
     })
 }
 
-/// Resolve every tool of `scope`. Each entry is the proven tool or the reason
-/// that it stays native.
+/// Resolve every tool body of `scope` by its tool ordinal. Each entry is the
+/// proven tool or the reason that it stays native. A tool that names the
+/// browser node of an earlier tool is that tool's body and has no entry.
 fn resolve_tools(
     operation: &crate::records::feature::combine::DesignCombineOperation,
     stream: Option<&str>,
     combine_ordinal: u64,
     inputs: &Inputs<'_>,
-) -> Vec<Result<ResolvedTool, &'static str>> {
-    let mut resolved = Vec::<Result<ResolvedTool, &'static str>>::new();
-    for tool in operation.tools.iter() {
+) -> Vec<(usize, Result<ResolvedTool, &'static str>)> {
+    let mut resolved = Vec::<(usize, Result<ResolvedTool, &'static str>)>::new();
+    let mut tool_nodes = std::collections::HashSet::new();
+    for (ordinal, tool) in operation.tools.iter().enumerate() {
+        if tool
+            .body_node
+            .is_some_and(|node| !tool_nodes.insert(node.record_index))
+        {
+            continue;
+        }
         let mut entry = resolve_tool(tool, stream, combine_ordinal, inputs);
         if let Ok(candidate) = &entry {
-            let repeated = resolved.iter().any(|existing| {
+            let repeated = resolved.iter().any(|(_, existing)| {
                 existing
                     .as_ref()
                     .is_ok_and(|existing| existing.local_id == candidate.local_id)
@@ -85,7 +93,7 @@ fn resolve_tools(
                 entry = Err("another tool names the same body");
             }
         }
-        resolved.push(entry);
+        resolved.push((ordinal, entry));
     }
     resolved
 }
@@ -108,7 +116,7 @@ pub(crate) fn bind(
     bindings: &[DesignBodyBinding],
 ) -> Vec<LossNote> {
     let mut losses = Vec::new();
-    let mut updates = Vec::<(usize, Vec<Result<ResolvedTool, &'static str>>)>::new();
+    let mut updates = Vec::<(usize, Vec<(usize, Result<ResolvedTool, &'static str>)>)>::new();
     {
         let inputs = Inputs {
             scopes,
@@ -164,18 +172,17 @@ pub(crate) fn bind(
     }
     for (index, tools) in updates {
         let feature = &mut features[index];
-        for (ordinal, tool) in tools.iter().enumerate() {
+        for (ordinal, tool) in &tools {
             let Ok(tool) = tool else {
                 continue;
             };
-            insert_property(feature, ordinal, "generator", tool.generator.as_str());
+            insert_property(feature, *ordinal, "generator", tool.generator.as_str());
             if tool.generator != feature.id {
                 feature.dependencies.insert(tool.generator.clone());
             }
         }
         let unproven = tools
             .iter()
-            .enumerate()
             .filter_map(|(ordinal, tool)| {
                 tool.as_ref()
                     .err()
@@ -195,7 +202,7 @@ pub(crate) fn bind(
         };
         let refs = tools
             .into_iter()
-            .flatten()
+            .filter_map(|(_, tool)| tool.ok())
             .map(|tool| GeneratedBodyRef::new(tool.generator, tool.local_id))
             .collect::<Result<Vec<_>, _>>();
         let Some(selection) = refs
