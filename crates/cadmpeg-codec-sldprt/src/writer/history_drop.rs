@@ -263,11 +263,11 @@ pub(super) fn historical_selections_note(ir: &CadIr) -> Option<LossNote> {
 /// holds (§3.4):
 /// - a fillet's tangency weight, for which the record has no field, is not
 ///   written;
-/// - each owned parameter whose length is a construction value the record
+/// - each owned parameter whose value is a construction value the record
 ///   reads from a positional dimension (`sldprt.md`, Keywords history) is
-///   written under that name, when exactly one owned parameter holds that
-///   length and the feature owns no parameter of a positional or named
-///   construction dimension already.
+///   written under that name, when every such value of the feature has
+///   exactly one owned holder and the feature owns no parameter of a
+///   positional or named construction dimension already.
 ///
 /// Runs after [`equations_as_displayed_values`], so no expression names a
 /// renamed parameter. The rewrites come back as [`KeywordsRewrites`], named
@@ -309,20 +309,26 @@ pub(super) fn foreign_records_as_keywords(ir: &mut CadIr) -> KeywordsRewrites {
         if owned.iter().any(|parameter| {
             matches!(
                 parameter.name.as_str(),
-                "D1" | "D2" | "Depth" | "Depth2" | "Radius"
+                "D1" | "D2" | "Depth" | "Depth2" | "Radius" | "Thickness"
             )
         }) {
             continue;
         }
-        let mut renames = Vec::new();
-        for (name, length) in lengths {
-            let mut holders = owned.iter().enumerate().filter(|(_, parameter)| {
-                matches!(parameter.value, Some(ParameterValue::Length(value)) if value.get() == length)
-            });
-            if let (Some((index, _)), None) = (holders.next(), holders.next()) {
-                renames.push((index, name));
-            }
-        }
+        let renames = lengths
+            .into_iter()
+            .map(|(name, length)| {
+                let mut holders = owned.iter().enumerate().filter(|(_, parameter)| {
+                    matches!(parameter.value, Some(ParameterValue::Length(value)) if value.get() == length)
+                });
+                match (holders.next(), holders.next()) {
+                    (Some((index, _)), None) => Some((index, name)),
+                    _ => None,
+                }
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(renames) = renames else {
+            continue;
+        };
         for (index, name) in renames {
             let parameter = &mut *owned[index];
             rewrites.renamed.push((
@@ -336,22 +342,30 @@ pub(super) fn foreign_records_as_keywords(ir: &mut CadIr) -> KeywordsRewrites {
 }
 
 /// The positional dimensions a Keywords record of `definition` reads a
-/// construction length from, each with the length the definition states: a
-/// constant fillet radius from `D1`, a blind extrusion depth from `D1` and a
-/// second blind depth from `D2`.
+/// construction value from, each with the value the definition states: a
+/// constant fillet radius, a blind extrusion depth and a shell thickness from
+/// `D1`, a second blind depth from `D2`. A chamfer reads its values in
+/// dimension order and keeps its names.
 fn positional_lengths(definition: &FeatureDefinition) -> Vec<(&'static str, f64)> {
     use cadmpeg_ir::features::edge_treatments::RadiusSpec;
     use cadmpeg_ir::features::{ExtrudeExtent, LinearTermination};
 
-    match definition {
-        FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) => match &**groups {
+    let FeatureDefinition::Operation(operation) = definition else {
+        return Vec::new();
+    };
+    match operation {
+        FeatureOperation::Fillet { groups } => match &**groups {
             [group] => match group.radius {
                 RadiusSpec::Constant { radius } => vec![("D1", radius.get())],
                 _ => Vec::new(),
             },
             _ => Vec::new(),
         },
-        FeatureDefinition::Operation(FeatureOperation::Extrude { extent, .. }) => match extent {
+        FeatureOperation::Shell {
+            thickness: Some(thickness),
+            ..
+        } => vec![("D1", thickness.get())],
+        FeatureOperation::Extrude { extent, .. } => match extent {
             ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
                 match side.termination {
                     LinearTermination::Blind { length } => vec![("D1", length.get())],

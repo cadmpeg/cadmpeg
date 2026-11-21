@@ -501,7 +501,26 @@ fn push_length_parameter(
     name: &str,
     value: f64,
 ) {
-    use cadmpeg_ir::features::{DesignParameter, DistinctMembers, ParameterId, ParameterValue};
+    push_parameter(
+        ir,
+        owner,
+        name,
+        format!("{value} mm"),
+        cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(value).unwrap(),
+        ),
+    );
+}
+
+/// Push a parameter `name` = `expression` of `value` owned by `owner`.
+fn push_parameter(
+    ir: &mut cadmpeg_ir::CadIr,
+    owner: &cadmpeg_ir::features::FeatureId,
+    name: &str,
+    expression: String,
+    value: cadmpeg_ir::features::ParameterValue,
+) {
+    use cadmpeg_ir::features::{DesignParameter, DistinctMembers, ParameterId};
 
     ir.model.parameters.push(DesignParameter {
         product_definition: None,
@@ -516,11 +535,9 @@ fn push_length_parameter(
         )
         .unwrap(),
         name: name.into(),
-        expression: format!("{value} mm"),
+        expression,
         display: None,
-        value: Some(ParameterValue::Length(
-            cadmpeg_ir::scalar::Length::new(value).unwrap(),
-        )),
+        value: Some(value),
         dependencies: DistinctMembers::default(),
         properties: std::collections::BTreeMap::new(),
         pmi: None,
@@ -721,6 +738,126 @@ fn a_blind_extrude_of_another_format_decodes_back_with_its_depth_parameter() {
         .collect::<Vec<_>>();
     names.sort_unstable();
     assert_eq!(names, ["D1", "d2"]);
+}
+
+#[test]
+fn a_distance_angle_chamfer_of_another_format_decodes_back_with_its_parameter_names() {
+    use cadmpeg_ir::features::edge_treatments::{ChamferGroup, ChamferSpec};
+    use cadmpeg_ir::features::{
+        EdgeSelection, FeatureDefinition, FeatureOperation, NonEmptyMembers, ParameterValue,
+    };
+
+    let mut ir = cube_with_foreign_history();
+    let angle = std::f64::consts::FRAC_PI_4;
+    let id = push_foreign_feature(&mut ir, "bevel", "Bevel", |state, _, edge| {
+        FeatureDefinition::Operation(FeatureOperation::Chamfer {
+            groups: NonEmptyMembers::one(ChamferGroup {
+                edges: EdgeSelection::historical(
+                    state,
+                    vec![edge],
+                    "other:design:edge-operand#bevel".into(),
+                )
+                .unwrap(),
+                spec: ChamferSpec::DistanceAngle {
+                    distance: cadmpeg_ir::scalar::PositiveLength::new(1.5).unwrap(),
+                    angle: cadmpeg_ir::scalar::InteriorAngle::new(angle).unwrap(),
+                },
+            }),
+            flip_direction: false,
+        })
+    });
+    push_length_parameter(&mut ir, &id, "d3", 1.5);
+    push_parameter(
+        &mut ir,
+        &id,
+        "d4",
+        "45 deg".into(),
+        ParameterValue::Angle(cadmpeg_ir::scalar::Angle::new(angle).unwrap()),
+    );
+    let losses = plan_losses(&ir);
+    assert!(
+        loss(&losses, "writer.features-omitted").is_none(),
+        "{losses:#?}"
+    );
+
+    let decoded = crate::test_support::ir::encode_decode(&ir);
+    let bevel = decoded
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Bevel"))
+        .expect("the chamfer decodes back");
+    let FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) =
+        bevel.evaluation.definition()
+    else {
+        panic!("{:?}", bevel.evaluation.definition());
+    };
+    assert!(
+        matches!(
+            &**groups,
+            [ChamferGroup {
+                spec: ChamferSpec::DistanceAngle { distance, angle },
+                ..
+            }] if distance.get() == 1.5 && angle.get().to_degrees().round() == 45.0
+        ),
+        "{groups:?}"
+    );
+    let mut names = decoded
+        .model
+        .parameters
+        .iter()
+        .filter(|parameter| parameter.owner.as_ref() == Some(&bevel.id))
+        .map(|parameter| parameter.name.as_str())
+        .collect::<Vec<_>>();
+    names.sort_unstable();
+    assert_eq!(names, ["d3", "d4"]);
+}
+
+#[test]
+fn a_shell_of_another_format_decodes_back_with_its_thickness() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+
+    let mut ir = cube_with_foreign_history();
+    let id = push_foreign_feature(&mut ir, "hollow", "Hollow", |state, face, _| {
+        FeatureDefinition::Operation(FeatureOperation::Shell {
+            bodies: None,
+            removed_faces: FaceSelection::historical(
+                state,
+                vec![face],
+                "other:design:face-operand#hollow".into(),
+            )
+            .unwrap(),
+            thickness: cadmpeg_ir::scalar::PositiveLength::new(2.0),
+            outward: Some(false),
+            mode: None,
+            join: None,
+            resolve_intersections: None,
+            allow_self_intersections: None,
+        })
+    });
+    push_length_parameter(&mut ir, &id, "d5", 2.0);
+    push_length_parameter(&mut ir, &id, "d6", 7.0);
+
+    let decoded = crate::test_support::ir::encode_decode(&ir);
+    let hollow = decoded
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Hollow"))
+        .expect("the shell decodes back");
+    assert!(
+        matches!(
+            hollow.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Shell {
+                removed_faces: FaceSelection::Native(faces),
+                thickness: Some(thickness),
+                outward: Some(false),
+                ..
+            }) if faces == "other:design:face-operand#hollow" && thickness.get() == 2.0
+        ),
+        "{:?}",
+        hollow.evaluation.definition()
+    );
 }
 
 #[test]
