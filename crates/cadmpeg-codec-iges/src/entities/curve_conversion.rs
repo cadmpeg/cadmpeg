@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact conversions from bounded analytic curves to NURBS carriers.
 
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsError, NurbsPoles3, WeightedPole3};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{NonZeroReal, PositiveLength};

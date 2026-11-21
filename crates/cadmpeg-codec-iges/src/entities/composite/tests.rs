@@ -70,7 +70,8 @@ fn composite_index_admits_added_entity_nodes_and_identity_keys() {
     let curve = CurveId::mint("test:model:curve#added").unwrap();
     let start = VertexId::mint("test:model:vertex#start").unwrap();
     let end = VertexId::mint("test:model:vertex#end").unwrap();
-    let position = cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap();
+    let position =
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap();
     let mut index = CompositeIndex::default();
     index.add_model_entity(
         &curve,
@@ -649,13 +650,13 @@ fn bounded_line_carrier_excludes_an_endpoint_at_the_resolution_boundary() {
         ir.geometry.points.extend([
             Point::new(
                 PointId::mint("test:model:point#start-point").expect("identity grammar"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.001, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.001, 0.0, 0.0))
                     .expect("a finite position is a point"),
                 None,
             ),
             Point::new(
                 PointId::mint("test:model:point#end-point").expect("identity grammar"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
                     .expect("a finite position is a point"),
                 None,
             ),
@@ -700,7 +701,7 @@ fn bounded_line_carrier_excludes_an_endpoint_at_the_resolution_boundary() {
         .is_none());
 
         ir.geometry.points[0].set_position(
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.000_999, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.000_999, 0.0, 0.0))
                 .expect("a finite position is a point"),
         );
         assert!(bounded_nurbs_for_curve_with_tolerance(
@@ -757,13 +758,13 @@ fn composite_flattening_over_its_depth_limit_is_refused_without_fusing_the_sessi
     ir.geometry.points.extend([
         Point::new(
             PointId::mint("test:model:point#base-start-point").expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
         Point::new(
             PointId::mint("test:model:point#base-end-point").expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
@@ -852,25 +853,25 @@ fn bounded_line_carrier_selects_a_curve_valid_edge_occurrence() {
         ir.geometry.points.extend([
             Point::new(
                 PointId::mint("test:model:point#wrong-start-point").expect("identity grammar"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(10.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(10.0, 0.0, 0.0))
                     .expect("a finite position is a point"),
                 None,
             ),
             Point::new(
                 PointId::mint("test:model:point#wrong-end-point").expect("identity grammar"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(11.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(11.0, 0.0, 0.0))
                     .expect("a finite position is a point"),
                 None,
             ),
             Point::new(
                 PointId::mint("test:model:point#matching-start-point").expect("identity grammar"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                     .expect("a finite position is a point"),
                 None,
             ),
             Point::new(
                 PointId::mint("test:model:point#matching-end-point").expect("identity grammar"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
                     .expect("a finite position is a point"),
                 None,
             ),
@@ -976,7 +977,7 @@ fn bounded_line_carrier_rejects_conflicting_valid_edge_ranges() {
             ir.geometry.points.extend([
                 Point::new(
                     start_point.clone(),
-                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
                         cadmpeg_core::convert::f64_from_index(index).expect("test index is exact"),
                         0.0,
                         0.0,
@@ -986,7 +987,7 @@ fn bounded_line_carrier_rejects_conflicting_valid_edge_ranges() {
                 ),
                 Point::new(
                     end_point.clone(),
-                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(end, 0.0, 0.0))
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(end, 0.0, 0.0))
                         .expect("a finite position is a point"),
                     None,
                 ),
@@ -1056,13 +1057,13 @@ fn composite_index_lookups_match_the_unindexed_scan() {
         ir.geometry.points.extend([
             Point::new(
                 PointId::mint("test:model:point#start-point").expect("identity grammar"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                     .expect("a finite position is a point"),
                 None,
             ),
             Point::new(
                 PointId::mint("test:model:point#end-point").expect("identity grammar"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
                     .expect("a finite position is a point"),
                 None,
             ),

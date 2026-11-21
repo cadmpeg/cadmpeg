@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sampled curves and polygonal surfaces with checked sample layouts.
 
-use crate::features::FinitePoint3;
+use crate::features::geometry::FinitePoint3;
 use crate::math::Point3;
 use crate::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
 #[cfg(feature = "schema")]
@@ -235,12 +235,12 @@ pub enum PolylineSamples<R = f64, P = Point3> {
     /// Samples the source did not parameterize.
     Unparameterized {
         /// Ordered model-space samples.
-        points: crate::features::NonEmptyMembers<P>,
+        points: crate::features::selections::NonEmptyMembers<P>,
     },
     /// Samples the source parameterized.
     Parameterized {
         /// Ordered samples, each with its source parameter.
-        vertices: crate::features::NonEmptyMembers<PolylineVertex<R, P>>,
+        vertices: crate::features::selections::NonEmptyMembers<PolylineVertex<R, P>>,
     },
 }
 
@@ -523,7 +523,7 @@ impl PolylineCurve {
     ) -> Result<PolylineSamples<FiniteReal, FinitePoint3>, GeometryLayoutError> {
         fn members<T>(
             values: Vec<T>,
-        ) -> Result<crate::features::NonEmptyMembers<T>, GeometryLayoutError> {
+        ) -> Result<crate::features::selections::NonEmptyMembers<T>, GeometryLayoutError> {
             match values.try_into() {
                 Ok(values) => Ok(values),
                 Err(_) => Err(layout_error("polyline must contain at least two points")),

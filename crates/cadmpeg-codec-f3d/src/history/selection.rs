@@ -286,13 +286,13 @@ pub(super) fn incident_loop_counts_satisfy_sides(counts: &[i64], required: &[Opt
 }
 
 pub(super) fn bind_face_selection(
-    selection: &mut cadmpeg_ir::features::FaceSelection,
+    selection: &mut cadmpeg_ir::features::selections::FaceSelection,
     scope: &crate::records::feature::scope::DesignParameterScope,
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::face::DesignFaceOperand],
     updated_face_slots: &[i64],
 ) {
-    let cadmpeg_ir::features::FaceSelection::Native(native) = selection else {
+    let cadmpeg_ir::features::selections::FaceSelection::Native(native) = selection else {
         return;
     };
     if native == &scope.id {
@@ -384,7 +384,10 @@ pub(super) fn bind_face_selection(
             scope,
             operands.iter().filter(selected),
         ) {
-            if !matches!(resolved, cadmpeg_ir::features::FaceSelection::Native(_)) {
+            if !matches!(
+                resolved,
+                cadmpeg_ir::features::selections::FaceSelection::Native(_)
+            ) {
                 *selection = resolved;
             }
         }
@@ -487,7 +490,7 @@ pub(super) fn bind_face_selection(
         faces.push(candidate.clone());
     }
     if !faces.is_empty() {
-        *selection = cadmpeg_ir::features::FaceSelection::Resolved {
+        *selection = cadmpeg_ir::features::selections::FaceSelection::Resolved {
             faces,
             native: native.to_owned(),
         };
@@ -495,14 +498,14 @@ pub(super) fn bind_face_selection(
 }
 
 pub(super) fn bind_body_recipe_face_selection(
-    selection: &mut cadmpeg_ir::features::FaceSelection,
+    selection: &mut cadmpeg_ir::features::selections::FaceSelection,
     feature_id: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
     scope: &crate::records::feature::scope::DesignParameterScope,
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::body_recipe::DesignBodyRecipeOperand],
 ) {
-    use cadmpeg_ir::features::FaceSelection;
+    use cadmpeg_ir::features::selections::FaceSelection;
 
     let FaceSelection::Native(native) = selection else {
         return;
@@ -557,7 +560,9 @@ pub(super) fn bind_body_recipe_face_selection(
         faces.push(face);
     }
     let native = native.to_owned();
-    if let Ok(historical) = cadmpeg_ir::features::FaceSelection::historical(state, faces, native) {
+    if let Ok(historical) =
+        cadmpeg_ir::features::selections::FaceSelection::historical(state, faces, native)
+    {
         *selection = historical;
     }
 }
@@ -1447,8 +1452,8 @@ pub(crate) fn bind_mirror_selection_planes(
             continue;
         }
         let (Some(origin), Some(normal)) = (
-            cadmpeg_ir::features::FinitePoint3::new(plane.origin),
-            cadmpeg_ir::features::FiniteVector3::new(plane.normal),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(plane.origin),
+            cadmpeg_ir::features::geometry::FiniteVector3::new(plane.normal),
         ) else {
             continue;
         };
@@ -1683,7 +1688,7 @@ pub(crate) fn design_geometry_origin_plane(ordinal: usize) -> Option<HistoricalM
 /// planes take u axes `+x`, `+z`, and `+y`.
 pub(crate) fn design_geometry_origin_plane_frame(
     ordinal: usize,
-) -> Option<cadmpeg_ir::features::FeatureSupportPlaneFrame> {
+) -> Option<cadmpeg_ir::features::geometry::FeatureSupportPlaneFrame> {
     let u_axis = match ordinal {
         0 => cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
         1 => cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -1691,7 +1696,11 @@ pub(crate) fn design_geometry_origin_plane_frame(
         _ => return None,
     };
     let plane = design_geometry_origin_plane(ordinal)?;
-    cadmpeg_ir::features::FeatureSupportPlaneFrame::new(plane.origin, plane.normal, u_axis)
+    cadmpeg_ir::features::geometry::FeatureSupportPlaneFrame::new(
+        plane.origin,
+        plane.normal,
+        u_axis,
+    )
 }
 
 pub(super) fn historical_mirror_plane(
@@ -2678,9 +2687,8 @@ fn historical_identity_faces(
 pub(super) fn feature_selected_input_state_id(
     feature: &cadmpeg_ir::features::Feature,
 ) -> Option<i64> {
-    use cadmpeg_ir::features::{
-        BodySelection, EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation,
-    };
+    use cadmpeg_ir::features::selections::{BodySelection, EdgeSelection, FaceSelection};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let parse_state = |state: &cadmpeg_ir::ids::FeatureInputTopologyId| {
         state
             .as_str()
@@ -2730,7 +2738,7 @@ pub(super) fn feature_selected_input_state_id(
         }
         FeatureOperation::SplitFace { targets, tool, .. } => {
             for selection in std::iter::once(targets).chain(match tool {
-                cadmpeg_ir::features::SplitFaceTool::Faces(faces) => Some(faces),
+                cadmpeg_ir::features::direct_edit::SplitFaceTool::Faces(faces) => Some(faces),
                 _ => None,
             }) {
                 if let FaceSelection::Historical { state, .. }

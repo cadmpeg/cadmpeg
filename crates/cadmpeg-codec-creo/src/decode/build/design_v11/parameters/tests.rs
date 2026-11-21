@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_ir::design::ops::sketch::{Planar, SketchConstraint};
-use cadmpeg_ir::features::{DistinctMembers, FeatureId};
+use cadmpeg_ir::features::selections::DistinctMembers;
+use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{SketchConstraintId, SketchEntityId, SketchId};
 

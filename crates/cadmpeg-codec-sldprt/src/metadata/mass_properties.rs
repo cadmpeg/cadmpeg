@@ -91,7 +91,7 @@ pub(crate) fn append(
     let Some(bodies) = configuration
         .bodies
         .as_ref()
-        .map(cadmpeg_ir::features::DistinctMembers::as_slice)
+        .map(cadmpeg_ir::features::selections::DistinctMembers::as_slice)
     else {
         not_compared(losses, "the active configuration body set is unresolved");
         return Ok(());

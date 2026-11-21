@@ -1,5 +1,5 @@
 //! Line reference directions and revolution axis inputs.
-use cadmpeg_ir::features::PlanarProfileRef;
+use cadmpeg_ir::features::profiles::PlanarProfileRef;
 
 use super::component_paths::is_profile_feature_object;
 use super::curves::compact_bounded_curve_tangent;
@@ -435,7 +435,11 @@ fn revolution_line_reference_inputs(
     object_start: usize,
     object_end: usize,
     profile_sources: &HashSet<u32>,
-) -> Option<(u32, cadmpeg_ir::features::FinitePoint3, UnitVector3)> {
+) -> Option<(
+    u32,
+    cadmpeg_ir::features::geometry::FinitePoint3,
+    UnitVector3,
+)> {
     const HANDLE: [u8; 4] = [0xc7, 0xcf, 0xff, 0xff];
     const NATIVE_TO_IR: f64 = 1000.0;
 
@@ -464,7 +468,7 @@ fn revolution_line_reference_inputs(
         let dy = scalar(direction_offset + 8)?;
         let dz = scalar(direction_offset + 16)?;
         Some((
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
                 x * NATIVE_TO_IR,
                 y * NATIVE_TO_IR,
                 z * NATIVE_TO_IR,
@@ -523,7 +527,7 @@ fn revolution_line_reference_inputs(
                     continue;
                 }
                 if let (Some(origin), Some(direction)) = (
-                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
                         x * NATIVE_TO_IR,
                         y * NATIVE_TO_IR,
                         z * NATIVE_TO_IR,
@@ -731,11 +735,9 @@ fn revolution_line_reference_inputs(
                     let Some(direction) = square_sum_unit_direction([dx, dy, dz]) else {
                         continue;
                     };
-                    let Some(origin) = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-                        x * NATIVE_TO_IR,
-                        y * NATIVE_TO_IR,
-                        z * NATIVE_TO_IR,
-                    )) else {
+                    let Some(origin) = cadmpeg_ir::features::geometry::FinitePoint3::new(
+                        Point3::new(x * NATIVE_TO_IR, y * NATIVE_TO_IR, z * NATIVE_TO_IR),
+                    ) else {
                         continue;
                     };
                     let candidate = (source, origin, direction);
@@ -797,7 +799,7 @@ pub(super) fn temporary_axis_reference(
     payload: &[u8],
     object_start: usize,
     object_end: usize,
-) -> Option<(cadmpeg_ir::features::FinitePoint3, UnitVector3)> {
+) -> Option<(cadmpeg_ir::features::geometry::FinitePoint3, UnitVector3)> {
     const NATIVE_TO_IR: f64 = 1000.0;
 
     let end = super::DeclaredEnd::of(object_end, payload.len())?.get();
@@ -837,7 +839,7 @@ pub(super) fn temporary_axis_reference(
             }
             *scalar = value;
         }
-        let origin = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+        let origin = cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
             frame[3] * NATIVE_TO_IR,
             frame[4] * NATIVE_TO_IR,
             frame[5] * NATIVE_TO_IR,
@@ -930,8 +932,10 @@ pub(crate) fn enrich_history_revolution_inputs(
         }
     }
     let mut profiles = HashMap::<String, Vec<Option<u32>>>::new();
-    let mut inputs =
-        HashMap::<String, Vec<Option<(cadmpeg_ir::features::FinitePoint3, UnitVector3)>>>::new();
+    let mut inputs = HashMap::<
+        String,
+        Vec<Option<(cadmpeg_ir::features::geometry::FinitePoint3, UnitVector3)>>,
+    >::new();
     for (lane, names) in lanes.iter().zip(&lane_names) {
         for history in histories.iter() {
             let mut objects = Vec::new();
@@ -1058,7 +1062,7 @@ pub(crate) fn bind_profile_revolution_axes(
     for sketch in sketches {
         sketch_by_id.insert(&sketch.id, sketch);
     }
-    let mut assignments = Vec::<(usize, cadmpeg_ir::features::RevolutionAxis)>::new();
+    let mut assignments = Vec::<(usize, cadmpeg_ir::features::revolve::RevolutionAxis)>::new();
 
     for (feature_index, feature) in model_features.iter().enumerate() {
         let FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) =
@@ -1130,8 +1134,8 @@ pub(crate) fn bind_profile_revolution_axes(
         };
         let generated_axis_surfaces = if matches!(
             construction.extent(),
-            Some(cadmpeg_ir::features::RevolveExtent::OneSided {
-                termination: cadmpeg_ir::features::AngularTermination::Angle { angle },
+            Some(cadmpeg_ir::features::revolve::RevolveExtent::OneSided {
+                termination: cadmpeg_ir::features::extents::AngularTermination::Angle { angle },
             }) if (angle.get().abs() - std::f64::consts::TAU).abs() <= EPS_AXES_BIND_PROFILE_REVOLUTION_AXES_E9
         ) {
             surfaces
@@ -1194,7 +1198,7 @@ fn profile_roster_construction_axis(
     sketch: &Sketch,
     surfaces: &[Surface],
     features: &[cadmpeg_ir::features::Feature],
-) -> Option<cadmpeg_ir::features::RevolutionAxis> {
+) -> Option<cadmpeg_ir::features::revolve::RevolutionAxis> {
     const QUANTUM: f64 = 1e-8;
     const NATIVE_TO_IR: f64 = 1000.0;
     let (origin, normal, u_axis) = sketch.resolved_placement()?;
@@ -1296,14 +1300,14 @@ fn profile_roster_construction_axis(
         return None;
     }
     let (Some(origin), Some(direction)) = (
-        cadmpeg_ir::features::FinitePoint3::new(start),
+        cadmpeg_ir::features::geometry::FinitePoint3::new(start),
         UnitVector3::normalized_by_square_sum_division(delta),
     ) else {
         return None;
     };
-    Some(cadmpeg_ir::features::RevolutionAxis {
+    Some(cadmpeg_ir::features::revolve::RevolutionAxis {
         origin,
-        direction: cadmpeg_ir::features::FeatureDirection3::from(direction),
+        direction: cadmpeg_ir::features::geometry::FeatureDirection3::from(direction),
         reference: None,
     })
 }
@@ -1315,7 +1319,7 @@ fn profile_generated_surface_axis(
     sketch: &Sketch,
     transform: &MarkerTransform,
     surfaces: &[Surface],
-) -> Option<cadmpeg_ir::features::RevolutionAxis> {
+) -> Option<cadmpeg_ir::features::revolve::RevolutionAxis> {
     const QUANTUM: f64 = 1e-8;
     const NATIVE_TO_IR: f64 = 1000.0;
     const LINE_TOLERANCE: f64 = 1e-6;
@@ -1344,7 +1348,7 @@ fn profile_generated_surface_axis(
         axis.origin = origin;
     } else {
         let projection = origin_offset.dot(axis.direction.get());
-        let projected_origin = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+        let projected_origin = cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
             axis.origin.x + projection * axis.direction.x,
             axis.origin.y + projection * axis.direction.y,
             axis.origin.z + projection * axis.direction.z,
@@ -1409,7 +1413,7 @@ fn profile_generated_surface_axis(
 
 fn common_generated_surface_axis(
     surfaces: &[Surface],
-) -> Option<cadmpeg_ir::features::RevolutionAxis> {
+) -> Option<cadmpeg_ir::features::revolve::RevolutionAxis> {
     const DIRECTION_TOLERANCE: f64 = 1e-9;
     const LINE_TOLERANCE: f64 = 1e-6;
 
@@ -1462,9 +1466,9 @@ fn common_generated_surface_axis(
         origin.y - origin_projection * direction_raw.y,
         origin.z - origin_projection * direction_raw.z,
     );
-    Some(cadmpeg_ir::features::RevolutionAxis {
-        origin: cadmpeg_ir::features::FinitePoint3::new(origin)?,
-        direction: cadmpeg_ir::features::FeatureDirection3::from(direction),
+    Some(cadmpeg_ir::features::revolve::RevolutionAxis {
+        origin: cadmpeg_ir::features::geometry::FinitePoint3::new(origin)?,
+        direction: cadmpeg_ir::features::geometry::FeatureDirection3::from(direction),
         reference: None,
     })
 }

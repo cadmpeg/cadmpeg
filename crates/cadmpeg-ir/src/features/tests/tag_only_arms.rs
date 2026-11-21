@@ -3,7 +3,8 @@ use cadmpeg_core::dialect::Admission;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use crate::features::{SheetMetalFlangeWidth, TrimRegion, WrapMode};
+use crate::features::sheet_metal_forms::SheetMetalFlangeWidth;
+use crate::features::surface_inputs::{TrimRegion, WrapMode};
 
 /// Each unit arm of an enum tagged by `kind` alone reads its bare tag and
 /// refuses every key beside it, whatever the key's name or value.

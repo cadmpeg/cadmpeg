@@ -65,7 +65,7 @@ fn decode_projects_owned_native_sketch_relation() {
     assert_eq!(parameter.expression, "25mm");
     assert_eq!(
         parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(25.0).unwrap()
         ))
     );
@@ -232,7 +232,7 @@ fn decode_groups_native_tagged_point_line_relations() {
     assert_eq!(parameter.expression, "25mm");
     assert_eq!(
         parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(25.0).unwrap()
         ))
     );
@@ -285,7 +285,8 @@ fn decode_groups_native_tagged_point_line_relations() {
 
 #[test]
 fn decode_uses_relation_units_for_bare_integer_dimensions() {
-    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::scalar::Length;
 
     let mut source = sldprt_with_tagged_compact_relation(
         &triangle_body(),
@@ -317,7 +318,8 @@ fn decode_uses_relation_units_for_bare_integer_dimensions() {
 
 #[test]
 fn decode_uses_relation_units_for_boolean_shaped_dimensions() {
-    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::scalar::Length;
 
     let mut source = sldprt_with_tagged_compact_relation_scalar(
         &triangle_body(),
@@ -350,7 +352,8 @@ fn decode_uses_relation_units_for_boolean_shaped_dimensions() {
 
 #[test]
 fn decode_uses_relation_units_for_bare_integer_angles() {
-    use cadmpeg_ir::{features::ParameterValue, scalar::Angle};
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::scalar::Angle;
 
     let mut source =
         sldprt_with_tagged_compact_relation(&triangle_body(), "sgAnglDim", [[0xda, 0x8d]; 2]);
@@ -584,7 +587,7 @@ fn decode_uses_declaration_to_disambiguate_native_relation_tags() {
             assert_eq!(parameter.expression, "0.025rad");
             assert_eq!(
                 parameter.value,
-                Some(cadmpeg_ir::features::ParameterValue::Angle(
+                Some(cadmpeg_ir::features::parameters::ParameterValue::Angle(
                     cadmpeg_ir::scalar::Angle::new(0.025).unwrap()
                 ))
             );
@@ -592,7 +595,7 @@ fn decode_uses_declaration_to_disambiguate_native_relation_tags() {
             assert_eq!(parameter.expression, "25mm");
             assert_eq!(
                 parameter.value,
-                Some(cadmpeg_ir::features::ParameterValue::Length(
+                Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
                     cadmpeg_ir::scalar::Length::new(25.0).unwrap()
                 ))
             );

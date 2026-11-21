@@ -10,9 +10,10 @@ use cadmpeg_ir::design::expr::{Expression, ExpressionDialect, ExpressionToken, N
 use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::refs::Member;
 use cadmpeg_ir::design::units::UnitSymbol;
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{
-    DistinctMembers, Feature as LegacyFeature, FeatureContent,
-    FeatureDefinition as LegacyDefinition, FeatureEvaluation, FeatureId,
+    Feature as LegacyFeature, FeatureContent, FeatureDefinition as LegacyDefinition, FeatureId,
     FeatureOperation as LegacyOperation, UnresolvedFamily,
 };
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
@@ -360,7 +361,9 @@ fn a_base_feature_whose_bodies_are_current_is_stored_geometry() {
             0,
             Some(false),
             LegacyOperation::BaseFeature {
-                bodies: cadmpeg_ir::features::BodySelection::Bodies(bodies.into_iter().collect()),
+                bodies: cadmpeg_ir::features::selections::BodySelection::Bodies(
+                    bodies.into_iter().collect(),
+                ),
             },
         )
     };
@@ -401,11 +404,11 @@ fn parameter(
     key: &str,
     owner: Option<&str>,
     expression: &str,
-    value: Option<cadmpeg_ir::features::ParameterValue>,
+    value: Option<cadmpeg_ir::features::parameters::ParameterValue>,
     dependencies: &[&str],
     properties: &[(&str, &str)],
-) -> cadmpeg_ir::features::DesignParameter {
-    cadmpeg_ir::features::DesignParameter {
+) -> cadmpeg_ir::features::parameters::DesignParameter {
+    cadmpeg_ir::features::parameters::DesignParameter {
         product_definition: None,
         id: cadmpeg_ir::features::ParameterId::mint(format!("f3d:model:parameter#{key}")).unwrap(),
         owner: owner.map(|owner| FeatureId::mint(owner).unwrap()),
@@ -459,7 +462,7 @@ fn source(tokens: Vec<ExpressionToken<ParameterRef>>) -> Expression {
 
 #[test]
 fn parameters_state_literals_and_source_text_in_their_scope() {
-    use cadmpeg_ir::features::ParameterValue as V10;
+    use cadmpeg_ir::features::parameters::ParameterValue as V10;
     use cadmpeg_ir::scalar::{Angle, FiniteReal, Length};
     const OWNER: &str = "f3d:model:feature#extrude:20";
     const XREF: &str = "xref/role-1/reference-0/occurrence-0/";
@@ -644,7 +647,7 @@ fn parameters_state_literals_and_source_text_in_their_scope() {
 
 #[test]
 fn a_hosted_referenced_designs_user_parameters_stay_off_the_scope_that_hosts_it() {
-    use cadmpeg_ir::features::ParameterValue as V10;
+    use cadmpeg_ir::features::parameters::ParameterValue as V10;
     use cadmpeg_ir::scalar::Length;
     const FIRST: &str = "xref/role-1/reference-0/occurrence-0/";
     const SECOND: &str = "xref/role-1/reference-1/occurrence-0/";
@@ -804,10 +807,11 @@ fn each_class_of_parameter_the_design_omits_charges_one_loss_naming_them() {
 
 #[test]
 fn the_active_row_is_the_base_and_other_rows_state_their_cells() {
-    use cadmpeg_ir::features::{
-        ConfigurationEvaluation, ConfigurationFeatureState, ConfigurationId,
+    use cadmpeg_ir::features::parameters::{
+        ConfigurationEvaluation, ConfigurationFeatureState,
         DesignConfiguration as LegacyConfiguration, ParameterValue as V10,
     };
+    use cadmpeg_ir::features::ConfigurationId;
     use cadmpeg_ir::scalar::Length;
     const OWNER: &str = "f3d:model:feature#extrude:20";
     let root = crate::tree::file_root_id();
@@ -894,10 +898,11 @@ fn the_active_row_is_the_base_and_other_rows_state_their_cells() {
 #[test]
 fn rows_and_cells_the_design_omits_are_named_by_one_loss_per_class() {
     use crate::loss::F3dLossCode;
-    use cadmpeg_ir::features::{
-        ConfigurationEvaluation, ConfigurationFeatureState, ConfigurationId,
-        DesignConfiguration as LegacyConfiguration, ParameterId,
+    use cadmpeg_ir::features::parameters::{
+        ConfigurationEvaluation, ConfigurationFeatureState,
+        DesignConfiguration as LegacyConfiguration,
     };
+    use cadmpeg_ir::features::{ConfigurationId, ParameterId};
     const OWNER: &str = "f3d:model:feature#extrude:20";
     const UNLISTED: &str = "f3d:model:feature#unlisted:9";
     const HOSTED: &str = "xref/role-1/reference-0/occurrence-0/";
@@ -1036,7 +1041,8 @@ fn rows_and_cells_the_design_omits_are_named_by_one_loss_per_class() {
 #[test]
 fn configuration_properties_are_named_by_a_loss() {
     use crate::loss::F3dLossCode;
-    use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration as LegacyConfiguration};
+    use cadmpeg_ir::features::parameters::DesignConfiguration as LegacyConfiguration;
+    use cadmpeg_ir::features::ConfigurationId;
     let root = crate::tree::file_root_id();
     let scopes = BTreeMap::from([(String::new(), root)]);
     let row = |key: &str, active: bool, properties: &[(&str, &str)]| LegacyConfiguration {
@@ -1124,7 +1130,8 @@ fn configuration_properties_are_named_by_a_loss() {
 fn part_number_and_description_cells_of_other_rows_override_the_scope_definition() {
     use crate::loss::F3dLossCode;
     use cadmpeg_ir::design::configuration::{DefinitionOverride, PartNumber};
-    use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration as LegacyConfiguration};
+    use cadmpeg_ir::features::parameters::DesignConfiguration as LegacyConfiguration;
+    use cadmpeg_ir::features::ConfigurationId;
     let root = crate::tree::file_root_id();
     let scopes = BTreeMap::from([(String::new(), root.clone())]);
     let row = |key: &str, active: bool, properties: &[(&str, &str)]| LegacyConfiguration {

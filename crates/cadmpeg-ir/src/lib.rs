@@ -101,12 +101,8 @@ pub use document::{
 };
 pub use draft::ModelDraft;
 pub use features::{
-    BodyMember, BodyMembers, BodyRetentionMode, BodySelection, BodyTrimSide, CoilConstruction,
-    CoilExtent, CoilPlacement, CoilSection, CoilSectionPlacement, ConfigurationEvaluation,
-    ConfigurationId, CurveProjectionDirection, CurveProjectionDirectionState, DesignConfiguration,
-    DesignParameter, FaceMotion, Feature, FeatureDefinition, FeatureId, FeatureOperation,
-    LoftGuidance, ParameterId, ParameterPmi, ParameterValue, PmiDimensionSubtype, ScaleCenter,
-    ScaleFactors, SolidFeatureResult,
+    ConfigurationId, Feature, FeatureDefinition, FeatureId, FeatureOperation, LoftGuidance,
+    ParameterId,
 };
 pub use ids::{is_valid_identity, IdentityError};
 pub use native::{

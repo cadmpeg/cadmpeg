@@ -57,7 +57,7 @@ fn parent_child_composition_uses_column_point_order() {
             .compose(child)
             .unwrap()
             .apply_point(Point3::new(1.0, 0.0, 0.0))
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Some(Point3::new(12.0, 0.0, 0.0))
     );
 }

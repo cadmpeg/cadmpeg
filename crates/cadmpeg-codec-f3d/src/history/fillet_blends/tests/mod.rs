@@ -5,16 +5,18 @@ use super::{
 };
 use crate::history_records::{
     AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalCurveAxis,
-    AsmHistoricalCylinder, AsmHistoricalEdgeSample, AsmHistoricalEntityDelta,
-    AsmHistoricalOptionalCarrierBinding, AsmHistoricalPlane, AsmHistoricalRelation,
-    AsmHistoricalRowsDelta, AsmHistoricalSurfaceRadius, AsmHistoricalTopology,
-    AsmHistoricalTopologyDelta, AsmHistoricalTransition,
+    AsmHistoricalCylinder, AsmHistoricalEntityDelta, AsmHistoricalOptionalCarrierBinding,
+    AsmHistoricalPlane, AsmHistoricalRelation, AsmHistoricalRowsDelta, AsmHistoricalSurfaceRadius,
+    AsmHistoricalTopology, AsmHistoricalTopologyDelta, AsmHistoricalTransition,
 };
 use crate::loss::F3dLossCode;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::topology::construction::DesignConstructionOperandGroup;
+use crate::test_support::history::edge_sample;
 use cadmpeg_ir::features::edge_treatments::{FilletGroup, RadiusSpec};
-use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureId, FeatureOperation};
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::selections::{EdgeSelection, NonEmptyMembers};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
 
@@ -89,12 +91,11 @@ fn line(topology: &mut AsmHistoricalTopology, edge: i64, direction: Vector3) {
         origin: Point3::new(0.0, 0.0, 0.0),
         direction,
     });
-    topology.edge_samples.push(AsmHistoricalEdgeSample {
-        bounds: None,
+    topology.edge_samples.push(edge_sample(
         edge,
-        interior: Point3::new(0.0, 0.0, 0.0),
-        tangent: Some(direction),
-    });
+        Point3::new(0.0, 0.0, 0.0),
+        Some(direction),
+    ));
 }
 
 /// Faces 10 and 11 meet at edge 17 along z; face 12 caps both at edge 18
@@ -228,12 +229,10 @@ fn rib_fillet() -> AsmHistoricalTopology {
         radius: 1.0,
     });
     for (edge, position) in [(30, 1.0), (31, 1.5)] {
-        topology.edge_samples.push(AsmHistoricalEdgeSample {
-            bounds: None,
-            edge,
-            interior: Point3::new(position, centre.y, 0.0),
-            tangent: Some(x()),
-        });
+        let interior = Point3::new(position, centre.y, 0.0);
+        topology
+            .edge_samples
+            .push(edge_sample(edge, interior, Some(x())));
     }
     topology
 }
@@ -1530,7 +1529,7 @@ fn named_group(
 
 fn fillet(edges: EdgeSelection, radius: RadiusSpec) -> FeatureDefinition {
     FeatureDefinition::Operation(FeatureOperation::Fillet {
-        groups: cadmpeg_ir::features::NonEmptyMembers::one(FilletGroup {
+        groups: NonEmptyMembers::one(FilletGroup {
             edges,
             radius,
             tangency_weight: None,
@@ -1713,7 +1712,7 @@ fn bound_pair(three: EdgeSelection, five: EdgeSelection) -> (EdgeSelection, Edge
         radius: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
     };
     let mut definition = FeatureDefinition::Operation(FeatureOperation::Fillet {
-        groups: cadmpeg_ir::features::NonEmptyMembers::try_from(vec![
+        groups: NonEmptyMembers::try_from(vec![
             FilletGroup {
                 edges: three,
                 radius: three_mm(),
@@ -1897,10 +1896,7 @@ fn bind_feature(native_ref: Option<&str>) -> EdgeSelection {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(fillet(
-            native(),
-            three_mm(),
-        )),
+        evaluation: FeatureEvaluation::from_definition(fillet(native(), three_mm())),
         native_ref: native_ref.map(str::to_owned),
     };
     super::bind_treatment_edges(
@@ -1945,7 +1941,7 @@ fn bind_unbound_fillet(
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+        evaluation: FeatureEvaluation::from_definition(definition),
         native_ref: Some(SCOPE_ID.to_owned()),
     };
     let bindings = super::bind_treatment_edges(

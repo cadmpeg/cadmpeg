@@ -10,7 +10,7 @@ use crate::decode::analytic::edges::nurbs_intrinsic_parameter_range;
 use crate::vecmath::normalize;
 use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::RevolutionAxis;
+use cadmpeg_ir::features::revolve::RevolutionAxis;
 use cadmpeg_ir::geometry::pcurve::PcurveMetadata;
 use cadmpeg_ir::geometry::{
     pcurve::{Pcurve, PcurveGeometry},

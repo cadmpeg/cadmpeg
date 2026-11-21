@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_ir::features::{
-    BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
-    PlanarProfileRef, SketchProfileRegion,
+use cadmpeg_ir::features::extents::{
+    ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
 };
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, SketchProfileRegion};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::NonZeroLength;
 use cadmpeg_ir::sketches::{
