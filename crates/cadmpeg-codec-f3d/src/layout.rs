@@ -11139,16 +11139,26 @@ pub(crate) mod thread_owner_extended_scope_prefix {
 
 /// Byte offsets for the `constructed_plane_entity_prefix` record.
 ///
-/// Spec §3.1. Record length 134 B.
+/// Spec §3.1. Record length 21 B.
 ///
 /// ```text
-/// Offsets are relative to the plane entity's primary indexed header through the LP-UTF16 entity ID code-unit count.
+/// Offsets are relative to the plane entity's primary indexed header. The property block follows the presence byte, then `constructed_plane_entity_body`.
 /// ```
 pub(crate) mod constructed_plane_entity_prefix {
-    /// Record length in bytes. Spec §3.1.
-    pub(crate) const LEN: usize = 134;
+    /// Offset of `property_presence` (`u8`). Spec §3.1.
+    pub(crate) const PROPERTY_PRESENCE: usize = 20;
+}
+
+/// Byte offsets for the `constructed_plane_entity_body` record.
+///
+/// Spec §3.1. Record length 113 B.
+///
+/// ```text
+/// Offsets are relative to the end of the property block: offset 21 when the presence byte is `0`, 25 for an empty block, and 77 for the one property `EntityGenesis`. The LP-UTF16 code units of the Design entity ID follow.
+/// ```
+pub(crate) mod constructed_plane_entity_body {
     /// Offset of `entity_id_code_unit_count` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const ENTITY_ID_CODE_UNIT_COUNT: usize = 130;
+    pub(crate) const ENTITY_ID_CODE_UNIT_COUNT: usize = 109;
 }
 
 /// Byte offsets for the `derived_instance_prefix` record.
