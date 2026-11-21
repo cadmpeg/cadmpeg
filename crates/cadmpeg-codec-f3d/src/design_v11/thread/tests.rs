@@ -83,3 +83,59 @@ fn compact_thread_class_comes_from_its_fixed_prefix() {
         assert_eq!(projected.hand, None);
     }
 }
+
+#[test]
+fn thread_selection_without_a_native_face_reference_stays_unresolved() {
+    let generated = FaceSelection::Generated {
+        faces: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::GeneratedFaceRef {
+            feature: cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#thread").unwrap(),
+            local_id: cadmpeg_ir::features::SelectionReference::new("face#1".to_owned()).unwrap(),
+        }),
+        native: cadmpeg_ir::features::SelectionReference::new(
+            "f3d:test:face-selection#10".to_owned(),
+        )
+        .unwrap(),
+    };
+    for face in [
+        FaceSelection::Unresolved,
+        FaceSelection::Faces(Vec::new()),
+        generated,
+    ] {
+        assert!(selection(&face).is_none());
+    }
+}
+
+#[test]
+fn thread_selection_keeps_its_native_face_reference() {
+    let native = "f3d:test:design-construction-operand-group#10";
+    let face = selection(&FaceSelection::Native(native.to_owned())).unwrap();
+    assert_eq!(face.at, Anchor::Input);
+    assert!(matches!(face.picks, Picks::Unread));
+    assert_eq!(
+        face.native,
+        Some(NativeSelections::try_from(vec![native.to_owned()]).unwrap())
+    );
+}
+
+#[test]
+fn standard_thread_class_comes_from_its_fixed_prefix() {
+    let mut construction = construction();
+    construction.extended = None;
+    for form in [
+        crate::records::feature::thread::DesignThreadForm::Standard,
+        crate::records::feature::thread::DesignThreadForm::StandardLegacy,
+        crate::records::feature::thread::DesignThreadForm::StandardCompact,
+    ] {
+        construction.form = form;
+        let projected = spec(&construction, None);
+        assert_eq!(
+            projected
+                .standard
+                .unwrap()
+                .class
+                .as_ref()
+                .map(NonBlankString::as_str),
+            Some("6g")
+        );
+    }
+}

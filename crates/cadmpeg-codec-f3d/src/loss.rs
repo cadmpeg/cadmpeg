@@ -407,7 +407,7 @@ pub(crate) enum F3dLossCode {
     /// A Thread profile angle other than 60 degrees is retained by the native
     /// Thread construction.
     ThreadAngleNative,
-    /// Thread side, flank angle, exact groove profile, and unproven hand stay native.
+    /// Thread side, flank angle, exact groove profile, and hand outside the extended standard form stay native.
     ThreadDetailNative,
     /// A Hole-owned Thread retains its specification in native records.
     ThreadHoleNative,
@@ -541,6 +541,8 @@ pub(crate) enum F3dLossCode {
     HoleExtentLeadingWordAssumed,
     /// A tapped Hole keeps its stored diameter instead of the bore of its thread size.
     HoleTappedDiameterStored,
+    /// A Hole with an absent stored diameter uses its Thread minor diameter as the bore.
+    HoleThreadMinorDiameterAssumed,
     /// A taper-tapped Hole keeps a cylindrical bore of its stored diameter instead of the tapered bore of its thread size.
     HoleTaperTappedBoreCylindrical,
     /// A Base Feature whose marked null reference stores flag `1` reads its result runs as the ordinary result set.
@@ -1644,6 +1646,7 @@ impl F3dLossCode {
         Self::HoleShapePartialAssumed,
         Self::HoleExtentLeadingWordAssumed,
         Self::HoleTappedDiameterStored,
+        Self::HoleThreadMinorDiameterAssumed,
         Self::HoleTaperTappedBoreCylindrical,
         Self::FeatureBaseFeatureNullFlagAssumed,
         Self::FeatureBaseFeatureSuffixRunOrderAssumed,
@@ -2625,6 +2628,7 @@ impl F3dLossCode {
             Self::HoleParametersIndependentAssumed => "feature.hole-parameters-independent-assumed",
             Self::HoleShapePartialAssumed => "feature.hole-shape-partial-assumed",
             Self::HoleExtentLeadingWordAssumed => "feature.hole-extent-leading-word-assumed",
+            Self::HoleThreadMinorDiameterAssumed => "feature.hole-thread-minor-diameter-assumed",
             Self::HoleTappedDiameterStored => "feature.hole-tapped-diameter-stored",
             Self::HoleTaperTappedBoreCylindrical => "feature.hole-taper-tapped-bore-cylindrical",
             Self::FeatureBaseFeatureNullFlagAssumed => "feature.base-feature-null-flag-assumed",
@@ -3614,6 +3618,7 @@ impl F3dLossCode {
             | Self::HoleShapePartialAssumed
             | Self::HoleExtentLeadingWordAssumed
             | Self::HoleTappedDiameterStored
+            | Self::HoleThreadMinorDiameterAssumed
             | Self::HoleTaperTappedBoreCylindrical
             | Self::FeatureBaseFeatureNullFlagAssumed
             | Self::FeatureBaseFeatureSuffixRunOrderAssumed
@@ -4342,6 +4347,7 @@ impl F3dLossCode {
             | Self::HoleShapePartialAssumed
             | Self::HoleExtentLeadingWordAssumed
             | Self::HoleTappedDiameterStored
+            | Self::HoleThreadMinorDiameterAssumed
             | Self::HoleTaperTappedBoreCylindrical
             | Self::FeatureBaseFeatureNullFlagAssumed
             | Self::FeatureBaseFeatureSuffixRunOrderAssumed

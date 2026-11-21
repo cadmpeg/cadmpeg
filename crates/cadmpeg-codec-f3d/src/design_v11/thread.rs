@@ -94,16 +94,17 @@ pub(super) fn project(
                     .find(|feature| feature.native_ref.as_deref() == Some(owner.id.as_str()))
             });
             let resolved = owner.and_then(|owner| {
-                let operation = hole::operation(
-                    owner,
-                    spec(construction, extent.as_ref()),
-                    options(construction),
-                )?;
                 let target = ir
                     .design
                     .features
                     .iter_mut()
                     .find(|feature| feature.id == owner.id)?;
+                let operation = hole::operation(
+                    owner,
+                    spec(construction, extent.as_ref()),
+                    options(construction),
+                    losses,
+                )?;
                 target.definition.operation = operation;
                 Some(())
             });
@@ -122,7 +123,7 @@ pub(super) fn project(
         else {
             continue;
         };
-        let Some(face) = selection(face, &scope.id) else {
+        let Some(face) = selection(face) else {
             continue;
         };
         feature.definition.operation = FeatureOperation::Thread(Box::new(Thread {
@@ -136,12 +137,12 @@ pub(super) fn project(
     Ok(())
 }
 
-fn selection(face: &FaceSelection, fallback: &str) -> Option<SetSelection> {
+fn selection(face: &FaceSelection) -> Option<SetSelection> {
     let native = match face {
         FaceSelection::Native(native) | FaceSelection::Resolved { native, .. } => native.clone(),
         FaceSelection::Historical { native, .. }
         | FaceSelection::HistoricalPartial { native, .. } => native.as_str().to_owned(),
-        _ => fallback.to_owned(),
+        _ => return None,
     };
     Some(SetSelection {
         at: Anchor::Input,

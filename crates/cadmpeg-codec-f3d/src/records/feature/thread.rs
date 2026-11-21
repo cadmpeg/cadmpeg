@@ -303,14 +303,15 @@ impl DesignThreadConstruction {
         self.extended
             .as_ref()
             .map(|value| value.class.as_str())
-            .or_else(|| {
-                matches!(
-                    self.form,
-                    DesignThreadForm::Compact(_)
-                        | DesignThreadForm::CompactOwnersLeading
-                        | DesignThreadForm::CompactOwnersTrailing
-                )
-                .then_some("6H")
+            .or(match self.form {
+                DesignThreadForm::Standard
+                | DesignThreadForm::StandardLegacy
+                | DesignThreadForm::StandardCompact => Some("6g"),
+                DesignThreadForm::Compact(_)
+                | DesignThreadForm::CompactLegacy
+                | DesignThreadForm::CompactOwnersLeading
+                | DesignThreadForm::CompactOwnersTrailing => Some("6H"),
+                _ => None,
             })
     }
 

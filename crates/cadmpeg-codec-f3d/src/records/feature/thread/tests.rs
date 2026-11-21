@@ -173,3 +173,19 @@ fn compact_owned_thread_forms_preserve_wire_identity_and_reference_shape() {
         assert!(serde_json::from_value::<DesignThreadConstruction>(wire).is_err());
     }
 }
+
+#[test]
+fn thread_class_follows_the_prefix_token() {
+    for (form, class) in [
+        ("standard", "6g"),
+        ("standard_legacy", "6g"),
+        ("standard_compact", "6g"),
+        ("compact", "6H"),
+        ("compact_legacy", "6H"),
+    ] {
+        let mut wire = thread_wire();
+        wire["form"] = serde_json::json!(form);
+        let construction: DesignThreadConstruction = serde_json::from_value(wire).unwrap();
+        assert_eq!(construction.class(), Some(class));
+    }
+}

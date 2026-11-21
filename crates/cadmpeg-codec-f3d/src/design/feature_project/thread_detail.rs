@@ -48,6 +48,7 @@ mod tests {
             .unwrap();
         let note = loss("scope", &construction);
         assert_eq!(note.code, F3dLossCode::ThreadDetailNative.kind());
+        assert!(!note.message.contains("Hand remains native"));
         for detail in [
             "scope",
             "external false",

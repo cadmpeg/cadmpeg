@@ -24,6 +24,7 @@ pub(super) fn operation(
     source: &Feature,
     thread: ThreadSpec,
     native_options: NativeOptions,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<FeatureOperation> {
     let LegacyOperation::Hole {
         shape,
@@ -117,14 +118,19 @@ pub(super) fn operation(
             resolved: Some(direction),
             ..Default::default()
         });
+    let diameter = shape.diameter().map(Dimension::Literal).or_else(|| {
+        let diameter = thread.minor_diameter.clone()?;
+        losses.push(crate::loss::F3dLossCode::HoleThreadMinorDiameterAssumed.note(format!(
+            "Hole {} uses its Thread minor diameter as the bore because its stored HoleDiameter is absent.", source.id
+        )));
+        Some(diameter)
+    });
     Some(FeatureOperation::Hole(Box::new(Hole {
         positions,
-        start: face
-            .as_ref()
-            .and_then(|face| super::selection(face, source.native_ref.as_deref()?)),
+        start: face.as_ref().and_then(super::selection),
         direction,
         shape: HoleShape::Bore(Bore {
-            diameter: thread.minor_diameter.clone(),
+            diameter,
             head: None,
             taper: None,
             bottom,
@@ -150,7 +156,7 @@ mod tests {
     };
     use cadmpeg_ir::scalar::{NonZeroLength, PositiveLength};
 
-    fn source() -> Feature {
+    fn source(diameter: Option<PositiveLength>) -> Feature {
         Feature {
             product_definition: None,
             id: FeatureId::mint("f3d:model:feature#hole").unwrap(),
@@ -172,7 +178,7 @@ mod tests {
                     shape: cadmpeg_ir::features::holes::HoleShape::new(
                         HoleConstruction::form(HoleKind::Simple),
                         None,
-                        PositiveLength::new(10.0),
+                        diameter,
                     )
                     .unwrap(),
                     extent: Some(LinearTermination::Blind {
@@ -188,13 +194,21 @@ mod tests {
     }
 
     #[test]
-    fn a_hole_owned_thread_uses_hole_thread_and_the_minor_bore_diameter() {
+    fn a_hole_owned_thread_keeps_the_stored_bore_diameter() {
         let construction = super::super::tests::construction();
         let thread = super::super::spec(
             &construction,
             Some(&cadmpeg_ir::features::CosmeticThreadExtent::Through {}),
         );
-        let projected = operation(&source(), thread.clone(), BTreeMap::new()).unwrap();
+        let mut losses = Vec::new();
+        let projected = operation(
+            &source(PositiveLength::new(10.0)),
+            thread.clone(),
+            BTreeMap::new(),
+            &mut losses,
+        )
+        .unwrap();
+        assert!(losses.is_empty());
         let FeatureOperation::Hole(hole) = projected else {
             panic!("Hole");
         };
@@ -211,7 +225,7 @@ mod tests {
         };
         assert_eq!(
             bore.diameter,
-            Some(Dimension::Literal(PositiveLength::new(8.0).unwrap()))
+            Some(Dimension::Literal(PositiveLength::new(10.0).unwrap()))
         );
         assert_eq!(bore.bottom, Some(HoleBottom::Flat));
         let HolePositions::Points { points, .. } = hole.positions else {
@@ -219,5 +233,30 @@ mod tests {
         };
         assert_eq!(points.at, Anchor::Input);
         assert!(matches!(points.picks, Picks::Unread));
+    }
+    #[test]
+    fn a_hole_without_a_stored_diameter_uses_the_thread_minor_diameter_with_a_loss() {
+        let thread = super::super::spec(&super::super::tests::construction(), None);
+        let mut losses = Vec::new();
+        let projected = operation(&source(None), thread, BTreeMap::new(), &mut losses).unwrap();
+        let FeatureOperation::Hole(hole) = projected else {
+            panic!("Hole");
+        };
+        let HoleShape::Bore(bore) = hole.shape else {
+            panic!("Bore");
+        };
+        assert_eq!(
+            bore.diameter,
+            Some(Dimension::Literal(PositiveLength::new(8.0).unwrap()))
+        );
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::HoleThreadMinorDiameterAssumed.kind()
+        );
+        assert!(losses[0]
+            .message
+            .contains("Thread minor diameter as the bore"));
+        assert!(losses[0].message.contains("stored HoleDiameter is absent"));
     }
 }
