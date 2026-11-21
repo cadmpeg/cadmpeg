@@ -1176,20 +1176,27 @@ pub(crate) fn admit_history_bound_scope_variants(
             (Some(keep), false, _, _) => keep,
             (None, false, _, EnvelopeComparison::Equivalent) => later,
             // Several envelopes resolve to ASM transitions: the one the primary
-            // record index names is live; the others are retained revisions.
-            (Some(_), true, Some(keep), _) | (None, false, Some(keep), _) => {
-                // The other envelopes are not equivalent serializations, so
-                // dropping them loses their payload.
+            // record index names is live; the others are retained revisions,
+            // and the comparison, which ignores history states, cannot tell
+            // them apart.
+            (Some(_), true, Some(keep), _) => {
                 superseded.primary_indexed = superseded
                     .primary_indexed
                     .checked_add(following.len())
                     .ok_or_else(count_overflow)?;
                 keep
             }
+            (None, false, Some(keep), _) => {
+                superseded.primary_indexed = superseded
+                    .primary_indexed
+                    .checked_add(envelopes_differing_from(ctx, scopes, indices, keep)?)
+                    .ok_or_else(count_overflow)?;
+                keep
+            }
             (None, false, None, EnvelopeComparison::TailFlags) => {
                 superseded.tail_flags = superseded
                     .tail_flags
-                    .checked_add(following.len())
+                    .checked_add(envelopes_differing_from(ctx, scopes, indices, later)?)
                     .ok_or_else(count_overflow)?;
                 later
             }
@@ -1219,8 +1226,9 @@ pub(crate) fn admit_history_bound_scope_variants(
 /// Duplicate scope envelopes that admission did not decode.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SupersededScopeEnvelopes {
-    /// Envelopes that differ from the primary-indexed envelope of their
-    /// record.
+    /// Envelopes not decoded because the primary-indexed envelope of their
+    /// record was: every other envelope where several are history-bound,
+    /// else those that differ from it.
     pub(crate) primary_indexed: usize,
     /// Earlier envelopes that differ from the later envelope of their record
     /// only in their suppressed or rolled-back flags.
@@ -1250,6 +1258,25 @@ enum EnvelopeComparison {
     /// The envelopes differ only in their suppressed or rolled-back flags.
     TailFlags,
     Different,
+}
+
+/// The envelopes of `indices`, other than `keep`, that differ from `keep`.
+fn envelopes_differing_from(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scopes: &[DesignParameterScope],
+    indices: &[usize],
+    keep: usize,
+) -> Result<usize, CodecError> {
+    let mut differing = 0;
+    for &index in indices {
+        if index != keep
+            && compare_scope_variant_payloads(ctx, &scopes[keep], &scopes[index])?
+                != EnvelopeComparison::Equivalent
+        {
+            differing += 1;
+        }
+    }
+    Ok(differing)
 }
 
 /// Compare two same-index scope envelopes after removing source-location,

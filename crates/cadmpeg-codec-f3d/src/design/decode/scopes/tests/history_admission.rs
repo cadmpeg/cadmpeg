@@ -243,14 +243,16 @@ fn retains_later_equivalent_scope_envelope_without_history_binding() {
     assert_eq!(scopes[0].byte_offset(), 200);
 }
 
-/// Two same-index `kind` envelopes without a history binding, at byte offsets
-/// 100 and 200. `fill` completes the envelope with copy number 0 or 1.
+/// `copies` same-index `kind` envelopes without a history binding, at byte
+/// offsets 100, 200 and on. `fill` completes the envelope with its copy number.
 fn relocated_variants(
     kind: &DesignFeatureKind,
+    copies: usize,
     fill: impl Fn(&mut DesignParameterScope, usize),
 ) -> Vec<DesignParameterScope> {
-    [100, 200]
-        .into_iter()
+    (100_u64..)
+        .step_by(100)
+        .take(copies)
         .enumerate()
         .map(|(copy, byte_offset)| {
             let mut scope = DesignParameterScope::empty(
@@ -275,32 +277,36 @@ fn relocated_variants(
         .collect()
 }
 
-/// Two same-index Thicken envelopes without a history binding, the second at
-/// a later byte offset, whose signed thicknesses are `first` and `second`.
-fn thicken_variants(first: f64, second: f64) -> Vec<DesignParameterScope> {
-    relocated_variants(&DesignFeatureKind::Thicken, |scope, copy| {
-        let at = scope.byte_offset();
-        let DesignScopePayloadMut::Thicken(slot) = scope.payload_mut() else {
-            panic!("a Thicken scope holds a Thicken payload");
-        };
-        *slot = Some(
-            crate::records::feature::direct_face::DesignThickenOperation {
-                signed_thickness: Some(real([first, second][copy])),
-                thickness_record_index: 74,
-                thickness_offset: Some(at + 40),
-                symmetric: false,
-                tangent_chain: true,
-                ..Default::default()
-            },
-        );
-    })
+/// Same-index Thicken envelopes as `relocated_variants` places them, one per
+/// signed thickness of `thicknesses`.
+fn thicken_variants(thicknesses: &[f64]) -> Vec<DesignParameterScope> {
+    relocated_variants(
+        &DesignFeatureKind::Thicken,
+        thicknesses.len(),
+        |scope, copy| {
+            let at = scope.byte_offset();
+            let DesignScopePayloadMut::Thicken(slot) = scope.payload_mut() else {
+                panic!("a Thicken scope holds a Thicken payload");
+            };
+            *slot = Some(
+                crate::records::feature::direct_face::DesignThickenOperation {
+                    signed_thickness: Some(real(thicknesses[copy])),
+                    thickness_record_index: 74,
+                    thickness_offset: Some(at + 40),
+                    symmetric: false,
+                    tangent_chain: true,
+                    ..Default::default()
+                },
+            );
+        },
+    )
 }
 
 /// Two envelopes as `relocated_variants` builds them, labeled `labels`. Each
 /// label and each located payload value lies inside its own envelope, so the
 /// copies store every location at a different byte offset.
 fn labeled_variants(kind: &DesignFeatureKind, labels: [&str; 2]) -> Vec<DesignParameterScope> {
-    relocated_variants(kind, |scope, copy| {
+    relocated_variants(kind, labels.len(), |scope, copy| {
         let at = scope.byte_offset();
         let located = |value: u32, delta| Located {
             value,
@@ -396,7 +402,7 @@ fn relocated_identical_scope_copies_are_equivalent() {
 /// envelopes whose thicknesses differ in the last place stay unresolved.
 #[test]
 fn scope_variants_that_differ_in_a_payload_float_are_not_equivalent() {
-    let mut equivalent = thicken_variants(-1.0, -1.0);
+    let mut equivalent = thicken_variants(&[-1.0, -1.0]);
     with_test_ctx(|ctx| {
         admit_history_bound_scope_variants(ctx, &mut equivalent, &[], &Default::default())
     })
@@ -404,7 +410,7 @@ fn scope_variants_that_differ_in_a_payload_float_are_not_equivalent() {
     assert_eq!(equivalent.len(), 1);
     assert_eq!(equivalent[0].byte_offset(), 200);
 
-    let mut different = thicken_variants(-1.0, -1.0 - f64::EPSILON);
+    let mut different = thicken_variants(&[-1.0, -1.0 - f64::EPSILON]);
     assert!(with_test_ctx(|ctx| admit_history_bound_scope_variants(
         ctx,
         &mut different,
@@ -414,28 +420,51 @@ fn scope_variants_that_differ_in_a_payload_float_are_not_equivalent() {
     .is_err());
 }
 
-/// Two Thicken envelopes as `thicken_variants` builds them, whose tails store
-/// the suppressed flags `suppressed`, each at its own byte location.
-fn flagged_thicken_variants(suppressed: [bool; 2]) -> Vec<DesignParameterScope> {
-    let mut scopes = thicken_variants(-1.0, -1.0);
-    for (scope, suppressed) in scopes.iter_mut().zip(suppressed) {
-        scope.tail_flags = Some(crate::records::feature::scope::DesignScopeTailFlags {
-            suppressed,
-            rolled_back: true,
-            suppressed_offset: scope.feature_ordinal_offset() + 1,
+/// The suppressed and rolled-back flags of one envelope's tail, `None` where
+/// the tail stores none.
+type CopyFlags = Option<(bool, bool)>;
+
+/// Equal Thicken envelopes as `thicken_variants` builds them, one per entry of
+/// `flags`, whose tails store that entry's flags, each at its own byte
+/// location.
+fn flagged_thicken_variants(flags: &[CopyFlags]) -> Vec<DesignParameterScope> {
+    let mut scopes = thicken_variants(&vec![-1.0; flags.len()]);
+    for (scope, flags) in scopes.iter_mut().zip(flags.iter().copied()) {
+        let suppressed_offset = scope.feature_ordinal_offset() + 1;
+        scope.tail_flags = flags.map(|(suppressed, rolled_back)| {
+            crate::records::feature::scope::DesignScopeTailFlags {
+                suppressed,
+                rolled_back,
+                suppressed_offset,
+            }
         });
     }
     scopes
 }
 
-/// Two envelopes whose flags differ only in location are equivalent. Two
-/// envelopes that differ in suppression, with no history binding and no
-/// primary-indexed envelope, keep the later envelope and charge the earlier
-/// one as superseded.
+/// Envelopes whose flags differ only in location are equivalent. Envelopes
+/// that differ in their suppressed or rolled-back flags, or of which only some
+/// store flags, with no history binding and no primary-indexed envelope, keep
+/// the later envelope and charge each envelope whose flags differ from it.
 #[test]
-fn scope_variants_that_differ_in_suppression_keep_the_later_and_charge_a_loss() {
-    for (suppressed, tail_flags) in [([true, true], 0), ([true, false], 1)] {
-        let mut variants = flagged_thicken_variants(suppressed);
+fn scope_variants_that_differ_in_their_flags_keep_the_later_and_charge_a_loss() {
+    let cases: [(&[CopyFlags], usize); 5] = [
+        (&[Some((true, true)), Some((true, true))], 0),
+        (&[Some((true, true)), Some((false, true))], 1),
+        (&[Some((false, true)), Some((false, false))], 1),
+        (
+            &[
+                Some((true, false)),
+                Some((false, false)),
+                Some((false, false)),
+            ],
+            1,
+        ),
+        (&[None, Some((false, false))], 1),
+    ];
+    for (flags, tail_flags) in cases {
+        let mut variants = flagged_thicken_variants(flags);
+        let later = variants.last().map(DesignParameterScope::byte_offset);
         let superseded = with_test_ctx(|ctx| {
             admit_history_bound_scope_variants(ctx, &mut variants, &[], &Default::default())
         })
@@ -443,10 +472,13 @@ fn scope_variants_that_differ_in_suppression_keep_the_later_and_charge_a_loss() 
         let [retained] = variants.as_slice() else {
             panic!("one retained envelope")
         };
-        assert_eq!(retained.byte_offset(), 200);
+        assert_eq!(Some(retained.byte_offset()), later, "flags {flags:?}");
         assert_eq!(
-            retained.tail_flags.map(|flags| flags.suppressed),
-            Some(suppressed[1])
+            retained
+                .tail_flags
+                .map(|flags| (flags.suppressed, flags.rolled_back)),
+            flags.last().copied().flatten(),
+            "flags {flags:?}"
         );
         assert_eq!(
             superseded,
@@ -454,11 +486,34 @@ fn scope_variants_that_differ_in_suppression_keep_the_later_and_charge_a_loss() 
                 primary_indexed: 0,
                 tail_flags,
             },
-            "flags {suppressed:?}"
+            "flags {flags:?}"
         );
     }
 
-    let mut primary_earlier = flagged_thicken_variants([true, false]);
+    let mut primary_last = flagged_thicken_variants(&[
+        Some((true, false)),
+        Some((false, false)),
+        Some((false, false)),
+    ]);
+    let stream = crate::ids::native_stream(&primary_last[0].id)
+        .expect("fixture stream")
+        .to_owned();
+    let primary = std::collections::HashSet::from([(stream, 300)]);
+    let superseded = with_test_ctx(|ctx| {
+        admit_history_bound_scope_variants(ctx, &mut primary_last, &[], &primary)
+    })
+    .expect("primary-indexed envelope");
+    assert_eq!(primary_last.len(), 1);
+    assert_eq!(primary_last[0].byte_offset(), 300);
+    assert_eq!(
+        superseded,
+        SupersededScopeEnvelopes {
+            primary_indexed: 1,
+            tail_flags: 0,
+        }
+    );
+
+    let mut primary_earlier = flagged_thicken_variants(&[Some((true, true)), Some((false, true))]);
     let stream = crate::ids::native_stream(&primary_earlier[0].id)
         .expect("fixture stream")
         .to_owned();
@@ -488,7 +543,7 @@ fn scope_variants_that_differ_in_suppression_keep_the_later_and_charge_a_loss() 
 /// without a history binding or a primary-indexed envelope.
 #[test]
 fn scope_variants_that_differ_in_suppression_and_payload_are_unresolved() {
-    let mut variants = thicken_variants(-1.0, -2.0);
+    let mut variants = thicken_variants(&[-1.0, -2.0]);
     for (scope, suppressed) in variants.iter_mut().zip([true, false]) {
         scope.tail_flags = Some(crate::records::feature::scope::DesignScopeTailFlags {
             suppressed,
@@ -642,7 +697,7 @@ fn duplicate_scope_selection_is_equal_with_and_without_history_binding() {
 /// record index names is admitted even when the payloads differ.
 #[test]
 fn primary_indexed_scope_variant_is_admitted_without_a_history_binding() {
-    let mut different = thicken_variants(-1.0, -2.0);
+    let mut different = thicken_variants(&[-1.0, -2.0]);
     let stream = crate::ids::native_stream(&different[0].id)
         .expect("fixture stream")
         .to_owned();
@@ -654,7 +709,7 @@ fn primary_indexed_scope_variant_is_admitted_without_a_history_binding() {
     assert_eq!(different.len(), 1);
     assert_eq!(different[0].byte_offset(), 100);
 
-    let mut both = thicken_variants(-1.0, -2.0);
+    let mut both = thicken_variants(&[-1.0, -2.0]);
     let primary = std::collections::HashSet::from([(stream.clone(), 100), (stream, 200)]);
     assert!(
         with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut both, &[], &primary))
