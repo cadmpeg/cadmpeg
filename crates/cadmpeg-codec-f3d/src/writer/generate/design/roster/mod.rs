@@ -411,6 +411,9 @@ const EMPTY_CONFIGURATION: &[u8] = b"{}";
 /// The empty directory of the document's images.
 pub(super) const IMAGES: &str = "Images.BlobParts/";
 
+/// The reason of the note that charges the record-timestamp tables.
+pub(super) const FIXED_CLOCK: &str = "writes fixed-clock (2026-01-01 UTC) authoring timestamps in the record-timestamp tables: the document records no authoring clock";
+
 /// The values this writer chooses where the specification leaves the rule
 /// open.
 fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
@@ -422,7 +425,7 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
     notes.extend(sketches::dimensions::losses(ctx));
     notes.extend(record_residual_unavailable(
         "F3D",
-        "writes fixed-clock (2026-01-01 UTC) authoring timestamps in the record-timestamp tables: the document records no authoring clock",
+        FIXED_CLOCK,
         ctx.roster
             .rows()
             .iter()
@@ -478,14 +481,18 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
         ctx.bodies.iter().map(|body| body.id.to_string()),
     ));
     if !ctx.roster.sketches.is_empty() {
+        let item = if ctx.roster.extrude.is_some() {
+            "Extrude"
+        } else {
+            "Base Feature"
+        };
         notes.extend(record_residual_unavailable(
             "F3D",
             &format!(
-                "writes the Sketch items before the {} with these records and bytes by the majority of Fusion's Sketch designs; f3d-open-items.md DR-901 leaves their rule open",
-                if ctx.roster.extrude.is_some() { "Extrude" } else { "Base Feature" }
+                "writes the Sketch items before the {item} with these records and bytes by the majority of Fusion's Sketch designs; f3d-open-items.md DR-901 leaves their rule open"
             ),
             [
-                "record 199 (owner collection: the order of the Sketch and Base Feature members)".to_owned(),
+                format!("record 199 (owner collection: the order of the Sketch and {item} members)"),
                 "record 200 (B65B5682: the order of its members)".to_owned(),
                 "record 201 (dependency table: the order of its entries)".to_owned(),
                 "record 203 (persistent-id table of Sketch items before the timeline's geometry item)".to_owned(),
@@ -497,7 +504,7 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
                 format!("record {SKETCHES} (sketch collection: `crv_tag_id_idx`, one more than the largest point or curve identity)"),
                 "placement tracking flags (01 01 00)".to_owned(),
                 format!(
-                    "Sketch scope tails, placements and placement paths (evaluation epoch {}, where f3d.md §3.1 states 252, and duration {}, as the Base Feature item tail)",
+                    "Sketch scope tails, placements and placement paths (evaluation epoch {}, where f3d.md §3.1 states 252, and duration {}, as the {item} item tail)",
                     super::base_feature::EPOCH,
                     super::base_feature::DURATION
                 ),

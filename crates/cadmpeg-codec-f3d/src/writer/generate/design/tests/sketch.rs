@@ -700,6 +700,11 @@ pub(super) fn fixed_clock_tables(
             "{table}: {note}"
         );
     }
+    assert_eq!(
+        note.matches("(record-timestamp table)").count(),
+        tables.len(),
+        "{note}"
+    );
     tables
 }
 
