@@ -11,14 +11,16 @@ use super::support::{
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::classification::{classify, FeatureClass};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::{
-    features::{
-        CosmeticThreadExtent, CurveProjectionDirection, CurveProjectionDirectionState,
-        FaceSelection, FeatureId, FeatureTreeNodeRole, HelixConstructionStyle, PathRef,
-    },
-    scalar::{Angle, Length},
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::surface_inputs::{
+    CurveProjectionDirection, CurveProjectionDirectionState,
 };
+use cadmpeg_ir::features::sweeps::HelixConstructionStyle;
+use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
+use cadmpeg_ir::features::{CosmeticThreadExtent, FeatureId};
+use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::{Angle, Length};
 use std::collections::BTreeMap;
 
 /// The decoded fields of one `Helix` operation, borrowed from the feature definition.
@@ -27,7 +29,7 @@ pub(super) struct HelixDefinition<'a> {
     pub(super) axis_origin: &'a Point3,
     pub(super) axis_direction: &'a Vector3,
     pub(super) radius: &'a cadmpeg_ir::scalar::PositiveLength,
-    pub(super) shape: &'a cadmpeg_ir::features::HelixShape,
+    pub(super) shape: &'a cadmpeg_ir::features::sweeps::HelixShape,
     pub(super) revolutions: &'a cadmpeg_ir::scalar::PositiveReal,
     pub(super) start_angle: &'a Angle,
     pub(super) clockwise: bool,
@@ -185,7 +187,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_equation_curve(
         &self,
-        curve: &cadmpeg_ir::features::FeatureEquationCurve,
+        curve: &cadmpeg_ir::features::geometry::FeatureEquationCurve,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -365,7 +367,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            let cadmpeg_ir::features::HelixShape::Cylindrical { pitch } = shape else {
+            let cadmpeg_ir::features::sweeps::HelixShape::Cylindrical { pitch } = shape else {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} uses unsupported helix construction controls",
                     feature.id
@@ -378,8 +380,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 )));
             }
             let (Some(axis_origin), Some(axis_direction)) = (
-                cadmpeg_ir::features::FinitePoint3::new(*axis_origin),
-                cadmpeg_ir::features::FiniteVector3::new(*axis_direction)
+                cadmpeg_ir::features::geometry::FinitePoint3::new(*axis_origin),
+                cadmpeg_ir::features::geometry::FiniteVector3::new(*axis_direction)
                     .filter(|direction| valid_direction(direction.get())),
             ) else {
                 return Err(CodecError::malformed(format_args!(

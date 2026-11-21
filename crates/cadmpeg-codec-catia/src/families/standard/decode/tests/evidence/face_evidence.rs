@@ -116,8 +116,12 @@ fn standard_spline_retains_complete_surface_incidence_pair_domain() {
     for index in 0..138 {
         ir.geometry.points.push(Point::new(
             PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(f64::from(index), 0.0, 0.0))
-                .expect("a finite position is a point"),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                f64::from(index),
+                0.0,
+                0.0,
+            ))
+            .expect("a finite position is a point"),
             None,
         ));
     }
@@ -235,7 +239,7 @@ fn standard_planar_intersection_spline_uses_the_common_line_domain() {
     {
         ir.geometry.points.push(Point::new(
             PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(position)
+            cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                 .expect("a finite position is a point"),
             None,
         ));
@@ -315,7 +319,7 @@ fn standard_antipodal_circle_candidates_admit_full_circle_seams() {
     {
         ir.geometry.points.push(Point::new(
             PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(position)
+            cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                 .expect("a finite position is a point"),
             None,
         ));
@@ -397,7 +401,7 @@ fn standard_parallel_line_rows_retain_domains_independent_of_allocation_order() 
     {
         ir.geometry.points.push(Point::new(
             PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(position)
+            cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                 .expect("a finite position is a point"),
             None,
         ));
@@ -545,8 +549,12 @@ fn a_native_endpoint_pair_reads_from_the_finite_support_when_its_partner_overflo
             Point::new(
                 PointId::mint(format!("catia:test:point#overflow-{index}"))
                     .expect("identity grammar"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(angle.cos(), angle.sin(), 0.0))
-                    .expect("a finite position is a point"),
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                    angle.cos(),
+                    angle.sin(),
+                    0.0,
+                ))
+                .expect("a finite position is a point"),
                 None,
             )
         })
@@ -587,8 +595,12 @@ fn a_native_endpoint_pair_reads_from_the_finite_support_when_its_placed_partner_
             Point::new(
                 PointId::mint(format!("catia:test:point#placed-overflow-{index}"))
                     .expect("identity grammar"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(angle.cos(), angle.sin(), 0.0))
-                    .expect("a finite position is a point"),
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                    angle.cos(),
+                    angle.sin(),
+                    0.0,
+                ))
+                .expect("a finite position is a point"),
                 None,
             )
         })
@@ -777,9 +789,10 @@ fn face_partition_splits_components_into_separate_regions_and_shells() {
 fn extrusion_definition_copy_equals_the_source_definition() {
     let directrix =
         cadmpeg_ir::ids::CurveId::mint("catia:test:directrix#7").expect("identity grammar");
-    let direction =
-        cadmpeg_ir::features::FiniteVector3::new(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))
-            .expect("finite direction");
+    let direction = cadmpeg_ir::features::geometry::FiniteVector3::new(
+        cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+    )
+    .expect("finite direction");
     let definition = cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::legacy(
         directrix, None, direction, None, None,
     );

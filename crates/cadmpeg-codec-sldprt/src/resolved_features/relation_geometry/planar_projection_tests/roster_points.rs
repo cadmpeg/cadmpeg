@@ -2,7 +2,9 @@ use super::{planar_fixture, project_relation_bindings};
 use crate::records::{FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{DesignParameter, DistinctMembers, ParameterId, ParameterValue};
+use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
+use cadmpeg_ir::features::selections::DistinctMembers;
+use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
     SketchGeometryDefinition, SketchLocus,

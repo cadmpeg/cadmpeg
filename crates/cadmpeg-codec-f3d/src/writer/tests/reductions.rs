@@ -290,7 +290,8 @@ fn a_pole_loop_is_dropped_and_its_face_written() {
     let pole = cadmpeg_ir::ids::LoopId::mint("generated:test:pole-loop#0").expect("identity");
     ir.geometry.points.push(Point::new(
         point.clone(),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.5, 0.5, 0.0)).expect("finite"),
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.5, 0.5, 0.0))
+            .expect("finite"),
         None,
     ));
     ir.geometry.vertices.push(Vertex {
@@ -365,7 +366,7 @@ fn an_open_edge_with_no_stated_range_is_written_between_its_vertices() {
 }
 
 #[test]
-fn an_open_edge_whose_vertex_misses_its_line_is_written_with_record_invalid() {
+fn an_open_edge_whose_vertex_misses_its_spline_is_written_with_record_invalid() {
     let mut ir = source_less(&synthetic_wire_body_smbh());
     ir.native = cadmpeg_ir::native::Native::default();
     let edge = ir
@@ -380,7 +381,25 @@ fn an_open_edge_whose_vertex_misses_its_line_is_written_with_record_invalid() {
         .expect("the fixture holds an open edge");
     edge.carrier = EdgeCarrier::new(edge.curve().cloned(), None).expect("a curve without a range");
     let id = edge.id.to_string();
+    let curve = edge.curve().cloned().expect("an edge on a curve");
+    let start = edge.ends.as_ref().expect("an open edge").start.clone();
     let end = edge.ends.as_ref().expect("an open edge").end.clone();
+    let start_point = ir
+        .geometry
+        .vertices
+        .iter()
+        .find(|vertex| vertex.id == start)
+        .expect("the start vertex")
+        .point
+        .clone();
+    let from = ir
+        .geometry
+        .points
+        .iter()
+        .find(|row| row.id == start_point)
+        .expect("the start point")
+        .position()
+        .get();
     let point = ir
         .geometry
         .vertices
@@ -399,7 +418,7 @@ fn an_open_edge_whose_vertex_misses_its_line_is_written_with_record_invalid() {
     // The fixture's line runs along x; the vertex moves 1 mm off it.
     *row = cadmpeg_ir::topology::Point::new(
         point,
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
             position.x,
             position.y + 1.0,
             position.z,
@@ -407,6 +426,23 @@ fn an_open_edge_whose_vertex_misses_its_line_is_written_with_record_invalid() {
         .expect("finite"),
         None,
     );
+    // The writer states a range from the vertices' feet on a line or conic
+    // only; on a spline the edge keeps no range.
+    ir.geometry
+        .curves
+        .iter_mut()
+        .find(|row| row.id == curve)
+        .expect("the edge curve")
+        .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![from, position],
+            None,
+            false,
+        )
+        .expect("a straight spline"),
+    ));
     assert_written_with_loss(&ir, None, "export/record.invalid", &id);
 }
 
@@ -699,3 +735,5 @@ fn a_carrier_whose_encoding_fails_still_drops_its_body() {
         report.losses
     );
 }
+
+mod edge_ranges;

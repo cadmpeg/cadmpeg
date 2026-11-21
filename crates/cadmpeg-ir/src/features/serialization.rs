@@ -4,11 +4,12 @@
 
 use std::collections::BTreeMap;
 
-use super::{
-    CoilPlacement, DistinctMembers, Feature, FeatureContent, FeatureDefinition,
-    FeatureEquationCurve, FeatureId, FeatureResultMembers, PlanarProfileRef, SelectionReference,
-    SketchFeatureBinding, SweepSection,
-};
+use super::{Feature, FeatureContent, FeatureDefinition, FeatureId, SketchFeatureBinding};
+use crate::features::evaluation::FeatureResultMembers;
+use crate::features::geometry::FeatureEquationCurve;
+use crate::features::profiles::PlanarProfileRef;
+use crate::features::selections::{DistinctMembers, SelectionReference};
+use crate::features::sweeps::{CoilPlacement, SweepSection};
 use crate::ids::{BodyId, ProductDefinitionId};
 use crate::math::{Point3, Vector3};
 use crate::sketches::SketchId;

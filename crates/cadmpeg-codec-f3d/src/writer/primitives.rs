@@ -54,8 +54,6 @@ pub(crate) fn validate_assembly_projection(
                 )
             });
     };
-    // The decoder projects joints over the expanded instance tree, then names
-    // each instance's occurrence.
     let expanded = crate::tree::expand(
         &cadmpeg_core::decode::ResourceLimits::default(),
         &target.model.product_definitions,
@@ -87,20 +85,62 @@ pub(crate) fn validate_assembly_projection(
         &expanded.occurrences,
         &mut projected.joints,
     );
-    for connector in projected
-        .joints
+    let mut selected = target.model.assembly_joints.clone();
+    let parents = crate::tree::parent_ids(&expanded.definitions, &expanded.occurrences);
+    let keys = native
+        .design_component_occurrences
+        .iter()
+        .map(|carrier| (carrier.id.as_str(), carrier.occurrence_guid.as_str()))
+        .chain(native.xref_references.iter().filter_map(|reference| {
+            Some((
+                reference.id.as_str(),
+                reference
+                    .placement_source
+                    .as_ref()?
+                    .occurrence_guid
+                    .as_ref()?
+                    .as_str(),
+            ))
+        }))
+        .chain(native.design_parameter_scopes.iter().filter_map(|scope| {
+            let key = scope
+                .component_insert_construction()?
+                .occurrence_key
+                .as_ref()?;
+            Some((scope.id.as_str(), key.value.as_str()))
+        }))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    for connector in selected
         .iter_mut()
         .flat_map(cadmpeg_ir::products::AssemblyJoint::connectors_mut)
     {
-        if let cadmpeg_ir::products::OperandContainer::Occurrence { occurrence, .. } =
-            &mut connector.operand.container
+        if let cadmpeg_ir::products::OperandContainer::Occurrence {
+            occurrence,
+            occurrence_path,
+        } = &mut connector.operand.container
         {
-            if let Some(own) = expanded.occurrence_of.get(occurrence) {
-                occurrence.clone_from(own);
+            let mut consumed = 0;
+            for key in occurrence_path.iter() {
+                let mut children = expanded.occurrences.iter().filter(|child| {
+                    parents.get(&child.id) == Some(occurrence)
+                        && child
+                            .native_ref
+                            .as_deref()
+                            .and_then(|id| keys.get(id))
+                            .is_some_and(|native_key| native_key.eq_ignore_ascii_case(key))
+                });
+                match (children.next(), children.next()) {
+                    (Some(child), None) => {
+                        *occurrence = child.id.clone();
+                        consumed += 1;
+                    }
+                    _ => break,
+                }
             }
+            occurrence_path.drain(..consumed);
         }
     }
-    if target.model.assembly_joints != projected.joints {
+    if selected != projected.joints {
         return Err(CodecError::NotImplemented(
             "editing F3D assembly joints is not supported".into(),
         ));

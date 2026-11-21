@@ -12,7 +12,7 @@
 
 use std::f64::consts::TAU;
 
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::math::{Point2, Vector3};
 use cadmpeg_ir::scalar::PositiveLength;
 use cadmpeg_ir::sketches::{SpatialSketch, SpatialSketchEntity, SpatialSketchGeometryDefinition};

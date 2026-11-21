@@ -52,7 +52,7 @@ fn read_poles(
     scale: MillimeterScale,
 ) -> Result<
     (
-        Vec<cadmpeg_ir::features::FinitePoint3>,
+        Vec<cadmpeg_ir::features::geometry::FinitePoint3>,
         Option<Vec<cadmpeg_ir::scalar::NonZeroReal>>,
     ),
     GeometryError,
@@ -886,7 +886,7 @@ fn extrusion_tensor_preserves_rational_profile_knots_weights_and_transpose() {
     end.try_map_control_points(|_, point| {
         let mut point = point.get();
         point.z = 7.0;
-        cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+        cadmpeg_ir::features::geometry::FinitePoint3::new(point).ok_or_else(|| {
             cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                 "control_points contains a non-finite point".into(),
             )

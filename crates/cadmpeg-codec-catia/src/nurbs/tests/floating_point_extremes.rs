@@ -63,7 +63,7 @@ fn reversal_preserves_large_parameter_offsets_and_endpoint_values() {
                     &reversed,
                     parameter
                 )
-                .map(cadmpeg_ir::features::FinitePoint3::get),
+                .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
                 Ok(Point3::new(expected_x, 0.0, 0.0))
             );
             assert_eq!(
@@ -401,7 +401,7 @@ fn reversed_line_starts_at_the_original_end_point() {
             .control_points()
             .first()
             .copied()
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Some(Point3::new(1.0, 0.0, 0.0))
     );
 }

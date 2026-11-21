@@ -171,6 +171,18 @@ pub(super) fn standard_pcurve_geometry(
     else {
         return Ok(None);
     };
+    if let (
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_)),
+        Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle))),
+    ) = (surface, edge_curve)
+    {
+        let normal = *circle.frame().axis().as_raw();
+        let offset = midpoint.vector_from(circle.center().get());
+        if normal.dot(offset).abs() > SUPPORT_AGREEMENT_TOLERANCE {
+            refusal.push_pcurve_circle_plane_mismatch(support.pos);
+            return Ok(None);
+        }
+    }
     let on_curve = match &support.geometry {
         crate::families::standard::records::StandardCurveGeometry::Line => {
             let chord = end.vector_from(start);
@@ -915,7 +927,7 @@ pub(super) fn standard_native_support_witness(
             cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
                 cadmpeg_ir::eval::decode::surface_point(ctx, surface, uv.u, uv.v),
             )?)?
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         )
     };
     let Some(first) = lift(&native.carriers[0], &native.pcurves[0])? else {
@@ -1506,49 +1518,34 @@ pub(super) fn build_standard_edge_curve(
             _ => Exactness::ByteExact,
         },
     )?;
-    if matches!(
-        &geometry,
-        CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
-    ) {
-        annotations.derived(&id, "geometry.origin")?;
-        annotations.derived(&id, "geometry.direction")?;
-    } else if matches!(
-        (&support.geometry, &geometry),
+    let derived_fields: &[&str] = match (&support.geometry, &geometry) {
+        (_, CurveGeometry::Solved(SolvedCurveGeometry::Line(_))) => &["origin", "direction"],
         (
             crate::families::standard::records::StandardCurveGeometry::Bspline,
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(_)),
-        )
-    ) {
-        annotations.derived(&id, "geometry.center")?;
-        annotations.derived(&id, "geometry.axis")?;
-        annotations.derived(&id, "geometry.ref_direction")?;
-        annotations.derived(&id, "geometry.radius")?;
-    } else if matches!(
-        (&support.geometry, &geometry),
+        ) => &["center", "axis", "ref_direction", "radius"],
         (
             crate::families::standard::records::StandardCurveGeometry::Bspline,
             CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_)),
-        )
-    ) {
-        annotations.derived(&id, "geometry.center")?;
-        annotations.derived(&id, "geometry.axis")?;
-        annotations.derived(&id, "geometry.major_direction")?;
-        annotations.derived(&id, "geometry.major_radius")?;
-        annotations.derived(&id, "geometry.minor_radius")?;
-    } else if matches!(
-        (&support.geometry, &geometry),
+        ) => &[
+            "center",
+            "axis",
+            "major_direction",
+            "major_radius",
+            "minor_radius",
+        ],
         (
             crate::families::standard::records::StandardCurveGeometry::Circle { .. },
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(_)),
-        )
-    ) {
-        annotations.derived(&id, "geometry.axis")?;
-    }
+        ) => &["axis"],
+        _ => &[],
+    };
     let geometry_is_unknown = matches!(
         &geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
     );
     admission.charge()?;
+    let curve_index = ir.geometry.curves.len();
     ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: id.clone(),
@@ -1628,7 +1625,6 @@ pub(super) fn build_standard_edge_curve(
                     "standard_surface_intersection",
                     Exactness::Derived,
                 )?;
-                annotations.derived(&procedural_id, "curve")?;
                 annotations.derived(&procedural_id, "definition")?;
                 let Ok(context) = IntcurveSupportContext::try_new(
                     sides,
@@ -1650,6 +1646,16 @@ pub(super) fn build_standard_edge_curve(
                 param_range = Some(curve_parameter_range);
             }
         }
+    }
+    let prefix = match ir.geometry.curves[curve_index].geometry {
+        CurveGeometry::Procedural { .. } => {
+            annotations.derived(&id, "geometry.value.construction")?;
+            "geometry.value.cache"
+        }
+        CurveGeometry::Solved(_) => "geometry.value",
+    };
+    for field in derived_fields {
+        annotations.derived(&id, &format!("{prefix}.{field}"))?;
     }
     Ok((Some(id), param_range))
 }
@@ -2142,7 +2148,7 @@ pub(super) fn attach_standard_circles(
             "curve_support_60_circle",
             Exactness::ByteExact,
         )?;
-        annotations.derived(&id, "geometry.axis")?;
+        annotations.derived(&id, "geometry.value.axis")?;
         admission.charge()?;
         ir.geometry.curves.push(Curve {
             parameter_range: None,
@@ -2362,8 +2368,8 @@ pub(super) fn attach_standard_lines(
             "curve_support_60_line",
             Exactness::ByteExact,
         )?;
-        annotations.derived(&id, "geometry.origin")?;
-        annotations.derived(&id, "geometry.direction")?;
+        annotations.derived(&id, "geometry.value.origin")?;
+        annotations.derived(&id, "geometry.value.direction")?;
         admission.charge()?;
         ir.geometry.curves.push(Curve {
             parameter_range: None,

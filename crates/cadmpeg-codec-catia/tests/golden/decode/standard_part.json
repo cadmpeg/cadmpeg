@@ -844,7 +844,7 @@
         },
         "catia:standard:circle#0": {
           "fields": {
-            "geometry.axis": "derived"
+            "geometry.value.axis": "derived"
           },
           "kind": "fields"
         },

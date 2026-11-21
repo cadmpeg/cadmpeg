@@ -27,7 +27,7 @@ use crate::nurbs::subtypes::subtype_span;
 use crate::nurbs::support_chart::SupportChart;
 use crate::nurbs::toks::{self, Cur, SubtypeTable};
 use crate::sab::Token;
-use cadmpeg_ir::features::FiniteVector3;
+use cadmpeg_ir::features::geometry::FiniteVector3;
 use cadmpeg_ir::geometry::{
     pcurve::{PcurveGeometry, PcurveNurbs},
     BlendCrossSection, CurveGeometry, RollingBallSide, RollingBallSideExtension,

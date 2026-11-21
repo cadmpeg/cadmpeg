@@ -6,7 +6,7 @@ use super::{
     TessellationId, TessellationMesh, TessellationTextureAssignment, TessellationTriangleGroup,
     TessellationWire, TextureCoordinateAddressing, TextureCoordinates,
 };
-use crate::features::{FinitePoint3, FiniteVector3};
+use crate::features::geometry::{FinitePoint3, FiniteVector3};
 use crate::math::{Point3, Vector3};
 use crate::scalar::NonNegativeReal;
 use crate::units::{FinitePoint2, UnitVector3};
@@ -705,7 +705,7 @@ fn a_channel_states_its_addressing_by_name() {
 
 #[test]
 fn a_tessellation_holds_its_admitted_mesh_and_takes_an_admitted_replacement() {
-    use crate::features::{FinitePoint3, FiniteVector3};
+    use crate::features::geometry::{FinitePoint3, FiniteVector3};
 
     let base = mesh();
     let normals = vec![Vector3::new(0.0, 0.0, 1.0); base.vertex_count()];

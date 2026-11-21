@@ -91,7 +91,7 @@ pub(crate) fn append(
     let Some(bodies) = configuration
         .bodies
         .as_ref()
-        .map(cadmpeg_ir::features::DistinctMembers::as_slice)
+        .map(cadmpeg_ir::features::selections::DistinctMembers::as_slice)
     else {
         not_compared(losses, "the active configuration body set is unresolved");
         return Ok(());
@@ -208,7 +208,7 @@ fn property_configuration_index(name: &str) -> Option<u32> {
 }
 
 fn saved_measures(attribute: &SourceAttribute) -> Option<SavedMeasures> {
-    let [AttributeValue::String(value)] = attribute.values.as_slice() else {
+    let [Some(AttributeValue::String(value))] = attribute.values.as_slice() else {
         return None;
     };
     let mut count = 0usize;
@@ -302,7 +302,8 @@ mod tests {
                 .expect("attribute id"),
             target: AttributeTarget::Document.into(),
             name: name.to_owned(),
-            values: vec![AttributeValue::String(value.to_owned())],
+            values: vec![Some(AttributeValue::String(value.to_owned()))],
+            native_ref: None,
         }
     }
 

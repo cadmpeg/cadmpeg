@@ -6,7 +6,7 @@
 //! coedge a [`pcurve::Pcurve`]). One carrier may therefore support several topological
 //! entities.
 
-use crate::features::{FinitePoint3, FiniteVector3};
+use crate::features::geometry::{FinitePoint3, FiniteVector3};
 use crate::ids::{CurveId, PcurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
 use crate::math::{
     sum::{fast_dot, ExactSignedSum},
@@ -54,7 +54,7 @@ pub mod surface_payloads;
 pub const MAX_GEOMETRY_NESTING: usize = 256;
 
 /// Admitted conditional flag shapes in the pre-revision offset-surface layout.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum LegacyExtensionFlags {
@@ -106,7 +106,7 @@ pub enum OffsetExtension<R = f64> {
 
 /// Analytic, NURBS, or opaque surface geometry established without a
 /// construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -246,7 +246,7 @@ impl TryFrom<PlacedSurfaceWire> for PlacedSurface {
 }
 
 /// Analytic, NURBS, procedural, or opaque surface geometry.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -325,7 +325,7 @@ pub struct Surface {
 
 /// The analytic or free-form shape of a 3D curve carrier established without a
 /// construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -495,7 +495,7 @@ impl TryFrom<PlacedCurveWire> for PlacedCurve {
 }
 
 /// The analytic, free-form, procedural, or opaque shape of a 3D curve carrier.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -632,8 +632,8 @@ pub fn derive_reference_direction(axis: Vector3) -> Vector3 {
     let norm = axis.norm();
     let axis = if norm.is_finite() && norm != 0.0 {
         Vector3::new(axis.x / norm, axis.y / norm, axis.z / norm)
-    } else if let Some(unit) = crate::features::FiniteVector3::new(axis)
-        .and_then(crate::features::FiniteVector3::unit_nonzero)
+    } else if let Some(unit) = crate::features::geometry::FiniteVector3::new(axis)
+        .and_then(crate::features::geometry::FiniteVector3::unit_nonzero)
     {
         unit
     } else {
@@ -1536,7 +1536,7 @@ pub enum ProceduralGeometryError {
     Cache(#[from] CacheContractError),
     /// A member list violates its member contract.
     #[error(transparent)]
-    Members(#[from] crate::features::BodySelectionError),
+    Members(#[from] crate::features::selections::BodySelectionError),
 }
 
 /// A construction whose layout states no solved-cache fit tolerance.
@@ -2708,7 +2708,7 @@ impl TryFrom<HelixLineProfileWire> for HelixLineProfile {
 }
 
 /// Profile-specific tail of a helix surface.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -2854,7 +2854,7 @@ pub struct InlineTSplineSubtransform {
     pub values: cadmpeg_core::text::NonBlankString,
 }
 
-#[derive(Deserialize)]
+#[derive(cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -2919,7 +2919,7 @@ pub enum TSplineSubtransform {
     },
 }
 
-#[derive(Deserialize)]
+#[derive(cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -6468,7 +6468,7 @@ pub struct SweepSurfaceConstruction<R = f64, V = Vector3, P = Point3> {
 }
 
 /// Radius law for a procedural blend.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -7423,7 +7423,7 @@ impl<'de> Deserialize<'de> for ProjectionRole {
 
 /// Native surface-curve family with its support context and optional
 /// cache-first form.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SurfaceCurveFamily {
@@ -7561,7 +7561,7 @@ impl SurfaceCurveFamily {
 }
 
 /// Native silhouette construction family and its exclusive tail fields.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -7618,7 +7618,7 @@ pub enum DeformableCurveData<R = f64, V = Vector3, P = Point3> {
 }
 
 /// Source slot of a deformable native intcurve.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
