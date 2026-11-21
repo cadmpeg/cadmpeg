@@ -10,13 +10,16 @@
 //! set that are equal with their indexes left out are one place. A `Bounded`
 //! name's `ends` narrows the candidates its indexes keep.
 //!
-//! Interim: this module matches each name under two readings, and only the
-//! outer `index` narrows. Under `Loose` every index is left out of the
-//! comparison; under `Exact` a nested name compares whole, its index
-//! included. A pick is lost only where it matches nothing under either
-//! reading, and an entity is selected only where both readings select it.
-//! `ends` narrows a `Bounded` name's adjacency candidates before the outer
-//! index narrows.
+//! Interim: this module matches each name under two readings. Against table
+//! entries, only the outer `index` narrows: under `Loose` every nested index
+//! is left out of the comparison; under `Exact` a nested name compares whole,
+//! its index included. Through adjacency, `Bounded` and `Meeting` resolve
+//! each name in `faces` (and `ends`) recursively through `resolve`, so a
+//! face or end name's own `index` narrows its matches independently, rather
+//! than against the outer candidates. A pick is lost only where it matches
+//! nothing under either reading, and an entity is selected only where both
+//! readings select it. `ends` narrows a `Bounded` name's adjacency candidates
+//! before the outer `index` narrows.
 
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet};
