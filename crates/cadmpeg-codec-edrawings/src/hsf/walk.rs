@@ -353,7 +353,7 @@ impl<'a> Walker<'a> {
         self.take(length)
     }
 
-    fn expect(&mut self, byte: u8, reason: &'static str) -> Result<(), WalkError> {
+    fn require_byte(&mut self, byte: u8, reason: &'static str) -> Result<(), WalkError> {
         if self.u8()? == byte {
             Ok(())
         } else {
@@ -438,7 +438,7 @@ impl<'a> Walker<'a> {
 
     fn shell(&mut self) -> Result<Record<'a>, WalkError> {
         let id = self.u32()?;
-        self.expect(0, "shell: byte after the id is not zero")?;
+        self.require_byte(0, "shell: byte after the id is not zero")?;
         let count = self.len32()?;
         if count == 0 || count > MAX_SHELL_VERTICES {
             return self.fail("shell: vertex count is zero or exceeds the cap");
@@ -454,7 +454,7 @@ impl<'a> Walker<'a> {
             return self.fail("shell: vertex bytes overflow");
         };
         let points = self.take(size)?;
-        self.expect(1, "shell: no face list marker")?;
+        self.require_byte(1, "shell: no face list marker")?;
         let length = self.len32()?;
         let facelist = self.take(length)?;
         if self.take(3)? != [0x01, 0x07, 0x0c] {
@@ -468,7 +468,7 @@ impl<'a> Walker<'a> {
         if self.peek() == Some(SHELL_FACE_TAG) {
             self.shell_face_tag()?;
         }
-        self.expect(0, "shell: no terminator")?;
+        self.require_byte(0, "shell: no terminator")?;
         Ok(Record::Shell(Shell {
             id,
             points,
@@ -487,7 +487,7 @@ impl<'a> Walker<'a> {
         if u0 != 0.0 || u1 != 0.0 {
             return self.fail("shell: range block u is not zero");
         }
-        self.expect(SHELL_RANGE_MARK, "shell: no range block marker")?;
+        self.require_byte(SHELL_RANGE_MARK, "shell: no range block marker")?;
         let length = self.len32()?;
         if count.checked_mul(2) != Some(length) {
             return self.fail("shell: range block length is not twice the vertex count");
@@ -509,7 +509,7 @@ impl<'a> Walker<'a> {
             }
             _ => return self.fail("shell: face tag without user option"),
         }
-        self.expect(0, "shell: no zero byte after the face tag")
+        self.require_byte(0, "shell: no zero byte after the face tag")
     }
 
     /// The items of a geometry side object, up to the implicit close.
@@ -525,7 +525,7 @@ impl<'a> Walker<'a> {
             {
                 self.skip(1 + F32_BYTES * floats)?;
                 if GEOMETRY_ZERO_ENDED.contains(&opcode) {
-                    self.expect(0, "geometry object: no zero byte after the arc")?;
+                    self.require_byte(0, "geometry object: no zero byte after the arc")?;
                 }
             } else {
                 return Ok(());
@@ -566,13 +566,13 @@ impl<'a> Walker<'a> {
             Some(0x78) => {
                 self.skip(1)?;
                 self.skip(TEXT_ZERO_RUN)?;
-                self.expect(TEXT_MARK, "text object: no marker")?;
+                self.require_byte(TEXT_MARK, "text object: no marker")?;
                 let mut length = usize::from(self.u8()?);
                 if length == usize::from(TEXT_LONG_MARK) {
                     length = usize::from(self.u16()?);
                 }
                 let text = self.take(length)?;
-                self.expect(0, "text object: no terminator")?;
+                self.require_byte(0, "text object: no terminator")?;
                 Ok(Record::SideText(id, text))
             }
             Some(0x69) => {
@@ -613,7 +613,7 @@ impl<'a> Walker<'a> {
             return self.fail("header block: length overflows");
         };
         self.skip(span)?;
-        self.expect(b']', "header block: no closing bracket")?;
+        self.require_byte(b']', "header block: no closing bracket")?;
         Ok(Record::Header)
     }
 
@@ -643,7 +643,7 @@ impl<'a> Walker<'a> {
     }
 
     fn line_styles(&mut self) -> Result<Record<'a>, WalkError> {
-        self.expect(1, "line style table: unknown version")?;
+        self.require_byte(1, "line style table: unknown version")?;
         self.line_style_run()
     }
 
@@ -774,7 +774,7 @@ impl<'a> Walker<'a> {
                 Record::Ignored
             }
             b'-' | EDGE_PATTERN => {
-                self.expect(PATTERN_FLAG, "line pattern: flag is not ff")?;
+                self.require_byte(PATTERN_FLAG, "line pattern: flag is not ff")?;
                 self.pstr()?;
                 Record::Ignored
             }

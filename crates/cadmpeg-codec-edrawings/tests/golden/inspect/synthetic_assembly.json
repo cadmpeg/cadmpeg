@@ -9,11 +9,11 @@
         "header_offset": "0",
         "hsf_version": "19.10"
       },
-      "compression": "stored",
+      "kind": "stored",
       "name": "eModel",
       "role": "model-data",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 3122
       }
     },
@@ -24,11 +24,11 @@
         "data_offset": "3199",
         "header_offset": "3158"
       },
-      "compression": "stored",
+      "kind": "stored",
       "name": "preview.jpg",
       "role": "preview-image",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 19
       }
     },
@@ -39,11 +39,11 @@
         "data_offset": "3251",
         "header_offset": "3218"
       },
-      "compression": "stored",
+      "kind": "stored",
       "name": "OLE",
       "role": "opaque",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 12
       }
     },
@@ -54,11 +54,11 @@
         "data_offset": "3302",
         "header_offset": "3263"
       },
-      "compression": "stored",
+      "kind": "stored",
       "name": "scene.xml",
       "role": "auxiliary",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 35
       }
     },
@@ -69,11 +69,11 @@
         "data_offset": "3380",
         "header_offset": "3337"
       },
-      "compression": "stored",
+      "kind": "stored",
       "name": "materials.xml",
       "role": "material-texture",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 12
       }
     },
@@ -84,28 +84,31 @@
         "data_offset": "3440",
         "header_offset": "3392"
       },
-      "compression": "stored",
+      "kind": "stored",
       "name": "FileProperties.xml",
       "role": "properties",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 17
       }
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "hsf_version": "19.10"
         },
         "dialect": "edrawings:hsf-19-10"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "6 members",
     "HSF V19.10; info record 4; bounds [-0.5, 0.0, -0.25]..[0.5, 1.0, 0.25]; model stream at offset 47"

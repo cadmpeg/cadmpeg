@@ -9,11 +9,11 @@
         "header_offset": "0",
         "hsf_version": "19.10"
       },
-      "compression": "stored",
+      "kind": "stored",
       "name": "eModel",
       "role": "model-data",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 1361
       }
     },
@@ -24,11 +24,11 @@
         "data_offset": "1438",
         "header_offset": "1397"
       },
-      "compression": "stored",
+      "kind": "stored",
       "name": "preview.jpg",
       "role": "preview-image",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 19
       }
     },
@@ -39,11 +39,11 @@
         "data_offset": "1490",
         "header_offset": "1457"
       },
-      "compression": "stored",
+      "kind": "stored",
       "name": "OLE",
       "role": "opaque",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 12
       }
     },
@@ -54,28 +54,31 @@
         "data_offset": "1541",
         "header_offset": "1502"
       },
-      "compression": "stored",
+      "kind": "stored",
       "name": "scene.xml",
       "role": "auxiliary",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 35
       }
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "hsf_version": "19.10"
         },
         "dialect": "edrawings:hsf-19-10"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "4 members",
     "HSF V19.10; info record 4; bounds [-0.5, 0.0, -0.25]..[0.5, 1.0, 0.25]; model stream at offset 47"

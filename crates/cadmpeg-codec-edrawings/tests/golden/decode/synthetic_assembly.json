@@ -1,12 +1,27 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "10",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "assembly_joints": [],
-      "attributes": [],
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
+    "fragment": false,
+    "geometry": {
       "bodies": [
         {
           "color": {
@@ -17,10 +32,7 @@
           },
           "id": "edrawings:model:body#body0",
           "kind": "solid",
-          "name": "body0",
-          "regions": [
-            "edrawings:model:region#body0:0"
-          ]
+          "name": "body0"
         },
         {
           "color": {
@@ -31,10 +43,7 @@
           },
           "id": "edrawings:model:body#body1",
           "kind": "solid",
-          "name": "body1",
-          "regions": [
-            "edrawings:model:region#body1:0"
-          ]
+          "name": "body1"
         }
       ],
       "coedges": [
@@ -42,6 +51,7 @@
           "edge": "edrawings:model:edge#body0:0",
           "id": "edrawings:model:coedge#body0:0",
           "owner_loop": "edrawings:model:loop#body0:0",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body0:19",
           "sense": "forward"
         },
@@ -49,6 +59,7 @@
           "edge": "edrawings:model:edge#body0:1",
           "id": "edrawings:model:coedge#body0:1",
           "owner_loop": "edrawings:model:loop#body0:0",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body0:15",
           "sense": "forward"
         },
@@ -56,6 +67,7 @@
           "edge": "edrawings:model:edge#body0:4",
           "id": "edrawings:model:coedge#body0:10",
           "owner_loop": "edrawings:model:loop#body0:2",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body0:4",
           "sense": "reversed"
         },
@@ -63,6 +75,7 @@
           "edge": "edrawings:model:edge#body0:9",
           "id": "edrawings:model:coedge#body0:11",
           "owner_loop": "edrawings:model:loop#body0:2",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body0:16",
           "sense": "forward"
         },
@@ -70,6 +83,7 @@
           "edge": "edrawings:model:edge#body0:10",
           "id": "edrawings:model:coedge#body0:12",
           "owner_loop": "edrawings:model:loop#body0:3",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body0:18",
           "sense": "forward"
         },
@@ -77,6 +91,7 @@
           "edge": "edrawings:model:edge#body0:6",
           "id": "edrawings:model:coedge#body0:13",
           "owner_loop": "edrawings:model:loop#body0:3",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body0:6",
           "sense": "reversed"
         },
@@ -84,6 +99,7 @@
           "edge": "edrawings:model:edge#body0:11",
           "id": "edrawings:model:coedge#body0:14",
           "owner_loop": "edrawings:model:loop#body0:3",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body0:21",
           "sense": "forward"
         },
@@ -91,6 +107,7 @@
           "edge": "edrawings:model:edge#body0:1",
           "id": "edrawings:model:coedge#body0:15",
           "owner_loop": "edrawings:model:loop#body0:3",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body0:1",
           "sense": "reversed"
         },
@@ -98,6 +115,7 @@
           "edge": "edrawings:model:edge#body0:9",
           "id": "edrawings:model:coedge#body0:16",
           "owner_loop": "edrawings:model:loop#body0:4",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body0:11",
           "sense": "reversed"
         },
@@ -105,6 +123,7 @@
           "edge": "edrawings:model:edge#body0:7",
           "id": "edrawings:model:coedge#body0:17",
           "owner_loop": "edrawings:model:loop#body0:4",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body0:7",
           "sense": "reversed"
         },
@@ -112,6 +131,7 @@
           "edge": "edrawings:model:edge#body0:10",
           "id": "edrawings:model:coedge#body0:18",
           "owner_loop": "edrawings:model:loop#body0:4",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body0:12",
           "sense": "reversed"
         },
@@ -119,6 +139,7 @@
           "edge": "edrawings:model:edge#body0:0",
           "id": "edrawings:model:coedge#body0:19",
           "owner_loop": "edrawings:model:loop#body0:4",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body0:0",
           "sense": "reversed"
         },
@@ -126,6 +147,7 @@
           "edge": "edrawings:model:edge#body0:2",
           "id": "edrawings:model:coedge#body0:2",
           "owner_loop": "edrawings:model:loop#body0:0",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body0:20",
           "sense": "forward"
         },
@@ -133,6 +155,7 @@
           "edge": "edrawings:model:edge#body0:2",
           "id": "edrawings:model:coedge#body0:20",
           "owner_loop": "edrawings:model:loop#body0:5",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body0:2",
           "sense": "reversed"
         },
@@ -140,6 +163,7 @@
           "edge": "edrawings:model:edge#body0:11",
           "id": "edrawings:model:coedge#body0:21",
           "owner_loop": "edrawings:model:loop#body0:5",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body0:14",
           "sense": "reversed"
         },
@@ -147,6 +171,7 @@
           "edge": "edrawings:model:edge#body0:5",
           "id": "edrawings:model:coedge#body0:22",
           "owner_loop": "edrawings:model:loop#body0:5",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body0:5",
           "sense": "reversed"
         },
@@ -154,6 +179,7 @@
           "edge": "edrawings:model:edge#body0:8",
           "id": "edrawings:model:coedge#body0:23",
           "owner_loop": "edrawings:model:loop#body0:5",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body0:9",
           "sense": "reversed"
         },
@@ -161,6 +187,7 @@
           "edge": "edrawings:model:edge#body0:3",
           "id": "edrawings:model:coedge#body0:3",
           "owner_loop": "edrawings:model:loop#body0:0",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body0:8",
           "sense": "forward"
         },
@@ -168,6 +195,7 @@
           "edge": "edrawings:model:edge#body0:4",
           "id": "edrawings:model:coedge#body0:4",
           "owner_loop": "edrawings:model:loop#body0:1",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body0:10",
           "sense": "forward"
         },
@@ -175,6 +203,7 @@
           "edge": "edrawings:model:edge#body0:5",
           "id": "edrawings:model:coedge#body0:5",
           "owner_loop": "edrawings:model:loop#body0:1",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body0:22",
           "sense": "forward"
         },
@@ -182,6 +211,7 @@
           "edge": "edrawings:model:edge#body0:6",
           "id": "edrawings:model:coedge#body0:6",
           "owner_loop": "edrawings:model:loop#body0:1",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body0:13",
           "sense": "forward"
         },
@@ -189,6 +219,7 @@
           "edge": "edrawings:model:edge#body0:7",
           "id": "edrawings:model:coedge#body0:7",
           "owner_loop": "edrawings:model:loop#body0:1",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body0:17",
           "sense": "forward"
         },
@@ -196,6 +227,7 @@
           "edge": "edrawings:model:edge#body0:3",
           "id": "edrawings:model:coedge#body0:8",
           "owner_loop": "edrawings:model:loop#body0:2",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body0:3",
           "sense": "reversed"
         },
@@ -203,6 +235,7 @@
           "edge": "edrawings:model:edge#body0:8",
           "id": "edrawings:model:coedge#body0:9",
           "owner_loop": "edrawings:model:loop#body0:2",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body0:23",
           "sense": "forward"
         },
@@ -210,6 +243,7 @@
           "edge": "edrawings:model:edge#body1:0",
           "id": "edrawings:model:coedge#body1:0",
           "owner_loop": "edrawings:model:loop#body1:0",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body1:19",
           "sense": "forward"
         },
@@ -217,6 +251,7 @@
           "edge": "edrawings:model:edge#body1:1",
           "id": "edrawings:model:coedge#body1:1",
           "owner_loop": "edrawings:model:loop#body1:0",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body1:15",
           "sense": "forward"
         },
@@ -224,6 +259,7 @@
           "edge": "edrawings:model:edge#body1:4",
           "id": "edrawings:model:coedge#body1:10",
           "owner_loop": "edrawings:model:loop#body1:2",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body1:4",
           "sense": "reversed"
         },
@@ -231,6 +267,7 @@
           "edge": "edrawings:model:edge#body1:9",
           "id": "edrawings:model:coedge#body1:11",
           "owner_loop": "edrawings:model:loop#body1:2",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body1:16",
           "sense": "forward"
         },
@@ -238,6 +275,7 @@
           "edge": "edrawings:model:edge#body1:10",
           "id": "edrawings:model:coedge#body1:12",
           "owner_loop": "edrawings:model:loop#body1:3",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body1:18",
           "sense": "forward"
         },
@@ -245,6 +283,7 @@
           "edge": "edrawings:model:edge#body1:6",
           "id": "edrawings:model:coedge#body1:13",
           "owner_loop": "edrawings:model:loop#body1:3",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body1:6",
           "sense": "reversed"
         },
@@ -252,6 +291,7 @@
           "edge": "edrawings:model:edge#body1:11",
           "id": "edrawings:model:coedge#body1:14",
           "owner_loop": "edrawings:model:loop#body1:3",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body1:22",
           "sense": "forward"
         },
@@ -259,6 +299,7 @@
           "edge": "edrawings:model:edge#body1:1",
           "id": "edrawings:model:coedge#body1:15",
           "owner_loop": "edrawings:model:loop#body1:3",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body1:1",
           "sense": "reversed"
         },
@@ -266,6 +307,7 @@
           "edge": "edrawings:model:edge#body1:9",
           "id": "edrawings:model:coedge#body1:16",
           "owner_loop": "edrawings:model:loop#body1:4",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body1:11",
           "sense": "reversed"
         },
@@ -273,6 +315,7 @@
           "edge": "edrawings:model:edge#body1:7",
           "id": "edrawings:model:coedge#body1:17",
           "owner_loop": "edrawings:model:loop#body1:4",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body1:7",
           "sense": "reversed"
         },
@@ -280,6 +323,7 @@
           "edge": "edrawings:model:edge#body1:10",
           "id": "edrawings:model:coedge#body1:18",
           "owner_loop": "edrawings:model:loop#body1:4",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body1:12",
           "sense": "reversed"
         },
@@ -287,6 +331,7 @@
           "edge": "edrawings:model:edge#body1:0",
           "id": "edrawings:model:coedge#body1:19",
           "owner_loop": "edrawings:model:loop#body1:4",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body1:0",
           "sense": "reversed"
         },
@@ -294,6 +339,7 @@
           "edge": "edrawings:model:edge#body1:2",
           "id": "edrawings:model:coedge#body1:2",
           "owner_loop": "edrawings:model:loop#body1:0",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body1:21",
           "sense": "forward"
         },
@@ -301,6 +347,7 @@
           "edge": "edrawings:model:edge#body1:8",
           "id": "edrawings:model:coedge#body1:20",
           "owner_loop": "edrawings:model:loop#body1:5",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body1:9",
           "sense": "reversed"
         },
@@ -308,6 +355,7 @@
           "edge": "edrawings:model:edge#body1:2",
           "id": "edrawings:model:coedge#body1:21",
           "owner_loop": "edrawings:model:loop#body1:5",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body1:2",
           "sense": "reversed"
         },
@@ -315,6 +363,7 @@
           "edge": "edrawings:model:edge#body1:11",
           "id": "edrawings:model:coedge#body1:22",
           "owner_loop": "edrawings:model:loop#body1:5",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body1:14",
           "sense": "reversed"
         },
@@ -322,6 +371,7 @@
           "edge": "edrawings:model:edge#body1:5",
           "id": "edrawings:model:coedge#body1:23",
           "owner_loop": "edrawings:model:loop#body1:5",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body1:5",
           "sense": "reversed"
         },
@@ -329,6 +379,7 @@
           "edge": "edrawings:model:edge#body1:3",
           "id": "edrawings:model:coedge#body1:3",
           "owner_loop": "edrawings:model:loop#body1:0",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body1:8",
           "sense": "forward"
         },
@@ -336,6 +387,7 @@
           "edge": "edrawings:model:edge#body1:4",
           "id": "edrawings:model:coedge#body1:4",
           "owner_loop": "edrawings:model:loop#body1:1",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body1:10",
           "sense": "forward"
         },
@@ -343,6 +395,7 @@
           "edge": "edrawings:model:edge#body1:5",
           "id": "edrawings:model:coedge#body1:5",
           "owner_loop": "edrawings:model:loop#body1:1",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body1:23",
           "sense": "forward"
         },
@@ -350,6 +403,7 @@
           "edge": "edrawings:model:edge#body1:6",
           "id": "edrawings:model:coedge#body1:6",
           "owner_loop": "edrawings:model:loop#body1:1",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body1:13",
           "sense": "forward"
         },
@@ -357,6 +411,7 @@
           "edge": "edrawings:model:edge#body1:7",
           "id": "edrawings:model:coedge#body1:7",
           "owner_loop": "edrawings:model:loop#body1:1",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body1:17",
           "sense": "forward"
         },
@@ -364,6 +419,7 @@
           "edge": "edrawings:model:edge#body1:3",
           "id": "edrawings:model:coedge#body1:8",
           "owner_loop": "edrawings:model:loop#body1:2",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body1:3",
           "sense": "reversed"
         },
@@ -371,398 +427,469 @@
           "edge": "edrawings:model:edge#body1:8",
           "id": "edrawings:model:coedge#body1:9",
           "owner_loop": "edrawings:model:loop#body1:2",
+          "pcurves": [],
           "radial_next": "edrawings:model:coedge#body1:20",
           "sense": "forward"
         }
       ],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "edrawings:model:curve#body0:0"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 9.999999776482582,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 9.999999776482582,
+                "z": 0.0
+              }
             }
           },
           "id": "edrawings:model:curve#body0:1"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 9.999999776482582,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 9.999999776482582,
+                "z": 0.0
+              }
             }
           },
           "id": "edrawings:model:curve#body0:10"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": -1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 9.999999776482582,
-              "y": 9.999999776482582,
-              "z": 9.999999776482582
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 9.999999776482582,
+                "y": 9.999999776482582,
+                "z": 9.999999776482582
+              }
             }
           },
           "id": "edrawings:model:curve#body0:11"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 9.999999776482582,
-              "y": 9.999999776482582,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 9.999999776482582,
+                "y": 9.999999776482582,
+                "z": 0.0
+              }
             }
           },
           "id": "edrawings:model:curve#body0:2"
         },
         {
           "geometry": {
-            "direction": {
-              "x": -1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 9.999999776482582,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 9.999999776482582,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "edrawings:model:curve#body0:3"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 9.999999776482582
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 9.999999776482582
+              }
             }
           },
           "id": "edrawings:model:curve#body0:4"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 9.999999776482582,
-              "y": 0.0,
-              "z": 9.999999776482582
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 9.999999776482582,
+                "y": 0.0,
+                "z": 9.999999776482582
+              }
             }
           },
           "id": "edrawings:model:curve#body0:5"
         },
         {
           "geometry": {
-            "direction": {
-              "x": -1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 9.999999776482582,
-              "y": 9.999999776482582,
-              "z": 9.999999776482582
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 9.999999776482582,
+                "y": 9.999999776482582,
+                "z": 9.999999776482582
+              }
             }
           },
           "id": "edrawings:model:curve#body0:6"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 9.999999776482582,
-              "z": 9.999999776482582
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 9.999999776482582,
+                "z": 9.999999776482582
+              }
             }
           },
           "id": "edrawings:model:curve#body0:7"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 9.999999776482582,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 9.999999776482582,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "edrawings:model:curve#body0:8"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": -1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 9.999999776482582
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 9.999999776482582
+              }
             }
           },
           "id": "edrawings:model:curve#body0:9"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "edrawings:model:curve#body1:0"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 9.999999776482582,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 9.999999776482582,
+                "z": 0.0
+              }
             }
           },
           "id": "edrawings:model:curve#body1:1"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 9.999999776482582,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 9.999999776482582,
+                "z": 0.0
+              }
             }
           },
           "id": "edrawings:model:curve#body1:10"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": -1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 19.999999552965164,
-              "y": 9.999999776482582,
-              "z": 4.999999888241291
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 19.999999552965164,
+                "y": 9.999999776482582,
+                "z": 4.999999888241291
+              }
             }
           },
           "id": "edrawings:model:curve#body1:11"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 19.999999552965164,
-              "y": 9.999999776482582,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 19.999999552965164,
+                "y": 9.999999776482582,
+                "z": 0.0
+              }
             }
           },
           "id": "edrawings:model:curve#body1:2"
         },
         {
           "geometry": {
-            "direction": {
-              "x": -1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 19.999999552965164,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 19.999999552965164,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "edrawings:model:curve#body1:3"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 4.999999888241291
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 4.999999888241291
+              }
             }
           },
           "id": "edrawings:model:curve#body1:4"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 19.999999552965164,
-              "y": 0.0,
-              "z": 4.999999888241291
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 19.999999552965164,
+                "y": 0.0,
+                "z": 4.999999888241291
+              }
             }
           },
           "id": "edrawings:model:curve#body1:5"
         },
         {
           "geometry": {
-            "direction": {
-              "x": -1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 19.999999552965164,
-              "y": 9.999999776482582,
-              "z": 4.999999888241291
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 19.999999552965164,
+                "y": 9.999999776482582,
+                "z": 4.999999888241291
+              }
             }
           },
           "id": "edrawings:model:curve#body1:6"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 9.999999776482582,
-              "z": 4.999999888241291
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 9.999999776482582,
+                "z": 4.999999888241291
+              }
             }
           },
           "id": "edrawings:model:curve#body1:7"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 19.999999552965164,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 19.999999552965164,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "edrawings:model:curve#body1:8"
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": -1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 4.999999888241291
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 4.999999888241291
+              }
             }
           },
           "id": "edrawings:model:curve#body1:9"
         }
       ],
-      "drawings": [],
       "edges": [
         {
           "carrier": {
@@ -772,9 +899,11 @@
               9.999999776482582
             ]
           },
-          "end": "edrawings:model:vertex#body0:1",
-          "id": "edrawings:model:edge#body0:0",
-          "start": "edrawings:model:vertex#body0:0"
+          "ends": {
+            "end": "edrawings:model:vertex#body0:1",
+            "start": "edrawings:model:vertex#body0:0"
+          },
+          "id": "edrawings:model:edge#body0:0"
         },
         {
           "carrier": {
@@ -784,9 +913,11 @@
               9.999999776482582
             ]
           },
-          "end": "edrawings:model:vertex#body0:2",
-          "id": "edrawings:model:edge#body0:1",
-          "start": "edrawings:model:vertex#body0:1"
+          "ends": {
+            "end": "edrawings:model:vertex#body0:2",
+            "start": "edrawings:model:vertex#body0:1"
+          },
+          "id": "edrawings:model:edge#body0:1"
         },
         {
           "carrier": {
@@ -796,9 +927,11 @@
               9.999999776482582
             ]
           },
-          "end": "edrawings:model:vertex#body0:7",
-          "id": "edrawings:model:edge#body0:10",
-          "start": "edrawings:model:vertex#body0:1"
+          "ends": {
+            "end": "edrawings:model:vertex#body0:7",
+            "start": "edrawings:model:vertex#body0:1"
+          },
+          "id": "edrawings:model:edge#body0:10"
         },
         {
           "carrier": {
@@ -808,9 +941,11 @@
               9.999999776482582
             ]
           },
-          "end": "edrawings:model:vertex#body0:2",
-          "id": "edrawings:model:edge#body0:11",
-          "start": "edrawings:model:vertex#body0:6"
+          "ends": {
+            "end": "edrawings:model:vertex#body0:2",
+            "start": "edrawings:model:vertex#body0:6"
+          },
+          "id": "edrawings:model:edge#body0:11"
         },
         {
           "carrier": {
@@ -820,9 +955,11 @@
               9.999999776482582
             ]
           },
-          "end": "edrawings:model:vertex#body0:3",
-          "id": "edrawings:model:edge#body0:2",
-          "start": "edrawings:model:vertex#body0:2"
+          "ends": {
+            "end": "edrawings:model:vertex#body0:3",
+            "start": "edrawings:model:vertex#body0:2"
+          },
+          "id": "edrawings:model:edge#body0:2"
         },
         {
           "carrier": {
@@ -832,9 +969,11 @@
               9.999999776482582
             ]
           },
-          "end": "edrawings:model:vertex#body0:0",
-          "id": "edrawings:model:edge#body0:3",
-          "start": "edrawings:model:vertex#body0:3"
+          "ends": {
+            "end": "edrawings:model:vertex#body0:0",
+            "start": "edrawings:model:vertex#body0:3"
+          },
+          "id": "edrawings:model:edge#body0:3"
         },
         {
           "carrier": {
@@ -844,9 +983,11 @@
               9.999999776482582
             ]
           },
-          "end": "edrawings:model:vertex#body0:5",
-          "id": "edrawings:model:edge#body0:4",
-          "start": "edrawings:model:vertex#body0:4"
+          "ends": {
+            "end": "edrawings:model:vertex#body0:5",
+            "start": "edrawings:model:vertex#body0:4"
+          },
+          "id": "edrawings:model:edge#body0:4"
         },
         {
           "carrier": {
@@ -856,9 +997,11 @@
               9.999999776482582
             ]
           },
-          "end": "edrawings:model:vertex#body0:6",
-          "id": "edrawings:model:edge#body0:5",
-          "start": "edrawings:model:vertex#body0:5"
+          "ends": {
+            "end": "edrawings:model:vertex#body0:6",
+            "start": "edrawings:model:vertex#body0:5"
+          },
+          "id": "edrawings:model:edge#body0:5"
         },
         {
           "carrier": {
@@ -868,9 +1011,11 @@
               9.999999776482582
             ]
           },
-          "end": "edrawings:model:vertex#body0:7",
-          "id": "edrawings:model:edge#body0:6",
-          "start": "edrawings:model:vertex#body0:6"
+          "ends": {
+            "end": "edrawings:model:vertex#body0:7",
+            "start": "edrawings:model:vertex#body0:6"
+          },
+          "id": "edrawings:model:edge#body0:6"
         },
         {
           "carrier": {
@@ -880,9 +1025,11 @@
               9.999999776482582
             ]
           },
-          "end": "edrawings:model:vertex#body0:4",
-          "id": "edrawings:model:edge#body0:7",
-          "start": "edrawings:model:vertex#body0:7"
+          "ends": {
+            "end": "edrawings:model:vertex#body0:4",
+            "start": "edrawings:model:vertex#body0:7"
+          },
+          "id": "edrawings:model:edge#body0:7"
         },
         {
           "carrier": {
@@ -892,9 +1039,11 @@
               9.999999776482582
             ]
           },
-          "end": "edrawings:model:vertex#body0:5",
-          "id": "edrawings:model:edge#body0:8",
-          "start": "edrawings:model:vertex#body0:3"
+          "ends": {
+            "end": "edrawings:model:vertex#body0:5",
+            "start": "edrawings:model:vertex#body0:3"
+          },
+          "id": "edrawings:model:edge#body0:8"
         },
         {
           "carrier": {
@@ -904,9 +1053,11 @@
               9.999999776482582
             ]
           },
-          "end": "edrawings:model:vertex#body0:0",
-          "id": "edrawings:model:edge#body0:9",
-          "start": "edrawings:model:vertex#body0:4"
+          "ends": {
+            "end": "edrawings:model:vertex#body0:0",
+            "start": "edrawings:model:vertex#body0:4"
+          },
+          "id": "edrawings:model:edge#body0:9"
         },
         {
           "carrier": {
@@ -916,9 +1067,11 @@
               9.999999776482582
             ]
           },
-          "end": "edrawings:model:vertex#body1:1",
-          "id": "edrawings:model:edge#body1:0",
-          "start": "edrawings:model:vertex#body1:0"
+          "ends": {
+            "end": "edrawings:model:vertex#body1:1",
+            "start": "edrawings:model:vertex#body1:0"
+          },
+          "id": "edrawings:model:edge#body1:0"
         },
         {
           "carrier": {
@@ -928,9 +1081,11 @@
               19.999999552965164
             ]
           },
-          "end": "edrawings:model:vertex#body1:2",
-          "id": "edrawings:model:edge#body1:1",
-          "start": "edrawings:model:vertex#body1:1"
+          "ends": {
+            "end": "edrawings:model:vertex#body1:2",
+            "start": "edrawings:model:vertex#body1:1"
+          },
+          "id": "edrawings:model:edge#body1:1"
         },
         {
           "carrier": {
@@ -940,9 +1095,11 @@
               4.999999888241291
             ]
           },
-          "end": "edrawings:model:vertex#body1:7",
-          "id": "edrawings:model:edge#body1:10",
-          "start": "edrawings:model:vertex#body1:1"
+          "ends": {
+            "end": "edrawings:model:vertex#body1:7",
+            "start": "edrawings:model:vertex#body1:1"
+          },
+          "id": "edrawings:model:edge#body1:10"
         },
         {
           "carrier": {
@@ -952,9 +1109,11 @@
               4.999999888241291
             ]
           },
-          "end": "edrawings:model:vertex#body1:2",
-          "id": "edrawings:model:edge#body1:11",
-          "start": "edrawings:model:vertex#body1:6"
+          "ends": {
+            "end": "edrawings:model:vertex#body1:2",
+            "start": "edrawings:model:vertex#body1:6"
+          },
+          "id": "edrawings:model:edge#body1:11"
         },
         {
           "carrier": {
@@ -964,9 +1123,11 @@
               9.999999776482582
             ]
           },
-          "end": "edrawings:model:vertex#body1:3",
-          "id": "edrawings:model:edge#body1:2",
-          "start": "edrawings:model:vertex#body1:2"
+          "ends": {
+            "end": "edrawings:model:vertex#body1:3",
+            "start": "edrawings:model:vertex#body1:2"
+          },
+          "id": "edrawings:model:edge#body1:2"
         },
         {
           "carrier": {
@@ -976,9 +1137,11 @@
               19.999999552965164
             ]
           },
-          "end": "edrawings:model:vertex#body1:0",
-          "id": "edrawings:model:edge#body1:3",
-          "start": "edrawings:model:vertex#body1:3"
+          "ends": {
+            "end": "edrawings:model:vertex#body1:0",
+            "start": "edrawings:model:vertex#body1:3"
+          },
+          "id": "edrawings:model:edge#body1:3"
         },
         {
           "carrier": {
@@ -988,9 +1151,11 @@
               19.999999552965164
             ]
           },
-          "end": "edrawings:model:vertex#body1:5",
-          "id": "edrawings:model:edge#body1:4",
-          "start": "edrawings:model:vertex#body1:4"
+          "ends": {
+            "end": "edrawings:model:vertex#body1:5",
+            "start": "edrawings:model:vertex#body1:4"
+          },
+          "id": "edrawings:model:edge#body1:4"
         },
         {
           "carrier": {
@@ -1000,9 +1165,11 @@
               9.999999776482582
             ]
           },
-          "end": "edrawings:model:vertex#body1:6",
-          "id": "edrawings:model:edge#body1:5",
-          "start": "edrawings:model:vertex#body1:5"
+          "ends": {
+            "end": "edrawings:model:vertex#body1:6",
+            "start": "edrawings:model:vertex#body1:5"
+          },
+          "id": "edrawings:model:edge#body1:5"
         },
         {
           "carrier": {
@@ -1012,9 +1179,11 @@
               19.999999552965164
             ]
           },
-          "end": "edrawings:model:vertex#body1:7",
-          "id": "edrawings:model:edge#body1:6",
-          "start": "edrawings:model:vertex#body1:6"
+          "ends": {
+            "end": "edrawings:model:vertex#body1:7",
+            "start": "edrawings:model:vertex#body1:6"
+          },
+          "id": "edrawings:model:edge#body1:6"
         },
         {
           "carrier": {
@@ -1024,9 +1193,11 @@
               9.999999776482582
             ]
           },
-          "end": "edrawings:model:vertex#body1:4",
-          "id": "edrawings:model:edge#body1:7",
-          "start": "edrawings:model:vertex#body1:7"
+          "ends": {
+            "end": "edrawings:model:vertex#body1:4",
+            "start": "edrawings:model:vertex#body1:7"
+          },
+          "id": "edrawings:model:edge#body1:7"
         },
         {
           "carrier": {
@@ -1036,9 +1207,11 @@
               4.999999888241291
             ]
           },
-          "end": "edrawings:model:vertex#body1:5",
-          "id": "edrawings:model:edge#body1:8",
-          "start": "edrawings:model:vertex#body1:3"
+          "ends": {
+            "end": "edrawings:model:vertex#body1:5",
+            "start": "edrawings:model:vertex#body1:3"
+          },
+          "id": "edrawings:model:edge#body1:8"
         },
         {
           "carrier": {
@@ -1048,9 +1221,11 @@
               4.999999888241291
             ]
           },
-          "end": "edrawings:model:vertex#body1:0",
-          "id": "edrawings:model:edge#body1:9",
-          "start": "edrawings:model:vertex#body1:4"
+          "ends": {
+            "end": "edrawings:model:vertex#body1:0",
+            "start": "edrawings:model:vertex#body1:4"
+          },
+          "id": "edrawings:model:edge#body1:9"
         }
       ],
       "faces": [
@@ -1063,8 +1238,8 @@
           },
           "id": "edrawings:model:face#body0:0",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "edrawings:model:loop#body0:0"
           },
           "sense": "forward",
@@ -1080,8 +1255,8 @@
           },
           "id": "edrawings:model:face#body0:1",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "edrawings:model:loop#body0:1"
           },
           "sense": "forward",
@@ -1097,8 +1272,8 @@
           },
           "id": "edrawings:model:face#body0:2",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "edrawings:model:loop#body0:2"
           },
           "sense": "forward",
@@ -1114,8 +1289,8 @@
           },
           "id": "edrawings:model:face#body0:3",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "edrawings:model:loop#body0:3"
           },
           "sense": "forward",
@@ -1131,8 +1306,8 @@
           },
           "id": "edrawings:model:face#body0:4",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "edrawings:model:loop#body0:4"
           },
           "sense": "forward",
@@ -1148,8 +1323,8 @@
           },
           "id": "edrawings:model:face#body0:5",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "edrawings:model:loop#body0:5"
           },
           "sense": "forward",
@@ -1165,8 +1340,8 @@
           },
           "id": "edrawings:model:face#body1:0",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "edrawings:model:loop#body1:0"
           },
           "sense": "forward",
@@ -1182,8 +1357,8 @@
           },
           "id": "edrawings:model:face#body1:1",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "edrawings:model:loop#body1:1"
           },
           "sense": "forward",
@@ -1199,8 +1374,8 @@
           },
           "id": "edrawings:model:face#body1:2",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "edrawings:model:loop#body1:2"
           },
           "sense": "forward",
@@ -1216,8 +1391,8 @@
           },
           "id": "edrawings:model:face#body1:3",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "edrawings:model:loop#body1:3"
           },
           "sense": "forward",
@@ -1233,8 +1408,8 @@
           },
           "id": "edrawings:model:face#body1:4",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "edrawings:model:loop#body1:4"
           },
           "sense": "forward",
@@ -1250,8 +1425,8 @@
           },
           "id": "edrawings:model:face#body1:5",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "edrawings:model:loop#body1:5"
           },
           "sense": "forward",
@@ -1259,7 +1434,6 @@
           "surface": "edrawings:model:surface#body1:5"
         }
       ],
-      "features": [],
       "loops": [
         {
           "boundary": {
@@ -1269,7 +1443,8 @@
               "edrawings:model:coedge#body0:2",
               "edrawings:model:coedge#body0:3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "edrawings:model:face#body0:0",
           "id": "edrawings:model:loop#body0:0"
@@ -1282,7 +1457,8 @@
               "edrawings:model:coedge#body0:6",
               "edrawings:model:coedge#body0:7"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "edrawings:model:face#body0:1",
           "id": "edrawings:model:loop#body0:1"
@@ -1295,7 +1471,8 @@
               "edrawings:model:coedge#body0:10",
               "edrawings:model:coedge#body0:11"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "edrawings:model:face#body0:2",
           "id": "edrawings:model:loop#body0:2"
@@ -1308,7 +1485,8 @@
               "edrawings:model:coedge#body0:14",
               "edrawings:model:coedge#body0:15"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "edrawings:model:face#body0:3",
           "id": "edrawings:model:loop#body0:3"
@@ -1321,7 +1499,8 @@
               "edrawings:model:coedge#body0:18",
               "edrawings:model:coedge#body0:19"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "edrawings:model:face#body0:4",
           "id": "edrawings:model:loop#body0:4"
@@ -1334,7 +1513,8 @@
               "edrawings:model:coedge#body0:22",
               "edrawings:model:coedge#body0:23"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "edrawings:model:face#body0:5",
           "id": "edrawings:model:loop#body0:5"
@@ -1347,7 +1527,8 @@
               "edrawings:model:coedge#body1:2",
               "edrawings:model:coedge#body1:3"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "edrawings:model:face#body1:0",
           "id": "edrawings:model:loop#body1:0"
@@ -1360,7 +1541,8 @@
               "edrawings:model:coedge#body1:6",
               "edrawings:model:coedge#body1:7"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "edrawings:model:face#body1:1",
           "id": "edrawings:model:loop#body1:1"
@@ -1373,7 +1555,8 @@
               "edrawings:model:coedge#body1:10",
               "edrawings:model:coedge#body1:11"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "edrawings:model:face#body1:2",
           "id": "edrawings:model:loop#body1:2"
@@ -1386,7 +1569,8 @@
               "edrawings:model:coedge#body1:14",
               "edrawings:model:coedge#body1:15"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "edrawings:model:face#body1:3",
           "id": "edrawings:model:loop#body1:3"
@@ -1399,7 +1583,8 @@
               "edrawings:model:coedge#body1:18",
               "edrawings:model:coedge#body1:19"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "edrawings:model:face#body1:4",
           "id": "edrawings:model:loop#body1:4"
@@ -1412,249 +1597,14 @@
               "edrawings:model:coedge#body1:22",
               "edrawings:model:coedge#body1:23"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "edrawings:model:face#body1:5",
           "id": "edrawings:model:loop#body1:5"
         }
       ],
-      "occurrences": [
-        {
-          "id": "edrawings:model:occurrence#0",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "edrawings:model:definition#2",
-            "scope": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
-          "id": "edrawings:model:occurrence#1",
-          "name": "Cube-1",
-          "native_ref": "assempart0",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "edrawings:model:occurrence#0"
-          },
-          "prototype": {
-            "definition": "edrawings:model:definition#0",
-            "scope": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
-          "id": "edrawings:model:occurrence#2",
-          "name": "Group A",
-          "native_ref": "subassem1",
-          "ordinal": 1,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "edrawings:model:occurrence#0"
-          },
-          "prototype": {
-            "definition": "edrawings:model:definition#3",
-            "scope": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
-          "id": "edrawings:model:occurrence#3",
-          "name": "Group B",
-          "native_ref": "subassem2",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "edrawings:model:occurrence#2"
-          },
-          "prototype": {
-            "definition": "edrawings:model:definition#4",
-            "scope": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
-          "id": "edrawings:model:occurrence#4",
-          "name": "Box-1",
-          "native_ref": "assempart3",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "edrawings:model:occurrence#3"
-          },
-          "prototype": {
-            "definition": "edrawings:model:definition#1",
-            "scope": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              0.0,
-              -1.0,
-              0.0,
-              50.00000074505806
-            ],
-            [
-              1.0,
-              0.0,
-              0.0,
-              19.999999552965164
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              9.999999776482582
-            ]
-          ]
-        },
-        {
-          "id": "edrawings:model:occurrence#5",
-          "name": "Cube-2",
-          "native_ref": "assempart4",
-          "ordinal": 1,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "edrawings:model:occurrence#2"
-          },
-          "prototype": {
-            "definition": "edrawings:model:definition#0",
-            "scope": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              29.999999329447746
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ],
-          "visible": false
-        }
-      ],
-      "parameters": [],
       "pcurves": [],
-      "pmi": [],
       "points": [
         {
           "id": "edrawings:model:point#body0:0",
@@ -1785,49 +1735,8 @@
           }
         }
       ],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [
-        {
-          "bodies": [
-            "edrawings:model:body#body0"
-          ],
-          "id": "edrawings:model:definition#0",
-          "kind": "part",
-          "label": "Cube-1",
-          "native_ref": "/include library/model_1_include/shared/body0",
-          "source_name": "body0"
-        },
-        {
-          "bodies": [
-            "edrawings:model:body#body1"
-          ],
-          "id": "edrawings:model:definition#1",
-          "kind": "part",
-          "label": "Box-1",
-          "native_ref": "/include library/model_1_include/shared/body1",
-          "source_name": "body1"
-        },
-        {
-          "id": "edrawings:model:definition#2",
-          "kind": "group",
-          "source_name": "synthetic assembly.sldasm"
-        },
-        {
-          "id": "edrawings:model:definition#3",
-          "kind": "group",
-          "native_ref": "subassem1",
-          "source_name": "Group A"
-        },
-        {
-          "id": "edrawings:model:definition#4",
-          "kind": "group",
-          "native_ref": "subassem2",
-          "source_name": "Group B"
-        }
-      ],
       "regions": [
         {
           "body": "edrawings:model:body#body0",
@@ -1844,331 +1753,309 @@
           ]
         }
       ],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "edrawings:model:shell#body0:0",
-          "members": [
-            {
-              "id": "edrawings:model:face#body0:0",
-              "kind": "face"
-            },
-            {
-              "id": "edrawings:model:face#body0:1",
-              "kind": "face"
-            },
-            {
-              "id": "edrawings:model:face#body0:2",
-              "kind": "face"
-            },
-            {
-              "id": "edrawings:model:face#body0:3",
-              "kind": "face"
-            },
-            {
-              "id": "edrawings:model:face#body0:4",
-              "kind": "face"
-            },
-            {
-              "id": "edrawings:model:face#body0:5",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "edrawings:model:region#body0:0"
         },
         {
           "id": "edrawings:model:shell#body1:0",
-          "members": [
-            {
-              "id": "edrawings:model:face#body1:0",
-              "kind": "face"
-            },
-            {
-              "id": "edrawings:model:face#body1:1",
-              "kind": "face"
-            },
-            {
-              "id": "edrawings:model:face#body1:2",
-              "kind": "face"
-            },
-            {
-              "id": "edrawings:model:face#body1:3",
-              "kind": "face"
-            },
-            {
-              "id": "edrawings:model:face#body1:4",
-              "kind": "face"
-            },
-            {
-              "id": "edrawings:model:face#body1:5",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "edrawings:model:region#body1:0"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": -1.0
-            },
-            "origin": {
-              "x": 3.3333332588275275,
-              "y": 3.3333332588275275,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -1.0
+              },
+              "origin": {
+                "x": 3.3333332588275275,
+                "y": 3.3333332588275275,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "edrawings:model:surface#body0:0"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 3.3333332588275275,
-              "y": 3.3333332588275275,
-              "z": 9.999999776482582
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 3.3333332588275275,
+                "y": 3.3333332588275275,
+                "z": 9.999999776482582
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "edrawings:model:surface#body0:1"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 3.3333332588275275,
-              "y": 0.0,
-              "z": 3.3333332588275275
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 3.3333332588275275,
+                "y": 0.0,
+                "z": 3.3333332588275275
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "edrawings:model:surface#body0:2"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 3.3333332588275275,
-              "y": 9.999999776482582,
-              "z": 3.3333332588275275
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 3.3333332588275275,
+                "y": 9.999999776482582,
+                "z": 3.3333332588275275
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "edrawings:model:surface#body0:3"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": -1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 3.3333332588275275,
-              "z": 3.3333332588275275
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 3.3333332588275275,
+                "z": 3.3333332588275275
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              }
             }
           },
           "id": "edrawings:model:surface#body0:4"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 9.999999776482582,
-              "y": 3.3333332588275275,
-              "z": 3.3333332588275275
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 9.999999776482582,
+                "y": 3.3333332588275275,
+                "z": 3.3333332588275275
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              }
             }
           },
           "id": "edrawings:model:surface#body0:5"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": -1.0
-            },
-            "origin": {
-              "x": 6.666666517655055,
-              "y": 3.3333332588275275,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -1.0
+              },
+              "origin": {
+                "x": 6.666666517655055,
+                "y": 3.3333332588275275,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "edrawings:model:surface#body1:0"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 6.666666517655055,
-              "y": 3.3333332588275275,
-              "z": 4.999999888241291
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 6.666666517655055,
+                "y": 3.3333332588275275,
+                "z": 4.999999888241291
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "edrawings:model:surface#body1:1"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 6.666666517655055,
-              "y": 0.0,
-              "z": 1.6666666294137638
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 6.666666517655055,
+                "y": 0.0,
+                "z": 1.6666666294137638
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "edrawings:model:surface#body1:2"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 6.666666517655055,
-              "y": 9.999999776482582,
-              "z": 1.6666666294137638
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 6.666666517655055,
+                "y": 9.999999776482582,
+                "z": 1.6666666294137638
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "edrawings:model:surface#body1:3"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": -1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 3.3333332588275275,
-              "z": 1.6666666294137638
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 3.3333332588275275,
+                "z": 1.6666666294137638
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              }
             }
           },
           "id": "edrawings:model:surface#body1:4"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 1.0,
-              "y": -0.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 19.999999552965164,
-              "y": 3.3333332588275275,
-              "z": 3.3333332588275275
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 1.0,
+                "y": -0.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 19.999999552965164,
+                "y": 3.3333332588275275,
+                "z": 3.3333332588275275
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              }
             }
           },
           "id": "edrawings:model:surface#body1:5"
         }
       ],
-      "tessellations": [],
       "vertices": [
         {
           "id": "edrawings:model:vertex#body0:0",
@@ -2234,10 +2121,298 @@
           "id": "edrawings:model:vertex#body1:7",
           "point": "edrawings:model:point#body1:7"
         }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [
+        {
+          "id": "edrawings:model:occurrence#0",
+          "name": "Cube-1",
+          "native_ref": "assempart0",
+          "overrides": [],
+          "prototype": "edrawings:model:definition#0",
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "edrawings:model:occurrence#1",
+          "name": "Group A",
+          "native_ref": "subassem1",
+          "overrides": [],
+          "prototype": "edrawings:model:definition#3",
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "edrawings:model:occurrence#2",
+          "name": "Group B",
+          "native_ref": "subassem2",
+          "overrides": [],
+          "prototype": "edrawings:model:definition#4",
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        },
+        {
+          "id": "edrawings:model:occurrence#3",
+          "name": "Box-1",
+          "native_ref": "assempart3",
+          "overrides": [],
+          "prototype": "edrawings:model:definition#1",
+          "transform": [
+            [
+              0.0,
+              -1.0,
+              0.0,
+              50.00000074505806
+            ],
+            [
+              1.0,
+              0.0,
+              0.0,
+              19.999999552965164
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              9.999999776482582
+            ]
+          ]
+        },
+        {
+          "id": "edrawings:model:occurrence#4",
+          "name": "Cube-2",
+          "native_ref": "assempart4",
+          "overrides": [],
+          "prototype": "edrawings:model:definition#0",
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              29.999999329447746
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ],
+          "visible": false
+        }
       ],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [
+        {
+          "bodies": [
+            "edrawings:model:body#body0"
+          ],
+          "bom_properties": {},
+          "id": "edrawings:model:definition#0",
+          "instance_bodies": [],
+          "kind": "part",
+          "label": "Cube-1",
+          "native_ref": "/include library/model_1_include/shared/body0",
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "source_name": "body0",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
+        },
+        {
+          "bodies": [
+            "edrawings:model:body#body1"
+          ],
+          "bom_properties": {},
+          "id": "edrawings:model:definition#1",
+          "instance_bodies": [],
+          "kind": "part",
+          "label": "Box-1",
+          "native_ref": "/include library/model_1_include/shared/body1",
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "source_name": "body1",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
+        },
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "edrawings:model:definition#2",
+          "instance_bodies": [],
+          "kind": "group",
+          "occurrences": [
+            "edrawings:model:occurrence#0",
+            "edrawings:model:occurrence#1"
+          ],
+          "representations": [],
+          "sketches": [],
+          "source_name": "synthetic assembly.sldasm",
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        },
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "edrawings:model:definition#3",
+          "instance_bodies": [],
+          "kind": "group",
+          "native_ref": "subassem1",
+          "occurrences": [
+            "edrawings:model:occurrence#2",
+            "edrawings:model:occurrence#4"
+          ],
+          "representations": [],
+          "sketches": [],
+          "source_name": "Group A",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
+        },
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "edrawings:model:definition#4",
+          "instance_bodies": [],
+          "kind": "group",
+          "native_ref": "subassem2",
+          "occurrences": [
+            "edrawings:model:occurrence#3"
+          ],
+          "representations": [],
+          "sketches": [],
+          "source_name": "Group B",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
+        }
+      ],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "tessellations": [],
       "view_presentations": []
     },
     "native": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "hsf_version": "19.10",
@@ -2245,17 +2420,19 @@
         "model_stream_bytes": "3063"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "hsf_version": "19.10"
             },
             "dialect": "edrawings:hsf-19-10"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -2263,30 +2440,38 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "hsf_version": "19.10"
           },
           "dialect": "edrawings:hsf-19-10"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "geometry.reconstructed-from-mesh",
-          "kind": "topology_gauge_substituted",
-          "namespace": "edrawings",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "geometry.reconstructed-from-mesh",
+            "kind": "topology_gauge_substituted",
+            "namespace": "edrawings"
+          }
         },
         "message": "2 bodies were rebuilt from display meshes (24 triangles) as 12 planar faces with straight edges; the source stores no analytic surfaces or curves",
         "severity": "warning"
@@ -2295,10 +2480,20 @@
     "notes": [],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "decode_digest": "234fe47c278d3f4b910eeece5ef10de63133b6b1d706b6d8e9f54218e7433f46",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }
