@@ -70,6 +70,14 @@ impl LaneRefusals {
         self.notes.len()
     }
 
+    pub(crate) fn push_pcurve_circle_plane_mismatch(&mut self, source_offset: usize) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::GeometryPcurveCirclePlaneMismatch.note(format!(
+                "Withheld a derived spherical pcurve at source offset {source_offset}: its midpoint leaves the edge circle plane"
+            )),
+        );
+    }
+
     pub(crate) fn push_body_selection(&mut self, resolved: bool, excluded: usize) {
         let note = if resolved {
             crate::loss::CatiaLossCode::TopologyUnselectedBodiesRetained.note(format!(

@@ -76,6 +76,7 @@ fn retained_sketch_profiles_resolve_members_in_their_own_scope() {
             std::slice::from_mut(&mut scope),
             &headers,
             &entities,
+            &mut Vec::new(),
         )
         .unwrap();
         assert_eq!(losses.len(), 1);

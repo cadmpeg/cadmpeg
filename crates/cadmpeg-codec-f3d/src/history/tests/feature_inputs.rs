@@ -311,6 +311,7 @@ fn input_edge_geometry_keeps_only_selected_edges() {
         start: None,
         end: None,
         faces: Default::default(),
+        supports: Vec::new(),
     };
     let mut topologies = vec![cadmpeg_ir::features::FeatureInputTopology {
         id: crate::ids::history_input_state_id(&prefix),
@@ -376,6 +377,7 @@ fn input_edge_geometry_keeps_the_edges_that_bound_a_selected_face() {
                 .to_vec(),
         )
         .unwrap(),
+        supports: Vec::new(),
     };
     let mut topologies = vec![cadmpeg_ir::features::FeatureInputTopology {
         id: crate::ids::history_input_state_id(&prefix),

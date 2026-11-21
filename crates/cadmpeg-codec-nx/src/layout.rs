@@ -44,6 +44,8 @@ pub(crate) mod token {
     pub(crate) const BLEND_SURF: u8 = 56;
     /// `OFFSET_SURF` (`60`). Spec §4.1.
     pub(crate) const OFFSET_SURF: u8 = 60;
+    /// `SWEPT_SURF` (`67`). Spec §4.1.
+    pub(crate) const SWEPT_SURF: u8 = 67;
     /// `B_SURFACE` (`124`). Spec §4.1.
     pub(crate) const B_SURFACE: u8 = 124;
     /// `TRIMMED_CURVE` (`133`). Spec §4.1.
@@ -498,6 +500,18 @@ pub(crate) mod torus_payload {
 pub(crate) mod offset_surf_payload {
     /// Record length in bytes. Spec §6.1.
     pub(crate) const LEN: usize = 31;
+}
+
+/// Byte offsets for the `swept_surf_payload` record.
+///
+/// Spec §6.2.1. Record length 53 B.
+///
+/// ```text
+/// A large-index section-curve reference shifts every later field by two bytes.
+/// ```
+pub(crate) mod swept_surf_payload {
+    /// Record length in bytes. Spec §6.2.1.
+    pub(crate) const LEN: usize = 53;
 }
 
 /// Byte offsets for the `trimmed_curve_payload` record.

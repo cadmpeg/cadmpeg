@@ -7,9 +7,14 @@ use crate::test_support::multiple_profiles::fixture;
 fn multiple_sketch_profiles_remain_native_with_one_loss() {
     let (archive, mut scope, headers, entities) = fixture(2);
     crate::test_support::zip_test::with_scan(&archive, |scan| {
-        let losses =
-            bind_sketch_profiles(scan, std::slice::from_mut(&mut scope), &headers, &entities)
-                .unwrap();
+        let losses = bind_sketch_profiles(
+            scan,
+            std::slice::from_mut(&mut scope),
+            &headers,
+            &entities,
+            &mut Vec::new(),
+        )
+        .unwrap();
         assert_eq!(losses.len(), 1);
         assert_eq!(
             losses[0].code.local_code(),
@@ -38,9 +43,14 @@ fn multiple_sketch_profiles_remain_native_with_one_loss() {
 fn one_sketch_profile_binds_without_a_native_group_loss() {
     let (archive, mut scope, headers, entities) = fixture(1);
     crate::test_support::zip_test::with_scan(&archive, |scan| {
-        let losses =
-            bind_sketch_profiles(scan, std::slice::from_mut(&mut scope), &headers, &entities)
-                .unwrap();
+        let losses = bind_sketch_profiles(
+            scan,
+            std::slice::from_mut(&mut scope),
+            &headers,
+            &entities,
+            &mut Vec::new(),
+        )
+        .unwrap();
         assert!(losses.is_empty());
         assert_eq!(scope.extrude_profile().unwrap().record_index, 100);
         assert!(scope.extrude_native_profiles().is_none());
@@ -66,6 +76,7 @@ fn compact_profile_flags_are_retained_and_report_the_assumption() {
                     std::slice::from_mut(&mut scope),
                     &headers,
                     &entities,
+                    &mut Vec::new(),
                 )
                 .unwrap();
                 assert_eq!(losses.len(), 1);
@@ -108,6 +119,7 @@ fn compact_profile_flags_require_binary_values() {
                     std::slice::from_mut(&mut scope),
                     &headers,
                     &entities,
+                    &mut Vec::new(),
                 )
                 .unwrap();
                 assert!(losses.is_empty());
@@ -126,9 +138,14 @@ fn compact_profile_zero_flags_bind_without_an_assumption_loss() {
                 Some(([0, 0], tail_length)),
             );
         crate::test_support::zip_test::with_scan(&archive, |scan| {
-            let losses =
-                bind_sketch_profiles(scan, std::slice::from_mut(&mut scope), &headers, &entities)
-                    .unwrap();
+            let losses = bind_sketch_profiles(
+                scan,
+                std::slice::from_mut(&mut scope),
+                &headers,
+                &entities,
+                &mut Vec::new(),
+            )
+            .unwrap();
             assert!(losses.is_empty());
             let profile = scope.extrude_profile().unwrap();
             assert_eq!(profile.entity_id.as_str(), "0_172");
@@ -142,9 +159,14 @@ fn profile_of_an_unregistered_sketch_remains_native_with_one_loss() {
     let (archive, mut scope, headers, mut entities) = fixture(2);
     entities.retain(|entity| entity.entity_id.as_str() != "0_173");
     crate::test_support::zip_test::with_scan(&archive, |scan| {
-        let losses =
-            bind_sketch_profiles(scan, std::slice::from_mut(&mut scope), &headers, &entities)
-                .unwrap();
+        let losses = bind_sketch_profiles(
+            scan,
+            std::slice::from_mut(&mut scope),
+            &headers,
+            &entities,
+            &mut Vec::new(),
+        )
+        .unwrap();
         assert_eq!(losses.len(), 1);
         assert_eq!(
             losses[0].code.local_code(),
@@ -166,8 +188,14 @@ fn profile_of_an_unregistered_sketch_remains_native_with_one_loss() {
 fn profile_of_an_unregistered_sketch_needs_a_sketch_prefix_in_the_stream() {
     let (archive, mut scope, headers, _) = fixture(1);
     crate::test_support::zip_test::with_scan(&archive, |scan| {
-        let losses =
-            bind_sketch_profiles(scan, std::slice::from_mut(&mut scope), &headers, &[]).unwrap();
+        let losses = bind_sketch_profiles(
+            scan,
+            std::slice::from_mut(&mut scope),
+            &headers,
+            &[],
+            &mut Vec::new(),
+        )
+        .unwrap();
         assert!(losses.is_empty());
         assert!(scope.extrude_profile().is_none());
         assert!(scope.extrude_native_profiles().is_none());

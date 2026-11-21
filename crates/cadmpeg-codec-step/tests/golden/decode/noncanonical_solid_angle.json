@@ -113,6 +113,11 @@
     },
     "source": {
       "attributes": {
+        "file_description.description.0": "noncanonical unit order",
+        "file_description.implementation_level": "2;1",
+        "file_name.name": "noncanonical-unit",
+        "file_name.originating_system": "cadmpeg",
+        "file_schema.schema_identifiers.0": "AUTOMOTIVE_DESIGN_CC2",
         "schema": "AUTOMOTIVE_DESIGN_CC2"
       },
       "identity": {

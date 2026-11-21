@@ -38,7 +38,56 @@
           "id": "creo:model:feature#4"
         }
       ],
-      "names": [],
+      "names": [
+        [
+          {
+            "kind": "surface",
+            "value": "creo:visibgeom:surface#7"
+          },
+          {
+            "name": {
+              "kind": "generated",
+              "value": {
+                "feature": "creo:model:feature#4",
+                "kind": "surface"
+              }
+            },
+            "native": {
+              "codec": "creo",
+              "value": {
+                "kind": "integers",
+                "value": [
+                  7
+                ]
+              }
+            }
+          }
+        ],
+        [
+          {
+            "kind": "surface",
+            "value": "creo:visibgeom:surface#8"
+          },
+          {
+            "name": {
+              "kind": "generated",
+              "value": {
+                "feature": "creo:model:feature#4",
+                "kind": "surface"
+              }
+            },
+            "native": {
+              "codec": "creo",
+              "value": {
+                "kind": "integers",
+                "value": [
+                  8
+                ]
+              }
+            }
+          }
+        ]
+      ],
       "parameters": [],
       "programs": [],
       "publications": [],

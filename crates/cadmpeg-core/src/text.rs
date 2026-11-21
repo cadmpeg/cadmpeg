@@ -295,6 +295,34 @@ macro_rules! nonblank_const {
     }};
 }
 
+/// Source text as a source-attribute value.
+///
+/// The value holds the characters of `text` that are not control
+/// characters. It is `None` when no non-whitespace character remains.
+#[must_use]
+pub fn attribute_text(text: &str) -> Option<String> {
+    attribute_text_checked(text).0
+}
+
+/// Source text as a source-attribute value, reporting whether any control
+/// character was removed.
+#[must_use]
+pub fn attribute_text_checked(text: &str) -> (Option<String>, bool) {
+    let mut removed = false;
+    let mut value = String::with_capacity(text.len());
+    for character in text.chars() {
+        if character.is_control() {
+            removed = true;
+        } else {
+            value.push(character);
+        }
+    }
+    (
+        NonBlankString::new(value).map(NonBlankString::into_string),
+        removed,
+    )
+}
+
 impl PartialEq<str> for NonBlankString {
     fn eq(&self, other: &str) -> bool {
         self.0 == other
@@ -331,8 +359,26 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::{
-        named_entries, named_entries_reporting, NamedEntryError, NonBlankString, NonWhitespaceChar,
+        attribute_text, named_entries, named_entries_reporting, NamedEntryError, NonBlankString,
+        NonWhitespaceChar,
     };
+
+    #[test]
+    fn attribute_text_drops_control_characters_and_keeps_the_rest() {
+        assert_eq!(
+            attribute_text("a\u{0}b\nc\u{7f}d\u{9b}e").as_deref(),
+            Some("abcde")
+        );
+        assert_eq!(
+            attribute_text("\u{e9}\u{e9}\u{e9}").as_deref(),
+            Some("\u{e9}\u{e9}\u{e9}")
+        );
+        let long = "x".repeat(5000);
+        assert_eq!(attribute_text(&long).as_deref(), Some(long.as_str()));
+        assert_eq!(attribute_text(" ab ").as_deref(), Some(" ab "));
+        assert_eq!(attribute_text(""), None);
+        assert_eq!(attribute_text(" \t\r\n"), None);
+    }
 
     #[test]
     fn prefixes_preserve_nonblank_strings_and_wire_values() {

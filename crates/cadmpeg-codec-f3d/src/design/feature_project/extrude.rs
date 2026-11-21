@@ -162,8 +162,22 @@ pub(super) fn project_extrude(
         construction_groups
     )?);
     let prologue = or_none!(scope.extrude_prologue());
-    let profile_ref = if scope.extrude_native_profiles().is_some() {
+    let native_profiles = scope.extrude_native_profiles();
+    let shared_profile = native_profiles
+        .filter(|profiles| crate::design::decode::operands::composable_sketch_profiles(profiles))
+        .and_then(<[_]>::first);
+    let profile_ref = if native_profiles.is_some() && shared_profile.is_none() {
         ProfileRef::Planar(PlanarProfileRef::Native(scope.id.clone()))
+    } else if let Some(profile) = shared_profile {
+        match placements.iter().find(|placement| {
+            native_stream(&placement.id) == native_stream(&scope.id)
+                && placement.entity_id == profile.entity_id
+        }) {
+            Some(placement) => ProfileRef::Planar(PlanarProfileRef::Sketch(
+                crate::ids::neutral_sketch_id(placement),
+            )),
+            None => ProfileRef::Planar(PlanarProfileRef::Native(scope.id.clone())),
+        }
     } else if !prologue.solid_operation()
         && scope.extrude_profile().is_none()
         && profile_groups.is_empty()

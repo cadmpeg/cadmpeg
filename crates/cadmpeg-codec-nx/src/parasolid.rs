@@ -572,7 +572,7 @@ fn entity_51_frame_at(bytes: &[u8], offset: usize) -> Option<Entity51Frame> {
 
 fn entity_51_record_from_frame(bytes: &[u8], frame: Entity51Frame) -> Option<Entity51Record> {
     let mut at = frame.references_at;
-    let prefixed = bytes.get(at) == Some(&1);
+    let prefixed = frame.shared_terminal;
     let mut leading_references = [0; 5];
     for reference in &mut leading_references {
         if prefixed {
@@ -601,16 +601,26 @@ fn entity_51_record_from_frame(bytes: &[u8], frame: Entity51Frame) -> Option<Ent
 }
 
 fn entity_51_reference_end(bytes: &[u8], at: &mut usize, count: usize) -> Option<(usize, bool)> {
-    if bytes.get(*at) == Some(&1) {
+    // A plain reference with a high byte of one also starts with the prefix
+    // byte, so a byte that cannot be a prefix makes the run plain. Running out
+    // of bytes still rejects the record.
+    let prefixed_end = || -> Option<Option<usize>> {
+        if bytes.get(*at) != Some(&1) {
+            return Some(None);
+        }
         let mut prefixed_at = *at;
         for _ in 0..count {
-            matches!(bytes.get(prefixed_at), Some(0 | 1)).then_some(())?;
+            if !matches!(bytes.get(prefixed_at)?, 0 | 1) {
+                return Some(None);
+            }
             prefixed_at += 1;
             read_xmt(bytes, &mut prefixed_at)?;
         }
-        matches!(bytes.get(prefixed_at), Some(0 | 1)).then_some(())?;
-        *at = prefixed_at + 1;
-        return Some((*at, true));
+        Some(matches!(bytes.get(prefixed_at)?, 0 | 1).then_some(prefixed_at + 1))
+    };
+    if let Some(end) = prefixed_end()? {
+        *at = end;
+        return Some((end, true));
     }
     for _ in 0..count {
         read_xmt(bytes, at)?;
@@ -740,6 +750,34 @@ fn attribute_definitions_in<'a>(
         }
     }
     records
+}
+
+/// The first byte after a complete attribute-family record starting at `offset`.
+///
+/// A type-80 definition counts only its leading fields, because its field list
+/// has no self-contained extent.
+pub(crate) fn attribute_record_end(bytes: &[u8], offset: usize) -> Option<usize> {
+    if let Some(frame) = entity_51_frame_at(bytes, offset) {
+        return frame.next_offset();
+    }
+    let tag = *bytes.get(offset.checked_add(1)?)?;
+    let width = match tag {
+        0x4f | 0x54 => 1,
+        0x52 => 4,
+        0x53 => 8,
+        0x50 => 0,
+        _ => return None,
+    };
+    (bytes.get(offset) == Some(&0)).then_some(())?;
+    let mut at = offset.checked_add(2)?;
+    if bytes.get(at) == Some(&0xff) {
+        at += 1;
+    }
+    let count = usize::try_from(View::u32_be_at(bytes, at)?).ok()?;
+    at += 4;
+    NonNullXmt::try_from(read_xmt(bytes, &mut at)?).ok()?;
+    let end = at.checked_add(count.checked_mul(width)?)?;
+    bytes.get(at..end).map(|_| end)
 }
 
 fn attribute_definition_boundary(bytes: &[u8], offset: usize) -> bool {
@@ -900,8 +938,12 @@ fn append_all_zlib_streams<'a>(
                 i += packed_member_advance(offset, consumed)?;
                 continue;
             }
-            let source_end = following.map_or(part_view.end(), |(&offset, _)| offset - file_start);
-            let source = part_view.child(i, source_end).ok_or_else(|| {
+            // `child` takes positions in the view's own space, which may not start at zero.
+            let view_start = part_view.start();
+            let source_end = following.map_or(part_view.end(), |(&offset, _)| {
+                view_start + (offset - file_start)
+            });
+            let source = part_view.child(view_start + i, source_end).ok_or_else(|| {
                 CodecError::Malformed("NX member offset exceeds its part payload".into())
             })?;
             if let Some((inflated, consumed)) = inflate_stream(ctx, source)? {
@@ -1005,6 +1047,10 @@ pub(crate) fn extract_legacy_streams<'a>(
     }
     if streams.is_empty() {
         append_text_wrapped_streams(ctx, part, &mut streams)?;
+    }
+    // NX 9 stores its sections as zlib members inside the same legacy container.
+    if streams.is_empty() {
+        append_all_zlib_streams(ctx, part, part.start(), &mut streams, false)?;
     }
     Ok(streams)
 }

@@ -201,14 +201,9 @@ impl OwnerClosureIndex {
         edge_index: usize,
         representations: [usize; 2],
         carriers: [usize; 2],
-        mut face_tags: [u64; 2],
+        face_tags: [u64; 2],
     ) -> Option<[OwnerOccurrence; 2]> {
-        let [first, second] = self.by_edge.get(&edge_index)?.as_slice() else {
-            return None;
-        };
-        if first.owner_index == second.owner_index || first.face_index == second.face_index {
-            return None;
-        }
+        let [first, second] = self.edge_occurrences(edge_index, face_tags)?;
         if representations[0] == representations[1] {
             return None;
         }
@@ -217,20 +212,40 @@ impl OwnerClosureIndex {
             && second.representation_index == representations[1]
             && second.carrier_index == carriers[1]
         {
-            [*first, *second]
+            [first, second]
         } else if second.representation_index == representations[0]
             && second.carrier_index == carriers[0]
             && first.representation_index == representations[1]
             && first.carrier_index == carriers[1]
         {
-            [*second, *first]
+            [second, first]
         } else {
             return None;
         };
-        let mut owned_tags = sides.map(|side| side.face_tag);
+        Some(sides)
+    }
+
+    pub(crate) fn edge_occurrences(
+        &self,
+        edge_index: usize,
+        mut face_tags: [u64; 2],
+    ) -> Option<[OwnerOccurrence; 2]> {
+        if face_tags[0] == face_tags[1] {
+            return None;
+        }
+        let [first, second] = self.by_edge.get(&edge_index)?.as_slice() else {
+            return None;
+        };
+        if first.owner_index == second.owner_index
+            || first.face_index == second.face_index
+            || first.representation_index == second.representation_index
+        {
+            return None;
+        }
+        let mut owned_tags = [first.face_tag, second.face_tag];
         owned_tags.sort_unstable();
         face_tags.sort_unstable();
-        (owned_tags == face_tags).then_some(sides)
+        (owned_tags == face_tags).then_some([*first, *second])
     }
 }
 

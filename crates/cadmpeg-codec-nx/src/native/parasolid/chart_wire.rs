@@ -166,11 +166,12 @@ impl TryFrom<ChartWire> for ParasolidChartRecord {
             id: wire.id,
             stream_ordinal: wire.stream_ordinal,
             xmt: wire.xmt,
-            preamble: ChartPreamble::new(
+            preamble: ChartPreamble::for_points(
                 wire.base_parameter,
                 wire.base_scale,
                 wire.chordal_error,
                 wire.angular_error,
+                &data.points(),
             )?,
             data,
             framing: wire.framing,

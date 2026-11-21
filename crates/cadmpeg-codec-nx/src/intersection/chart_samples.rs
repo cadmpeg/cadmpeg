@@ -109,15 +109,51 @@ impl ChartSamples {
 /// Serialized value used by both missing-parameter error slots.
 pub(crate) const MISSING_PARAMETER: f64 = -31_415_800_000_000.0;
 
-/// Finite chart preamble with a nonzero scale and positive chordal error.
+fn lie_on_one_line(points: &[Point3]) -> bool {
+    /// Largest distance from the line, as a fraction of the distance between the end points.
+    const STRAIGHT_CHART_GAP: f64 = 1.0e-9;
+    let (Some(first), Some(last)) = (points.first(), points.last()) else {
+        return false;
+    };
+    let from_first = |point: &Point3| {
+        cadmpeg_ir::math::Vector3::new(point.x - first.x, point.y - first.y, point.z - first.z)
+    };
+    let along = from_first(last);
+    let length = along.norm();
+    length > 0.0
+        && points.iter().all(|point| {
+            along.cross(from_first(point)).norm() <= STRAIGHT_CHART_GAP * length * length
+        })
+}
+
+/// Finite chart preamble with a nonzero scale and positive chordal error, or a zero chordal error
+/// on a straight chart.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct ChartPreamble {
     base_parameter: FiniteReal,
     base_scale: NonZeroReal,
-    chordal_error: PositiveReal,
+    chordal_error: NonNegativeReal,
     angular_error: FiniteReal,
 }
 impl ChartPreamble {
+    /// The preamble of a chart through `points`. Points on one straight line state that line
+    /// exactly, so that chart alone can have no chordal error.
+    pub(crate) fn for_points(
+        base_parameter: f64,
+        base_scale: f64,
+        chordal_error: f64,
+        angular_error: f64,
+        points: &[Point3],
+    ) -> Result<Self, &'static str> {
+        if chordal_error == 0.0 && lie_on_one_line(points) {
+            let mut preamble = Self::new(base_parameter, base_scale, 1.0, angular_error)?;
+            preamble.chordal_error =
+                NonNegativeReal::new(0.0).ok_or("chordal_error: must be finite and positive")?;
+            return Ok(preamble);
+        }
+        Self::new(base_parameter, base_scale, chordal_error, angular_error)
+    }
+
     pub(crate) fn new(
         base_parameter: f64,
         base_scale: f64,
@@ -135,7 +171,7 @@ impl ChartPreamble {
         Ok(Self {
             base_parameter,
             base_scale,
-            chordal_error,
+            chordal_error: NonNegativeReal::from(chordal_error),
             angular_error,
         })
     }
@@ -145,14 +181,13 @@ impl ChartPreamble {
     pub(crate) fn base_scale(self) -> f64 {
         self.base_scale.get()
     }
-    pub(crate) fn chordal_error(self) -> PositiveReal {
+    pub(crate) fn chordal_error(self) -> NonNegativeReal {
         self.chordal_error
     }
     /// The metre chordal error in millimetres, as the fit tolerance of the
-    /// solved chart. A positive error stays non-negative after the
-    /// conversion, so only an error that overflows has no tolerance.
+    /// solved chart. Only an error that overflows has no tolerance.
     pub(crate) fn fit_tolerance(self) -> Option<FitTolerance> {
-        FitTolerance::from(NonNegativeReal::from(self.chordal_error))
+        FitTolerance::from(self.chordal_error)
             .scaled(PositiveReal::from(Magnification::MILLIMETERS_PER_METER))
     }
     pub(crate) fn angular_error(self) -> f64 {
@@ -245,7 +280,6 @@ impl SourceChartData {
         })
     }
 
-    #[cfg(test)]
     pub(crate) fn points(&self) -> Vec<Point3> {
         match &self.encoding {
             SourceEncoding::Xyz3 { points } => points.iter().map(|point| point.get()).collect(),
@@ -351,6 +385,36 @@ mod tests {
         assert_eq!(
             ChartPreamble::new(0.0, 1.0, 0.25, f64::INFINITY),
             Err("angular_error: must be finite")
+        );
+    }
+
+    #[test]
+    fn only_a_straight_chart_may_state_a_zero_chordal_error() {
+        let straight = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 2.0, 3.0),
+            Point3::new(2.0, 4.0, 6.0),
+        ];
+        let bent = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 2.5, 3.0),
+            Point3::new(2.0, 4.0, 6.0),
+        ];
+        let refused = Err("chordal_error: must be finite and positive");
+        assert_eq!(
+            ChartPreamble::for_points(0.0, 1.0, 0.0, 0.0, &straight)
+                .unwrap()
+                .fit_tolerance()
+                .map(cadmpeg_ir::geometry::FitTolerance::get),
+            Some(0.0)
+        );
+        assert_eq!(
+            ChartPreamble::for_points(0.0, 1.0, 0.0, 0.0, &bent),
+            refused
+        );
+        assert_eq!(
+            ChartPreamble::for_points(0.0, 1.0, -1.0, 0.0, &straight),
+            refused
         );
     }
 

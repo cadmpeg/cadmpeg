@@ -1816,6 +1816,19 @@ pub struct FeatureInputTopology {
     pub native_ref: Option<String>,
 }
 
+/// One face beside a historical edge that carries an asymmetric chamfer distance.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct EdgeSupport {
+    /// Face of the owning input state.
+    pub face: HistoricalFaceId,
+    /// Outward unit normal of the face at the edge midpoint.
+    pub normal: UnitVector3,
+    /// The face's coedge runs with the edge, so the face lies on the left.
+    pub with_edge: bool,
+}
+
 /// Geometry of one historical edge in a feature's input state.
 ///
 /// Positions and directions are in millimetres in the frame of the body that
@@ -1852,6 +1865,9 @@ pub struct HistoricalEdgeGeometry {
     pub end: Option<FinitePoint3>,
     /// Faces of the owning input state that use the edge.
     pub faces: DistinctMembers<HistoricalFaceId>,
+    /// Support faces of an unequal two-distance chamfer that selects this edge.
+    /// Empty for every other edge.
+    pub supports: Vec<EdgeSupport>,
 }
 
 /// One member of a feature result state: a body, face, edge, or vertex.

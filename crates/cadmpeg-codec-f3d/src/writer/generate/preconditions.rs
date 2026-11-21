@@ -77,13 +77,13 @@ pub(super) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result
                 return Err(CodecError::InvalidInput(format!(
                     "cacheless procedural curve {} carries a cache-fit tolerance",
                     procedural.id
-                )))
+                )));
             }
             Some(_) => {
                 return Err(CodecError::NotImplemented(format!(
-                "source-less F3D procedural curve {} cannot retain its construction on carrier {}",
-                procedural.id, curve.id
-            )))
+                    "source-less F3D procedural curve {} cannot retain its construction on carrier {}",
+                    procedural.id, curve.id
+                )));
             }
         }
     }
@@ -422,7 +422,7 @@ pub(super) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
                 return Err(CodecError::NotImplemented(format!(
                     "source-less F3D sketch curve {} has no writable geometry",
                     curve.id
-                )))
+                )));
             }
         };
         if !design_type_matches(curve_type, expected_type) {

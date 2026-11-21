@@ -146,6 +146,15 @@
     },
     "source": {
       "attributes": {
+        "file_description.description.0": "degree cone",
+        "file_description.implementation_level": "2;1",
+        "file_name.author.0": "cadmpeg",
+        "file_name.name": "degree-cone.p21",
+        "file_name.organization.0": "cadmpeg",
+        "file_name.originating_system": "cadmpeg",
+        "file_name.preprocessor_version": "cadmpeg",
+        "file_name.time_stamp": "2026-07-14T00:00:00",
+        "file_schema.schema_identifiers.0": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
         "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
       },
       "identity": {

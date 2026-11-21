@@ -10,7 +10,9 @@ use cadmpeg_core::CodecError;
 use crate::decode::Scan;
 use crate::intersection::{self, CurveScan};
 use crate::parasolid::{Stream, StreamKind};
-use crate::topology::{BlendSurface, Graph, OffsetSurface, SurfaceCurve, TrimmedCurve};
+use crate::topology::{
+    BlendSurface, Graph, OffsetSurface, SurfaceCurve, SweptSurface, TrimmedCurve,
+};
 
 struct TopologyStream<'a> {
     source: &'a [u8],
@@ -78,6 +80,8 @@ pub(crate) struct StreamView<'a> {
     pub(crate) graph: Rc<Graph>,
     /// Type-60 offset surfaces.
     pub(crate) offset_surfaces: Vec<OffsetSurface>,
+    /// Type-67 swept surfaces.
+    pub(crate) swept_surfaces: Vec<SweptSurface>,
     /// Type-56 rolling-ball blend surfaces.
     pub(crate) blend_surfaces: Vec<BlendSurface>,
     /// Type-133 trimmed curves.
@@ -94,6 +98,7 @@ impl<'a> StreamView<'a> {
             source,
             graph: Rc::new(Graph::default()),
             offset_surfaces: Vec::new(),
+            swept_surfaces: Vec::new(),
             blend_surfaces: Vec::new(),
             trimmed_curves: Vec::new(),
             surface_curves: Vec::new(),
@@ -110,6 +115,7 @@ impl<'a> StreamView<'a> {
         Ok(StreamView {
             source: bytes,
             offset_surfaces: graph.offset_surfaces(),
+            swept_surfaces: graph.swept_surfaces(),
             blend_surfaces: graph.blend_surfaces(),
             trimmed_curves: graph.trimmed_curves(),
             surface_curves: graph.surface_curves(),

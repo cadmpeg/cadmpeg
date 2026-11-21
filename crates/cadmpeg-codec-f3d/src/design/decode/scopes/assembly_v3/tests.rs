@@ -469,6 +469,7 @@ fn append_locator_paths(
             bytes.extend(crate::bytes::lp_utf16_bytes(OTHER_GUID).unwrap());
         }
         bytes.extend(2_u32.to_le_bytes());
+        bytes.extend([0; 8]);
         indexed_header(bytes, *b"495", locator + 2);
         bytes.extend([0; 10]);
         bytes.push(1);
@@ -691,6 +692,78 @@ fn version_five_decoder_keeps_connector_frames_with_qualified_paths() {
         ),
         [3.0, -2.0, 4.0]
     );
+}
+
+#[test]
+fn a_nonzero_path_pair_word_projects_the_joint_and_charges_the_assumption() {
+    let project = |word: u8| {
+        let (mut bytes, mut scope, owners, mut types) =
+            versioned_fixture(5, 7, false, false, false, 0);
+        append_paths(&mut bytes, &mut types);
+        let mut closing = Vec::new();
+        indexed_header(&mut closing, *b"495", 0);
+        let mut tail = 2_u32.to_le_bytes().to_vec();
+        tail.extend([0; 8]);
+        tail.extend(&closing[..7]);
+        let words = bytes
+            .windows(tail.len())
+            .enumerate()
+            .filter(|(_, window)| *window == tail.as_slice())
+            .map(|(at, _)| at + 4)
+            .collect::<Vec<_>>();
+        assert_eq!(words.len(), 2);
+        for at in words {
+            bytes[at] = word;
+        }
+        let decoded = crate::test_support::with_decode_context(|ctx| {
+            alignment(
+                ctx,
+                &bytes,
+                &IndexedRecordOffsets::build(&bytes),
+                &scope,
+                &owners,
+                &types,
+            )
+        })
+        .unwrap()
+        .unwrap();
+        let words = decoded
+            .operand_path_refs()
+            .unwrap()
+            .iter()
+            .map(|path| {
+                path.identity_pair_words()
+                    .iter()
+                    .map(|word| word.value)
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(words, [[0, u32::from(word)]; 2]);
+        if let DesignScopePayloadMut::Assemble(slot) = scope.payload_mut() {
+            *slot = Some(decoded);
+        }
+        crate::design::assembly::project_assembly_joints(
+            &[scope],
+            &[],
+            &crate::design::components::ComponentInserts::decide(&[], &[], &[]),
+            &[],
+        )
+    };
+    let zero = project(0);
+    let one = project(1);
+    assert_eq!(zero.joints.len(), 1);
+    assert_eq!(one.joints, zero.joints);
+    let word_losses = |projection: &crate::design::assembly::AssemblyJointProjection| {
+        projection
+            .losses
+            .iter()
+            .filter(|loss| {
+                loss.code == crate::loss::F3dLossCode::AssemblyOperandPathWordAssumed.kind()
+            })
+            .count()
+    };
+    assert_eq!(word_losses(&zero), 0);
+    assert_eq!(word_losses(&one), 1);
 }
 
 #[test]

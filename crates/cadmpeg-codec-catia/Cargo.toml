@@ -30,6 +30,8 @@ serde_json.workspace = true
 [dev-dependencies]
 # Test-only golden harness and round-trip helpers.
 cadmpeg-test-support = { workspace = true }
+# Test-only measurement of decoded solids against their STEP validation properties.
+cadmpeg-measure = { workspace = true }
 
 [lints]
 workspace = true

@@ -47,6 +47,7 @@ record states which lane it is in.
 | `54` | TORUS | 107 B | logical fixed record length | §4.1 |
 | `56` | BLEND_SURF | variable | 66 bytes plus escape and large-index shifts | §4.1 |
 | `60` | OFFSET_SURF | 31 B | logical fixed record length | §4.1 |
+| `67` | SWEPT_SURF | 53 B | logical fixed record length | §4.1 |
 | `124` | B_SURFACE | 23 B | logical fixed record length | §4.1 |
 | `133` | TRIMMED_CURVE | variable | 85 bytes plus escape and large-index shifts | §4.1 |
 | `134` | B_CURVE | 23 B | logical fixed record length | §4.1 |
@@ -708,6 +709,22 @@ The compact partition record ends after `offset_distance`, closing the §4.1 len
 | 20 | 1 | `true_offset` | `u8` | big | spec | `true_offset:u8 +20` (`0`/`1`) |
 | 21 | 2 | `base_surface` | `xmt_ref` | big | spec | base surface ref `+21`, finite `offset_distance:f64 +23` |
 | 23 | 8 | `offset_distance` | `f64` | big | spec | finite `offset_distance:f64 +23` (meters) |
+
+Unstated regions:
+
+- `0..19` (19 B): Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`.
+
+## `swept_surf_payload`
+
+Spec §6.2.1 · layout: byte offsets · size: 53 B
+
+A large-index section-curve reference shifts every later field by two bytes.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 19 | 2 | `section` | `xmt_ref` | big | spec | section curve ref `+19` (large-index capable) |
+| 21 | 24 | `sweep` | `f64[3]` | big | spec | unit `sweep` vector `+21` |
+| 45 | 8 | `scale` | `f64` | big | spec | `scale:f64 +45` |
 
 Unstated regions:
 

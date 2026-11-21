@@ -870,6 +870,21 @@ fn zero_body_frame(
     metadata_marker: usize,
     class_tags: (&str, &str),
 ) -> (Vec<u8>, DesignParameterScope) {
+    zero_body_frame_with_kind(
+        frame_length,
+        frame_length - 101,
+        metadata_marker,
+        class_tags,
+    )
+}
+
+/// As `zero_body_frame`, with the kind payload at `kind_offset`.
+fn zero_body_frame_with_kind(
+    frame_length: usize,
+    kind_offset: usize,
+    metadata_marker: usize,
+    class_tags: (&str, &str),
+) -> (Vec<u8>, DesignParameterScope) {
     let mut bytes = vec![0u8; frame_length];
     bytes[20] = 1;
     bytes[metadata_marker] = 1;
@@ -885,7 +900,7 @@ fn zero_body_frame(
     scope
         .try_edit(|draft| {
             draft.frame_length = u64_from_index(frame_length);
-            draft.kind_offset = u64_from_index(frame_length - 101);
+            draft.kind_offset = u64_from_index(kind_offset);
             draft.paired_byte_offset = u64_from_index(frame_length);
             draft.reference_members = ReferenceRun::unlocated(vec![77]);
             draft.reference_count_offset =
@@ -918,6 +933,60 @@ fn zero_body_frame_is_read_under_any_class_pair() {
             "{class_tags:?}"
         );
     }
+}
+
+/// A 257-byte zero-body frame: kind at offset 157, 76-byte scope tail, and the
+/// previous history-state identity at offset 211.
+fn short_tail_zero_body_frame(class_tags: (&str, &str)) -> (Vec<u8>, DesignParameterScope) {
+    short_tail_zero_body_frame_with_kind(157, class_tags)
+}
+
+fn short_tail_zero_body_frame_with_kind(
+    kind_offset: usize,
+    class_tags: (&str, &str),
+) -> (Vec<u8>, DesignParameterScope) {
+    let (bytes, mut scope) = zero_body_frame_with_kind(257, kind_offset, 32, class_tags);
+    scope
+        .try_edit(|draft| {
+            draft.feature_ordinal_offset = 181;
+            draft.history_state_id = Some(5);
+            draft.previous_history_state_id = Some(5);
+            draft.previous_history_state_id_offset = Some(211);
+        })
+        .unwrap();
+    (bytes, scope)
+}
+
+#[test]
+fn short_tail_zero_body_frame_is_read_under_any_class_pair() {
+    for class_tags in [("341", "263"), ("409", "262"), ("339", "264")] {
+        let (bytes, scope) = short_tail_zero_body_frame(class_tags);
+        assert_eq!(
+            zero_body_metadata(&bytes, &scope),
+            Some((0, 77)),
+            "{class_tags:?}"
+        );
+    }
+}
+
+#[test]
+fn short_tail_zero_body_frame_requires_its_kind_and_previous_state_offsets() {
+    let (bytes, scope) = short_tail_zero_body_frame(("341", "263"));
+    let (shifted_bytes, shifted_kind) = short_tail_zero_body_frame_with_kind(156, ("341", "263"));
+    assert_eq!(zero_body_metadata(&shifted_bytes, &shifted_kind), None);
+
+    let mut shifted_previous = scope.clone();
+    shifted_previous
+        .try_edit(|draft| {
+            draft.feature_ordinal_offset = 185;
+            draft.previous_history_state_id_offset = Some(215);
+        })
+        .unwrap();
+    assert_eq!(zero_body_metadata(&bytes, &shifted_previous), None);
+
+    let mut flagged = bytes;
+    flagged[31] = 1;
+    assert_eq!(zero_body_metadata(&flagged, &scope), None);
 }
 
 #[test]

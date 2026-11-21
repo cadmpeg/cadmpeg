@@ -20808,6 +20808,30 @@
         "distance"
       ]
     },
+    "EdgeSupport": {
+      "description": "One face beside a historical edge that carries an asymmetric chamfer distance.",
+      "type": "object",
+      "properties": {
+        "face": {
+          "description": "Face of the owning input state.",
+          "$ref": "#/$defs/HistoricalFaceId"
+        },
+        "normal": {
+          "description": "Outward unit normal of the face at the edge midpoint.",
+          "$ref": "#/$defs/UnitVector3"
+        },
+        "with_edge": {
+          "description": "The face's coedge runs with the edge, so the face lies on the left.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "face",
+        "normal",
+        "with_edge"
+      ]
+    },
     "Emboss": {
       "description": "Raises or sinks a profile, often text, by a depth, or imprints it.",
       "type": "object",
@@ -36804,6 +36828,13 @@
             }
           ]
         },
+        "supports": {
+          "description": "Support faces of an unequal two-distance chamfer that selects this edge.\nEmpty for every other edge.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EdgeSupport"
+          }
+        },
         "tangent": {
           "description": "Unit carrier tangent at `interior`, in the carrier's parameter\ndirection.",
           "anyOf": [
@@ -36820,7 +36851,8 @@
       "required": [
         "edge",
         "interior",
-        "faces"
+        "faces",
+        "supports"
       ]
     },
     "HistoricalEdgeId": {

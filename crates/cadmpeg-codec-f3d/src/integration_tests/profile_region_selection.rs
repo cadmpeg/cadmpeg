@@ -562,3 +562,90 @@ fn a_counted_member_flag_states_a_traversal_against_the_curve_direction() {
         ProfileRef::Planar(PlanarProfileRef::SketchSelection { .. })
     ));
 }
+
+#[test]
+fn same_sketch_profile_group_composes_merged_regions_and_charges_union_assumption() {
+    let geometry = vec![
+        json!({"kind": "line", "start": {"u": 0.0, "v": 0.0}, "end": {"u": 4.0, "v": 0.0}}),
+        json!({"kind": "line", "start": {"u": 4.0, "v": 0.0}, "end": {"u": 4.0, "v": 3.0}}),
+        json!({"kind": "line", "start": {"u": 4.0, "v": 3.0}, "end": {"u": 0.0, "v": 3.0}}),
+        json!({"kind": "line", "start": {"u": 0.0, "v": 3.0}, "end": {"u": 0.0, "v": 0.0}}),
+        json!({"kind": "line", "start": {"u": 0.0, "v": 0.0}, "end": {"u": 2.0, "v": 3.0}}),
+    ];
+    let loops: &[&[usize]] = &[&[0, 1, 2, 3]];
+    let right_members = [(1, false), (2, false), (3, false), (5, true)];
+    let left_members = [(3, false), (4, false), (5, false)];
+    let (sketch, entities, curves, right_scope) =
+        fixture_with_flags(geometry.clone(), loops, &right_members);
+    let (_, _, _, left_scope) = fixture_with_flags(geometry, loops, &left_members);
+    let first = right_scope.extrude_profile().unwrap().clone();
+    let mut second = left_scope.extrude_profile().unwrap().clone();
+    second.scope_reference_ordinal = 1;
+    second.record_index = 110;
+    assert!(crate::design::decode::operands::composable_sketch_profiles(
+        &[first.clone(), second.clone(),]
+    ));
+
+    let scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#10",
+        DesignScopePayload::Extrude(Some(DesignExtrudeScope {
+            extrude_native_profiles: Some(vec![first.clone(), second.clone()]),
+            ..DesignExtrudeScope::default()
+        })),
+        10,
+    );
+    let (profile, losses) =
+        bound_fixture_with_losses((sketch.clone(), entities.clone(), curves.clone(), scope));
+    let ProfileRef::Planar(PlanarProfileRef::SketchRegions { regions, .. }) = &profile else {
+        panic!("expected merged SketchRegions, got {profile:?}");
+    };
+    assert_eq!(regions.len(), 2);
+    assert!(losses
+        .iter()
+        .any(|note| note.code == F3dLossCode::FeatureExtrudeProfileGroupUnionAssumed.kind()));
+    assert!(!losses
+        .iter()
+        .any(|note| note.code == F3dLossCode::FeatureExtrudeProfileGroupNative.kind()));
+
+    // A mixed group (missing region selection or different sketch) is not composable.
+    let mut no_region = second.clone();
+    no_region.region_selection = None;
+    assert!(
+        !crate::design::decode::operands::composable_sketch_profiles(&[first.clone(), no_region,])
+    );
+    let mut other_sketch = second;
+    other_sketch.entity_id = crate::records::identity::DesignEntityId::from_parts("0", 99);
+    assert!(
+        !crate::design::decode::operands::composable_sketch_profiles(&[
+            first.clone(),
+            other_sketch,
+        ])
+    );
+
+    // A same-sketch group where one operand fails to resolve stays Native and charges group-native.
+    let (_, _, _, bad_scope) = fixture_with_flags(square_and_circles(), &[&[0]], &[(99, false)]);
+    let mut bad_operand = bad_scope.extrude_profile().unwrap().clone();
+    bad_operand.scope_reference_ordinal = 1;
+    bad_operand.record_index = 120;
+    let failing_scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#11",
+        DesignScopePayload::Extrude(Some(DesignExtrudeScope {
+            extrude_native_profiles: Some(vec![first, bad_operand]),
+            ..DesignExtrudeScope::default()
+        })),
+        11,
+    );
+    let failing_id = failing_scope.id.clone();
+    let (failed_profile, failed_losses) =
+        bound_fixture_with_losses((sketch, entities, curves, failing_scope));
+    assert!(matches!(
+        failed_profile,
+        ProfileRef::Planar(PlanarProfileRef::Native(ref id)) if id == &failing_id
+    ));
+    assert!(failed_losses
+        .iter()
+        .any(|note| note.code == F3dLossCode::FeatureExtrudeProfileGroupNative.kind()));
+    assert!(!failed_losses
+        .iter()
+        .any(|note| note.code == F3dLossCode::FeatureExtrudeProfileGroupUnionAssumed.kind()));
+}

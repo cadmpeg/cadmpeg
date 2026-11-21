@@ -836,6 +836,48 @@ fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
 }
 
 #[test]
+fn records_numbered_alike_in_two_streams_keep_distinct_string_use_ids() {
+    use super::super::{
+        external_reference_record_string_uses, ExternalReference, ExternalReferenceRecord,
+    };
+
+    let streams = ["fast-load", "part"];
+    let references = streams
+        .iter()
+        .flat_map(|stream| {
+            (0..4).map(move |ordinal| ExternalReference {
+                id: format!("reference:{stream}#{ordinal}"),
+                ordinal,
+                path: format!("value-{ordinal}"),
+                source_entry: (*stream).into(),
+                source_offset: 100 + u64::from(ordinal),
+            })
+        })
+        .collect::<Vec<_>>();
+    let records = streams
+        .iter()
+        .map(|stream| ExternalReferenceRecord {
+            id: format!("record:{stream}#6"),
+            record_id: 6,
+            declared_count: 2,
+            id_slots: [0, 1, 2, 3],
+            handles: crate::container::extref_handles::ExtrefHandles::new(vec![10, 20, 20])
+                .unwrap(),
+            tail_byte_len: 5,
+            source_entry: (*stream).into(),
+            source_offset: 20,
+        })
+        .collect::<Vec<_>>();
+    let uses = external_reference_record_string_uses(&records, &references).unwrap();
+    let ids = uses
+        .iter()
+        .map(|use_| use_.id.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(uses.len(), 8);
+    assert_eq!(ids.len(), 8);
+}
+
+#[test]
 fn external_reference_record_slots_resolve_atomically_in_the_same_stream() {
     use super::super::{
         external_reference_record_children, external_reference_record_string_uses,
