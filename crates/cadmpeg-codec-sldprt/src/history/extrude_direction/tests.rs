@@ -422,6 +422,19 @@ fn a_solid_along_the_normal_contradicts_a_reversal_without_its_start_cap() {
     };
     assert_eq!(direction, &ExtrudeDirection::ProfileNormal {});
     assert!(reversal_unread(&ir.model.features[0].source_properties));
+    // The whole solid contradicts a reversal of any termination.
+    let mut ir = model(0.0, 1.0);
+    set_direction(&mut ir, ExtrudeDirection::ReversedProfileNormal {});
+    ir.model.features[0].evaluation.edit(|definition, _| {
+        if let FeatureDefinition::Operation(FeatureOperation::Extrude {
+            extent: ExtrudeExtent::OneSided { side },
+            ..
+        }) = definition
+        {
+            side.termination = LinearTermination::ThroughAll {};
+        }
+    });
+    assert!(contradicted_features(&ir).contains(&ir.model.features[0].id));
     // A solid against the normal keeps the reversal.
     let mut ir = model(10.0, 1.0);
     set_direction(&mut ir, ExtrudeDirection::ReversedProfileNormal {});
