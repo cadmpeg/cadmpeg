@@ -155,9 +155,19 @@ fn variable_mesh_body_reads_matrix_flags_and_material_lengths() {
                 &old[mesh_body::WRAPPER_REFERENCE
                     ..mesh_body::CONTAINER_GUID_REFERENCE + SAME_SEGMENT_REFERENCE_BYTES],
             );
-            body.extend_from_slice(
-                &old[mesh_body::FEATURE_SCOPE_REFERENCE..mesh_body::WRAPPER_REFERENCE],
-            );
+            body.push(0);
+            for ty in &mut graph.meta.types {
+                if ty
+                    .type_guid
+                    .as_str()
+                    .eq_ignore_ascii_case(MESH_FEATURE_SCOPE_TYPE_GUID)
+                {
+                    ty.type_guid = "00000000-0000-4000-8000-000000000000"
+                        .to_owned()
+                        .try_into()
+                        .unwrap();
+                }
+            }
         } else {
             body.extend_from_slice(
                 &old[mesh_body::FEATURE_SCOPE_REFERENCE
@@ -190,10 +200,6 @@ fn variable_mesh_body_reads_matrix_flags_and_material_lengths() {
             "Synthetic/BulkStream.dat",
             &mut no_texture_asset,
         );
-        if null_scope {
-            assert!(parsed.is_err());
-            continue;
-        }
         let features = parsed.expect("variable mesh body");
         let [feature] = features.as_slice() else {
             panic!("one feature")
@@ -201,7 +207,14 @@ fn variable_mesh_body_reads_matrix_flags_and_material_lengths() {
         let wire = serde_json::to_value(feature).unwrap();
         let row = &wire["bodies"][0];
         assert_eq!(row["body_name"], "Axle");
-        if compact {
+        assert_eq!(feature.scopes().count(), usize::from(!null_scope));
+        assert_eq!(feature.bodies()[0].scope_record_index.is_none(), null_scope);
+        assert_eq!(row.get("scope_record_index").is_none(), null_scope);
+        if null_scope {
+            assert_eq!(row["scope_reference_offset"], start + 514);
+            assert_eq!(row["scene_node_reference_offset"], start + 549);
+            assert!(row.get("scope_body_ordinal").is_none());
+        } else if compact {
             assert!(row.get("transform_offsets").is_none());
             assert_eq!(
                 row["body_variable_layout"]["presence_offsets"],

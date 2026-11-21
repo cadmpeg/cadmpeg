@@ -29,7 +29,8 @@ use super::super::extrude::profile::{profile, LoopEntry, ProfileLoop};
 use super::super::sketch::{CurveGeometry, OriginPlane, PlannedCurve, PlannedSketch};
 use super::roster::segment;
 use super::sketch::{
-    datum, feature, feature_id, frame, picked, point2, principal, sketch_id, Source,
+    datum, feature, feature_id, fixed_clock_tables, frame, picked, point2, principal, sketch_id,
+    Source,
 };
 use super::{
     loss, neutral, number, parameter_id, scoped_cube, write, write_bytes, EXTRUDE, SKETCH,
@@ -286,6 +287,90 @@ fn the_extrude_replaces_the_base_feature() {
 }
 
 #[test]
+fn an_extrude_design_charges_a_hidden_body_and_every_fixed_clock_table() {
+    let mut ir = sketch_and_extrude(blind(), false);
+    ir.geometry.bodies[0].visible = Some(false);
+    let body = ir.geometry.bodies[0].id.to_string();
+    let (report, decoded, bytes) = write_bytes(&ir);
+    assert_eq!(
+        kinds(&decoded),
+        ["sketch", "extrude"],
+        "{:#?}",
+        report.losses
+    );
+    assert!(
+        loss(&report, "export/value.unwritable")
+            .iter()
+            .any(|message| message.contains("as visible") && message.contains(&body)),
+        "{:#?}",
+        report.losses
+    );
+    let tables = fixed_clock_tables(&report, &bytes);
+    // The component table, three of the sketch and six of the Extrude:
+    // its scope, profile group, start record and profile selection, and
+    // one of each owned parameter. The Base Feature tables 210 and 214
+    // are not written.
+    assert_eq!(tables.len(), 1 + 3 + 6, "{tables:?}");
+    assert!(
+        !tables.contains(&210) && !tables.contains(&214),
+        "{tables:?}"
+    );
+}
+
+#[test]
+fn an_extrude_design_names_no_base_feature_in_its_notes() {
+    let mut ir = sketch_and_extrude(blind(), false);
+    let guid = "11111111-2222-3333-4444-555555555555";
+    ir.model.appearances = vec![cadmpeg_ir::appearance::Appearance {
+        id: cadmpeg_ir::ids::AppearanceId::mint("generated:test:appearance#0")
+            .expect("identity grammar"),
+        name: Some("Prism-Generated".into()),
+        asset_guid: Some(guid.into()),
+        library_id: None,
+        visual_guid: Some(guid.into()),
+        physical_token: Some("PrismMaterial-Generated".into()),
+        schema: Some("GenericSchema".into()),
+        category: Some("Plastic/Generated".into()),
+        base_color: Some(
+            cadmpeg_ir::topology::Color::new(0.15, 0.35, 0.75, 1.0).expect("valid color"),
+        ),
+        properties: std::collections::BTreeMap::from([(
+            cadmpeg_core::nonblank_literal!("refraction_index"),
+            cadmpeg_ir::scalar::FiniteReal::new(1.5).expect("finite scalar"),
+        )]),
+        textures: Vec::new(),
+        native_ref: None,
+    }];
+    let (report, decoded) = write(&ir);
+    assert_eq!(
+        kinds(&decoded),
+        ["sketch", "extrude"],
+        "{:#?}",
+        report.losses
+    );
+    let messages = report
+        .losses
+        .iter()
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    // The appearance and Sketch-item notes, each of which named a Base
+    // Feature in an Extrude design.
+    for charged in [
+        "the one Protein package its asset manager names",
+        "record 199 (owner collection: the order of the Sketch and Extrude members)",
+        "as the Extrude item tail)",
+    ] {
+        assert!(
+            messages.iter().any(|message| message.contains(charged)),
+            "{charged}: {messages:#?}"
+        );
+    }
+    for message in messages {
+        assert!(!message.contains("Base Feature"), "{message}");
+    }
+}
+
+#[test]
 fn the_distance_is_an_owned_parameter_of_the_extrude() {
     let (_, decoded) = write(&sketch_and_extrude(blind(), false));
     let extrude = decoded_extrude(&decoded).id.clone();
@@ -317,6 +402,74 @@ fn the_distance_is_an_owned_parameter_of_the_extrude() {
         .parameters
         .iter()
         .any(|parameter| parameter.name == "Width" && parameter.owner.is_none()));
+}
+
+/// The LP-UTF16 string at `at` and the offset after it.
+fn utf16_at(bytes: &[u8], at: usize) -> (String, usize) {
+    let units = usize::try_from(u32_at(bytes, at)).expect("length");
+    let end = at + 4 + 2 * units;
+    let units = bytes[at + 4..end]
+        .chunks(2)
+        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+        .collect::<Vec<_>>();
+    (String::from_utf16(&units).expect("UTF-16"), end)
+}
+
+/// Each parameter record is framed by the version of the type the
+/// `MetaStream` registers for it (f3d.md §3.1): the eleven-byte header,
+/// and the nine-byte expression trailer at version 7 or the ten-byte one at
+/// version 8, whose last byte is the document flag.
+#[test]
+fn every_parameter_record_closes_with_the_trailer_of_its_type_version() {
+    let mut ir = sketch_and_extrude(blind(), false);
+    ir.design
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.id == parameter_id("width"))
+        .expect("Width")
+        .comment = Some("overall width".into());
+    let (_, _, bytes) = write_bytes(&ir);
+    let design = segment(&bytes, "FusionDesignSegmentType1");
+    let mut written = Vec::new();
+    for (index, version) in design.records_of(super::super::types::PARAMETER.guid) {
+        let record = design.record(index);
+        let trailer = match version {
+            7 => 9,
+            8 => 10,
+            other => panic!("parameter type version {other}"),
+        };
+        assert_eq!(&record[11..22], &[0; 11], "record {index}");
+        assert!(u32_at(record, 22) <= 6, "record {index}");
+        assert_eq!(record[26], 0, "record {index}");
+        let (comment, at) = utf16_at(record, 27);
+        let (owned, expression_at) = match record[at + 4] {
+            0 => (false, at + 5),
+            1 => {
+                assert_eq!(&record[at + 13..at + 15], &[0; 2], "record {index}");
+                (true, at + 15)
+            }
+            marker => panic!("record {index}: owner marker {marker}"),
+        };
+        let (_, end) = utf16_at(record, expression_at);
+        let mut expected = vec![0; trailer];
+        expected[trailer - 1] = u8::from(!owned);
+        assert_eq!(&record[end..end + trailer], expected, "record {index}");
+        let (kind, end) = utf16_at(record, end + trailer);
+        assert_eq!(u32_at(record, end), 0, "record {index}: the text value");
+        written.push((kind, comment));
+    }
+    for expected in [
+        ("AlongDistance", ""),
+        ("TaperAngle", ""),
+        ("User Parameter", "overall width"),
+    ] {
+        assert!(
+            written
+                .iter()
+                .any(|(kind, comment)| (kind.as_str(), comment.as_str()) == expected),
+            "{expected:?} in {written:?}"
+        );
+    }
 }
 
 #[test]

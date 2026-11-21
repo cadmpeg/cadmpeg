@@ -228,7 +228,7 @@ fn prepare_component(
             &edge,
             line.source_offset,
             "sketch_boundary_edge",
-            &["carrier", "start", "end"],
+            &["carrier", "ends.start", "ends.end"],
         )?;
         annotation(
             prepared,

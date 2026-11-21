@@ -48,9 +48,9 @@ fn decode_projects_part_attributes_to_document_attributes() {
     );
     assert_eq!(
         attribute.values,
-        vec![cadmpeg_ir::attributes::AttributeValue::String(
+        vec![Some(cadmpeg_ir::attributes::AttributeValue::String(
             "Steel".to_string()
-        )]
+        ))]
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())

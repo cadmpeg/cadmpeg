@@ -31,7 +31,8 @@ impl<'a> Graph<'a> {
         &mut self,
         entity: &T,
     ) -> Result<(), CodecError> {
-        let value = serde_json::to_value(entity).map_err(CodecError::malformed)?;
+        let value =
+            crate::hash::finite_json::to_json_value(entity).map_err(CodecError::malformed)?;
         let Some(&index) = self.ids.get(entity.record_identity()) else {
             return Ok(());
         };
@@ -231,7 +232,8 @@ pub fn select(
         let mut referenced = BTreeSet::new();
         for namespace in selected.native.0.values() {
             for record in namespace.arenas().values().flatten() {
-                let value = serde_json::to_value(record).map_err(CodecError::malformed)?;
+                let value = crate::hash::finite_json::to_json_value(record)
+                    .map_err(CodecError::malformed)?;
                 crate::reference_walk::visit_edges(
                     &value,
                     "",
@@ -267,7 +269,8 @@ pub fn select(
             _ => return Err(error),
         }
     }
-    let mut value = serde_json::to_value(&selected).map_err(CodecError::malformed)?;
+    let mut value =
+        crate::hash::finite_json::to_json_value(&selected).map_err(CodecError::malformed)?;
     for home in crate::document::ArenaHome::ALL {
         let Some(arenas) = value[home.as_str()].as_object_mut() else {
             continue;

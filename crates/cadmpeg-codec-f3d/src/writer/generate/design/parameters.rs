@@ -180,6 +180,7 @@ pub(in crate::writer::generate) fn plan(
     let mut unwritten = Vec::new();
     let mut renamed = Vec::new();
     let mut unbound = Vec::new();
+    let mut displayed = Vec::new();
     let mut integers = Vec::new();
     for index in order {
         let (parameter, form) = candidates[index];
@@ -232,6 +233,9 @@ pub(in crate::writer::generate) fn plan(
                 unbound.push(format!("{} (owner attribute {attribute})", parameter.id));
             }
             Some(ParameterOwner::Feature(_)) | None => {}
+        }
+        if let Some(display) = parameter.display {
+            displayed.push(format!("{} ({display:?})", parameter.id));
         }
         if matches!(parameter.kind, ValueKind::Integer) {
             integers.push(parameter.id.to_string());
@@ -289,6 +293,11 @@ pub(in crate::writer::generate) fn plan(
         "F3D",
         "writes these parameters as user parameters without their owners: a Fusion user parameter is bound to no container or attribute",
         unbound,
+    ));
+    losses.extend(value_unwritable(
+        "F3D",
+        "writes these parameters without their diameter or radius display presentation: a Fusion user parameter holds no display flag",
+        displayed,
     ));
     if !integers.is_empty() {
         integers.sort_unstable();
@@ -622,7 +631,7 @@ impl PlannedParameter {
         .and_then(|record| {
             record.with_comment(self.comment.clone().map(|comment| RecordedValue {
                 value: comment,
-                offset: 30,
+                offset: 31,
             }))
         })
         .map_err(|error| {

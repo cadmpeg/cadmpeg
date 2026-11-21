@@ -272,7 +272,7 @@ impl<'de> Deserialize<'de> for NonEmptyMap {
 }
 
 /// Exactness for an entity and sparse overrides for its serialized fields.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ExactnessNote {

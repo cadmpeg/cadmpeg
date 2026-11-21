@@ -24,6 +24,9 @@ pub(crate) enum ExportLossCode {
     /// A feature the target needs a state or names for is not written
     /// (§3.4, Features without their state).
     EvaluationMissing,
+    /// A state whose status is `Stale` or `Failed` is written to a target
+    /// that has no stale mark (§3.4, Features without their state).
+    EvaluationStale,
     /// A parameter's expression is written as its cached value (§5.13).
     ParameterFlattened,
     /// A parameter is written under another name (§5.13).
@@ -46,6 +49,7 @@ impl ExportLossCode {
             Self::NativeRecordsOmitted => "native.records-omitted",
             Self::OutputEmpty => "output.empty",
             Self::EvaluationMissing => "evaluation.missing",
+            Self::EvaluationStale => "evaluation.stale",
             Self::ParameterFlattened => "parameter.flattened",
             Self::ParameterRenamed => "parameter.renamed",
             Self::RecordResidualUnavailable => "record.residual-unavailable",
@@ -60,6 +64,7 @@ impl ExportLossCode {
             | Self::NativeRecordsOmitted
             | Self::OutputEmpty
             | Self::EvaluationMissing
+            | Self::EvaluationStale
             | Self::ParameterFlattened
             | Self::RecordResidualUnavailable
             | Self::ValueUnwritable => Severity::Warning,
@@ -75,6 +80,7 @@ impl ExportLossCode {
             Self::NativeRecordsOmitted => return LossTaxonomy::PassthroughRecordOmitted,
             Self::OutputEmpty => return LossTaxonomy::NoExportableSolids,
             Self::EvaluationMissing
+            | Self::EvaluationStale
             | Self::ParameterFlattened
             | Self::ParameterRenamed
             | Self::RecordResidualUnavailable
@@ -207,6 +213,19 @@ where
     S: Into<String>,
 {
     listed(ExportLossCode::EvaluationMissing, format, reason, ids)
+}
+
+/// `export:evaluation.stale`: the target has no stale mark, and the writer
+/// writes these states, whose status is `Stale` or `Failed`, without one.
+/// The message gives the count and then every entry, sorted (§3.2). `None`
+/// when `ids` is empty.
+#[must_use]
+pub fn evaluation_stale<I, S>(format: &str, reason: &str, ids: I) -> Option<LossNote>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    listed(ExportLossCode::EvaluationStale, format, reason, ids)
 }
 
 /// `export:parameter.flattened`: the writer writes these parameters as their
