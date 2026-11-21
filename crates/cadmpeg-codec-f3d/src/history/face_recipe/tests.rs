@@ -548,6 +548,43 @@ fn a_one_clause_node_leaves_the_bounded_face_member_unresolved() {
 }
 
 #[test]
+fn counted_shell_program_keeps_a_one_clause_hole_loop_unresolved() {
+    let mut topology = topology_with_inner_loop();
+    topology.faces.retain(|face| *face != 104);
+    let other = topology.face_loops.pop().unwrap();
+    topology.face_loops[0].member_refs.extend(other.member_refs);
+    let index = FaceRecipeIndex::new(&topology);
+    let mut operand = operand();
+    add_closed_edge_node(&mut operand, [4, 0]);
+    operand.recipe_references[4].candidate_faces = vec![crate::ids::brep_face_id(100)];
+    let node = operand.recipe_nodes.pop().unwrap();
+    operand.recipe_program = vec![0, -1, 1];
+    operand.recipe_program.extend_from_slice(&node.program);
+    operand.recipe_nodes = vec![node];
+    let recipe = index.prepare(&operand).unwrap();
+    assert_eq!(recipe.nodes[0].prelude[1], 1);
+    assert_eq!(recipe.candidates, BTreeSet::from([100]));
+    assert!(index.node_matches(recipe.nodes[0], 20, &recipe.lanes));
+    assert_eq!(
+        index
+            .resolve_loop_program(
+                &operand,
+                &cadmpeg_core::decode::WorkBudget::new(super::MAX_FACE_RECIPE_MATCH_WORK),
+            )
+            .unwrap(),
+        None
+    );
+    assert!(super::bind_operation_operand(
+        &mut operand,
+        &crate::records::feature::scope::DesignFeatureKind::Shell,
+        &topology,
+        &mut super::SnapshotCache::default(),
+    )
+    .is_none());
+    assert!(operand.resolved_face_slots.is_empty());
+}
+
+#[test]
 fn counted_shell_program_binds_aliased_neighbor_faces() {
     let index = FaceRecipeIndex::new(&topology());
     let mut operand = operand();
