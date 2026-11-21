@@ -5,7 +5,7 @@ use super::{
     NurbsCurve, NurbsError, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis,
     NurbsSurfaceLanes, PoleValue,
 };
-use crate::features::FinitePoint3;
+use crate::features::geometry::FinitePoint3;
 
 impl NurbsCurve {
     /// Pair raw pole and weight lanes, then build the curve.

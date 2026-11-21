@@ -3,7 +3,10 @@
 
 use std::io::Cursor;
 
-use cadmpeg_ir::features::{AngularTermination, BooleanOp, FeatureOperation, RevolveExtent};
+use cadmpeg_ir::features::extents::AngularTermination;
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::revolve::RevolveExtent;
+use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::{Codec, DecodeOptions};
 
 use crate::test_support::test_archive::archive;
@@ -203,7 +206,7 @@ fn revolve_absent_base_defaults_but_malformed_base_remains_native() {
             };
             assert_eq!(
                 construction.axis().expect("axis").origin,
-                cadmpeg_ir::features::FinitePoint3::ZERO
+                cadmpeg_ir::features::geometry::FinitePoint3::ZERO
             );
         } else {
             assert!(matches!(operation, FeatureOperation::Native { .. }));

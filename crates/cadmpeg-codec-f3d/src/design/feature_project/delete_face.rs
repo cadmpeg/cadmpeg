@@ -97,7 +97,8 @@ pub(super) fn project_delete_face(
     face_operands: &[DesignFaceOperand],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let heal = match scope.kind_name() {
         "DeleteFace" => true,
@@ -138,8 +139,8 @@ fn selected_delete_faces(
     construction_groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
     heal: bool,
-) -> Result<Option<cadmpeg_ir::features::FaceSelection>, CodecError> {
-    use cadmpeg_ir::features::FaceSelection;
+) -> Result<Option<cadmpeg_ir::features::selections::FaceSelection>, CodecError> {
+    use cadmpeg_ir::features::selections::FaceSelection;
     let reference_count = scope.reference_members().len();
     if reference_count < 2 {
         return Ok(None);

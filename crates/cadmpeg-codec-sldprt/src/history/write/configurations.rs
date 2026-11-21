@@ -4,7 +4,7 @@
 use crate::records::{Configuration, FeatureHistory};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{DesignConfiguration, ParameterValue};
+use cadmpeg_ir::features::parameters::{DesignConfiguration, ParameterValue};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use super::features::synchronize_history_content_order;

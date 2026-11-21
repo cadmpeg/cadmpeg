@@ -189,7 +189,7 @@ fn linear_extrusion_surface_selects_endpoint_continuous_pcurve() {
             10.0,
             0.0
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(10.0, 0.0, 0.0))
     );
     assert!(!decoded.report().losses.iter().any(|loss| {
@@ -330,7 +330,7 @@ fn linear_extrusion_surface_evaluates_a_nurbs_directrix() {
             5.0,
             0.0
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(5.0, 0.0, 0.0))
     );
     let partials = model_surface_partials_by_id(
@@ -374,7 +374,7 @@ fn swept_surface_chart_ignores_pcurve_population() {
                 5.0,
                 0.0
             )
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
             Ok(Point3::new(5.0, 0.0, 0.0))
         );
         let partials = model_surface_partials_by_id(
@@ -429,7 +429,7 @@ fn surface_of_revolution_selects_profile_parameter_pcurve() {
             0.0,
             10.0
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(10.0, 0.0, 0.0))
     );
     assert_eq!(decoded.ir().geometry.pcurves.len(), 1);

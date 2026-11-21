@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::features::{
-    FaceSelection, FeatureDefinition, FeatureEvaluation, FeatureOperation, FeatureResultMembers,
-    FeatureResultTopology, SplitFaceTool,
+use cadmpeg_ir::features::direct_edit::SplitFaceTool;
+use cadmpeg_ir::features::evaluation::{
+    FeatureEvaluation, FeatureResultMembers, FeatureResultTopology,
 };
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 use cadmpeg_ir::ids::FeatureResultTopologyId;
 

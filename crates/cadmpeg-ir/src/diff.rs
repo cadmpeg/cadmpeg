@@ -630,7 +630,7 @@ mod tests {
         let mut right = left.clone();
         let moved = right.geometry.points[0].position().get();
         right.geometry.points[0].set_position(
-            crate::features::FinitePoint3::new(crate::math::Point3::new(
+            crate::features::geometry::FinitePoint3::new(crate::math::Point3::new(
                 moved.x + 1.0,
                 moved.y,
                 moved.z,
@@ -712,8 +712,10 @@ mod tests {
         );
         let moved = right.geometry.points[index].position().get();
         right.geometry.points[index].set_position(
-            crate::features::FinitePoint3::new(crate::math::Point3::new(after, moved.y, moved.z))
-                .expect("a finite position is a point"),
+            crate::features::geometry::FinitePoint3::new(crate::math::Point3::new(
+                after, moved.y, moved.z,
+            ))
+            .expect("a finite position is a point"),
         );
 
         assert_ne!(
@@ -751,7 +753,7 @@ mod tests {
         let index = scaled_point(&left);
         let point = right.geometry.points[index].position().get();
         right.geometry.points[index].set_position(
-            crate::features::FinitePoint3::new(crate::math::Point3::new(
+            crate::features::geometry::FinitePoint3::new(crate::math::Point3::new(
                 point.x.mul_add(1.0e-6, point.x),
                 point.y,
                 point.z,

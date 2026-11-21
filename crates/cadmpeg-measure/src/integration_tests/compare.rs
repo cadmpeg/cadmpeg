@@ -2,7 +2,7 @@
 //! ID-free comparison of measured documents: copies, renamed and moved
 //! copies, coincident bodies, signature bodies and occurrence placement.
 
-use cadmpeg_ir::features::FiniteVector3;
+use cadmpeg_ir::features::geometry::FiniteVector3;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::topology::{BodyKind, Sense};
 use cadmpeg_ir::transform::Transform;

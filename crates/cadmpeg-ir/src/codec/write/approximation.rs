@@ -202,7 +202,7 @@ impl<'a> Approximator<'a> {
                     model_surface_point_by_id(admission, index, owner, u, v)
                 }),
             )
-            .map(crate::features::FinitePoint3::get)
+            .map(crate::features::geometry::FinitePoint3::get)
         };
         if !trims_meet_vertices(
             ir,
@@ -339,7 +339,7 @@ impl<'a> Approximator<'a> {
                     },
                 ),
             )
-            .map(crate::features::FinitePoint3::get)
+            .map(crate::features::geometry::FinitePoint3::get)
         };
         let Grid {
             rows,
@@ -417,7 +417,7 @@ impl<'a> Approximator<'a> {
                     model_curve_point_by_id(admission, index, owner, u)
                 }),
             )
-            .map(crate::features::FinitePoint3::get)
+            .map(crate::features::geometry::FinitePoint3::get)
         };
         // A uniform fit cannot converge across a corner that falls between its samples, so
         // supply known corner parameters as axis breaks.
@@ -491,7 +491,7 @@ fn spline_through_plane(
                 model_surface_point_by_id(admission, index, surface, u, v)
             }),
         )
-        .map(crate::features::FinitePoint3::get)
+        .map(crate::features::geometry::FinitePoint3::get)
     };
     let origin = on_plane(0.0, 0.0)?;
     let along_u = on_plane(1.0, 0.0)?;
