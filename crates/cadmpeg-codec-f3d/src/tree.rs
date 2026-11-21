@@ -34,6 +34,14 @@ pub(crate) fn file_root_id() -> ProductDefinitionId {
     )
 }
 
+pub(crate) fn state_root_definition(
+    ctx: &DecodeContext<'_>,
+    ir: &mut cadmpeg_ir::CadIr,
+) -> Result<(), CodecError> {
+    ir.state_root_definition(ctx, file_root_id(), ExternalDocument::default())?;
+    Ok(())
+}
+
 /// The file's root definition in `model`, added when it is absent.
 pub(crate) fn file_root(model: &mut Model) -> &mut ProductDefinition {
     let id = file_root_id();
