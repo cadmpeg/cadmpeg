@@ -595,9 +595,11 @@ impl<'a> Reduction<'a> {
     /// (f3d.md §2: the edge's, its own and the cache-fit tolerances) is raised
     /// to that distance, with `geometry.vertex-tolerance-widened` naming it.
     /// On a curve other than a line, conic or point, each end also inverts
-    /// from the other end's seed; an edge whose two witnesses of one end lie on
-    /// different arcs of a self-crossing curve keeps no range. The two ends of
-    /// a closed curve's domain are one place, not two arcs.
+    /// from the other end's seed. Where a self-crossing curve passes a vertex
+    /// on two arcs, the edge takes the shortest range between a witness of
+    /// each end that passes no other witness of its vertices, with a loss
+    /// naming the edge and that assumption. The two ends of a closed curve's
+    /// domain are one place.
     /// An edge that runs against its line is written with its ends exchanged.
     /// A line or conic carrier that a vertex lies beyond the edge's allowance
     /// from is ranged between the vertices' feet on it, with a loss naming the
@@ -635,10 +637,10 @@ impl<'a> Reduction<'a> {
             .map(|curve| (curve.id.as_str(), curve))
             .collect::<HashMap<_, _>>();
         let mut tolerant = HashMap::<&VertexId, f64>::new();
-        let (stated, exchanged, feet, invalid) = loop {
+        let (stated, exchanged, assumptions, invalid) = loop {
             let mut stated = Vec::new();
             let mut exchanged = HashSet::new();
-            let mut feet = Vec::new();
+            let mut assumptions = Vec::new();
             let mut invalid = Vec::new();
             let mut raised_any = false;
             for &edge_index in &open {
@@ -724,7 +726,7 @@ impl<'a> Reduction<'a> {
                             | SolvedCurveGeometry::Degenerate(_)
                     )
                 );
-                let (within, [first, last]) = match parameters(allowance)? {
+                let (within, [mut first, mut last]) = match parameters(allowance)? {
                     Some(range) => (true, range),
                     None if line || conic => match parameters(f64::MAX)? {
                         Some(range) => (false, range),
@@ -732,22 +734,13 @@ impl<'a> Reduction<'a> {
                     },
                     None => continue,
                 };
-                let reach = [
-                    (&ends.start, start, start_tolerance, first),
-                    (&ends.end, end, end_tolerance, last),
-                ];
-                let mut range = [first, last];
-                if last <= first && conic {
-                    range[1] += std::f64::consts::TAU;
-                }
+                let mut assumed = None;
                 if freeform {
                     // A freeform curve can pass a point on two arcs, and the
                     // seed picks the witness: each end inverts from the other
-                    // end's seed as well, and an edge whose two witnesses of an
-                    // end lie on different arcs keeps no range. On a closed
-                    // curve, periodic or not, the witnesses split the loop into
-                    // two arcs, and the closure's two witnesses bound a short
-                    // one across it.
+                    // end's seed as well. On a closed curve, periodic or not,
+                    // the witnesses split the loop into two arcs, and the
+                    // closure's two witnesses bound a short one across it.
                     let bounds = match solved {
                         Some(SolvedCurveGeometry::Nurbs(nurbs)) if nurbs.periodic() => {
                             cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs)
@@ -755,40 +748,80 @@ impl<'a> Reduction<'a> {
                         }
                         _ => domain,
                     };
-                    let one_arc =
-                        |point: Point3, seed: f64, witness: f64| -> Result<bool, CodecError> {
-                            let near = |parameter| -> Result<bool, CodecError> {
+                    let other_place = |point: Point3,
+                                       seed: f64,
+                                       witness: f64|
+                     -> Result<Option<f64>, CodecError> {
+                        let near =
+                            |parameter| -> Result<bool, CodecError> {
                                 Ok(gap(point, parameter)?
                                     .is_some_and(|distance| distance <= allowance))
                             };
-                            let Some(other) = invert(point, seed, allowance)? else {
-                                return Ok(false);
-                            };
-                            let middle = 0.5 * witness + 0.5 * other;
-                            if near(middle)? {
-                                return Ok(true);
-                            }
-                            let Some([low, high]) = bounds else {
-                                return Ok(false);
-                            };
-                            let Some(closure) = point_at(low)? else {
-                                return Ok(false);
-                            };
-                            if !gap(closure, high)?.is_some_and(|distance| distance <= allowance) {
-                                return Ok(false);
-                            }
-                            let half = 0.5 * (high - low);
-                            near(if middle + half <= high {
-                                middle + half
-                            } else {
-                                middle - half
-                            })
+                        let Some(other) = invert(point, seed, allowance)? else {
+                            return Ok(None);
                         };
-                    if !(one_arc(start, domain.map_or(last, |[_, high]| high), first)?
-                        && one_arc(end, domain.map_or(0.0, |[low, _]| low), last)?)
-                    {
-                        continue;
+                        let middle = 0.5 * witness + 0.5 * other;
+                        if near(middle)? {
+                            return Ok(None);
+                        }
+                        let Some([low, high]) = bounds else {
+                            return Ok(Some(other));
+                        };
+                        let Some(closure) = point_at(low)? else {
+                            return Ok(Some(other));
+                        };
+                        if !gap(closure, high)?.is_some_and(|distance| distance <= allowance) {
+                            return Ok(Some(other));
+                        }
+                        let half = 0.5 * (high - low);
+                        let opposite = if middle + half <= high {
+                            middle + half
+                        } else {
+                            middle - half
+                        };
+                        Ok((!near(opposite)?).then_some(other))
+                    };
+                    let starts = [
+                        Some(first),
+                        other_place(start, domain.map_or(last, |[_, high]| high), first)?,
+                    ];
+                    let finishes = [
+                        Some(last),
+                        other_place(end, domain.map_or(0.0, |[low, _]| low), last)?,
+                    ];
+                    if starts[1].is_some() || finishes[1].is_some() {
+                        let witnesses = starts.iter().chain(&finishes).flatten();
+                        let Some(arc) = starts
+                            .iter()
+                            .flatten()
+                            .flat_map(|&from| finishes.iter().flatten().map(move |&to| [from, to]))
+                            .filter(|&[from, to]| {
+                                let (low, high) = (from.min(to), from.max(to));
+                                low < high
+                                    && !witnesses
+                                        .clone()
+                                        .any(|&witness| low < witness && witness < high)
+                            })
+                            .min_by(|a, b| (a[1] - a[0]).abs().total_cmp(&(b[1] - b[0]).abs()))
+                        else {
+                            continue;
+                        };
+                        [first, last] = arc;
+                        assumed = Some(F3dLossCode::WriterGeometryOmitted.note(format!(
+                            "edge {}: its curve passes a vertex of the edge on two arcs; the \
+                             edge runs from {first:.6} to {last:.6} on it, the shortest arc that \
+                             passes neither vertex between its ends",
+                            edge.id
+                        )));
                     }
+                }
+                let reach = [
+                    (&ends.start, start, start_tolerance, first),
+                    (&ends.end, end, end_tolerance, last),
+                ];
+                let mut range = [first, last];
+                if last <= first && conic {
+                    range[1] += std::f64::consts::TAU;
                 }
                 let exchange = (line || aperiodic_nurbs) && last < first;
                 if exchange {
@@ -828,7 +861,7 @@ impl<'a> Reduction<'a> {
                     }
                 }
                 if !off.is_empty() {
-                    feet.push(F3dLossCode::WriterGeometryOmitted.note(format!(
+                    assumptions.push(F3dLossCode::WriterGeometryOmitted.note(format!(
                         "edge {}: {}; its range is stated from the vertices' feet on the curve",
                         edge.id,
                         off.join(", ")
@@ -838,10 +871,11 @@ impl<'a> Reduction<'a> {
                 if exchange {
                     exchanged.insert(edge.id.clone());
                 }
+                assumptions.extend(assumed);
                 stated.push((edge_index, carrier));
             }
             if !raised_any {
-                break (stated, exchanged, feet, invalid);
+                break (stated, exchanged, assumptions, invalid);
             }
         };
         drop(index);
@@ -883,7 +917,7 @@ impl<'a> Reduction<'a> {
             }
         }
         self.losses.extend(widened);
-        self.losses.extend(feet);
+        self.losses.extend(assumptions);
         if !invalid.is_empty() {
             self.losses.push(record_invalid(
                 EntityKind::Edge,

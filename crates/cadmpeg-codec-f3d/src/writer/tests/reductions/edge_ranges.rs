@@ -77,6 +77,16 @@ fn widened() -> String {
     F3dLossCode::VertexToleranceWidened.kind().to_string()
 }
 
+/// Whether `report` charges `writer.geometry-omitted` for `edge` running over
+/// one of two arcs of its curve.
+fn arc_assumed_for(report: &cadmpeg_ir::report::export::ExportReport, edge: &str) -> bool {
+    report.losses.iter().any(|loss| {
+        loss.code.to_string() == geometry_omitted()
+            && loss.message.contains(&format!("edge {edge}:"))
+            && loss.message.contains("on two arcs")
+    })
+}
+
 fn record_invalid_names(report: &cadmpeg_ir::report::export::ExportReport, edge: &str) -> bool {
     report
         .losses
@@ -492,11 +502,11 @@ fn an_open_edge_against_a_periodic_nurbs_curve_keeps_its_stand_in_and_is_named()
 }
 
 #[test]
-fn an_open_edge_ending_where_its_nurbs_curve_crosses_itself_keeps_its_stand_in_and_is_named() {
+fn an_open_edge_ending_where_its_nurbs_curve_crosses_itself_takes_the_inner_arc_and_is_named() {
     // The curve passes (10,0,0) at 0.5 and again at 2.5, and ends at (0,0,0)
-    // at 3. Seeded from the curve's end, the edge's end inverts to 2.5 and the
-    // edge would run against the curve from 3; seeded from its start, to 0.5
-    // on the other arc. The writer cannot tell which arc the edge runs over.
+    // at 3. The edge runs against the curve from 3 to 2.5 or to 0.5; the arc
+    // [0.5, 3] passes the edge's end vertex again at 2.5, so the edge takes
+    // [2.5, 3] with its ends exchanged.
     let ir = cube_with_unranged_nurbs_edge(
         vec![0.0, 0.0, 1.0, 2.0, 3.0, 3.0],
         vec![
@@ -509,24 +519,35 @@ fn an_open_edge_ending_where_its_nurbs_curve_crosses_itself_keeps_its_stand_in_a
     );
     let edge = ir.geometry.edges[0].id.to_string();
     let (report, decoded) = write(&ir);
-    assert!(record_invalid_names(&report, &edge), "{:#?}", report.losses);
-    assert!(start_position(&decoded, 0).distance(Point3::new(0.0, 0.0, 0.0)) < EPS_PARAMETER);
-    if let Some(range) = decoded.geometry.edges[0].param_range() {
-        let [start, end] = range.get();
-        assert!(
-            (start - 2.5).abs() > EPS_PARAMETER || (end - 3.0).abs() > EPS_PARAMETER,
-            "[{start}, {end}]"
-        );
-    }
+    assert_inner_arc(&report, &decoded, &edge);
+}
+
+/// `edge`, edge 0, is written over `[2.5, 3]` from `(10,0,0)`, with the loss
+/// naming the arc assumption.
+fn assert_inner_arc(
+    report: &cadmpeg_ir::report::export::ExportReport,
+    decoded: &CadIr,
+    edge: &str,
+) {
+    assert!(!record_invalid_names(report, edge), "{:#?}", report.losses);
+    assert!(arc_assumed_for(report, edge), "{:#?}", report.losses);
+    let [start, end] = decoded.geometry.edges[0]
+        .param_range()
+        .expect("the edge is written with a range")
+        .get();
+    assert!(
+        (start - 2.5).abs() < EPS_PARAMETER && (end - 3.0).abs() < EPS_PARAMETER,
+        "[{start}, {end}]"
+    );
+    assert!(start_position(decoded, 0).distance(Point3::new(10.0, 0.0, 0.0)) < EPS_PARAMETER);
+    assert_eq!(edge_errors(decoded, 0), Vec::<String>::new());
 }
 
 #[test]
-fn an_open_edge_starting_where_its_nurbs_curve_crosses_itself_keeps_its_stand_in_and_is_named() {
+fn an_open_edge_starting_where_its_nurbs_curve_crosses_itself_takes_the_inner_arc_and_is_named() {
     // Edge 0 is reversed to run from (10,0,0) to (0,0,0) on the curve of the
-    // test above. Seeded from the curve's start, its start inverts to 0.5 and
-    // the edge would take [0.5, 3] over (10,10,0) and (20,0,0); seeded from
-    // its end, to 2.5, where the edge takes [2.5, 3]. The ends need no
-    // exchange, and the writer cannot tell which arc the edge runs over.
+    // test above. Its start inverts to 0.5 and to 2.5; the arc [0.5, 3] passes
+    // the start vertex again at 2.5, so the edge takes [2.5, 3] as it runs.
     let mut ir = cube_with_unranged_nurbs_edge(
         vec![0.0, 0.0, 1.0, 2.0, 3.0, 3.0],
         vec![
@@ -552,19 +573,46 @@ fn an_open_edge_starting_where_its_nurbs_curve_crosses_itself_keeps_its_stand_in
         };
     }
     let (report, decoded) = write(&ir);
+    assert_inner_arc(&report, &decoded, edge.as_str());
+}
+
+#[test]
+fn an_open_edge_far_along_a_long_nurbs_curve_takes_its_range() {
+    // A degree-1 curve of 600 spans zigzags 1 mm either side of the x axis
+    // and crosses it at each half parameter, through (0,0,0) at 0.5 and
+    // (10,0,0) at 599.5. Each vertex lies more spans from the far end of the
+    // curve than the inversion searches from that seed: the second inversion
+    // finds nothing, and the edge still takes its range.
+    const SPANS: u32 = 600;
+    let step = 10.0 / f64::from(SPANS - 1);
+    let mut knots = vec![0.0];
+    knots.extend((0..=SPANS).map(f64::from));
+    knots.push(f64::from(SPANS));
+    let poles = (0..=SPANS)
+        .map(|index| {
+            let side = if index % 2 == 0 { 1.0 } else { -1.0 };
+            Point3::new((f64::from(index) - 0.5) * step, side, 0.0)
+        })
+        .collect();
+    let ir = cube_with_unranged_nurbs_edge(knots, poles, false);
+    let edge = ir.geometry.edges[0].id.to_string();
+    let (report, decoded) = write(&ir);
     assert!(
-        record_invalid_names(&report, edge.as_str()),
+        !record_invalid_names(&report, &edge),
         "{:#?}",
         report.losses
     );
-    assert!(start_position(&decoded, 0).distance(Point3::new(10.0, 0.0, 0.0)) < EPS_PARAMETER);
-    if let Some(range) = decoded.geometry.edges[0].param_range() {
-        let [start, end] = range.get();
-        assert!(
-            (start - 0.5).abs() > EPS_PARAMETER || (end - 3.0).abs() > EPS_PARAMETER,
-            "[{start}, {end}]"
-        );
-    }
+    assert!(!arc_assumed_for(&report, &edge), "{:#?}", report.losses);
+    let [start, end] = decoded.geometry.edges[0]
+        .param_range()
+        .expect("the edge is written with a range")
+        .get();
+    let last = f64::from(SPANS) - 0.5;
+    assert!(
+        (start - 0.5).abs() < EPS_PARAMETER && (end - last).abs() < EPS_PARAMETER,
+        "[{start}, {end}]"
+    );
+    assert!(start_position(&decoded, 0).distance(Point3::new(0.0, 0.0, 0.0)) < EPS_PARAMETER);
 }
 
 #[test]
