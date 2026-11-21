@@ -3224,6 +3224,22 @@ pub(crate) mod sketch_profile_region_selection_prefix {
     pub(crate) const LOOP_COUNT: usize = 36;
 }
 
+/// Byte offsets for the `sketch_profile_text_selection` record.
+///
+/// Spec §3.1. Record length 29 B.
+///
+/// ```text
+/// Offsets are relative to the N+3 selection header. The next indexed header starts at offset 29.
+/// ```
+pub(crate) mod sketch_profile_text_selection {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 29;
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `text_record_index` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const TEXT_RECORD_INDEX: usize = 21;
+}
+
 /// Byte offsets for the `sketch_profile_region_member` record.
 ///
 /// Spec §3.1. Record length 40 B.

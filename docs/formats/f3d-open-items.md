@@ -691,7 +691,7 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Conflict.** None.
 
-**Note.** The decoder retains each profile operand in the native scope and emits `feature.extrude-profile-group-native` for each scope with multiple Sketch-profile operands.
+**Note.** The decoder retains each profile operand in the native scope. When all operands of an Extrude group name the same planar Sketch and each carries a region selection, the decoder composes them as the union of their selected regions under `feature.extrude-profile-group-union-assumed`. Every other multi-operand group, and any same-sketch group whose composition cannot run (including on a spatial Sketch), stays native and emits `feature.extrude-profile-group-native`.
 
 ### DR-257. Entity-selection serialization form
 
@@ -3051,7 +3051,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** None.
 
-**Note.** Projection retains each distance-reversal flag in its native set, keeps owner-slot order with forward neutral direction, and reports `feature.chamfer-reference-face-assumed`. The neutral representation needs a reference-face binding for each selected edge before it can retain a proven assignment.
+**Note.** Projection retains each distance-reversal flag in its native set, keeps owner-slot order with forward neutral direction, and reports `feature.chamfer-reference-face-assumed`. For an unequal two-distance chamfer whose selected edge meets two planar or plane-and-cylinder faces with one forward coedge, input-edge support records store both faces and their outward normals with the forward-coedge face marked `with_edge` as the assumed Distance 1 side under `feature.chamfer-reference-face-assumed`. The neutral representation still needs a proven reference-face binding per selected edge to retire the assumption.
 
 ### DR-342. Chamfer recipes with conflicting transition selections
 

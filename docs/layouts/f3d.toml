@@ -11103,6 +11103,35 @@ source = "spec"
 anchor = "Each selected region starts with a nonzero u32 loop count."
 
 [[record]]
+name = "sketch_profile_text_selection"
+kind = "byte"
+section = "3.1"
+anchor = "A text selection is a 29-byte record `N+3`"
+size = 29
+note = "Offsets are relative to the N+3 selection header. The next indexed header starts at offset 29."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "its eleven-byte indexed header"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "ten zero bytes"
+
+[[record.field]]
+name = "text_record_index"
+offset = 21
+type = "u64"
+source = "spec"
+anchor = "the u64 record index of a Sketch text entity"
+
+[[record]]
 name = "sketch_profile_region_member"
 kind = "byte"
 section = "3.1"
