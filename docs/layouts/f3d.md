@@ -15512,6 +15512,26 @@ Offsets are relative to the collection's indexed header. The `k` container refer
 | 70 | 8 | `crv_tag_id_idx` | `u64` | little | spec | The sketch collection of a component with `k` sketches stores, in order |
 | 78 | 4 | `container_count` | `u32` | little | spec | The sketch collection of a component with `k` sketches stores, in order |
 
+## `compact_legacy_external_placement_members`
+
+Spec §1.4 · layout: byte offsets · size: 218 B
+
+Offsets start after the complete property-presence block.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/xref.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `ordinal` | `u32` | little | spec | A compact legacy external placement uses the 88-byte legacy target prefix. |
+| 4 | 4 | `metadata_guid_length` | `u32` | little | spec | A compact legacy external placement uses the 88-byte legacy target prefix. · value `36` |
+| 8 | 72 | `metadata_guid` | `bytes[72]` | little | spec | A compact legacy external placement uses the 88-byte legacy target prefix. |
+| 80 | 4 | `occurrence_guid_length` | `u32` | little | spec | A compact legacy external placement uses the 88-byte legacy target prefix. · value `36` |
+| 84 | 72 | `occurrence_guid` | `bytes[72]` | little | spec | A compact legacy external placement uses the 88-byte legacy target prefix. |
+| 156 | 1 | `separator` | `u8` | little | spec | A compact legacy external placement uses the 88-byte legacy target prefix. · value `0` |
+| 157 | 60 | `repeated_target` | `bytes[60]` | little | spec | A compact legacy external placement uses the 88-byte legacy target prefix. |
+| 217 | 1 | `identity_flag` | `u8` | little | spec | A compact legacy external placement uses the 88-byte legacy target prefix. |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
