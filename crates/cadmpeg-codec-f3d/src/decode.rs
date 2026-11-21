@@ -3834,7 +3834,7 @@ impl<'a> F3dDecodeSession<'a> {
             &self.ir.model.product_definitions,
             &self.ir.model.occurrences,
         );
-        crate::design::decode::hidden_occurrences::apply_hidden_occurrences(
+        let native_visibility = crate::design::decode::hidden_occurrences::apply_hidden_occurrences(
             &mut self.ir.model.occurrences,
             &parents,
             &prereqs.design_component_occurrences,
@@ -3842,7 +3842,13 @@ impl<'a> F3dDecodeSession<'a> {
                 .xref_table()
                 .map_or(&[], |table| table.references.as_slice()),
             &prereqs.design_hidden_occurrences,
+            &local_components,
         );
+        if native_visibility != 0 {
+            self.report.losses.push(F3dLossCode::OccurrenceVisibilityNative.note(format!(
+                "{native_visibility} hidden occurrence path(s) retain unbound carriers in native records; admitted occurrence visibility is projected."
+            )));
+        }
         self.report.losses.extend(local.losses);
         let mut component_inserts = crate::design::components::ComponentInserts::decide(
             &prereqs.design_parameter_scopes,
@@ -4190,7 +4196,9 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             decoded.body.losses.extend(owned);
             crate::design::owners::release_unbound(&mut decoded.ir.model);
             crate::tree::state_root_definition(ctx, &mut decoded.ir)?;
-            crate::design_v11::project(ctx, &mut decoded.ir, &mut decoded.body.losses)?;
+            if decoded.body.transfer.depth() >= DecodeDepth::Design {
+                crate::design_v11::project(ctx, &mut decoded.ir, &mut decoded.body.losses)?;
+            }
             decoded.ir.finalize();
             let hash = cadmpeg_ir::hash::document_local_sha256(
                 ctx,
