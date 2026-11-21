@@ -134,6 +134,12 @@ fn labeled_tail_admits_any_record_index_epoch_and_flag_state() {
             previous: 70_000,
             ..PlainTail::default()
         });
+        let (out_of_range, _) = plain_labeled_frame(&PlainTail {
+            long_form,
+            flags: (2, 0),
+            ..PlainTail::default()
+        });
+        assert!(parse_plain(&out_of_range).is_none());
     }
 }
 

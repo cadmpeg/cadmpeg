@@ -199,6 +199,7 @@ fn named_combine_rejects_incomplete_or_inconsistent_tail() {
         (259, 0),
         (270, 2),
         (271, 1),
+        (258, 2),
     ] {
         let mut broken = bytes.clone();
         broken[offset] = value;
