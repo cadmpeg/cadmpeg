@@ -16,6 +16,18 @@ use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 const EPS_SPACING: f64 = 1.0e-12;
 
+/// Authored timeline ordinals that list the test-stream scopes with record
+/// indices `record_indices`, in that order.
+pub(super) fn listed(
+    record_indices: &[u32],
+) -> std::collections::HashMap<(&'static str, u32), u64> {
+    record_indices
+        .iter()
+        .zip(1..)
+        .map(|(record_index, ordinal)| (("f3d:Design/BulkStream.dat", *record_index), ordinal))
+        .collect()
+}
+
 fn group(
     scope_record_index: u32,
     record_index: u32,
@@ -159,6 +171,7 @@ fn circular_pattern_seed_role_selects_body_or_face() {
             &[],
             &[],
             &[],
+            &listed(&[5]),
             &mut Vec::new(),
         )
         .expect("circular pattern");
@@ -194,6 +207,7 @@ fn a_symmetric_partial_turn_reports_its_dropped_distribution() {
             &[],
             &[],
             &[],
+            &listed(&[5]),
             &mut losses,
         )
         .expect("circular pattern");
@@ -225,6 +239,7 @@ fn a_symmetric_partial_turn_reports_its_dropped_distribution() {
         &[],
         &[],
         &[],
+        &listed(&[5]),
         &mut losses,
     )
     .expect("circular pattern");
@@ -253,6 +268,7 @@ fn a_separator_axis_projects_only_a_full_turn() {
             &[],
             &[],
             &[],
+            &listed(&[5]),
             &mut Vec::new(),
         )
     };
@@ -294,6 +310,7 @@ fn rectangular_pattern_seed_role_selects_body_or_face() {
         &[],
         &[],
         &[],
+        &listed(&[5]),
         &mut Vec::new(),
     )
     .expect("body rectangular pattern");
@@ -312,6 +329,7 @@ fn rectangular_pattern_seed_role_selects_body_or_face() {
         &[],
         &[],
         &[],
+        &listed(&[5]),
         &mut Vec::new(),
     )
     .expect("face rectangular pattern");
@@ -379,9 +397,16 @@ fn rectangular_pattern_direction_records_supply_both_directions() {
         direction_record(20, [2.0, 0.0, 0.0]),
         direction_record(30, [0.0, 2.5, 0.0]),
     ]);
-    let definition =
-        project_rectangular_pattern_scalars(&scope, &[], &[], &[], &[], &mut Vec::new())
-            .expect("two-direction rectangular pattern");
+    let definition = project_rectangular_pattern_scalars(
+        &scope,
+        &[],
+        &[],
+        &[],
+        &[],
+        &listed(&[5]),
+        &mut Vec::new(),
+    )
+    .expect("two-direction rectangular pattern");
     let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) = definition else {
         panic!("rectangular pattern definition");
     };
@@ -421,6 +446,7 @@ fn two_active_directions_without_direction_records_do_not_project() {
         &[],
         &[],
         &[],
+        &listed(&[5]),
         &mut Vec::new()
     )
     .is_none());
@@ -507,6 +533,7 @@ fn a_disagreeing_single_direction_record_keeps_the_instance_run() {
             &[],
             &[],
             &[],
+            &listed(&[5]),
             &mut Vec::new(),
         )
         .expect("instance-run pattern"),
@@ -521,6 +548,7 @@ fn a_disagreeing_single_direction_record_keeps_the_instance_run() {
             &[],
             &[],
             &[],
+            &listed(&[5]),
             &mut Vec::new(),
         )
         .expect("agreeing pattern"),
@@ -536,6 +564,7 @@ fn a_disagreeing_single_direction_record_keeps_the_instance_run() {
             &[],
             &[],
             &[],
+            &listed(&[5]),
             &mut losses,
         )
         .expect("disagreeing pattern"),
@@ -615,6 +644,7 @@ fn compact_entity_selection_seed_names_the_seed_feature() {
         &[],
         &[compact_entity_selection(30, 31, 5)],
         &[rectangular_scope(), feature.clone()],
+        &listed(&[5]),
         &mut Vec::new(),
     )
     .expect("rectangular pattern");
@@ -626,6 +656,7 @@ fn compact_entity_selection_seed_names_the_seed_feature() {
         &[],
         &[compact_entity_selection(30, 31, 5)],
         &[circular_scope(), feature],
+        &listed(&[5]),
         &mut Vec::new(),
     )
     .expect("circular pattern");
@@ -633,6 +664,70 @@ fn compact_entity_selection_seed_names_the_seed_feature() {
         panic!("circular pattern definition");
     };
     assert_eq!(seeds, vec![expected]);
+}
+
+#[test]
+fn compact_entity_selection_seed_naming_an_unlisted_scope_stays_native() {
+    let feature = seed_scope(5, Some(2));
+    let native = PatternSeed::Faces(FaceSelection::Native(
+        "f3d:Design/BulkStream.dat:design-construction-operand-group#30".into(),
+    ));
+    for (timeline, expected) in [
+        (
+            listed(&[5]),
+            PatternSeed::Feature(crate::ids::neutral_feature_id(&feature)),
+        ),
+        (listed(&[]), native.clone()),
+        (listed(&[10]), native),
+    ] {
+        for circular in [false, true] {
+            let mut losses = Vec::new();
+            let scope = if circular {
+                circular_scope()
+            } else {
+                rectangular_scope()
+            };
+            let project = if circular {
+                project_circular_pattern
+            } else {
+                project_rectangular_pattern_scalars
+            };
+            let definition = project(
+                &scope,
+                &[group(10, 30, DesignOperandRole::BODIES_A)],
+                &[],
+                &[compact_entity_selection(30, 31, 5)],
+                &[scope.clone(), feature.clone()],
+                &timeline,
+                &mut losses,
+            )
+            .expect("pattern with compact seed");
+            let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) =
+                definition
+            else {
+                panic!("pattern definition");
+            };
+            assert_eq!(seeds, vec![expected.clone()]);
+            if circular {
+                assert!(matches!(
+                    pattern.definition(),
+                    PatternTransform::Circular { .. }
+                ));
+            } else {
+                assert!(matches!(
+                    pattern.definition(),
+                    PatternTransform::Linear { .. }
+                ));
+            }
+            let substituted = crate::loss::F3dLossCode::FeaturePatternFeatureSeedSubstituted.kind();
+            let substitutions = losses
+                .iter()
+                .filter(|loss| loss.code == substituted)
+                .count();
+            let listed = timeline.contains_key(&("f3d:Design/BulkStream.dat", 5));
+            assert_eq!(substitutions, usize::from(!listed), "{losses:?}");
+        }
+    }
 }
 
 #[test]
@@ -645,16 +740,23 @@ fn compact_entity_selection_seed_without_a_feature_scope_stays_native() {
         (6, vec![seed_scope(5, Some(2))]),
         (10, vec![rectangular_scope()]),
     ] {
+        let mut losses = Vec::new();
         let definition = project_rectangular_pattern_scalars(
             &rectangular_scope(),
             &[group(10, 30, DesignOperandRole::BODIES_A)],
             &[],
             &[compact_entity_selection(30, 31, identity)],
             &scopes,
-            &mut Vec::new(),
+            &listed(&[5]),
+            &mut losses,
         )
         .expect("rectangular pattern");
         assert_linear_seed(definition, native.clone());
+        let substituted = crate::loss::F3dLossCode::FeaturePatternFeatureSeedSubstituted.kind();
+        assert!(
+            losses.iter().all(|loss| loss.code != substituted),
+            "{losses:?}"
+        );
     }
 }
 
@@ -690,6 +792,7 @@ fn rectangular_pattern_payload_projects_both_axes_and_feature_seed() {
             &[],
             &[compact_entity_selection(30, 31, 5)],
             &[feature],
+            &listed(&[5]),
             &mut Vec::new(),
         )
         .expect("spacing pattern");
@@ -792,6 +895,7 @@ fn a_face_seed_group_supplies_face_seeds_without_a_body_or_face_role_group() {
         &bounded,
         &[],
         &[],
+        &listed(&[5]),
         &mut Vec::new(),
     )
     .expect("rectangular pattern");
@@ -802,6 +906,7 @@ fn a_face_seed_group_supplies_face_seeds_without_a_body_or_face_role_group() {
         &bounded,
         &[],
         &[],
+        &listed(&[5]),
         &mut Vec::new(),
     )
     .expect("circular pattern");
@@ -811,7 +916,15 @@ fn a_face_seed_group_supplies_face_seeds_without_a_body_or_face_role_group() {
     assert_eq!(seeds, vec![faces]);
 
     let seeds = |groups: &[DesignConstructionOperandGroup], operands: &[_]| {
-        unprojected_pattern_seeds(&rectangular_scope(), groups, operands, &[], &[])
+        unprojected_pattern_seeds(
+            &rectangular_scope(),
+            groups,
+            operands,
+            &[],
+            &[],
+            &listed(&[5]),
+            &mut Vec::new(),
+        )
     };
     let face_group = || group(10, 30, DesignOperandRole::ROLE_0X10);
     assert!(seeds(&[face_group()], &[]).is_empty());
@@ -869,6 +982,8 @@ fn an_unprojected_pattern_keeps_its_seeds() {
             &[],
             &[compact_entity_selection(30, 31, 5)],
             &[scope.clone(), feature.clone()],
+            &listed(&[5]),
+            &mut Vec::new(),
         )
     };
     assert_eq!(
@@ -886,6 +1001,8 @@ fn an_unprojected_pattern_keeps_its_seeds() {
             &[seed_face_operand(ConstructionRecipeKind::BoundedFace)],
             &[],
             &[],
+            &listed(&[5]),
+            &mut Vec::new(),
         ),
         vec![PatternSeed::Faces(FaceSelection::Native(
             "f3d:Design/BulkStream.dat:design-construction-operand-group#30".into(),
@@ -1000,6 +1117,7 @@ fn rectangular_pattern_drops_a_coincident_direction_and_reports_it() {
         &[],
         &[],
         &[],
+        &listed(&[5]),
         &mut losses,
     )
     .expect("one active direction");
@@ -1027,6 +1145,7 @@ fn rectangular_pattern_payload_distance_type_selects_extent_or_spacing() {
         &[],
         &[],
         &[],
+        &listed(&[5]),
         &mut Vec::new(),
     )
     .expect("extent distance");
@@ -1044,6 +1163,7 @@ fn rectangular_pattern_carries_a_symmetric_spacing_direction() {
         &[],
         &[],
         &[],
+        &listed(&[5]),
         &mut losses,
     )
     .expect("symmetric spacing direction");
@@ -1082,6 +1202,7 @@ fn an_odd_symmetric_extent_direction_reads_the_extent_from_the_seed_to_either_fi
         &[],
         &[],
         &[],
+        &listed(&[5]),
         &mut losses,
     )
     .expect("symmetric extent direction");
@@ -1195,9 +1316,16 @@ fn a_symmetric_extent_pattern_charges_a_disagreeing_payload_seed() {
     let charged = crate::loss::F3dLossCode::FeaturePatternPayloadSeedUnconfirmed.kind();
     let project = |scope: &DesignParameterScope, groups: &[DesignConstructionOperandGroup]| {
         let mut losses = Vec::new();
-        let definition =
-            project_rectangular_pattern_scalars(scope, groups, &[], &[], &[], &mut losses)
-                .expect("symmetric extent direction");
+        let definition = project_rectangular_pattern_scalars(
+            scope,
+            groups,
+            &[],
+            &[],
+            &[],
+            &std::collections::HashMap::new(),
+            &mut losses,
+        )
+        .expect("symmetric extent direction");
         let seed_losses = losses
             .into_iter()
             .filter(|loss| loss.code == charged)
@@ -1276,6 +1404,7 @@ fn a_flagged_direction_without_a_distribution_block_reads_an_extent_and_charges_
             &[],
             &[],
             &[],
+            &std::collections::HashMap::new(),
             &mut losses,
         )
         .expect("extent direction");
@@ -1300,9 +1429,16 @@ fn a_flagged_direction_without_a_distribution_block_reads_an_extent_and_charges_
 #[test]
 fn rectangular_pattern_without_a_direction_source_charges_the_unresolved_direction() {
     let mut losses = Vec::new();
-    let definition =
-        project_rectangular_pattern_scalars(&rectangular_scope(), &[], &[], &[], &[], &mut losses)
-            .expect("one active direction");
+    let definition = project_rectangular_pattern_scalars(
+        &rectangular_scope(),
+        &[],
+        &[],
+        &[],
+        &[],
+        &listed(&[5]),
+        &mut losses,
+    )
+    .expect("one active direction");
     let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) = &definition
     else {
         panic!("rectangular pattern definition");
@@ -1334,7 +1470,7 @@ fn rectangular_pattern_without_a_direction_source_charges_the_unresolved_directi
         *construction = DesignRectangularPatternConstruction::try_from(wire).unwrap();
     }
     let mut losses = Vec::new();
-    project_rectangular_pattern_scalars(&scope, &[], &[], &[], &[], &mut losses)
+    project_rectangular_pattern_scalars(&scope, &[], &[], &[], &[], &listed(&[5]), &mut losses)
         .expect("one active direction");
     assert!(losses.is_empty());
 }
@@ -1423,6 +1559,7 @@ fn an_inactive_symmetric_direction_one_keeps_direction_two_and_drops_the_flag() 
         &[],
         &[],
         &[],
+        &listed(&[5]),
         &mut losses,
     )
     .expect("payload direction two");
@@ -1448,6 +1585,7 @@ fn an_inactive_symmetric_direction_one_keeps_direction_two_and_drops_the_flag() 
         &[],
         &[],
         &[],
+        &listed(&[5]),
         &mut losses,
     )
     .expect("direction two without a payload vector");
@@ -1467,6 +1605,7 @@ fn an_inactive_symmetric_direction_one_keeps_direction_two_and_drops_the_flag() 
         &[],
         &[],
         &[],
+        &listed(&[5]),
         &mut losses,
     )
     .expect("direction two record");
@@ -1539,8 +1678,15 @@ fn with_distribution(
 
 /// The symmetric flags of the two directions of a projected linear pattern.
 fn symmetric_flags(scope: &DesignParameterScope) -> Option<(bool, Option<bool>)> {
-    let definition =
-        project_rectangular_pattern_scalars(scope, &[], &[], &[], &[], &mut Vec::new())?;
+    let definition = project_rectangular_pattern_scalars(
+        scope,
+        &[],
+        &[],
+        &[],
+        &[],
+        &std::collections::HashMap::new(),
+        &mut Vec::new(),
+    )?;
     let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) = definition else {
         panic!("rectangular pattern definition");
     };
@@ -1606,6 +1752,7 @@ fn a_symmetric_extent_direction_keeps_the_other_direction() {
             &[],
             &[],
             &[],
+            &std::collections::HashMap::new(),
             &mut losses,
         )
         .expect("two-direction extent pattern");
@@ -1646,8 +1793,16 @@ fn a_coincident_symmetric_direction_two_is_dropped_and_direction_one_kept() {
         *slot = Some(DesignRectangularPatternConstruction::try_from(wire).unwrap());
     }
     let mut losses = Vec::new();
-    let definition = project_rectangular_pattern_scalars(&scope, &[], &[], &[], &[], &mut losses)
-        .expect("direction one");
+    let definition = project_rectangular_pattern_scalars(
+        &scope,
+        &[],
+        &[],
+        &[],
+        &[],
+        &std::collections::HashMap::new(),
+        &mut losses,
+    )
+    .expect("direction one");
     let (spacing, count) = single_direction(definition);
     assert!((spacing - 30.0).abs() < EPS_SPACING);
     assert_eq!(count, 4);

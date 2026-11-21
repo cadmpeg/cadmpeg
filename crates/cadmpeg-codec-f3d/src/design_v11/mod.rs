@@ -27,6 +27,7 @@ mod parameters;
 mod sheet_metal;
 #[cfg(test)]
 mod tests;
+mod thread;
 mod timeline;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -198,6 +199,7 @@ pub(crate) fn project(
         .configurations
         .extend(scoped_configurations.records);
     sheet_metal::project(ctx, ir, &definitions, losses)?;
+    thread::project(ctx, ir, losses)?;
     Ok(())
 }
 
