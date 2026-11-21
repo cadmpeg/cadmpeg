@@ -22,6 +22,7 @@ mod fusion_mirror_remove;
 mod fusion_patterns;
 mod fusion_profile_regions;
 mod fusion_reverse_normal;
+mod fusion_surface_loft;
 mod fusion_surface_revolve;
 mod history_deltas;
 mod history_scale;
