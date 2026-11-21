@@ -2276,7 +2276,7 @@ impl<'a> Builder<'a> {
             || !faces
                 .iter()
                 .all(|face| whole_bounded(face) || curve_bounded(face))
-            || self.faces_share_an_edge_a_vertex_or_a_curve(&faces)
+            || self.set_members_would_split_shared_topology(&faces)
         {
             return None;
         }
@@ -2296,15 +2296,18 @@ impl<'a> Builder<'a> {
         )
     }
 
-    /// Whether two of `faces` share an edge, a vertex of an edge, or the
-    /// curve of an edge, or two loops of one face share a vertex. A set
-    /// member states its own boundaries and no edge or vertex, so the members
-    /// of a geometric set read back with their own edges, vertices and
-    /// shells, and each boundary with its own vertices, and the adjacency of
-    /// such faces or loops would be lost. A closed loop reaches each of its
-    /// vertices through two coedges, so vertices are keyed by loop.
-    fn faces_share_an_edge_a_vertex_or_a_curve(&self, faces: &[&Face]) -> bool {
-        let mut edges: HashMap<&str, usize> = HashMap::new();
+    /// Whether the members of a geometric set of `faces` would split
+    /// topology that the faces share. A set member states its own boundaries
+    /// and no edge or vertex, so the members read back with their own shells,
+    /// each boundary segment with its own edge, and each boundary with one
+    /// vertex per segment. So the faces qualify only when no edge is used
+    /// twice, by one loop or by two, no vertex is used by two loops, no loop
+    /// passes through a vertex twice, and no two faces share the curve of an
+    /// edge. A closed loop reaches each vertex it passes through by two
+    /// edge ends, so a vertex is used more than once by a loop when more
+    /// than two of the loop's edge ends name it.
+    fn set_members_would_split_shared_topology(&self, faces: &[&Face]) -> bool {
+        let mut edges: HashSet<&str> = HashSet::new();
         let mut vertices: HashMap<&str, usize> = HashMap::new();
         let mut curves: HashMap<&str, usize> = HashMap::new();
         let face_loops = faces.iter().enumerate().flat_map(|(index, face)| {
@@ -2314,6 +2317,7 @@ impl<'a> Builder<'a> {
                 .map(move |face_loop| (index, face_loop))
         });
         for (ordinal, (index, face_loop)) in face_loops.enumerate() {
+            let mut ends: HashMap<&str, usize> = HashMap::new();
             for coedge in face_loop.coedges() {
                 let Some(edge) = self
                     .coedges
@@ -2322,14 +2326,18 @@ impl<'a> Builder<'a> {
                 else {
                     continue;
                 };
-                if *edges.entry(edge.id.as_str()).or_insert(index) != index {
+                if !edges.insert(edge.id.as_str()) {
                     return true;
                 }
-                if edge
-                    .vertices()
-                    .any(|vertex| *vertices.entry(vertex.as_str()).or_insert(ordinal) != ordinal)
-                {
-                    return true;
+                for vertex in edge.vertices() {
+                    if *vertices.entry(vertex.as_str()).or_insert(ordinal) != ordinal {
+                        return true;
+                    }
+                    let count = ends.entry(vertex.as_str()).or_insert(0);
+                    *count += 1;
+                    if *count > 2 {
+                        return true;
+                    }
                 }
                 if let Some(curve) = edge.curve() {
                     if *curves.entry(curve.as_str()).or_insert(index) != index {

@@ -1116,3 +1116,246 @@ fn a_curve_bounded_face_whose_loops_share_a_vertex_keeps_the_sheet_a_shell() {
     assert_eq!(geometry.edges.len(), 2, "{:#?}", geometry.edges);
     assert_eq!(geometry.vertices.len(), 1, "{:#?}", geometry.vertices);
 }
+
+/// The ring of [`ring_and_disc_set`] alone, with `edit` applied to its
+/// source, decoded.
+fn ring_alone(edit: impl FnOnce(String) -> String) -> CadIr {
+    let source = ring_and_disc_set()
+        .replace(
+            "#12=GEOMETRIC_SET('',(#11,#20));",
+            "#12=GEOMETRIC_SET('',(#11));",
+        )
+        .replace("#17=CIRCLE('',#6,1.);\n", "")
+        .replace("#18=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#17);\n", "")
+        .replace("#19=OUTER_BOUNDARY_CURVE('',(#18),.F.);\n", "")
+        .replace("#20=CURVE_BOUNDED_SURFACE('disc',#8,(#19),.F.);\n", "");
+    StepCodec::default()
+        .decode(&mut Cursor::new(edit(source)), &DecodeOptions::default())
+        .unwrap()
+        .ir()
+        .clone()
+}
+
+/// A ring whose two loops, each bounded by a segment on the radius-5
+/// circle, use one edge on it: the hole loop's coedge is moved onto the
+/// outer loop's edge. The edge has no vertices, so no shared vertex keeps
+/// the face out of a geometric set.
+fn ring_whose_loops_share_an_edge() -> CadIr {
+    let mut ir = ring_alone(|source| {
+        source.replace(
+            "#15=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#14);",
+            "#15=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#7);",
+        )
+    });
+    let geometry = &mut ir.geometry;
+    assert_eq!(geometry.faces.len(), 1);
+    assert_eq!(geometry.edges.len(), 2);
+    let loops: Vec<_> = geometry.faces[0].loops.iter().cloned().collect();
+    let coedge_of = |geometry: &cadmpeg_ir::document::Topology,
+                     loop_id: &cadmpeg_ir::ids::LoopId| {
+        let face_loop = geometry
+            .loops
+            .iter()
+            .find(|face_loop| &face_loop.id == loop_id)
+            .unwrap();
+        let [coedge] = face_loop.coedges() else {
+            panic!("one coedge per loop");
+        };
+        coedge.clone()
+    };
+    let kept_coedge = coedge_of(geometry, &loops[0]);
+    let moved_coedge = coedge_of(geometry, &loops[1]);
+    let kept_edge = geometry
+        .coedges
+        .iter()
+        .find(|coedge| coedge.id == kept_coedge)
+        .unwrap()
+        .edge
+        .clone();
+    let coedge = geometry
+        .coedges
+        .iter_mut()
+        .find(|coedge| coedge.id == moved_coedge)
+        .unwrap();
+    let dropped_edge = std::mem::replace(&mut coedge.edge, kept_edge.clone());
+    geometry.edges.retain(|edge| edge.id != dropped_edge);
+    let edge = geometry
+        .edges
+        .iter_mut()
+        .find(|edge| edge.id == kept_edge)
+        .unwrap();
+    edge.ends = None;
+    geometry.vertices.clear();
+    ir.finalize();
+    ir
+}
+
+/// Two loops of one curve-bounded face that use one edge: the reader
+/// states an edge per boundary segment of a set member, so the writer does
+/// not write the face as one. The edge has no vertices, so the shell path
+/// omits it and reports the loss.
+#[test]
+fn a_curve_bounded_face_whose_loops_share_an_edge_is_not_a_set_member() {
+    let ir = ring_whose_loops_share_an_edge();
+    assert_eq!(sheet_loop_counts(&ir), [2]);
+    assert_eq!(ir.geometry.edges.len(), 1);
+    assert!(ir.geometry.vertices.is_empty());
+    let mut output = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    let text = String::from_utf8(output).unwrap();
+    assert_eq!(text.matches("= GEOMETRIC_SET(").count(), 0, "{text}");
+    assert_eq!(
+        text.matches("= CURVE_BOUNDED_SURFACE(").count(),
+        0,
+        "{text}"
+    );
+    assert!(
+        report
+            .losses
+            .iter()
+            .any(|loss| loss.code == crate::loss::StepLossCode::EdgeNoVertex.kind()),
+        "{:#?}",
+        report.losses
+    );
+}
+
+/// A disc whose one boundary runs the radius-5 circle and then the radius-2
+/// circle centred at `(3, 0, 0)`, both from `(5, 0, 0)`: the loop passes
+/// through that point twice, and its two vertices there are merged into
+/// one, so the loop is pinched.
+fn pinched_disc() -> CadIr {
+    let mut ir = ring_alone(|source| {
+        source
+            .replace("COMPOSITE_CURVE((#9),.F.)", "COMPOSITE_CURVE((#9,#15),.F.)")
+            .replace(
+                "#11=CURVE_BOUNDED_SURFACE('ring',#8,(#10,#16),.F.);",
+                "#11=CURVE_BOUNDED_SURFACE('ring',#8,(#10),.F.);",
+            )
+            .replace("#16=BOUNDARY_CURVE('hole',(#15),.F.);\n", "")
+            .replace(
+                "#14=CIRCLE('',#6,2.);",
+                "#14=CIRCLE('',#22,2.);\n\
+                 #21=CARTESIAN_POINT('',(3.,0.,0.));\n\
+                 #22=AXIS2_PLACEMENT_3D('',#21,#4,#5);",
+            )
+    });
+    let geometry = &mut ir.geometry;
+    assert_eq!(geometry.faces.len(), 1);
+    assert_eq!(geometry.edges.len(), 2);
+    assert_eq!(geometry.vertices.len(), 2);
+    let kept = geometry.vertices[0].id.clone();
+    let dropped = geometry.vertices[1].id.clone();
+    for edge in &mut geometry.edges {
+        let ends = edge.ends.as_mut().unwrap();
+        for vertex in [&mut ends.start, &mut ends.end] {
+            if *vertex == dropped {
+                *vertex = kept.clone();
+            }
+        }
+    }
+    geometry.vertices.retain(|vertex| vertex.id != dropped);
+    ir.finalize();
+    ir
+}
+
+/// A curve-bounded face whose loop passes through one vertex twice: the
+/// reader states a vertex per boundary segment of a set member, so the
+/// writer keeps the sheet a shell, and the one vertex survives a round
+/// trip.
+#[test]
+fn a_curve_bounded_face_with_a_pinched_loop_keeps_the_sheet_a_shell() {
+    let ir = pinched_disc();
+    assert_eq!(sheet_loop_counts(&ir), [1]);
+    assert_eq!(ir.geometry.edges.len(), 2);
+    assert_eq!(ir.geometry.vertices.len(), 1);
+    let mut output = Vec::new();
+    write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    let text = String::from_utf8(output).unwrap();
+    assert_eq!(text.matches("= GEOMETRIC_SET(").count(), 0, "{text}");
+    assert_eq!(text.matches("= OPEN_SHELL(").count(), 1, "{text}");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(text), &DecodeOptions::default())
+        .unwrap();
+    let geometry = &decoded.ir().geometry;
+    assert_eq!(sheet_loop_counts(decoded.ir()), [1]);
+    assert_eq!(geometry.edges.len(), 2, "{:#?}", geometry.edges);
+    assert_eq!(geometry.vertices.len(), 1, "{:#?}", geometry.vertices);
+}
+
+/// A disc whose one boundary runs the radius-5 circle twice, and whose loop
+/// uses one edge, with no vertices, for both segments.
+fn disc_with_a_seam_edge() -> CadIr {
+    let mut ir = ring_alone(|source| {
+        source
+            .replace("COMPOSITE_CURVE((#9),.F.)", "COMPOSITE_CURVE((#9,#9),.F.)")
+            .replace(
+                "#11=CURVE_BOUNDED_SURFACE('ring',#8,(#10,#16),.F.);",
+                "#11=CURVE_BOUNDED_SURFACE('ring',#8,(#10),.F.);",
+            )
+            .replace("#14=CIRCLE('',#6,2.);\n", "")
+            .replace("#15=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#14);\n", "")
+            .replace("#16=BOUNDARY_CURVE('hole',(#15),.F.);\n", "")
+    });
+    let geometry = &mut ir.geometry;
+    assert_eq!(geometry.faces.len(), 1);
+    assert_eq!(geometry.edges.len(), 2);
+    let kept = geometry.edges[0].id.clone();
+    let dropped = geometry.edges[1].id.clone();
+    for coedge in &mut geometry.coedges {
+        if coedge.edge == dropped {
+            coedge.edge = kept.clone();
+        }
+    }
+    geometry.edges.retain(|edge| edge.id != dropped);
+    geometry.edges[0].ends = None;
+    geometry.vertices.clear();
+    ir.finalize();
+    ir
+}
+
+/// A curve-bounded face whose loop uses one edge twice: the reader states
+/// an edge per boundary segment of a set member, so the writer does not
+/// write the face as one. The edge has no vertices, so the shell path omits
+/// it and reports the loss.
+#[test]
+fn a_curve_bounded_face_whose_loop_uses_an_edge_twice_is_not_a_set_member() {
+    let ir = disc_with_a_seam_edge();
+    assert_eq!(sheet_loop_counts(&ir), [1]);
+    assert_eq!(ir.geometry.edges.len(), 1);
+    assert_eq!(ir.geometry.coedges.len(), 2);
+    let mut output = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    let text = String::from_utf8(output).unwrap();
+    assert_eq!(text.matches("= GEOMETRIC_SET(").count(), 0, "{text}");
+    assert_eq!(
+        text.matches("= CURVE_BOUNDED_SURFACE(").count(),
+        0,
+        "{text}"
+    );
+    assert!(
+        report
+            .losses
+            .iter()
+            .any(|loss| loss.code == crate::loss::StepLossCode::EdgeNoVertex.kind()),
+        "{:#?}",
+        report.losses
+    );
+}
