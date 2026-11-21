@@ -1001,6 +1001,7 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
         category: None,
         base_color: Some(material),
         properties: Default::default(),
+        native_ref: None,
     });
     let binding = |id: &str, target: AppearanceTarget| AppearanceBinding {
         id: format!("test:model:appearance-binding#{id}")
@@ -1012,6 +1013,7 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
         object_type: None,
         visible: None,
         channels: Default::default(),
+        native_ref: None,
     };
     ir.model.appearance_bindings = vec![
         binding("body", AppearanceTarget::Body(body)),

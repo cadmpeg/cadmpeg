@@ -19,6 +19,7 @@ mod design;
 mod index;
 mod native_bytes;
 pub(crate) mod native_geometry;
+pub(in crate::writer) mod pcurve_supports;
 mod preconditions;
 mod presentation;
 mod records;
@@ -51,7 +52,7 @@ pub(super) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<Genera
     let lowered = cadmpeg_ir::codec::write::subset_lowering::lower_subset_curves(target, |_| true)?;
     let mut reduction = Reduction::new(lowered.as_ref());
     reduction.prepare()?;
-    let (mut staged, coverage, design_losses) = loop {
+    let (mut staged, mut coverage, design_losses) = loop {
         let mut staged = tempfile::tempfile()?;
         match attempt(
             reduction.ir(),
@@ -64,6 +65,9 @@ pub(super) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<Genera
             Err(failure) => reduction.degrade(failure, writes_alone)?,
         }
     };
+    if reduction.drops_neutral_design() {
+        coverage.design = design::DROPPED;
+    }
     staged.seek(SeekFrom::Start(0))?;
     std::io::copy(&mut staged, writer)?;
     let mut losses = reduction.finish();
@@ -192,6 +196,11 @@ fn attempt<W: Write + Seek>(
     let mut design_registry =
         GeneratedDesignRegistry::new(target, design_bindings, &attributes, selection)
             .map_err(design_failure)?;
+    let unstated_visibility = cadmpeg_ir::codec::write::value_unwritable(
+        "F3D",
+        "writes these bodies as visible: the source did not record their visibility",
+        std::mem::take(&mut design_registry.guessed_visible),
+    );
     if let Some(mut design) = if stamped { neutral.take() } else { None } {
         let snapshot = snapshot_stream(target, &native).map_err(Failure::neutral_design)?;
         let members = design
@@ -214,6 +223,17 @@ fn attempt<W: Write + Seek>(
         }
         let mut losses = roster_losses(target, &native);
         losses.extend(design.into_losses());
+        losses.extend(unstated_visibility);
+        losses.extend(cadmpeg_ir::codec::write::value_unwritable(
+            "F3D",
+            "writes these bodies as visible: the written Design records hold no body visibility",
+            target
+                .geometry
+                .bodies
+                .iter()
+                .filter(|body| body.visible == Some(false))
+                .map(|body| body.id.to_string()),
+        ));
         return Ok((coverage, losses));
     }
     let mut neutral_records = None;
@@ -287,6 +307,8 @@ fn attempt<W: Write + Seek>(
     let parameters = match native_parameters {
         Some(design::parameters::ParameterSource::Native) => ArenaDisposition::Written,
         Some(design::parameters::ParameterSource::Neutral(plan)) => {
+            let mut losses = plan.into_losses();
+            losses.extend(unstated_visibility);
             return Ok((
                 coverage(
                     write_design,
@@ -294,14 +316,15 @@ fn attempt<W: Write + Seek>(
                     false,
                     ArenaDisposition::Written,
                 ),
-                plan.into_losses(),
+                losses,
             ));
         }
         None if neutral.is_some() => ArenaDisposition::Reported,
         None => ArenaDisposition::Dropped,
     };
     let written = neutral.is_some();
-    let losses = neutral.map_or_else(Vec::new, design::NeutralDesign::into_losses);
+    let mut losses = neutral.map_or_else(Vec::new, design::NeutralDesign::into_losses);
+    losses.extend(unstated_visibility);
     Ok((
         coverage(write_design, parameters, written, ArenaDisposition::Written),
         losses,
@@ -535,6 +558,7 @@ fn coverage(
                 containers: Reported,
                 features: Reported,
                 parameters: Reported,
+                evaluations: Dropped,
                 ..cadmpeg_ir::codec::write::DesignArenaDispositions::uniform(Omitted)
             }
         } else {

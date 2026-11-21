@@ -10,6 +10,7 @@ use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use std::io::Cursor;
 
+use super::super::records::TopologyIndex;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
@@ -390,7 +391,7 @@ fn semantic_writer_maps_a_normalized_line_generatrix_pcurve_to_source_domain() {
         .pcurves
         .first()
         .expect("procedural line generatrix pcurve");
-    let source = super::super::source_pcurve(original.ir(), pcurve)
+    let source = super::super::source_pcurve(&TopologyIndex::new(original.ir()), pcurve)
         .expect("procedural pcurve source-domain mapping");
     let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &source.geometry else {
         panic!("expected a NURBS source pcurve");
@@ -422,8 +423,9 @@ fn semantic_writer_maps_a_normalized_line_generatrix_pcurve_to_source_domain() {
         .pcurves
         .first()
         .expect("procedural line generatrix pcurve without record bounds");
-    let source = super::super::source_pcurve(&source_without_record_bounds, pcurve)
-        .expect("derive the line carrier interval from its edge");
+    let source =
+        super::super::source_pcurve(&TopologyIndex::new(&source_without_record_bounds), pcurve)
+            .expect("derive the line carrier interval from its edge");
     let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &source.geometry else {
         panic!("expected a NURBS source pcurve");
     };

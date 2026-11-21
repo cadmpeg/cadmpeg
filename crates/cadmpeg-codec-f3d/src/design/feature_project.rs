@@ -762,6 +762,24 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         }
     }
     let axis_bindings = AxisBindings::new(native, owners, scopes);
+    let mut scope_owners = HashMap::<_, Vec<_>>::new();
+    for owner in owners {
+        if let Some(stream) = native_stream(owner.id()) {
+            scope_owners
+                .entry((stream, owner.scope_record_index()))
+                .or_default()
+                .push(owner);
+        }
+    }
+    let mut parameters_by_index = HashMap::<_, Vec<_>>::new();
+    for parameter in native {
+        if let Some(stream) = native_stream(&parameter.id) {
+            parameters_by_index
+                .entry((stream, parameter.record_index))
+                .or_default()
+                .push(parameter);
+        }
+    }
     let extended_assembly_frames = scopes
         .iter()
         .filter(|scope| scope.kind() == crate::records::feature::scope::DesignFeatureKind::Assemble)
@@ -790,15 +808,20 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         .map(|scope| -> Result<Feature, CodecError> {
             let native_scope = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
             let mut parameters = Vec::new();
-            for owner in owners.iter().filter(|owner| {
-                native_stream(owner.id()) == Some(native_scope)
-                    && owner.scope_record_index() == scope.record_index
-            }) {
-                if let Some(parameter) = native.iter().find(|parameter| {
-                    native_stream(&parameter.id) == Some(native_scope)
-                        && parameter.record_index == owner.parameter_record_index()
-                        && !matches!(axis_bindings.owner(native_scope,owner.record_index(),parameter.record_index), AxisBinding::Unresolved)
-                }) {
+            for &owner in scope_owners
+                .get(&(native_scope, scope.record_index))
+                .into_iter()
+                .flatten()
+            {
+                if let Some(parameter) = parameters_by_index
+                    .get(&(native_scope, owner.parameter_record_index()))
+                    .into_iter()
+                    .flatten()
+                    .copied()
+                    .find(|parameter| {
+                        !matches!(axis_bindings.owner(native_scope,owner.record_index(),parameter.record_index), AxisBinding::Unresolved)
+                    })
+                {
                     parameters.push((owner.local_ordinal(), parameter));
                 }
             }
@@ -6450,9 +6473,32 @@ fn project_fixed_chamfer(
 
     let fixed = or_none!(scope.fixed_chamfer_parameters());
     let stream = or_none!(native_stream(&scope.id));
-    let group = unique_feature_match(construction_groups.iter().filter(|group| {
-        native_stream(&group.id) == Some(stream) && group.scope_record_index == scope.record_index
-    }));
+    let mut groups = construction_groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+                && group.extrude_role().is_none()
+        })
+        .collect::<Vec<_>>();
+    groups.sort_by_key(|group| group.scope_reference_ordinal);
+    // Face-role groups next to the one edge-role group take its fixed
+    // specification, as in the parameterised projection.
+    let face_groups = groups
+        .iter()
+        .filter(|group| group.role() == DesignOperandRole::ROLE_0X10)
+        .count();
+    let shared_specification = face_groups != 0 && groups.len() - face_groups == 1;
+    if groups.len() > 1 && (scope.chamfer_sets().is_some() || !shared_specification) {
+        groups.clear();
+    }
+    let edge_role_assumed = groups.len() > 1
+        && groups.iter().any(|group| {
+            !matches!(
+                group.role(),
+                DesignOperandRole::ROLE_0X10 | DesignOperandRole::BODIES_B
+            )
+        });
     let spec = match fixed {
         crate::records::feature::fixed_parameters::DesignFixedChamferParameters::EqualDistance { distance } => {
             ChamferSpec::Distance {
@@ -6467,29 +6513,53 @@ fn project_fixed_chamfer(
         }
     };
     chamfer::note_orientation_assumptions(&format!("Chamfer scope {}", scope.id), spec, losses);
+    let shared = groups.len() > 1;
+    let mut projected = Vec::with_capacity(groups.len());
+    for group in groups {
+        let edges = resolved_edge_treatment_group_with_corners(
+            group,
+            crate::design::edge_resolve::EdgeTreatmentInputs {
+                groups: construction_groups,
+                operands: edge_operands,
+                identity_operands: edge_identity_operands,
+                vertex_operands: edge_treatment_vertex_operands,
+                histories,
+                previous_state_id: scope.previous_history_state_id(),
+                feature_id: &crate::ids::neutral_feature_id(scope),
+                treatment_radius: None,
+            },
+            ctx,
+            losses,
+        )?;
+        if shared && matches!(edges, cadmpeg_ir::features::EdgeSelection::Native(_)) {
+            losses.push(crate::loss::F3dLossCode::ChamferSelectionUnresolved.note(format!(
+                "Chamfer {} retains native selection {} because the group of its shared fixed specification resolves to no input edges.",
+                scope.id, group.id
+            )));
+        }
+        projected.push(ChamferGroup { edges, spec });
+    }
+    if shared {
+        losses.push(crate::loss::F3dLossCode::ChamferFixedFaceGroupAssumed.note(format!(
+            "Chamfer scope {} applies its fixed scalar to each face-role group beside its edge-role group (DR-891).",
+            scope.id
+        )));
+    }
+    if edge_role_assumed {
+        losses.push(crate::loss::F3dLossCode::ChamferEdgeRoleAssumed.note(format!(
+            "Chamfer scope {} shares one specification between face groups and a group whose role is not the edge role; the group is read as the edge group.",
+            scope.id
+        )));
+    }
+    let groups = projected.try_into().unwrap_or_else(|_| {
+        cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
+            edges: chamfer::unresolved_selection(scope, None, losses),
+            spec,
+        })
+    });
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Chamfer {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
-                edges: match group {
-                    None => chamfer::unresolved_selection(scope, None, losses),
-                    Some(group) => resolved_edge_treatment_group_with_corners(
-                        group,
-                        crate::design::edge_resolve::EdgeTreatmentInputs {
-                            groups: construction_groups,
-                            operands: edge_operands,
-                            identity_operands: edge_identity_operands,
-                            vertex_operands: edge_treatment_vertex_operands,
-                            histories,
-                            previous_state_id: scope.previous_history_state_id(),
-                            feature_id: &crate::ids::neutral_feature_id(scope),
-                            treatment_radius: None,
-                        },
-                        ctx,
-                        losses,
-                    )?,
-                },
-                spec,
-            }),
+            groups,
             flip_direction: false,
         },
     )))
