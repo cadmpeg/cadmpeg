@@ -155,3 +155,4 @@ mod metadata;
 mod sketch_bind;
 mod sketch_relations;
 mod tree_binding;
+mod xml_recovery;

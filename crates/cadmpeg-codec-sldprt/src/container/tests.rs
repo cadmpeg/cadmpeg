@@ -651,6 +651,19 @@ fn compound_scan_preserves_malformed_open_error() {
 }
 
 #[test]
+fn xml_text_skips_either_lead_marker() {
+    for marker in [0x85, 0x86] {
+        let mut payload = vec![marker];
+        payload.extend_from_slice(b"<?xml version=\"1.0\"?><Keywords/>");
+        assert_eq!(
+            container::xml_text(&payload).as_deref(),
+            Some("<?xml version=\"1.0\"?><Keywords/>")
+        );
+    }
+    assert_eq!(container::xml_text(&[0x84, b'<', b'a', b'/', b'>']), None);
+}
+
+#[test]
 fn xml_utf16_replacement_decodes_unpaired_surrogate() {
     assert_eq!(
         container::xml_text(&[0xff, 0xfe, 0, 0xd8, 0x5a]).as_deref(),
