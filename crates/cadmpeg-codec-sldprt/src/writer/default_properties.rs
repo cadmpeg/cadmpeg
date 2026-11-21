@@ -81,41 +81,93 @@ fn rows(
     rows
 }
 
-/// Every saved-property attribute the document states: with no retained
-/// carrier, none of them is written.
-pub(super) fn stated_properties(ir: &CadIr) -> BTreeMap<String, Held> {
-    ir.model
+/// Each saved-property attribute the write does not write, and what the
+/// output holds for it. A property of a carrier emitted as the source image
+/// stores it is charged when `source` shows it edited. A property of a
+/// carrier emitted from other retained bytes is charged as kept. A property
+/// of a carrier the output does not hold is charged with no record.
+pub(super) fn unwritten(
+    ir: &CadIr,
+    source: Option<&CadIr>,
+    scan: Option<&ContainerScan<'_>>,
+    records: &[crate::SourceRecord<'_>],
+    annotations: &cadmpeg_ir::Annotations,
+) -> BTreeMap<String, Held> {
+    let carriers = scan.map_or_else(BTreeMap::new, |scan| carriers(scan, records, annotations));
+    let carrier = |id: &str| {
+        owner_ordinal(id)
+            .and_then(|ordinal| carriers.get(&ordinal).copied())
+            .unwrap_or(Carrier::Absent)
+    };
+    let mut unwritten = match (source, scan) {
+        (Some(source), Some(scan)) => edited_properties(ir, source, scan)
+            .into_iter()
+            .filter(|(id, _)| carrier(id) == Carrier::AsStored)
+            .collect(),
+        _ => BTreeMap::new(),
+    };
+    for attribute in ir
+        .model
         .attributes
         .iter()
         .filter(|attribute| is_property(attribute))
-        .map(|attribute| (attribute.id.as_str().to_owned(), Held::Nothing))
-        .collect()
+    {
+        let held = match carrier(attribute.id.as_str()) {
+            Carrier::AsStored if source.is_some() => continue,
+            Carrier::AsStored | Carrier::Retained => Held::Source,
+            Carrier::Absent => Held::Nothing,
+        };
+        unwritten.insert(attribute.id.as_str().to_owned(), held);
+    }
+    unwritten
 }
 
-/// Whether every saved-property owner of the source is a retained native
-/// member that the write emits as stored: one retained record with the
-/// owner's bytes under the owner's stream. A compound-file owner never is.
-pub(super) fn carried(
+/// The source section ordinal a saved-property or unit-mirror id names.
+fn owner_ordinal(id: &str) -> Option<usize> {
+    let (_, key) = id.split_once('#')?;
+    key.split_once(':')?.0.parse().ok()
+}
+
+/// What the write emits for one saved-property owner.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Carrier {
+    /// One retained native record with the owner's bytes under its stream:
+    /// emitted as the source image stores it.
+    AsStored,
+    /// Retained native bytes unlike the owner's, or under another stream:
+    /// emitted as the record stores them.
+    Retained,
+    /// A compound-file owner, or no retained record with bytes: no carrier.
+    Absent,
+}
+
+/// Each saved-property owner of the source, by section ordinal.
+fn carriers(
     scan: &ContainerScan<'_>,
     records: &[crate::SourceRecord<'_>],
     annotations: &cadmpeg_ir::Annotations,
-) -> bool {
+) -> BTreeMap<usize, Carrier> {
     scan.sections()
         .filter(|section| is_owner(*section))
-        .all(|owner| {
-            if matches!(owner, Section::Compound(_)) {
-                return false;
-            }
+        .map(|owner| {
             let id = owner.native_id();
-            let mut retained = records.iter().filter(|record| record.id == id);
-            matches!(
-                (retained.next(), retained.next()),
-                (Some(record), None) if record.data == Some(owner.payload())
-            ) && annotations
-                .provenance
-                .get(id.as_str())
-                .is_some_and(|provenance| provenance.stream() == owner.source_stream().as_str())
+            let mut retained = records
+                .iter()
+                .filter(|record| record.id == id && record.data.is_some());
+            let stream = annotations.provenance.get(id.as_str());
+            let carrier = match (owner, retained.next(), retained.next(), stream) {
+                (Section::Compound(_), ..) | (_, None, ..) | (.., None) => Carrier::Absent,
+                (_, Some(record), None, Some(stream))
+                    if record.data == Some(owner.payload())
+                        && stream.stream() == owner.source_stream().as_str() =>
+                {
+                    Carrier::AsStored
+                }
+                _ => Carrier::Retained,
+            };
+            (owner.ordinal(), carrier)
         })
+        .collect()
 }
 
 fn same_attribute(left: &SourceAttribute, right: &SourceAttribute) -> bool {

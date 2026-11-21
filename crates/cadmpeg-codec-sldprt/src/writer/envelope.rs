@@ -5,6 +5,7 @@
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
+use sha2::{Digest, Sha256};
 
 use crate::container::{native_layout, ContainerScan};
 use crate::layout::block_frame_header as local;
@@ -15,9 +16,73 @@ use crate::layout::zip_central_header as central;
 /// The outer header's big-endian `version` word (§1.1).
 const NATIVE_VERSION: [u8; 4] = 4u32.to_be_bytes();
 
-/// A central header's `version_made_by`: the decoder selects central records
-/// whose field is zero (§1.3).
+/// A central header's `version_made_by` (§1.3).
 const VERSION_MADE_BY: [u8; 2] = [0; 2];
+
+/// The residual fields of a synthesized envelope: one `file_id` and one token
+/// of each kind per file (§1.1, §1.3, §1.4).
+const SYNTHESIZED_FIELDS: [&str; 4] = [
+    "outer header file_id",
+    "local signature",
+    "central signature",
+    "end-of-directory signature",
+];
+
+/// A member with no source time/date word takes this word plus its index.
+const PLACEHOLDER_TIME_DATE: u32 = 0x20;
+
+/// The first nonzero word of SHA-256(`parts`, counter) that `taken` does not
+/// hold.
+fn derived_word(parts: &[&[u8]], taken: &[[u8; 4]]) -> [u8; 4] {
+    (0u32..)
+        .find_map(|counter| {
+            let mut hasher = Sha256::new();
+            for part in parts {
+                hasher.update(part);
+            }
+            hasher.update(counter.to_le_bytes());
+            let word = bytes_array::<4>(hasher.finalize().as_slice(), 0)?;
+            (word != [0; 4] && !taken.contains(&word)).then_some(word)
+        })
+        .unwrap_or([0xff; 4])
+}
+
+/// The `file_id` of a synthesized envelope: a word of the SHA-256 of the
+/// written members.
+fn content_file_id(sections: &[(String, Vec<u8>)], time_dates: &[u32]) -> [u8; 4] {
+    let mut content = Sha256::new();
+    for ((name, payload), time_date) in sections.iter().zip(time_dates) {
+        for field in [name.as_bytes(), payload.as_slice()] {
+            content.update(Sha256::digest(field));
+        }
+        content.update(time_date.to_le_bytes());
+    }
+    derived_word(&[b"file_id".as_slice(), content.finalize().as_slice()], &[])
+}
+
+/// The local, central and end-of-directory signature tokens of a file,
+/// a function of its `file_id`: nonzero and pairwise distinct.
+struct FileTokens {
+    local: [u8; 4],
+    central: [u8; 6],
+    root: [u8; 4],
+}
+
+impl FileTokens {
+    fn of(file_id: [u8; 4]) -> Self {
+        let local = derived_word(&[b"local".as_slice(), &file_id], &[]);
+        let central = derived_word(&[b"central".as_slice(), &file_id], &[local]);
+        let root = derived_word(&[b"root".as_slice(), &file_id], &[local, central]);
+        let mut record = [0; 6];
+        record[..4].copy_from_slice(&central);
+        record[4..].copy_from_slice(&VERSION_MADE_BY);
+        Self {
+            local,
+            central: record,
+            root,
+        }
+    }
+}
 
 fn bytes_array<const N: usize>(source: &[u8], start: usize) -> Option<[u8; N]> {
     source
@@ -43,13 +108,17 @@ struct RetainedEnvelope {
 }
 
 impl RetainedEnvelope {
-    /// The token every source member shares, when they share one.
-    fn shared<const N: usize>(&self, token: impl Fn(&SourceMember) -> [u8; N]) -> Option<[u8; N]> {
+    /// The first source member's token, and whether every source member
+    /// shares it.
+    fn token<const N: usize>(
+        &self,
+        token: impl Fn(&SourceMember) -> [u8; N],
+    ) -> Option<([u8; N], bool)> {
         let first = token(self.members.first()?);
-        self.members
-            .iter()
-            .all(|member| token(member) == first)
-            .then_some(first)
+        Some((
+            first,
+            self.members.iter().all(|member| token(member) == first),
+        ))
     }
 }
 
@@ -97,8 +166,11 @@ fn retained(scan: &ContainerScan<'_>) -> Result<Option<RetainedEnvelope>, CodecE
 pub(super) struct Regenerated {
     pub(super) bytes: Vec<u8>,
     pub(super) omitted_envelope_bytes: usize,
-    /// The opaque token fields written as zero, each naming its record.
+    /// The opaque token fields written without a stored value, each naming
+    /// its record.
     pub(super) residual: Vec<String>,
+    /// The member fields written with a placeholder, each naming its member.
+    pub(super) placeholders: Vec<String>,
     /// The members the envelope cannot store: a name it cannot encode, or a
     /// count or offset past its field.
     pub(super) dropped: Vec<String>,
@@ -110,9 +182,19 @@ impl Regenerated {
             .into_iter()
             .chain(cadmpeg_ir::codec::write::record_residual_unavailable(
                 "SLDPRT",
-                "writes zero for these opaque envelope fields, whose value the SLDPRT specification \
-                 leaves unstated; whether SolidWorks accepts zero there cannot be tested",
+                "writes these opaque envelope tokens with values of its own, since no stated rule \
+                 gives the values SolidWorks stores: a synthesized envelope takes a file_id from a \
+                 SHA-256 of the written members and three nonzero, distinct tokens derived from \
+                 that file_id, and a new member of a retained envelope whose members disagree \
+                 takes the first member's token",
                 self.residual.iter().cloned(),
+            ))
+            .chain(cadmpeg_ir::codec::write::record_residual_unavailable(
+                "SLDPRT",
+                "writes placeholders in these member fields, since no stated rule gives the values \
+                 SolidWorks stores: a time/date word of 0x20 plus the member's index, and \
+                 internal_attrs 0",
+                self.placeholders.iter().cloned(),
             ))
             .chain(cadmpeg_ir::codec::write::native_records_omitted(
                 "SLDPRT",
@@ -161,38 +243,66 @@ fn cell_members_unchanged(
 }
 
 /// Write `sections` in a native envelope. A section takes the tokens and
-/// attributes of the source member of its name and type id, the k-th such
-/// section the k-th such member. A section with no source member takes the
-/// token every source member shares, else zero.
+/// attributes of the source member of its name and time/date word, the k-th
+/// such section the k-th such member. A section with no source member takes
+/// the token every source member shares, else the first member's. Without a
+/// proved source envelope, every member takes the synthesized file's
+/// tokens. A section with no source time/date word (`None`) takes
+/// `0x20 + index`.
 pub(super) fn build(
     sections: &[(String, Vec<u8>)],
-    time_dates: &[u32],
+    stored_time_dates: &[Option<u32>],
     source_scan: Option<&ContainerScan<'_>>,
 ) -> Result<Regenerated, CodecError> {
-    debug_assert_eq!(sections.len(), time_dates.len());
+    debug_assert_eq!(sections.len(), stored_time_dates.len());
+    let time_dates = stored_time_dates
+        .iter()
+        .enumerate()
+        .map(|(index, time_date)| match time_date {
+            Some(time_date) => Ok(*time_date),
+            None => u32::try_from(index)
+                .ok()
+                .and_then(|index| PLACEHOLDER_TIME_DATE.checked_add(index))
+                .ok_or_else(|| {
+                    CodecError::NotImplemented(
+                        "SLDPRT section count exceeds the time/date word".into(),
+                    )
+                }),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut placeholders = Vec::new();
     let retained = source_scan.map(retained).transpose()?.flatten();
     let mut residual = Vec::new();
     let mut dropped = Vec::new();
-    let header = match (&retained, source_scan) {
-        (Some(retained), _) => retained.header,
-        (None, Some(scan))
-            if scan.source_image.get(outer::VERSION..outer::LEN) == Some(&NATIVE_VERSION[..]) =>
-        {
-            bytes_array(scan.source_image, 0).unwrap_or_default()
+    let (header, root, new_local, new_central) = match &retained {
+        Some(retained) => {
+            let fallback = FileTokens::of(bytes_array(&retained.header, 0).unwrap_or_default());
+            (
+                retained.header,
+                retained.root,
+                retained
+                    .token(|member| member.local)
+                    .unwrap_or((fallback.local, false)),
+                retained
+                    .token(|member| member.central)
+                    .unwrap_or((fallback.central, false)),
+            )
         }
-        (None, _) => {
-            residual.push("outer header file_id".to_owned());
+        None => {
+            let file_id = content_file_id(sections, &time_dates);
+            let tokens = FileTokens::of(file_id);
+            residual.extend(SYNTHESIZED_FIELDS.map(str::to_owned));
             let mut header = [0; outer::LEN];
+            header[..outer::VERSION].copy_from_slice(&file_id);
             header[outer::VERSION..].copy_from_slice(&NATIVE_VERSION);
-            header
+            (
+                header,
+                tokens.root,
+                (tokens.local, true),
+                (tokens.central, true),
+            )
         }
     };
-    let shared_local = retained
-        .as_ref()
-        .and_then(|retained| retained.shared(|member| member.local));
-    let shared_central = retained
-        .as_ref()
-        .and_then(|retained| retained.shared(|member| member.central));
     let mut used = retained
         .iter()
         .flat_map(|retained| &retained.members)
@@ -201,7 +311,7 @@ pub(super) fn build(
     let mut output = header.to_vec();
     let mut central_entries = Vec::new();
     let mut written = Vec::new();
-    for (index, ((name, payload), time_date)) in sections.iter().zip(time_dates).enumerate() {
+    for (index, ((name, payload), time_date)) in sections.iter().zip(&time_dates).enumerate() {
         if !storable_name(name) {
             dropped.push(name.clone());
             continue;
@@ -213,6 +323,9 @@ pub(super) fn build(
             dropped.extend(sections[index..].iter().map(|(name, _)| name.clone()));
             break;
         };
+        if stored_time_dates.get(index).is_some_and(Option::is_none) {
+            placeholders.push(format!("{name} time/date word"));
+        }
         let source = retained.as_ref().and_then(|retained| {
             let position = retained
                 .members
@@ -227,17 +340,14 @@ pub(super) fn build(
         let (local_token, central_token, attributes) = match source {
             Some(member) => (member.local, member.central, member.attributes),
             None => {
-                let local_token = shared_local.unwrap_or_else(|| {
+                if !new_local.1 {
                     residual.push(format!("{name} local signature"));
-                    [0; 4]
-                });
-                let central_token = shared_central.unwrap_or_else(|| {
+                }
+                if !new_central.1 {
                     residual.push(format!("{name} central signature"));
-                    let mut token = [0; 6];
-                    token[4..].copy_from_slice(&VERSION_MADE_BY);
-                    token
-                });
-                (local_token, central_token, [0; 10])
+                }
+                placeholders.push(format!("{name} internal_attrs"));
+                (new_local.0, new_central.0, [0; 10])
             }
         };
         let frame = super::block(payload, name, *time_date)?;
@@ -278,13 +388,6 @@ pub(super) fn build(
     }
     let central_size = u32::try_from(output.len() - central_start).map_err(|_| too_large())?;
     let central_offset = u32::try_from(central_start - outer::LEN).map_err(|_| too_large())?;
-    let root = retained.as_ref().map_or_else(
-        || {
-            residual.push("end-of-directory signature".to_owned());
-            [0; 4]
-        },
-        |retained| retained.root,
-    );
     output.extend(root);
     output.extend([0u8; 4]);
     output.extend(count.to_le_bytes());
@@ -296,6 +399,7 @@ pub(super) fn build(
         bytes: output,
         omitted_envelope_bytes,
         residual,
+        placeholders,
         dropped,
     })
 }
@@ -316,66 +420,88 @@ mod tests {
         native_envelope_fixture(&source)
     }
 
+    /// The `file_id` and the local, central and root tokens of a written
+    /// single-envelope file.
+    fn tokens(bytes: &[u8]) -> [[u8; 4]; 4] {
+        let written = crate::test_support::container::scan(bytes);
+        let envelope = native_layout::source_envelope(bytes, &written.blocks)
+            .unwrap()
+            .unwrap();
+        let block = &written.blocks[0];
+        [
+            bytes_array(bytes, 0).unwrap(),
+            bytes_array(bytes, block.offset - 4).unwrap(),
+            bytes_array(bytes, written.directory[0].offset - 6).unwrap(),
+            bytes_array(bytes, envelope.root).unwrap(),
+        ]
+    }
+
     #[test]
-    fn source_less_and_unproved_envelopes_are_synthesized_with_zero_tokens() {
+    fn source_less_and_unproved_envelopes_take_tokens_derived_from_the_written_members() {
         let sections = vec![
             ("A".into(), b"new".to_vec()),
             ("\u{c4}".into(), b"x".to_vec()),
         ];
-        let synthesized = build(&sections, &[10, 11], None).unwrap();
+        let synthesized = build(&sections, &[None, None], None).unwrap();
         assert_eq!(synthesized.dropped, ["\u{c4}"]);
+        assert_eq!(synthesized.residual, SYNTHESIZED_FIELDS);
         assert_eq!(
-            synthesized.residual,
-            [
-                "outer header file_id",
-                "A local signature",
-                "A central signature",
-                "end-of-directory signature"
-            ]
+            synthesized.placeholders,
+            ["A time/date word", "A internal_attrs"]
         );
-        assert_eq!(&synthesized.bytes[..outer::LEN], &[0, 0, 0, 0, 0, 0, 0, 4]);
+        assert_eq!(
+            &synthesized.bytes[outer::VERSION..outer::LEN],
+            &NATIVE_VERSION
+        );
         let written = crate::test_support::container::scan(&synthesized.bytes);
         assert_eq!(written.blocks.len(), 1);
         assert_eq!(written.blocks[0].payload, b"new");
+        let [file_id, local, central, root] = tokens(&synthesized.bytes);
+        let all = [file_id, local, central, root];
+        assert!(all.iter().all(|token| *token != [0; 4]));
+        assert!(local != central && local != root && central != root);
+        let file_tokens = FileTokens::of(file_id);
         assert_eq!(
-            &synthesized.bytes[written.blocks[0].offset - 4..written.blocks[0].offset],
-            &[0; 4]
+            [local, root],
+            [file_tokens.local, file_tokens.root],
+            "the tokens are a function of file_id"
         );
-        let envelope = native_layout::source_envelope(&synthesized.bytes, &written.blocks)
-            .unwrap()
-            .unwrap();
-        assert_eq!(envelope.entries.len(), 1);
+        assert_eq!(&file_tokens.central[..4], &central);
+        let directory = &written.directory[0];
         assert_eq!(
-            bytes_array::<4>(&synthesized.bytes, envelope.root),
-            Some([0; 4])
+            &synthesized.bytes[directory.offset - 2..directory.offset],
+            &VERSION_MADE_BY
         );
+        assert_eq!(
+            build(&sections, &[None, None], None).unwrap().bytes,
+            synthesized.bytes,
+            "the derivation is stable"
+        );
+        let other = build(&[("A".into(), b"other".to_vec())], &[None], None).unwrap();
+        assert_ne!(tokens(&other.bytes)[0], file_id);
         let codes = synthesized
             .losses()
             .map(|note| note.code.local_code().to_owned())
             .collect::<Vec<_>>();
         assert_eq!(
             codes,
-            ["record.residual-unavailable", "native.records-omitted"]
+            [
+                "record.residual-unavailable",
+                "record.residual-unavailable",
+                "native.records-omitted"
+            ]
         );
 
         let mut legacy = outer_header();
         legacy.extend(make_block(10, "A", b"old"));
         let scan = crate::test_support::container::scan(&legacy);
-        let synthesized = build(&[("A".into(), b"new".to_vec())], &[10], Some(&scan)).unwrap();
-        assert_eq!(&synthesized.bytes[..outer::LEN], &legacy[..outer::LEN]);
+        let unproved = build(&[("A".into(), b"new".to_vec())], &[Some(10)], Some(&scan)).unwrap();
+        assert_eq!(unproved.residual, SYNTHESIZED_FIELDS);
+        let [file_id, local, _, root] = tokens(&unproved.bytes);
+        assert_ne!(file_id, [0; 4]);
         assert_eq!(
-            synthesized.residual,
-            [
-                "A local signature",
-                "A central signature",
-                "end-of-directory signature"
-            ]
-        );
-        let written = crate::test_support::container::scan(&synthesized.bytes);
-        assert!(
-            native_layout::source_envelope(&synthesized.bytes, &written.blocks)
-                .unwrap()
-                .is_some()
+            [local, root],
+            [FileTokens::of(file_id).local, FileTokens::of(file_id).root]
         );
     }
 
@@ -390,7 +516,7 @@ mod tests {
             ("A".into(), b"first".to_vec()),
             ("A".into(), b"second".to_vec()),
         ];
-        let regenerated = build(&sections, &[10, 10], Some(&original)).unwrap();
+        let regenerated = build(&sections, &[Some(10); 2], Some(&original)).unwrap();
         assert!(regenerated.residual.is_empty());
         let written = crate::test_support::container::scan(&regenerated.bytes);
         assert_eq!(written.directory.len(), 2);
@@ -416,7 +542,8 @@ mod tests {
                 ("B".into(), b"changed".to_vec()),
                 ("C".into(), b"new".to_vec()),
             ];
-            let regenerated = build(&sections, &[10, 11, 12], Some(&original)).unwrap();
+            let regenerated =
+                build(&sections, &[Some(10), Some(11), Some(12)], Some(&original)).unwrap();
             assert_eq!(regenerated.omitted_envelope_bytes, 100);
             let output = regenerated.bytes;
             let written = crate::test_support::container::scan(&output);
@@ -473,18 +600,24 @@ mod tests {
     }
 
     #[test]
-    fn new_member_takes_zero_where_retained_signature_tokens_differ() {
+    fn new_member_takes_the_first_source_token_where_retained_signature_tokens_differ() {
         let mut source = source_fixture(0);
         let parsed = crate::test_support::container::scan(&source);
         let at = parsed.blocks[1].offset - 4;
         source[at] ^= 1;
         let parsed = crate::test_support::container::scan(&source);
+        let first = bytes_array::<4>(&source, parsed.blocks[0].offset - 4).unwrap();
         let sections = vec![("C".into(), b"new".to_vec())];
-        let regenerated = build(&sections, &[12], Some(&parsed)).unwrap();
+        let regenerated = build(&sections, &[None], Some(&parsed)).unwrap();
         assert_eq!(regenerated.residual, ["C local signature"]);
+        assert_eq!(
+            regenerated.placeholders,
+            ["C time/date word", "C internal_attrs"]
+        );
         let written = crate::test_support::container::scan(&regenerated.bytes);
         let block = &written.blocks[0];
-        assert_eq!(&regenerated.bytes[block.offset - 4..block.offset], &[0; 4]);
+        assert_eq!(&regenerated.bytes[block.offset - 4..block.offset], &first);
+        assert_eq!(block.type_id, PLACEHOLDER_TIME_DATE);
         assert_eq!(
             &regenerated.bytes[written.directory[0].offset - 6..written.directory[0].offset],
             &[0x45, 0x2b, 0x7e, 0x28, 0, 0]
@@ -501,7 +634,7 @@ mod tests {
                 ("A".into(), b"unchanged".to_vec()),
                 ("B".into(), b"changed".to_vec()),
             ];
-            let regenerated = build(&sections, &[10, 11], Some(&parsed)).unwrap();
+            let regenerated = build(&sections, &[Some(10), Some(11)], Some(&parsed)).unwrap();
             assert_eq!(regenerated.omitted_envelope_bytes, 247);
             let note = auxiliary_loss(regenerated.omitted_envelope_bytes).unwrap();
             assert_eq!(
@@ -539,7 +672,12 @@ mod tests {
                 ("A".into(), b"second".to_vec()),
                 ("A".into(), b"first".to_vec()),
             ];
-            let retained = build(&unchanged, &[0x0021_004a, 0x0021_0049], Some(&original)).unwrap();
+            let retained = build(
+                &unchanged,
+                &[Some(0x0021_004a), Some(0x0021_0049)],
+                Some(&original),
+            )
+            .unwrap();
             assert_eq!(retained.omitted_envelope_bytes, 0);
             let parsed = crate::test_support::container::scan(&retained.bytes);
             assert_eq!(parsed.cache_cells.len(), 1);
@@ -580,6 +718,7 @@ mod tests {
                 ),
             ];
             for (sections, time_dates) in cases {
+                let time_dates = time_dates.into_iter().map(Some).collect::<Vec<_>>();
                 let omitted = build(&sections, &time_dates, Some(&original)).unwrap();
                 assert_eq!(omitted.omitted_envelope_bytes, 100);
                 assert!(auxiliary_loss(omitted.omitted_envelope_bytes).is_some());

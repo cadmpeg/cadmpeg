@@ -6,8 +6,6 @@
 //! boundary to the field's width, the writer writes the cut's length as the
 //! count the format stores beside the text, and the writer charges
 //! `export:value.unwritable` with [`FittedText::unwritable_entry`].
-//!
-//! A character boundary is a Unicode scalar value boundary.
 
 /// The code unit a text field's stored count counts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,7 +58,8 @@ impl TextCapacity {
     }
 
     /// The longest prefix of `text` that ends on a character boundary and
-    /// fits the field.
+    /// fits the field. A character boundary is a Unicode scalar value
+    /// boundary (interim, gap 20261120-SW-WRITER-71b-1).
     #[must_use]
     pub fn fit<'a>(&self, text: &'a str) -> FittedText<'a> {
         let mut units = 0usize;
