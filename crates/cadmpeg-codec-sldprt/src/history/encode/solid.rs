@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Extrude and hole write encoders.
 
-use super::super::extrude_direction::{reversal_flag, reversal_unread, REVERSE_DECODED};
+use super::super::extrude_direction::{cleared_reversal, reversal_flag, REVERSE_DECODED};
 use super::super::literals::{format_angle_rad, format_length_mm};
 use super::format::{format_length_like, format_point3_mm, format_vector3};
 use super::support::{
@@ -342,7 +342,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             // The flag comes from the decoded record, which holds the end
             // spec's flag where the native record does not.
             let flagged = reversal_flag(&feature.source_properties);
-            let unread = reversal_unread(&feature.source_properties);
+            let cleared = cleared_reversal(feature);
             properties.remove(REVERSE_DECODED);
             match direction {
                 cadmpeg_ir::features::extents::ExtrudeDirection::Unresolved {}
@@ -357,7 +357,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     )));
                 }
                 cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {}
-                    if self.contradicted_travel =>
+                    if self.contradicted_travel && !cleared =>
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} requires an explicit model-space extrusion direction",
@@ -366,10 +366,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 }
                 cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {} => {
                     properties.remove("Direction");
-                    // An edit cleared a reversal the decoder read.
-                    if flagged && !unread {
-                        properties
-                            .insert(cadmpeg_core::nonblank_literal!("Reverse"), "false".into());
+                    // An edit cleared a reversal the decoder read: the writer
+                    // clears the end-spec flag (`sync_neutral_features`).
+                    if cleared {
+                        properties.remove("Reverse");
                     }
                 }
                 cadmpeg_ir::features::extents::ExtrudeDirection::ReversedProfileNormal {}
@@ -785,9 +785,9 @@ mod tests {
     /// The end-spec reversal flag of a one-sided extrusion that adds
     /// material projects against its profile normal and writes from the
     /// decoded record, which holds the flag where the native record does
-    /// not. An edit that clears a decoded reversal writes `Reverse=false`; a
-    /// cut, whose flag the decoder leaves unread, and the decoder's fallback
-    /// keep the record's flag.
+    /// not. An edit that clears a decoded reversal drops the flag from the
+    /// record; a cut, whose flag the decoder leaves unread, and the
+    /// decoder's fallback keep it.
     #[test]
     fn a_reversal_writes_from_the_decoded_record() {
         let record = |operation: &str, reverse: bool| -> crate::records::Feature {
@@ -833,10 +833,11 @@ mod tests {
                 }
             });
         };
-        let encode = |feature: &cadmpeg_ir::features::Feature,
-                      existing: &crate::records::Feature| {
+        let encode_over = |contradicted_travel: bool,
+                           feature: &cadmpeg_ir::features::Feature,
+                           existing: &crate::records::Feature| {
             NeutralFeatureEncoder {
-                contradicted_travel: false,
+                contradicted_travel,
                 feature,
                 existing: Some(existing),
                 principal_planes_by_record: &HashMap::new(),
@@ -848,6 +849,10 @@ mod tests {
                 resolved_parameter_names: &HashMap::new(),
             }
             .encode()
+        };
+        let encode = |feature: &cadmpeg_ir::features::Feature,
+                      existing: &crate::records::Feature| {
+            encode_over(false, feature, existing)
         };
         let written = |encoded: &NeutralFeatureEncoding| {
             assert!(!encoded
@@ -867,11 +872,19 @@ mod tests {
         let mut unflagged = join.clone();
         unflagged.source_properties.remove("Reverse");
         assert!(encode(&unflagged, &record("Join", false)).is_err());
-        // An edit that clears the reversal writes along the normal.
+        // An edit that clears the reversal writes along the normal, also
+        // where the stored solid still shows the old travel; the writer
+        // clears the end-spec flag and names the stale solid.
         let mut cleared = join.clone();
         set_direction(&mut cleared, ExtrudeDirection::ProfileNormal {});
-        let encoded = encode(&cleared, &record("Join", true)).expect("an edit along the normal");
-        assert_eq!(written(&encoded), Some("false".to_owned()));
+        assert!(crate::history::extrude_direction::cleared_reversal(
+            &cleared
+        ));
+        for contradicted in [false, true] {
+            let encoded = encode_over(contradicted, &cleared, &record("Join", true))
+                .expect("an edit along the normal");
+            assert_eq!(written(&encoded), None);
+        }
         // The fallback keeps the flag.
         let mut fallback = cleared.clone();
         fallback.source_properties.insert(
@@ -880,6 +893,9 @@ mod tests {
         );
         let encoded = encode(&fallback, &record("Join", true)).expect("the fallback");
         assert_eq!(written(&encoded), flag);
+        // Travel along the normal that the stored solid contradicts, and that
+        // no edit cleared, has no implicit encoding.
+        assert!(encode_over(true, &fallback, &record("Join", true)).is_err());
         // A cut leaves its flag unread and keeps it.
         let cut = project(&record("Cut", true));
         assert_eq!(direction(&cut), ExtrudeDirection::ProfileNormal {});

@@ -168,6 +168,11 @@ fn extrude(
         cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {} => {
             ExtrudeDirection::ProfileNormal { reversed: None }
         }
+        cadmpeg_ir::features::extents::ExtrudeDirection::ReversedProfileNormal {} => {
+            ExtrudeDirection::ProfileNormal {
+                reversed: Some(Dimension::Literal(true)),
+            }
+        }
         _ => return Err("the extrude's direction is not the profile normal"),
     };
     if !matches!(
