@@ -112,16 +112,16 @@ fn observed(ir: &CadIr) -> Observed {
 #[test]
 fn a_part_whose_attributes_cross_the_short_pointer_range_reads_back_as_written_below_it() {
     // 0x7fff - 40 crosses the boundary inside the topology records; 0x8000
-    // makes every attribute wide, the first 256 of them with a cell that
-    // begins `ff` like the optional first-of-type byte; 65 500 crosses the
-    // largest one-quotient value (65 534) and 0x1_0000.
+    // makes every attribute wide; 65 500 crosses the largest one-quotient
+    // value (65 534) and 0x1_0000; 33 150 writes remainder words whose low
+    // byte is below 0x80.
     for (name, ir) in [("cube", coloured_cube()), ("nurbs", nurbs_triangle())] {
         let narrow = observed(&read_back(&ir, 2));
         assert_ne!(
             narrow.counts[3], 0,
             "{name}: the narrow write keeps its faces"
         );
-        for first in [0x7fff - 40, 0x8000, 65_500] {
+        for first in [0x7fff - 40, 0x8000, 33_150, 65_500] {
             let wide = read_back(&ir, first);
             assert_eq!(
                 observed(&wide),
@@ -146,15 +146,17 @@ fn a_compact_record_past_the_short_range_stores_its_attr_in_the_native_four_byte
         .expect("partition is written");
     let record = 2 + 2 + 4 + 10 + 1 + 9 * 8;
     assert_eq!(body[..4], [0x00, 0x32, 0x7f, 0xff], "0x7fff is one word");
-    // 0x8000 = 1 * 32767 + 1: remainder word -1, quotient word 1.
+    // 0x8000 through 33 023 are left unused: their cells begin `ff`, which
+    // after a type tag also reads as the first-of-type byte (§4).
+    // 33 024 = 1 * 32767 + 257: remainder word -257, quotient word 1.
     assert_eq!(
         body[record..record + 10],
-        [0x00, 0x32, 0xff, 0xff, 0x00, 0x01, 0, 0, 0, 0],
-        "0x8000 is the int16 pair, and the ordinal follows it"
+        [0x00, 0x32, 0xfe, 0xff, 0x00, 0x01, 0, 0, 0, 0],
+        "33 024 is the int16 pair, and the ordinal follows it"
     );
     let second = record + 2 + 4 + 4 + 10 + 1 + 9 * 8;
     assert_eq!(
         body[second..second + 6],
-        [0x00, 0x32, 0xff, 0xfe, 0x00, 0x01]
+        [0x00, 0x32, 0xfe, 0xfe, 0x00, 0x01]
     );
 }

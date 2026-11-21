@@ -3824,7 +3824,6 @@ fn write_typed_body_hierarchy(
 
 fn typed_prefix(out: &mut Vec<u8>, kind: u8, attr: u32, node_id: u32) -> Result<(), CodecError> {
     tag(out, kind);
-    out.push(0xff);
     pointer(out, attr)?;
     be32(out, node_id);
     Ok(())
@@ -4303,8 +4302,19 @@ fn write_nurbs_surface(
     Ok(())
 }
 
+/// Whether the XMT cell of `value` begins with the byte `ff`: the two-word
+/// form whose remainder magnitude is at most 256 (`parasolid.md` §1).
+fn cell_begins_ff(value: u32) -> bool {
+    value > 0x7fff && (value - 1) % 32_767 < 256
+}
+
 fn take_attr(next: &mut u32) -> Result<u32, CodecError> {
-    let attr = *next;
+    let mut attr = *next;
+    // After a type tag such a cell also reads from the byte after its `ff`
+    // (§4), so the writer leaves those indices unused.
+    if cell_begins_ff(attr) {
+        attr += 256 - (attr - 1) % 32_767;
+    }
     if attr > cadmpeg_parasolid::pointer::MAX_VALUE {
         return Err(CodecError::NotImplemented(
             "SLDPRT attribute space exhausted: the XT pointer range ends at 1073709056".into(),
@@ -4910,7 +4920,16 @@ mod nurbs_write_tests {
     fn attribute_space_ends_at_the_xt_pointer_range() {
         let mut next = 0x7fff;
         assert_eq!(take_attr(&mut next).expect("one-word attr"), 0x7fff);
-        assert_eq!(take_attr(&mut next).expect("two-word attr"), 0x8000);
+        // 0x8000 through 33 023 have cells that begin `ff`.
+        assert_eq!(take_attr(&mut next).expect("two-word attr"), 33_024);
+        let mut next = 65_534;
+        assert_eq!(take_attr(&mut next).expect("two-word attr"), 65_534);
+        assert_eq!(take_attr(&mut next).expect("two-word attr"), 65_791);
+        for value in 0x8000..0x2_0000 {
+            let mut cell = Vec::new();
+            pointer(&mut cell, value).expect("representable");
+            assert_eq!(super::cell_begins_ff(value), cell[0] == 0xff, "{value}");
+        }
         let mut next = cadmpeg_parasolid::pointer::MAX_VALUE;
         assert_eq!(
             take_attr(&mut next).expect("largest attr"),
