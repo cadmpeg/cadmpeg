@@ -30,6 +30,11 @@ mod carried;
 mod coverage;
 pub mod edge_recovery;
 mod loss;
+pub use loss::{
+    evaluation_missing, evaluation_stale, native_records_omitted, output_empty,
+    parameter_flattened, parameter_renamed, record_invalid, record_residual_unavailable,
+    value_unwritable,
+};
 mod scene;
 pub mod subset_lowering;
 pub mod target;
@@ -163,6 +168,7 @@ impl<E: EncoderBackend> Encoder for E {
         }
         let target = E::TARGET.resolve(input.ir, request, E::FORMAT)?;
         let identity = target.export_target().cloned();
+        let synthesized_identity = target.synthesized_target().cloned();
         let body = self.plan_resolved(input, target)?;
         let ExportBody {
             bytes,
@@ -173,6 +179,10 @@ impl<E: EncoderBackend> Encoder for E {
             notes,
         } = body;
         losses.extend(coverage.omission_losses(input.ir, E::FORMAT.as_str()));
+        let identity = match write_path {
+            WritePath::Synthesized { .. } => synthesized_identity,
+            WritePath::Patched { .. } | WritePath::VerbatimReplay => identity,
+        };
         let write_path = write_path.into_report(input.fidelity.is_some());
         let report = match identity {
             None => ExportReport::cadir(census, write_path, losses, notes),

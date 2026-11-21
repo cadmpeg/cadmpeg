@@ -15,6 +15,7 @@ use cadmpeg_core::decode::u64_from_index;
 mod arc_extremes;
 pub(crate) mod binding;
 mod blend_spine;
+mod chamfer_supports;
 
 mod body_candidates;
 mod body_index;
@@ -38,6 +39,7 @@ pub(crate) mod fragment_edge;
 mod generated_bodies;
 pub(crate) mod history_bodies;
 mod hole_support;
+pub(crate) mod linked_states;
 mod loop_index;
 mod move_face;
 mod output_blob;
@@ -204,6 +206,7 @@ pub(crate) fn decode(
     binding_work: &cadmpeg_core::decode::WorkBudget,
 ) -> Result<Option<AsmHistory>, cadmpeg_core::CodecError> {
     let framing = HistoryFraming::scan(bytes, stream);
+    let _chamfer_orientation = chamfer_supports::HistoryScope::enter(&framing.history_id);
     let mut states = Vec::new();
     for (ordinal, &offset) in framing.delta_offsets.iter().enumerate() {
         let header = match read_delta_state_header(bytes, offset, width) {
@@ -294,6 +297,11 @@ pub(crate) fn decode_header_index(
         return None;
     }
     Some(framing.into_history(bytes, width, false, states))
+}
+
+/// Drop chamfer face senses recorded for the design decode that just finished.
+pub(crate) fn clear_chamfer_orientation() {
+    chamfer_supports::clear();
 }
 
 /// Stream-level layout of one ASM history: its preamble and `delta_state` offsets.
@@ -1027,10 +1035,15 @@ pub(crate) fn bind_feature_outputs(
             }
         }
     }
+    let feature_states = features
+        .iter()
+        .map(|feature| feature_history_states(feature, scopes, histories))
+        .collect::<Vec<_>>();
     let feature_sources = features
         .iter()
-        .map(|feature| {
-            let (state_id, previous_state_id) = feature_history_states(feature, scopes, histories)?;
+        .zip(&feature_states)
+        .map(|(feature, states)| {
+            let (state_id, previous_state_id) = (*states)?;
             let scope = feature.native_ref.as_deref()?;
             let (history, _, previous) = if scope_histories.contains_key(scope) {
                 bound_history_state_pair(
@@ -1071,7 +1084,7 @@ pub(crate) fn bind_feature_outputs(
         .iter()
         .enumerate()
         .map(|(index, feature)| {
-            let (current, previous) = feature_history_states(feature, scopes, histories)?;
+            let (current, previous) = feature_states[index]?;
             output_chain::OutputChain::resolve(
                 histories,
                 current,
@@ -1085,15 +1098,10 @@ pub(crate) fn bind_feature_outputs(
             )
         })
         .collect::<Vec<_>>();
-    let output_states = features
+    let output_states = feature_sources
         .iter()
-        .enumerate()
-        .filter_map(|(idx, feature)| {
-            Some((
-                feature_sources[idx]?,
-                feature_history_states(feature, scopes, histories)?.0,
-            ))
-        })
+        .zip(&feature_states)
+        .filter_map(|(source, states)| Some(((*source)?, (*states)?.0)))
         .chain(output_chains.iter().flatten().flat_map(|chain| {
             chain
                 .states
@@ -1102,11 +1110,8 @@ pub(crate) fn bind_feature_outputs(
         }))
         .collect::<HashSet<_>>();
     let mut measured_states = output_states.clone();
-    for (idx, feature) in features.iter().enumerate() {
-        if let (Some(history_index), Some((_, previous_state_id))) = (
-            feature_sources[idx],
-            feature_history_states(feature, scopes, histories),
-        ) {
+    for (source, states) in feature_sources.iter().zip(&feature_states) {
+        if let (Some(history_index), Some((_, previous_state_id))) = (*source, *states) {
             measured_states.insert((history_index, previous_state_id));
         }
     }
@@ -1129,9 +1134,7 @@ pub(crate) fn bind_feature_outputs(
     );
     let mut treatment_states = HashMap::<(usize, i64), Vec<EdgeMidpointRequest>>::new();
     for (feature_index, feature) in features.iter().enumerate() {
-        let Some((state_id, previous_state_id)) =
-            feature_history_states(feature, scopes, histories)
-        else {
+        let Some((state_id, previous_state_id)) = feature_states[feature_index] else {
             continue;
         };
         let op = match feature.evaluation.definition() {
@@ -1526,9 +1529,7 @@ pub(crate) fn bind_feature_outputs(
         {
             continue;
         }
-        let Some((state_id, previous_state_id)) =
-            feature_history_states(feature, scopes, histories)
-        else {
+        let Some((state_id, previous_state_id)) = feature_states[idx] else {
             continue;
         };
         let bound_history = feature_sources[idx];
@@ -4389,7 +4390,8 @@ fn project_input_topology(
     let vertices = project_input_members(&topology.vertices, |slot| {
         crate::ids::history_input_vertex_id(&prefix, slot)
     })?;
-    let edge_geometry = project_input_edge_geometry(topology, &prefix);
+    let mut edge_geometry = project_input_edge_geometry(topology, &prefix);
+    chamfer_supports::attach(feature, &history.id, topology, &prefix, &mut edge_geometry);
     let id = crate::ids::history_input_state_id(&prefix);
     let input_of = feature.id.clone();
     let native_ref = state.id.clone();
@@ -4529,6 +4531,7 @@ fn project_input_edge_geometry(
                 faces: project_input_members(&faces, |face| {
                     crate::ids::history_input_face_id(prefix, face)
                 })?,
+                supports: Vec::new(),
             })
         })
         .collect()
@@ -8003,9 +8006,12 @@ fn bind_historical_edge_operand<'a>(
         for edge in reference_edge_sets.iter().flatten() {
             candidate_edges.insert(*edge);
         }
+        let edge_contexts = topology_queries
+            .edge_contexts
+            .get(topology, selection::EdgeContextIndex::new);
         let contexts = candidate_edges
             .into_iter()
-            .map(|edge| selection::historical_edge_context(edge, topology))
+            .map(|edge| edge_contexts.context(edge))
             .collect::<Vec<_>>();
         operand.recipe_selectors =
             selection::recipe_selector_candidates(operand.recipe_structure.as_ref(), &contexts);
@@ -8029,9 +8035,12 @@ fn bind_historical_edge_operand<'a>(
         for edge in reference_edge_sets.iter().flatten() {
             candidate_edges.insert(*edge);
         }
+        let edge_contexts = topology_queries
+            .edge_contexts
+            .get(topology, selection::EdgeContextIndex::new);
         let contexts = candidate_edges
             .into_iter()
-            .map(|edge| selection::historical_edge_context(edge, topology))
+            .map(|edge| edge_contexts.context(edge))
             .collect::<Vec<_>>();
         operand.recipe_selectors =
             selection::recipe_selector_candidates(operand.recipe_structure.as_ref(), &contexts);
@@ -8380,10 +8389,13 @@ fn bind_active_edge_operand_candidates<'a>(
             continue;
         }
         let boundary_edges = face_boundary_edges(&candidate_faces, topology, topology_queries);
+        let edge_contexts = topology_queries
+            .edge_contexts
+            .get(topology, selection::EdgeContextIndex::new);
         let contexts = boundary_edges
             .iter()
             .copied()
-            .map(|edge| selection::historical_edge_context(edge, topology))
+            .map(|edge| edge_contexts.context(edge))
             .collect::<Vec<_>>();
         let selectors =
             selection::recipe_selector_candidates(operand.recipe_structure.as_ref(), &contexts);
@@ -9088,6 +9100,7 @@ fn historical_topology(
         Some(collected)
     }
 
+    chamfer_supports::note(brep);
     let mut surface_radii = brep
         .surfaces
         .iter()

@@ -79,7 +79,11 @@ fn multi_instance_output_payload_lane(
 }
 
 fn operation_labels(bytes: &[u8], base_offset: usize) -> Vec<crate::om::OperationLabel<'_>> {
-    crate::om::operation_labels(bytes, base_offset)
+    crate::om::operation_labels(
+        bytes,
+        base_offset,
+        &crate::om::validated_operation_headers(bytes, base_offset),
+    )
 }
 
 fn sketch_payload_references(
