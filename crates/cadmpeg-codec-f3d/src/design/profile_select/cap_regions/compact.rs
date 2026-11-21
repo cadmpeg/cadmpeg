@@ -434,7 +434,11 @@ fn inserted_sides_agree(
     side_count > 0
 }
 
-fn split_piece(piece: &Piece, points: &[cadmpeg_ir::math::Point2], tolerance: f64) -> Vec<Piece> {
+pub(super) fn split_piece(
+    piece: &Piece,
+    points: &[cadmpeg_ir::math::Point2],
+    tolerance: f64,
+) -> Vec<Piece> {
     let length = match *piece {
         Piece::Line(start, end) => distance(start, end),
         Piece::Arc { radius, sweep, .. } => radius * sweep.abs(),
@@ -673,7 +677,7 @@ fn signed_length(sweep: &Sweep<'_>) -> Option<f64> {
     blind_length(sweep)
 }
 
-fn blind_length(sweep: &Sweep<'_>) -> Option<f64> {
+pub(super) fn blind_length(sweep: &Sweep<'_>) -> Option<f64> {
     if !matches!(sweep.start, ExtrudeStart::ProfilePlane {}) {
         return None;
     }

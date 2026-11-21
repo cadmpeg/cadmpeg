@@ -31,6 +31,7 @@ pub(crate) mod edge_recipe_scope;
 mod edge_samples;
 pub(crate) mod extrude_target;
 pub(crate) mod face_admission;
+mod face_envelopes;
 mod face_recipe;
 mod face_support;
 mod fallback_face;
@@ -9267,7 +9268,10 @@ fn historical_topology(
         }
     }
 
+    let (face_envelopes, edge_envelopes) = face_envelopes::derive(brep);
     let mut topology = AsmHistoricalTopology {
+        face_envelopes: face_envelopes.into(),
+        edge_envelopes: edge_envelopes.into(),
         bodies: topology_some!(refs(brep.bodies.iter().map(|entity| entity.id.as_str()))),
         regions: topology_some!(refs(brep.regions.iter().map(|entity| entity.id.as_str()))),
         shells: topology_some!(refs(brep.shells.iter().map(|entity| entity.id.as_str()))),
