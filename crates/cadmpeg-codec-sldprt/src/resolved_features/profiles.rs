@@ -48,8 +48,8 @@ use super::relation_geometry::{declared_entity_handle_circular_marker, owned_rel
 use super::relation_loci::same_dimension_length;
 use super::scalars::FeatureObjectNames;
 use super::sketch_lists::{
-    construction_record, listed_entity, unchecked_record_conflict, ChordConflict, FramedCurve,
-    SketchRecordLists,
+    construction_record, listed_entity, off_chord_arc, unchecked_record_conflict, ChordConflict,
+    FramedCurve, SketchRecordLists,
 };
 use super::transforms::{record_component_marker_coordinates, sketch_frame_marker_transform};
 use super::typed_relations::{
@@ -1109,10 +1109,11 @@ pub(crate) struct HeldMarkerGeometry {
     /// Arc handles whose inline points define no minor arc.
     handles: Vec<SketchEntity>,
     /// The geometry the `sgSketch` record of a marker gives by point-record
-    /// position when the marker reading leaves the marker unread and the
-    /// record indexes point records of another feature object, by sketch and
-    /// marker reference.
-    listed: HashMap<(SketchId, String), SketchGeometry>,
+    /// position when the marker reading leaves the marker unread, with the
+    /// losses the marker charges when it takes that geometry, by sketch and
+    /// marker reference: the record indexes point records of another feature
+    /// object, or its arc ends off its endpoint point records.
+    listed: HashMap<(SketchId, String), (SketchGeometry, Vec<cadmpeg_ir::report::loss::LossNote>)>,
     /// Why the `sgSketch` curve record of a line's marker gives no entity
     /// although it states another form, by sketch and marker reference.
     chord_conflicts: HashMap<(SketchId, String), ChordConflict>,
@@ -1124,6 +1125,11 @@ pub(crate) struct HeldMarkerGeometry {
     /// The sketches that take the retained Front fallback frame; the
     /// finalize pass charges each one that remains.
     assumed_planes: Vec<(SketchId, PlaneAssumedCause)>,
+    /// The `sketch.point-record-index-basis-assumed` loss of each entity
+    /// that takes the geometry of a curve record on locus `05 00 01 00`,
+    /// with that geometry: the entity charges it when it keeps the geometry.
+    index_basis_assumptions:
+        HashMap<SketchEntityId, (SketchGeometry, cadmpeg_ir::report::loss::LossNote)>,
 }
 
 impl HeldMarkerGeometry {
@@ -1172,6 +1178,7 @@ pub(crate) fn finalize_unread_marker_entities(
         unchecked,
         finalized,
         assumed_planes,
+        mut index_basis_assumptions,
     } = held;
     let mut causes = HashMap::<&SketchId, PlaneAssumedCause>::new();
     for (sketch, cause) in &assumed_planes {
@@ -1193,12 +1200,13 @@ pub(crate) fn finalize_unread_marker_entities(
         else {
             continue;
         };
-        if let Some(geometry) = entity
+        if let Some((geometry, charges)) = entity
             .native_ref
             .clone()
             .and_then(|marker| listed.remove(&(entity.sketch.clone(), marker)))
         {
             entity.geometry = geometry;
+            losses.extend(charges);
             continue;
         }
         let (role, code) = match placeholder {
@@ -1229,6 +1237,11 @@ pub(crate) fn finalize_unread_marker_entities(
             SketchGeometry::native(cadmpeg_core::nonblank_literal!("sldprt:{role}-handle"));
     }
     for entity in sketch_entities.iter() {
+        if let Some((geometry, loss)) = index_basis_assumptions.remove(entity.id()) {
+            if geometry == entity.geometry {
+                losses.push(loss);
+            }
+        }
         if !matches!(
             entity.geometry.definition(),
             SketchGeometryDefinition::Line { .. }
@@ -1746,6 +1759,7 @@ pub(crate) fn project_marker_backed_sketches(
             let mut held = Vec::new();
             let mut chord_conflicts = Vec::new();
             let mut listed_elsewhere = Vec::new();
+            let mut index_basis_assumptions = Vec::new();
             let mut listed_entities = HashMap::new();
             let project_coordinates = |[u, v]: [f64; 2]| {
                 let point = transform.apply(quantize(
@@ -2445,21 +2459,45 @@ pub(crate) fn project_marker_backed_sketches(
                     {
                         chord_conflicts.push((marker.id().to_owned(), conflict));
                     }
+                    let off_chord = record_conflict == Some(ChordConflict::MissesChord);
                     if matches!(
                         geometry.definition(),
                         SketchGeometryDefinition::Native { .. }
-                    ) && record_conflict.is_none()
+                    ) && (record_conflict.is_none() || off_chord)
                     {
-                        if let Some(Ok(read)) = index_from_u64(marker.offset()).and_then(|offset| {
-                            listed_entity(
-                                &lane.native_payload,
-                                &record_lists,
-                                offset,
-                                &|_| true,
-                                &project_coordinates,
-                            )
-                        }) {
-                            listed_elsewhere.push((marker.id().to_owned(), read.geometry));
+                        if let Some((offset, read)) =
+                            index_from_u64(marker.offset()).and_then(|offset| {
+                                let read = if off_chord {
+                                    off_chord_arc(
+                                        &lane.native_payload,
+                                        &record_lists,
+                                        offset,
+                                        &project_coordinates,
+                                    )
+                                } else {
+                                    listed_entity(
+                                        &lane.native_payload,
+                                        &record_lists,
+                                        offset,
+                                        &|_| true,
+                                        &project_coordinates,
+                                    )?
+                                    .ok()
+                                };
+                                Some((offset, read?))
+                            })
+                        {
+                            let mut charges = Vec::from_iter(read.index_basis_loss);
+                            if off_chord {
+                                charges.push(
+                                    crate::loss::SldprtLossCode::SketchArcRecordOffChord.note(format!(
+                                        "Sketch {sketch_id} (feature {}) marker {} takes the arc of its `sgSketch` curve record at {offset}, which, placed in the sketch, ends off its endpoint point records",
+                                        native_feature.name,
+                                        marker.id()
+                                    )),
+                                );
+                            }
+                            listed_elsewhere.push((marker.id().to_owned(), read.geometry, charges));
                         }
                     }
                     let construction =
@@ -2529,6 +2567,13 @@ pub(crate) fn project_marker_backed_sketches(
                         .with_construction(construction)
                         .with_native_ref(Some(marker.id().to_owned()))
                         .with_endpoint_refs(endpoint_refs);
+                    if let Some(loss) = listed
+                        .as_ref()
+                        .and_then(|listed| listed.index_basis_loss.clone())
+                    {
+                        index_basis_assumptions
+                            .push((entity.id().clone(), (entity.geometry.clone(), loss)));
+                    }
                     if listed.is_some() {
                         listed_entities.insert(
                             entity.id().clone(),
@@ -2588,6 +2633,10 @@ pub(crate) fn project_marker_backed_sketches(
                 let entity = SketchEntity::new(entity_id, sketch_id.clone(), listed.geometry)
                     .with_construction(construction)
                     .with_endpoint_refs(endpoint_refs);
+                if let Some(loss) = listed.index_basis_loss {
+                    index_basis_assumptions
+                        .push((entity.id().clone(), (entity.geometry.clone(), loss)));
+                }
                 listed_entities.insert(
                     entity.id().clone(),
                     (entity.geometry.clone(), entity.endpoint_refs.clone()),
@@ -2809,11 +2858,18 @@ pub(crate) fn project_marker_backed_sketches(
             }
             sketch_entities.extend(projected);
             held_geometry.handles.extend(held);
-            held_geometry.listed.extend(
-                listed_elsewhere
-                    .into_iter()
-                    .map(|(marker, geometry)| ((sketch_id.clone(), marker), geometry)),
-            );
+            held_geometry
+                .listed
+                .extend(
+                    listed_elsewhere
+                        .into_iter()
+                        .map(|(marker, geometry, charges)| {
+                            ((sketch_id.clone(), marker), (geometry, charges))
+                        }),
+                );
+            held_geometry
+                .index_basis_assumptions
+                .extend(index_basis_assumptions);
             held_geometry.chord_conflicts.extend(
                 chord_conflicts
                     .into_iter()

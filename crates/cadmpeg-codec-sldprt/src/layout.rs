@@ -2918,6 +2918,8 @@ pub(crate) mod sketch_record_head {
     pub(crate) const SCHEMA: usize = 2;
     /// Offset of `attribute_minus_one` (`f32`, little-endian). Spec §Sketch objects.
     pub(crate) const ATTRIBUTE_MINUS_ONE: usize = 13;
+    /// Offset of `locus` (`bytes[4]`). Spec §Sketch objects.
+    pub(crate) const LOCUS: usize = 23;
     /// Offset of `minus_one` (`f32`, little-endian). Spec §Sketch objects.
     pub(crate) const MINUS_ONE: usize = 31;
     /// Offset of `object_pointer` (`u16`, little-endian). Spec §Sketch objects.
@@ -2926,6 +2928,18 @@ pub(crate) mod sketch_record_head {
     pub(crate) const SELECTOR: usize = 37;
     /// Offset of `zero_pad` (`bytes[8]`). Spec §Sketch objects.
     pub(crate) const ZERO_PAD: usize = 56;
+}
+
+/// Byte offsets for the `sketch_line_record` record.
+///
+/// Spec §Sketch objects. Record length 92 B.
+///
+/// ```text
+/// A curve record with curve type `0` after a 64-byte head. The endpoint indices are zero-based positions in the point records of the same `sgSketch` object.
+/// ```
+pub(crate) mod sketch_line_record {
+    /// Offset of `record_id` (`u32`, little-endian). Spec §Sketch objects.
+    pub(crate) const RECORD_ID: usize = 88;
 }
 
 /// Byte offsets for the `sketch_arc_record` record.

@@ -337,6 +337,38 @@ fn an_inline_arc_whose_read_points_define_no_minor_arc_keeps_its_handle() {
     assert!(losses[0].message.contains(id.as_str()));
 }
 
+/// A placeholder that takes held `sgSketch` record geometry charges the
+/// losses held with it.
+#[test]
+fn a_placeholder_with_held_record_geometry_charges_the_losses_held_with_it() {
+    let arc = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+        center: Point2::new(0.0, 0.0),
+        radius: cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
+        start_angle: cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
+        end_angle: cadmpeg_ir::scalar::Angle::new(1.0).unwrap(),
+    })
+    .unwrap();
+    let mut entities = vec![entity("off-chord", placeholder("sldprt:marker-geometry:1"))];
+    let mut held = HeldMarkerGeometry::default();
+    held.listed.insert(
+        (entities[0].sketch.clone(), "marker-off-chord".to_owned()),
+        (
+            arc.clone(),
+            vec![SldprtLossCode::SketchArcRecordOffChord.note("off chord")],
+        ),
+    );
+    let mut losses = Vec::new();
+    finalize_unread_marker_entities(&[], &mut entities, held, &mut losses);
+    assert_eq!(entities[0].geometry, arc);
+    assert_eq!(
+        losses
+            .iter()
+            .map(|loss| loss.code.clone())
+            .collect::<Vec<_>>(),
+        vec![SldprtLossCode::SketchArcRecordOffChord.kind()]
+    );
+}
+
 /// A placeholder whose marker has held `sgSketch` record geometry in its
 /// sketch takes that geometry and charges no loss; the same marker in another
 /// sketch keeps its role and its loss.
@@ -353,7 +385,7 @@ fn a_placeholder_with_held_record_geometry_takes_it_without_a_loss() {
     let mut held = HeldMarkerGeometry::default();
     held.listed.insert(
         (read.sketch.clone(), "marker-read".to_owned()),
-        line.clone(),
+        (line.clone(), Vec::new()),
     );
     let mut entities = vec![read, other_sketch];
     let mut losses = Vec::new();
@@ -721,6 +753,56 @@ fn each_remaining_sketch_on_the_retained_front_fallback_charges_one_assumed_plan
         "{message}"
     );
     assert!(!message.contains("more than one plane"), "{message}");
+}
+
+#[test]
+fn geometry_locus_arc_projection_reports_its_point_record_index_basis() {
+    for end in [1u16, 2] {
+        let (mut payload, points, arc) = sensed_arc_sketch();
+        let offset = usize::try_from(arc).unwrap();
+        payload[offset + 23..offset + 27].copy_from_slice(&[5, 0, 1, 0]);
+        payload[offset + 66..offset + 68].copy_from_slice(&end.to_le_bytes());
+        let mut markers = Vec::new();
+        for (ordinal, ((id, offset), coordinates)) in ["p0", "p1", "p2"]
+            .into_iter()
+            .zip(points)
+            .zip(SENSED_ARC_POINTS)
+            .enumerate()
+        {
+            markers.push(marker_at(
+                id,
+                u32::try_from(ordinal).unwrap(),
+                offset,
+                SketchInputKind::Point,
+                Some(coordinates),
+            ));
+        }
+        markers.push(marker_at(
+            "curve",
+            3,
+            arc,
+            SketchInputKind::LineOrCircle,
+            None,
+        ));
+        let (mut entities, held) = projected_entities(markers, payload);
+        let mut losses = Vec::new();
+        finalize_unread_marker_entities(&[], &mut entities, held, &mut losses);
+        let geometry = marker_entity(&entities, "curve").geometry.definition();
+        assert!(matches!(
+            (end, geometry),
+            (1, SketchGeometryDefinition::Circle { .. })
+                | (2, SketchGeometryDefinition::Arc { .. })
+        ));
+        assert_eq!(
+            losses
+                .iter()
+                .filter(
+                    |loss| loss.code == SldprtLossCode::SketchPointRecordIndexBasisAssumed.kind()
+                )
+                .count(),
+            1
+        );
+    }
 }
 
 #[test]
