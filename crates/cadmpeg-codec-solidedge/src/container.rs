@@ -37,7 +37,7 @@ pub(crate) fn open<'a>(
     root: View<'a>,
 ) -> Result<CompoundSnapshot<'a>, CodecError> {
     let snapshot = CompoundSnapshot::new(ctx, root)?;
-    if !evidence(snapshot.entries().iter().map(|entry| entry.path())) {
+    if !evidence(snapshot.entries().iter().map(CompoundEntry::path)) {
         return Err(CodecError::WrongFormat(
             "Solid Edge directory signature is absent".into(),
         ));

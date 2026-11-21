@@ -16,7 +16,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     let mut ir = CadIr::empty();
     ir.source = Some(SourceMeta::classified(
         dialect::layers(),
-        Default::default(),
+        std::collections::BTreeMap::default(),
     ));
     let mut body = DecodeBody::new(DecodeTransfer::at(ctx.depth(), false));
     body.losses.extend(
