@@ -2435,7 +2435,7 @@ pub(crate) fn mesh_component_flag_losses(
             .filter(|stream| stream.component_flag)
             .map(|stream| {
                 crate::loss::F3dLossCode::MeshComponentFlagUninterpreted.note(format!(
-                    "mesh body {} stream {} stores the component flag Z: true with no settled meaning; the native record retains the flag",
+                    "mesh body {} stream {} reads the payload of a component flagged Z: true as unflagged f32 components; the native record retains the flag",
                     body.placement.record().record_index(), stream.name
                 ))
             })

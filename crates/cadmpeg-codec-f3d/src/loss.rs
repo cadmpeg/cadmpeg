@@ -1047,7 +1047,8 @@ pub(crate) enum F3dLossCode {
     /// Mesh attribute channels have no settled stored-element layout.
     MeshAttributeNotTransferred,
     MeshGuidBytesUninterpreted,
-    /// A packed-direction split component flag has no settled meaning.
+    /// A packed-direction split component flag has no settled meaning; its
+    /// payload is read with the `{T: 3}` layout.
     MeshComponentFlagUninterpreted,
     MeshOperationRecordsNative,
     MeshFaceGroupsAssumed,
@@ -3291,7 +3292,6 @@ impl F3dLossCode {
             | Self::NurbsCurveCarrier
             | Self::MeshSurfaceSentinel
             | Self::MeshGuidBytesUninterpreted
-            | Self::MeshComponentFlagUninterpreted
             | Self::MeshBodyBytesUninterpreted
             | Self::MeshWrapperBytesUninterpreted
             | Self::MeshOwnerBytesUninterpreted
@@ -3902,6 +3902,7 @@ impl F3dLossCode {
             | Self::MeshContainerUnjoined
             | Self::MeshContainerMissing
             | Self::MeshAttributeNotTransferred
+            | Self::MeshComponentFlagUninterpreted
             | Self::MeshOperationRecordsNative
             | Self::MeshFaceGroupsAssumed
             | Self::MeshBodyWordsNative
