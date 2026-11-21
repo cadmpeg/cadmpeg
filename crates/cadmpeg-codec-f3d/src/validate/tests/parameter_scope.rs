@@ -454,7 +454,7 @@ fn operand_list_combine_requires_its_own_offsets() {
         if let DesignScopePayloadMut::Combine(slot) = scope.payload_mut() {
             slot.operation = Some(DesignCombineOperation {
                 form: DesignCombineForm::OperandLists,
-                operation: cadmpeg_ir::features::BooleanKind::Join,
+                operation: cadmpeg_ir::features::operation_settings::BooleanKind::Join,
                 operation_offset,
                 keep_tools,
                 keep_tools_offset,
@@ -470,6 +470,8 @@ fn operand_list_combine_requires_its_own_offsets() {
                 },
 
                 destination: Default::default(),
+                created_body_nodes: Vec::new(),
+                consumed_body_nodes: Vec::new(),
             });
         }
         let mut native = crate::native::F3dNative::default();

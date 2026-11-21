@@ -900,11 +900,16 @@ pub(crate) enum F3dLossCode {
     /// builds, and the generating feature is not proven.
     FeatureCombineToolBodyUnbound,
     /// The browser node of an operand-list Combine operand names no distinct
-    /// body of the preceding history state, so that operand does not bind
-    /// through its node.
+    /// body of the preceding history state, and the body recipes of the scope
+    /// bind no body for it, so that operand stays native.
     FeatureCombineOperandBodyUnbound,
+    /// The body recipe of an operand-list Combine names model bodies for its
+    /// tools, and these bodies replace the tools that the browser-node slots
+    /// bind.
+    FeatureCombineToolRecipeReplacementAssumed,
     /// A Combine frame that matches the fixed fields of the operand-list
-    /// prologue is read in the standard prologue.
+    /// prologue, and whose lists do not complete that prologue, is read in the
+    /// standard prologue.
     FeatureCombinePrologueAssumed,
     FeatureCombineKeptToolsCutAssumed,
     /// A Combine whose lists name its operands, whose other fields contradict
@@ -913,7 +918,7 @@ pub(crate) enum F3dLossCode {
     FeatureCombineOperandListRefused,
     /// A Combine with a companion `RemoveBody` scope reads every tool as
     /// removed, though the companion body selections do not name exactly the
-    /// tools.
+    /// tools that its consumed-body list omits.
     FeatureCombineToolConsumptionAssumed,
     FeatureSplitFaceMethodUnresolved,
     FeatureSplitFaceDirectionUnresolved,
@@ -1864,6 +1869,7 @@ impl F3dLossCode {
         Self::FeatureCombineNamedTailPrologueAssumed,
         Self::FeatureCombineToolBodyUnbound,
         Self::FeatureCombineOperandBodyUnbound,
+        Self::FeatureCombineToolRecipeReplacementAssumed,
         Self::FeatureCombinePrologueAssumed,
         Self::FeatureCombineKeptToolsCutAssumed,
         Self::FeatureCombineOperandListRefused,
@@ -2961,6 +2967,9 @@ impl F3dLossCode {
             }
             Self::FeatureCombineToolBodyUnbound => "feature.combine-tool-body-unbound",
             Self::FeatureCombineOperandBodyUnbound => "feature.combine-operand-body-unbound",
+            Self::FeatureCombineToolRecipeReplacementAssumed => {
+                "feature.combine-tool-recipe-replacement-assumed"
+            }
             Self::FeatureCombinePrologueAssumed => "feature.combine-prologue-assumed",
             Self::FeatureCombineKeptToolsCutAssumed => "feature.combine-kept-tools-cut-assumed",
             Self::FeatureCombineOperandListRefused => "feature.combine-operand-list-refused",
@@ -3846,6 +3855,7 @@ impl F3dLossCode {
             | Self::FeatureCombineNamedTailPrologueAssumed
             | Self::FeatureCombineToolBodyUnbound
             | Self::FeatureCombineOperandBodyUnbound
+            | Self::FeatureCombineToolRecipeReplacementAssumed
             | Self::FeatureCombinePrologueAssumed
             | Self::FeatureCombineKeptToolsCutAssumed
             | Self::FeatureCombineOperandListRefused
@@ -4570,6 +4580,7 @@ impl F3dLossCode {
             | Self::FeatureCombineNamedTailPrologueAssumed
             | Self::FeatureCombineToolBodyUnbound
             | Self::FeatureCombineOperandBodyUnbound
+            | Self::FeatureCombineToolRecipeReplacementAssumed
             | Self::FeatureCombinePrologueAssumed
             | Self::FeatureCombineKeptToolsCutAssumed
             | Self::FeatureCombineOperandListRefused
@@ -5407,6 +5418,7 @@ mod tests {
                 "feature.combine-named-tail-prologue-assumed",
                 "feature.combine-tool-body-unbound",
                 "feature.combine-operand-body-unbound",
+                "feature.combine-tool-recipe-replacement-assumed",
                 "feature.combine-prologue-assumed",
                 "feature.combine-kept-tools-cut-assumed",
                 "feature.combine-operand-list-refused",

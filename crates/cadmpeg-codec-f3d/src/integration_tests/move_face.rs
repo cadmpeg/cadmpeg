@@ -12,7 +12,9 @@ use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::move_face::{
     MoveFaceFixture, MoveFaceFrame, GROUP_GUID, OTHER_GUID, TRANSFORM_GUID, TRANSLATION,
 };
-use cadmpeg_ir::features::{FaceMotion, FaceSelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::direct_edit::FaceMotion;
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 struct Projection {
     scope: DesignParameterScope,

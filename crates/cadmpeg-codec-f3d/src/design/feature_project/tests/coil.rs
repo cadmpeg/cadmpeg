@@ -11,9 +11,9 @@ use crate::records::{
     },
     parameters::DesignParameter,
 };
-use cadmpeg_ir::features::{
-    CoilPlacement, FeatureDefinition, FeatureOperation, SolidFeatureResult,
-};
+use cadmpeg_ir::features::operation_settings::SolidFeatureResult;
+use cadmpeg_ir::features::sweeps::CoilPlacement;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 fn parameter(
     record_index: u32,
@@ -159,7 +159,7 @@ fn long_coil_matrix_projects_as_explicit_placement() {
     assert_eq!(
         construction.placement,
         CoilPlacement::Explicit {
-            frame: cadmpeg_ir::features::FeatureUnitPlaneFrame::new(
+            frame: cadmpeg_ir::features::geometry::FeatureUnitPlaneFrame::new(
                 cadmpeg_ir::math::Point3::new(12.5, -25.0, 37.5),
                 cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
@@ -319,7 +319,7 @@ fn ten_reference_coil_join_targets_its_role_four_group() {
     };
     assert_eq!(
         target(crate::records::topology::extrude_selection::DesignOperandRole::BODIES_A),
-        Some(cadmpeg_ir::features::BodySelection::Native(
+        Some(cadmpeg_ir::features::selections::BodySelection::Native(
             "f3d:Design/BulkStream.dat:group#60".into()
         ))
     );
@@ -375,7 +375,7 @@ fn ten_reference_coil_cut_targets_a_role_eight_group_at_ordinal_eight() {
             _ => None,
         }
     };
-    let group = Some(cadmpeg_ir::features::BodySelection::Native(
+    let group = Some(cadmpeg_ir::features::selections::BodySelection::Native(
         "f3d:Design/BulkStream.dat:group#60".into(),
     ));
     assert_eq!(target(DesignOperandRole::BODIES_A, 0), group);
@@ -469,7 +469,7 @@ fn short_coil_keeps_signed_dimensions_and_native_placement_with_controls_loss() 
     ));
     assert_eq!(
         construction.extent,
-        cadmpeg_ir::features::CoilExtent::HeightPitch {
+        cadmpeg_ir::features::sweeps::CoilExtent::HeightPitch {
             height: cadmpeg_ir::scalar::NonZeroLength::new(-15.0).unwrap(),
             pitch: cadmpeg_ir::scalar::NonZeroLength::new(-2.5).unwrap(),
         }
@@ -477,7 +477,7 @@ fn short_coil_keeps_signed_dimensions_and_native_placement_with_controls_loss() 
     assert!(matches!(
         result,
         SolidFeatureResult::Boolean {
-            operation: cadmpeg_ir::features::BooleanKind::Cut,
+            operation: cadmpeg_ir::features::operation_settings::BooleanKind::Cut,
             ..
         }
     ));
@@ -514,7 +514,7 @@ fn short_coil_keeps_signed_dimensions_and_native_placement_with_controls_loss() 
         assert!(matches!(
             result,
             SolidFeatureResult::Boolean {
-                targets: cadmpeg_ir::features::BodySelection::Unresolved,
+                targets: cadmpeg_ir::features::selections::BodySelection::Unresolved,
                 ..
             }
         ));

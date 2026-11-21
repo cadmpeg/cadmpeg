@@ -297,7 +297,9 @@ mod tests {
     use cadmpeg_ir::ids::BodyId;
     use std::collections::BTreeMap;
 
-    use cadmpeg_ir::features::{BodySelection, Feature, FeatureTreeNodeRole};
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
+    use cadmpeg_ir::features::Feature;
 
     fn history_feature(
         id: &str,
@@ -313,19 +315,20 @@ mod tests {
             ordinal,
             name: Some(id.into()),
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies).unwrap(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(dependencies)
+                .unwrap(),
             source_properties: cadmpeg_core::text::named_entries(id, source_properties)
                 .expect("the fixture states named properties"),
             source_tag: native.then(|| "NX_OPERATION".to_string()),
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
                 FeatureDefinition::Operation(FeatureOperation::TreeNode {
                     role: FeatureTreeNodeRole::History,
-                    children: cadmpeg_ir::features::TreeChildren::default(),
+                    children: cadmpeg_ir::features::tree::TreeChildren::default(),
                 }),
-                cadmpeg_ir::features::DistinctMembers::try_from(outputs).unwrap(),
+                cadmpeg_ir::features::selections::DistinctMembers::try_from(outputs).unwrap(),
             ),
             native_ref: native.then(|| format!("native:{id}")),
         }
@@ -385,7 +388,7 @@ mod tests {
 
         let mut missing = writer();
         missing.dependencies =
-            cadmpeg_ir::features::DistinctMembers::try_from(vec![FeatureId::mint(
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![FeatureId::mint(
                 "synthetic:test:id#missing",
             )
             .expect("identity grammar")])
@@ -401,12 +404,10 @@ mod tests {
 
         let mut out_of_order = writer();
         out_of_order.ordinal = 1;
-        out_of_order.dependencies =
-            cadmpeg_ir::features::DistinctMembers::try_from(vec![FeatureId::mint(
-                "synthetic:test:id#dependency",
-            )
-            .expect("identity grammar")])
-            .unwrap();
+        out_of_order.dependencies = cadmpeg_ir::features::selections::DistinctMembers::try_from(
+            vec![FeatureId::mint("synthetic:test:id#dependency").expect("identity grammar")],
+        )
+        .unwrap();
         let dependency = history_feature(
             "synthetic:test:id#dependency",
             2,
@@ -592,23 +593,24 @@ mod tests {
                 ordinal: 0,
                 name: Some("base".into()),
                 suppressed: Some(false),
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                 source_properties: BTreeMap::new(),
                 source_tag: None,
                 source_text: None,
                 source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-                evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+                evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
                     FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                         bodies: BodySelection::Resolved {
-                            bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![
-                                body.clone()
-                            ])
+                            bodies: cadmpeg_ir::features::selections::DistinctMembers::try_from(
+                                vec![body.clone()],
+                            )
                             .expect("distinct bodies"),
                             native: "test".into(),
                         },
                     }),
-                    cadmpeg_ir::features::DistinctMembers::try_from(vec![body.clone()]).unwrap(),
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![body.clone()])
+                        .unwrap(),
                 ),
                 native_ref: None,
             },
@@ -680,7 +682,7 @@ mod tests {
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::from([(
                 cadmpeg_core::nonblank_literal!("segment_body_binding.0"),
                 "nx:segment-body-bindings:binding#0".into(),
@@ -689,15 +691,18 @@ mod tests {
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
                 FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                     bodies: BodySelection::Resolved {
-                        bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![body.clone()])
-                            .expect("distinct bodies"),
+                        bodies: cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+                            body.clone(),
+                        ])
+                        .expect("distinct bodies"),
                         native: "test".into(),
                     },
                 }),
-                cadmpeg_ir::features::DistinctMembers::try_from(vec![body.clone()]).unwrap(),
+                cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![body.clone()])
+                    .unwrap(),
             ),
             native_ref: None,
         }]);

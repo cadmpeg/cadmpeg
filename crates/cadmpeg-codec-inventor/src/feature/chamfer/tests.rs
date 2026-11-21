@@ -3,7 +3,8 @@
 use super::*;
 use crate::feature::tests::{reference_list, test_feature, test_property};
 use crate::pmdc::PmDcU32List;
-use cadmpeg_ir::features::{edge_treatments::ChamferGroup, EdgeSelection};
+use cadmpeg_ir::features::edge_treatments::ChamferGroup;
+use cadmpeg_ir::features::selections::EdgeSelection;
 
 pub(crate) fn fixture(form: u16) -> (PmDcFeature, Vec<PmDcFeatureProperty>) {
     (

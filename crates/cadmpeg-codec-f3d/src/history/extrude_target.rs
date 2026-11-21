@@ -3,10 +3,11 @@
 
 use std::collections::{BTreeSet, HashMap};
 
-use cadmpeg_ir::features::{
-    ExtrudeDirection, ExtrudeExtent, ExtrudeStart, FaceSelection, Feature, FeatureDefinition,
-    FeatureOperation, LinearTermination,
+use cadmpeg_ir::features::extents::{
+    ExtrudeDirection, ExtrudeExtent, ExtrudeStart, LinearTermination,
 };
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::Length;

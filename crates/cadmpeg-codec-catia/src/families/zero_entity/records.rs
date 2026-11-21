@@ -8,7 +8,7 @@ use cadmpeg_core::decode::index_from_u32;
 use cadmpeg_core::decode::{DecodeContext, View};
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve,
     pcurve::{PcurveGeometry, PcurveNurbs},
@@ -1635,7 +1635,7 @@ fn zero_entity_model_curve(
                 Some((
                     CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                         cadmpeg_ir::geometry::analytic::CircleCurve::new(
-                            cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
                                 origin.x + height * axis.x,
                                 origin.y + height * axis.y,
                                 origin.z + height * axis.z,
@@ -1697,7 +1697,7 @@ fn zero_entity_model_curve(
                 Some((
                     CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                         cadmpeg_ir::geometry::analytic::CircleCurve::new(
-                            cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
                                 origin.x + slant * half_angle.cos() * axis.x,
                                 origin.y + slant * half_angle.cos() * axis.y,
                                 origin.z + slant * half_angle.cos() * axis.z,
@@ -1754,7 +1754,7 @@ fn zero_entity_model_curve(
                 Some((
                     CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                         cadmpeg_ir::geometry::analytic::CircleCurve::new(
-                            cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
                                 center.x + minor_radius * angle.sin() * axis.x,
                                 center.y + minor_radius * angle.sin() * axis.y,
                                 center.z + minor_radius * angle.sin() * axis.z,
@@ -2391,7 +2391,7 @@ mod tests {
         zero_entity_surfaces, zero_entity_torus, zero_entity_vertex_incidences,
         ZeroEntityFaceControl, ZeroEntityLoopMembers, ZeroEntityUseSlot,
     };
-    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
     use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
     use cadmpeg_ir::geometry::CurveGeometry;

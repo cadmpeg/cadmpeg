@@ -2,13 +2,12 @@ use super::{native_stream, project_face_selection, ProjectInputs};
 use crate::loss::F3dLossCode;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::{
-    features::{
-        sheet_metal::{SheetMetalRefoldConstruction, SheetMetalUnfoldConstruction},
-        FaceSelection, FeatureDefinition, FeatureId, FeatureOperation,
-    },
-    report::loss::LossNote,
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::sheet_metal::{
+    SheetMetalRefoldConstruction, SheetMetalUnfoldConstruction,
 };
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
+use cadmpeg_ir::report::loss::LossNote;
 use std::collections::HashMap;
 
 pub(super) fn unfold(

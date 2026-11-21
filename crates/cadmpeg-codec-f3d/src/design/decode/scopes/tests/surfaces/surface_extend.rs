@@ -258,7 +258,7 @@ fn fixture_after_distance(mut bytes: Vec<u8>, distance: f64) -> Vec<u8> {
 
 #[test]
 fn fixed_prologue_gives_the_extension_method_code() {
-    use cadmpeg_ir::features::SurfaceExtension;
+    use cadmpeg_ir::features::surface_inputs::SurfaceExtension;
     for (code, extension) in [
         (0, SurfaceExtension::Perpendicular),
         (1, SurfaceExtension::Natural),
@@ -293,7 +293,7 @@ fn a_violated_prologue_leaves_the_extension_method_unread() {
         assert_eq!(operation.method_code_offset, None);
         assert_eq!(
             operation.extension(),
-            cadmpeg_ir::features::SurfaceExtension::Unresolved
+            cadmpeg_ir::features::surface_inputs::SurfaceExtension::Unresolved
         );
     }
 }

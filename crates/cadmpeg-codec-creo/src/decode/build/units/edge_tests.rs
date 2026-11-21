@@ -1,5 +1,5 @@
 use super::*;
-use cadmpeg_ir::features::{SheetMetalFlangeHeight, SheetMetalFlangeWidth};
+use cadmpeg_ir::features::sheet_metal_forms::{SheetMetalFlangeHeight, SheetMetalFlangeWidth};
 use serde_json::json;
 
 #[test]

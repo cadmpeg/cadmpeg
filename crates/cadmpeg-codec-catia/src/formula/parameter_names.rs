@@ -2,7 +2,7 @@
 //! Unique names for document-scoped typed parameters.
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::DesignParameter;
+use cadmpeg_ir::features::parameters::DesignParameter;
 use std::collections::HashSet;
 
 /// Preserve source names and reserve them before suffixing collisions.

@@ -61,8 +61,8 @@ fn coil_validation_requires_native_definition_for_each_refused_vector() -> TestR
         ));
         feature.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
             FeatureOperation::TreeNode {
-                role: cadmpeg_ir::features::FeatureTreeNodeRole::History,
-                children: cadmpeg_ir::features::TreeChildren::default(),
+                role: cadmpeg_ir::features::tree::FeatureTreeNodeRole::History,
+                children: cadmpeg_ir::features::tree::TreeChildren::default(),
             },
         ));
         ir.model.features = vec![feature];
@@ -115,9 +115,10 @@ fn coil_validation_keeps_ambiguous_labels_native_and_rejects_invented_parameters
 
 #[test]
 fn coil_validation_refuses_both_hands_for_each_neutral_extent() {
-    use cadmpeg_ir::features::{
+    use cadmpeg_ir::features::geometry::FeatureUnitPlaneFrame;
+    use cadmpeg_ir::features::operation_settings::SolidFeatureResult;
+    use cadmpeg_ir::features::sweeps::{
         CoilConstruction, CoilExtent, CoilPlacement, CoilSection, CoilSectionPlacement,
-        FeatureUnitPlaneFrame, SolidFeatureResult,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::scalar::{Angle, Length, NonZeroLength, PositiveLength, PositiveReal};
