@@ -733,6 +733,15 @@ pub(crate) fn decode_parameter_scopes(
                     }),
                     _ => return Err(CodecError::NotImplemented("F3D path feature payload kind mismatch".into())),
                 }
+            } else if crate::design::design_feature_family(&scope.kind())
+                == Some(crate::design::DesignFeatureFamily::Revolve)
+            {
+                losses.push(crate::loss::F3dLossCode::FeatureRevolveFrameUnmatched.note(format!(
+                    "Revolve scope {} has a {}-byte token-independent frame with {} ordered references that matches no Revolve form; its construction stays undecoded.",
+                    scope.id,
+                    parameter_scope_payload_length(&scope).map_or_else(|| "unmeasured".to_owned(), |length| length.to_string()),
+                    scope.reference_members().len()
+                )));
             }
             {
                 let construction =
