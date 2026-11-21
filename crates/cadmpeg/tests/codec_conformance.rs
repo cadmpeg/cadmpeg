@@ -759,7 +759,7 @@ mod subset_carriers {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use cadmpeg_ir::eval::admission::EvaluationAdmission;
     use cadmpeg_ir::eval::decode::curve_point;
-    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::geometry::analytic::{EllipseCurve, ParabolaCurve};
     use cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction;
     use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoles3};

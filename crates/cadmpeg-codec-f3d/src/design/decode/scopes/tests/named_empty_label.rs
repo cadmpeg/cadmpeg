@@ -6,8 +6,9 @@ use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
 use crate::records::decal::DesignRecordHeader;
 use crate::test_support::lp_utf16;
 
-#[test]
-fn parameter_scope_parses_named_tail_with_empty_label() {
+/// A `CylinderPrimitive` scope whose 78-byte tail has an empty label, lane
+/// value 1, preceding history state `previous` and evaluation epoch `epoch`.
+fn empty_label_scope(previous: u32, epoch: u32) -> (Vec<u8>, usize) {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"378");
@@ -19,6 +20,7 @@ fn parameter_scope_parses_named_tail_with_empty_label() {
     bytes.extend_from_slice(&[0; 6]);
     bytes.extend_from_slice(&7u32.to_le_bytes());
     lp_utf16(&mut bytes, "CylinderPrimitive");
+    let kind_end = bytes.len();
     bytes.extend_from_slice(&1u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 4]);
     bytes.extend_from_slice(&0u32.to_le_bytes());
@@ -28,10 +30,10 @@ fn parameter_scope_parses_named_tail_with_empty_label() {
     bytes.push(0x0f);
     bytes.extend_from_slice(&1u64.to_le_bytes());
     bytes.extend_from_slice(&[0; 2]);
-    bytes.extend_from_slice(&9u32.to_le_bytes());
-    bytes.extend_from_slice(&0xfcu32.to_le_bytes());
+    bytes.extend_from_slice(&previous.to_le_bytes());
+    bytes.extend_from_slice(&epoch.to_le_bytes());
     bytes.extend_from_slice(&0.25f64.to_le_bytes());
-    bytes.extend_from_slice(&0xfcu32.to_le_bytes());
+    bytes.extend_from_slice(&epoch.to_le_bytes());
     bytes.push(1);
     bytes.push(0x0e);
     bytes.extend_from_slice(&1u64.to_le_bytes());
@@ -41,10 +43,15 @@ fn parameter_scope_parses_named_tail_with_empty_label() {
     bytes.extend_from_slice(&1u64.to_le_bytes());
     bytes.extend_from_slice(&[0; 3]);
 
-    let paired_at = bytes.len();
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"261");
     bytes.extend_from_slice(&12u32.to_le_bytes());
+    (bytes, kind_end)
+}
+
+fn parse_empty_label_scope(
+    bytes: &[u8],
+) -> Option<crate::records::feature::scope::DesignParameterScope> {
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: 12,
@@ -52,23 +59,35 @@ fn parameter_scope_parses_named_tail_with_empty_label() {
         byte_offset: 0,
     };
 
-    let scope = parse_parameter_scope(
-        &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+    parse_parameter_scope(
+        bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset,
     )
     .unwrap()
-    .expect("empty-label named scope");
-    assert_eq!(
-        scope.kind(),
-        crate::records::feature::scope::DesignFeatureKind::CylinderPrimitive
-    );
-    assert_eq!(scope.frame_length(), u64_from_index(paired_at));
-    assert_eq!(scope.label, None);
-    assert_eq!(scope.previous_history_state_id(), None);
-    assert_eq!(scope.previous_history_state_id_offset(), None);
+}
+
+#[test]
+fn an_empty_label_tail_reads_its_preceding_state_whatever_its_epoch() {
+    for epoch in [252, 250] {
+        let (bytes, kind_end) = empty_label_scope(9, epoch);
+        let scope = parse_empty_label_scope(&bytes).expect("empty-label scope");
+        assert_eq!(
+            scope.kind(),
+            crate::records::feature::scope::DesignFeatureKind::CylinderPrimitive
+        );
+        assert_eq!(scope.frame_length(), u64_from_index(kind_end + 78));
+        assert_eq!(scope.label, None);
+        assert_eq!(scope.history_state_id(), Some(7), "epoch {epoch}");
+        assert_eq!(scope.previous_history_state_id(), Some(9), "epoch {epoch}");
+        assert_eq!(
+            scope.previous_history_state_id_offset(),
+            Some(u64_from_index(kind_end + 31)),
+            "epoch {epoch}"
+        );
+    }
 }
 
 #[test]

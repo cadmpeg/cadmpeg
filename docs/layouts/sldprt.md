@@ -3276,6 +3276,123 @@ Offsets from the end of the ambient light's name string; the light's bytes end a
 | 24 | 8 | `value_24` | `f64` | little | spec | \| +24 \| little-endian f64 \| |
 | 32 | 4 | `word_32` | `u32` | little | spec | \| +32 \| little-endian u32 \| |
 
+## `sketch_record_head`
+
+Spec §Sketch objects · layout: byte offsets · size: 64 B
+
+Head of every `sgSketch` record with a null object pointer at +35. In files before swVersion 11000 the eight zero bytes at +56 are absent.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/sketch_lists.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `tag` | `bytes[2]` | little | spec | an attribute record: `ff ff` · value `[255, 255]` |
+| 2 | 2 | `schema` | `u16` | little | spec | a little-endian u16 record schema version (`1f 00` or `07 00`) |
+| 4 | 1 | `slot` | `u8` | little | spec | a slot byte |
+| 5 | 4 | `attribute_word` | `i32` | little | spec | little-endian i32 `-1` · value `-1` |
+| 9 | 4 | `attribute_pair` | `u16[2]` | little | spec | two little-endian u16 (usually `ff ff`) |
+| 13 | 4 | `attribute_minus_one` | `f32` | little | spec | and little-endian f32 `-1` |
+| 17 | 4 | `kind` | `u32` | little | spec | \| +17 \| little-endian u32 kind \| |
+| 21 | 2 | `zero_word` | `u16` | little | spec | \| +21 \| little-endian u16 `0` \| · value `0` |
+| 23 | 4 | `locus` | `u16[2]` | little | spec | two little-endian u16, the locus (`04 00 02 00` profile, `05 00 01 00` geometry) |
+| 27 | 2 | `role` | `u16` | little | spec | \| +27 \| little-endian u16 role \| |
+| 29 | 2 | `state` | `u16` | little | spec | \| +29 \| little-endian u16 state \| |
+| 31 | 4 | `minus_one` | `f32` | little | spec | \| +31 \| little-endian f32 `-1` \| |
+| 35 | 2 | `object_pointer` | `u16` | little | derived | The null pointer fills the two bytes before the selector at +37; a nonzero word here opens an `sgExtEnt_c` object. |
+| 37 | 2 | `selector` | `u16` | little | spec | \| +37 \| little-endian u16 selector \| |
+| 39 | 9 | `opaque` | `bytes[9]` | little | spec | \| +39 \| nine bytes \| |
+| 48 | 8 | `unit` | `f64` | little | spec | \| +48 \| little-endian f64 `1` \| |
+| 56 | 8 | `zero_pad` | `bytes[8]` | little | spec | \| +56 \| eight zero bytes \| |
+
+## `sketch_line_record`
+
+Spec §Sketch objects · layout: byte offsets · size: 92 B
+
+A curve record with curve type `0` after a 64-byte head. The endpoint indices are zero-based positions in the point records of the same `sgSketch` object.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/sketch_lists.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 64 | `head` | `bytes[64]` | little | spec | Every record opens with a 64-byte head |
+| 64 | 2 | `start` | `u16` | little | spec | the endpoint indices stand at +64 and +66 |
+| 66 | 2 | `end` | `u16` | little | spec | the endpoint indices stand at +64 and +66 |
+| 68 | 4 | `word` | `u32` | little | spec | two little-endian u16 endpoint indices at +64, a little-endian u32 |
+| 72 | 8 | `minus_one` | `f64` | little | spec | little-endian f64 `-1` at +72 |
+| 80 | 2 | `curve_type` | `u16` | little | spec | a little-endian u16 curve type at +80 · value `0` |
+| 82 | 2 | `tail_word` | `u16` | little | spec | All three end with a little-endian u16, a little-endian u32 and a little-endian u32 record identifier |
+| 84 | 4 | `trailer` | `u32` | little | spec | All three end with a little-endian u16, a little-endian u32 and a little-endian u32 record identifier |
+| 88 | 4 | `record_id` | `u32` | little | spec | a little-endian u32 record identifier: 92 bytes for a line |
+
+## `sketch_arc_record`
+
+Spec §Sketch objects · layout: byte offsets · size: 112 B
+
+A curve record with sense `1` or `-1` after a 64-byte head. Equal endpoint indices make the full circle about the centre point record.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/sketch_lists.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 64 | `head` | `bytes[64]` | little | spec | Every record opens with a 64-byte head |
+| 64 | 2 | `start` | `u16` | little | spec | the endpoint indices stand at +64 and +66 |
+| 66 | 2 | `end` | `u16` | little | spec | the endpoint indices stand at +64 and +66 |
+| 68 | 4 | `word` | `u32` | little | spec | two little-endian u16 endpoint indices at +64, a little-endian u32 |
+| 72 | 8 | `minus_one` | `f64` | little | spec | little-endian f64 `-1` at +72 |
+| 80 | 4 | `sense` | `i32` | little | spec | the sense at +80 and the centre index at +84 |
+| 84 | 2 | `center` | `u16` | little | spec | the sense at +80 and the centre index at +84 |
+| 86 | 16 | `minus_two` | `i32[4]` | little | spec | An arc then writes the little-endian u16 index of its centre point record and four little-endian i32 (`-2`) |
+| 102 | 2 | `tail_word` | `u16` | little | spec | All three end with a little-endian u16, a little-endian u32 and a little-endian u32 record identifier |
+| 104 | 4 | `trailer` | `u32` | little | spec | All three end with a little-endian u16, a little-endian u32 and a little-endian u32 record identifier |
+| 108 | 4 | `record_id` | `u32` | little | spec | All three end with a little-endian u16, a little-endian u32 and a little-endian u32 record identifier |
+
+## `sketch_line_record_legacy`
+
+Spec §Sketch objects · layout: byte offsets · size: 84 B
+
+sketch_line_record without the eight zero bytes of the head: every field after the head stands 8 bytes earlier.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/sketch_lists.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 56 | `head` | `bytes[56]` | little | derived | The 64-byte head less its eight zero bytes at +56. |
+| 56 | 2 | `start` | `u16` | little | spec | In files before `swVersion` 11000 they stand at +56 and +58, +72 and +76 |
+| 58 | 2 | `end` | `u16` | little | spec | In files before `swVersion` 11000 they stand at +56 and +58, +72 and +76 |
+| 60 | 4 | `word` | `u32` | little | derived | sketch_line_record.word at +68 less the eight absent bytes. |
+| 64 | 8 | `minus_one` | `f64` | little | derived | sketch_line_record.minus_one at +72 less the eight absent bytes. |
+| 72 | 2 | `curve_type` | `u16` | little | spec | In files before `swVersion` 11000 they stand at +56 and +58, +72 and +76 · value `0` |
+| 74 | 2 | `tail_word` | `u16` | little | derived | sketch_line_record.tail_word at +82 less the eight absent bytes. |
+| 76 | 4 | `trailer` | `u32` | little | derived | sketch_line_record.trailer at +84 less the eight absent bytes. |
+| 80 | 4 | `record_id` | `u32` | little | derived | sketch_line_record.record_id at +88 less the eight absent bytes. |
+
+## `sketch_arc_record_legacy`
+
+Spec §Sketch objects · layout: byte offsets · size: 104 B
+
+sketch_arc_record without the eight zero bytes of the head: every field after the head stands 8 bytes earlier.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/sketch_lists.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 56 | `head` | `bytes[56]` | little | derived | The 64-byte head less its eight zero bytes at +56. |
+| 56 | 2 | `start` | `u16` | little | spec | In files before `swVersion` 11000 they stand at +56 and +58, +72 and +76 |
+| 58 | 2 | `end` | `u16` | little | spec | In files before `swVersion` 11000 they stand at +56 and +58, +72 and +76 |
+| 60 | 4 | `word` | `u32` | little | derived | sketch_arc_record.word at +68 less the eight absent bytes. |
+| 64 | 8 | `minus_one` | `f64` | little | derived | sketch_arc_record.minus_one at +72 less the eight absent bytes. |
+| 72 | 4 | `sense` | `i32` | little | spec | In files before `swVersion` 11000 they stand at +56 and +58, +72 and +76 |
+| 76 | 2 | `center` | `u16` | little | spec | In files before `swVersion` 11000 they stand at +56 and +58, +72 and +76 |
+| 78 | 16 | `minus_two` | `i32[4]` | little | derived | sketch_arc_record.minus_two at +86 less the eight absent bytes. |
+| 94 | 2 | `tail_word` | `u16` | little | derived | sketch_arc_record.tail_word at +102 less the eight absent bytes. |
+| 96 | 4 | `trailer` | `u32` | little | derived | sketch_arc_record.trailer at +104 less the eight absent bytes. |
+| 100 | 4 | `record_id` | `u32` | little | derived | sketch_arc_record.record_id at +108 less the eight absent bytes. |
+
 ## `attribute_definition_short_refs`
 
 Spec §5 · layout: byte offsets · size: 38 B
@@ -3892,6 +4009,19 @@ Parsed by:
 | 16 | 2 | `zero_before_codes` | `u16` | little | spec | anchor +16 is a zero u16 · value `0` |
 | 18 | 4 | `first_code` | `u32` | little | spec | The little-endian u32 first-direction termination code is at anchor +18 |
 | 22 | 4 | `second_code` | `u32` | little | spec | the little-endian u32 second-direction termination code is at anchor +22 |
+
+## `pmark_record_head`
+
+Spec §3.4 · layout: byte offsets · size: 12 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/rollback.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `mark` | `u32` | little | spec | the mark, a little-endian u32 at +0 |
+| 4 | 4 | `form` | `u32` | little | spec | the form, a little-endian u32 at +4 |
+| 8 | 4 | `form_word` | `u32` | little | spec | the form word, a little-endian u32 at +8 |
 
 ## Not tabulated
 

@@ -73,7 +73,7 @@ impl SpellingSweep {
         if canonical_text(&CadIr::from_json(&canonical)?)? != canonical {
             accepting.insert("its canonical text does not write back byte for byte".to_owned());
         }
-        let empty = serde_json::to_value(CadIr::empty())?;
+        let empty = cadmpeg_ir::hash::finite_json::to_json_value(&CadIr::empty())?;
         for node in nodes(ir) {
             let Some(fields) = node_object(ir, &node.path) else {
                 continue;

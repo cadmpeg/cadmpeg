@@ -907,7 +907,7 @@ pub(in super::super) fn transfer_positional_cylinders(
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<PositionalCylinderTransferSummary, cadmpeg_core::CodecError> {
     let mut named_matrix_cylinders = BTreeSet::new();
-    for (prototype, row, _) in super::prototypes::unique_surface_prototype_associations(scan)? {
+    for (prototype, row, _, _) in super::prototypes::unique_surface_prototype_associations(scan)? {
         let super::prototypes::SupportedPrototype::Cylinder(record) = prototype else {
             continue;
         };

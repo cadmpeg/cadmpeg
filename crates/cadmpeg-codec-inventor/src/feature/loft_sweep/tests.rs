@@ -398,10 +398,9 @@ fn record_type_validation_rejects_wrong_payload_kinds() {
 
 #[test]
 fn surface_loft_class_keeps_the_native_kind_and_refuses_solid_admission() {
-    use cadmpeg_ir::features::{
-        BooleanOp, FeatureDefinition, FeatureOperation, LoftGuidance, LoftSection,
-        PlanarProfileRef, ProfileRef,
-    };
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::profiles::{LoftSection, PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, LoftGuidance};
     let class = crate::feature::ClassId::try_from("808b00afd41140881000fca5bba647b5".to_owned())
         .expect("surface loft class");
     assert_eq!(

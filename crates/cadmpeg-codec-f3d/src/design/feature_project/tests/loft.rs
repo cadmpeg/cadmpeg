@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::extrude_fallbacks::{profile_group, profile_group_with_members, scope};
-use crate::design::feature_project::project_fixed_loft;
+use crate::design::feature_project::sweep_loft::project_fixed_loft;
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use crate::records::feature::path_features::DesignLoftConstruction;
 use crate::records::feature::scope::DesignScopePayload;
@@ -10,7 +10,8 @@ use crate::records::topology::entity_selection::DesignEntitySelectionOperand;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, LoftSection};
+use cadmpeg_ir::features::profiles::LoftSection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 fn loft_input(
     roles: [DesignOperandRole; 2],
@@ -128,7 +129,7 @@ fn projected_sections(roles: [DesignOperandRole; 2]) -> Option<Vec<LoftSection>>
 
 #[test]
 fn a_profile_and_a_point_group_project_in_scope_reference_order() {
-    use cadmpeg_ir::features::{LoftPointSection, PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::profiles::{LoftPointSection, PlanarProfileRef, ProfileRef};
     let profile_then_point =
         projected_sections([DesignOperandRole::PROFILE, DesignOperandRole::ROLE_0X21])
             .expect("profile-to-point Loft");
@@ -268,10 +269,10 @@ fn loft_point_sources() -> (
 
 /// A Loft from profile group 100 to point group `point_group`.
 fn loft_to_point(point_group: &str) -> cadmpeg_ir::features::Feature {
-    use cadmpeg_ir::features::{
-        BooleanOp, Feature, FeatureEvaluation, FeatureId, LoftGuidance, LoftPointSection,
-        PlanarProfileRef, ProfileRef,
-    };
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::profiles::{LoftPointSection, PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{Feature, FeatureId, LoftGuidance};
     Feature {
         product_definition: None,
         id: FeatureId::mint("test:model:feature#loft").unwrap(),
@@ -311,9 +312,12 @@ fn loft_to_point(point_group: &str) -> cadmpeg_ir::features::Feature {
 fn bound_point_section(
     feature: cadmpeg_ir::features::Feature,
     sources: &crate::design::feature_project::LoftPointSources<'_>,
-) -> cadmpeg_ir::features::LoftPointSection {
+) -> cadmpeg_ir::features::profiles::LoftPointSection {
     let mut features = [feature];
-    crate::design::feature_project::bind_loft_sketch_point_sections(&mut features, sources);
+    crate::design::feature_project::sweep_loft::bind_loft_sketch_point_sections(
+        &mut features,
+        sources,
+    );
     let FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. }) =
         features[0].evaluation.definition()
     else {
@@ -327,7 +331,7 @@ fn bound_point_section(
 
 #[test]
 fn a_loft_point_section_solves_to_its_sketch_point_in_model_space() {
-    use cadmpeg_ir::features::LoftPointSection;
+    use cadmpeg_ir::features::profiles::LoftPointSection;
     let (group, operand, point, sketch, entity) = loft_point_sources();
     let group_id = group.id.clone();
     let sources = crate::design::feature_project::LoftPointSources {
@@ -346,7 +350,7 @@ fn a_loft_point_section_solves_to_its_sketch_point_in_model_space() {
 
 #[test]
 fn a_loft_point_section_without_one_sketch_point_stays_native() {
-    use cadmpeg_ir::features::LoftPointSection;
+    use cadmpeg_ir::features::profiles::LoftPointSection;
     let (group, operand, point, sketch, entity) = loft_point_sources();
     let group_id = group.id.clone();
     let mut other_owner = point.clone();
@@ -408,7 +412,7 @@ fn a_loft_point_section_without_one_sketch_point_stays_native() {
 #[test]
 fn a_loft_point_section_needs_a_sketch_point_frame() {
     use crate::layout::marked_sketch_curve_identity as curve_identity;
-    use cadmpeg_ir::features::LoftPointSection;
+    use cadmpeg_ir::features::profiles::LoftPointSection;
     let (group, operand, point, sketch, entity) = loft_point_sources();
     let group_id = group.id.clone();
     let mut pair = operand.clone().into_draft();
@@ -448,7 +452,7 @@ fn a_loft_point_section_needs_a_sketch_point_frame() {
 
 #[test]
 fn a_loft_point_section_needs_the_selection_of_its_point_member() {
-    use cadmpeg_ir::features::LoftPointSection;
+    use cadmpeg_ir::features::profiles::LoftPointSection;
     let (group, operand, point, sketch, entity) = loft_point_sources();
     let group_id = group.id.clone();
     let mut section_group = group.clone();
@@ -549,7 +553,9 @@ fn native_group(index: u32) -> String {
 
 #[test]
 fn the_body_lists_assign_sections_rails_and_the_existing_body_group() {
-    use cadmpeg_ir::features::{BooleanOp, LoftGuidance, PathRef, PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::LoftGuidance;
     let (definition, losses) = listed_loft(
         DesignExtrudeOperation::Join,
         &[
@@ -594,7 +600,8 @@ fn the_body_lists_assign_sections_rails_and_the_existing_body_group() {
 
 #[test]
 fn a_rail_list_with_one_role_0x7_group_projects_a_centerline() {
-    use cadmpeg_ir::features::{LoftGuidance, PathRef};
+    use cadmpeg_ir::features::profiles::PathRef;
+    use cadmpeg_ir::features::LoftGuidance;
     let groups = [
         (300, DesignOperandRole::ROLE_0X43),
         (302, DesignOperandRole::ROLE_0X43),
@@ -641,7 +648,8 @@ fn a_rail_list_with_one_role_0x7_group_projects_a_centerline() {
 
 #[test]
 fn the_offset_33_reference_names_a_rail() {
-    use cadmpeg_ir::features::{LoftGuidance, PathRef};
+    use cadmpeg_ir::features::profiles::PathRef;
+    use cadmpeg_ir::features::LoftGuidance;
     let (definition, losses) = listed_loft(
         DesignExtrudeOperation::NewBody,
         &[
@@ -664,7 +672,7 @@ fn the_offset_33_reference_names_a_rail() {
 
 #[test]
 fn a_one_member_role_0x5_end_section_is_a_profile() {
-    use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
     let groups = [
         (500, DesignOperandRole::ROLE_0X43),
         (502, DesignOperandRole::ROLE_0X5),
@@ -695,7 +703,7 @@ fn a_one_member_role_0x5_end_section_is_a_profile() {
 
 #[test]
 fn a_middle_or_multi_member_role_0x5_section_is_a_profile() {
-    use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
     let profile = |index| {
         LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native(native_group(
             index,
@@ -765,7 +773,7 @@ fn loft_groups_reject_lists_that_do_not_partition_the_groups() {
     ]);
     let groups = groups.iter().collect::<Vec<_>>();
     let assign = |operation, section_records: Vec<u32>, rail_groups: Vec<u32>| {
-        crate::design::feature_project::loft_groups(
+        crate::design::feature_project::sweep_loft::loft_groups(
             &DesignLoftConstruction {
                 operation,
                 operation_offset: 128,

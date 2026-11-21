@@ -75,7 +75,8 @@ fn paste_copy(
 
 #[test]
 fn a_same_component_paste_of_copies_moves_one_copy_of_each_source_in_place() {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let source = component_body(20, "f3d:model:body#1", 3);
     let copy = component_body(30, "f3d:model:body#2", 3);
     let (definition, copies) =
@@ -174,7 +175,8 @@ fn cross_component_paste(
 
 #[test]
 fn a_paste_into_a_component_without_its_sources_inserts_its_copies() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, InsertedBodies};
+    use cadmpeg_ir::features::selections::InsertedBodies;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let bindings = [
         component_body(20, "f3d:model:body#1", 3),
         component_body(21, "f3d:model:body#2", 4),

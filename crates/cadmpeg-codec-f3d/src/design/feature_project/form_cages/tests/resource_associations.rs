@@ -436,7 +436,9 @@ fn active_state_survives_coalescing_before_later_inactive_state() {
 #[test]
 fn shared_alias_does_not_attach_unrelated_cage_paths_to_candidate() {
     let path = |id| FormInputPath {
-        references: cadmpeg_ir::features::NonEmptyMembers::one(NativeId::mint(id).unwrap()),
+        references: cadmpeg_ir::features::selections::NonEmptyMembers::one(
+            NativeId::mint(id).unwrap(),
+        ),
     };
     let r = resource("f3d:scope:record#r", "asset/r.tsm");
     let t = resource("f3d:scope:record#t", "asset/t.tsm");

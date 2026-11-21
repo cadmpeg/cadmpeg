@@ -7,7 +7,7 @@
 
 use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_usize};
 
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::nurbs::KnotVector;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsError},
@@ -68,6 +68,14 @@ impl LaneRefusals {
     /// many records a route refused before it transferred no model.
     pub(crate) fn note_count(&self) -> usize {
         self.notes.len()
+    }
+
+    pub(crate) fn push_pcurve_circle_plane_mismatch(&mut self, source_offset: usize) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::GeometryPcurveCirclePlaneMismatch.note(format!(
+                "Withheld a derived spherical pcurve at source offset {source_offset}: its midpoint leaves the edge circle plane"
+            )),
+        );
     }
 
     pub(crate) fn push_body_selection(&mut self, resolved: bool, excluded: usize) {
@@ -165,6 +173,41 @@ impl LaneRefusals {
     ) {
         self.notes.push(crate::loss::CatiaLossCode::GeometrySheetSurfaceFitted.note(format!(
             "Transferred fitted B-spline surfaces for {rolling_ball} rolling-ball, {offset} offset, {ruled} ruled, and {extrusion} extrusion sheet faces. The fits use sampled geometric checks."
+        )));
+    }
+
+    pub(crate) fn push_surface_extrapolation_not_transferred(
+        &mut self,
+        source: usize,
+        descriptors: [(u32, Option<u32>); 2],
+        flags: [u8; 3],
+        continuation: &[f64],
+    ) {
+        self.notes.push(crate::loss::CatiaLossCode::GeometrySurfaceExtrapolationNotTransferred.note(format!(
+            "For surface record at offset {source}, extrapolation descriptors {descriptors:?}, flags {flags:?}, and continuation values {continuation:?} remain outside the neutral NURBS carrier."
+        )));
+    }
+
+    pub(crate) fn push_surface_parameters_not_transferred(
+        &mut self,
+        source: usize,
+        parameters: [f64; 8],
+    ) {
+        self.notes.push(crate::loss::CatiaLossCode::GeometrySurfaceParametersNotTransferred.note(format!(
+            "Surface record at offset {source}: local U limits {:?}, local V limits {:?}, and affine map coefficients {:?} are omitted from the neutral NURBS carrier, which retains its full knot domains.",
+            &parameters[..2], &parameters[2..4], &parameters[4..],
+        )));
+    }
+
+    pub(crate) fn push_plane_bounds_not_transferred(&mut self, face: usize, bounds: [[f64; 2]; 2]) {
+        self.notes.push(crate::loss::CatiaLossCode::GeometryPlaneBoundsNotTransferred.note(format!(
+            "The plane carrier for emitted native face {face} retains its origin and axes; native chart bounds {bounds:?} are omitted from the neutral plane support."
+        )));
+    }
+
+    pub(crate) fn push_surface_weights_inferred(&mut self, source: usize) {
+        self.notes.push(crate::loss::CatiaLossCode::GeometrySurfaceWeightsInferred.note(format!(
+            "For the rational A5 surface at offset {source}, interpreted extended row controls as reflected-column masks and command-05 leading repeats; these control meanings are inferred."
         )));
     }
 

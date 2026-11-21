@@ -16,6 +16,7 @@ use super::isoparametric_flag;
 use super::number;
 use super::oriented_curve_entity;
 use super::orthonormal_pair;
+use super::records::TopologyIndex;
 use super::surface_entities;
 use super::validate_arc_sweep;
 use super::CurveSpan;
@@ -248,13 +249,13 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
     ir.geometry.points.extend([
         Point::new(
             point_start.clone(),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(2_000_000.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(2_000_000.0, 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
         Point::new(
             point_end.clone(),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(2_000_001.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(2_000_001.0, 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
@@ -300,7 +301,8 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
 
     let expected = 2_000_001.0 * WRITER_ENDPOINT_RELATIVE_TOLERANCE;
     assert!(
-        (generated_minimum_resolution(&ir).expect("compute the generated minimum resolution")
+        (generated_minimum_resolution(&TopologyIndex::new(&ir))
+            .expect("compute the generated minimum resolution")
             - expected)
             .abs()
             <= f64::EPSILON * 64.0
@@ -312,7 +314,7 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
     let mut ir = CadIr::empty();
     ir.geometry.points.push(Point::new(
         PointId::mint("test:model:point#global-profile").expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(123.0, -4.0, 5.0))
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(123.0, -4.0, 5.0))
             .expect("a finite position is a point"),
         None,
     ));
@@ -409,7 +411,7 @@ fn encode_uses_neutral_linear_tolerance_as_global_floor() {
         cadmpeg_ir::scalar::PositiveLength::new(2.5).expect("positive finite tolerance");
     ir.geometry.points.push(Point::new(
         PointId::mint("test:model:point#resolution-floor").expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
             .expect("a finite position is a point"),
         None,
     ));
@@ -1081,7 +1083,8 @@ fn face_loop_order_places_the_explicit_outer_loop_first() {
         },
     ];
 
-    let ordered = face_loop_order(&ir, &face).expect("both face loops resolve");
+    let ordered =
+        face_loop_order(&TopologyIndex::new(&ir), &face).expect("both face loops resolve");
     assert_eq!(ordered[0].id, outer_id);
 }
 
@@ -1137,7 +1140,8 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
         },
     ];
 
-    let ordered = face_loop_order(&ir, &face).expect("both face loops resolve");
+    let ordered =
+        face_loop_order(&TopologyIndex::new(&ir), &face).expect("both face loops resolve");
     assert_eq!(ordered[0].id, unclassified_id);
     assert!(face_outer_loop(&face, &ordered).is_none());
 }

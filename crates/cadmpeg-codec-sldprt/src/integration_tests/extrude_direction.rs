@@ -3,7 +3,8 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::features::{ExtrudeDirection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::extents::ExtrudeDirection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::Vector3;
 
 use crate::loss::SldprtLossCode;

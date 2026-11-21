@@ -2,7 +2,8 @@
 use super::*;
 use crate::feature::tests::{test_feature, test_property};
 use crate::pmdc::{PmDcListMetadata, PmDcReferenceList, PmDcU32List};
-use cadmpeg_ir::features::{FaceMotion, FeatureEvaluation};
+use cadmpeg_ir::features::direct_edit::FaceMotion;
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 
 const SELECTOR_SOURCE: u32 = 9;
 const SELECTOR_KEY: u32 = 7;
@@ -552,7 +553,7 @@ fn fixture(
         FeatureOperation::MoveFace {
             faces: FaceSelection::Native(properties[0].id()),
             motion: FaceMotion::Translate {
-                direction: cadmpeg_ir::features::FeatureDirection3::from(
+                direction: cadmpeg_ir::features::geometry::FeatureDirection3::from(
                     cadmpeg_ir::units::UnitVector3::X_AXIS,
                 ),
                 distance: cadmpeg_ir::scalar::Length::new(2.0).expect("length"),
@@ -816,7 +817,7 @@ fn a_stored_face_selection_must_re_derive_from_its_collection_and_state() {
                         )
                         .expect("selection"),
                         motion: FaceMotion::Translate {
-                            direction: cadmpeg_ir::features::FeatureDirection3::from(
+                            direction: cadmpeg_ir::features::geometry::FeatureDirection3::from(
                                 cadmpeg_ir::units::UnitVector3::X_AXIS,
                             ),
                             distance: cadmpeg_ir::scalar::Length::new(2.0).expect("length"),
@@ -1335,7 +1336,7 @@ fn a_thicken_tagged_translation_takes_no_face_join() {
         FeatureOperation::MoveFace {
             faces: FaceSelection::Native(inventory.properties[0].id()),
             motion: FaceMotion::Translate {
-                direction: cadmpeg_ir::features::FeatureDirection3::from(
+                direction: cadmpeg_ir::features::geometry::FeatureDirection3::from(
                     cadmpeg_ir::units::UnitVector3::X_AXIS,
                 ),
                 distance: cadmpeg_ir::scalar::Length::new(2.0).expect("length"),

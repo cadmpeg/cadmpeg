@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Validation of stored-body Base features and current-body identities.
 
-use cadmpeg_ir::features::{Feature, FeatureResultTopology};
+use cadmpeg_ir::features::evaluation::FeatureResultTopology;
+use cadmpeg_ir::features::Feature;
 
 use super::NativeData;
 use crate::feature::{base, PmDcFeature};

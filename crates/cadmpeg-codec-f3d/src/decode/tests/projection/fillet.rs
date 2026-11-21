@@ -1,6 +1,7 @@
 use crate::decode::feature_definition_is_incomplete;
 use cadmpeg_ir::features::edge_treatments::{FilletGroup, RadiusSpec};
-use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureOperation, NonEmptyMembers};
+use cadmpeg_ir::features::selections::{EdgeSelection, NonEmptyMembers};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 #[test]
 fn fillet_with_resolved_edges_and_unresolved_radius_is_incomplete() {

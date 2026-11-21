@@ -70,7 +70,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         for index in 0..2 {
             ir.geometry.points.push(Point::new(
                 points[index].clone(),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
                     0.005
                         + 9.99
                             * cadmpeg_core::convert::f64_from_index(index)
@@ -324,7 +324,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         });
         for (point, position) in ir.geometry.points.iter_mut().zip(endpoints) {
             point.set_position(
-                cadmpeg_ir::features::FinitePoint3::new(position)
+                cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                     .expect("a finite position is a point"),
             );
         }
@@ -418,7 +418,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             let endpoints = intersection.endpoints();
             *intersection = cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
                 supports.clone(),
-                (*endpoints).map(cadmpeg_ir::features::FinitePoint3::get),
+                (*endpoints).map(cadmpeg_ir::features::geometry::FinitePoint3::get),
                 10.0,
             )
             .unwrap();

@@ -6,13 +6,12 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::selections::{DistinctMembers, FaceSelection};
 use cadmpeg_ir::features::sheet_metal::{
     SheetMetalRefoldConstruction, SheetMetalUnfoldConstruction,
 };
-use cadmpeg_ir::features::{
-    DistinctMembers, FaceSelection, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation,
-    FeatureOperation,
-};
+use cadmpeg_ir::features::{Feature, FeatureContent, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::native::bytes::NativeBytes;
 
 use super::operands::{boolean, enumeration};

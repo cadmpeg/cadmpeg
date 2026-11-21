@@ -184,10 +184,10 @@ fn semantic_writer_emits_face_records_deterministically() {
 
 #[test]
 fn encoder_rejects_source_less_unresolved_extrusion_profile() {
-    use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
-        FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
-    };
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.model.features.push(Feature {
@@ -196,18 +196,18 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
         ordinal: 0,
         name: Some("Extrude".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(
                     "native:missing-owner".into(),
                 )),
-                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
-                start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
+                direction: cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {},
+                start: cadmpeg_ir::features::extents::ExtrudeStart::ProfilePlane {},
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
@@ -238,19 +238,19 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
 
 #[test]
 fn encoder_writes_authored_with_retained_native_envelope_line_sketches() {
+    use cadmpeg_ir::features::extents::{
+        AngularTermination, ExtrudeExtent, ExtrudeSide, LinearTermination,
+    };
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::revolve::RevolveExtent;
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::scalar::Angle;
     use cadmpeg_ir::sketches::{
         Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
         SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
         SketchId, SketchLocus,
-    };
-    use cadmpeg_ir::{
-        features::{
-            AngularTermination, BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition,
-            FeatureId, FeatureOperation, LinearTermination, PathRef, PlanarProfileRef, ProfileRef,
-            RevolveExtent,
-        },
-        scalar::Angle,
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
@@ -386,30 +386,32 @@ fn encoder_writes_authored_with_retained_native_envelope_line_sketches() {
         ordinal: 0,
         name: Some("Profile".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
             }),
         ),
         native_ref: None,
     });
-    let profile = cadmpeg_ir::features::PlanarProfileRef::Sketch(sketch_id.clone());
+    let profile = cadmpeg_ir::features::profiles::PlanarProfileRef::Sketch(sketch_id.clone());
     let path = PathRef::Sketch(sketch_id.clone());
     let generated = [
         FeatureDefinition::Operation(FeatureOperation::Revolve {
-            construction: cadmpeg_ir::features::RevolveConstruction::Resolved {
+            construction: cadmpeg_ir::features::revolve::RevolveConstruction::Resolved {
                 profile: profile.clone(),
-                axis: cadmpeg_ir::features::RevolutionAxis {
-                    origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                        .unwrap(),
-                    direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                        0.0, 1.0, 0.0,
+                axis: cadmpeg_ir::features::revolve::RevolutionAxis {
+                    origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                        0.0, 0.0, 0.0,
                     ))
+                    .unwrap(),
+                    direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(
+                        Vector3::new(0.0, 1.0, 0.0),
+                    )
                     .unwrap(),
                     reference: None,
                 },
@@ -426,11 +428,11 @@ fn encoder_writes_authored_with_retained_native_envelope_line_sketches() {
             op: BooleanOp::NewBody,
         }),
         FeatureDefinition::Operation(FeatureOperation::Sweep {
-            shape: cadmpeg_ir::features::SweepShape::sheet_sections(
-                cadmpeg_ir::features::SweepMode::Solid {
-                    op: cadmpeg_ir::features::SolidSweepOperation::Join,
+            shape: cadmpeg_ir::features::sweeps::SweepShape::sheet_sections(
+                cadmpeg_ir::features::sweeps::SweepMode::Solid {
+                    op: cadmpeg_ir::features::sweeps::SolidSweepOperation::Join,
                 },
-                cadmpeg_ir::features::SweepSection::Profile(profile.clone()),
+                cadmpeg_ir::features::sweeps::SweepSection::Profile(profile.clone()),
                 Vec::new(),
             ),
             path: Some(path.clone()),
@@ -448,8 +450,12 @@ fn encoder_writes_authored_with_retained_native_envelope_line_sketches() {
         }),
         FeatureDefinition::Operation(FeatureOperation::Loft {
             sections: vec![
-                cadmpeg_ir::features::LoftSection::Profile(ProfileRef::Planar(profile.clone())),
-                cadmpeg_ir::features::LoftSection::Profile(ProfileRef::Planar(profile.clone())),
+                cadmpeg_ir::features::profiles::LoftSection::Profile(ProfileRef::Planar(
+                    profile.clone(),
+                )),
+                cadmpeg_ir::features::profiles::LoftSection::Profile(ProfileRef::Planar(
+                    profile.clone(),
+                )),
             ],
             guidance: cadmpeg_ir::features::LoftGuidance::Guides(vec![path]),
             op: BooleanOp::NewBody,
@@ -461,15 +467,17 @@ fn encoder_writes_authored_with_retained_native_envelope_line_sketches() {
             allow_multi_profile_faces: None,
         }),
         FeatureDefinition::Operation(FeatureOperation::Rib {
-            construction: cadmpeg_ir::features::RibConstruction {
+            construction: cadmpeg_ir::features::revolve::RibConstruction {
                 profile: Some(profile),
                 direction: Some(
-                    cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
-                        .unwrap(),
+                    cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                        0.0, 0.0, 1.0,
+                    ))
+                    .unwrap(),
                 ),
                 thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(2.5).unwrap()),
-                side: Some(cadmpeg_ir::features::RibSide::Centered),
-                draft: cadmpeg_ir::features::RibDraft::Angle(
+                side: Some(cadmpeg_ir::features::revolve::RibSide::Centered),
+                draft: cadmpeg_ir::features::revolve::RibDraft::Angle(
                     cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap(),
                 ),
             },
@@ -484,12 +492,14 @@ fn encoder_writes_authored_with_retained_native_envelope_line_sketches() {
             ordinal: cadmpeg_core::decode::u64_from_index(index) + 2,
             name: Some(format!("Profile op {index}")),
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+                definition,
+            ),
             native_ref: None,
         });
     }
@@ -501,22 +511,22 @@ fn encoder_writes_authored_with_retained_native_envelope_line_sketches() {
         ordinal: 1,
         name: Some("Boss".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(PlanarProfileRef::Sketch(sketch_id)),
-                direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
-                    vector: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                direction: cadmpeg_ir::features::extents::ExtrudeDirection::Explicit {
+                    vector: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
                         0.0, 0.0, 1.0,
                     ))
                     .unwrap(),
                     source: None,
                 },
-                start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
+                start: cadmpeg_ir::features::extents::ExtrudeStart::ProfilePlane {},
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
@@ -807,12 +817,12 @@ fn encoder_writes_authored_with_retained_native_envelope_spatial_point_and_line_
         ordinal: 0,
         name: Some("Spatial path".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch_id),
             }),
@@ -984,9 +994,10 @@ fn the_metadata_projection_refuses_a_length_that_overflows_in_source_units() {
         target: AttributeTarget::Document.into(),
         name: "default_reference_plane".into(),
         values: vec![
-            AttributeValue::vector([1.0e10, 2.0, 3.0]).unwrap(),
-            AttributeValue::vector([0.0, 0.0, 1.0, 1.0, 0.0, 0.0]).unwrap(),
+            Some(AttributeValue::vector([1.0e10, 2.0, 3.0]).unwrap()),
+            Some(AttributeValue::vector([0.0, 0.0, 1.0, 1.0, 0.0, 0.0]).unwrap()),
         ],
+        native_ref: None,
     };
     assert!(crate::writer::MetadataRecord::project(&attribute, 0.001, |_| Ok(())).is_ok());
     let Err(error) = crate::writer::MetadataRecord::project(&attribute, 1.0e300, |_| Ok(())) else {
@@ -1013,7 +1024,8 @@ fn patched_retained_metadata(
         id: cadmpeg_ir::ids::AttributeId::mint(&id).unwrap(),
         target: AttributeTarget::Document.into(),
         name: name.into(),
-        values,
+        values: values.into_iter().map(Some).collect(),
+        native_ref: None,
     });
     let mut annotations = cadmpeg_ir::annotations::Annotations::default();
     crate::annotations::note(
@@ -1119,7 +1131,8 @@ fn configuration_manager_metadata_cannot_be_patched_or_generated() {
             .unwrap(),
         target: AttributeTarget::Document.into(),
         name: "configuration_manager".into(),
-        values,
+        values: values.into_iter().map(Some).collect(),
+        native_ref: None,
     };
     assert!(matches!(
         crate::writer::MetadataRecord::project(&attribute, 0.001, |_| {
@@ -1155,7 +1168,8 @@ fn retained_part_edits_require_root_ownership_and_preserve_scalar_form() {
             id: cadmpeg_ir::ids::AttributeId::mint(id).unwrap(),
             target: AttributeTarget::Document.into(),
             name: "part_record".into(),
-            values,
+            values: values.into_iter().map(Some).collect(),
+            native_ref: None,
         });
         let mut annotations = cadmpeg_ir::annotations::Annotations::default();
         crate::annotations::note(
@@ -1184,7 +1198,8 @@ fn generated_part_metadata_requires_retained_root_serializer() {
         id: cadmpeg_ir::ids::AttributeId::mint("sldprt:metadata:part_record#0:6").unwrap(),
         target: AttributeTarget::Document.into(),
         name: "part_record".into(),
-        values: vec![AttributeValue::Integer(17)],
+        values: vec![Some(AttributeValue::Integer(17))],
+        native_ref: None,
     });
     let error = crate::writer::metadata_payloads(&ir, 1.0, false).unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
@@ -1193,6 +1208,86 @@ fn generated_part_metadata_requires_retained_root_serializer() {
         .unwrap()
         .0
         .is_empty());
+}
+
+/// A generated metadata record that states no value at a position is not
+/// written, and the others still are.
+#[test]
+fn generated_metadata_skips_a_record_with_a_null_value() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+    let attribute = |name: &str, values: Vec<Option<AttributeValue>>| SourceAttribute {
+        id: cadmpeg_ir::ids::AttributeId::mint(format!("sldprt:metadata:{name}#0:0")).unwrap(),
+        target: AttributeTarget::Document.into(),
+        name: name.into(),
+        values,
+        native_ref: None,
+    };
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model
+        .attributes
+        .push(attribute("bounding_envelope", vec![None]));
+    ir.model.attributes.push(attribute(
+        "source_linear_unit_name",
+        vec![Some(AttributeValue::String("mm".into()))],
+    ));
+    let (objects, units) = crate::writer::metadata_payloads(&ir, 1.0, false).unwrap();
+    assert_eq!(objects, b"moLengthUserUnits_c\xff\xfe\xff\x04m\x00m\x00");
+    assert_eq!(units, None);
+}
+
+/// A decoded part whose metadata attributes state a null value writes a file:
+/// each record keeps its retained bytes, and the export names the attributes
+/// in one `WriterAttributesOmitted` loss.
+#[test]
+fn a_null_metadata_value_keeps_the_retained_record_and_charges_a_loss() {
+    use crate::test_support::container::{native_envelope_fixture, sldprt_with_body_and_envelope};
+    let source = native_envelope_fixture(&sldprt_with_body_and_envelope(&triangle_body()));
+    let swobjects = |bytes: &[u8]| {
+        crate::test_support::container::scan(bytes)
+            .blocks
+            .into_iter()
+            .find(|block| block.section.name() == Some("SWObjects"))
+            .unwrap()
+            .payload
+    };
+    let original = swobjects(&source);
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let (mut ir, _, fidelity) = decoded.into_parts();
+    for name in ["bounding_envelope", "configuration_manager"] {
+        ir.model
+            .attributes
+            .iter_mut()
+            .find(|attribute| attribute.name == name)
+            .unwrap()
+            .values[0] = None;
+    }
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(&ir, Some(&fidelity)),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    let loss = plan
+        .report()
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code == crate::loss::SldprtLossCode::WriterAttributesOmitted.kind()
+                && loss.message.contains("null value")
+        })
+        .unwrap();
+    assert!(
+        loss.message
+            .starts_with("2 sldprt metadata attribute record(s) state a null value"),
+        "{}",
+        loss.message
+    );
+    assert!(loss.message.contains("sldprt:metadata:bounding_envelope#"));
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    assert_eq!(swobjects(&written), original);
 }
 
 #[test]
@@ -1254,7 +1349,7 @@ fn configuration_manager_retention_is_checked_at_the_writer_entry() {
                 .iter_mut()
                 .find(|a| a.name == "bounding_envelope")
                 .unwrap();
-            let AttributeValue::Vector(values) = &mut bbox.values[0] else {
+            let Some(AttributeValue::Vector(values)) = &mut bbox.values[0] else {
                 panic!("vector")
             };
             values[0] = cadmpeg_ir::scalar::FiniteReal::new(11.0).unwrap();
@@ -1265,7 +1360,7 @@ fn configuration_manager_retention_is_checked_at_the_writer_entry() {
                 .iter_mut()
                 .find(|a| a.name == "configuration_manager")
                 .unwrap();
-            let AttributeValue::Integer(value) = &mut manager.values[change - 2] else {
+            let Some(AttributeValue::Integer(value)) = &mut manager.values[change - 2] else {
                 panic!("integer")
             };
             *value += 1;

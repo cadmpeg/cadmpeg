@@ -13,13 +13,11 @@ use cadmpeg_core::{
     decode::{unique_index, DecodeContext, View},
     CodecError,
 };
-use cadmpeg_ir::{
-    features::{
-        DistinctMembers, FaceMotion, FaceSelection, Feature, FeatureDefinition,
-        FeatureInputTopology, FeatureOperation,
-    },
-    ids::{FeatureInputTopologyId, HistoricalFaceId},
-};
+use cadmpeg_ir::features::direct_edit::FaceMotion;
+use cadmpeg_ir::features::evaluation::FeatureInputTopology;
+use cadmpeg_ir::features::selections::{DistinctMembers, FaceSelection};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::ids::{FeatureInputTopologyId, HistoricalFaceId};
 
 use super::edge_selection::{generated_family, matched_qualified, source_names, values};
 use super::{
