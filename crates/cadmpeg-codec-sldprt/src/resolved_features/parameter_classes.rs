@@ -8,9 +8,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::decode::View;
 
-use super::{is_class_token, CLASS_MARKER};
-use crate::archive::resolved_features_count;
-use crate::layout::feature_input_scalar_parameter_class as class_slot;
+use super::{is_class_token, COMPACT_SCALAR_HEADER, VALUE_ONLY_SCALAR_HEADER};
+use crate::archive::resolved_count;
+use crate::layout::feature_input_scalar_class_prefix as prefix;
 use crate::records::{
     ArchiveParameterClass, FeatureInputClass, FeatureInputLane, FeatureInputScalar,
     FeatureInputScalarRole,
@@ -19,6 +19,12 @@ use crate::records::{
 /// The bytes of a class declaration before its name: the `ff ff 01 00`
 /// marker and the u16 name length.
 const DECLARATION_PREFIX: u64 = 6;
+
+/// The bytes of a count's i32 cell.
+const COUNT_LEN: usize = 4;
+
+/// The bound below which a count trailer's scalar object identifier lies.
+const COUNT_OBJECT_ID_BOUND: u32 = 1 << 24;
 
 /// A parameter a scalar's record states: its class, and its value in that
 /// class's unit.
@@ -105,8 +111,10 @@ fn slot<'a>(payload: &[u8], declarations: &HashMap<u64, &'a str>, name: u64) -> 
     if let Some(declared) = declarations.get(&name) {
         return Some(Slot::Declared(declared));
     }
-    let start = usize::try_from(name).ok()?.checked_sub(class_slot::LEN)?;
-    let token = View::u16_le_at(payload, start + class_slot::PARAMETER_CLASS_TOKEN)?;
+    let start = usize::try_from(name)
+        .ok()?
+        .checked_sub(prefix::LEN - prefix::PARAMETER_CLASS_TOKEN)?;
+    let token = View::u16_le_at(payload, start)?;
     is_class_token(token).then_some(Slot::Token(token & 0x7fff))
 }
 
@@ -123,9 +131,34 @@ fn stated(
         ArchiveParameterClass::Scaler => StatedParameter::Scaler(value),
         ArchiveParameterClass::Integer => StatedParameter::Count(View::i32_le_at(
             payload,
-            usize::try_from(scalar.offset).ok()?,
+            count_cell(payload, usize::try_from(scalar.offset).ok()?)?,
         )?),
     })
+}
+
+/// The offset of the i32 count of an `moIntegerParameter_c` scalar framed at
+/// `value`, the end of a 14-byte value-only header. Behind the 18-byte
+/// compact header, whose last four bytes are zero, the count follows those
+/// four bytes; each count's trailer begins after the count.
+fn count_cell(payload: &[u8], value: usize) -> Option<usize> {
+    let header = value.checked_sub(VALUE_ONLY_SCALAR_HEADER.len())?;
+    let compact = header.checked_add(COMPACT_SCALAR_HEADER.len())?;
+    let behind_compact_header = payload.get(header..compact) == Some(COMPACT_SCALAR_HEADER)
+        && !count_trailer(payload, value.checked_add(COUNT_LEN)?)
+        && count_trailer(payload, compact.checked_add(COUNT_LEN)?);
+    Some(if behind_compact_header {
+        compact
+    } else {
+        value
+    })
+}
+
+/// Whether a count's trailer begins at `at`: three zero bytes, then the
+/// nonzero scalar object identifier, below 2^24.
+fn count_trailer(payload: &[u8], at: usize) -> bool {
+    payload.get(at..at.saturating_add(3)) == Some(&[0, 0, 0])
+        && View::u32_le_at(payload, at.saturating_add(3))
+            .is_some_and(|id| id != 0 && id < COUNT_OBJECT_ID_BOUND)
 }
 
 /// The parameter class each class-token index of the lane's parameter slots
@@ -134,10 +167,11 @@ fn stated(
 /// follows its class's declaration. The tokens of driving and display scalars,
 /// ascending, are given the lane's parameter-class declarations, in stream
 /// order, such that both orders agree and each token is first used after its
-/// declaration. Where exactly one such assignment exists, it names each
-/// token's class; otherwise no token is named. A token below the stream's
-/// opening map count (see [`opening_count`]) names a class of the `Config-N`
-/// map, which the lane does not hold.
+/// declaration. A token to which every such assignment gives one class has
+/// that class; a token the assignments disagree on, or that no assignment
+/// exists for, is not named. A token below the stream's opening map count
+/// (see [`resolved_count`]) names a class of the `Config-N` map, which the
+/// lane does not hold.
 fn token_classes(
     payload: &[u8],
     classes: &[FeatureInputClass],
@@ -165,7 +199,7 @@ fn token_classes(
         .filter_map(|index| Some((index, *first_use.get(&index)?)))
         .collect::<Vec<_>>();
     if tokens.is_empty()
-        || opening_count(payload)
+        || resolved_count(payload)
             .is_some_and(|count| tokens.iter().any(|&(index, _)| u32::from(index) < count))
     {
         return HashMap::new();
@@ -190,28 +224,25 @@ fn token_classes(
     }
     let mut found = Vec::new();
     assignments(&tokens, &declared, 0, &mut Vec::new(), &mut found);
-    match found.as_slice() {
-        [assignment] => tokens
-            .iter()
-            .zip(assignment)
-            .map(|(&(index, _), &declaration)| (index, declared[declaration].1))
-            .collect(),
-        _ => HashMap::new(),
-    }
+    let Some((first, others)) = found.split_first() else {
+        return HashMap::new();
+    };
+    tokens
+        .iter()
+        .enumerate()
+        .filter(|&(position, _)| {
+            others
+                .iter()
+                .all(|other| other[position] == first[position])
+        })
+        .map(|(position, &(index, _))| (index, declared[first[position]].1))
+        .collect()
 }
 
-/// The map count the lane's stream opens with. A stream that opens with a
-/// class declaration, as a `Config-N` stream does, states none.
-fn opening_count(payload: &[u8]) -> Option<u32> {
-    if payload.starts_with(CLASS_MARKER) {
-        return None;
-    }
-    resolved_features_count(payload)
-}
-
-/// Add to `found`, until it holds two, the order-preserving assignments of
-/// tokens to declarations that extend `chosen`, the declarations of the first
-/// `chosen.len()` tokens, with declarations from `from` on.
+/// Add to `found` the order-preserving assignments of tokens to declarations
+/// that extend `chosen`, the declarations of the first `chosen.len()` tokens,
+/// with declarations from `from` on. The declarations name distinct
+/// parameter classes, so there are at most four, and at most six assignments.
 fn assignments(
     tokens: &[(u16, u64)],
     declared: &[(u64, ArchiveParameterClass)],
@@ -219,9 +250,6 @@ fn assignments(
     chosen: &mut Vec<usize>,
     found: &mut Vec<Vec<usize>>,
 ) {
-    if found.len() > 1 {
-        return;
-    }
     let Some(&(_, first_use)) = tokens.get(chosen.len()) else {
         found.push(chosen.clone());
         return;

@@ -107,25 +107,39 @@ type = "bytes[4]"
 source = "spec"
 anchor = "four zero bytes at +8"
 
-
-# --- Container envelopes ---------------------------------------------------
-
 [[record]]
-name = "feature_input_scalar_parameter_class"
+name = "feature_input_scalar_class_prefix"
 parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/parameter_classes.rs"
 kind = "byte"
 section = "2"
-anchor = "or a class token in the two bytes before it"
-size = 2
+anchor = "In the token form this is an 8-byte prefix"
+size = 8
 endianness = "little"
-note = "The parameter-class slot of a named scalar in the token form; the scalar's name record begins at +2."
+note = "The relation and parameter classes of a sketch dimension's named scalar in the token form; the scalar's name record begins at +8. The parameter-class token at +6 is the two bytes before the name record of every named scalar in the token form."
 
 [[record.field]]
-name = "parameter_class_token"
+name = "relation_class_token"
 offset = 0
 type = "u16"
 source = "spec"
-anchor = "a class token in the two bytes before it"
+anchor = "the relation class token at prefix +0"
+
+[[record.field]]
+name = "zero"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "a zero u32 at prefix +2"
+
+[[record.field]]
+name = "parameter_class_token"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "the parameter class token at prefix +6"
+
+
+# --- Container envelopes ---------------------------------------------------
 
 [[record]]
 name = "outer_header"

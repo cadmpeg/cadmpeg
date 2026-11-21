@@ -2,7 +2,7 @@
 
 use super::super::names::{class_declarations, object_names};
 use super::super::scalars::named_scalars;
-use super::super::SCALAR_HEADER;
+use super::super::{COMPACT_SCALAR_HEADER, SCALAR_HEADER, VALUE_ONLY_SCALAR_HEADER};
 use super::{stated_parameters, StatedParameter};
 use crate::records::FeatureInputLane;
 
@@ -48,9 +48,7 @@ impl Stream {
         self
     }
 
-    /// The name record and the primary-layout scalar of `role` (`0`
-    /// driving, `1` display) holding the cell `value`.
-    fn scalar(&mut self, name: &str, value: &[u8], role: u8, object: u32) -> &mut Self {
+    fn name_record(&mut self, name: &str) -> &mut Self {
         self.0
             .extend_from_slice(&(0x8000 | NAME_CLASS).to_le_bytes());
         self.0.extend_from_slice(&[0xff, 0xfe, 0xff]);
@@ -59,6 +57,13 @@ impl Stream {
         for unit in name.encode_utf16() {
             self.0.extend_from_slice(&unit.to_le_bytes());
         }
+        self
+    }
+
+    /// The name record and the primary-layout scalar of `role` (`0`
+    /// driving, `1` display) holding the cell `value`.
+    fn scalar(&mut self, name: &str, value: &[u8], role: u8, object: u32) -> &mut Self {
+        self.name_record(name);
         self.0.extend_from_slice(SCALAR_HEADER);
         self.0.extend_from_slice(value);
         let trailer = self.0.len();
@@ -66,6 +71,19 @@ impl Stream {
         self.0[trailer + 3..trailer + 7].copy_from_slice(&object.to_le_bytes());
         self.0[trailer + 24..trailer + 29].copy_from_slice(&[0, 0, 0, 2, 0]);
         self.0[trailer + 29] = role;
+        self
+    }
+
+    /// The name record and a count scalar behind `header`: the i32 `count`,
+    /// then its trailer of three zero bytes and the scalar's object
+    /// identifier.
+    fn count(&mut self, name: &str, header: &[u8], count: i32, object: u32) -> &mut Self {
+        self.name_record(name);
+        self.0.extend_from_slice(header);
+        self.0.extend_from_slice(&count.to_le_bytes());
+        self.0.extend_from_slice(&[0, 0, 0]);
+        self.0.extend_from_slice(&object.to_le_bytes());
+        self.0.resize(self.0.len() + 40, 0);
         self
     }
 
@@ -172,6 +190,32 @@ fn a_count_states_its_four_byte_cell() {
 }
 
 #[test]
+fn a_count_behind_the_compact_header_states_the_cell_after_it() {
+    let mut compact = Stream::compound();
+    compact
+        .declare("sgCircularPattCntDim")
+        .zero_word()
+        .declare("moIntegerParameter_c")
+        .count("D3", COMPACT_SCALAR_HEADER, 3, 7);
+    assert_eq!(
+        stated_by_name(&compact.lane()),
+        vec![("D3".into(), Some(StatedParameter::Count(3)))]
+    );
+    // A zero count behind the value-only header has the compact header's
+    // bytes; its trailer follows the zero count.
+    let mut value_only = Stream::compound();
+    value_only
+        .declare("sgCircularPattCntDim")
+        .zero_word()
+        .declare("moIntegerParameter_c")
+        .count("D3", VALUE_ONLY_SCALAR_HEADER, 0, 7);
+    assert_eq!(
+        stated_by_name(&value_only.lane()),
+        vec![("D3".into(), Some(StatedParameter::Count(0)))]
+    );
+}
+
+#[test]
 fn a_token_no_declaration_of_the_lane_answers_states_no_class() {
     // The token is used before the lane's only parameter-class declaration,
     // so it names a class declared outside the lane.
@@ -218,6 +262,65 @@ fn two_assignments_of_tokens_to_declarations_state_no_class() {
         .scalar("D2", &metres(0.02), 0, 9);
     let stated = stated_by_name(&stream.lane());
     assert_eq!(stated[2], ("D2".into(), None));
+}
+
+#[test]
+fn a_token_every_assignment_gives_one_class_has_that_class() {
+    // Token 502 is first used before the integer declaration, so every
+    // assignment gives it the length class; token 602 is first used after
+    // both the integer and the angle declarations.
+    let mut stream = Stream::compound();
+    stream
+        .declare("sgPntPntDist")
+        .zero_word()
+        .declare("moLengthParameter_c")
+        .scalar("D1", &metres(0.01), 0, 7)
+        .token(500)
+        .zero_word()
+        .token(502)
+        .scalar("D2", &metres(0.02), 0, 8)
+        .declare("sgCircularPattCntDim")
+        .zero_word()
+        .declare("moIntegerParameter_c")
+        .scalar("D3", &4i32.to_le_bytes(), 0, 9)
+        .declare("sgAnglDim")
+        .zero_word()
+        .declare("moAngleParameter_c")
+        .scalar("A1", &metres(0.3), 0, 10)
+        .token(600)
+        .zero_word()
+        .token(602)
+        .scalar("A2", &metres(0.4), 0, 11);
+    let stated = stated_by_name(&stream.lane());
+    assert_eq!(
+        stated[1],
+        ("D2".into(), Some(StatedParameter::Length(0.02)))
+    );
+    assert_eq!(stated[4], ("A2".into(), None));
+}
+
+#[test]
+fn a_parameter_class_declared_twice_names_no_token() {
+    let mut stream = Stream::compound();
+    stream
+        .declare("sgPntPntDist")
+        .zero_word()
+        .declare("moLengthParameter_c")
+        .scalar("D1", &metres(0.01), 0, 7)
+        .declare("moLengthParameter_c")
+        .scalar("D2", &metres(0.02), 0, 8)
+        .token(500)
+        .zero_word()
+        .token(502)
+        .scalar("D3", &metres(0.03), 0, 9);
+    assert_eq!(
+        stated_by_name(&stream.lane()),
+        vec![
+            ("D1".into(), Some(StatedParameter::Length(0.01))),
+            ("D2".into(), Some(StatedParameter::Length(0.02))),
+            ("D3".into(), None),
+        ]
+    );
 }
 
 #[test]
