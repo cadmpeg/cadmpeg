@@ -64,20 +64,13 @@ pub(super) fn exact_combine_operation(
         match combine_operation_with(bytes, records, scope, stream_types, prologue)? {
             PrologueReading::Operation(operation, unconfirmed) => {
                 if operation.form == DesignCombineForm::OperandLists
+                    && scope.combine_named_tail().is_some()
                     && standard_fields_read(bytes, start)
                 {
-                    if scope.combine_named_tail().is_some() {
-                        losses.push(F3dLossCode::FeatureCombineNamedTailPrologueAssumed.note(format!(
-                            "{}: its expanded named tail is read with the complete operand-list prologue despite the overlapping standard prefix (DR-560)",
-                            scope.id
-                        )));
-                    } else {
-                        operand_list_refusal = Some(
-                            "its lists name its operands, and the standard prologue also reads it"
-                                .to_owned(),
-                        );
-                        continue;
-                    }
+                    losses.push(F3dLossCode::FeatureCombineNamedTailPrologueAssumed.note(format!(
+                        "{}: its expanded named tail is read with the complete operand-list prologue despite the overlapping standard prefix (DR-560)",
+                        scope.id
+                    )));
                 }
                 if let Some(reason) = &operand_list_refusal {
                     losses.push(F3dLossCode::FeatureCombinePrologueAssumed.note(format!(
@@ -93,7 +86,7 @@ pub(super) fn exact_combine_operation(
                 }
                 if unconfirmed.middle_list_assumed {
                     losses.push(F3dLossCode::FeatureCombineMiddleListOmittedAssumed.note(format!(
-                        "{}: the two middle lists are read as component-node and consumed-body lists; the omitted list is assumed empty",
+                        "{}: the two middle lists are read as created-body and consumed-body lists; the omitted list is assumed empty",
                         scope.id
                     )));
                 }
@@ -311,9 +304,9 @@ fn combine_operation_with(
         let operation = match View::u32_le_at(bytes, operation_offset)
             .and_then(|code| code.checked_sub(first_operation_code))
         {
-            Some(0) => Some(cadmpeg_ir::features::BooleanKind::Join),
-            Some(1) => Some(cadmpeg_ir::features::BooleanKind::Cut),
-            Some(2) => Some(cadmpeg_ir::features::BooleanKind::Intersect),
+            Some(0) => Some(cadmpeg_ir::features::operation_settings::BooleanKind::Join),
+            Some(1) => Some(cadmpeg_ir::features::operation_settings::BooleanKind::Cut),
+            Some(2) => Some(cadmpeg_ir::features::operation_settings::BooleanKind::Intersect),
             _ => None,
         };
         let keep_tools = match bytes.get(keep_tools_offset) {
@@ -389,6 +382,7 @@ fn combine_operation_with(
             additional: additional_tools,
         };
         let mut destination = DesignCombineDestination::default();
+        let mut body_lists = (Vec::new(), Vec::new());
         let (operation, keep_tools, unconfirmed) = match &lists {
             None => (operation?, keep_tools?, UnconfirmedConsumption::default()),
             Some(lists) => {
@@ -410,29 +404,37 @@ fn combine_operation_with(
                         "its keep-tools byte is not a Boolean",
                     )));
                 };
+                let tool_nodes = tools
+                    .iter()
+                    .map(|tool| tool.body_node.map(|node| node.record_index))
+                    .collect::<Vec<_>>();
                 if let Err(reason) = operand_list_fields_hold(
-                    bytes,
-                    records,
-                    stream_types,
+                    (bytes, records, stream_types),
                     lists,
                     &stored,
                     keep_tools,
-                    tool_operations.len(),
+                    (scope.record_index, tool_nodes.as_slice()),
                 ) {
                     return Some(Ok(PrologueReading::Contradicted(reason)));
                 }
-                let mut unconfirmed =
-                    unconfirmed_consumption(bytes, records, &lists.companions, stored.guid, &tools);
+                let ([_, created, consumed] | [created, consumed]) = &stored.middle[..] else {
+                    return None;
+                };
+                let mut unconfirmed = unconfirmed_consumption(
+                    bytes,
+                    records,
+                    &lists.companions,
+                    stored.guid,
+                    (&tools, consumed.as_slice()),
+                );
                 unconfirmed.middle_list_assumed =
                     stored.middle.len() == 2 && lists.companions.is_empty();
                 if lists.new_component == 1 {
-                    let ([_, nodes, _] | [nodes, _]) = &stored.middle[..] else {
-                        return None;
-                    };
                     destination = DesignCombineDestination::NewComponent {
-                        browser_node_record_index: nodes.first().copied(),
+                        browser_node_record_index: created.first().copied(),
                     };
                 }
+                body_lists = (created.clone(), consumed.clone());
                 (operation, keep_tools, unconfirmed)
             }
         };
@@ -446,8 +448,9 @@ fn combine_operation_with(
                 target_record_index: target,
                 target_body_node,
                 tools,
-
                 destination,
+                created_body_nodes: body_lists.0,
+                consumed_body_nodes: body_lists.1,
             }),
             unconfirmed,
         )))
@@ -501,36 +504,39 @@ fn stored_operand_lists<'a>(
 
 /// Check the fields of an operand-list frame whose lists name its operands.
 ///
-/// The second list after the tool list holds one entry when the
-/// new-component Boolean is one. A prologue with a companion can store two
-/// empty lists between the tool list and the target list in place of three.
-/// Each companion is a distinct `RemoveBody` scope that stores the counted
-/// GUID of the `Combine` scope and three zero bytes before its reference
-/// table.
+/// In the three-list form the first list after the tool list is empty, the
+/// second names the browser nodes that the `Combine` scope creates, and the
+/// third names the consumed tool nodes of the `Combine` component in tool
+/// order. A new-component request creates at least one body. A prologue with
+/// a companion can store two empty lists between the tool list and the
+/// target list in place of three. Each companion is a distinct `RemoveBody`
+/// scope that stores the counted GUID of the `Combine` scope and three zero
+/// bytes before its reference table.
 fn operand_list_fields_hold(
-    bytes: &[u8],
-    records: &IndexedRecordOffsets,
-    stream_types: &HashMap<u64, (&str, u32)>,
+    (bytes, records, stream_types): (&[u8], &IndexedRecordOffsets, &HashMap<u64, (&str, u32)>),
     lists: &OperandLists,
     stored: &StoredOperandLists<'_>,
     keep_tools: bool,
-    tool_count: usize,
+    (scope_record_index, tool_nodes): (u32, &[Option<u32>]),
 ) -> Result<(), &'static str> {
     if lists.new_component > 1 {
         return Err("its new-component byte is not a Boolean");
     }
-    let browser_nodes = usize::from(lists.new_component);
     let has_companion = !lists.companions.is_empty();
-    let consumed_count = if keep_tools || has_companion {
-        0
-    } else {
-        tool_count
-    };
     let middle_holds = match &stored.middle[..] {
-        [first, second, consumed] => {
-            first.is_empty() && second.len() == browser_nodes && consumed.len() == consumed_count
+        [first, created, consumed] => {
+            first.is_empty()
+                && (lists.new_component == 0 || !created.is_empty())
+                && created_list_holds(bytes, records, created, scope_record_index)
+                && consumed_list_holds(consumed, keep_tools, has_companion, tool_nodes)
         }
         [first, second] => {
+            let browser_nodes = usize::from(lists.new_component);
+            let consumed_count = if keep_tools || has_companion {
+                0
+            } else {
+                tool_nodes.len()
+            };
             (has_companion && first.is_empty() && second.is_empty())
                 || (first.len() == browser_nodes && second.len() == consumed_count)
         }
@@ -568,6 +574,53 @@ fn operand_list_fields_hold(
         }
     }
     Ok(())
+}
+
+/// Whether `created` names distinct browser nodes and every readable node
+/// names the `Combine` scope as its creating scope.
+fn created_list_holds(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    created: &[u32],
+    scope_record_index: u32,
+) -> bool {
+    distinct(created)
+        && created.iter().all(|record_index| {
+            browser_node(bytes, records, *record_index)
+                .is_none_or(|node| node.creating_scope_record_index == scope_record_index)
+        })
+}
+
+/// Whether `consumed` names distinct tool nodes in tool order: none when the
+/// tools are kept, every tool without a companion, and fewer than every tool
+/// beside a companion.
+fn consumed_list_holds(
+    consumed: &[u32],
+    keep_tools: bool,
+    has_companion: bool,
+    tool_nodes: &[Option<u32>],
+) -> bool {
+    if keep_tools {
+        return consumed.is_empty();
+    }
+    if !distinct(consumed)
+        || consumed.len() > tool_nodes.len()
+        || (consumed.len() == tool_nodes.len()) == has_companion
+    {
+        return false;
+    }
+    let Some(nodes) = tool_nodes.iter().copied().collect::<Option<Vec<_>>>() else {
+        return true;
+    };
+    let mut remaining = nodes.iter();
+    consumed
+        .iter()
+        .all(|entry| remaining.any(|node| node == entry))
+}
+
+fn distinct(records: &[u32]) -> bool {
+    let mut seen = HashSet::new();
+    records.iter().all(|record| seen.insert(*record))
 }
 
 /// The nonempty reference tables of marked references that `record` stores
@@ -626,21 +679,28 @@ impl UnconfirmedConsumption {
     }
 }
 
-/// Compare the browser nodes that the tool selections name with the browser
-/// nodes that the body selections of the companion scopes name.
+/// Compare the browser nodes of the tools that `consumed` omits with the
+/// browser nodes that the body selections of the companion scopes name.
 fn unconfirmed_consumption(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     companions: &[u32],
     guid: &[u8],
-    tools: &combine::DesignCombineTools,
+    (tools, consumed): (&combine::DesignCombineTools, &[u32]),
 ) -> UnconfirmedConsumption {
     if companions.is_empty() {
         return UnconfirmedConsumption::default();
     }
     let Some(removed) = companion_body_nodes(bytes, records, companions, guid) else {
         return UnconfirmedConsumption {
-            tools: tools.iter().map(|tool| tool.record_index).collect(),
+            tools: tools
+                .iter()
+                .filter(|tool| {
+                    tool.body_node
+                        .is_none_or(|node| !consumed.contains(&node.record_index))
+                })
+                .map(|tool| tool.record_index)
+                .collect(),
             ..Default::default()
         };
     };
@@ -653,9 +713,10 @@ fn unconfirmed_consumption(
         tools: tools
             .iter()
             .filter(|tool| {
-                tool.body_node
-                    .as_ref()
-                    .is_none_or(|node| !removed_nodes.contains(&node.record_index))
+                tool.body_node.as_ref().is_none_or(|node| {
+                    !consumed.contains(&node.record_index)
+                        && !removed_nodes.contains(&node.record_index)
+                })
             })
             .map(|tool| tool.record_index)
             .collect(),
@@ -739,6 +800,15 @@ fn selection_body_node(
     let [record_index] = take_marked_records(bytes, &mut cursor, list_limit)?[..] else {
         return None;
     };
+    browser_node(bytes, records, record_index)
+}
+
+/// Read the browser node at `record_index`.
+fn browser_node(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    record_index: u32,
+) -> Option<DesignCombineBodyNode> {
     let [node_at, node_end] = records.offsets(record_index) else {
         return None;
     };

@@ -209,13 +209,15 @@ fn mirror_native_plane_refuses_zero_and_nonunit_normals() {
             .contains("plane_normal must be a unit vector"));
     }
     value["plane_origin"] = serde_json::to_value(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))
-            .unwrap(),
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            0.0, 0.0, 0.0,
+        ))
+        .unwrap(),
     )
     .unwrap();
-    value["plane_normal"] = serde_json::to_value(cadmpeg_ir::features::FiniteVector3::from(
-        cadmpeg_ir::units::UnitVector3::Z_AXIS,
-    ))
+    value["plane_normal"] = serde_json::to_value(
+        cadmpeg_ir::features::geometry::FiniteVector3::from(cadmpeg_ir::units::UnitVector3::Z_AXIS),
+    )
     .unwrap();
     let plane: DesignMirrorConstruction = serde_json::from_value(value.clone()).unwrap();
     assert_eq!(serde_json::to_value(plane).unwrap(), value);

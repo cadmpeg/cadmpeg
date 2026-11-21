@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::features::DistinctMembers;
+use crate::features::selections::DistinctMembers;
 
 #[test]
 fn insert_for_decode_service_profile_and_duplicate_without_charge() {

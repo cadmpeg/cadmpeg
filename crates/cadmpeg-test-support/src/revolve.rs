@@ -2,7 +2,8 @@
 //! The region a CADIR revolution sweeps, computed from the turn sense that
 //! `docs/cad-ir.md` states, so a decoder test can predict where a revolve lands.
 
-use cadmpeg_ir::features::{AngularTermination, RevolutionAxis, RevolveExtent};
+use cadmpeg_ir::features::extents::AngularTermination;
+use cadmpeg_ir::features::revolve::{RevolutionAxis, RevolveExtent};
 use cadmpeg_ir::math::Point3;
 
 /// Half turns from `atan2`'s range to the far end of a travel of at most one
@@ -104,9 +105,9 @@ fn extreme_angles(point: Point3, axis: &RevolutionAxis, start: f64, end: f64) ->
 mod tests {
     use std::f64::consts::{FRAC_PI_2, FRAC_PI_4, PI};
 
-    use cadmpeg_ir::features::{
-        AngularTermination, FeatureDirection3, FinitePoint3, RevolutionAxis, RevolveExtent,
-    };
+    use cadmpeg_ir::features::extents::AngularTermination;
+    use cadmpeg_ir::features::geometry::{FeatureDirection3, FinitePoint3};
+    use cadmpeg_ir::features::revolve::{RevolutionAxis, RevolveExtent};
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::scalar::PositiveAngle;
     use cadmpeg_ir::units::UnitVector3;

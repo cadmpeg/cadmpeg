@@ -16,10 +16,10 @@ use crate::records::{
         extrude_selection::DesignOperandRole,
     },
 };
-use cadmpeg_ir::features::{
-    patterns::{PatternSeed, PatternTransform},
-    BodySelection, FaceSelection, FeatureDefinition, FeatureOperation, PathRef,
-};
+use cadmpeg_ir::features::patterns::{PatternSeed, PatternTransform};
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::selections::{BodySelection, FaceSelection};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 const STREAM: &str = "f3d:Design/BulkStream.dat";
 const SCOPE: u32 = 315;

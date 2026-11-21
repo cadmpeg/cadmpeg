@@ -5,7 +5,7 @@ use super::*;
 use crate::feature::{
     parse_work_axis, project_revolve, FeatureFamily, REVOLVE_CLASS_ID, REVOLVE_EXTENT_FULL,
 };
-use cadmpeg_ir::features::PlanarProfileRef;
+use cadmpeg_ir::features::profiles::PlanarProfileRef;
 
 /// A revolve of one profile selection about a work axis through
 /// (0.5, 0, 0) cm along the sketch v axis, with extent value `extent`.
@@ -316,11 +316,12 @@ fn projects_a_full_revolve_about_its_work_axis() {
         .expect("revolve projection");
     let FeatureDefinition::Operation(FeatureOperation::Revolve {
         construction:
-            cadmpeg_ir::features::RevolveConstruction::Resolved {
+            cadmpeg_ir::features::revolve::RevolveConstruction::Resolved {
                 axis,
                 extent:
-                    cadmpeg_ir::features::RevolveExtent::OneSided {
-                        termination: cadmpeg_ir::features::AngularTermination::Angle { angle },
+                    cadmpeg_ir::features::revolve::RevolveExtent::OneSided {
+                        termination:
+                            cadmpeg_ir::features::extents::AngularTermination::Angle { angle },
                     },
                 ..
             },
@@ -525,7 +526,7 @@ fn a_multi_member_profile_requires_the_same_repeated_patch() {
     assert!(matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Revolve {
-            construction: cadmpeg_ir::features::RevolveConstruction::Resolved {
+            construction: cadmpeg_ir::features::revolve::RevolveConstruction::Resolved {
                 profile: PlanarProfileRef::SketchSelection { selections, .. }, ..
             }, ..
         }) if selections.len() == 2
@@ -582,9 +583,9 @@ fn native_dimension_annotation_data_does_not_change_the_angular_travel() {
     .expect("revolve");
     assert!(
         matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Revolve {
-        construction: cadmpeg_ir::features::RevolveConstruction::Resolved {
-            extent: cadmpeg_ir::features::RevolveExtent::OneSided {
-                termination: cadmpeg_ir::features::AngularTermination::Angle { angle },
+        construction: cadmpeg_ir::features::revolve::RevolveConstruction::Resolved {
+            extent: cadmpeg_ir::features::revolve::RevolveExtent::OneSided {
+                termination: cadmpeg_ir::features::extents::AngularTermination::Angle { angle },
             }, ..
         }, ..
     }) if angle.get() == 1.25)
@@ -639,11 +640,12 @@ fn projects_the_positive_one_sided_angular_travel() {
         .expect("partial revolve");
         let FeatureDefinition::Operation(FeatureOperation::Revolve {
             construction:
-                cadmpeg_ir::features::RevolveConstruction::Resolved {
+                cadmpeg_ir::features::revolve::RevolveConstruction::Resolved {
                     axis,
                     extent:
-                        cadmpeg_ir::features::RevolveExtent::OneSided {
-                            termination: cadmpeg_ir::features::AngularTermination::Angle { angle },
+                        cadmpeg_ir::features::revolve::RevolveExtent::OneSided {
+                            termination:
+                                cadmpeg_ir::features::extents::AngularTermination::Angle { angle },
                         },
                     solid: Some(true),
                     ..
@@ -678,7 +680,8 @@ fn a_quarter_turn_reaches_the_side_that_the_work_axis_span_selects() {
         .expect("candidate")
         .expect("partial revolve");
         let FeatureDefinition::Operation(FeatureOperation::Revolve {
-            construction: cadmpeg_ir::features::RevolveConstruction::Resolved { axis, extent, .. },
+            construction:
+                cadmpeg_ir::features::revolve::RevolveConstruction::Resolved { axis, extent, .. },
             ..
         }) = feature.evaluation.definition()
         else {
@@ -744,10 +747,10 @@ fn a_fixed_angle_of_one_full_turn_needs_no_direction() {
             .expect("full turn");
         assert!(
             matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Revolve {
-                construction: cadmpeg_ir::features::RevolveConstruction::Resolved {
+                construction: cadmpeg_ir::features::revolve::RevolveConstruction::Resolved {
                     axis,
-                    extent: cadmpeg_ir::features::RevolveExtent::OneSided {
-                        termination: cadmpeg_ir::features::AngularTermination::Angle { angle },
+                    extent: cadmpeg_ir::features::revolve::RevolveExtent::OneSided {
+                        termination: cadmpeg_ir::features::extents::AngularTermination::Angle { angle },
                     }, ..
                 }, ..
             }) if angle.get() == std::f64::consts::TAU && axis.direction.get() == Vector3::new(0.0, 1.0, 0.0)),
@@ -772,9 +775,9 @@ fn a_full_turn_does_not_consume_the_stored_angle_value() {
         .expect("full turn");
         assert!(
             matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Revolve {
-            construction: cadmpeg_ir::features::RevolveConstruction::Resolved {
-                extent: cadmpeg_ir::features::RevolveExtent::OneSided {
-                    termination: cadmpeg_ir::features::AngularTermination::Angle { angle },
+            construction: cadmpeg_ir::features::revolve::RevolveConstruction::Resolved {
+                extent: cadmpeg_ir::features::revolve::RevolveExtent::OneSided {
+                    termination: cadmpeg_ir::features::extents::AngularTermination::Angle { angle },
                 }, ..
             }, ..
         }) if angle.get() == std::f64::consts::TAU)
@@ -823,7 +826,7 @@ fn a_full_turn_accepts_both_stored_control_values() {
     .expect("candidate")
     .expect("full turn");
     let FeatureDefinition::Operation(FeatureOperation::Revolve {
-        construction: cadmpeg_ir::features::RevolveConstruction::Resolved { axis, .. },
+        construction: cadmpeg_ir::features::revolve::RevolveConstruction::Resolved { axis, .. },
         ..
     }) = feature.evaluation.definition()
     else {

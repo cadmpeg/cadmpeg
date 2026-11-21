@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::design::decode::parameters::parse_design_parameter_record;
-use crate::design::feature_project::project_hole;
+use crate::design::feature_project::hole::project_hole;
 use crate::design::test_support::parameter_record;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
-use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 const EPS_HOLE_EXTENT_TEST: f64 = 1.0e-12;
 
@@ -166,15 +167,15 @@ fn directed(position: [f64; 3]) -> cadmpeg_ir::features::holes::HolePlacement {
 
 fn directed_along(position: [f64; 3], z: f64) -> cadmpeg_ir::features::holes::HolePlacement {
     cadmpeg_ir::features::holes::HolePlacement::Directed {
-        position: cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        position: cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             position[0],
             position[1],
             position[2],
         ))
         .unwrap(),
-        direction: cadmpeg_ir::features::FeatureDirection3::new(cadmpeg_ir::math::Vector3::new(
-            0.0, 0.0, z,
-        ))
+        direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, z),
+        )
         .unwrap(),
     }
 }
@@ -272,7 +273,7 @@ fn axis(position: [f64; 3]) -> cadmpeg_ir::features::holes::HolePlacement {
 fn assert_unresolved_extent_retains_bore_and_bottom(definition: Option<FeatureDefinition>) {
     use cadmpeg_ir::features::holes::{HoleBottom, HoleConstruction, HoleKind};
     let Some(FeatureDefinition::Operation(FeatureOperation::Hole {
-        extent: Some(cadmpeg_ir::features::LinearTermination::Unresolved {}),
+        extent: Some(cadmpeg_ir::features::extents::LinearTermination::Unresolved {}),
         shape,
         bottom,
         ..
@@ -352,7 +353,7 @@ fn through_all_admits_a_carrier_selection_only_on_a_sketch_point_carrier() {
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::Hole {
-            extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll {}),
+            extent: Some(cadmpeg_ir::features::extents::LinearTermination::ThroughAll {}),
             ..
         })
     ));
@@ -418,10 +419,8 @@ fn face_operand(
 
 #[test]
 fn hole_extent_projection_checks_distance_shoulder_and_through_all() {
-    use cadmpeg_ir::features::{
-        holes::{HoleBottom, HoleConstruction, HoleKind},
-        LinearTermination,
-    };
+    use cadmpeg_ir::features::extents::LinearTermination;
+    use cadmpeg_ir::features::holes::{HoleBottom, HoleConstruction, HoleKind};
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#1",
         DesignFeatureKind::Hole,
@@ -510,7 +509,7 @@ fn hole_extent_projection_checks_distance_shoulder_and_through_all() {
         };
         assert_eq!(extent, Some(LinearTermination::ThroughAll {}));
         assert_eq!(
-            super::super::hole_termination(&scope, &indexed, &[], &[]),
+            crate::design::feature_project::hole::hole_termination(&scope, &indexed, &[], &[]),
             Some(LinearTermination::ThroughAll {})
         );
         assert_eq!(
@@ -558,7 +557,13 @@ fn hole_unproved_extent_has_loss_for_depth_extra_face_and_missing_saved_depth() 
         .collect();
     let faces = [face_operand(2, 0), face_operand(3, 1), face_operand(5, 2)];
     for (parameters, faces) in [(&indexed[..], &faces[..2]), (&indexed[1..], &faces[..])] {
-        assert!(super::super::hole_termination(&scope, parameters, &[], faces).is_none());
+        assert!(crate::design::feature_project::hole::hole_termination(
+            &scope,
+            parameters,
+            &[],
+            faces
+        )
+        .is_none());
         let mut losses = Vec::new();
         assert_unresolved_extent_retains_bore_and_bottom(
             project_hole(&scope, parameters, &[], faces, &mut losses).unwrap(),
@@ -576,7 +581,7 @@ fn hole_unproved_extent_has_loss_for_depth_extra_face_and_missing_saved_depth() 
 
 #[test]
 fn hole_without_an_extent_control_is_distance_only_with_its_depth() {
-    use cadmpeg_ir::features::LinearTermination;
+    use cadmpeg_ir::features::extents::LinearTermination;
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#1",
         DesignFeatureKind::Hole,
@@ -599,7 +604,7 @@ fn hole_without_an_extent_control_is_distance_only_with_its_depth() {
         .map(|(i, p)| (u32::try_from(i).unwrap(), p))
         .collect();
     assert!(matches!(
-        super::super::hole_termination(&scope, &indexed, &[], &[]),
+        crate::design::feature_project::hole::hole_termination(&scope, &indexed, &[], &[]),
         Some(LinearTermination::Blind { .. })
     ));
     let without_depth: Vec<_> = indexed
@@ -609,7 +614,7 @@ fn hole_without_an_extent_control_is_distance_only_with_its_depth() {
         .collect();
     assert_eq!(without_depth.len(), indexed.len() - 1);
     assert_eq!(
-        super::super::hole_termination(&scope, &without_depth, &[], &[]),
+        crate::design::feature_project::hole::hole_termination(&scope, &without_depth, &[], &[]),
         None
     );
     let mut losses = Vec::new();
@@ -811,7 +816,7 @@ fn extent_group(
 #[test]
 fn an_extents_to_hole_ends_on_the_face_of_its_extent_group() {
     use crate::records::topology::extrude_selection::DesignOperandRole;
-    use cadmpeg_ir::features::LinearTermination;
+    use cadmpeg_ir::features::extents::LinearTermination;
     let mut scope = hole_scope();
     set_extent(&mut scope, 0, true);
     let without_depth = hole_parameters()[1..].to_vec();
@@ -857,7 +862,8 @@ fn an_extents_to_hole_ends_at_the_one_face_its_member_resolves() {
     let scope = extents_to_scope();
     let groups = [extent_group(DesignOperandRole::ROLE_0X5, &[7])];
     let face = |operands: &[crate::records::topology::face::DesignFaceOperand]| {
-        super::super::hole_extent_face(&scope, &groups, operands).expect("extent face")
+        crate::design::feature_project::hole::hole_extent_face(&scope, &groups, operands)
+            .expect("extent face")
     };
     let FaceSelection::Historical { faces, native, .. } = face(&[extent_member(vec![63])]) else {
         panic!("expected a historical extent face");
@@ -879,7 +885,11 @@ fn an_extents_to_hole_ends_at_the_one_face_its_member_resolves() {
     let mut stateless = hole_scope();
     set_extent(&mut stateless, 0, true);
     assert_eq!(
-        super::super::hole_extent_face(&stateless, &groups, &[extent_member(vec![63])]),
+        crate::design::feature_project::hole::hole_extent_face(
+            &stateless,
+            &groups,
+            &[extent_member(vec![63])]
+        ),
         Some(native_group)
     );
 }
@@ -910,7 +920,7 @@ fn a_resolved_extents_to_face_adds_no_loss() {
     };
     assert!(matches!(
         extent,
-        Some(cadmpeg_ir::features::LinearTermination::ToFace {
+        Some(cadmpeg_ir::features::extents::LinearTermination::ToFace {
             face: FaceSelection::Historical { .. },
             offset: None,
         })
@@ -951,7 +961,7 @@ fn an_extents_to_hole_needs_one_extent_group_with_one_member() {
         assert_eq!(shape.diameter().unwrap().get(), 4.0);
         assert_eq!(
             extent,
-            Some(cadmpeg_ir::features::LinearTermination::Unresolved {})
+            Some(cadmpeg_ir::features::extents::LinearTermination::Unresolved {})
         );
     }
 }
@@ -959,7 +969,7 @@ fn an_extents_to_hole_needs_one_extent_group_with_one_member() {
 #[test]
 fn a_hole_depth_or_an_unsaved_depth_keeps_the_distance_extent() {
     use crate::records::topology::extrude_selection::DesignOperandRole;
-    use cadmpeg_ir::features::LinearTermination;
+    use cadmpeg_ir::features::extents::LinearTermination;
     let group = extent_group(DesignOperandRole::ROLE_0X5, &[7]);
     let mut saved = hole_scope();
     set_extent(&mut saved, 0, true);
@@ -1018,7 +1028,7 @@ fn through_all(
     scope: &DesignParameterScope,
     faces: &[crate::records::topology::face::DesignFaceOperand],
 ) -> bool {
-    use cadmpeg_ir::features::LinearTermination;
+    use cadmpeg_ir::features::extents::LinearTermination;
     let parameters = hole_parameters();
     let indexed = [(1, &parameters[1]), (2, &parameters[2])];
     matches!(
@@ -1099,7 +1109,7 @@ fn reference_dimension_hole(
 
 #[test]
 fn a_hole_placed_by_two_reference_dimensions_keeps_them_native() {
-    use cadmpeg_ir::features::LinearTermination;
+    use cadmpeg_ir::features::extents::LinearTermination;
     let (operation, losses) = reference_dimension_hole(&[("RefDim1", 1.0), ("RefDim2", 1.0)], 2);
     let Some(FeatureOperation::Hole { extent, .. }) = operation else {
         panic!("expected a hole");
@@ -1124,7 +1134,7 @@ fn unproved_reference_constraints_retain_the_hole_dimensions() {
         };
         assert_eq!(shape.diameter().unwrap().get(), 4.0);
         assert!(
-            matches!(extent, Some(cadmpeg_ir::features::LinearTermination::Blind { length }) if length.get() == 10.0)
+            matches!(extent, Some(cadmpeg_ir::features::extents::LinearTermination::Blind { length }) if length.get() == 10.0)
         );
         assert!(losses
             .iter()
@@ -1151,7 +1161,7 @@ fn one_reference_distance_and_one_edge_group_keep_the_hole() {
     };
     assert_eq!(shape.diameter().unwrap().get(), 4.0);
     assert!(
-        matches!(extent, Some(cadmpeg_ir::features::LinearTermination::Blind { length }) if length.get() == 10.0)
+        matches!(extent, Some(cadmpeg_ir::features::extents::LinearTermination::Blind { length }) if length.get() == 10.0)
     );
     assert!(losses
         .iter()
@@ -1206,7 +1216,7 @@ fn unresolved_extent_retains_counterbore_tip_and_directed_points() {
     );
     assert_eq!(
         extent,
-        Some(cadmpeg_ir::features::LinearTermination::Unresolved {})
+        Some(cadmpeg_ir::features::extents::LinearTermination::Unresolved {})
     );
     assert!(
         matches!(bottom, Some(HoleBottom::Angled { included_angle, depth_to_tip: false }) if included_angle.get() == 118_f64.to_radians())
@@ -1267,7 +1277,7 @@ fn missing_bore_and_tip_parameters_leave_each_other_and_the_depth_intact() {
             bore.then_some(4.0)
         );
         assert!(
-            matches!(extent, Some(cadmpeg_ir::features::LinearTermination::Blind { length }) if length.get() == 10.0)
+            matches!(extent, Some(cadmpeg_ir::features::extents::LinearTermination::Blind { length }) if length.get() == 10.0)
         );
         if tip {
             assert!(
@@ -1326,7 +1336,7 @@ fn single_entry_dimensions_keep_their_specification_units() {
             _ => panic!("partial entry dimension"),
         }
         assert!(
-            matches!(extent, Some(cadmpeg_ir::features::LinearTermination::Blind { length }) if length.get() == 10.0)
+            matches!(extent, Some(cadmpeg_ir::features::extents::LinearTermination::Blind { length }) if length.get() == 10.0)
         );
         assert_eq!(bottom, Some(cadmpeg_ir::features::holes::HoleBottom::Flat));
         assert!(losses
@@ -1367,7 +1377,7 @@ fn a_hole_without_scalar_parameters_retains_its_unoriented_entry_axes() {
     );
     assert_eq!(
         extent,
-        Some(cadmpeg_ir::features::LinearTermination::Unresolved {})
+        Some(cadmpeg_ir::features::extents::LinearTermination::Unresolved {})
     );
     assert_eq!(bottom, None);
     assert_eq!(
@@ -1431,7 +1441,7 @@ fn extra_parameters_and_native_sizing_keep_the_admitted_hole_dimensions() {
         }
     );
     assert!(
-        matches!(extent,Some(cadmpeg_ir::features::LinearTermination::Blind { length }) if length.get()==10.0)
+        matches!(extent,Some(cadmpeg_ir::features::extents::LinearTermination::Blind { length }) if length.get()==10.0)
     );
     assert_eq!(bottom, Some(cadmpeg_ir::features::holes::HoleBottom::Flat));
     for code in [
@@ -1586,11 +1596,16 @@ fn competing_bore_parameters_keep_both_expressions_and_an_unresolved_diameter() 
     };
     assert_eq!(shape.diameter(), None);
     assert!(
-        matches!(extent,Some(cadmpeg_ir::features::LinearTermination::Blind { length }) if length.get()==10.0)
+        matches!(extent,Some(cadmpeg_ir::features::extents::LinearTermination::Blind { length }) if length.get()==10.0)
     );
     assert_eq!(bottom, Some(cadmpeg_ir::features::holes::HoleBottom::Flat));
-    let properties =
-        super::super::scope_properties(&scope, "f3d:Design/BulkStream.dat", &[], &indexed).unwrap();
+    let properties = crate::design::feature_project::scope_properties::scope_properties(
+        &scope,
+        "f3d:Design/BulkStream.dat",
+        &[],
+        &indexed,
+    )
+    .unwrap();
     assert_eq!(
         properties.get("parameter:d5").map(String::as_str),
         Some("4 mm")
@@ -1634,7 +1649,7 @@ fn encoded_entry_types_retain_partial_counterbore_and_countersink_families() {
         assert_eq!(shape.construction(), &HoleConstruction::form(expected));
         assert_eq!(shape.diameter().unwrap().get(), 4.0);
         assert!(
-            matches!(extent,Some(cadmpeg_ir::features::LinearTermination::Blind { length }) if length.get()==10.0)
+            matches!(extent,Some(cadmpeg_ir::features::extents::LinearTermination::Blind { length }) if length.get()==10.0)
         );
         assert_eq!(bottom, Some(cadmpeg_ir::features::holes::HoleBottom::Flat));
     }
@@ -1683,8 +1698,13 @@ fn an_encoded_simple_form_retains_unmatched_counterbore_parameters() {
         &HoleConstruction::form(HoleKind::Simple)
     );
     assert_eq!(shape.diameter().unwrap().get(), 4.0);
-    let properties =
-        super::super::scope_properties(&scope, "f3d:Design/BulkStream.dat", &[], &indexed).unwrap();
+    let properties = crate::design::feature_project::scope_properties::scope_properties(
+        &scope,
+        "f3d:Design/BulkStream.dat",
+        &[],
+        &indexed,
+    )
+    .unwrap();
     for (key, value) in [
         ("hole:type", "0"),
         ("parameter:d7", "3 mm"),
@@ -1702,7 +1722,7 @@ fn an_encoded_simple_form_retains_unmatched_counterbore_parameters() {
 
 #[test]
 fn the_tap_type_selects_the_hole_diameter_loss() {
-    use super::super::hole_tap_type_loss;
+    use crate::design::feature_project::hole::hole_tap_type_loss;
     assert!(hole_tap_type_loss("hole", 0).is_none());
     assert!(hole_tap_type_loss("hole", 1).is_none());
     assert_eq!(

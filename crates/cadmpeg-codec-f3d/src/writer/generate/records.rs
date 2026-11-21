@@ -120,52 +120,8 @@ pub(super) fn encode_design_bulkstream(
     native: &F3dNative,
     registry: &GeneratedDesignRegistry,
     parameter_bytes: Vec<u8>,
+    neutral: Option<&super::design::frames::DesignRecords>,
 ) -> Result<Option<EncodedDesignBulkStream>, CodecError> {
-    let decode_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &decode_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
-    let decode_ctx = &decode_ctx;
-
-    let projected_parameters =
-        crate::design::feature_project::project_parameter_design_with_edge_identities(
-            decode_ctx,
-            &crate::design::feature_project::ProjectInputs {
-                native: &native.design_parameters,
-                source_parameters: &native.design_parameters,
-                owners: &native.design_parameter_owners,
-                scopes: &native.design_parameter_scopes,
-                timelines: &native.design_feature_timelines,
-                construction_groups: &native.design_construction_operand_groups,
-                fillet_radius_groups: &native.design_fillet_radius_groups,
-                edge_operands: &native.design_edge_operands,
-                edge_identity_operands: &native.design_edge_identity_operands,
-                edge_treatment_vertex_operands: &native.design_edge_treatment_vertex_operands,
-                entity_selection_operands: &native.design_entity_selection_operands,
-                design_types: &native.design_types,
-                curve_identities: &native.sketch_curve_identities,
-                face_operands: &native.design_face_operands,
-                face_source_groups: &native.design_face_source_groups,
-                body_recipe_operands: &native.design_body_recipe_operands,
-                placements: &native.design_sketch_placements,
-                placement_constructions: &native.design_placement_constructions,
-                body_bindings: &native.design_body_bindings,
-                component_naming_spaces: &native.design_component_naming_spaces,
-                histories: &native.asm_histories,
-                face_boundaries: &native.asm_face_boundaries,
-                sheet_metal_settings: &native.design_sheet_metal_settings,
-                construction_recipes: &native.construction_recipes,
-                persistent_subentity_tags: &native.persistent_subentity_tags,
-            },
-        )?
-        .parameters;
-    if target.model.parameters != projected_parameters {
-        return Err(CodecError::Malformed(
-            "neutral F3D parameters must equal the projection of native Design parameters".into(),
-        ));
-    }
     if !native.design_parameter_companions.is_empty()
         || !native.design_dimension_annotation_frames.is_empty()
         || !native.design_dimension_presentation_frames.is_empty()
@@ -191,7 +147,8 @@ pub(super) fn encode_design_bulkstream(
         .bodies
         .iter()
         .any(|body| body.visible.is_some());
-    if native.design_parameters.is_empty()
+    if neutral.is_none()
+        && native.design_parameters.is_empty()
         && native.construction_recipes.is_empty()
         && native.persistent_references.is_empty()
         && native.lost_edge_references.is_empty()
@@ -230,6 +187,13 @@ pub(super) fn encode_design_bulkstream(
         native_lp_utf16(&mut out, "BREP.generated.smbh")?;
     }
     encode_browser_nodes(&mut out, &mut primary_records, registry)?;
+    if let Some(records) = neutral {
+        let base = out.len();
+        for &(record_index, offset) in &records.primaries {
+            primary_records.push(primary_record(record_index, base + offset)?);
+        }
+        out.extend_from_slice(&records.bytes);
+    }
     for recipe in &native.construction_recipes {
         let name = construction_recipe_name(recipe.kind);
         let mut prefix = [0u8; 27];
@@ -437,8 +401,11 @@ fn primary_record_u64(
     })
 }
 
+/// The document parameters as Design records whose tails name the parameter
+/// collection `collection_record_index`.
 pub(super) fn encode_document_parameters(
     parameters: &[crate::records::parameters::DesignParameter],
+    collection_record_index: u32,
 ) -> Result<Vec<u8>, CodecError> {
     let mut out = Vec::new();
     let mut parameter_indices = std::collections::BTreeSet::new();
@@ -455,7 +422,11 @@ pub(super) fn encode_document_parameters(
         {
             return Err(CodecError::InvalidInput(format!(
                 "F3D Design parameter {} has discriminator {:?}, expected {expected_discriminator} for {}",
-                parameter.id, parameter.family_discriminator().map(|value| value.value.code()), parameter.source_kind()
+                parameter.id,
+                parameter
+                    .family_discriminator()
+                    .map(|value| value.value.code()),
+                parameter.source_kind()
             )));
         }
         let crate::records::parameters::DesignParameterSource::User {
@@ -478,15 +449,30 @@ pub(super) fn encode_document_parameters(
         native_lp_ascii(&mut out, parameter.class_tag.as_str())?;
         out.extend_from_slice(&parameter.record_index.to_le_bytes());
         out.extend_from_slice(&[0; 11]);
-        out.extend_from_slice(&family_discriminator.value.code().to_le_bytes());
-        out.push(0);
-        out.extend_from_slice(&parameter.source_ordinal.to_le_bytes());
-        out.push(0);
-        native_lp_utf16(&mut out, parameter.expression())?;
-        out.extend_from_slice(&[0; 8]);
-        out.push(1);
-        native_lp_utf16(&mut out, "User Parameter")?;
-        out.extend_from_slice(&0u32.to_le_bytes());
+        if let Some(comment) = parameter.comment() {
+            // The comment discriminated form (f3d.md §3.1): u32 family
+            // discriminator, the comment, the ordinal, the null owner, the
+            // expression and the five-byte trailer with the document flag.
+            let discriminator = u32::try_from(family_discriminator.value.code())
+                .map_err(|_| CodecError::Malformed("F3D parameter discriminator".into()))?;
+            out.extend_from_slice(&discriminator.to_le_bytes());
+            native_lp_utf16(&mut out, comment)?;
+            out.extend_from_slice(&parameter.source_ordinal.to_le_bytes());
+            out.push(0);
+            native_lp_utf16(&mut out, parameter.expression())?;
+            out.extend_from_slice(&[0, 0, 0, 0, 1]);
+            native_lp_utf16(&mut out, "User Parameter")?;
+        } else {
+            out.extend_from_slice(&family_discriminator.value.code().to_le_bytes());
+            out.push(0);
+            out.extend_from_slice(&parameter.source_ordinal.to_le_bytes());
+            out.push(0);
+            native_lp_utf16(&mut out, parameter.expression())?;
+            out.extend_from_slice(&[0; 8]);
+            out.push(1);
+            native_lp_utf16(&mut out, "User Parameter")?;
+            out.extend_from_slice(&0u32.to_le_bytes());
+        }
         if let Some(unit) = parameter.unit() {
             native_lp_utf16(&mut out, unit.value.as_str())?;
         } else {
@@ -494,7 +480,9 @@ pub(super) fn encode_document_parameters(
         }
         native_lp_utf16(&mut out, parameter.name())?;
         out.extend_from_slice(&parameter.evaluated_value().get().to_le_bytes());
-        out.extend_from_slice(&[0, 1, 19, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        out.extend_from_slice(&[0, 1]);
+        out.extend_from_slice(&collection_record_index.to_le_bytes());
+        out.extend_from_slice(&[0; 6]);
     }
     Ok(out)
 }
@@ -702,7 +690,7 @@ fn encode_sketch_curve_identity(
             return Err(CodecError::NotImplemented(format!(
                 "source-less sketch curve {} has no writable geometry",
                 curve.id
-            )))
+            )));
         }
     }
     write_reference(&mut record, owner_reference);
@@ -1082,8 +1070,8 @@ mod tests {
     };
 
     fn registry_with_entity(entity_id: u64) -> super::GeneratedDesignRegistry {
-        super::GeneratedDesignRegistry {
-            types: vec![super::super::presentation::GeneratedDesignType {
+        super::GeneratedDesignRegistry::from_types(vec![
+            super::super::presentation::GeneratedDesignType {
                 type_guid: "11111111-2222-3333-4444-555555555555"
                     .to_owned()
                     .try_into()
@@ -1092,10 +1080,8 @@ mod tests {
                 version: 1,
                 module: "Fusion".into(),
                 entity_ids: vec![entity_id],
-            }],
-            body_map: None,
-            browser_nodes: None,
-        }
+            },
+        ])
     }
 
     #[test]

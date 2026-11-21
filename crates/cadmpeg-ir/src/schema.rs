@@ -4,7 +4,7 @@
 use serde::Serialize;
 
 pub mod rewrite;
-/// Caller-accounted structural value projection and reconstruction.
+/// Caller-accounted structural JSON projection.
 pub mod structural;
 
 /// Canonical neutral arena kind.
@@ -529,12 +529,12 @@ impl EntitySchema for crate::geometry::ProceduralCurve {
 impl_entity_schema!(crate::assets::Asset, Asset, id; id, name, media_type, content, native_ref);
 impl_entity_schema!(crate::features::Feature, Feature, id; id, product_definition, ordinal, name, suppressed, dependencies, source_properties, source_tag, source_text, source_content, evaluation, native_ref);
 impl_entity_schema!(
-    crate::features::FeatureInputTopology,
+    crate::features::evaluation::FeatureInputTopology,
     FeatureInputTopology,
     id;
     id, input_of, bodies, faces, edges, vertices, edge_geometry, native_ref
 );
-impl EntitySchema for crate::features::FeatureResultTopology {
+impl EntitySchema for crate::features::evaluation::FeatureResultTopology {
     const KIND: EntityKind = EntityKind::FeatureResultTopology;
 
     fn identity(&self) -> &str {
@@ -542,13 +542,13 @@ impl EntitySchema for crate::features::FeatureResultTopology {
     }
 }
 impl_entity_schema!(
-    crate::features::DesignConfiguration,
+    crate::features::parameters::DesignConfiguration,
     Configuration,
     id;
     id, ordinal, active, source_index, name, material, properties, parameter_overrides,
     bodies, parameter_values, feature_states, native_ref
 );
-impl_entity_schema!(crate::features::DesignParameter, Parameter, id; id, product_definition, owner, ordinal, name, expression, display, value, dependencies, properties, pmi, native_ref);
+impl_entity_schema!(crate::features::parameters::DesignParameter, Parameter, id; id, product_definition, owner, ordinal, name, expression, display, value, dependencies, properties, pmi, native_ref);
 impl_entity_schema!(crate::sketches::Sketch, Sketch, id; id, name, configuration, visible, placement, profiles, native_ref);
 impl EntitySchema for crate::sketches::SketchEntity {
     const KIND: EntityKind = EntityKind::SketchEntity;
@@ -618,9 +618,9 @@ impl EntitySchema for crate::tessellation::Tessellation {
         self.id.as_str()
     }
 }
-impl_entity_schema!(crate::appearance::Appearance, Appearance, id; id, name, asset_guid, library_id, visual_guid, physical_token, schema, category, base_color, properties, textures);
-impl_entity_schema!(crate::appearance::AppearanceBinding, AppearanceBinding, id; id, target, appearance, source_entity_id, object_type, visible, channels);
-impl_entity_schema!(crate::attributes::SourceAttribute, SourceAttribute, id; id, target, name, values);
+impl_entity_schema!(crate::appearance::Appearance, Appearance, id; id, name, asset_guid, library_id, visual_guid, physical_token, schema, category, base_color, properties, textures, native_ref);
+impl_entity_schema!(crate::appearance::AppearanceBinding, AppearanceBinding, id; id, target, appearance, source_entity_id, object_type, visible, channels, native_ref);
+impl_entity_schema!(crate::attributes::SourceAttribute, SourceAttribute, id; id, target, name, values, native_ref);
 impl_entity_schema!(crate::pmi::PmiAnnotation, PmiAnnotation, id; id, name, visible, targets, definition, native_ref, native_options, source_settings);
 impl_entity_schema!(
     crate::presentation::PresentationLayer,

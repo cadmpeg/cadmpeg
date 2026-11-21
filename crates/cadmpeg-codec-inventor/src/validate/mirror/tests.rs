@@ -10,10 +10,12 @@ use crate::feature::history::{HistoryNodeKind, HistoryPlacement, SUPPRESSED_FLAG
 use crate::native::RseRecordRecord;
 use crate::test_support::mirror::Fixture;
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::geometry::{FeatureDirection3, FinitePoint3};
 use cadmpeg_ir::features::patterns::{PatternKind, PatternSeed, PatternTransform};
+use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{
-    DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureDirection3,
-    FeatureEvaluation, FeatureId, FeatureOperation, FinitePoint3, NativeFeatureKind,
+    Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation, NativeFeatureKind,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveLength;
@@ -92,7 +94,7 @@ fn mirror_construction_recognizes_patterns_and_shapes() {
     assert!(requires_mirror_validation(&feature, Some(&changed)));
     feature.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
         FeatureOperation::MirrorShape {
-            source: cadmpeg_ir::features::BodySelection::Native("source-body".into()),
+            source: cadmpeg_ir::features::selections::BodySelection::Native("source-body".into()),
             plane_origin: FinitePoint3::ZERO,
             plane_normal: cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(1.0, 0.0, 0.0))
                 .expect("normal"),
@@ -413,7 +415,7 @@ fn validator_checks_the_body_copy_form_and_instance_map_lengths() {
     else {
         panic!("mirror shape")
     };
-    *selection = cadmpeg_ir::features::BodySelection::Native("other-source".into());
+    *selection = cadmpeg_ir::features::selections::BodySelection::Native("other-source".into());
     changed.evaluation.set_definition(definition);
     assert!(!fixture.index().matches_projection(
         &source,
@@ -781,7 +783,7 @@ fn validator_derives_the_plane_reference_from_the_plane_dependency() {
                 ..
             }) = &mut definition
             {
-                *plane_reference = Some(cadmpeg_ir::features::FaceSelection::Native(
+                *plane_reference = Some(cadmpeg_ir::features::selections::FaceSelection::Native(
                     fixture.planes[0].id(),
                 ));
             }

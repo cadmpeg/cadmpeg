@@ -2,7 +2,8 @@
 
 #[test]
 fn component_insertions_round_trip_native_partial_and_complete_membership() {
-    use crate::features::{FeatureDefinition, FeatureOperation, InsertedComponents};
+    use crate::features::selections::InsertedComponents;
+    use crate::features::{FeatureDefinition, FeatureOperation};
     use crate::ids::OccurrenceId;
     let first = OccurrenceId::mint("fixture:model:occurrence#1").unwrap();
     let second = OccurrenceId::mint("fixture:model:occurrence#2").unwrap();
@@ -46,7 +47,7 @@ fn component_insertions_round_trip_native_partial_and_complete_membership() {
 
 #[test]
 fn component_insertions_reject_blank_empty_and_repeated_membership() {
-    use crate::features::{InsertedComponents, InsertedComponentsError};
+    use crate::features::selections::{InsertedComponents, InsertedComponentsError};
     use crate::ids::OccurrenceId;
     let occurrence = OccurrenceId::mint("fixture:model:occurrence#1").unwrap();
     assert_eq!(

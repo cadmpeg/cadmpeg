@@ -12,7 +12,7 @@ use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::products::{
@@ -485,6 +485,7 @@ pub(crate) fn display_geometry(
                         object_type: None,
                         visible: None,
                         channels: BTreeMap::new(),
+                        native_ref: None,
                     });
                 }
             }
@@ -623,6 +624,7 @@ fn appearance(member: &str, base: u32, defined: &crate::ol::Appearance) -> (Appe
         base_color,
         properties,
         textures: Vec::new(),
+        native_ref: None,
     };
     (appearance, rejected)
 }

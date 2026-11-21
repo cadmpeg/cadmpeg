@@ -39,6 +39,7 @@ mod history;
 mod members;
 mod removal;
 mod resolve;
+pub mod state_view;
 mod states;
 mod wire;
 
@@ -407,5 +408,5 @@ fn malformed(error: impl std::fmt::Display) -> EditError {
     EditError::Malformed(error.to_string())
 }
 
-mod effective;
+pub(crate) mod effective;
 mod process;

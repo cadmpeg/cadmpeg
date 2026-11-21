@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_ir::annotations::StreamHandle;
-use cadmpeg_ir::features::{DesignParameter, DistinctMembers, ParameterId, ParameterValue};
+use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
+use cadmpeg_ir::features::selections::DistinctMembers;
+use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::AnnotationBuilder;
 
 #[test]

@@ -330,7 +330,7 @@ fn generated_f3d_replays_byte_exactly_and_regenerates_on_semantic_edits() {
     let mut point_edited = decoded.ir().clone();
     let moved = point_edited.geometry.points[0].position().get();
     point_edited.geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 12.5,
             moved.y,
             moved.z,
@@ -736,7 +736,7 @@ fn generated_source_less_f3d_drops_unbacked_design_parameters() {
     source_less
         .model
         .parameters
-        .push(cadmpeg_ir::features::DesignParameter {
+        .push(cadmpeg_ir::features::parameters::DesignParameter {
             product_definition: None,
             id: cadmpeg_ir::features::ParameterId::mint("test:f3d:parameter#0")
                 .expect("identity grammar"),
@@ -745,7 +745,7 @@ fn generated_source_less_f3d_drops_unbacked_design_parameters() {
             name: "Width".into(),
             expression: "60 mm".into(),
             display: None,
-            value: Some(cadmpeg_ir::features::ParameterValue::Length(
+            value: Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
                 cadmpeg_ir::scalar::Length::new(60.0).unwrap(),
             )),
             dependencies: Default::default(),
@@ -1130,8 +1130,10 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
         .points
         .push(cadmpeg_ir::topology::Point::new(
             point_id.clone(),
-            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(10.0, 10.0, 0.0))
-                .expect("a finite position is a point"),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                10.0, 10.0, 0.0,
+            ))
+            .expect("a finite position is a point"),
             None,
         ));
     let vertex_id = VertexId::mint("generated:test:vertex#3").expect("identity grammar");
@@ -1675,7 +1677,7 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
         });
         source_less.geometry.points.push(Point::new(
             points[index].clone(),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(-5.0, 0.0, z))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(-5.0, 0.0, z))
                 .expect("a finite position is a point"),
             None,
         ));
@@ -1878,4 +1880,5 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
 
 mod closed_edges;
 mod family_changes;
+mod reversed_edges;
 mod tolerant_tails;

@@ -45,16 +45,25 @@ impl Serialize for DisplayText {
 }
 
 #[test]
-fn structural_projection_preserves_nonfinite_values_and_refuses_at_the_depth_limit() {
+fn structural_projection_spells_floats_as_serde_json_and_refuses_at_the_depth_limit() {
     let shape = Shape {
         text: "source text".into(),
         values: vec![f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -0.0],
         optional: Some(Box::new((true, 17))),
     };
-    let expected = serde_value::to_value(&shape).unwrap();
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let projected = project(&ctx, &shape, "project structural fixture").unwrap();
-    assert_eq!(*projected, expected);
+    assert_eq!(
+        projected,
+        serde_json::json!({
+            "text": "source text",
+            "values": [null, null, null, -0.0],
+            "optional": [true, 17],
+        })
+    );
+    assert!(projected["values"][3]
+        .as_f64()
+        .is_some_and(f64::is_sign_negative));
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 0;
@@ -73,5 +82,5 @@ fn structural_projection_preserves_nonfinite_values_and_refuses_at_the_depth_lim
 fn structural_display_text_projects_its_formatted_text() {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let projected = project(&ctx, &DisplayText, "project display text").unwrap();
-    assert_eq!(*projected, serde_value::Value::String("abcde".into()));
+    assert_eq!(projected, serde_json::Value::String("abcde".into()));
 }

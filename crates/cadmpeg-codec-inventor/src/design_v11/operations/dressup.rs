@@ -264,13 +264,15 @@ pub(super) fn operation(
                 let wall = match (wall, side) {
                     (None, None) => None,
                     (Some(value), None) => Some(thickness(*value, None)),
-                    (Some(value), Some(old::ThickenSide::Forward)) => {
-                        Some(thickness(*value, Some(true)))
-                    }
-                    (Some(value), Some(old::ThickenSide::Reverse)) => {
-                        Some(thickness(*value, Some(false)))
-                    }
-                    (Some(value), Some(old::ThickenSide::Both)) => {
+                    (
+                        Some(value),
+                        Some(cadmpeg_ir::features::direct_edit::ThickenSide::Forward),
+                    ) => Some(thickness(*value, Some(true))),
+                    (
+                        Some(value),
+                        Some(cadmpeg_ir::features::direct_edit::ThickenSide::Reverse),
+                    ) => Some(thickness(*value, Some(false))),
+                    (Some(value), Some(cadmpeg_ir::features::direct_edit::ThickenSide::Both)) => {
                         Some(Thickness::Symmetric(Dimension::Literal(*value)))
                     }
                     _ => return Err("the thicken side has no thickness"),
@@ -279,19 +281,19 @@ pub(super) fn operation(
                     .as_ref()
                     .map(|value| -> Projected<_> {
                         Ok(match value {
-                            old::SolidFeatureResult::NewBody {} => {
+                            cadmpeg_ir::features::operation_settings::SolidFeatureResult::NewBody {} => {
                                 cadmpeg_ir::design::options::Boolean::NewBody
                             }
-                            old::SolidFeatureResult::Boolean { operation, targets } => {
+                            cadmpeg_ir::features::operation_settings::SolidFeatureResult::Boolean { operation, targets } => {
                                 cadmpeg_ir::design::options::Boolean::Apply {
                                     op: match operation {
-                                        old::BooleanKind::Join => {
+                                        cadmpeg_ir::features::operation_settings::BooleanKind::Join => {
                                             cadmpeg_ir::design::options::BooleanOp::Join
                                         }
-                                        old::BooleanKind::Cut => {
+                                        cadmpeg_ir::features::operation_settings::BooleanKind::Cut => {
                                             cadmpeg_ir::design::options::BooleanOp::Cut
                                         }
-                                        old::BooleanKind::Intersect => {
+                                        cadmpeg_ir::features::operation_settings::BooleanKind::Intersect => {
                                             cadmpeg_ir::design::options::BooleanOp::Intersect
                                         }
                                     },

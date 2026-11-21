@@ -2,7 +2,8 @@
 
 #[test]
 fn draft_second_side_round_trips_as_a_tagged_key() {
-    use crate::features::{DraftSecondSide, FeatureDefinition, FeatureOperation};
+    use crate::features::direct_edit::DraftSecondSide;
+    use crate::features::{FeatureDefinition, FeatureOperation};
 
     for (second_side, expected) in [
         (

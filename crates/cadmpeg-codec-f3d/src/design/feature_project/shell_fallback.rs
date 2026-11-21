@@ -12,10 +12,9 @@ use crate::records::topology::face::DesignFaceOperand;
 use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{
-    BodySelection, FaceSelection, Feature, FeatureDefinition, FeatureOperation, ShellJoin,
-    ShellMode,
-};
+use cadmpeg_ir::features::operation_settings::{ShellJoin, ShellMode};
+use cadmpeg_ir::features::selections::{BodySelection, FaceSelection};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::PositiveLength;
 use std::collections::{HashMap, HashSet};

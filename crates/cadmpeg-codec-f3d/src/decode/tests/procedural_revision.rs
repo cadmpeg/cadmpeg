@@ -964,7 +964,7 @@ fn decode_retains_generated_translational_extrusion_and_fit_contract() {
         Some([0.25, 0.75])
     );
     assert_eq!(
-        native_position.map(cadmpeg_ir::features::FinitePoint3::get),
+        native_position.map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0))
     );
     let directrix = result
@@ -1009,7 +1009,7 @@ fn decode_retains_versioned_nested_translational_extrusion() {
     );
     assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 20.0));
     assert_eq!(
-        native_position.map(cadmpeg_ir::features::FinitePoint3::get),
+        native_position.map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0))
     );
 }
@@ -1059,7 +1059,7 @@ fn generated_f3d_rewrites_translational_extrusion_header() {
         let direction = &mut direction_value;
         let mut native_position_value = definition_payload
             .native_position()
-            .map(cadmpeg_ir::features::FinitePoint3::get);
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get);
         let native_position = &mut native_position_value;
         {
             *parameter_interval = Some([-0.5, 1.25]);
@@ -1105,7 +1105,7 @@ fn generated_f3d_rewrites_translational_extrusion_header() {
     );
     assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(5.0, -10.0, 30.0));
     assert_eq!(
-        native_position.map(cadmpeg_ir::features::FinitePoint3::get),
+        native_position.map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(-20.0, 70.0, 15.0))
     );
 }
@@ -1170,7 +1170,7 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
                 pole.x = 17.5;
                 pole.z = -3.25;
             }
-            cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+            cadmpeg_ir::features::geometry::FinitePoint3::new(pole).ok_or_else(|| {
                 cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                     "control_points contains a non-finite point".into(),
                 )

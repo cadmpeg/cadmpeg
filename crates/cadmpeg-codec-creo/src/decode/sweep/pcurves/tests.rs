@@ -5,7 +5,7 @@ use super::{
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::RevolutionAxis;
+use cadmpeg_ir::features::revolve::RevolutionAxis;
 use cadmpeg_ir::geometry::pcurve::{LinePcurve, PcurveGeometry};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::PcurveId;
@@ -64,10 +64,12 @@ fn spindle_torus_boundary_pcurve_retains_the_signed_ring_branch() {
         .expect("valid TorusSurface fixture"),
     ));
     let axis = RevolutionAxis {
-        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+        origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
             .expect("finite point fixture"),
-        direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
-            .expect("valid direction fixture"),
+        direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+            0.0, 0.0, 1.0,
+        ))
+        .expect("valid direction fixture"),
         reference: None,
     };
     let pcurve = revolution_boundary_pcurve(

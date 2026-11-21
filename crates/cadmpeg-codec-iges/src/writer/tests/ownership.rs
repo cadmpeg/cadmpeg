@@ -120,7 +120,7 @@ fn unowned_support_surface_and_point_are_withheld_with_loss() {
     ir.geometry.surfaces.push(support);
     ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         "test:model:point#support".try_into().unwrap(),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 3.0, 4.0)).unwrap(),
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(2.0, 3.0, 4.0)).unwrap(),
         Some(support_association()),
     ));
     let generated = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
@@ -172,7 +172,7 @@ fn support_only_point_export_refuses_an_empty_transfer() {
     let mut ir = CadIr::empty();
     ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         "test:model:point#support".try_into().unwrap(),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 3.0, 4.0)).unwrap(),
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(2.0, 3.0, 4.0)).unwrap(),
         Some(support_association()),
     ));
     assert!(matches!(

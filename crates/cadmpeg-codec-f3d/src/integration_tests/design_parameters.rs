@@ -76,7 +76,8 @@ fn base_feature_without_result_body_binding_keeps_a_neutral_snapshot() {
         "Basiselement",
     ] {
         use crate::layout::base_feature_wide_zero_body as prefix;
-        use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+        use cadmpeg_ir::features::selections::BodySelection;
+        use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
         let (mut bulk, records) =
             crate::test_support::streams_test::generated_design_base_feature_bulkstream();
         let start = usize::try_from(records.last().unwrap().1).unwrap();
@@ -141,7 +142,8 @@ fn base_feature_without_result_body_binding_keeps_a_neutral_snapshot() {
 
 #[test]
 fn derived_instance_with_unresolved_sources_keeps_a_neutral_component_selection() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, InsertedComponents};
+    use cadmpeg_ir::features::selections::InsertedComponents;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     for source_kind in ["DerivedInstance", "LocalizedScope!"] {
         let (mut bulk, records) =
             crate::test_support::streams_test::generated_design_copy_paste_bodies_bulkstream();
@@ -219,4 +221,99 @@ fn derived_instance_with_unresolved_sources_keeps_a_neutral_component_selection(
         }) if native.as_str() == scope.id)
         );
     }
+}
+
+/// A commented document parameter keeps its comment through a source-less
+/// write in the comment discriminated form, a decode, a second write and a
+/// second decode.
+#[test]
+fn commented_document_parameter_keeps_its_comment_through_a_rewrite() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+
+    const COMMENT: &str = "bolt spacing Ø";
+    fn write(ir: &cadmpeg_ir::document::CadIr) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        crate::F3dCodec
+            .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+            .and_then(|plan| plan.write_to(&mut bytes))
+            .expect("source-less document parameter encode");
+        bytes
+    }
+    fn comment(ir: &cadmpeg_ir::document::CadIr) -> Option<String> {
+        let native = f3d_native(ir);
+        let [parameter] = native.design_parameters.as_slice() else {
+            panic!("expected the one document parameter");
+        };
+        assert_eq!(parameter.name(), "Spacing");
+        parameter.comment().map(str::to_owned)
+    }
+
+    let mut source = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    let parameter = crate::records::parameters::DesignParameter::try_from(
+        crate::records::parameters::DesignParameterDraft {
+            id: "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#0".into(),
+            byte_offset: 0,
+            class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
+                .unwrap(),
+            record_index: 700,
+            source_ordinal: 0,
+            source: crate::records::parameters::DesignParameterSource::User {
+                source_kind: cadmpeg_core::nonblank_literal!("User Parameter"),
+                family_discriminator: Some(crate::records::identity::Located {
+                    value: crate::records::parameters::DesignParameterDiscriminator::Code0,
+                    offset: 22,
+                }),
+            },
+            expression: "12 mm".into(),
+            expression_offset: 36,
+            source_kind_offset: 70,
+            unit: Some(crate::records::identity::RecordedValue {
+                value: "mm".into(),
+                offset: 110,
+            }),
+            name: "Spacing".into(),
+            name_offset: 120,
+            evaluated_value: 1.2,
+            evaluated_value_offset: 150,
+        },
+    )
+    .unwrap()
+    .with_comment(Some(crate::records::identity::RecordedValue {
+        value: COMMENT.into(),
+        offset: 30,
+    }))
+    .unwrap();
+    crate::test_support::native_test::f3d_native_mut(&mut source)
+        .design_parameters
+        .push(parameter);
+    let crate::design::feature_project::ProjectedParameterDesign { parameters, .. } =
+        crate::test_support::with_decode_context(|ctx| {
+            let scopes = &[];
+            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    native: &f3d_native(&source).design_parameters,
+                    scopes,
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .expect("test projection has a synthetic exact timeline")
+        });
+    source.model.parameters = parameters;
+
+    let decoded = decode(write(&source));
+    assert_eq!(comment(decoded.ir()).as_deref(), Some(COMMENT));
+    let (mut rewritten, _, _) = decoded.into_parts();
+    rewritten.source = None;
+    rewritten
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
+        .unwrap();
+    let round_trip = decode(write(&rewritten));
+    assert_eq!(comment(round_trip.ir()).as_deref(), Some(COMMENT));
 }
