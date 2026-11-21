@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::design::decode::parameters::parse_design_parameter_record;
-use crate::design::feature_project::project_hole;
+use crate::design::feature_project::hole::project_hole;
 use crate::design::test_support::parameter_record;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
@@ -510,7 +510,7 @@ fn hole_extent_projection_checks_distance_shoulder_and_through_all() {
         };
         assert_eq!(extent, Some(LinearTermination::ThroughAll {}));
         assert_eq!(
-            super::super::hole_termination(&scope, &indexed, &[], &[]),
+            crate::design::feature_project::hole::hole_termination(&scope, &indexed, &[], &[]),
             Some(LinearTermination::ThroughAll {})
         );
         assert_eq!(
@@ -558,7 +558,13 @@ fn hole_unproved_extent_has_loss_for_depth_extra_face_and_missing_saved_depth() 
         .collect();
     let faces = [face_operand(2, 0), face_operand(3, 1), face_operand(5, 2)];
     for (parameters, faces) in [(&indexed[..], &faces[..2]), (&indexed[1..], &faces[..])] {
-        assert!(super::super::hole_termination(&scope, parameters, &[], faces).is_none());
+        assert!(crate::design::feature_project::hole::hole_termination(
+            &scope,
+            parameters,
+            &[],
+            faces
+        )
+        .is_none());
         let mut losses = Vec::new();
         assert_unresolved_extent_retains_bore_and_bottom(
             project_hole(&scope, parameters, &[], faces, &mut losses).unwrap(),
@@ -599,7 +605,7 @@ fn hole_without_an_extent_control_is_distance_only_with_its_depth() {
         .map(|(i, p)| (u32::try_from(i).unwrap(), p))
         .collect();
     assert!(matches!(
-        super::super::hole_termination(&scope, &indexed, &[], &[]),
+        crate::design::feature_project::hole::hole_termination(&scope, &indexed, &[], &[]),
         Some(LinearTermination::Blind { .. })
     ));
     let without_depth: Vec<_> = indexed
@@ -609,7 +615,7 @@ fn hole_without_an_extent_control_is_distance_only_with_its_depth() {
         .collect();
     assert_eq!(without_depth.len(), indexed.len() - 1);
     assert_eq!(
-        super::super::hole_termination(&scope, &without_depth, &[], &[]),
+        crate::design::feature_project::hole::hole_termination(&scope, &without_depth, &[], &[]),
         None
     );
     let mut losses = Vec::new();
@@ -857,7 +863,8 @@ fn an_extents_to_hole_ends_at_the_one_face_its_member_resolves() {
     let scope = extents_to_scope();
     let groups = [extent_group(DesignOperandRole::ROLE_0X5, &[7])];
     let face = |operands: &[crate::records::topology::face::DesignFaceOperand]| {
-        super::super::hole_extent_face(&scope, &groups, operands).expect("extent face")
+        crate::design::feature_project::hole::hole_extent_face(&scope, &groups, operands)
+            .expect("extent face")
     };
     let FaceSelection::Historical { faces, native, .. } = face(&[extent_member(vec![63])]) else {
         panic!("expected a historical extent face");
@@ -879,7 +886,11 @@ fn an_extents_to_hole_ends_at_the_one_face_its_member_resolves() {
     let mut stateless = hole_scope();
     set_extent(&mut stateless, 0, true);
     assert_eq!(
-        super::super::hole_extent_face(&stateless, &groups, &[extent_member(vec![63])]),
+        crate::design::feature_project::hole::hole_extent_face(
+            &stateless,
+            &groups,
+            &[extent_member(vec![63])]
+        ),
         Some(native_group)
     );
 }
@@ -1589,8 +1600,13 @@ fn competing_bore_parameters_keep_both_expressions_and_an_unresolved_diameter() 
         matches!(extent,Some(cadmpeg_ir::features::LinearTermination::Blind { length }) if length.get()==10.0)
     );
     assert_eq!(bottom, Some(cadmpeg_ir::features::holes::HoleBottom::Flat));
-    let properties =
-        super::super::scope_properties(&scope, "f3d:Design/BulkStream.dat", &[], &indexed).unwrap();
+    let properties = crate::design::feature_project::scope_properties::scope_properties(
+        &scope,
+        "f3d:Design/BulkStream.dat",
+        &[],
+        &indexed,
+    )
+    .unwrap();
     assert_eq!(
         properties.get("parameter:d5").map(String::as_str),
         Some("4 mm")
@@ -1683,8 +1699,13 @@ fn an_encoded_simple_form_retains_unmatched_counterbore_parameters() {
         &HoleConstruction::form(HoleKind::Simple)
     );
     assert_eq!(shape.diameter().unwrap().get(), 4.0);
-    let properties =
-        super::super::scope_properties(&scope, "f3d:Design/BulkStream.dat", &[], &indexed).unwrap();
+    let properties = crate::design::feature_project::scope_properties::scope_properties(
+        &scope,
+        "f3d:Design/BulkStream.dat",
+        &[],
+        &indexed,
+    )
+    .unwrap();
     for (key, value) in [
         ("hole:type", "0"),
         ("parameter:d7", "3 mm"),
@@ -1702,7 +1723,7 @@ fn an_encoded_simple_form_retains_unmatched_counterbore_parameters() {
 
 #[test]
 fn the_tap_type_selects_the_hole_diameter_loss() {
-    use super::super::hole_tap_type_loss;
+    use crate::design::feature_project::hole::hole_tap_type_loss;
     assert!(hole_tap_type_loss("hole", 0).is_none());
     assert!(hole_tap_type_loss("hole", 1).is_none());
     assert_eq!(

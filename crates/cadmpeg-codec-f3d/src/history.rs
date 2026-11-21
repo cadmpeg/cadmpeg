@@ -42,6 +42,7 @@ mod generated_bodies;
 pub(crate) mod history_bodies;
 mod hole_support;
 pub(crate) mod linked_states;
+pub(crate) mod loft_solid;
 mod loop_index;
 mod move_face;
 mod output_blob;
@@ -4324,7 +4325,10 @@ pub(crate) fn project_feature_input_topologies(
         let Some(previous_state_id) = selection::feature_selected_input_state_id(feature)
             .or_else(|| scope.previous_history_state_id())
             .or_else(|| {
-                crate::design::feature_project::work_point_recipe_state_id(scope, edge_operands)
+                crate::design::feature_project::work_points::work_point_recipe_state_id(
+                    scope,
+                    edge_operands,
+                )
             })
             .or_else(|| crate::design::feature_project::work_plane_recipe_state_id(scope))
             .or_else(|| {
@@ -4556,7 +4560,9 @@ pub(crate) fn bind_vertex_recipe_history(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut topology_queries = TopologyQueryCache::default();
     let source_ordinals =
-        crate::design::feature_project::authored_scope_ordinals_per_stream(scopes, timelines)?;
+        crate::design::feature_project::scope_order::authored_scope_ordinals_per_stream(
+            scopes, timelines,
+        )?;
     let mut input_states = HashMap::new();
     for scope in scopes.iter().filter(|scope| {
         matches!(
