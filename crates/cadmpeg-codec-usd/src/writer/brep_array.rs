@@ -368,7 +368,7 @@ impl Writer<'_> {
         let mut groups: std::collections::BTreeMap<String, Vec<usize>> =
             std::collections::BTreeMap::new();
         for (index, face) in faces.iter().enumerate() {
-            if let Some(path) = self.binding_path(&face.to_string()) {
+            if let Some(path) = self.face_binding_path(face) {
                 groups.entry(path).or_default().push(index);
             }
         }

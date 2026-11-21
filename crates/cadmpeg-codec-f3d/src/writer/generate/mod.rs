@@ -58,6 +58,7 @@ pub(super) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<Genera
             reduction.ir(),
             reduction.writes_design(),
             reduction.writes_neutral_design(),
+            reduction.sketch_failure(),
             &mut staged,
         ) {
             Ok((coverage, losses)) => break (staged, coverage, losses),
@@ -82,9 +83,14 @@ fn writes_alone(target: &CadIr, native: &crate::native::F3dNative, stage: Stage)
             let attributes = attributes::AttributeIndex::new(target, native);
             encode_brep(target, native, &attributes).is_ok()
         }
-        Stage::Design | Stage::NeutralDesign | Stage::Archive => {
-            attempt(target, false, false, &mut std::io::Cursor::new(Vec::new())).is_ok()
-        }
+        Stage::Design | Stage::NeutralDesign | Stage::Archive => attempt(
+            target,
+            false,
+            false,
+            None,
+            &mut std::io::Cursor::new(Vec::new()),
+        )
+        .is_ok(),
     }
 }
 
@@ -100,13 +106,15 @@ fn encode_brep(
 }
 
 /// Write `target` once. `write_design` states whether its native Design
-/// records are written, and `write_neutral` whether its design scope is; a
-/// failure names the stage that failed. Returns the arena coverage and the
-/// losses of the design scope's records.
+/// records are written, and `write_neutral` whether its design scope is;
+/// `sketch_failure` is why the design scope is written without its `Sketch`
+/// items. A failure names the stage that failed. Returns the arena coverage
+/// and the losses of the design scope's records.
 fn attempt<W: Write + Seek>(
     target: &CadIr,
     write_design: bool,
     write_neutral: bool,
+    sketch_failure: Option<&str>,
     staged: W,
 ) -> Result<(ArenaDispositions, Vec<LossNote>), Failure> {
     #[cfg(test)]
@@ -114,7 +122,7 @@ fn attempt<W: Write + Seek>(
         return Err(Failure::neutral_design(error));
     }
     let mut neutral = if write_neutral {
-        design::plan(target)
+        design::plan(target, sketch_failure).map_err(Failure::neutral_design)?
     } else {
         None
     };
@@ -200,18 +208,33 @@ fn attempt<W: Write + Seek>(
             .map_err(Failure::neutral_design)?;
         write_archive(staged, &ArchiveEntries::BaseFeature { members: &members })
             .map_err(Failure::archive)?;
+        let mut coverage = coverage(
+            false,
+            ArenaDisposition::Reported,
+            true,
+            ArenaDisposition::Reported,
+        );
+        // The written `Sketch` items carry the design's sketches; the plan
+        // charges each sketch, entity and relation it does not write.
+        if design.writes_sketches() {
+            coverage.design.sketches = ArenaDisposition::Reported;
+            coverage.design.sketch_entities = ArenaDisposition::Reported;
+            coverage.design.sketch_constraints = ArenaDisposition::Reported;
+        }
         let mut losses = roster_losses(target, &native);
         losses.extend(design.into_losses());
         losses.extend(unstated_visibility);
-        return Ok((
-            coverage(
-                false,
-                ArenaDisposition::Reported,
-                true,
-                ArenaDisposition::Reported,
-            ),
-            losses,
+        losses.extend(cadmpeg_ir::codec::write::value_unwritable(
+            "F3D",
+            "writes these bodies as visible: the Base Feature design records hold no body visibility",
+            target
+                .geometry
+                .bodies
+                .iter()
+                .filter(|body| body.visible == Some(false))
+                .map(|body| body.id.to_string()),
         ));
+        return Ok((coverage, losses));
     }
     let mut neutral_records = None;
     let parameter_bytes = match (neutral.as_mut(), &native_parameters) {

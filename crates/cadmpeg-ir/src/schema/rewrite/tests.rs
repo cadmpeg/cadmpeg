@@ -10,9 +10,9 @@ use std::collections::BTreeMap;
 
 #[test]
 fn thicken_boolean_targets_are_identity_references() {
-    use crate::features::{
-        BodySelection, BooleanKind, FaceSelection, FeatureOperation, SolidFeatureResult,
-    };
+    use crate::features::operation_settings::{BooleanKind, SolidFeatureResult};
+    use crate::features::selections::{BodySelection, FaceSelection};
+    use crate::features::FeatureOperation;
     let operation = FeatureOperation::Thicken {
         faces: FaceSelection::Native("test:model:faces#source".into()),
         thickness: None,
@@ -20,10 +20,9 @@ fn thicken_boolean_targets_are_identity_references() {
         result: Some(SolidFeatureResult::Boolean {
             operation: BooleanKind::Cut,
             targets: BodySelection::Bodies(
-                crate::features::DistinctMembers::try_from(vec![crate::ids::BodyId::mint(
-                    "test:model:body#target",
-                )
-                .unwrap()])
+                crate::features::selections::DistinctMembers::try_from(vec![
+                    crate::ids::BodyId::mint("test:model:body#target").unwrap(),
+                ])
                 .unwrap(),
             ),
         }),

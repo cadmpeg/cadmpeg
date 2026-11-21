@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
-use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation, InsertedComponents};
+use cadmpeg_ir::features::selections::InsertedComponents;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::products::Occurrence;
 use cadmpeg_ir::report::loss::LossNote;
 

@@ -360,7 +360,7 @@ fn native_validation_compares_the_reflection_seeds_and_result_identity() {
         false,
         |_| seed(4)
     ));
-    feature.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+    feature.evaluation = cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             seeds: vec![PatternSeed::Feature(seed(2).expect("seed"))],
             pattern: PatternKind::new(PatternTransform::Mirror {
@@ -822,7 +822,7 @@ fn multi_operation_sheet_metal_parent_seeds_keep_the_pinned_native_loss() {
 fn mirror_plane_reference(
     fixture: &Fixture,
     source: &PmDcPatternFeature,
-) -> Option<cadmpeg_ir::features::FaceSelection> {
+) -> Option<cadmpeg_ir::features::selections::FaceSelection> {
     let resolved = fixture
         .index()
         .resolve(source, &fixture.label, |_| None)
@@ -839,7 +839,7 @@ fn mirror_plane_reference(
 #[test]
 fn a_plane_supplied_by_a_work_plane_keeps_the_native_reference_until_history() {
     let (plain, source) = crate::test_support::mirror::replacement_form();
-    let native = Some(cadmpeg_ir::features::FaceSelection::Native(
+    let native = Some(cadmpeg_ir::features::selections::FaceSelection::Native(
         plain.planes[0].id(),
     ));
     assert_eq!(mirror_plane_reference(&plain, &source), native);
@@ -933,7 +933,7 @@ fn a_plane_reference_that_does_not_prove_the_plane_stays_native() {
     for (name, (fixture, source)) in cases {
         assert_eq!(
             mirror_plane_reference(&fixture, &source),
-            Some(cadmpeg_ir::features::FaceSelection::Native(
+            Some(cadmpeg_ir::features::selections::FaceSelection::Native(
                 fixture.planes[0].id()
             )),
             "{name}"

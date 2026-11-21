@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_ir::features::SketchProfileRegion;
+use cadmpeg_ir::features::profiles::SketchProfileRegion;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{Sketch, SketchEntityId, SketchEntityUse, SketchId, SketchPlacement};
 
@@ -36,7 +36,7 @@ fn whole_sketch_test_sketch(profile_count: u32) -> Sketch {
 #[test]
 fn whole_sketch_selection_names_every_profile_as_its_own_region() {
     let sketch = whole_sketch_test_sketch(3);
-    let every = cadmpeg_ir::features::PlanarProfileRef::sketch_regions(
+    let every = cadmpeg_ir::features::profiles::PlanarProfileRef::sketch_regions(
         sketch.id.clone(),
         (0..3)
             .map(|outer| SketchProfileRegion::loops(outer, Vec::new()).unwrap())
@@ -51,7 +51,7 @@ fn whole_sketch_selection_names_every_profile_as_its_own_region() {
 #[test]
 fn partial_or_holed_selection_is_not_the_whole_sketch() {
     let sketch = whole_sketch_test_sketch(3);
-    let some = cadmpeg_ir::features::PlanarProfileRef::sketch_regions(
+    let some = cadmpeg_ir::features::profiles::PlanarProfileRef::sketch_regions(
         sketch.id.clone(),
         vec![SketchProfileRegion::loops(0, Vec::new()).unwrap()],
     )
@@ -59,7 +59,7 @@ fn partial_or_holed_selection_is_not_the_whole_sketch() {
     assert!(!crate::design::profile_select::selects_whole_sketch(
         &some, &sketch
     ));
-    let holed = cadmpeg_ir::features::PlanarProfileRef::sketch_regions(
+    let holed = cadmpeg_ir::features::profiles::PlanarProfileRef::sketch_regions(
         sketch.id.clone(),
         vec![SketchProfileRegion::loops(0, vec![1, 2]).unwrap()],
     )

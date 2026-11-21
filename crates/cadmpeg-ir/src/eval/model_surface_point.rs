@@ -34,7 +34,7 @@ use super::EvaluationFailure;
 use super::ModelEvaluationDepthGuard;
 use super::ModelEvaluationIdentity;
 use super::UNREACHED_POINT;
-use crate::features::{FinitePoint3, FiniteVector3};
+use crate::features::geometry::{FinitePoint3, FiniteVector3};
 use crate::geometry::{ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
 use crate::math::{Point3, Vector3};
 

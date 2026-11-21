@@ -1428,8 +1428,10 @@ fn another_model_arena_reports_a_generated_tolerance_id_collision() {
     let mut ir = CadIr::empty();
     ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         cadmpeg_ir::ids::PointId::mint(id.as_str().to_owned()).expect("fixture identity"),
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
-            .expect("finite point"),
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            1.0, 2.0, 3.0,
+        ))
+        .expect("finite point"),
         None,
     ));
     let before = ir.clone();

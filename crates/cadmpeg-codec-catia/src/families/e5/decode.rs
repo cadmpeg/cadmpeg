@@ -12,7 +12,7 @@ type E5CurvePlans<'a> = (
 
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve,
     pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
@@ -4297,13 +4297,13 @@ mod route_tests {
         ir.geometry.points.extend([
             Point::new(
                 PointId::mint("catia:test:point#point-10".to_string()).expect("identity grammar"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                     .expect("a finite position is a point"),
                 None,
             ),
             Point::new(
                 PointId::mint("catia:test:point#point-11".to_string()).expect("identity grammar"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
                     .expect("a finite position is a point"),
                 None,
             ),

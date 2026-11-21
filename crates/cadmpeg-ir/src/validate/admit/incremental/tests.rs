@@ -36,7 +36,8 @@ fn source_records() -> Vec<crate::UnknownRecord> {
 fn sourced_point(id: &str) -> crate::topology::Point {
     let mut point = crate::topology::Point::new(
         id.try_into().unwrap(),
-        crate::features::FinitePoint3::new(crate::math::Point3::new(0.0, 0.0, 0.0)).unwrap(),
+        crate::features::geometry::FinitePoint3::new(crate::math::Point3::new(0.0, 0.0, 0.0))
+            .unwrap(),
         None,
     );
     point.source_object = Some(crate::provenance::SourceObjectAssociation {

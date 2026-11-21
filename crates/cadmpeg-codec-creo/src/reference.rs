@@ -6,7 +6,7 @@ use cadmpeg_core::CodecError;
 
 use crate::scalar::{self, ScalarCache};
 use crate::vecmath::{cross, dot, normalize_with_length};
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveLength, PositiveReal};
 use cadmpeg_ir::units::UnitVector3;

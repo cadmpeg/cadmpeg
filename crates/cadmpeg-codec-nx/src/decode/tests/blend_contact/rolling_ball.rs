@@ -447,7 +447,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         origin.x += 1.0e12;
         origin.y += 1.0e12;
         origin.z += 1.0e12;
-        let origin = cadmpeg_ir::features::FinitePoint3::new(origin).unwrap();
+        let origin = cadmpeg_ir::features::geometry::FinitePoint3::new(origin).unwrap();
         *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction);
         *cache = geometry;
         let translated_point =

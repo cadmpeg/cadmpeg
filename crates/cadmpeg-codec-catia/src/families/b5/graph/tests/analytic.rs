@@ -1747,9 +1747,12 @@ fn extrusion_surface_uses_complete_sampled_map_reference_lift() {
 
 #[test]
 fn point_cell_refuses_positive_spatial_overflow() {
-    let point =
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(f64::MAX, 0.0, 0.0))
-            .expect("finite point");
+    let point = cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        f64::MAX,
+        0.0,
+        0.0,
+    ))
+    .expect("finite point");
     let result = super::super::point_index(&[point]);
     assert!(matches!(
         result,
@@ -1759,9 +1762,12 @@ fn point_cell_refuses_positive_spatial_overflow() {
 
 #[test]
 fn point_cell_refuses_negative_spatial_overflow() {
-    let point =
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(-f64::MAX, 0.0, 0.0))
-            .expect("finite point");
+    let point = cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        -f64::MAX,
+        0.0,
+        0.0,
+    ))
+    .expect("finite point");
     let result = super::super::point_index(&[point]);
     assert!(matches!(
         result,

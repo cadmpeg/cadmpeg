@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use cadmpeg_ir::features::SketchProfileBoundaryUse;
+use cadmpeg_ir::features::profiles::SketchProfileBoundaryUse;
 use cadmpeg_ir::sketches::SketchId;
 
 fn id() -> SketchId {

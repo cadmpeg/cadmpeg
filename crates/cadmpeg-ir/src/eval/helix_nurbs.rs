@@ -7,7 +7,7 @@ use cadmpeg_core::convert::f64_from_index;
 use cadmpeg_core::decode::ResourceLimit;
 
 use super::{finite_or_refusal, helix_differential, ModelCurveDifferential};
-use crate::features::{FinitePoint3, FiniteVector3};
+use crate::features::geometry::{FinitePoint3, FiniteVector3};
 use crate::geometry::nurbs::{
     NurbsCurve, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis, WeightedPole3,
 };
