@@ -29,7 +29,8 @@ use super::super::extrude::{ring, LoopEntry};
 use super::super::sketch::{CurveGeometry, OriginPlane, PlannedCurve, PlannedSketch};
 use super::roster::segment;
 use super::sketch::{
-    datum, feature, feature_id, frame, picked, point2, principal, sketch_id, Source,
+    datum, feature, feature_id, fixed_clock_tables, frame, picked, point2, principal, sketch_id,
+    Source,
 };
 use super::{
     loss, neutral, number, parameter_id, scoped_cube, write, write_bytes, EXTRUDE, SKETCH,
@@ -278,6 +279,37 @@ fn the_extrude_replaces_the_base_feature() {
             .all(|message| !message.contains(EXTRUDE)),
         "{:#?}",
         report.losses
+    );
+}
+
+#[test]
+fn an_extrude_design_charges_a_hidden_body_and_every_fixed_clock_table() {
+    let mut ir = sketch_and_extrude(blind(), false);
+    ir.geometry.bodies[0].visible = Some(false);
+    let body = ir.geometry.bodies[0].id.to_string();
+    let (report, decoded, bytes) = write_bytes(&ir);
+    assert_eq!(
+        kinds(&decoded),
+        ["sketch", "extrude"],
+        "{:#?}",
+        report.losses
+    );
+    assert!(
+        loss(&report, "export/value.unwritable")
+            .iter()
+            .any(|message| message.contains("as visible") && message.contains(&body)),
+        "{:#?}",
+        report.losses
+    );
+    let tables = fixed_clock_tables(&report, &bytes);
+    // The component table, three of the sketch and six of the Extrude:
+    // its scope, profile group, start record and profile selection, and
+    // one of each owned parameter. The Base Feature tables 210 and 214
+    // are not written.
+    assert_eq!(tables.len(), 1 + 3 + 6, "{tables:?}");
+    assert!(
+        !tables.contains(&210) && !tables.contains(&214),
+        "{tables:?}"
     );
 }
 
