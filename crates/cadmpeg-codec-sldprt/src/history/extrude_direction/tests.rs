@@ -143,6 +143,7 @@ fn opposite_caps_contradict_reversed_travel() {
                 } else {
                     Vec::new()
                 },
+                assumed: Vec::new(),
             }
         );
         assert_eq!(
@@ -237,12 +238,10 @@ fn decoded_side_cap_prevents_a_contradiction() {
             .copied(),
     );
     witness.caps.push(decoded);
-    assert!(!contradicts(
-        &ir.model,
-        &ir.model.features[0],
-        &witness,
-        &work
-    ));
+    assert_ne!(
+        verdict(&ir.model, &ir.model.features[0], &witness, &work),
+        Some(false)
+    );
 }
 
 #[test]
@@ -352,12 +351,15 @@ fn bounded_planar_meshes_supply_finite_cap_witnesses() {
         ir.model.tessellations.push(mesh);
     }
     assert!(contradicted_features(&ir).contains(&ir.model.features[0].id));
-    assert!(!contradicts(
-        &ir.model,
-        &ir.model.features[0],
-        &evidence(&ir, &WorkBudget::new(MAX_WITNESS_WORK), true).expect("finite caps"),
-        &WorkBudget::new(0)
-    ));
+    assert_ne!(
+        verdict(
+            &ir.model,
+            &ir.model.features[0],
+            &evidence(&ir, &WorkBudget::new(MAX_WITNESS_WORK), true).expect("finite caps"),
+            &WorkBudget::new(0)
+        ),
+        Some(false)
+    );
 }
 
 #[test]
@@ -406,12 +408,10 @@ fn a_solid_along_the_normal_contradicts_a_reversal_without_its_start_cap() {
         caps: evidence(&ir, &work, true).expect("finite caps").caps,
         solid: Solid::default(),
     };
-    assert!(!contradicts(
-        &ir.model,
-        &ir.model.features[0],
-        &caps_only,
-        &work
-    ));
+    assert_ne!(
+        verdict(&ir.model, &ir.model.features[0], &caps_only, &work),
+        Some(false)
+    );
     assert!(contradicted_features(&ir).contains(&ir.model.features[0].id));
     let retained = retain_contradicted_directions(&mut ir);
     assert_eq!(retained.reversals.len(), 1);
@@ -504,6 +504,7 @@ fn end_caps_confirm_a_two_direction_reversal() {
             Retained {
                 changed: confirmed,
                 reversals: Vec::new(),
+                assumed: Vec::new(),
             },
             "{first} {second}"
         );

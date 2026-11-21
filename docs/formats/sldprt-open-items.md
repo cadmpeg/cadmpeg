@@ -1148,13 +1148,13 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 ### SF-03. Sign of the decoded sketch normal off the principal planes
 
-**Question.** Which fields set the sign of a sketch normal where the sketch plane is a datum plane or does not contain the model origin?
+**Question.** Which fields set the sign of a sketch normal, on a datum plane, on a plane off the model origin, and on an axis-aligned plane through the origin?
 
-**Known.** The end-spec reversal flag gives the travel of a one-direction extrusion that adds material relative to the decoded sketch normal (`sldprt.md` §2). Of the one-sided joins whose solid spans exactly their depth, the solid agrees with that rule in 428 of 433 where the sketch plane contains the model origin, and in 13 of 20 where it does not. Of the 12 joins that disagree, 3 have a datum plane on the sketch plane that faces opposite the decoded normal, 7 have a sketch plane off the origin, and 2 have neither. Where the stored flag is `1`, the solid lies against the decoded normal in 89 of 135 one-sided joins; where it is `0`, the solid lies along it in 493 of 532.
+**Known.** The end-spec reversal flag gives the travel of a one-direction extrusion that adds material relative to the decoded sketch normal (`sldprt.md` §2). Of the one-sided joins whose solid spans exactly their depth, the solid agrees with that rule in 428 of 433 where the sketch plane contains the model origin, and in 13 of 20 where it does not. Of the 12 joins that disagree, 3 have a datum plane on the sketch plane that faces opposite the decoded normal, 7 have a sketch plane off the origin, and 2 have neither. Where the stored flag is `1`, the solid lies against the decoded normal in 89 of 135 one-sided joins; where it is `0`, the solid lies along it in 493 of 532. Of the 45 flag-`1` one-sided joins whose whole solid lies along the decoded normal, 24 have a sketch plane off the model origin and 21 an axis-aligned sketch plane through it. Of those 21, 4 have a datum plane on the sketch plane that faces opposite the decoded normal, and 15 have no datum plane on the sketch plane.
 
 **Need.** A decoded normal of the wrong sign reverses the travel of each extrusion on that sketch. Sketches on datum planes of both orientations and sketches off the origin must establish the field that sets the sign.
 
-**Note.** Where the solid contradicts a decoded reversal, the decoder keeps the travel that the solid shows (`feature.extrude-reversal-contradicted`). The decoder does not test the opposite case: 39 joins with flag `0` whose whole solid lies against the normal keep travel along it.
+**Note.** Where the solid contradicts a decoded reversal, the decoder keeps the travel that the solid shows (`feature.extrude-reversal-contradicted`). Where the solid neither holds nor contradicts a decoded reversal, the decoder keeps the reversal and names it (`feature.extrude-reversal-assumed`). The decoder does not test the opposite case: 39 joins with flag `0` whose whole solid lies against the normal keep travel along it.
 
 ### DI-69. Extrusion Boolean carriers
 

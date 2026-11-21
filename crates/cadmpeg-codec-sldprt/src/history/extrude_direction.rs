@@ -54,6 +54,21 @@ pub(crate) fn reversal_unread(properties: &BTreeMap<NonBlankString, String>) -> 
         .is_some_and(|value| value == "false")
 }
 
+/// Whether an edit cleared the reversal that the decoder read: `feature`
+/// travels along its profile normal over a reversal flag `1` that the
+/// decoder read as its travel.
+pub(crate) fn cleared_reversal(feature: &Feature) -> bool {
+    reversal_flag(&feature.source_properties)
+        && !reversal_unread(&feature.source_properties)
+        && matches!(
+            feature.evaluation.definition().operation(),
+            FeatureOperation::Extrude {
+                direction: ExtrudeDirection::ProfileNormal {},
+                ..
+            }
+        )
+}
+
 /// Marks a projected extrusion that travels along its profile normal over a
 /// record whose reversal flag is `1`.
 pub(crate) fn mark_unread_reversal(feature: &mut Feature) {
@@ -135,7 +150,7 @@ pub(crate) fn contradicted_features(ir: &CadIr) -> HashSet<FeatureId> {
     let work = WorkBudget::new(MAX_WITNESS_WORK);
     witness(ir, &work).map_or_else(HashSet::new, |witness| {
         matching(&ir.model, &work, |feature| {
-            contradicts(&ir.model, feature, &witness, &work)
+            verdict(&ir.model, feature, &witness, &work) == Some(false)
         })
     })
 }
@@ -166,24 +181,71 @@ pub(crate) struct Retained {
     /// The decoded reversals that the solid contradicts, each named by its
     /// feature name and id.
     pub(crate) reversals: Vec<String>,
+    /// The decoded reversals that rest on the end-spec flag alone, as the
+    /// solid neither holds nor contradicts them, each named by its feature
+    /// name and id.
+    pub(crate) assumed: Vec<String>,
 }
 
 /// Settles each extrusion's travel against the B-rep: a contradicted
 /// reversal travels along the profile normal, other contradicted travel
 /// stays in the native lane, and a two-direction extrusion whose end caps
-/// confirm its reversal flag travels against the normal.
+/// confirm its reversal flag travels against the normal. Each reversal that
+/// the B-rep does not hold rests on the flag alone.
 pub(crate) fn retain_contradicted_directions(ir: &mut CadIr) -> Retained {
     let work = WorkBudget::new(MAX_WITNESS_WORK);
-    let Some(witness) = witness(ir, &work) else {
-        return Retained::default();
-    };
-    let contradicted = matching(&ir.model, &work, |feature| {
-        contradicts(&ir.model, feature, &witness, &work)
-    });
-    let confirmed = matching(&ir.model, &work, |feature| {
-        confirms(&ir.model, feature, &witness.caps, &work)
-    });
     let mut retained = Retained::default();
+    let mut held = HashSet::new();
+    if let Some(witness) = witness(ir, &work) {
+        let contradicted = matching(&ir.model, &work, |feature| {
+            match verdict(&ir.model, feature, &witness, &work) {
+                Some(true) => {
+                    held.insert(feature.id.clone());
+                    false
+                }
+                verdict => verdict == Some(false),
+            }
+        });
+        let confirmed = matching(&ir.model, &work, |feature| {
+            confirms(&ir.model, feature, &witness.caps, &work)
+        });
+        held.extend(confirmed.iter().cloned());
+        settle_travel(ir, &contradicted, &confirmed, &mut retained);
+    }
+    retained.assumed = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| {
+            reversal_flag(&feature.source_properties)
+                && !held.contains(&feature.id)
+                && matches!(
+                    feature.evaluation.definition().operation(),
+                    FeatureOperation::Extrude {
+                        direction: ExtrudeDirection::ReversedProfileNormal {},
+                        ..
+                    }
+                )
+        })
+        .map(label)
+        .collect();
+    retained
+}
+
+/// The feature's name and id, or its id where it has no name.
+pub(crate) fn label(feature: &Feature) -> String {
+    feature.name.as_ref().map_or_else(
+        || feature.id.as_str().to_owned(),
+        |name| format!("\"{name}\" ({})", feature.id.as_str()),
+    )
+}
+
+fn settle_travel(
+    ir: &mut CadIr,
+    contradicted: &HashSet<FeatureId>,
+    confirmed: &HashSet<FeatureId>,
+    retained: &mut Retained,
+) {
     for feature in &mut ir.model.features {
         let settle: fn(&mut FeatureDefinition) = if contradicted.contains(&feature.id) {
             retain
@@ -202,10 +264,7 @@ pub(crate) fn retain_contradicted_directions(ir: &mut CadIr) -> Retained {
                 ..
             }
         ) {
-            retained.reversals.push(feature.name.as_ref().map_or_else(
-                || feature.id.as_str().to_owned(),
-                |name| format!("\"{name}\" ({})", feature.id.as_str()),
-            ));
+            retained.reversals.push(label(feature));
             set_unread(feature, true);
             retained.changed = true;
         } else if confirmed.contains(&feature.id) {
@@ -225,7 +284,6 @@ pub(crate) fn retain_contradicted_directions(ir: &mut CadIr) -> Retained {
             }
         }
     }
-    retained
 }
 
 /// A contradicted reversal travels along the profile normal, as its solid
@@ -525,45 +583,46 @@ fn samples(entity: &SketchEntity) -> Option<Vec<Point2>> {
     )
 }
 
-/// Whether the B-rep contradicts `feature`'s decoded travel: a reversal
-/// that adds material whose whole solid lies on the profile normal's side
-/// of the profile plane, or a start cap holding the profile with an end cap
-/// only on the opposite side.
-fn contradicts(model: &Model, feature: &Feature, witness: &Witness, work: &WorkBudget) -> bool {
-    let along = reversed_join(feature)
+/// What the B-rep says of `feature`'s decoded travel. It contradicts it
+/// (`Some(false)`) for a reversal that adds material whose whole solid lies
+/// on the profile normal's side of the profile plane, or for a start cap
+/// holding the profile with an end cap only on the opposite side. It holds
+/// it (`Some(true)`) for a reversal whose whole solid lies on the other
+/// side, or for a start cap with an end cap only on the decoded side.
+fn verdict(model: &Model, feature: &Feature, witness: &Witness, work: &WorkBudget) -> Option<bool> {
+    let side = reversed_join(feature)
         .and_then(|profile| profile_sketch(model, profile))
         .and_then(Sketch::resolved_placement)
         .and_then(|(origin, normal, _)| witness.solid.span(origin.get(), normal.get()))
-        .is_some_and(|(lowest, highest)| lowest >= -EPS_SOLID_SIDE && highest > EPS_SOLID_SIDE);
-    if along {
-        return work.charge();
+        .and_then(|(lowest, highest)| {
+            if lowest >= -EPS_SOLID_SIDE && highest > EPS_SOLID_SIDE {
+                Some(false)
+            } else if highest <= EPS_SOLID_SIDE && lowest < -EPS_SOLID_SIDE {
+                Some(true)
+            } else {
+                None
+            }
+        });
+    if let Some(holds) = side {
+        return work.charge().then_some(holds);
     }
-    let Some(OneSided {
+    let OneSided {
         profile,
         length,
         operation_sign,
         travel,
-    }) = candidate(feature)
-    else {
-        return false;
-    };
-    let Some(sketch) = profile_sketch(model, profile) else {
-        return false;
-    };
-    let Some((_, normal, _)) = sketch.resolved_placement() else {
-        return false;
-    };
+    } = candidate(feature)?;
+    let sketch = profile_sketch(model, profile)?;
+    let (_, normal, _) = sketch.resolved_placement()?;
     let normal = normal.get();
-    let Some(points) = profile_points(model, profile, sketch) else {
-        return false;
-    };
+    let points = profile_points(model, profile, sketch)?;
     let start = witness
         .caps
         .iter()
         .filter(|cap| cap.normal.dot(normal).abs() > 1.0 - EPS_CAP_ALIGNMENT)
         .any(|cap| points.iter().all(|point| cap.supports(*point, work)));
     if !start {
-        return false;
+        return None;
     }
     let end = |travel: f64| {
         end_cap(
@@ -577,7 +636,7 @@ fn contradicts(model: &Model, feature: &Feature, witness: &Witness, work: &WorkB
     };
     let decoded = end(travel);
     let opposite = end(-travel);
-    !decoded && opposite && work.charge()
+    (decoded != opposite && work.charge()).then_some(decoded)
 }
 
 /// Whether the end caps confirm the reversal of a two-direction extrusion:
