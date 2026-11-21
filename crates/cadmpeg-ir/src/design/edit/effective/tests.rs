@@ -68,6 +68,7 @@ fn scope(key: u32, active: Option<u32>) -> DesignScope {
         active_arrangements: BTreeSet::new(),
         occurrences: BTreeMap::new(),
         current: Vec::new(),
+        unproduced: BTreeSet::new(),
     }
 }
 

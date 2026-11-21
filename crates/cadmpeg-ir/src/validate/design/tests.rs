@@ -133,6 +133,7 @@ fn timeline(features: Vec<Feature>) -> CadIr {
         active_arrangements: BTreeSet::new(),
         occurrences: BTreeMap::new(),
         current: Vec::new(),
+        unproduced: BTreeSet::default(),
     });
     ir.design.features = features;
     ir.design

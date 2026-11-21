@@ -502,6 +502,7 @@ fn seed_documents() -> Vec<(&'static str, Value)> {
                     "definition": "test:sweep:product-definition#0",
                     "occurrences": {},
                     "roots": ["test:sweep:container#0"],
+                    "unproduced": ["test:sweep:body#0", "test:sweep:body#1"],
                 }),
             ),
         ),

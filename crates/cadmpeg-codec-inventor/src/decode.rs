@@ -1539,7 +1539,7 @@ fn decode_container<'a>(
             feature_inventory.sheet_metal_flanges.len(),
         ),
     ];
-    let coverage: cadmpeg_ir::report::decode::Coverage = coverage_entries
+    let mut coverage: cadmpeg_ir::report::decode::Coverage = coverage_entries
         .into_iter()
         .chain(
             sheet_metal_coverage
@@ -1573,6 +1573,14 @@ fn decode_container<'a>(
             &mut losses,
         )?;
     }
+    if document_kind == DocumentKind::Assembly {
+        crate::design_v11::assembly::project(ctx, &mut ir)?;
+    }
+    coverage.record(
+        crate::coverage::DESIGN_UNPRODUCED_BODIES,
+        crate::design_v11::unproduced_bodies(&ir),
+    );
+    crate::design_v11::contraction::finish(&mut ir);
     let body = DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::at(delivered, geometry_transferred),
         coverage,

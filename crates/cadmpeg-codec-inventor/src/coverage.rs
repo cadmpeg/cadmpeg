@@ -83,3 +83,7 @@ pub(crate) const ACTIVE_KERNEL_CARRIERS: CoverageKey = CoverageKey::new("active_
 pub(crate) const KERNEL_UNKNOWN_RECORDS: CoverageKey = CoverageKey::new("kernel_unknown_records");
 pub(crate) const KERNEL_UNKNOWN_SURFACE_FACES: CoverageKey =
     CoverageKey::new("kernel_unknown_surface_faces");
+
+/// Bodies that the design scopes list as unproduced.
+pub(crate) const DESIGN_UNPRODUCED_BODIES: CoverageKey =
+    CoverageKey::new("design_unproduced_bodies");

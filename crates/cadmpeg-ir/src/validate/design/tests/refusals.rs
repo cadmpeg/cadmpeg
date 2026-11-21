@@ -89,6 +89,7 @@ fn rolled_back(pick: &Value) -> CadIr {
         active_arrangements: BTreeSet::new(),
         occurrences: BTreeMap::new(),
         current: Vec::new(),
+        unproduced: BTreeSet::default(),
     });
     ir.design.features = vec![a, b];
     let records = crate::examples::unit_cube().unwrap().geometry;
