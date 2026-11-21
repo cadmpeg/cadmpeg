@@ -42,6 +42,9 @@ pub(crate) enum ExportLossCode {
     /// A record of this kind is written with an Error the output's own
     /// validation finds (§3.4, Refusals).
     RecordInvalid(EntityKind),
+    /// The output's own validation finds an Error that names no record of a
+    /// model arena (§3.4, Refusals).
+    RuleInvalid,
 }
 
 impl ExportLossCode {
@@ -58,7 +61,7 @@ impl ExportLossCode {
             Self::ParameterRenamed => "parameter.renamed",
             Self::RecordResidualUnavailable => "record.residual-unavailable",
             Self::ValueUnwritable => "value.unwritable",
-            Self::RecordInvalid(_) => "record.invalid",
+            Self::RecordInvalid(_) | Self::RuleInvalid => "record.invalid",
         }
     }
 
@@ -73,7 +76,7 @@ impl ExportLossCode {
             | Self::RecordResidualUnavailable
             | Self::ValueUnwritable => Severity::Warning,
             Self::ParameterRenamed => Severity::Info,
-            Self::EditDropped(_) | Self::RecordInvalid(_) => Severity::Error,
+            Self::EditDropped(_) | Self::RecordInvalid(_) | Self::RuleInvalid => Severity::Error,
         }
     }
 
@@ -88,7 +91,8 @@ impl ExportLossCode {
             | Self::ParameterFlattened
             | Self::ParameterRenamed
             | Self::RecordResidualUnavailable
-            | Self::ValueUnwritable => return LossTaxonomy::ParametricRecordOmitted,
+            | Self::ValueUnwritable
+            | Self::RuleInvalid => return LossTaxonomy::ParametricRecordOmitted,
         };
         match kind {
             EntityKind::Body
@@ -304,10 +308,15 @@ where
 
 /// `export:edit.dropped`: the output holds these records of `kind` as the
 /// source file stores them, without the document's edit (§3.4, Paths item 4).
-/// The message names each record.
+/// Each entry names a record, or the file where the writer's digests do not
+/// isolate the record.
 #[must_use]
-pub fn edit_dropped(kind: EntityKind, message: impl Into<String>) -> LossNote {
-    ExportLossCode::EditDropped(kind).note(message)
+pub fn edit_dropped<I, S>(kind: EntityKind, format: &str, reason: &str, ids: I) -> Option<LossNote>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    listed(ExportLossCode::EditDropped(kind), format, reason, ids)
 }
 
 /// `export:output.empty`: the written file holds no geometry (§3.5).
@@ -322,4 +331,11 @@ pub fn output_empty(message: impl Into<String>) -> LossNote {
 #[must_use]
 pub fn record_invalid(kind: EntityKind, message: impl Into<String>) -> LossNote {
     ExportLossCode::RecordInvalid(kind).note(message)
+}
+
+/// `export:record.invalid` for Errors that name no record of a model arena:
+/// the message names each rule (§3.4, Refusals).
+#[must_use]
+pub fn rule_invalid(message: impl Into<String>) -> LossNote {
+    ExportLossCode::RuleInvalid.note(message)
 }

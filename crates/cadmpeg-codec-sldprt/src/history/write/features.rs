@@ -18,7 +18,7 @@ use crate::history::project::neutral_feature_id;
 
 use super::parameters::restore_equivalent_parameter_expressions;
 use super::project_features_with_native_inputs;
-use super::xml::{feature_xml_tag, valid_xml_name};
+use super::xml::{feature_xml_tag, solidworks_source_tag};
 use crate::history::encode::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::records::FeatureSource;
 
@@ -356,16 +356,6 @@ pub(in crate::history) fn sync_neutral_features(
         .map(|body| (body.id.clone(), body.id.as_str().to_owned()))
         .collect::<HashMap<_, _>>();
     for feature in features {
-        if feature
-            .source_tag
-            .as_deref()
-            .is_some_and(|tag| !valid_xml_name(tag))
-        {
-            return Err(CodecError::malformed(format_args!(
-                "SLDPRT feature {} has an invalid source tag",
-                feature.id
-            )));
-        }
         let mut existing = native
             .feature_histories
             .iter_mut()
@@ -437,7 +427,7 @@ pub(in crate::history) fn sync_neutral_features(
             }
         });
         if let Some(existing) = existing.as_mut() {
-            if let Some(tag) = &feature.source_tag {
+            if let Some(tag) = solidworks_source_tag(feature) {
                 existing.xml_tag.clone_from(tag);
             }
             existing.ordinal = ordinal;

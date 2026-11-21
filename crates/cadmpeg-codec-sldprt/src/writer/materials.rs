@@ -223,7 +223,7 @@ fn material_payload(name: &str, color: Color) -> Vec<u8> {
 /// materials while the document's materials differ from them: each material
 /// record added, removed or changed against the `baseline` decode, or every
 /// record when there is no baseline.
-pub(super) fn retained_materials_kept(ir: &CadIr, baseline: Option<&CadIr>) -> LossNote {
+pub(super) fn retained_materials_kept(ir: &CadIr, baseline: Option<&CadIr>) -> Option<LossNote> {
     let current = swobjects_materials(ir);
     let changed = match baseline {
         Some(baseline) => {
@@ -256,20 +256,19 @@ pub(super) fn retained_materials_kept(ir: &CadIr, baseline: Option<&CadIr>) -> L
             .collect(),
     };
     let named = if changed.is_empty() {
-        "SWObjects".to_owned()
+        BTreeSet::from(["SWObjects".to_owned()])
     } else {
-        changed.into_iter().collect::<Vec<_>>().join(", ")
+        changed
     };
     cadmpeg_ir::codec::write::edit_dropped(
         EntityKind::Appearance,
-        format!(
-            "the SLDPRT semantic exporter keeps the retained SWObjects materials and writes no \
-             material edit{}: {named}",
-            if baseline.is_none() {
-                "; with no source decode it cannot tell which record changed"
-            } else {
-                ""
-            }
-        ),
+        "SLDPRT",
+        if baseline.is_none() {
+            "keeps the retained SWObjects materials and writes no material edit; with no source \
+             decode it cannot tell which record changed"
+        } else {
+            "keeps the retained SWObjects materials and writes no material edit"
+        },
+        named,
     )
 }

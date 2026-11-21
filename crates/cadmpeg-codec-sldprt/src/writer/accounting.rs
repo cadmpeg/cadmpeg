@@ -162,11 +162,15 @@ pub(crate) enum Unwritten {
     UnknownName,
     /// A value has a type, count or range its record cannot hold.
     Unrepresentable,
+    /// An integer is wider than its record's 32-bit field (§3.4,
+    /// `export:value.unwritable`).
+    TooWide,
     /// The exporter cannot add, regenerate or edit this record in place.
     NoSerializer,
     /// The attribute's retained source position does not hold its record.
     RetainedMismatch,
-    /// A saved-property edit; the property carrier is written as stored.
+    /// A saved property the exporter cannot serialize; its carrier is
+    /// written as stored, or no carrier row is written.
     SavedProperty,
     /// A retained record the document no longer states; its bytes are kept.
     Removed,
@@ -205,6 +209,7 @@ impl Unwritten {
             Self::Unrepresentable => {
                 "hold a value whose type, count or range their SLDPRT record cannot hold"
             }
+            Self::TooWide => "hold an integer wider than their SLDPRT record's 32-bit word",
             Self::NoSerializer => {
                 "state a record the SLDPRT semantic exporter cannot add, regenerate or edit in place"
             }
@@ -212,7 +217,7 @@ impl Unwritten {
                 "name a retained source position that does not hold their SLDPRT record"
             }
             Self::SavedProperty => {
-                "are saved-property edits the SLDPRT semantic exporter cannot serialize"
+                "are saved properties the SLDPRT semantic exporter cannot serialize"
             }
             Self::Removed => "are no longer stated by the document",
             Self::OwnerCarried => {
@@ -275,25 +280,38 @@ impl UnwrittenAttributes {
         }
         grouped
             .into_iter()
-            .map(|((held, reason), ids)| {
-                let head = format!(
-                    "{} sldprt metadata attribute record(s) {}, {}",
-                    ids.len(),
-                    reason.stated(),
-                    reason.instead(held)
-                );
-                match held {
-                    Held::Source => cadmpeg_ir::codec::write::edit_dropped(
-                        EntityKind::SourceAttribute,
-                        format!("{head}: {}", ids.join(", ")),
+            .filter_map(|((held, reason), ids)| match (reason, held) {
+                (Unwritten::TooWide, held) => cadmpeg_ir::codec::write::value_unwritable(
+                    "SLDPRT",
+                    &format!(
+                        "names sldprt metadata attribute records that {}, {}",
+                        reason.stated(),
+                        reason.instead(held)
                     ),
-                    Held::Nothing => {
-                        let mut named = NamedCount::default();
-                        for id in ids {
-                            named.push(id);
-                        }
-                        SldprtLossCode::WriterAttributesOmitted.note(format!("{head}: {named}"))
+                    ids,
+                ),
+                (_, Held::Source) => cadmpeg_ir::codec::write::edit_dropped(
+                    EntityKind::SourceAttribute,
+                    "SLDPRT",
+                    &format!(
+                        "names sldprt metadata attribute records that {}, {}",
+                        reason.stated(),
+                        reason.instead(held)
+                    ),
+                    ids,
+                ),
+                (_, Held::Nothing) => {
+                    let head = format!(
+                        "{} sldprt metadata attribute record(s) {}, {}",
+                        ids.len(),
+                        reason.stated(),
+                        reason.instead(held)
+                    );
+                    let mut named = NamedCount::default();
+                    for id in ids {
+                        named.push(id);
                     }
+                    Some(SldprtLossCode::WriterAttributesOmitted.note(format!("{head}: {named}")))
                 }
             })
             .collect()

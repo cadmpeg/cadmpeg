@@ -158,6 +158,22 @@ fn sldprt_with_resolved_features(resolved: &[u8]) -> Vec<u8> {
     file
 }
 
+/// A part whose `Config-0` stream also declares a sketch and a sketch
+/// entity class, so it holds a config-objects lane beside the
+/// `Config-0-ResolvedFeatures` lane.
+pub(crate) fn sldprt_with_sketch_config_objects() -> Vec<u8> {
+    let mut config = config_object_stream_declaring("sgSketch");
+    config.extend(declaration("sgPointHandle"));
+    let mut file = outer_header();
+    file.extend_from_slice(&make_block(0x20, "Contents/Config-0", &config));
+    file.extend_from_slice(&make_block(
+        0x21,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_features_stream(),
+    ));
+    file
+}
+
 /// A part whose `Config-0` class map types its lane scalar's archive class.
 pub(crate) fn sldprt_with_archive_parameter() -> Vec<u8> {
     sldprt_with_resolved_features(&resolved_features_stream())

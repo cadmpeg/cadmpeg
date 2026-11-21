@@ -89,3 +89,59 @@ fn a_reemitted_lane_keeps_unchanged_coordinates_in_their_layout() {
         "{error}"
     );
 }
+
+/// Each lane of a written part decodes back from the member it came from: a
+/// config-objects lane from `Contents/Config-0`, the resolved-features lane
+/// from `Contents/Config-0-ResolvedFeatures`.
+#[test]
+fn a_config_objects_lane_is_written_to_its_own_member() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+    let lanes = |bytes: &[u8]| {
+        let decoded = crate::SldprtCodec
+            .decode(
+                &mut std::io::Cursor::new(bytes.to_vec()),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let native =
+            crate::native::SldprtNative::load(decoded.ir().native.namespace("sldprt").unwrap())
+                .unwrap();
+        let mut lanes = native
+            .feature_input_lanes
+            .iter()
+            .map(|lane| {
+                (
+                    lane.id.split_once('#').unwrap().0.to_owned(),
+                    lane.classes
+                        .iter()
+                        .map(|class| class.name.clone())
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect::<Vec<_>>();
+        lanes.sort();
+        (decoded, lanes)
+    };
+    let source = crate::test_support::carchive::sldprt_with_sketch_config_objects();
+    let (decoded, expected) = lanes(&source);
+    assert_eq!(expected.len(), 2, "{expected:?}");
+    let (mut ir, _, fidelity) = decoded.into_parts();
+    ir.source
+        .as_mut()
+        .unwrap()
+        .attributes
+        .remove(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE)
+        .unwrap();
+    let mut written = Vec::new();
+    crate::SldprtCodec
+        .plan(
+            EncodeInput::new(&ir, Some(&fidelity)),
+            TargetRequest::Inherit,
+        )
+        .unwrap()
+        .write_to(&mut written)
+        .unwrap();
+    assert_eq!(lanes(&written).1, expected);
+}

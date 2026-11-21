@@ -184,7 +184,7 @@ fn inherited_writer_keeps_the_carrier_and_names_every_saved_property_edit() {
         )
         .unwrap_or_else(|error| panic!("mutation {mutation}: {error}"));
         assert_eq!(carrier(&bytes), XML, "mutation {mutation}");
-        losses.assert_charged(held, "saved-property edits", &edited);
+        losses.assert_charged(held, "saved properties", &edited);
     }
 }
 #[test]
@@ -250,7 +250,7 @@ fn inherited_writer_keeps_the_saved_carrier_and_names_a_changed_unit_mirror() {
     )
     .unwrap();
     assert_eq!(carrier(&bytes), XML);
-    losses.assert_charged(Held::Source, "saved-property edits", &mirror);
+    losses.assert_charged(Held::Source, "saved properties", &mirror);
 }
 
 /// A document with no source states saved properties no carrier holds: the
@@ -273,7 +273,7 @@ fn source_less_writer_writes_the_part_and_names_its_saved_properties() {
     .unwrap();
     crate::test_support::UnwrittenLosses::of(&plan.report().losses).assert_charged(
         Held::Nothing,
-        "saved-property edits",
+        "saved properties",
         id,
     );
     let mut bytes = Vec::new();
@@ -321,7 +321,7 @@ fn a_carrier_without_retained_bytes_writes_the_part_and_names_every_property() {
     assert!(scan
         .sections()
         .all(|section| section.name() != Some(MEMBER)));
-    losses.assert_charged(Held::Nothing, "saved-property edits", &saved);
+    losses.assert_charged(Held::Nothing, "saved properties", &saved);
 }
 
 /// The ids of the saved properties `decoded` states.
@@ -374,6 +374,117 @@ fn imageless_write_charges_a_removed_property_the_carrier_keeps() {
     )
     .unwrap();
     assert_eq!(carrier(&bytes), XML);
-    losses.assert_charged(Held::Source, "saved-property edits", &ids[0]);
+    losses.assert_charged(Held::Source, "saved properties", &ids[0]);
     losses.assert_uncharged(&ids[1]);
+}
+
+const CONFIG_MEMBER: &str = "docProps/Config-0-Properties.xml";
+const CONFIG_XML: &[u8] = br#"<ConfigProperties xmlns="http://www.solidworks.com/config-properties" xmlns:v="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes" SW_UnitsLinear="0"><propertySection xmlns="" fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}"><property name="Finish" pid="3" IsEquation="False"><v:lpstr>Anodized</v:lpstr></property><propertyNameDictionaryElement name="Finish" pid="3"/></propertySection></ConfigProperties>"#;
+const CONFIG_PROPERTY: &str = "sldprt:metadata:configuration_property#";
+const UNIT_MIRROR: &str = "sldprt:metadata:source_linear_unit_code#";
+
+/// The envelope fixture with a configuration carrier that holds a unit code.
+fn configuration_carrier_fixture() -> EditableDecodeResult {
+    let original = sldprt_with_body_and_envelope(&triangle_body());
+    let scan = crate::test_support::container::scan(&original);
+    let mut bytes = crate::test_support::container::outer_header();
+    for block in &scan.blocks {
+        bytes.extend(make_block(
+            block.type_id,
+            block.section.name().unwrap(),
+            &block.payload,
+        ));
+    }
+    bytes.extend(make_block(0x44, CONFIG_MEMBER, CONFIG_XML));
+    decode(crate::test_support::container::native_envelope_fixture(
+        &bytes,
+    ))
+}
+
+fn attribute_ids(decoded: &EditableDecodeResult, prefix: &str) -> Vec<String> {
+    decoded
+        .ir()
+        .model
+        .attributes
+        .iter()
+        .filter(|row| row.id.as_str().starts_with(prefix))
+        .map(|row| row.id.as_str().to_owned())
+        .collect()
+}
+
+fn set_last_value(decoded: &mut EditableDecodeResult, id: &str, value: AttributeValue) {
+    let mut ir = decoded.ir_mut();
+    let row = ir
+        .model
+        .attributes
+        .iter_mut()
+        .find(|row| row.id.as_str() == id)
+        .unwrap();
+    match row.values.last_mut() {
+        Some(last) => *last = Some(value),
+        None => row.values.push(Some(value)),
+    }
+}
+
+/// A configuration carrier is written as stored. Its property and its unit
+/// mirror are charged only when edited, also with a digest-only image.
+#[test]
+fn a_configuration_carrier_charges_only_its_edited_property_and_unit_mirror() {
+    let stored = |bytes: &[u8]| {
+        crate::test_support::container::scan(bytes)
+            .sections()
+            .filter(|section| {
+                section.name() == Some(CONFIG_MEMBER) && section.payload() == CONFIG_XML
+            })
+            .count()
+    };
+    let mut decoded = configuration_carrier_fixture();
+    let properties = attribute_ids(&decoded, CONFIG_PROPERTY);
+    assert_eq!(properties.len(), 1);
+    let owner = properties[0]
+        .strip_prefix(CONFIG_PROPERTY)
+        .unwrap()
+        .split_once(':')
+        .unwrap()
+        .0
+        .to_owned();
+    let mirror = attribute_ids(&decoded, UNIT_MIRROR)
+        .into_iter()
+        .find(|id| id.starts_with(&format!("{UNIT_MIRROR}{owner}:")))
+        .unwrap();
+
+    crate::test_support::make_source_image_unavailable(decoded.source_fidelity_mut());
+    let (bytes, losses) = crate::test_support::write_with_unwritten_attributes(
+        decoded.ir(),
+        decoded.source_fidelity(),
+    )
+    .unwrap();
+    assert_eq!(stored(&bytes), 1);
+    losses.assert_uncharged(&properties[0]);
+    losses.assert_uncharged(&mirror);
+
+    set_last_value(
+        &mut decoded,
+        &properties[0],
+        AttributeValue::String("Painted".into()),
+    );
+    let (bytes, losses) = crate::test_support::write_with_unwritten_attributes(
+        decoded.ir(),
+        decoded.source_fidelity(),
+    )
+    .unwrap();
+    assert_eq!(stored(&bytes), 1);
+    losses.assert_charged(Held::Source, "saved properties", &properties[0]);
+    losses.assert_uncharged(&mirror);
+
+    let mut decoded = configuration_carrier_fixture();
+    set_last_value(&mut decoded, &mirror, AttributeValue::Integer(3));
+    let (bytes, losses) = crate::test_support::write_with_unwritten_attributes(
+        decoded.ir(),
+        decoded.source_fidelity(),
+    )
+    .unwrap();
+    assert_eq!(stored(&bytes), 1);
+    losses.assert_charged(Held::Source, "saved properties", &mirror);
+    losses.assert_uncharged(&properties[0]);
 }
