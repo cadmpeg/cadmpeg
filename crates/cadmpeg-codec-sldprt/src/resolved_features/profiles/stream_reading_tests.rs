@@ -193,14 +193,16 @@ struct Decoded {
 /// sketch feature bound to the profile-stream sketch `bound`, whose marker
 /// records draw the box, and one revolve that consumes the sketch feature.
 fn decode(streams: Vec<(Sketch, Vec<SketchEntity>)>, bound: &SketchId) -> Decoded {
-    decode_markers(streams, bound, box_markers())
+    decode_markers(streams, bound, box_markers(), true)
 }
 
-/// `decode` with the marker records `markers` in place of the box's.
+/// `decode` with the marker records `markers` in place of the box's, and a
+/// revolve that consumes the sketch feature only where `revolve` holds.
 fn decode_markers(
     streams: Vec<(Sketch, Vec<SketchEntity>)>,
     bound: &SketchId,
     (markers, payload): (Vec<SketchInputEntity>, Vec<u8>),
+    revolve: bool,
 ) -> Decoded {
     let histories = vec![FeatureHistory {
         id: "history".into(),
@@ -226,16 +228,16 @@ fn decode_markers(
             content: Vec::new(),
         }],
     }];
-    let mut features = vec![
-        feature(
-            sketch_feature_id(),
-            "feature-native",
-            NAME,
-            FeatureDefinition::Operation(FeatureOperation::Sketch {
-                sketch: SketchFeatureBinding::Planar(Some(bound.clone())),
-            }),
-        ),
-        feature(
+    let mut features = vec![feature(
+        sketch_feature_id(),
+        "feature-native",
+        NAME,
+        FeatureDefinition::Operation(FeatureOperation::Sketch {
+            sketch: SketchFeatureBinding::Planar(Some(bound.clone())),
+        }),
+    )];
+    if revolve {
+        features.push(feature(
             FeatureId::mint("synthetic:test:id#revolve").unwrap(),
             "revolve-native",
             "revolve",
@@ -250,8 +252,8 @@ fn decode_markers(
                 }),
                 op: BooleanOp::Join,
             }),
-        ),
-    ];
+        ));
+    }
     let lanes = vec![FeatureInputLane {
         id: LANE.into(),
         configuration: None,
@@ -289,13 +291,13 @@ fn decode_markers(
     )
     .unwrap();
     let mut losses = Vec::new();
-    finalize_unread_marker_entities(&mut entities, held, &mut losses);
+    let unbound = finalize_unread_marker_entities(&mut entities, held, &mut losses);
     crate::history::bind::bind_bound_sketch_profiles(&mut features, &sketches);
     let mut model = cadmpeg_ir::document::Model::default();
     model.features = features;
     model.sketches = sketches;
     model.sketch_entities = entities;
-    crate::resolved_features::stream_readings::note_second_readings(&model, &mut losses);
+    crate::resolved_features::stream_readings::note_stream_readings(&model, &unbound, &mut losses);
     Decoded {
         features: model.features,
         sketches: model.sketches,
@@ -320,9 +322,13 @@ fn revolve_profile(features: &[Feature]) -> Option<&PlanarProfileRef> {
 }
 
 fn second_readings(losses: &[LossNote]) -> Vec<&str> {
+    notes(losses, SldprtLossCode::SketchSecondReading)
+}
+
+fn notes(losses: &[LossNote], code: SldprtLossCode) -> Vec<&str> {
     losses
         .iter()
-        .filter(|loss| loss.code == SldprtLossCode::SketchSecondReading.kind())
+        .filter(|loss| loss.code == code.kind())
         .map(|loss| loss.message.as_str())
         .collect()
 }
@@ -419,8 +425,78 @@ fn a_marker_sketch_with_an_unread_handle_leaves_the_stream_circle_bound() {
         vec![stream_sketch(&circle_id, Some(NAME), &[&[circle]])],
         &circle_id,
         (markers, payload),
+        true,
     );
     assert_eq!(bound_sketch(&decoded.features), Some(&circle_id));
+}
+
+/// A held arc handle whose inline points define no minor arc keeps its
+/// marker role after the finalize pass, so the marker sketch that holds it
+/// does not take the binding from a stream circle either.
+#[test]
+fn a_marker_sketch_with_a_held_arc_handle_leaves_the_stream_circle_bound() {
+    let circle_id = stream_id(0);
+    let circle = circle(&circle_id, "circle", 40.0);
+    let (mut markers, mut payload) = box_markers();
+    let at = u64::try_from(payload.len()).unwrap();
+    payload.extend(super::unread_marker_tests::inline_arc_record(
+        [0.0, 0.0],
+        [0.001, 0.0],
+        [0.001, 1.0e-15],
+    ));
+    let mut arc = SketchInputEntity::new("arc", LANE, 99, at, SketchInputKind::Arc);
+    arc.feature_ref = Some("feature-native".into());
+    arc.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.0, 0.0]);
+    markers.push(arc);
+    let decoded = decode_markers(
+        vec![stream_sketch(&circle_id, Some(NAME), &[&[circle]])],
+        &circle_id,
+        (markers, payload),
+        true,
+    );
+    assert_eq!(bound_sketch(&decoded.features), Some(&circle_id));
+    assert!(decoded
+        .sketches
+        .iter()
+        .all(|sketch| sketch.id != marker_sketch_id()));
+    assert!(
+        decoded
+            .losses
+            .iter()
+            .all(|loss| loss.code != SldprtLossCode::SketchHandleUnresolved.kind()),
+        "the held handle leaves with the marker sketch"
+    );
+}
+
+/// A feature that no revolve takes keeps its stream circle where its marker
+/// sketch's plane does not match the circle's. The marker sketch joins the
+/// model unbound, and a loss names it with the stream sketch it stands
+/// beside.
+#[test]
+fn a_marker_sketch_off_the_stream_plane_is_an_unbound_reading() {
+    let circle_id = stream_id(0);
+    let circle = circle(&circle_id, "circle", 40.0);
+    let (mut stream, entities) = stream_sketch(&circle_id, Some(NAME), &[&[circle]]);
+    stream.placement = SketchPlacement::try_resolved(
+        Point3::new(0.0, 12.0, 0.0),
+        Vector3::new(0.0, 1.0, 0.0),
+        Vector3::new(1.0, 0.0, 0.0),
+    )
+    .unwrap();
+    let decoded = decode_markers(vec![(stream, entities)], &circle_id, box_markers(), false);
+    assert_eq!(bound_sketch(&decoded.features), Some(&circle_id));
+    let marker = decoded
+        .sketches
+        .iter()
+        .find(|sketch| sketch.id == marker_sketch_id())
+        .expect("the marker sketch joins the model");
+    assert_eq!(marker.profiles.as_slice().len(), 1);
+    let unbound = notes(&decoded.losses, SldprtLossCode::SketchMarkerReadingUnbound);
+    assert_eq!(unbound.len(), 1, "{unbound:?}");
+    assert!(unbound[0].starts_with(&format!("sketch {}:", marker_sketch_id())));
+    assert!(unbound[0].contains(circle_id.as_str()));
+    assert!(unbound[0].contains(sketch_feature_id().as_str()));
+    assert!(second_readings(&decoded.losses).is_empty());
 }
 
 /// A stream sketch that closes more loops than the feature's marker records

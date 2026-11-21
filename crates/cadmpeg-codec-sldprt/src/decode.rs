@@ -3648,7 +3648,7 @@ fn build_geometry_ir(
         &ir.model.parameters,
         sketch_lanes,
     )?;
-    crate::resolved_features::profiles::finalize_unread_marker_entities(
+    let unbound_readings = crate::resolved_features::profiles::finalize_unread_marker_entities(
         &mut sketch_entities,
         held_handles,
         &mut pmi_losses,
@@ -3870,7 +3870,11 @@ fn build_geometry_ir(
         &mut annotations,
     )?;
     pmi_losses.extend(configuration_losses);
-    crate::resolved_features::stream_readings::note_second_readings(&ir.model, &mut pmi_losses);
+    crate::resolved_features::stream_readings::note_stream_readings(
+        &ir.model,
+        &unbound_readings,
+        &mut pmi_losses,
+    );
     crate::history::configuration::bind_configuration_topology_selections(
         &mut ir,
         &histories,
@@ -5051,7 +5055,7 @@ fn build_metadata_ir(
         &histories,
         lanes,
     );
-    crate::resolved_features::profiles::finalize_unread_marker_entities(
+    let unbound_readings = crate::resolved_features::profiles::finalize_unread_marker_entities(
         &mut ir.model.sketch_entities,
         held_handles,
         &mut pmi_losses,
@@ -5090,7 +5094,11 @@ fn build_metadata_ir(
         &mut annotations,
     )?;
     pmi_losses.extend(configuration_losses);
-    crate::resolved_features::stream_readings::note_second_readings(&ir.model, &mut pmi_losses);
+    crate::resolved_features::stream_readings::note_stream_readings(
+        &ir.model,
+        &unbound_readings,
+        &mut pmi_losses,
+    );
     crate::history::configuration::inherit_configuration_reference_plane_states(ctx, &mut ir)?;
     crate::history::bind::order_model_features_for_regeneration(ctx, &mut ir)?;
     stamp_feature_baseline(ctx, &mut ir)?;
