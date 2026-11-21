@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::decode::View;
 
-use super::is_class_token;
+use super::{is_class_token, CLASS_MARKER};
 use crate::archive::resolved_features_count;
 use crate::layout::feature_input_scalar_parameter_class as class_slot;
 use crate::records::{
@@ -136,8 +136,8 @@ fn stated(
 /// order, such that both orders agree and each token is first used after its
 /// declaration. Where exactly one such assignment exists, it names each
 /// token's class; otherwise no token is named. A token below the stream's
-/// opening map count names a class of the `Config-N` map, which the lane does
-/// not hold.
+/// opening map count (see [`opening_count`]) names a class of the `Config-N`
+/// map, which the lane does not hold.
 fn token_classes(
     payload: &[u8],
     classes: &[FeatureInputClass],
@@ -165,7 +165,7 @@ fn token_classes(
         .filter_map(|index| Some((index, *first_use.get(&index)?)))
         .collect::<Vec<_>>();
     if tokens.is_empty()
-        || resolved_features_count(payload)
+        || opening_count(payload)
             .is_some_and(|count| tokens.iter().any(|&(index, _)| u32::from(index) < count))
     {
         return HashMap::new();
@@ -198,6 +198,15 @@ fn token_classes(
             .collect(),
         _ => HashMap::new(),
     }
+}
+
+/// The map count the lane's stream opens with. A stream that opens with a
+/// class declaration, as a `Config-N` stream does, states none.
+fn opening_count(payload: &[u8]) -> Option<u32> {
+    if payload.starts_with(CLASS_MARKER) {
+        return None;
+    }
+    resolved_features_count(payload)
 }
 
 /// The order-preserving assignments of tokens to declarations found so far,

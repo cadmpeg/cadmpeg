@@ -19,6 +19,11 @@ impl Stream {
         Self(vec![0x20, 0x00])
     }
 
+    /// A stream that opens with its first class declaration.
+    fn declared() -> Self {
+        Self(Vec::new())
+    }
+
     fn counted(count: u32) -> Self {
         let mut bytes = count.to_le_bytes().to_vec();
         bytes.extend_from_slice(&[0x02, 0x00]);
@@ -232,6 +237,29 @@ fn a_token_below_the_stream_map_count_names_a_configuration_class() {
         vec![
             ("D1".into(), Some(StatedParameter::Length(0.01))),
             ("D2".into(), None),
+        ]
+    );
+}
+
+#[test]
+fn a_stream_that_opens_with_a_declaration_states_no_map_count() {
+    // Its first four bytes are the declaration marker, which read as a u32
+    // would put every token below the count.
+    let mut stream = Stream::declared();
+    stream
+        .declare("sgPntPntDist")
+        .zero_word()
+        .declare("moLengthParameter_c")
+        .scalar("D1", &metres(0.01), 0, 7)
+        .token(401)
+        .zero_word()
+        .token(469)
+        .scalar("D2", &metres(0.02), 0, 8);
+    assert_eq!(
+        stated_by_name(&stream.lane()),
+        vec![
+            ("D1".into(), Some(StatedParameter::Length(0.01))),
+            ("D2".into(), Some(StatedParameter::Length(0.02))),
         ]
     );
 }
