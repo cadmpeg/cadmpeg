@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Extrude and hole write encoders.
 
-use super::super::literals::{format_angle_rad, format_length_mm};
+use super::super::literals::{format_angle_rad, format_length_mm, parse_bool};
 use super::format::{format_length_like, format_point3_mm, format_vector3};
 use super::support::{
     face_selection_value, profile_source, resolved_boolean_op, vertex_selection_value,
@@ -331,6 +331,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     }
                 }
             }
+            let reversed = existing.is_some_and(|record| {
+                record
+                    .properties
+                    .get("Reverse")
+                    .map(String::as_str)
+                    .and_then(parse_bool)
+                    == Some(true)
+            });
             match direction {
                 cadmpeg_ir::features::ExtrudeDirection::Unresolved {}
                     if self.contradicted_travel
@@ -351,7 +359,16 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         feature.id
                     )));
                 }
+                cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {} if reversed => {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} clears its extrusion reversal",
+                        feature.id
+                    )));
+                }
                 cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {} => {
+                    properties.remove("Direction");
+                }
+                cadmpeg_ir::features::ExtrudeDirection::ReversedProfileNormal {} if reversed => {
                     properties.remove("Direction");
                 }
                 cadmpeg_ir::features::ExtrudeDirection::ReversedProfileNormal {} => {
@@ -757,5 +774,83 @@ mod tests {
                 assert!(!encoded.properties.contains_key("Direction"));
             }
         }
+    }
+
+    /// A reversed extrusion projects against its profile normal, and writes
+    /// only where its record keeps the reversal.
+    #[test]
+    fn a_reversal_writes_only_with_the_record_that_states_it() {
+        let record = |reverse: bool| -> crate::records::Feature {
+            let mut properties = serde_json::json!({"EndCondition":"Blind", "Operation":"Join"});
+            if reverse {
+                properties["Reverse"] = "true".into();
+            }
+            serde_json::from_value(serde_json::json!({
+                "id":"native", "parent":"history", "ordinal":0,
+                "name":"Extrude", "kind":"BossExtrude", "xml_tag":"Extrusion",
+                "input_class":"moExtrusion_c", "parameters":{"Depth":"10mm"},
+                "properties":properties
+            }))
+            .expect("synthetic feature record")
+        };
+        let project = |record: &crate::records::Feature| {
+            let history: crate::records::FeatureHistory =
+                serde_json::from_value(serde_json::json!({
+                    "id":"history", "features":[record.clone()]
+                }))
+                .expect("synthetic history");
+            crate::history::project::project_features(&[history])
+                .expect("feature projection")
+                .into_iter()
+                .next()
+                .expect("extrusion")
+        };
+        let direction =
+            |feature: &cadmpeg_ir::features::Feature| match feature.evaluation.definition() {
+                FeatureDefinition::Operation(FeatureOperation::Extrude { direction, .. }) => {
+                    direction.clone()
+                }
+                other => panic!("an extrusion: {other:?}"),
+            };
+        let encode = |feature: &cadmpeg_ir::features::Feature,
+                      existing: &crate::records::Feature| {
+            NeutralFeatureEncoder {
+                contradicted_travel: false,
+                feature,
+                existing: Some(existing),
+                principal_planes_by_record: &HashMap::new(),
+                record_sources: &HashMap::new(),
+                retained_tree_node_roles: &HashMap::new(),
+                feature_sources: &HashMap::new(),
+                sketch_sources: &HashMap::new(),
+                parent_sources: &HashMap::new(),
+                resolved_parameter_names: &HashMap::new(),
+            }
+            .encode()
+        };
+        let reversed = record(true);
+        let mut feature = project(&reversed);
+        assert_eq!(
+            direction(&feature),
+            ExtrudeDirection::ReversedProfileNormal {}
+        );
+        let encoded = encode(&feature, &reversed).expect("the record keeps the reversal");
+        assert_eq!(
+            encoded.properties.get("Reverse").map(String::as_str),
+            Some("true")
+        );
+        assert!(encode(&feature, &record(false)).is_err());
+        assert_eq!(
+            direction(&project(&record(false))),
+            ExtrudeDirection::ProfileNormal {}
+        );
+        feature.evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::Extrude { direction, .. }) =
+                definition
+            {
+                *direction = ExtrudeDirection::ProfileNormal {};
+            }
+        });
+        assert!(encode(&feature, &reversed).is_err());
     }
 }

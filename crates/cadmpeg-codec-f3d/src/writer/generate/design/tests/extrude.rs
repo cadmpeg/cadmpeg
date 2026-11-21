@@ -38,6 +38,7 @@ use super::{
 mod arcs;
 mod faces;
 mod holes;
+mod reversed;
 
 const TOLERANCE: f64 = 1e-9;
 /// The cube's edge, in mm.

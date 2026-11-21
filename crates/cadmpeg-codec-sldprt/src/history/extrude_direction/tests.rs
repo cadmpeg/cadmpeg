@@ -105,6 +105,29 @@ fn opposite_caps_contradict_implicit_travel_with_mirrored_controls() {
 }
 
 #[test]
+fn opposite_caps_contradict_reversed_travel() {
+    for (start, normal, contradicted) in [
+        (10.0, 1.0, false),
+        (10.0, -1.0, true),
+        (0.0, 1.0, true),
+        (0.0, -1.0, false),
+    ] {
+        let mut ir = model(start, normal);
+        ir.model.features[0].evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::Extrude { direction, .. }) =
+                definition
+            {
+                *direction = ExtrudeDirection::ReversedProfileNormal {};
+            }
+        });
+        assert_eq!(
+            contradicted_features(&ir).contains(&ir.model.features[0].id),
+            contradicted
+        );
+    }
+}
+
+#[test]
 fn absent_caps_and_carrier_failures_preserve_travel() {
     for missing in [0.0, 10.0] {
         let mut ir = model(10.0, 1.0);

@@ -200,6 +200,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
         features_by_id.entry(feature.id.as_str()).or_insert(feature);
     }
     let mut terminations = HashMap::<String, Vec<Option<TerminationVote>>>::new();
+    let mut reversals = HashMap::<String, Vec<Option<bool>>>::new();
     let mut start_conditions =
         HashMap::<String, Vec<super::extrusion_start::StartCondition>>::new();
     for lane in lanes {
@@ -422,21 +423,27 @@ pub(crate) fn enrich_history_extrusion_terminations(
                         }))
                     })()?;
                 if let Some(candidate) = candidate {
-                    candidates.push(candidate);
+                    let reversed = View::u32_le_at(&lane.native_payload, offset + 12) == Some(1);
+                    candidates.push((candidate, Some(reversed)));
                 }
             }
             let grouped = (grouped_blind.get(feature_id.as_str()) == Some(&1))
-                .then_some(TerminationVote::Blind { depth_m: None });
-            let vote = if candidates.len() == 1 {
+                .then_some((TerminationVote::Blind { depth_m: None }, None));
+            let (vote, reversed) = if candidates.len() == 1 {
                 candidates.pop()
             } else {
                 None
             }
-            .or(grouped);
+            .or(grouped)
+            .unzip();
             terminations
                 .entry(feature_id.clone())
                 .or_default()
                 .push(vote);
+            reversals
+                .entry(feature_id.clone())
+                .or_default()
+                .push(reversed.flatten());
         }
     }
     for feature in histories
@@ -452,15 +459,35 @@ pub(crate) fn enrich_history_extrusion_terminations(
                 super::extrusion_start::insert_condition(&mut feature.properties, condition)?;
             }
         }
+        let Some(vote) = terminations
+            .get(&feature.id)
+            .map(Vec::as_slice)
+            .and_then(consensus_termination_vote)
+        else {
+            continue;
+        };
+        let reversed = reversals
+            .get(&feature.id)
+            .is_some_and(|flags| !flags.is_empty() && flags.iter().all(|flag| *flag == Some(true)));
+        // The flag belongs to the end spec's own termination: a Keywords end
+        // condition that names another one leaves the reversal unread.
+        let same_termination = feature
+            .properties
+            .get("EndCondition")
+            .is_none_or(|condition| condition == vote.condition());
+        if reversed
+            && same_termination
+            && !matches!(
+                vote,
+                TerminationVote::Symmetric | TerminationVote::ThroughAllBoth
+            )
+            && !feature.properties.contains_key("Reverse")
+        {
+            insert_termination_field(&mut feature.properties, "Reverse", "true".to_owned())?;
+        }
         if feature.properties.contains_key("EndCondition") {
             continue;
         }
-        let Some(votes) = terminations.get(&feature.id) else {
-            continue;
-        };
-        let Some(vote) = consensus_termination_vote(votes) else {
-            continue;
-        };
         let condition = vote.condition().to_owned();
         insert_termination_field(&mut feature.properties, "EndCondition", condition)?;
         match vote {

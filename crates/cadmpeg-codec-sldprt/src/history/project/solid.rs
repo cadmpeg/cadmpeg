@@ -16,9 +16,9 @@ use std::collections::HashMap;
 
 use crate::history::classify::{extrude_feature_op, is_legacy_history_extrusion, source_depth};
 use crate::history::literals::{
-    parse_angle_rad, parse_boolean_op, parse_bounded_angle_rad, parse_dimension_display_length,
-    parse_point3_mm, parse_positive_dimension_length_mm, parse_positive_length_mm, parse_vector3,
-    strip_diameter_modifier, valid_direction,
+    parse_angle_rad, parse_bool, parse_boolean_op, parse_bounded_angle_rad,
+    parse_dimension_display_length, parse_point3_mm, parse_positive_dimension_length_mm,
+    parse_positive_length_mm, parse_vector3, strip_diameter_modifier, valid_direction,
 };
 
 pub(super) fn project_extrude(
@@ -188,6 +188,15 @@ pub(super) fn project_extrude(
                 vector,
                 source: None,
             }
+        }
+        None if feature
+            .properties
+            .get("Reverse")
+            .map(String::as_str)
+            .and_then(parse_bool)
+            == Some(true) =>
+        {
+            cadmpeg_ir::features::ExtrudeDirection::ReversedProfileNormal {}
         }
         None => cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
     };
