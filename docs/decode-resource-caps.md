@@ -428,6 +428,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-sldprt`   | `src/parasolid.rs`                                 | `MAX_WRAPPED_FRAME_UNCOMPRESSED`          | `512 * 1024 * 1024`                                     | 2    | Declared size of a wrapped Parasolid frame, checked before `begin_expand`. Excess skips the frame; the block keeps its other candidates.                                                                                                                                     |
 | `cadmpeg-codec-sldprt` | `src/metadata/configuration_manager.rs` | `MAX_FILETIME` | `157_469_184_000_000_000` | 1 | Reader's window for the configuration-manager FILETIME scalar, the end of 2099 UTC. A later value does not frame the record. |
 | `cadmpeg-codec-sldprt` | `src/brep/topology.rs` | `MAX_SHORT_POINTER_INDEX` | `0x7fff` | 1 | Largest admitted short-form topology pointer; larger values require an extended reference frame. |
+| `cadmpeg-codec-solidedge` | `src/settings.rs` | `MAX_NAME_BYTES` | `512` | 1 | Largest name field of a `PSMcluster0` property record. A larger count does not frame a record, and the set does not walk. |
 | `cadmpeg-codec-sldprt` | `src/brep/topology.rs` | `MAX_STRING_NODE_BYTES` | `4096` | 1 | Reader's framing window for the stated text length of a KEY or CHAR_VALUES node in the topology scope pass. A node that states a longer text does not frame, and its bytes are scanned as other unframed bytes. |
 | `cadmpeg-codec-sldprt`   | `src/history/project/solid.rs`                     | `MAX_DIMENSIONS`                          | `7`                                                     | 1    | Dimension slots of the recognized hole-sketch shape. More dimensions mean the shape does not match (`None`).                                                                                                                                                                 |
 | `cadmpeg-codec-sldprt`   | `src/history/project/solid.rs`                     | `MAX_DIAMETERS`                           | `3`                                                     | 1    | Diameter slots of the same shape.                                                                                                                                                                                                                                            |
@@ -572,16 +573,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 350.
+Production `MAX_*` constants: 351.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
-| 1    | Format or reader invariant | 42    |
+| 1    | Format or reader invariant | 43    |
 | 2    | Per-input bound            | 78    |
 | 3    | Session ceiling            | 0     |
 | 4    | Local work cap             | 175   |
 | N    | Not a decode bound         | 55    |
-|      | Total                      | 350   |
+|      | Total                      | 351   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -591,6 +592,7 @@ By crate: `cadmpeg-core` 3, `cadmpeg-ir` 19, `cadmpeg-parasolid` 1, `cadmpeg-mea
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 8,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 30,
 `cadmpeg-codec-nx` 27, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 38,
+`cadmpeg-codec-solidedge` 1,
 `cadmpeg-codec-catia` 80, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
 `cadmpeg-tessellate` 4.
 
