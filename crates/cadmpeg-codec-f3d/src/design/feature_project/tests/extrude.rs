@@ -1485,7 +1485,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     },
                 },
                 ..
-            }) if actual_length.get() == 5.5 && actual_length_2.get() == 0.5 && actual_draft.get() == -0.3
+            }) if actual_length.get() == 5.5 && actual_length_2.get() == -0.5 && actual_draft.get() == -0.3
         ));
         set_extrude_direction_reversed(&mut scope, true);
         assert!(
@@ -1904,7 +1904,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     },
                 },
                 ..
-            }) if (id == &start_group.id) && actual_length.get() == 5.5 && actual_length_2.get() == 0.5
+            }) if (id == &start_group.id) && actual_length.get() == 5.5 && actual_length_2.get() == -0.5
         ));
     });
 }

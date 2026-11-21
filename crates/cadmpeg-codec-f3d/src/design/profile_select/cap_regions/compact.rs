@@ -17,6 +17,8 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::HashSet;
 
+mod two_sided;
+
 const PERPENDICULAR_SIDE: f64 = 1.0e-9;
 const TRANSVERSE_CYLINDER: f64 = 1.0e-9;
 
@@ -231,7 +233,7 @@ pub(in crate::design::profile_select) fn selection_agrees(
         &deleted,
         &frame,
         &outline,
-        far,
+        (far.min(0.0), far.max(0.0)),
         tolerance,
     ))
 }
@@ -368,7 +370,7 @@ fn inserted_sides_agree(
     deleted: &[DeletedSide],
     frame: &PlaneFrame,
     outline: &[Piece],
-    far: f64,
+    travel: (f64, f64),
     tolerance: f64,
 ) -> bool {
     let mut side_count = 0;
@@ -378,7 +380,7 @@ fn inserted_sides_agree(
         };
         if let ParallelPlane::At(point) = parallel_plane(after, *face, frame.normal) {
             let height = frame.height(point);
-            if height < far.min(0.0) - tolerance || height > far.max(0.0) + tolerance {
+            if height < travel.0 - tolerance || height > travel.1 + tolerance {
                 return false;
             }
             continue;
@@ -399,7 +401,7 @@ fn inserted_sides_agree(
                     edge,
                     frame,
                     outline,
-                    far,
+                    travel,
                     tolerance,
                 )
             {
@@ -417,7 +419,7 @@ fn inserted_sides_agree(
                 high = high.max(height);
             }
         }
-        let mut spans = vec![(far.min(0.0), far.max(0.0))];
+        let mut spans = vec![travel];
         if let Some(carrier) = SideCarrier::of(after, *face) {
             spans.extend(
                 deleted
@@ -601,6 +603,9 @@ pub(in crate::design::profile_select) fn added_candidate(
     state_ids: (i64, i64),
     sweep: Sweep<'_>,
 ) -> Result<Option<PlanarProfileRef>, CodecError> {
+    if matches!(sweep.extent, ExtrudeExtent::TwoSided { .. }) {
+        return two_sided::added_candidate(sketch, resolution, state_ids, sweep);
+    }
     if !matches!(sweep.operation, BooleanOp::Join | BooleanOp::NewBody) {
         return Ok(None);
     }
@@ -658,7 +663,7 @@ pub(in crate::design::profile_select) fn added_candidate(
         &deleted,
         &frame,
         &outline,
-        far,
+        (far.min(0.0), far.max(0.0)),
         resolution.linear_tolerance,
     ) {
         return Ok(None);
@@ -735,7 +740,7 @@ fn bounded_lateral_ellipse(
     edge: i64,
     frame: &PlaneFrame,
     outline: &[Piece],
-    far: f64,
+    travel: (f64, f64),
     tolerance: f64,
 ) -> bool {
     let Some(plane) = topology
@@ -794,8 +799,8 @@ fn bounded_lateral_ellipse(
         };
         let height = frame.height(center);
         let height_span = span(frame.normal);
-        if height - height_span < far.min(0.0) - tolerance
-            || height + height_span > far.max(0.0) + tolerance
+        if height - height_span < travel.0 - tolerance
+            || height + height_span > travel.1 + tolerance
         {
             continue;
         }

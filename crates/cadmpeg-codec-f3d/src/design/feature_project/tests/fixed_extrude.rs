@@ -588,3 +588,41 @@ fn the_measurement_word_selects_each_side_or_whole_symmetric_travel() {
 }
 
 mod through_all;
+
+#[test]
+fn signed_distance_lanes_keep_both_end_heights_relative_to_the_profile_plane() {
+    use cadmpeg_ir::features::ExtrudeDirection;
+    for (along, against, first_length, second_length, reversed) in [
+        (4.4, 3.7, 44.0, 37.0, false),
+        (-4.4, 3.7, 44.0, -37.0, true),
+        (4.4, -3.7, 44.0, -37.0, false),
+        (-4.4, -3.7, 44.0, 37.0, true),
+    ] {
+        let scope = fixed_extrude(
+            DesignExtrudeExtent::TwoSidedDistance,
+            DesignFixedExtrudeParameters {
+                along_distance: Some(DesignFixedExtrudeDistance::FixedScalar(distance(along, 11))),
+                against_distance: Some(distance(against, 17)),
+                ..Default::default()
+            },
+        );
+        let Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
+            direction,
+            extent: ExtrudeExtent::TwoSided { first, second },
+            ..
+        })) = projected(&scope)
+        else {
+            panic!("two signed blind sides");
+        };
+        assert_eq!(
+            matches!(direction, ExtrudeDirection::ReversedProfileNormal {}),
+            reversed
+        );
+        assert!(
+            matches!(first.termination, LinearTermination::Blind { length } if length.get() == first_length)
+        );
+        assert!(
+            matches!(second.termination, LinearTermination::Blind { length } if length.get() == second_length)
+        );
+    }
+}
