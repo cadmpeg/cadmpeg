@@ -1865,9 +1865,85 @@ pub struct HistoricalEdgeGeometry {
     pub end: Option<FinitePoint3>,
     /// Faces of the owning input state that use the edge.
     pub faces: DistinctMembers<HistoricalFaceId>,
+    /// Carrier curve of the edge and the parameter interval the edge covers
+    /// on it, in the frame of `interior`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_edge_geometry_carrier"
+    )]
+    pub carrier: Option<HistoricalEdgeCarrier>,
     /// Support faces of an unequal two-distance chamfer that selects this edge.
     /// Empty for every other edge.
     pub supports: Vec<EdgeSupport>,
+}
+
+/// Carrier of one historical edge: a curve that holds no arena references,
+/// and the parameter interval of the edge on it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct HistoricalEdgeCarrier {
+    /// Carrier curve.
+    pub curve: HistoricalEdgeCurve,
+    /// Parameter interval of the edge on `curve`, lower endpoint first.
+    pub range: crate::topology::ParameterInterval,
+}
+
+/// Shape of a historical edge's carrier curve.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+pub enum HistoricalEdgeCurve {
+    /// Infinite line.
+    Line(crate::geometry::analytic::LineCurve),
+    /// Full circle.
+    Circle(crate::geometry::analytic::CircleCurve),
+    /// Ellipse.
+    Ellipse(crate::geometry::analytic::EllipseCurve),
+    /// Parabola in STEP conic form.
+    Parabola(crate::geometry::analytic::ParabolaCurve),
+    /// Hyperbola in STEP conic form.
+    Hyperbola(crate::geometry::analytic::HyperbolaCurve),
+    /// Free-form NURBS curve.
+    Nurbs(crate::geometry::nurbs::NurbsCurve),
+}
+
+impl HistoricalEdgeCurve {
+    /// The carrier of `geometry`, absent for a carrier that refers to other
+    /// curves or holds no closed-form shape.
+    #[must_use]
+    pub fn from_solved(geometry: &crate::geometry::SolvedCurveGeometry) -> Option<Self> {
+        use crate::geometry::SolvedCurveGeometry as Solved;
+        match geometry {
+            Solved::Line(curve) => Some(Self::Line(*curve)),
+            Solved::Circle(curve) => Some(Self::Circle(*curve)),
+            Solved::Ellipse(curve) => Some(Self::Ellipse(*curve)),
+            Solved::Parabola(curve) => Some(Self::Parabola(*curve)),
+            Solved::Hyperbola(curve) => Some(Self::Hyperbola(*curve)),
+            Solved::Nurbs(curve) => Some(Self::Nurbs(curve.clone())),
+            Solved::Degenerate(_)
+            | Solved::Composite { .. }
+            | Solved::Polyline(_)
+            | Solved::Transformed(_)
+            | Solved::Unknown { .. } => None,
+        }
+    }
+
+    /// The carrier as solved curve geometry, for evaluation.
+    #[must_use]
+    pub fn to_solved(&self) -> crate::geometry::SolvedCurveGeometry {
+        use crate::geometry::SolvedCurveGeometry as Solved;
+        match self {
+            Self::Line(curve) => Solved::Line(*curve),
+            Self::Circle(curve) => Solved::Circle(*curve),
+            Self::Ellipse(curve) => Solved::Ellipse(*curve),
+            Self::Parabola(curve) => Solved::Parabola(*curve),
+            Self::Hyperbola(curve) => Solved::Hyperbola(*curve),
+            Self::Nurbs(curve) => Solved::Nurbs(curve.clone()),
+        }
+    }
 }
 
 /// One member of a feature result state: a body, face, edge, or vertex.
@@ -9502,6 +9578,11 @@ cadmpeg_core::named_optional_field!(
 cadmpeg_core::named_optional_field!(deserialize_edge_geometry_tangent, UnitVector3, "tangent");
 cadmpeg_core::named_optional_field!(deserialize_edge_geometry_start, FinitePoint3, "start");
 cadmpeg_core::named_optional_field!(deserialize_edge_geometry_end, FinitePoint3, "end");
+cadmpeg_core::named_optional_field!(
+    deserialize_edge_geometry_carrier,
+    HistoricalEdgeCarrier,
+    "carrier"
+);
 cadmpeg_core::named_optional_field!(deserialize_source_index, u32, "source_index");
 cadmpeg_core::named_optional_field!(deserialize_name, String, "name");
 cadmpeg_core::named_optional_field!(deserialize_material, String, "material");

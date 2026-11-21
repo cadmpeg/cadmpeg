@@ -10,7 +10,7 @@ use super::{
     FeatureImageBounds, FeatureInputTopology, FeatureLineSegment, FeatureResultMembers,
     FeatureResultTopology, FeatureTreeNodeRole, FeatureUnitPlaneFrame,
     FilledSurfaceBoundaryCondition, FlexForm, FlexMode, FuzzyTolerance, GeometryImportFormat,
-    HelicalSweepLaw, HelicalSweepTravel, HelixConstructionStyle, HelixShape,
+    HelicalSweepLaw, HelicalSweepTravel, HelixConstructionStyle, HelixShape, HistoricalEdgeCarrier,
     HistoricalEdgeGeometry, InnerWireTaper, NoGeneratedSection, ParameterPmi, PmiDimensionSubtype,
     PolygonSideCount, PrincipalPlane, RevolutionFuseOrder, RibDraft, RibSide,
     RuledCurveOrientation, RuledSurfaceCorner, ScaleFactors, SheetMetalBendPosition,
@@ -44,8 +44,9 @@ rewrite_scalar!(FeatureCoordinateFrame);
 rewrite_scalar!(FeatureEllipticArc);
 rewrite_scalar!(FeatureImageBounds);
 rewrite_record!(FeatureInputTopology, []; {id, input_of, bodies, faces, edges, vertices, edge_geometry, native_ref});
+rewrite_record!(HistoricalEdgeGeometry, []; {edge, interior, tangent, start, end, faces, carrier, supports});
+rewrite_scalar!(HistoricalEdgeCarrier);
 rewrite_record!(EdgeSupport, []; {face, normal, with_edge});
-rewrite_record!(HistoricalEdgeGeometry, []; {edge, interior, tangent, start, end, faces, supports});
 rewrite_scalar!(FeatureLineSegment);
 rewrite_record!(FeatureResultMembers, []; {bodies, faces, edges, vertices});
 rewrite_record!(FeatureResultTopology, []; {id, output_of, members, native_ref});
