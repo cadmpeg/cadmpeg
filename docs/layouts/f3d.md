@@ -14999,9 +14999,9 @@ Offsets are relative to the paired indexed header. The offsets hold when both re
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `paired_header` | `bytes[11]` | little | spec | the paired indexed header, eight zero bytes, the sketch container reference |
-| 11 | 8 | `zero_run` | `bytes[8]` | little | spec | the paired indexed header, eight zero bytes, the sketch container reference · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
-| 19 | 11 | `container` | `bytes[11]` | little | spec | the paired indexed header, eight zero bytes, the sketch container reference |
+| 0 | 11 | `paired_header` | `bytes[11]` | little | spec | the paired indexed header of type `855F0A64-6286-4FFC-B918-BC394F600107`, eight zero bytes, the sketch container reference |
+| 11 | 8 | `zero_run` | `bytes[8]` | little | spec | the paired indexed header of type `855F0A64-6286-4FFC-B918-BC394F600107`, eight zero bytes, the sketch container reference · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+| 19 | 11 | `container` | `bytes[11]` | little | spec | the paired indexed header of type `855F0A64-6286-4FFC-B918-BC394F600107`, eight zero bytes, the sketch container reference |
 | 30 | 12 | `zero_run_2` | `bytes[12]` | little | spec | twelve zero bytes, the f32 `1.0`, two zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
 | 42 | 4 | `scale` | `f32` | little | spec | twelve zero bytes, the f32 `1.0`, two zero bytes · value `1.0` |
 | 46 | 2 | `zero_run_3` | `bytes[2]` | little | spec | twelve zero bytes, the f32 `1.0`, two zero bytes · value `[0, 0]` |

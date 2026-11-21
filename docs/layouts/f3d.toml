@@ -51419,14 +51419,14 @@ name = "paired_header"
 offset = 0
 type = "bytes[11]"
 source = "spec"
-anchor = "the paired indexed header, eight zero bytes, the sketch container reference"
+anchor = "the paired indexed header of type `855F0A64-6286-4FFC-B918-BC394F600107`, eight zero bytes, the sketch container reference"
 
 [[record.field]]
 name = "zero_run"
 offset = 11
 type = "bytes[8]"
 source = "spec"
-anchor = "the paired indexed header, eight zero bytes, the sketch container reference"
+anchor = "the paired indexed header of type `855F0A64-6286-4FFC-B918-BC394F600107`, eight zero bytes, the sketch container reference"
 value = [0, 0, 0, 0, 0, 0, 0, 0]
 
 [[record.field]]
@@ -51434,7 +51434,7 @@ name = "container"
 offset = 19
 type = "bytes[11]"
 source = "spec"
-anchor = "the paired indexed header, eight zero bytes, the sketch container reference"
+anchor = "the paired indexed header of type `855F0A64-6286-4FFC-B918-BC394F600107`, eight zero bytes, the sketch container reference"
 
 [[record.field]]
 name = "zero_run_2"
