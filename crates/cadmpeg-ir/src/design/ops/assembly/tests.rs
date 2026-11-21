@@ -34,7 +34,8 @@ use crate::design::selection::{
     Anchor, MemberOrder, Members, PathStep, PickTarget, Picked, Picks, Selection, StepRef,
 };
 use crate::design::tests::unit_variants::{self, assert_units_refuse_value, Reader};
-use crate::features::{FinitePoint3, ParameterId};
+use crate::features::geometry::FinitePoint3;
+use crate::features::ParameterId;
 use crate::math::Point3;
 use crate::scalar::{
     Angle, FiniteReal, Fraction, Length, NonNegativeLength, NonNegativeReal, PositiveReal,

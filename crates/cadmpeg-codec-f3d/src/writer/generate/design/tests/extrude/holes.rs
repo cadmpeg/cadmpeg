@@ -9,7 +9,9 @@ use cadmpeg_ir::design::parameter::ParameterValue;
 use cadmpeg_ir::design::selection::PrincipalEntity;
 use cadmpeg_ir::design::units::UnitSymbol;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::extents::{ExtrudeExtent, LinearTermination};
+use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
 use cadmpeg_ir::geometry::analytic::{CircleCurve, CylinderSurface, LineCurve};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry as ModelCurve, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
@@ -548,18 +550,18 @@ pub(super) fn depth(decoded: &CadIr) -> f64 {
     assert!(
         matches!(
             profile,
-            cadmpeg_ir::features::ProfileRef::Planar(
-                cadmpeg_ir::features::PlanarProfileRef::Sketch(_)
-                    | cadmpeg_ir::features::PlanarProfileRef::SketchProfiles { .. }
-                    | cadmpeg_ir::features::PlanarProfileRef::SketchRegions { .. }
+            ProfileRef::Planar(
+                PlanarProfileRef::Sketch(_)
+                    | PlanarProfileRef::SketchProfiles { .. }
+                    | PlanarProfileRef::SketchRegions { .. }
             )
         ),
         "{profile:?}"
     );
-    let cadmpeg_ir::features::ExtrudeExtent::OneSided { side } = extent else {
+    let ExtrudeExtent::OneSided { side } = extent else {
         panic!("one side: {extent:?}");
     };
-    let cadmpeg_ir::features::LinearTermination::Blind { length } = &side.termination else {
+    let LinearTermination::Blind { length } = &side.termination else {
         panic!("blind: {side:?}");
     };
     length.get()

@@ -247,6 +247,7 @@ fn an_edge_reads_the_axis_row_of_its_curve_and_its_midpoint_tangent() {
         edge,
         interior: point(0.0, 30.0, 10.0),
         tangent: Some(vector(0.0, 0.0, 1.0)),
+        carrier: None,
     };
     let preceding = AsmHistoricalTopology {
         edges: vec![1, 2, 3, 4],
@@ -353,6 +354,7 @@ fn a_duplicated_or_non_finite_row_states_no_point_or_plane() {
         edge,
         interior,
         tangent: None,
+        carrier: None,
     };
     let plane = |surface| AsmHistoricalPlane {
         surface,

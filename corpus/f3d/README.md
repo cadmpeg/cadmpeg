@@ -98,6 +98,30 @@ the Combine.
 - `combine_tools_n2.f3d`: two tools. 1 body, 9960 mm³, 18 faces.
 - `combine_tools_n3.f3d`: three tools. 1 body, 10440 mm³, 24 faces.
 
+# Fusion API fixtures: Combine middle lists
+
+These files are CC0. Each was written through the Fusion API in Autodesk Fusion
+2706.1.17 from a new design, with one Combine as the last timeline item. All
+lengths are in mm. T is the box x −20..20, y −20..20, z 0..10. B is the box
+x −10..10, y −10..10, z 0..20. The API reported the result bodies and the bodies
+of each component before and after the Combine.
+
+- `combine_keep_tools.f3d`: Join of T with tool B, Keep Tools on. Result bodies
+  T and B.
+- `combine_intersect_two_lumps.f3d`: Intersect of U (T without the slot
+  x −5..5, y −10..25) with the bar X (x −30..30, y −4..4, z 1..9). Keep Tools
+  off. Result bodies U and U (1); X is consumed.
+- `combine_cut_split.f3d`: Cut of T by the bar x −30..30, y −4..4, z −1..11,
+  which splits T. Keep Tools off. Result bodies T and T (1); the bar is
+  consumed.
+- `combine_new_component.f3d`: Join of T with tool B, New Component on, Keep
+  Tools off. T stays in the root component, the result T is in Component1, and
+  a hidden RemoveBody removes B.
+- `combine_cross_component.f3d`: Join in Comp1 of target T with tools B1
+  (x −18..−2, y −8..8, z 0..20) in Comp2 and B2 (x 2..18, y −8..8, z 0..20) in
+  Comp1, Keep Tools off. Result body T. A hidden RemoveBody removes B1, and the
+  Combine consumes B2.
+
 # Fusion API fixtures: surface revolves
 
 These files are CC0. Each was written through the Fusion API in Autodesk Fusion
@@ -207,3 +231,16 @@ copy's translation and the face count after the pattern.
   one has quantity 1. y = −20, −10, 0, 10, 20. 31 faces.
 - `sym_extent_q4x5.f3d`: 4 along x by 5 along y, both symmetric.
   x = −10, 0, 10, 20; y = −20, −10, 0, 10, 20. 106 faces.
+
+# Fusion API fixtures: surface Loft
+
+These files are CC0. Each was written through the Fusion API in Autodesk Fusion
+2706.1.17 from a new design. Sketch1 has a circle of radius 10 mm on the XY
+plane, and Sketch2 has a circle of radius 6 mm on a plane offset 20 mm from XY.
+Loft1 is a new-body Loft of the two profiles with isSolid false. The API
+reported the body count, volume, area and face count after each timeline item.
+
+- `reverse_normal_loft_control.f3d`: Loft1 gives 1 surface body, 0 mm³,
+  1025.2187 mm², 1 cone face.
+- `reverse_normal_loft.f3d`: Loft1, then Reverse Normal of the Loft body.
+  1 surface body, 0 mm³, 1025.2187 mm², 1 cone face.

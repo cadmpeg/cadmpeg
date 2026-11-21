@@ -598,7 +598,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                     ctx: decode_ctx,
                 }
                 .scoped(&[]), crate::design::profile_select::ExtrudeTransition { history_state_id: None, previous_history_state_id: None, cut: false }).unwrap(),
-            cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchProfiles {
+            cadmpeg_ir::features::profiles::ProfileRef::Planar(cadmpeg_ir::features::profiles::PlanarProfileRef::SketchProfiles {
                 sketch: ref actual_sketch,
                 ref profiles,
             }) if actual_sketch == &sketch_id && profiles.as_slice() == [0]
@@ -666,7 +666,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                     ctx: decode_ctx,
                 }
                 .scoped(&[]), crate::design::profile_select::ExtrudeTransition { history_state_id: None, previous_history_state_id: None, cut: false }).unwrap(),
-            cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchProfiles {
+            cadmpeg_ir::features::profiles::ProfileRef::Planar(cadmpeg_ir::features::profiles::PlanarProfileRef::SketchProfiles {
                 sketch: ref actual_sketch,
                 ref profiles,
             }) if actual_sketch == &sketch_id && profiles.as_slice() == [0, 1]
@@ -685,7 +685,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                     ctx: decode_ctx,
                 }
                 .scoped(&[]), crate::design::profile_select::ExtrudeTransition { history_state_id: None, previous_history_state_id: None, cut: false }).unwrap(),
-            cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchSelection {
+            cadmpeg_ir::features::profiles::ProfileRef::Planar(cadmpeg_ir::features::profiles::PlanarProfileRef::SketchSelection {
                 sketch: ref actual_sketch,
                 selections: ref actual_selections,
             }) if actual_sketch == &sketch_id && actual_selections.as_slice() == [group.id.clone()]
@@ -708,7 +708,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                     ctx: decode_ctx,
                 }
                 .scoped(&[]), crate::design::profile_select::ExtrudeTransition { history_state_id: None, previous_history_state_id: None, cut: false }).unwrap(),
-            cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchProfiles {
+            cadmpeg_ir::features::profiles::ProfileRef::Planar(cadmpeg_ir::features::profiles::PlanarProfileRef::SketchProfiles {
                 sketch: ref actual_sketch,
                 ref profiles,
             }) if actual_sketch == &sketch_id && profiles.as_slice() == [0]

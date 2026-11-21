@@ -102,7 +102,8 @@ fn construction_graph_walks_nested_selections_bindings_and_configuration_keys() 
         }),
         resolved_in: std::collections::BTreeMap::from([(
             ConfigurationId::mint("test:model:configuration#two").unwrap(),
-            crate::features::FinitePoint3::new(crate::math::Point3::new(1.0, 2.0, 3.0)).unwrap(),
+            crate::features::geometry::FinitePoint3::new(crate::math::Point3::new(1.0, 2.0, 3.0))
+                .unwrap(),
         )]),
         ..Default::default()
     };

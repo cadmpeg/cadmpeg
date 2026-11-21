@@ -9,7 +9,7 @@ use crate::records::{
     Feature, FeatureHistory, FeatureInputLane, FeatureInputName, FeatureSource, ObjectId,
 };
 use crate::resolved_features::terminations::enrich_history_extrusion_terminations;
-use cadmpeg_ir::features::ExtrudeStart;
+use cadmpeg_ir::features::extents::ExtrudeStart;
 use std::collections::BTreeMap;
 
 /// Where the extrusion's name record starts in the synthetic payload.

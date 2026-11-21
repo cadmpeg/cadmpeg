@@ -31,13 +31,13 @@ use crate::decode::sweep::surfaces::{
     extruded_section_line, revolved_section_circle, revolved_section_surface,
 };
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+use cadmpeg_ir::features::revolve::RevolutionAxis;
+use cadmpeg_ir::features::selections::{EdgeSelection, GeneratedEdgeRef, GeneratedFaceRef};
+use cadmpeg_ir::features::Feature;
 use cadmpeg_ir::features::FeatureDefinition as IrFeatureDefinition;
 use cadmpeg_ir::features::FeatureId as IrFeatureId;
 use cadmpeg_ir::features::FeatureOperation as IrFeatureOperation;
-use cadmpeg_ir::features::{
-    EdgeSelection, ExtrudeExtent, ExtrudeSide, Feature, GeneratedEdgeRef, GeneratedFaceRef,
-    LinearTermination, RevolutionAxis,
-};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
     SolvedSurfaceGeometry, Surface, SurfaceGeometry,
@@ -1007,13 +1007,13 @@ fn mixed_current_and_generated_edges_remain_native() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             IrFeatureDefinition::Operation(IrFeatureOperation::Native {
                 kind: "producer".into(),
                 parameters: std::collections::BTreeMap::new(),
@@ -1413,10 +1413,12 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     )
     .expect("valid section frame");
     let axis = RevolutionAxis {
-        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+        origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
             .expect("finite point fixture"),
-        direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
-            .expect("valid direction fixture"),
+        direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+            0.0, 1.0, 0.0,
+        ))
+        .expect("valid direction fixture"),
         reference: None,
     };
     let line = |start: [f64; 2], end: [f64; 2]| {

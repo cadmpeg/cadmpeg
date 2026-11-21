@@ -8,7 +8,7 @@ use std::f64::consts::{FRAC_PI_2, FRAC_PI_4, PI, TAU};
 use cadmpeg_ir::design::ops::sketch::PlanarCurve;
 use cadmpeg_ir::design::selection::PrincipalEntity;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{CircleCurve, CylinderSurface, LineCurve, PlaneSurface};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry as ModelCurve, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,

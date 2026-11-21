@@ -464,7 +464,7 @@ fn write_points(
     Ok(())
 }
 
-struct CurvePoints<'a>(&'a NurbsPoles3<cadmpeg_ir::features::FinitePoint3>);
+struct CurvePoints<'a>(&'a NurbsPoles3<cadmpeg_ir::features::geometry::FinitePoint3>);
 
 impl fmt::Display for CurvePoints<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -479,7 +479,7 @@ impl fmt::Display for CurvePoints<'_> {
     }
 }
 
-struct SurfacePoints<'a>(&'a NurbsPoleGrid<cadmpeg_ir::features::FinitePoint3>);
+struct SurfacePoints<'a>(&'a NurbsPoleGrid<cadmpeg_ir::features::geometry::FinitePoint3>);
 
 impl fmt::Display for SurfacePoints<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -794,13 +794,13 @@ pub(crate) fn project(
         ordinal,
         name,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: properties,
         source_tag: Some("RhinoMorphControl".to_string()),
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "morph_control".into(),
                 parameters,

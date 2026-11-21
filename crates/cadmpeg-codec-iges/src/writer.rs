@@ -17,7 +17,7 @@ use cadmpeg_ir::codec::write::{
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::eval::model_surface_point;
 use cadmpeg_ir::eval::EvaluationFailure;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsError, NurbsSurface},
     pcurve::{Pcurve, PcurveGeometry},
@@ -7751,8 +7751,8 @@ fn placement(origin: Point3, x_axis: Vector3, y_axis: Vector3) -> Result<Placeme
     let y_axis = divided(y_axis - x_axis.scale(x_axis.dot(y_axis)));
     let z_axis = divided(x_axis.cross(y_axis));
     let column = |axis: Vector3, field: &str| {
-        cadmpeg_ir::features::FiniteVector3::new(axis)
-            .map(cadmpeg_ir::features::FiniteVector3::components)
+        cadmpeg_ir::features::geometry::FiniteVector3::new(axis)
+            .map(cadmpeg_ir::features::geometry::FiniteVector3::components)
             .ok_or_else(|| {
                 CodecError::NotImplemented(format!(
                     "IGES writer computed the non-finite placement {field} {axis:?}, which \

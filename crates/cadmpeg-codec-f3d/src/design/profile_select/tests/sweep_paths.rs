@@ -3,7 +3,7 @@
 use super::{curve, group, operand, placement};
 use crate::ids::{neutral_sketch_curve_id, neutral_sketch_id};
 use crate::records::topology::entity_selection::DesignEntitySelectionOperand;
-use cadmpeg_ir::features::PathRef;
+use cadmpeg_ir::features::profiles::PathRef;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchGeometry, SketchGeometryDefinition, SketchPlacement,
@@ -11,10 +11,10 @@ use cadmpeg_ir::sketches::{
 
 #[test]
 fn sweep_path_binds_a_complete_ordered_multi_member_curve_selection() {
-    use cadmpeg_ir::features::{
-        Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
-        PlanarProfileRef, SolidSweepOperation, SweepSection, SweepShape,
-    };
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
+    use cadmpeg_ir::features::sweeps::{SolidSweepOperation, SweepSection, SweepShape};
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     let placement = placement();
     let sketch = neutral_sketch_id(&placement);
     let curves = [curve(30, 100, 101), curve(31, 200, 201)];
@@ -61,7 +61,7 @@ fn sweep_path_binds_a_complete_ordered_multi_member_curve_selection() {
             ordinal: 0,
             name: None,
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,

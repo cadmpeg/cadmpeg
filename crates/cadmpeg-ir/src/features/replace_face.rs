@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::selection_overlap::face_selections_overlap;
-use super::FaceSelection;
+use crate::features::selections::FaceSelection;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

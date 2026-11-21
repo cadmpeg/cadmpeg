@@ -6,7 +6,8 @@ use crate::classification::{
     principal_plane_with_siblings, FeatureClass, NativeClassKind,
 };
 use crate::records::{Feature, FeatureContent};
-use cadmpeg_ir::features::{BooleanOp, FeatureTreeNodeRole};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
 use std::collections::HashMap;
 
 use crate::history::literals::{parse_boolean_op, parse_dimension_length_mm};

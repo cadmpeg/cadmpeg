@@ -16,7 +16,7 @@ use cadmpeg_ir::design::refs::Member;
 use cadmpeg_ir::design::selection::PrincipalEntity;
 use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::ParameterValue;
+use cadmpeg_ir::features::parameters::ParameterValue;
 use cadmpeg_ir::report::export::ExportReport;
 use cadmpeg_ir::scalar::{Angle, PositiveLength};
 use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Kind;
