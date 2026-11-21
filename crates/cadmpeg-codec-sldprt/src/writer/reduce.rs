@@ -389,6 +389,56 @@ pub(super) fn cache_tolerances_omitted(ir: &CadIr) -> Option<LossNote> {
     )
 }
 
+/// A FIN names the vertex at its end, and the reader takes the other end of
+/// its edge from the next FIN of the ring (`sldprt.md` §4.2), so a loop whose
+/// coedges do not meet end to end cannot be stated: its face is written as the
+/// document states it and may not read back.
+pub(super) fn unchained_face_loops(ir: &CadIr) -> Option<LossNote> {
+    let edges = ir
+        .geometry
+        .edges
+        .iter()
+        .map(|edge| (&edge.id, edge))
+        .collect::<HashMap<_, _>>();
+    let coedges = ir
+        .geometry
+        .coedges
+        .iter()
+        .map(|coedge| (&coedge.id, coedge))
+        .collect::<HashMap<_, _>>();
+    let mut faces = std::collections::BTreeSet::new();
+    for lp in &ir.geometry.loops {
+        let ends = lp
+            .coedges()
+            .iter()
+            .map(|id| {
+                let coedge = coedges.get(id)?;
+                let ends = edges.get(&coedge.edge)?.ends.as_ref()?;
+                Some(match coedge.sense {
+                    cadmpeg_ir::topology::Sense::Forward => (&ends.start, &ends.end),
+                    cadmpeg_ir::topology::Sense::Reversed => (&ends.end, &ends.start),
+                })
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(ends) = ends else {
+            continue;
+        };
+        let chained = ends
+            .iter()
+            .zip(ends.iter().cycle().skip(1))
+            .all(|((_, end), (next_start, _))| end == next_start);
+        if !chained {
+            faces.insert(lp.face.as_str().to_owned());
+        }
+    }
+    note(
+        SldprtLossCode::WriterFaceLoopsUnchained,
+        "face(s) have a loop whose coedges do not meet end to end, which the SLDPRT ring order \
+         cannot state; they are written as the document states them and may not read back",
+        &faces.into_iter().collect::<Vec<_>>(),
+    )
+}
+
 /// A generated partition of a document with no face holds no body.
 pub(super) fn faceless_bodies(ir: &CadIr) -> Option<LossNote> {
     note(

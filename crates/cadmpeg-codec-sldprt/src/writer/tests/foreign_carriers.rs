@@ -916,3 +916,136 @@ fn a_carrier_that_states_a_fit_tolerance_is_written_and_the_tolerance_named() {
     assert!(note.message.contains("largest 0.01 mm"), "{}", note.message);
     assert!(note.message.contains(surface.as_str()), "{}", note.message);
 }
+
+#[test]
+fn a_nurbs_sketch_curve_used_reversed_decodes_back_with_its_profile() {
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+    use cadmpeg_ir::geometry::pcurve::{PcurveNurbs, PcurveNurbsPoles};
+    use cadmpeg_ir::math::{Point2, Vector3};
+    use cadmpeg_ir::sketches::{
+        Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
+        SketchGeometryDefinition, SketchId,
+    };
+    let mut ir = cube();
+    let sketch = SketchId::mint("other:model:sketch#spline").unwrap();
+    let ids = (0..3)
+        .map(|index| {
+            SketchEntityId::mint(format!("other:model:sketch-entity#spline-{index}")).unwrap()
+        })
+        .collect::<Vec<_>>();
+    let line = |start: (f64, f64), end: (f64, f64)| {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: Point2::new(start.0, start.1),
+            end: Point2::new(end.0, end.1),
+        })
+        .unwrap()
+    };
+    // The spline runs from (0, 0) to (0, 10); the profile uses it from its end.
+    let spline = PcurveNurbs::new(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        PcurveNurbsPoles::from_lanes(
+            vec![
+                Point2::new(0.0, 0.0),
+                Point2::new(-3.0, 5.0),
+                Point2::new(0.0, 10.0),
+            ],
+            None,
+        )
+        .unwrap(),
+        false,
+    )
+    .unwrap();
+    let geometries = [
+        line((0.0, 0.0), (10.0, 0.0)),
+        line((10.0, 0.0), (0.0, 10.0)),
+        SketchGeometry::try_from(SketchGeometryDefinition::Nurbs { curve: spline }).unwrap(),
+    ];
+    for (id, geometry) in ids.iter().zip(geometries) {
+        ir.model
+            .sketch_entities
+            .push(SketchEntity::new(id.clone(), sketch.clone(), geometry));
+    }
+    ir.model.sketches.push(Sketch {
+        id: sketch.clone(),
+        name: Some("Spline".into()),
+        configuration: None,
+        visible: None,
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![ids
+            .iter()
+            .enumerate()
+            .map(|(index, entity)| SketchEntityUse {
+                entity: entity.clone(),
+                reversed: index == 2,
+            })
+            .collect()])
+        .unwrap(),
+        native_ref: None,
+    });
+    ir.model.features.push(Feature {
+        product_definition: None,
+        id: FeatureId::mint("other:model:feature#spline").unwrap(),
+        ordinal: 0,
+        name: Some("Spline".into()),
+        suppressed: Some(false),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
+            }),
+        ),
+        native_ref: Some("other:native#spline".into()),
+    });
+    let decoded = crate::test_support::ir::encode_decode(&ir);
+    assert_eq!(decoded.model.sketches.len(), 1);
+    let kinds = decoded
+        .model
+        .sketch_entities
+        .iter()
+        .filter_map(|entity| match *entity.geometry.definition() {
+            SketchGeometryDefinition::Point { .. } => None,
+            SketchGeometryDefinition::Nurbs { .. } => Some("nurbs"),
+            _ => Some("other"),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(kinds.len(), 3, "{kinds:?}");
+    assert!(kinds.contains(&"nurbs"), "{kinds:?}");
+    assert_eq!(decoded.model.sketches[0].profiles.len(), 1);
+}
+
+#[test]
+fn a_face_loop_whose_coedges_do_not_meet_is_named() {
+    use cadmpeg_ir::topology::Sense;
+    let mut ir = cube();
+    let face = ir.geometry.faces[0].clone();
+    let first = ir
+        .geometry
+        .loops
+        .iter()
+        .find(|row| row.face == face.id)
+        .unwrap()
+        .coedges()[0]
+        .clone();
+    assert!(crate::writer::reduce::unchained_face_loops(&ir).is_none());
+    for coedge in &mut ir.geometry.coedges {
+        if coedge.id == first {
+            coedge.sense = match coedge.sense {
+                Sense::Forward => Sense::Reversed,
+                Sense::Reversed => Sense::Forward,
+            };
+        }
+    }
+    let note = crate::writer::reduce::unchained_face_loops(&ir).expect("named face");
+    assert_eq!(note.code.local_code(), "writer.face-loops-unchained");
+    assert!(note.message.contains(face.id.as_str()), "{}", note.message);
+}

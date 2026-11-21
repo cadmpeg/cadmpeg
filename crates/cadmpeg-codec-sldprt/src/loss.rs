@@ -336,6 +336,9 @@ pub(crate) enum SldprtLossCode {
     /// Export writes the named approximation caches as exact carriers, without
     /// the fit tolerance they state.
     WriterCacheTolerancesOmitted,
+    /// Export writes the named faces with a loop whose coedges do not meet end
+    /// to end, which the ring order cannot state.
+    WriterFaceLoopsUnchained,
     SourceDialectDisplaced,
     /// A source record states a property whose key holds no non-whitespace
     /// character, so the property cannot be keyed and is not transferred.
@@ -519,6 +522,7 @@ impl SldprtLossCode {
         Self::WriterPmiOmitted,
         Self::WriterParameterExpressionsOmitted,
         Self::WriterCacheTolerancesOmitted,
+        Self::WriterFaceLoopsUnchained,
         Self::SourceDialectDisplaced,
         Self::SourcePropertyKeyBlank,
         Self::AssemblyStructureNotTransferred,
@@ -679,6 +683,7 @@ impl SldprtLossCode {
             Self::WriterPmiOmitted => "writer.pmi-omitted",
             Self::WriterParameterExpressionsOmitted => "writer.parameter-expressions-omitted",
             Self::WriterCacheTolerancesOmitted => "writer.cache-tolerances-omitted",
+            Self::WriterFaceLoopsUnchained => "writer.face-loops-unchained",
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::SourcePropertyKeyBlank => "source.property-key-blank",
             Self::MetadataPartRootUnsupported => "metadata.part-root-unsupported",
@@ -737,6 +742,7 @@ impl SldprtLossCode {
             Self::WriterPmiOmitted => Severity::Warning,
             Self::WriterParameterExpressionsOmitted => Severity::Warning,
             Self::WriterCacheTolerancesOmitted => Severity::Warning,
+            Self::WriterFaceLoopsUnchained => Severity::Warning,
             Self::WriterUnboundAppearancesOmitted => Severity::Warning,
             Self::WriterMaterialsOmitted => Severity::Warning,
             Self::WriterAttributesOmitted => Severity::Warning,
@@ -894,6 +900,7 @@ impl SldprtLossCode {
             Self::WriterPmiOmitted => LossTaxonomy::PmiOmitted,
             Self::WriterParameterExpressionsOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterCacheTolerancesOmitted => LossTaxonomy::ProceduralReduced,
+            Self::WriterFaceLoopsUnchained => LossTaxonomy::TopologyNotTransferred,
             Self::WriterUnboundAppearancesOmitted => LossTaxonomy::AppearanceReduced,
             Self::WriterMaterialsOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
@@ -1340,6 +1347,7 @@ mod tests {
                 "writer.pmi-omitted",
                 "writer.parameter-expressions-omitted",
                 "writer.cache-tolerances-omitted",
+                "writer.face-loops-unchained",
                 "target.source-dialect-displaced",
                 "source.property-key-blank",
                 "assembly.structure-not-transferred",

@@ -235,9 +235,9 @@ pub(crate) fn write_semantic_with_records(
             generated_partitions(ir, length_scale)
         })?;
         losses.extend(encoded.losses);
-        losses.extend(reduce::cache_tolerances_omitted(
-            encoded.reduced.as_ref().unwrap_or(ir),
-        ));
+        let written = encoded.reduced.as_ref().unwrap_or(ir);
+        losses.extend(reduce::cache_tolerances_omitted(written));
+        losses.extend(reduce::unchained_face_loops(written));
         encodable = encoded.reduced;
         let (partitions, bodiless) = encoded.partitions;
         bodiless_partitions.extend(bodiless);
@@ -3138,7 +3138,7 @@ pub(crate) fn brep_body(
         .map(|body| Ok((body.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let vertex_owners = ownership::vertex_body_owners(ir, &body_attrs)?;
-    let reversed_edges = edge_direction::reversed_compact_edges(ir)?;
+    let reversed_edges = edge_direction::reversed_edges(ir)?;
     let mut out = Vec::new();
     for surface in &ir.geometry.surfaces {
         // A procedural carrier is written as the solved shape the source
@@ -3263,6 +3263,14 @@ pub(crate) fn brep_body(
         }
         be16(&mut out, vertex_owners[&vertex.id]);
     }
+    let mut canonical_fins = HashMap::new();
+    for coedge in &ir.geometry.coedges {
+        if reversed_edges.stored_sense(&coedge.edge, coedge.sense) == Sense::Forward {
+            canonical_fins
+                .entry(&coedge.edge)
+                .or_insert(coedges[&coedge.id]);
+        }
+    }
     for edge in &ir.geometry.edges {
         let ends = edge_ends(edge).map_err(|error| named_record(error, edge.id.as_str()))?;
         let owner = vertex_owners.get(&ends.start).ok_or_else(|| {
@@ -3282,8 +3290,11 @@ pub(crate) fn brep_body(
         be32(&mut out, 0);
         be16(&mut out, 0);
         out.extend_from_slice(&MAGIC);
+        // The canonical forward FIN, stated so that an edge with several
+        // forward FINs still names one (§4).
+        let canonical = canonical_fins.get(&edge.id).copied().unwrap_or(0);
         for value in [
-            0,
+            canonical,
             0,
             0,
             edge.curve()
