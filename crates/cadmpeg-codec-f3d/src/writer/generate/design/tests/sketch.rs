@@ -649,6 +649,25 @@ fn written_sketches_leave_evaluation_missing() {
 }
 
 #[test]
+fn the_sketch_note_names_the_point_and_curve_identities() {
+    let (ir, _) = scoped_sketches();
+    let (report, _) = write(&ir);
+    let notes = loss(&report, "export/record.residual-unavailable")
+        .into_iter()
+        .filter(|message| message.contains("DR-901"))
+        .collect::<Vec<_>>();
+    let [note] = notes.as_slice() else {
+        panic!("one DR-901 note: {:#?}", report.losses);
+    };
+    for named in [
+        "point and curve identities (`pt_tag`, `crv_primary_id`): one sequence from 100",
+        "record 10 (sketch collection: `crv_tag_id_idx`",
+    ] {
+        assert!(note.contains(named), "{named}: {note}");
+    }
+}
+
+#[test]
 fn the_id_table_lists_sketches_then_the_base_feature() {
     let (ir, _) = scoped_sketches();
     let (_, decoded, bytes) = write_bytes(&ir);
@@ -1193,41 +1212,55 @@ fn a_tangent_via_a_shared_endpoint_writes_its_branch_and_branchless_uses_shared_
     use super::super::sketch::{plan, RelationKind, TangencyEnds};
     use super::super::types;
     let mut ir = scoped_cube();
-    let front = frame([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+    // A line along +x to `joint`, and an arc from `joint` turning up to
+    // `(20, 10)`: `joint` bounds both curves.
     let mut sketch = Source::new(
         "tangent-via",
         picked(principal(PrincipalEntity::XyPlane)),
-        front,
+        frame([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
     );
-    let p0 = sketch.point("p0", 0.0, 0.0);
-    let joint = sketch.point("joint", 10.0, 0.0);
-    let arc_end = sketch.point("arc-end", 20.0, 10.0);
-    let line = sketch.entity(
-        "line",
-        PlanarCurve::Line {
-            start: point2(0.0, 0.0),
-            end: point2(10.0, 0.0),
-        },
-        [p0, joint.clone()],
-    );
-    let arc = sketch.entity(
-        "arc",
-        PlanarCurve::Arc {
-            center: point2(10.0, 10.0),
-            radius: PositiveLength::new(10.0).unwrap(),
-            start_angle: Angle::new(-std::f64::consts::FRAC_PI_2).unwrap(),
-            end_angle: Angle::new(0.0).unwrap(),
-            sense: Sense::Forward,
-        },
-        [joint.clone(), arc_end],
-    );
+    sketch
+        .entity(
+            "p0",
+            PlanarCurve::Point(point2(0.0, 0.0)),
+            &[("line", DefiningRole::Start)],
+        )
+        .entity(
+            "joint",
+            PlanarCurve::Point(point2(10.0, 0.0)),
+            &[("line", DefiningRole::End), ("arc", DefiningRole::Start)],
+        )
+        .entity(
+            "arc-end",
+            PlanarCurve::Point(point2(20.0, 10.0)),
+            &[("arc", DefiningRole::End)],
+        )
+        .entity(
+            "line",
+            PlanarCurve::Line {
+                start: point2(0.0, 0.0),
+                end: point2(10.0, 0.0),
+            },
+            &[],
+        )
+        .entity(
+            "arc",
+            PlanarCurve::Arc {
+                center: point2(10.0, 10.0),
+                radius: PositiveLength::new(10.0).expect("a radius"),
+                start: Angle::THREE_QUARTER_TURN,
+                end: Angle::ZERO,
+            },
+            &[],
+        );
+    let (line, arc) = (sketch.operand("line"), sketch.operand("arc"));
     sketch
         .constraint(
             "via-end",
             SketchRelation::Tangent {
                 a: line.clone(),
                 b: arc.clone(),
-                contact: Some(Contact::Via(joint)),
+                contact: Some(Contact::Via(entity_id("tangent-via", "joint"))),
             },
         )
         .constraint(
@@ -1251,6 +1284,8 @@ fn a_tangent_via_a_shared_endpoint_writes_its_branch_and_branchless_uses_shared_
             _ => None,
         })
         .collect::<Vec<_>>();
+    // The line's stored end meets the arc's stored start, where both run
+    // along +x.
     assert_eq!(
         tangents,
         [
@@ -1261,35 +1296,34 @@ fn a_tangent_via_a_shared_endpoint_writes_its_branch_and_branchless_uses_shared_
             None,
         ]
     );
+    let shared = item
+        .relations
+        .iter()
+        .filter(|relation| !matches!(relation.kind, RelationKind::Tangent(Some(_))))
+        .count();
     let Some(Container::Ordered { members, .. }) = ir.design.containers.first_mut() else {
         panic!("the cube's timeline");
     };
     members.insert(0, Member::Feature(id));
-    let (_, decoded, bytes) = write_bytes(&ir);
+    let (report, decoded, bytes) = write_bytes(&ir);
     let design = segment(&bytes, "FusionDesignSegmentType1");
-    let tangency_records = design
-        .primary
-        .keys()
-        .filter(|index| design.type_of(**index) == Some(types::SKETCH_TANGENCY.guid))
-        .count();
-    let shared_records = design
-        .primary
-        .keys()
-        .filter(|index| design.type_of(**index) == Some(types::SKETCH_RELATION.guid))
-        .count();
-    assert_eq!(
-        tangency_records, 1,
-        "only Via(shared-end) uses SKETCH_TANGENCY"
-    );
-    assert_eq!(
-        shared_records, 1,
-        "branchless tangency uses shared SKETCH_RELATION"
-    );
+    let records_of = |row: &crate::writer::generate::presentation::TypeRow| {
+        design
+            .primary
+            .iter()
+            .filter(|(index, _)| design.type_of(*index).0.eq_ignore_ascii_case(row.guid))
+            .count()
+    };
+    // Only the tangency with an endpoint branch takes the tangency class;
+    // every other relation, the branchless tangency among them, takes the
+    // shared relation class.
+    assert_eq!(records_of(&types::SKETCH_TANGENCY), 1);
+    assert_eq!(records_of(&types::SKETCH_RELATION), shared);
     let decoded_tangents = decoded
         .model
         .sketch_constraints
         .iter()
-        .filter(|c| format!("{:?}", c.definition.kind()).starts_with("Tangent"))
+        .filter(|constraint| format!("{:?}", constraint.definition.kind()).starts_with("Tangent"))
         .count();
-    assert_eq!(decoded_tangents, 2);
+    assert_eq!(decoded_tangents, 2, "{:#?}", report.losses);
 }
