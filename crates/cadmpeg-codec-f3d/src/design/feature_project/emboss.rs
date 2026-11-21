@@ -68,9 +68,10 @@ pub(super) fn project_emboss(
     face_operands: &[DesignFaceOperand],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<cadmpeg_ir::features::FeatureDefinition, CodecError> {
-    use cadmpeg_ir::features::{
-        FaceSelection, FeatureDefinition, FeatureOperation, PlanarProfileRef, WrapMode,
-    };
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::surface_inputs::WrapMode;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let source_scope = scope.id.as_str();
     let construction = scope.emboss_construction();

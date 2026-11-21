@@ -13,7 +13,7 @@ use cadmpeg_core::{
     decode::{unique_index, DecodeContext},
     CodecError,
 };
-use cadmpeg_ir::features::{EdgeSelection, GeneratedEdgeRef};
+use cadmpeg_ir::features::selections::{EdgeSelection, GeneratedEdgeRef};
 use std::collections::{HashMap, HashSet};
 
 mod adjacency;
@@ -849,7 +849,7 @@ pub(super) fn generated_names(
                 Some(contour) => contour.clone(),
                 None => super::history_feature_id(&feature.identity).ok()?,
             };
-            let local_id = cadmpeg_ir::features::SelectionReference::new(format!(
+            let local_id = cadmpeg_ir::features::selections::SelectionReference::new(format!(
                 "inventor:nmx:{}:sketch-entity:{}:role:{}",
                 name.family, entity, name.role
             ))
@@ -955,16 +955,16 @@ pub(crate) fn all_items_empty<'a>(
 }
 
 pub(crate) fn matches_selection(
-    selection: &cadmpeg_ir::features::EdgeSelection,
+    selection: &cadmpeg_ir::features::selections::EdgeSelection,
     native: &str,
     direct: bool,
 ) -> bool {
     match selection {
-        cadmpeg_ir::features::EdgeSelection::Native(actual) => actual == native,
-        cadmpeg_ir::features::EdgeSelection::Generated { native: actual, .. } => {
+        cadmpeg_ir::features::selections::EdgeSelection::Native(actual) => actual == native,
+        cadmpeg_ir::features::selections::EdgeSelection::Generated { native: actual, .. } => {
             direct && actual.as_str() == native
         }
-        cadmpeg_ir::features::EdgeSelection::Historical { native: actual, .. } => {
+        cadmpeg_ir::features::selections::EdgeSelection::Historical { native: actual, .. } => {
             direct && actual.as_str() == native
         }
         _ => false,
@@ -1179,12 +1179,11 @@ fn retain_producers(selection: &mut EdgeSelection, ordinal: u64, producers: &Has
 
 pub(super) fn bind_generated(
     features: &mut [cadmpeg_ir::features::Feature],
-    results: &mut [cadmpeg_ir::features::FeatureResultTopology],
+    results: &mut [cadmpeg_ir::features::evaluation::FeatureResultTopology],
 ) -> Result<(), CodecError> {
     use cadmpeg_core::text::NonBlankString;
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, FeatureResultMembers, FeatureResultTopology,
-    };
+    use cadmpeg_ir::features::evaluation::{FeatureResultMembers, FeatureResultTopology};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let producers = features
         .iter()
         .map(|feature| (feature.id.as_str().to_owned(), feature.ordinal))

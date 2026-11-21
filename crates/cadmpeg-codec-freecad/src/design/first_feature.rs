@@ -7,9 +7,9 @@ use super::{
 };
 use crate::loss::FreecadLossCode;
 use crate::native::{ObjectRecord, PropertyRecord};
-use cadmpeg_ir::features::{
-    BooleanOp, FeatureDefinition, FeatureOperation, SolidSweepOperation, SweepShape,
-};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::sweeps::{SolidSweepOperation, SweepShape};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
 use std::collections::HashMap;

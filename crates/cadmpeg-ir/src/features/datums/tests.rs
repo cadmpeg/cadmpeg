@@ -4,10 +4,9 @@ use crate::design::construction::{
 };
 use crate::design::dimension::Dimension;
 use crate::design::options::NativeOption;
-use crate::features::{
-    DistinctMembers, FeatureContent, FeatureDirection3, FeatureOperation, FinitePoint3,
-    ParameterId, UnresolvedFamily,
-};
+use crate::features::geometry::{FeatureDirection3, FinitePoint3};
+use crate::features::selections::DistinctMembers;
+use crate::features::{FeatureContent, FeatureOperation, ParameterId, UnresolvedFamily};
 use crate::math::{Point3, Vector3};
 use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities, TextReplacements};
 
@@ -152,7 +151,7 @@ fn feature(operation: FeatureOperation, ordinal: u64) -> crate::features::Featur
         source_tag: None,
         source_text: None,
         source_content: FeatureContent::default(),
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             crate::features::FeatureDefinition::Operation(operation),
         ),
         native_ref: None,
@@ -161,7 +160,7 @@ fn feature(operation: FeatureOperation, ordinal: u64) -> crate::features::Featur
 
 #[test]
 fn datum_axis_validation_reaches_bound_parameter_owners_and_nested_subjects() {
-    use crate::features::{DesignParameter, ParameterValue};
+    use crate::features::parameters::{DesignParameter, ParameterValue};
     let mut ir = crate::CadIr::empty();
     let prior = feature(FeatureOperation::datum_axis(origin(), direction()), 1);
     let parameter: ParameterId = "test:model:parameter#length".try_into().unwrap();

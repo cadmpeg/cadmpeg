@@ -6,11 +6,10 @@ use crate::{
     loss::F3dLossCode,
     records::feature::scope::DesignParameterScope,
 };
-use cadmpeg_ir::{
-    features::{FeatureDefinition, FeatureOperation, PlanarProfileRef},
-    report::loss::LossNote,
-    scalar::PositiveLength,
-};
+use cadmpeg_ir::features::profiles::PlanarProfileRef;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::scalar::PositiveLength;
 
 pub(super) fn project(
     scope: &DesignParameterScope,

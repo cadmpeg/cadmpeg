@@ -25,7 +25,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::decode::curve_point_solved;
 use cadmpeg_ir::eval::EvaluationFailure;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::{
     CurveGeometry, FitTolerance, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };

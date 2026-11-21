@@ -8,7 +8,7 @@
 //! `S_u × S_v`. NURBS and extrusion charts evaluate their carriers in local
 //! coordinates and map points and partials by the composed placement.
 
-use cadmpeg_ir::features::FiniteVector3;
+use cadmpeg_ir::features::geometry::FiniteVector3;
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};

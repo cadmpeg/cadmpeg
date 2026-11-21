@@ -3,16 +3,17 @@
 use std::{io::Cursor, path::Path};
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
-use cadmpeg_ir::topology::{EdgeCarrier, LoopBoundary};
-use cadmpeg_ir::{
-    features::{
-        BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrusionDirectionSource, FeatureDefinition,
-        FeatureOperation, FeatureTreeNodeRole, LinearTermination, PlanarProfileRef, ProfileRef,
-    },
-    sketches::{SketchConstraintDefinitionInput, SketchGeometryDefinition},
-    Codec, DecodeOptions,
+use cadmpeg_ir::features::extents::{
+    ExtrudeDirection, ExtrudeExtent, ExtrusionDirectionSource, LinearTermination,
 };
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput, SketchGeometryDefinition};
+use cadmpeg_ir::topology::{EdgeCarrier, LoopBoundary};
+use cadmpeg_ir::{Codec, DecodeOptions};
 use cadmpeg_measure::test_support::round_trip::measured;
 
 use crate::{

@@ -55,12 +55,12 @@ wire_case!(
 );
 wire_case!(
     borrowed_feature_members_wire,
-    crate::features::FeatureResultTopology,
+    crate::features::evaluation::FeatureResultTopology,
     json!({"id":"test:model:feature-result-topology#r","output_of":"test:model:feature#f","members":[{"kind":"body","id":"local-body"},{"kind":"face","id":"local-face"},{"kind":"edge","id":"local-edge"},{"kind":"vertex","id":"local-vertex"}]})
 );
 wire_case!(
     borrowed_equation_curve_wire,
-    crate::features::FeatureEquationCurve,
+    crate::features::geometry::FeatureEquationCurve,
     json!({"parameter":" t ","x_expression":"t*t","y_expression":"0","z_expression":"-t","start":-2.0,"end":3.0})
 );
 wire_case!(
@@ -70,7 +70,7 @@ wire_case!(
 );
 wire_case!(
     borrowed_coil_placement_wire,
-    crate::features::CoilPlacement,
+    crate::features::sweeps::CoilPlacement,
     json!({"kind":"native","native_ref":"native-scope"})
 );
 wire_case!(

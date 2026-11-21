@@ -3,7 +3,7 @@
 
 use crate::vecmath::normalize;
 use crate::vecmath::unit_length;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::FiniteReal;
@@ -126,7 +126,7 @@ pub(super) fn nurbs_control_extent(nurbs: &NurbsCurve) -> f64 {
 
 pub(super) fn nurbs_points(
     nurbs: &NurbsCurve,
-) -> impl Iterator<Item = cadmpeg_ir::features::FinitePoint3> + '_ {
+) -> impl Iterator<Item = cadmpeg_ir::features::geometry::FinitePoint3> + '_ {
     (0..nurbs.pole_count()).filter_map(|index| nurbs.pole_rows().point_at(index))
 }
 

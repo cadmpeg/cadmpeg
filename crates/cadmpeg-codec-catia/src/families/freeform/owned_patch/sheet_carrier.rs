@@ -5,7 +5,7 @@ use std::borrow::Cow;
 
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::eval::{self, admission::EvaluationAdmission};
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{CylinderSurface, PlaneSurface};
 use cadmpeg_ir::geometry::nurbs::{KnotVector, NurbsSurface};
 use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry};

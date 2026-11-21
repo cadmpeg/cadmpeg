@@ -9,9 +9,10 @@ use crate::records::identity::Located;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::edge_identity::DesignEdgeOperand;
 use crate::records::topology::extrude_selection::DesignOperandRole;
-use cadmpeg_ir::features::{
-    AngularTermination, FaceSelection, FeatureDefinition, FeatureOperation, RevolveExtent,
-};
+use cadmpeg_ir::features::extents::AngularTermination;
+use cadmpeg_ir::features::revolve::RevolveExtent;
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 const SIDE_ONE: u32 = 102;
 const SIDE_TWO: u32 = 103;

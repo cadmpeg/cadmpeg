@@ -7,7 +7,7 @@
 
 use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_usize};
 
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::nurbs::KnotVector;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsError},

@@ -3,10 +3,9 @@
 
 use crate::history::FeatureBodySelectionInputs;
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
-use cadmpeg_ir::features::{
-    BodySelection, Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
-    FeatureResultTopology,
-};
+use cadmpeg_ir::features::evaluation::{FeatureEvaluation, FeatureResultTopology};
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 
 const ROOT_HISTORY: &str = "f3d:Breps.BlobParts/BREP.root.smbh:asm-history#1";

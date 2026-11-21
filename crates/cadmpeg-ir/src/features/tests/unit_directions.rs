@@ -2,11 +2,15 @@
 
 #[test]
 fn unit_feature_directions_admit_only_unit_vectors_on_the_wire() {
-    use crate::features::{
-        BodySelection, BooleanOp, FaceSelection, FeatureOperation, FinitePoint3,
-        HelicalSweepConstruction, HelicalSweepLaw, HelicalSweepTravel, PathRef, PlanarProfileRef,
-        SurfaceProjectionMode, SweepOrientation,
+    use crate::features::geometry::FinitePoint3;
+    use crate::features::operation_settings::BooleanOp;
+    use crate::features::profiles::{PathRef, PlanarProfileRef};
+    use crate::features::selections::{BodySelection, FaceSelection};
+    use crate::features::surface_inputs::SurfaceProjectionMode;
+    use crate::features::sweeps::{
+        HelicalSweepConstruction, HelicalSweepLaw, HelicalSweepTravel, SweepOrientation,
     };
+    use crate::features::FeatureOperation;
     use crate::scalar::{Angle, Length, NonNegativeLength, PositiveLength, PositiveReal};
     use crate::units::UnitVector3;
 

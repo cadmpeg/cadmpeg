@@ -7,7 +7,7 @@ use cadmpeg_ir::design::ops::shared::{Limit, Span};
 use cadmpeg_ir::design::ops::swept::{ExtrudeDirection, ExtrudeOrigin};
 use cadmpeg_ir::design::options::{BodyForm, Boolean, BooleanOp, SymmetricMeasure};
 use cadmpeg_ir::design::selection::{PickTarget, Picks};
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::scalar::{Angle, Length, PositiveLength};
 use cadmpeg_ir::units::UnitVector3;
 use serde_json::{json, Value};
@@ -352,11 +352,12 @@ fn a_round_picks_its_edges_by_their_producing_feature() {
 
 #[test]
 fn a_round_picks_the_edges_a_preceding_feature_generates_by_name() {
-    let edges = cadmpeg_ir::features::EdgeSelection::generated(
-        vec![
-            cadmpeg_ir::features::GeneratedEdgeRef::new(feature(10), "curve#9".to_owned())
-                .expect("edge"),
-        ],
+    let edges = cadmpeg_ir::features::selections::EdgeSelection::generated(
+        vec![cadmpeg_ir::features::selections::GeneratedEdgeRef::new(
+            feature(10),
+            "curve#9".to_owned(),
+        )
+        .expect("edge")],
         "creo:allfeatur:edgs_affected#50:9".to_owned(),
     )
     .expect("generated edges");
@@ -391,17 +392,20 @@ fn a_round_picks_the_edges_a_preceding_feature_generates_by_name() {
 
 #[test]
 fn a_merge_is_not_typed_while_its_role_codes_are_unread() {
-    let faces = cadmpeg_ir::features::FaceSelection::generated(
-        vec![
-            cadmpeg_ir::features::GeneratedFaceRef::new(feature(10), "surface#7".to_owned())
-                .expect("face"),
-        ],
+    let faces = cadmpeg_ir::features::selections::FaceSelection::generated(
+        vec![cadmpeg_ir::features::selections::GeneratedFaceRef::new(
+            feature(10),
+            "surface#7".to_owned(),
+        )
+        .expect("face")],
         "creo:allfeatur:quilts#50:3".to_owned(),
     )
     .expect("generated faces");
     for faces in [
         faces,
-        cadmpeg_ir::features::FaceSelection::Native("creo:allfeatur:quilts#50:3".to_owned()),
+        cadmpeg_ir::features::selections::FaceSelection::Native(
+            "creo:allfeatur:quilts#50:3".to_owned(),
+        ),
     ] {
         let operation = LegacyOperation::KnitSurface {
             faces,
@@ -419,13 +423,13 @@ fn a_hole_starts_on_a_face_its_own_feature_makes_by_native_name() {
     let operation = LegacyOperation::Hole {
         profile: None,
         profile_filter: None,
-        face: Some(cadmpeg_ir::features::FaceSelection::Native(
+        face: Some(cadmpeg_ir::features::selections::FaceSelection::Native(
             "creo:visibgeom:surface#8".to_owned(),
         )),
         direction: None,
         placements: Some(vec![holes::HolePlacement::Directed {
             position: FinitePoint3::ZERO,
-            direction: cadmpeg_ir::features::FeatureDirection3::new(
+            direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(
                 cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
             )
             .expect("direction"),
@@ -439,7 +443,7 @@ fn a_hole_starts_on_a_face_its_own_feature_makes_by_native_name() {
             PositiveLength::new(5.0),
         )
         .expect("shape"),
-        extent: Some(cadmpeg_ir::features::LinearTermination::Blind {
+        extent: Some(cadmpeg_ir::features::extents::LinearTermination::Blind {
             length: cadmpeg_ir::scalar::NonZeroLength::new(10.0).expect("depth"),
         }),
         bottom: Some(holes::HoleBottom::Flat),
@@ -470,7 +474,7 @@ fn a_hole_starts_on_a_face_its_own_feature_makes_by_native_name() {
 fn a_datum_plane_states_its_frame() {
     use cadmpeg_ir::math::{Point3, Vector3};
     let operation = LegacyOperation::DatumPlane {
-        frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+        frame: cadmpeg_ir::features::geometry::FeatureDatumPlaneFrame::new(
             Point3::new(0.0, 0.0, 5.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),

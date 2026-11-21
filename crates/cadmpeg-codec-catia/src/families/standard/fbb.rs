@@ -6,7 +6,7 @@ type ScopedEdgeTableOutput = Option<(Vec<EdgeRow>, Vec<usize>, usize)>;
 
 use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::units::FiniteVector;
 

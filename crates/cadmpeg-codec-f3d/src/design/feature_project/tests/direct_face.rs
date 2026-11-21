@@ -10,7 +10,8 @@ use crate::records::parameters::DesignParameterOwner;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::selections::{BodySelection, FaceSelection};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 fn scope(kind: DesignFeatureKind) -> DesignParameterScope {
     let mut scope = DesignParameterScope::empty("f3d:test:scope#12", kind, 12);
@@ -175,7 +176,8 @@ fn thicken_boolean_results_survive_missing_scalar_and_target_definitions() {
     use crate::records::feature::direct_face::{
         DesignThickenBoolean, DesignThickenBooleanOperation,
     };
-    use cadmpeg_ir::features::{BooleanKind, SolidFeatureResult, ThickenSide};
+    use cadmpeg_ir::features::direct_edit::ThickenSide;
+    use cadmpeg_ir::features::operation_settings::{BooleanKind, SolidFeatureResult};
 
     for (stored, expected) in [
         (DesignThickenBooleanOperation::Join, BooleanKind::Join),
@@ -331,7 +333,7 @@ fn thicken_zero_and_overflow_keep_result_and_chain_settings() {
         assert_eq!(thickness, None);
         assert_eq!(
             result,
-            Some(cadmpeg_ir::features::SolidFeatureResult::NewBody {})
+            Some(cadmpeg_ir::features::operation_settings::SolidFeatureResult::NewBody {})
         );
         assert_eq!(tangent_chain, Some(true));
         assert_eq!(losses.len(), 1);
@@ -366,19 +368,31 @@ fn a_symmetric_thicken_adds_the_stored_thickness_on_each_side() {
     };
     assert_eq!(
         project(true, 0.5),
-        (Some(10.0), Some(cadmpeg_ir::features::ThickenSide::Both))
+        (
+            Some(10.0),
+            Some(cadmpeg_ir::features::direct_edit::ThickenSide::Both)
+        )
     );
     assert_eq!(
         project(true, -0.5),
-        (Some(10.0), Some(cadmpeg_ir::features::ThickenSide::Both))
+        (
+            Some(10.0),
+            Some(cadmpeg_ir::features::direct_edit::ThickenSide::Both)
+        )
     );
     assert_eq!(
         project(false, 0.5),
-        (Some(5.0), Some(cadmpeg_ir::features::ThickenSide::Forward))
+        (
+            Some(5.0),
+            Some(cadmpeg_ir::features::direct_edit::ThickenSide::Forward)
+        )
     );
     assert_eq!(
         project(false, -0.5),
-        (Some(5.0), Some(cadmpeg_ir::features::ThickenSide::Reverse))
+        (
+            Some(5.0),
+            Some(cadmpeg_ir::features::direct_edit::ThickenSide::Reverse)
+        )
     );
 
     let mut scope = scope(DesignFeatureKind::Thicken);
@@ -531,7 +545,7 @@ fn wall_slot_scope(
 
 #[test]
 fn wall_slots_project_thickness_direction_mode_and_corners() {
-    use cadmpeg_ir::features::{ShellJoin, ShellMode};
+    use cadmpeg_ir::features::operation_settings::{ShellJoin, ShellMode};
     let group = group(DesignOperandRole::ROLE_0X10);
     let project = |scope: &DesignParameterScope| {
         let FeatureOperation::Shell {
@@ -590,9 +604,15 @@ fn unequal_walls_project_both_sides_with_unresolved_thickness() {
     };
     assert_eq!(thickness, None);
     assert_eq!(outward, None);
-    assert_eq!(mode, Some(cadmpeg_ir::features::ShellMode::BothSides));
+    assert_eq!(
+        mode,
+        Some(cadmpeg_ir::features::operation_settings::ShellMode::BothSides)
+    );
     assert_eq!(removed_faces, FaceSelection::Native(group.id));
-    assert_eq!(join, Some(cadmpeg_ir::features::ShellJoin::Intersection));
+    assert_eq!(
+        join,
+        Some(cadmpeg_ir::features::operation_settings::ShellJoin::Intersection)
+    );
 }
 
 #[test]
@@ -712,7 +732,7 @@ fn move_face_scope(transform: [[f64; 4]; 4]) -> DesignParameterScope {
 
 #[test]
 fn move_face_projects_a_translation_of_its_group() {
-    use cadmpeg_ir::features::FaceMotion;
+    use cadmpeg_ir::features::direct_edit::FaceMotion;
     let scope = move_face_scope([
         [1., 0., 0., 0.],
         [0., 1., 0., -0.25],
@@ -817,7 +837,7 @@ fn move_face_keeps_motion_without_a_resolved_group() {
 
 #[test]
 fn move_face_projects_a_rotation_about_the_axis_point_nearest_the_origin() {
-    use cadmpeg_ir::features::FaceMotion;
+    use cadmpeg_ir::features::direct_edit::FaceMotion;
     const EPS_ROTATION_FIELD: f64 = 1.0e-9;
     let (sine, cosine) = 5f64.to_radians().sin_cos();
     // A rotation about +X through (0, 1.5, 2) cm stores t = p - R p.

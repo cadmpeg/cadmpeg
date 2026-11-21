@@ -109,7 +109,7 @@ fn cacheless_ruled_surface_interpolates_profiles_and_partials() {
             0.25,
             0.5
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(point)
     );
     let partials = model_surface_second_partials_by_id(
@@ -179,11 +179,13 @@ fn a_ruled_surface_whose_point_overflows_reports_the_point_it_reached() {
         "ruled",
     );
     let index = crate::index::ModelIndex::build(&ir);
-    let reached =
-        |point: Result<crate::features::FinitePoint3, crate::eval::EvaluationFailure<Point3>>| {
-            matches!(point, Err(crate::eval::EvaluationFailure::NonFinite(point))
+    let reached = |point: Result<
+        crate::features::geometry::FinitePoint3,
+        crate::eval::EvaluationFailure<Point3>,
+    >| {
+        matches!(point, Err(crate::eval::EvaluationFailure::NonFinite(point))
             if point.x.is_nan() && point.y.is_nan() && point.z.is_nan())
-        };
+    };
     assert!(reached(model_surface_point_by_id(
         crate::eval::admission::EvaluationAdmission::Standard,
         &index,

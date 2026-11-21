@@ -2041,10 +2041,10 @@ fn define_member(
 /// The container is an entity the member decode did not admit, so it is
 /// charged here.
 fn scope_document_parameters(ctx: &DecodeContext<'_>, model: &mut Model) -> Result<(), CodecError> {
-    use cadmpeg_ir::features::{
-        DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation,
-        FeatureOperation, FeatureTreeNodeRole, TreeChildren,
-    };
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::selections::DistinctMembers;
+    use cadmpeg_ir::features::tree::{FeatureTreeNodeRole, TreeChildren};
+    use cadmpeg_ir::features::{Feature, FeatureContent, FeatureDefinition, FeatureOperation};
 
     if model
         .parameters
@@ -2235,10 +2235,9 @@ fn native_record_targets(
 }
 
 fn rescope_partial_pattern_sources(model: &mut Model, occurrence: &str) {
-    use cadmpeg_ir::features::{
-        patterns::{PatternSeed, PatternTransform},
-        FeatureDefinition, FeatureOperation, PathRef,
-    };
+    use cadmpeg_ir::features::patterns::{PatternSeed, PatternTransform};
+    use cadmpeg_ir::features::profiles::PathRef;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     for feature in &mut model.features {
         feature.evaluation.edit(|definition, _| {
             let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) =

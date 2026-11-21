@@ -44,7 +44,7 @@ impl FeatureBodySelection {
                 if bodies.is_empty() {
                     return BodySelection::Native(native);
                 }
-                match cadmpeg_ir::features::DistinctMembers::try_from(bodies) {
+                match cadmpeg_ir::features::selections::DistinctMembers::try_from(bodies) {
                     Ok(bodies) => BodySelection::Resolved { bodies, native },
                     Err(cadmpeg_ir::features::FeatureCollectionError::Invalid(_)) => {
                         BodySelection::Native(native)

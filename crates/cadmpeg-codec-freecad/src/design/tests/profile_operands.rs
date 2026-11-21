@@ -8,7 +8,8 @@ use crate::native::{
     LinkTarget, LinkTargetWire, ObjectRecord, PropertyBody, PropertyFamily, PropertyRecord,
     RetainedXml,
 };
-use cadmpeg_ir::features::{FeatureId, PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::io::Cursor;
