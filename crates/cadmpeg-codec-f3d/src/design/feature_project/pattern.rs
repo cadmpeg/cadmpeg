@@ -50,8 +50,8 @@ pub(super) fn project_circular_pattern(
         entity_selection_operands,
         scopes,
     );
-    let axis_origin = cadmpeg_ir::features::FinitePoint3::new(axis_origin)?;
-    let axis_dir = cadmpeg_ir::features::FeatureDirection3::new(axis_dir)?;
+    let axis_origin = cadmpeg_ir::features::geometry::FinitePoint3::new(axis_origin)?;
+    let axis_dir = cadmpeg_ir::features::geometry::FeatureDirection3::new(axis_dir)?;
     let pattern = PatternKind::new(PatternTransform::Circular {
         axis_origin,
         axis_dir,
@@ -313,7 +313,9 @@ pub(super) fn project_rectangular_pattern_scalars(
                 *direction,
                 *symmetric,
                 Some(cadmpeg_ir::features::patterns::LinearPatternDirection {
-                    direction: cadmpeg_ir::features::FeatureDirection3::from(*second_direction),
+                    direction: cadmpeg_ir::features::geometry::FeatureDirection3::from(
+                        *second_direction,
+                    ),
                     spacing: *second_spacing,
                     count: *second_count,
                     symmetric: *second_symmetric,
@@ -323,7 +325,7 @@ pub(super) fn project_rectangular_pattern_scalars(
         _ => return None,
     };
     let pattern = PatternKind::new(PatternTransform::Linear {
-        direction: direction.map(cadmpeg_ir::features::FeatureDirection3::from),
+        direction: direction.map(cadmpeg_ir::features::geometry::FeatureDirection3::from),
         spacing,
         count,
         second,

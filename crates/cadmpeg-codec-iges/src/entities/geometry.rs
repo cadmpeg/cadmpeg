@@ -9,7 +9,7 @@ use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
 use cadmpeg_core::decode::{index_from_u32, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::finite_or_refusal;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{KnotVector, NurbsCurve},
     Curve, CurveGeometry, SolvedCurveGeometry,
@@ -1142,8 +1142,8 @@ fn point_on_plane(point: Point3, plane: (Point3, Vector3), resolution: f64) -> b
 
 fn normal_matches_plane(normal: Vector3, plane_normal: Vector3) -> bool {
     let unit = |vector| {
-        cadmpeg_ir::features::FiniteVector3::new(vector)
-            .and_then(cadmpeg_ir::features::FiniteVector3::unit_nonzero)
+        cadmpeg_ir::features::geometry::FiniteVector3::new(vector)
+            .and_then(cadmpeg_ir::features::geometry::FiniteVector3::unit_nonzero)
     };
     let (Some(normal), Some(plane_normal)) = (unit(normal), unit(plane_normal)) else {
         return false;
@@ -1232,7 +1232,7 @@ pub(super) fn curve_geometry_coplanar(
         }),
         SolvedCurveGeometry::Polyline(polyline) => polyline
             .points()
-            .map(cadmpeg_ir::features::FinitePoint3::get)
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get)
             .all(point_valid),
         SolvedCurveGeometry::Composite { segments, .. } => {
             let mut valid = true;
@@ -1595,7 +1595,7 @@ pub(crate) fn project_geometry(
         };
         let Some(basis_x) = transform
             .apply_vector(Vector3::new(1.0, 0.0, 0.0))
-            .map(cadmpeg_ir::features::FiniteVector3::get)
+            .map(cadmpeg_ir::features::geometry::FiniteVector3::get)
         else {
             super::push_geometry_loss(
                 &mut losses,
@@ -1606,7 +1606,7 @@ pub(crate) fn project_geometry(
         };
         let Some(basis_y) = transform
             .apply_vector(Vector3::new(0.0, 1.0, 0.0))
-            .map(cadmpeg_ir::features::FiniteVector3::get)
+            .map(cadmpeg_ir::features::geometry::FiniteVector3::get)
         else {
             super::push_geometry_loss(
                 &mut losses,
@@ -2639,7 +2639,7 @@ pub(crate) fn project_geometry(
         ctx.charge_entities(1, "iges_geometry_wire_topology")?;
         if wire_edges.is_empty() && free_vertices.is_empty() {
             return Err(CodecError::malformed(
-                cadmpeg_ir::features::BodySelectionError::Empty,
+                cadmpeg_ir::features::selections::BodySelectionError::Empty,
             ));
         }
         let shell = Shell::with_members(shell, region, wire_edges, free_vertices);

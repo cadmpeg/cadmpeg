@@ -119,9 +119,9 @@ fn carrier(
     geometry: &SolvedCurveGeometry,
     start: f64,
     end: f64,
-) -> Option<cadmpeg_ir::features::HistoricalEdgeCarrier> {
-    Some(cadmpeg_ir::features::HistoricalEdgeCarrier {
-        curve: cadmpeg_ir::features::HistoricalEdgeCurve::from_solved(geometry)?,
+) -> Option<cadmpeg_ir::features::evaluation::HistoricalEdgeCarrier> {
+    Some(cadmpeg_ir::features::evaluation::HistoricalEdgeCarrier {
+        curve: cadmpeg_ir::features::evaluation::HistoricalEdgeCurve::from_solved(geometry)?,
         range: cadmpeg_ir::topology::ParameterInterval::new([start.min(end), start.max(end)])
             .ok()?,
     })
@@ -251,7 +251,7 @@ mod tests {
 
     #[test]
     fn a_free_form_edge_keeps_its_carrier_and_interval() {
-        use cadmpeg_ir::features::{HistoricalEdgeCarrier, HistoricalEdgeCurve};
+        use cadmpeg_ir::features::evaluation::{HistoricalEdgeCarrier, HistoricalEdgeCurve};
         use cadmpeg_ir::geometry::{Curve, CurveGeometry};
         use cadmpeg_ir::ids::{CurveId, EdgeId, VertexId};
         use cadmpeg_ir::topology::{Edge, EdgeCarrier, ParameterInterval};

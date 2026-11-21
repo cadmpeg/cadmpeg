@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Validation of stored-body composites against the shared body join.
 
-use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation, FeatureResultTopology};
+use cadmpeg_ir::features::evaluation::FeatureResultTopology;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::ids::BodyId;
 
 use super::NativeData;

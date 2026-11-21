@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bind stored-body scopes and report unresolved construction semantics.
 
-use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::topology::Body;
 use std::collections::HashMap;
@@ -81,7 +82,7 @@ impl<'a> ActiveBodies<'a> {
         &self,
         slots: &[i64],
         source: Option<&str>,
-    ) -> Option<cadmpeg_ir::features::DistinctMembers<BodyId>> {
+    ) -> Option<cadmpeg_ir::features::selections::DistinctMembers<BodyId>> {
         let mut bodies = Vec::new();
         for slot in slots {
             let body = self.unique_member(*slot, source)?;
@@ -96,7 +97,7 @@ impl<'a> ActiveBodies<'a> {
 
 pub(super) fn bound_result_bodies(
     feature: &Feature,
-) -> Option<&cadmpeg_ir::features::DistinctMembers<BodyId>> {
+) -> Option<&cadmpeg_ir::features::selections::DistinctMembers<BodyId>> {
     match feature.evaluation.definition() {
         FeatureDefinition::Operation(FeatureOperation::BaseFeature {
             bodies: BodySelection::Resolved { bodies, .. },

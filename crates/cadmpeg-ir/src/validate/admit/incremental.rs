@@ -7,9 +7,9 @@ use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
 use crate::document::CadIr;
 use crate::drawings::Drawing;
-use crate::features::{
-    DesignConfiguration, DesignParameter, Feature, FeatureInputTopology, FeatureResultTopology,
-};
+use crate::features::evaluation::{FeatureInputTopology, FeatureResultTopology};
+use crate::features::parameters::{DesignConfiguration, DesignParameter};
+use crate::features::Feature;
 use crate::geometry::{pcurve::Pcurve, Curve, ProceduralCurve, ProceduralSurface, Surface};
 use crate::native::{NativeConvertError, NativeRecord};
 use crate::presentation::{PresentationDocument, ViewPresentation};

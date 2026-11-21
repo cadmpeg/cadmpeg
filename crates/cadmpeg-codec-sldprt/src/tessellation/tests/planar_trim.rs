@@ -113,7 +113,7 @@ fn planar_trim_rejects_a_triangle_spanning_a_concave_outer() {
     .to_vec();
     let trim = PlanarTrim {
         frame: PlaneFrame::new(
-            cadmpeg_ir::features::FinitePoint3::ZERO,
+            cadmpeg_ir::features::geometry::FinitePoint3::ZERO,
             Vector3::new(0., 0., 1.),
             Vector3::new(1., 0., 0.),
         )

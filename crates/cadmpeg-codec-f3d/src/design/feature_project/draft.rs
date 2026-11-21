@@ -16,9 +16,9 @@ use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use crate::records::topology::face::DesignFaceOperand;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::DraftAnchor;
-use cadmpeg_ir::features::DraftPull;
-use cadmpeg_ir::features::FaceSelection;
+use cadmpeg_ir::features::direct_edit::DraftAnchor;
+use cadmpeg_ir::features::direct_edit::DraftPull;
+use cadmpeg_ir::features::selections::FaceSelection;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::math::Vector3;
@@ -306,12 +306,14 @@ pub(super) fn exact(
                             face_operands,
                             histories,
                         )?,
-                        anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
-                            plane: cadmpeg_ir::features::FaceSelection::Native(
+                        anchor: cadmpeg_ir::features::direct_edit::DraftAnchor::NeutralPlane {
+                            plane: cadmpeg_ir::features::selections::FaceSelection::Native(
                                 crate::ids::neutral_feature_id(neutral_plane).into_string(),
                             ),
-                            pull: Some(cadmpeg_ir::features::DraftPull::new(
-                                cadmpeg_ir::features::FeatureDirection3::from(pull_direction),
+                            pull: Some(cadmpeg_ir::features::direct_edit::DraftPull::new(
+                                cadmpeg_ir::features::geometry::FeatureDirection3::from(
+                                    pull_direction,
+                                ),
                                 Some(crate::ids::neutral_feature_id(neutral_plane)),
                             )),
                         },
@@ -330,8 +332,8 @@ pub(super) fn exact(
                 let direction = or_none!(cadmpeg_ir::units::UnitVector3::normalized(
                     draft_pull_vector(normal, flipped)
                 ));
-                let mut pull = cadmpeg_ir::features::DraftPull::new(
-                    cadmpeg_ir::features::FeatureDirection3::from(direction),
+                let mut pull = cadmpeg_ir::features::direct_edit::DraftPull::new(
+                    cadmpeg_ir::features::geometry::FeatureDirection3::from(direction),
                     None,
                 );
                 if scope_stream_has_one_component(scope, component_naming_spaces) {
@@ -349,8 +351,8 @@ pub(super) fn exact(
                             face_operands,
                             histories,
                         )?,
-                        anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
-                            plane: cadmpeg_ir::features::FaceSelection::Native(
+                        anchor: cadmpeg_ir::features::direct_edit::DraftAnchor::NeutralPlane {
+                            plane: cadmpeg_ir::features::selections::FaceSelection::Native(
                                 neutral_plane.id.clone(),
                             ),
                             pull: Some(pull),
@@ -374,7 +376,7 @@ pub(super) fn exact(
             let neutral_plane = or_none!(neutral_plane);
             Some(FeatureDefinition::Operation(FeatureOperation::Draft {
                 faces: project_draft_face_selection(scope, faces, face_operands, histories)?,
-                anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                anchor: cadmpeg_ir::features::direct_edit::DraftAnchor::NeutralPlane {
                     plane: neutral_plane,
                     pull: None,
                 },
@@ -386,7 +388,7 @@ pub(super) fn exact(
         [neutral_plane] if member_of_scope(neutral_plane) && second_side.is_none() => {
             Some(FeatureDefinition::Operation(FeatureOperation::Draft {
                 faces: project_draft_face_selection(scope, faces, face_operands, histories)?,
-                anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                anchor: cadmpeg_ir::features::direct_edit::DraftAnchor::NeutralPlane {
                     plane: project_draft_face_selection(
                         scope,
                         neutral_plane,
@@ -428,15 +430,15 @@ pub(super) fn exact(
             ));
             Some(FeatureDefinition::Operation(FeatureOperation::Draft {
                 faces: project_draft_face_selection(scope, faces, face_operands, histories)?,
-                anchor: cadmpeg_ir::features::DraftAnchor::PartingLine {
+                anchor: cadmpeg_ir::features::direct_edit::DraftAnchor::PartingLine {
                     tool: project_draft_face_selection(
                         scope,
                         parting_tool,
                         face_operands,
                         histories,
                     )?,
-                    pull: cadmpeg_ir::features::DraftPull::new(
-                        cadmpeg_ir::features::FeatureDirection3::from(pull_direction),
+                    pull: cadmpeg_ir::features::direct_edit::DraftPull::new(
+                        cadmpeg_ir::features::geometry::FeatureDirection3::from(pull_direction),
                         Some(crate::ids::neutral_feature_id(pull_plane)),
                     ),
                 },
@@ -458,10 +460,10 @@ pub(super) fn draft_sides(
     flipped: bool,
 ) -> Option<(
     cadmpeg_ir::scalar::SlopeAngle,
-    Option<cadmpeg_ir::features::DraftSecondSide>,
+    Option<cadmpeg_ir::features::direct_edit::DraftSecondSide>,
 )> {
     use crate::records::feature::direct_face::DesignDraftTwoSided;
-    use cadmpeg_ir::features::DraftSecondSide;
+    use cadmpeg_ir::features::direct_edit::DraftSecondSide;
     use cadmpeg_ir::scalar::SlopeAngle;
 
     let first = construction.angle.get();
@@ -543,7 +545,7 @@ pub(super) fn selected_historical_face_selection(
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     histories: &[crate::history_records::AsmHistory],
     design_types: &[crate::records::entity_header::SegmentType],
-) -> Option<cadmpeg_ir::features::FaceSelection> {
+) -> Option<cadmpeg_ir::features::selections::FaceSelection> {
     let previous_state_id =
         crate::history::effective_scope_previous_history_state_id(scope, histories)?;
     let stream = native_stream(&scope.id)?;
@@ -581,13 +583,13 @@ pub(super) fn selected_historical_face_selection(
     let feature = crate::ids::neutral_feature_id(scope);
     let prefix = crate::ids::feature_input_prefix(&feature, previous_state_id);
     Some(
-        match cadmpeg_ir::features::FaceSelection::historical(
+        match cadmpeg_ir::features::selections::FaceSelection::historical(
             crate::ids::feature_input_topology_id(&feature, previous_state_id),
             vec![crate::ids::history_input_face_id(&prefix, face_slot)],
             group.id.clone(),
         ) {
             Ok(selection) => selection,
-            Err(_) => cadmpeg_ir::features::FaceSelection::Native(group.id.clone()),
+            Err(_) => cadmpeg_ir::features::selections::FaceSelection::Native(group.id.clone()),
         },
     )
 }
@@ -597,9 +599,12 @@ pub(super) fn project_draft_face_selection(
     group: &DesignConstructionOperandGroup,
     face_operands: &[DesignFaceOperand],
     histories: &[crate::history_records::AsmHistory],
-) -> Result<cadmpeg_ir::features::FaceSelection, CodecError> {
+) -> Result<cadmpeg_ir::features::selections::FaceSelection, CodecError> {
     let selection = project_face_selection(scope, group, face_operands, histories)?;
-    if matches!(&selection, cadmpeg_ir::features::FaceSelection::Native(_)) {
+    if matches!(
+        &selection,
+        cadmpeg_ir::features::selections::FaceSelection::Native(_)
+    ) {
         Ok(
             crate::design::face_resolve::resolved_explicit_bounded_face_group(
                 group,

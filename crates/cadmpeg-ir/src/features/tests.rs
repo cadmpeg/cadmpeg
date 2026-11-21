@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::features::TrimCellSelection;
+use crate::features::surface_inputs::TrimCellSelection;
 use crate::math::{Point3, Vector3};
 
 mod attached_plates;
@@ -33,7 +33,7 @@ fn native_feature_kind_preserves_the_source_spelling() {
 
 #[test]
 fn a_face_maker_is_its_class_and_carries_no_mode_key() {
-    use crate::features::FaceMaker;
+    use crate::features::sweeps::FaceMaker;
 
     #[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
     struct ExtrusionCarrier {
@@ -71,7 +71,8 @@ fn a_face_maker_is_its_class_and_carries_no_mode_key() {
 
 #[test]
 fn draft_anchor_round_trips_as_a_nested_key() {
-    use crate::features::{DraftAnchor, FeatureDefinition, FeatureOperation};
+    use crate::features::direct_edit::DraftAnchor;
+    use crate::features::{FeatureDefinition, FeatureOperation};
 
     let wire = serde_json::json!({"kind": "operation", "value": {"kind": "draft", "value": {
         "faces": {"kind": "native", "value": "draft:faces"},
@@ -99,7 +100,8 @@ fn draft_anchor_round_trips_as_a_nested_key() {
 
 #[test]
 fn wrap_mode_round_trips_as_a_nested_key() {
-    use crate::features::{FeatureDefinition, FeatureOperation, WrapMode};
+    use crate::features::surface_inputs::WrapMode;
+    use crate::features::{FeatureDefinition, FeatureOperation};
 
     let wire = serde_json::json!({"kind": "operation", "value": {"kind": "wrap", "value": {
         "profile": {"kind": "native", "value": "wrap:profile"},
@@ -117,8 +119,8 @@ fn wrap_mode_round_trips_as_a_nested_key() {
     assert_eq!(serde_json::to_value(definition).unwrap(), wire);
 
     let scribe = FeatureDefinition::Operation(FeatureOperation::Wrap {
-        profile: crate::features::PlanarProfileRef::Native("wrap:profile".into()),
-        face: crate::features::FaceSelection::Native("wrap:face".into()),
+        profile: crate::features::profiles::PlanarProfileRef::Native("wrap:profile".into()),
+        face: crate::features::selections::FaceSelection::Native("wrap:face".into()),
         mode: WrapMode::Scribe,
     });
     let encoded = serde_json::to_value(scribe).unwrap();
@@ -130,7 +132,8 @@ fn wrap_mode_round_trips_as_a_nested_key() {
 
 #[test]
 fn helix_shape_round_trips_as_a_nested_key() {
-    use crate::features::{FeatureDefinition, FeatureOperation, HelixShape};
+    use crate::features::sweeps::HelixShape;
+    use crate::features::{FeatureDefinition, FeatureOperation};
 
     let conical_wire = serde_json::json!({"kind": "operation", "value": {"kind": "helix", "value": {
         "axis_origin": {"x": 0.0, "y": 0.0, "z": 0.0},
@@ -184,9 +187,10 @@ fn trim_cell_selection_requires_unique_in_range_ordinals() {
 
 #[test]
 fn trim_cells_preserve_the_nested_wire_fields_and_reject_invalid_input() {
-    use crate::features::{
-        FaceSelection, FeatureDefinition, FeatureOperation, PathRef, TrimRegion,
-    };
+    use crate::features::profiles::PathRef;
+    use crate::features::selections::FaceSelection;
+    use crate::features::surface_inputs::TrimRegion;
+    use crate::features::{FeatureDefinition, FeatureOperation};
 
     let definition = FeatureDefinition::Operation(FeatureOperation::TrimSurface {
         faces: FaceSelection::Unresolved,
@@ -215,7 +219,9 @@ fn trim_cells_preserve_the_nested_wire_fields_and_reject_invalid_input() {
 
 #[test]
 fn revolve_construction_carries_its_axis_reference_inside_the_axis() {
-    use crate::features::{FeatureDefinition, FeatureOperation, PathRef, RevolveConstruction};
+    use crate::features::profiles::PathRef;
+    use crate::features::revolve::RevolveConstruction;
+    use crate::features::{FeatureDefinition, FeatureOperation};
 
     let wire = serde_json::json!({"kind": "operation", "value": {"kind": "revolve", "value": {
         "construction": {"kind": "resolved", "value": {
@@ -260,7 +266,8 @@ fn revolve_construction_carries_its_axis_reference_inside_the_axis() {
 
 #[test]
 fn revolve_construction_admits_only_typed_partial_states() {
-    use crate::features::{FeatureDefinition, FeatureOperation, RevolveConstruction};
+    use crate::features::revolve::RevolveConstruction;
+    use crate::features::{FeatureDefinition, FeatureOperation};
 
     let partial_wire = serde_json::json!({"kind": "operation", "value": {"kind": "revolve", "value": {
         "construction": {"kind": "unresolved", "value": {
@@ -301,7 +308,7 @@ fn revolve_construction_admits_only_typed_partial_states() {
 
 #[test]
 fn an_unresolved_revolve_names_its_first_missing_operand() {
-    use crate::features::{PartialRevolveConstruction, RevolveConstruction};
+    use crate::features::revolve::{PartialRevolveConstruction, RevolveConstruction};
 
     let axis = serde_json::json!({
         "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
@@ -352,9 +359,9 @@ fn an_unresolved_revolve_names_its_first_missing_operand() {
 
 #[test]
 fn extrude_direction_round_trips_as_a_nested_key() {
-    use crate::features::{
-        ExtrudeDirection, ExtrusionDirectionSource, FeatureDefinition, FeatureOperation, PathRef,
-    };
+    use crate::features::extents::{ExtrudeDirection, ExtrusionDirectionSource};
+    use crate::features::profiles::PathRef;
+    use crate::features::{FeatureDefinition, FeatureOperation};
 
     let wire = serde_json::json!({"kind": "operation", "value": {"kind": "extrude", "value": {
         "profile": {"kind": "planar", "value": {"kind": "native", "value": "test:profile"}},
@@ -398,15 +405,20 @@ fn per_edge_flange_widths_reject_empty_rosters_and_preserve_array_wire() {
         "kind": "two_sides_per_edge",
         "widths": [{"first": 3.0, "second": 1.5}, {"first": 2.0, "second": 4.0}]
     });
-    let width: super::SheetMetalFlangeWidth = serde_json::from_value(wire.clone()).unwrap();
+    let width: crate::features::sheet_metal_forms::SheetMetalFlangeWidth =
+        serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(width).unwrap(), wire);
     let mut empty = wire;
     empty["widths"] = serde_json::json!([]);
-    let error = serde_json::from_value::<super::SheetMetalFlangeWidth>(empty).unwrap_err();
+    let error =
+        serde_json::from_value::<crate::features::sheet_metal_forms::SheetMetalFlangeWidth>(empty)
+            .unwrap_err();
     assert!(error
         .to_string()
         .contains("widths must contain at least one pair"));
-    assert!(super::SheetMetalFlangeEdgeWidths::new(Vec::new()).is_err());
+    assert!(
+        crate::features::sheet_metal_forms::SheetMetalFlangeEdgeWidths::new(Vec::new()).is_err()
+    );
 }
 
 #[test]
@@ -450,7 +462,7 @@ mod body_selection;
 
 #[test]
 fn body_selection_admission_rejects_invalid_members() {
-    use super::{BodySelection, GeneratedBodyRef, NativeSelections};
+    use crate::features::selections::{BodySelection, GeneratedBodyRef, NativeSelections};
     use crate::ids::FeatureInputTopologyId;
     for names in [
         vec![],
@@ -480,15 +492,16 @@ fn body_selection_admission_rejects_invalid_members() {
 
 #[test]
 fn topology_membership_admission() {
-    use super::{DistinctMembers, FeatureResultTopology};
+    use crate::features::evaluation::FeatureResultTopology;
+    use crate::features::selections::DistinctMembers;
     let id = crate::ids::FeatureResultTopologyId::mint("test:model:feature-result#1").unwrap();
     let feature = super::FeatureId::mint("test:test:feature#1").unwrap();
     assert!(
-        crate::features::FeatureResultMembers::new(vec![], vec![], vec![], vec![],)
+        crate::features::evaluation::FeatureResultMembers::new(vec![], vec![], vec![], vec![],)
             .map(|members| FeatureResultTopology::new(id.clone(), feature.clone(), members, None))
             .is_err()
     );
-    assert!(crate::features::FeatureResultMembers::new(
+    assert!(crate::features::evaluation::FeatureResultMembers::new(
         vec![
             cadmpeg_core::nonblank_literal!("a"),
             cadmpeg_core::nonblank_literal!("a"),
@@ -501,10 +514,12 @@ fn topology_membership_admission() {
     .is_err());
     // A blank member identity is refused by the member type, so the wire cannot
     // spell one and the constructor cannot be handed one.
-    assert!(serde_json::from_value::<super::SelectionMember>(
-        serde_json::json!({"kind": "body", "id": ""})
-    )
-    .is_err());
+    assert!(
+        serde_json::from_value::<crate::features::evaluation::SelectionMember>(
+            serde_json::json!({"kind": "body", "id": ""})
+        )
+        .is_err()
+    );
     assert!(DistinctMembers::<String>::try_from(vec!["a".into(), "a".into()],).is_err());
     assert!(
         serde_json::from_value::<DistinctMembers<crate::ids::BodyId>>(serde_json::json!([
@@ -521,7 +536,7 @@ fn topology_membership_admission() {
 
 #[test]
 fn primitive_dimensions_are_checked_at_construction_and_deserialization() {
-    use super::{PrimitiveSolid, PrimitiveSolidKind};
+    use crate::features::primitives::{PrimitiveSolid, PrimitiveSolidKind};
     use serde_json::{json, Value};
 
     let cases: [(Value, &[&str]); 8] = [
@@ -621,7 +636,8 @@ fn primitive_dimensions_are_checked_at_construction_and_deserialization() {
 
 #[test]
 fn scale_factors_admit_only_finite_nonzero_components() {
-    use crate::{features::ScaleFactors, scalar::NonZeroReal};
+    use crate::features::direct_edit::ScaleFactors;
+    use crate::scalar::NonZeroReal;
     for value in [0.0, -0.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         assert!(NonZeroReal::new(value).is_none());
     }
@@ -675,7 +691,8 @@ fn scale_factors_admit_only_finite_nonzero_components() {
 
 #[test]
 fn blind_and_coil_lengths_reject_zero_without_losing_signed_wire_values() {
-    use crate::features::{CoilExtent, LinearTermination};
+    use crate::features::extents::LinearTermination;
+    use crate::features::sweeps::CoilExtent;
     for value in [-4.0, 4.0] {
         let wire = serde_json::json!({"kind": "blind", "length": value});
         let admitted: LinearTermination = serde_json::from_value(wire.clone()).unwrap();
@@ -730,7 +747,7 @@ fn hole_profile_filters_admit_exactly_the_nonempty_family_sets() {
 
 #[test]
 fn polygon_side_counts_reject_degenerate_polygons_at_admission() {
-    use crate::features::PolygonSideCount;
+    use crate::features::parameters::PolygonSideCount;
     for value in [0, 1, 2] {
         assert!(PolygonSideCount::new(value).is_none());
         assert!(serde_json::from_value::<PolygonSideCount>(serde_json::json!(value)).is_err());
@@ -751,7 +768,7 @@ fn polygon_side_counts_reject_degenerate_polygons_at_admission() {
 
 #[test]
 fn feature_geometry_admission_preserves_nonunit_directions_and_zero_displacements() {
-    use crate::features::{FeatureDirection3, FinitePoint3, FiniteVector3};
+    use crate::features::geometry::{FeatureDirection3, FinitePoint3, FiniteVector3};
     for point in [Point3::new(0.0, 0.0, 0.0), Point3::new(-1.0, 2.0, f64::MAX)] {
         let admitted = FinitePoint3::new(point).unwrap();
         let wire = serde_json::to_value(point).unwrap();
@@ -825,7 +842,7 @@ fn feature_geometry_admission_preserves_nonunit_directions_and_zero_displacement
 
 #[test]
 fn a_point_from_finite_coordinates_holds_them_bit_for_bit() {
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::scalar::FiniteReal;
     for [x, y, z] in [[0.0, -0.0, 1.0], [f64::MAX, f64::MIN, 5.0e-324]] {
         let point = FinitePoint3::from_coordinates(
@@ -843,11 +860,10 @@ fn a_point_from_finite_coordinates_holds_them_bit_for_bit() {
 
 #[test]
 fn feature_arcs_preserve_directed_spans_and_admit_only_valid_frames_and_radii() {
+    use crate::features::geometry::{FeatureCircularArc, FeatureEllipticArc};
+    use crate::features::{FeatureDefinition, FeatureOperation};
     use crate::geometry::DirectedParameterRange;
-    use crate::{
-        features::{FeatureCircularArc, FeatureDefinition, FeatureEllipticArc, FeatureOperation},
-        scalar::PositiveLength,
-    };
+    use crate::scalar::PositiveLength;
     let center = Point3::new(1.0, 2.0, 3.0);
     let normal = Vector3::new(0.0, 0.0, 2.0);
     let major_axis = Vector3::new(3.0, 0.0, 0.0);
@@ -918,7 +934,7 @@ fn feature_arcs_preserve_directed_spans_and_admit_only_valid_frames_and_radii() 
 
 #[test]
 fn block_placement_admission_requires_a_right_handed_rigid_transform() {
-    use crate::features::FeatureRigidPlacement;
+    use crate::features::geometry::FeatureRigidPlacement;
     use crate::transform::Transform;
     for rows in [
         [
@@ -969,7 +985,8 @@ fn block_placement_admission_requires_a_right_handed_rigid_transform() {
 
 #[test]
 fn helical_sweep_travel_preserves_signed_and_planar_values_but_rejects_zero_travel() {
-    use crate::{features::HelicalSweepTravel, scalar::Length};
+    use crate::features::sweeps::HelicalSweepTravel;
+    use crate::scalar::Length;
     for (height, radial_growth, wire) in [
         (-2.0, 0.0, serde_json::json!({"kind":"axial","height":-2.0})),
         (
@@ -1015,9 +1032,8 @@ fn helical_sweep_travel_preserves_signed_and_planar_values_but_rejects_zero_trav
 
 #[test]
 fn feature_coordinate_frame_admission_preserves_wire_and_handedness_bound() {
-    use crate::features::{
-        FeatureCoordinateFrame, FeatureDefinition, FeatureOperation, EPS_FEATURE_UNIT_FRAME,
-    };
+    use crate::features::geometry::FeatureCoordinateFrame;
+    use crate::features::{FeatureDefinition, FeatureOperation, EPS_FEATURE_UNIT_FRAME};
     use crate::math::{Point3, Vector3};
     let origin = Point3::new(1.0, 2.0, 3.0);
     let x = Vector3::new(1.0, 0.0, 0.0);
@@ -1065,7 +1081,7 @@ fn feature_coordinate_frame_admission_preserves_wire_and_handedness_bound() {
 
 #[test]
 fn checked_feature_frame_parts_preserve_wire_and_cross_field_refusal() {
-    use crate::features::{
+    use crate::features::geometry::{
         FeatureCoordinateFrame, FeatureDatumPlaneFrame, FeatureDirection3,
         FeatureSupportPlaneFrame, FeatureUnitPlaneFrame, FinitePoint3,
     };
@@ -1115,7 +1131,8 @@ fn checked_feature_frame_parts_preserve_wire_and_cross_field_refusal() {
 
 #[test]
 fn feature_unit_plane_and_image_bounds_reject_degenerate_geometry() {
-    use crate::features::{FeatureImageBounds, FeatureUnitPlaneFrame, EPS_FEATURE_UNIT_FRAME};
+    use crate::features::geometry::{FeatureImageBounds, FeatureUnitPlaneFrame};
+    use crate::features::EPS_FEATURE_UNIT_FRAME;
     use crate::math::{Point2, Point3, Vector3};
     let origin = Point3::new(0.0, 0.0, 0.0);
     let x = Vector3::new(1.0, 0.0, 0.0);
@@ -1174,7 +1191,8 @@ fn feature_unit_plane_and_image_bounds_reject_degenerate_geometry() {
 
 #[test]
 fn reference_image_and_coil_frames_preserve_wire_fields_and_reject_invalid_frames() {
-    use crate::features::{CoilPlacement, FeatureDefinition};
+    use crate::features::sweeps::CoilPlacement;
+    use crate::features::FeatureDefinition;
     let image = definition_wire(
         "reference_image",
         serde_json::json!({
@@ -1219,10 +1237,9 @@ fn reference_image_and_coil_frames_preserve_wire_fields_and_reject_invalid_frame
 
 #[test]
 fn datum_and_support_plane_frames_preserve_nonunit_geometry_and_wire_fields() {
-    use crate::features::{
-        DatumPlaneReference, FeatureDatumPlaneFrame, FeatureDefinition, FeatureOperation,
-        FeatureSupportPlaneFrame,
-    };
+    use crate::features::datums::DatumPlaneReference;
+    use crate::features::geometry::{FeatureDatumPlaneFrame, FeatureSupportPlaneFrame};
+    use crate::features::{FeatureDefinition, FeatureOperation};
     let origin = Point3::new(1.0, 2.0, 3.0);
     let normal = Vector3::new(0.0, 0.0, 2.0);
     let u_axis = Vector3::new(-3.0, 0.0, 0.0);
@@ -1249,7 +1266,7 @@ fn datum_and_support_plane_frames_preserve_nonunit_geometry_and_wire_fields() {
 
 #[test]
 fn plane_frame_admission_rejects_nonfinite_degenerate_and_nonorthogonal_directions() {
-    use crate::features::{FeatureDatumPlaneFrame, FeatureSupportPlaneFrame};
+    use crate::features::geometry::{FeatureDatumPlaneFrame, FeatureSupportPlaneFrame};
     let origin = Point3::new(0.0, 0.0, 0.0);
     let normal = Vector3::new(0.0, 0.0, 2.0);
     for u_axis in [Vector3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 1.0)] {
@@ -1275,9 +1292,8 @@ fn plane_frame_admission_rejects_nonfinite_degenerate_and_nonorthogonal_directio
 
 #[test]
 fn plane_frame_owners_preserve_their_distinct_floating_point_thresholds() {
-    use crate::features::{
-        FeatureDatumPlaneFrame, FeatureSupportPlaneFrame, EPS_FEATURE_PLANE_ORTHOGONAL,
-    };
+    use crate::features::geometry::{FeatureDatumPlaneFrame, FeatureSupportPlaneFrame};
+    use crate::features::EPS_FEATURE_PLANE_ORTHOGONAL;
     let origin = Point3::new(0.0, 0.0, 0.0);
     let normal = Vector3::new(0.0, 0.0, 0.1);
     let u_axis = Vector3::new(0.7, 0.0, EPS_FEATURE_PLANE_ORTHOGONAL * 0.7);
@@ -1292,7 +1308,8 @@ fn plane_frame_owners_preserve_their_distinct_floating_point_thresholds() {
 
 #[test]
 fn a_resolved_plane_reference_checks_the_geometry_it_carries() {
-    use crate::features::{DatumPlaneReference, FaceSelection};
+    use crate::features::datums::DatumPlaneReference;
+    use crate::features::selections::FaceSelection;
     let degenerate = serde_json::json!({
         "kind": "resolved_plane",
         "frame": {
@@ -1340,7 +1357,9 @@ mod wire_forms;
 
 #[test]
 fn every_payload_free_feature_variant_the_freecad_sweep_reached_refuses_an_unknown_key() {
-    use crate::features::{ExtrusionDirectionSource, FuzzyTolerance, SweepOrientation};
+    use crate::features::extents::ExtrusionDirectionSource;
+    use crate::features::operation_settings::FuzzyTolerance;
+    use crate::features::sweeps::SweepOrientation;
 
     for kind in ["custom", "profile_normal"] {
         let wire = serde_json::json!({"kind": kind, "zz_bogus": 1});
@@ -1380,8 +1399,9 @@ fn every_payload_free_feature_variant_the_freecad_sweep_reached_refuses_an_unkno
 
 #[test]
 fn a_hole_drilling_direction_admits_only_a_finite_nonzero_vector() {
+    use crate::features::geometry::FeatureDirection3;
     use crate::features::holes::{HoleConstruction, HoleKind, HoleShape};
-    use crate::features::{FeatureDirection3, FeatureOperation};
+    use crate::features::FeatureOperation;
 
     for vector in [
         Vector3::new(0.0, 0.0, 0.0),
@@ -1468,7 +1488,7 @@ fn a_hole_wire_refuses_a_degenerate_drilling_direction() {
 
 #[test]
 fn feature_direction_from_unit_vector_keeps_the_admitted_components() {
-    use crate::features::FeatureDirection3;
+    use crate::features::geometry::FeatureDirection3;
     use crate::units::{OrthonormalFrame3, UnitVector3};
 
     for vector in [
@@ -1507,7 +1527,7 @@ fn feature_direction_from_unit_vector_keeps_the_admitted_components() {
 
 #[test]
 fn feature_direction_reversed_negates_the_components_and_stays_admitted() {
-    use crate::features::FeatureDirection3;
+    use crate::features::geometry::FeatureDirection3;
 
     for vector in [
         Vector3::new(0.0, 0.0, 1.0),
@@ -1538,7 +1558,7 @@ fn feature_direction_reversed_negates_the_components_and_stays_admitted() {
 
 #[test]
 fn finite_point_negated_negates_the_coordinates_and_stays_admitted() {
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
 
     for point in [
         Point3::new(0.0, 0.0, 0.0),
@@ -1563,7 +1583,7 @@ fn finite_point_negated_negates_the_coordinates_and_stays_admitted() {
 
 #[test]
 fn feature_frames_replace_the_origin_and_keep_the_admitted_axes() {
-    use crate::features::{
+    use crate::features::geometry::{
         FeatureCoordinateFrame, FeatureDatumPlaneFrame, FeatureSupportPlaneFrame,
         FeatureUnitPlaneFrame, FinitePoint3,
     };
@@ -1615,7 +1635,7 @@ fn feature_frames_replace_the_origin_and_keep_the_admitted_axes() {
 
 #[test]
 fn feature_arcs_rebuild_from_checked_parts() {
-    use crate::features::{
+    use crate::features::geometry::{
         FeatureCircularArc, FeatureDirection3, FeatureEllipticArc, FinitePoint3,
     };
     use crate::geometry::DirectedParameterRange;
@@ -1665,7 +1685,7 @@ fn feature_arcs_rebuild_from_checked_parts() {
 
 #[test]
 fn with_translation_keeps_the_linear_rows_and_the_rigid_admission() {
-    use crate::features::{FeatureRigidPlacement, FiniteVector3};
+    use crate::features::geometry::{FeatureRigidPlacement, FiniteVector3};
     use crate::transform::Transform;
 
     let (sine, cosine) = 0.6_f64.sin_cos();
@@ -1694,7 +1714,7 @@ fn with_translation_keeps_the_linear_rows_and_the_rigid_admission() {
 
 #[test]
 fn apply_point_hands_back_an_admitted_point_bit_for_bit() {
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::transform::Transform;
 
     let transform = Transform::affine([
@@ -1735,7 +1755,7 @@ fn apply_point_hands_back_an_admitted_point_bit_for_bit() {
 
 #[test]
 fn apply_vector_hands_back_an_admitted_vector_bit_for_bit() {
-    use crate::features::FiniteVector3;
+    use crate::features::geometry::FiniteVector3;
     use crate::transform::Transform;
 
     let transform = Transform::affine([
@@ -1778,7 +1798,7 @@ fn apply_vector_hands_back_an_admitted_vector_bit_for_bit() {
 
 #[test]
 fn feature_geometry_constants_are_the_admitted_literals() {
-    use crate::features::{FeatureDirection3, FinitePoint3};
+    use crate::features::geometry::{FeatureDirection3, FinitePoint3};
 
     let origin = Point3::new(0.0, 0.0, 0.0);
     assert_eq!(FinitePoint3::new(origin), Some(FinitePoint3::ZERO));
@@ -1831,7 +1851,7 @@ fn wrap_depth_admits_only_a_positive_length_on_the_wire() {
 
 #[test]
 fn feature_frames_hold_their_admitted_unit_axes() {
-    use crate::features::{
+    use crate::features::geometry::{
         FeatureCoordinateFrame, FeatureDirection3, FeatureUnitPlaneFrame, FiniteVector3,
     };
     use crate::units::UnitVector3;
@@ -1874,7 +1894,7 @@ mod component_insertions;
 
 #[test]
 fn partial_wrap_mode_retains_optional_signed_depth_in_json() {
-    use crate::features::WrapMode;
+    use crate::features::surface_inputs::WrapMode;
     use crate::scalar::Length;
     for (encoded, expected) in [
         (r#"{"kind":"unresolved"}"#, None),
@@ -1889,7 +1909,9 @@ fn partial_wrap_mode_retains_optional_signed_depth_in_json() {
 
 #[test]
 fn base_flange_omits_unknown_thickness_and_side() {
-    use crate::features::{FeatureOperation, PlanarProfileRef, SheetMetalThicknessSide};
+    use crate::features::profiles::PlanarProfileRef;
+    use crate::features::sheet_metal_forms::SheetMetalThicknessSide;
+    use crate::features::FeatureOperation;
     use crate::scalar::PositiveLength;
 
     let profile = PlanarProfileRef::Native("test:native:source#1".into());

@@ -5,9 +5,11 @@ use std::collections::{BTreeMap, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::geometry::FeatureDatumPlaneFrame;
+use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{
-    DistinctMembers, Feature, FeatureContent, FeatureDatumPlaneFrame, FeatureDefinition,
-    FeatureEvaluation, FeatureOperation, NativeFeatureKind,
+    Feature, FeatureContent, FeatureDefinition, FeatureOperation, NativeFeatureKind,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;

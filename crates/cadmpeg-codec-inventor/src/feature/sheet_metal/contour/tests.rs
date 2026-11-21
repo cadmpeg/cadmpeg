@@ -558,7 +558,7 @@ fn projected_contours_report_retained_controls_and_style_forms() {
 
 #[test]
 fn the_travel_parameter_is_a_length_or_internal_centimetres() {
-    use cadmpeg_ir::features::ParameterValue;
+    use cadmpeg_ir::features::parameters::ParameterValue;
     let length = |value: f64| Length::new(value).expect("length");
     assert_eq!(
         travel_length(&ParameterValue::Length(length(37.0))),

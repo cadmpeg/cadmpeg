@@ -249,7 +249,7 @@ fn faces_sharing_an_edge_form_one_component() {
 #[test]
 fn native_edge_vertices_bind_only_with_one_pair_per_edge_row() {
     use super::{BoundaryDraft, CoedgeUse, EdgeBoundaryLayout, EdgeRow, FaceTopologyDraft};
-    use cadmpeg_ir::features::NonEmptyMembers;
+    use cadmpeg_ir::features::selections::NonEmptyMembers;
     let topology = StandardTopologyDraft {
         faces: vec![FaceTopologyDraft {
             boundaries: vec![BoundaryDraft {
@@ -407,7 +407,7 @@ fn edge_vertices_follow_the_coedge_direction() {
 #[test]
 fn edge_vertices_reject_an_edge_row_without_a_coedge() {
     use super::{BoundaryDraft, CoedgeUse, EdgeBoundaryLayout, EdgeRow, FaceTopologyDraft};
-    use cadmpeg_ir::features::NonEmptyMembers;
+    use cadmpeg_ir::features::selections::NonEmptyMembers;
 
     let topology = StandardTopologyDraft {
         faces: vec![FaceTopologyDraft {
@@ -583,7 +583,7 @@ fn set_duplicate_degree_inserts_a_missing_point() {
 #[test]
 fn face_orientation_rejects_an_unpaired_edge_use() {
     use super::{orient_face_cycles, BoundaryDraft, CoedgeUse, FaceTopologyDraft};
-    use cadmpeg_ir::features::NonEmptyMembers;
+    use cadmpeg_ir::features::selections::NonEmptyMembers;
     let faces = || {
         vec![FaceTopologyDraft {
             boundaries: vec![BoundaryDraft {
