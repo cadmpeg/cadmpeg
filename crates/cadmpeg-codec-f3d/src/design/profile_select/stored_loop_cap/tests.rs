@@ -261,7 +261,7 @@ fn a_reversed_coincident_boundary_curve_uses_the_certified_interval() {
 
 #[test]
 fn counted_member_boundary_certificate_keeps_an_unsampled_conic() {
-    use cadmpeg_ir::features::SketchProfileBoundaryUse;
+    use cadmpeg_ir::features::profiles::SketchProfileBoundaryUse;
     use cadmpeg_ir::geometry::DirectedParameterRange;
     use cadmpeg_ir::scalar::{Angle, Length};
 
