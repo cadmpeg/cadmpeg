@@ -17,6 +17,8 @@ use cadmpeg_ir::topology::{Shell, ShellMember};
 use super::frames::DesignRecords;
 use super::history::{HEAD_STATE, ROOT_STATE};
 use super::parameters::ParameterPlan;
+use super::roster::values::Timestamps;
+use super::roster::{self, Context, RosterBody};
 use super::types;
 use crate::native::F3dNative;
 use crate::records::references::DesignClassTag;
@@ -40,6 +42,28 @@ const FAMILY_COUNTER: &str = "DcBaseFeatureMetaType";
 const COMPONENT_EDGE: u32 = 0x1000;
 /// The flag of every other dependency-table edge.
 const EDGE: u32 = 1;
+/// The evaluation epoch of the item tail: `250`, below the `252` Fusion
+/// writes, until the decoder reads an epoch-252 tail beside record indices
+/// 209 to 212 (interim, F3D-EPOCH).
+const EPOCH: u32 = 250;
+/// The evaluation duration of the item tail, the median of Fusion's Base
+/// Feature items (DR-913).
+const DURATION: f64 = 0.000_631;
+
+/// The note naming the item tail's evaluation values: the epoch written in
+/// place of the `252` f3d.md §3.1 states for the stream's generation words,
+/// and the duration DR-913 leaves open.
+pub(super) fn item_tail_loss(scope: u32) -> Option<LossNote> {
+    record_residual_unavailable(
+        "F3D",
+        &format!(
+            "writes evaluation epoch {EPOCH} in both epoch fields of the Base Feature item tail, where f3d.md §3.1 states 252 for the generation words 1234, 8, 36 the Design stream stores, because the decoder reads an empty-label tail of epoch 252 beside these record indices as named (F3D-EPOCH); and writes evaluation duration {DURATION}, which f3d-open-items.md DR-913 leaves open"
+        ),
+        [format!(
+            "record {scope} (Base Feature scope: its item tail)"
+        )],
+    )
+}
 
 /// The bodies the `Base Feature` stores, in body order, each with its faces
 /// in the order of its lump, shell and face chains.
@@ -271,6 +295,8 @@ impl BaseFeaturePlan<'_> {
             indices: &indices,
             classes: &classes,
             bodies: &bodies,
+            stamps: Timestamps::FIXED,
+            act_component: None,
         };
         writer.timeline(&mut out);
         writer.context(&mut out)?;
@@ -279,9 +305,83 @@ impl BaseFeaturePlan<'_> {
         }
         writer.components(&mut out)?;
         writer.origin(&mut out);
-        writer.collection(&mut out, &parameter_indices)?;
+        writer.parameter_collection(&mut out, &parameter_indices)?;
+        out.record(&classes.aggregate, indices.aggregate);
         writer.body_references(&mut out)?;
         Ok((parameter_bytes, out, residual_losses(&indices, &bodies)))
+    }
+
+    /// Each result body as the roster writes it.
+    pub(super) fn roster_bodies<'a>(&self, target: &'a CadIr) -> Vec<RosterBody<'a>> {
+        self.bodies
+            .iter()
+            .filter_map(|planned| {
+                let body = target
+                    .geometry
+                    .bodies
+                    .iter()
+                    .find(|body| &body.id == planned.id)?;
+                Some(RosterBody {
+                    id: &body.id,
+                    entities: planned.faces.len() + planned.edges,
+                    sheet: body.kind == cadmpeg_ir::topology::BodyKind::Sheet,
+                    node_guid: deterministic_guid("browser-node", body.id.as_str())
+                        .to_ascii_lowercase(),
+                    parameter_guid: deterministic_guid("body-parameter", body.id.as_str())
+                        .to_ascii_lowercase(),
+                })
+            })
+            .collect()
+    }
+
+    /// The timeline, its context and the records they name, the origin
+    /// container, the parameter collection and its companion, the body
+    /// tracking entries, and the user parameters, at the roster's indices.
+    pub(super) fn roster_records(
+        ctx: &Context<'_>,
+        parameters: &ParameterPlan,
+        out: &mut DesignRecords,
+    ) -> Result<(), CodecError> {
+        let indices = Indices::roster();
+        let classes = Classes::of(ctx)?;
+        let bodies = ctx
+            .roster
+            .bodies
+            .iter()
+            .zip(&ctx.bodies)
+            .map(|(records, body)| BodyRecords {
+                design_reference: records.design,
+                parameter_reference: records.parameter,
+                node: records.node,
+                tracking: records.tracking,
+                node_guid: body.node_guid.clone(),
+                parameter_guid: body.parameter_guid.clone(),
+            })
+            .collect::<Vec<_>>();
+        let writer = Writer {
+            indices: &indices,
+            classes: &classes,
+            bodies: &bodies,
+            stamps: ctx.values.stamps,
+            act_component: Some(roster::ACT_COMPONENT),
+        };
+        writer.timeline(out);
+        writer.context(out)?;
+        if let Some(item) = &indices.item {
+            writer.item(out, item)?;
+        }
+        writer.components(out)?;
+        writer.origin_container(out);
+        writer.parameter_collection(out, &ctx.roster.parameters)?;
+        if ctx.roster.parameters.is_empty() {
+            return Ok(());
+        }
+        parameters.roster_records(
+            &ctx.class(types::PARAMETER.guid)?,
+            &ctx.roster.parameters,
+            indices.collection,
+            out,
+        )
     }
 
     /// The record indices of each result body. Its design body-reference
@@ -336,6 +436,38 @@ impl BaseFeaturePlan<'_> {
 }
 
 impl Indices {
+    /// The indices of the one-body roster.
+    fn roster() -> Self {
+        Self {
+            timeline: 207,
+            context: roster::CONTEXT,
+            item: Some(ItemIndices {
+                scope: roster::SCOPE,
+                result_owner: 213,
+                result_companion: 214,
+                tracked_results: 212,
+                item_companion: 211,
+                scope_timestamps: 210,
+            }),
+            owner_collection: 199,
+            component: 205,
+            component_timestamps: 206,
+            component_link: 208,
+            context_12d00ac0: 202,
+            context_016d8c93: 204,
+            context_members: 200,
+            dependencies: 201,
+            persistent_ids: 203,
+            origin: roster::ORIGIN,
+            origin_point: 25,
+            origin_axes: 26,
+            origin_planes: 29,
+            collection: roster::PARAMETER_COLLECTION,
+            collection_companion: 18,
+            aggregate: roster::AGGREGATE,
+        }
+    }
+
     fn allocate(registry: &mut GeneratedDesignRegistry, item: bool) -> Result<Self, CodecError> {
         let timeline = registry.allocate()?;
         let context = registry.allocate()?;
@@ -386,6 +518,40 @@ impl Indices {
 }
 
 impl Classes {
+    /// The class tags of the roster's type table.
+    fn of(ctx: &Context<'_>) -> Result<Self, CodecError> {
+        let class = |row: TypeRow| ctx.class(row.guid);
+        Ok(Self {
+            timeline: class(types::TIMELINE)?,
+            context: class(types::TIMELINE_CONTEXT)?,
+            scope: class(types::BASE_FEATURE)?,
+            result_owner: class(types::RESULT_OWNER)?,
+            tracking: class(types::BODY_TRACKING)?,
+            tracked_results: class(types::TRACKED_RESULTS)?,
+            item_companion: class(types::ITEM_TAIL_COMPANION)?,
+            timestamps: class(types::RECORD_TIMESTAMPS)?,
+            owner_collection: class(types::OWNER_COLLECTION)?,
+            component: class(types::COMPONENT_RECORD)?,
+            component_link: class(types::CONTEXT_COMPONENT_LINK)?,
+            context_12d00ac0: class(types::CONTEXT_12D00AC0)?,
+            context_016d8c93: class(types::CONTEXT_016D8C93)?,
+            context_members: class(types::CONTEXT_MEMBERS)?,
+            dependencies: class(types::DEPENDENCIES)?,
+            persistent_ids: class(types::PERSISTENT_IDS)?,
+            origin: class(types::ORIGIN)?,
+            origin_point: class(types::ORIGIN_POINT)?,
+            origin_axis: class(types::ORIGIN_AXIS)?,
+            origin_plane: class(types::ORIGIN_PLANE)?,
+            collection: class(types::PARAMETER_COLLECTION)?,
+            collection_companion: class(types::COLLECTION_COMPANION)?,
+            aggregate: class(types::COMPONENT_AGGREGATE)?,
+            body_reference: class(types::BODY_REFERENCE)?,
+            object: class(types::DATA_MODEL_OBJECT)?,
+            tracking_entry: class(types::TRACKING_ENTRY)?,
+            collection_base: class(types::COLLECTION)?,
+        })
+    }
+
     fn register(
         registry: &mut GeneratedDesignRegistry,
         indices: &Indices,
@@ -460,6 +626,10 @@ struct Writer<'a> {
     indices: &'a Indices,
     classes: &'a Classes,
     bodies: &'a [BodyRecords],
+    stamps: Timestamps,
+    /// The ACT component record the `549FBB80` record names, where the
+    /// archive holds an ACT segment.
+    act_component: Option<u32>,
 }
 
 impl Writer<'_> {
@@ -545,8 +715,8 @@ impl Writer<'_> {
             .u32(HEAD_STATE)
             .lp_utf16(FAMILY)?;
         // The 78-byte item tail: family ordinal 1, no label, state bytes
-        // `00 00 00`, the preceding state, two equal evaluation epochs and the
-        // duration, `s0 = s1 = 0`.
+        // `00 00 00`, the preceding state, the two evaluation epochs around
+        // the duration, `s0 = s1 = 0`.
         out.u32(1)
             .u32(0)
             .u32(0)
@@ -555,9 +725,9 @@ impl Writer<'_> {
             .reference(item.tracked_results)
             .byte(0)
             .u32(ROOT_STATE)
-            .u32(0)
-            .f64(0.0)
-            .u32(0)
+            .u32(EPOCH)
+            .f64(DURATION)
+            .u32(EPOCH)
             .reference(item.item_companion)
             .byte(1)
             .byte(0)
@@ -586,7 +756,7 @@ impl Writer<'_> {
             item.result_companion,
             false,
             &[],
-            item.result_owner,
+            (item.result_owner, self.stamps.result),
         )?;
 
         out.record(&classes.tracked_results, item.tracked_results)
@@ -615,8 +785,11 @@ impl Writer<'_> {
             &classes.timestamps,
             item.scope_timestamps,
             true,
-            &[indices.component, item.scope],
-            item.scope,
+            &[
+                (indices.component, self.stamps.component),
+                (item.scope, self.stamps.scope),
+            ],
+            (item.scope, self.stamps.scope),
         )?;
         Ok(())
     }
@@ -651,16 +824,19 @@ impl Writer<'_> {
             out,
             &classes.timestamps,
             indices.component_timestamps,
-            true,
+            false,
             &[],
-            indices.component,
+            (indices.component, self.stamps.component),
         )?;
 
+        let (act_target, act_segment) = self.act_component.map_or((0, 0), |record| {
+            (record, roster::segment::SegmentKind::Act.id())
+        });
         out.record(&classes.component_link, indices.component_link)
             .zeros(22)
             .u32(3)
             .byte(0)
-            .cross_segment_reference(0, 0)
+            .cross_segment_reference(u64::from(act_target), act_segment)
             .reference(indices.aggregate)
             .u32(u32::MAX)
             .u32(0);
@@ -718,8 +894,22 @@ impl Writer<'_> {
         Ok(())
     }
 
-    /// The origin container and the records it names.
+    /// The origin container and the header of each record it names.
     fn origin(&self, out: &mut DesignRecords) {
+        let (indices, classes) = (self.indices, self.classes);
+        self.origin_container(out);
+        out.record(&classes.origin_point, indices.origin_point);
+        for axis in 0..3 {
+            out.record(&classes.origin_axis, indices.origin_axes + axis);
+        }
+        for plane in 0..3 {
+            out.record(&classes.origin_plane, indices.origin_planes + plane);
+        }
+    }
+
+    /// The origin container: the origin point, axes and planes, and the
+    /// component aggregate.
+    fn origin_container(&self, out: &mut DesignRecords) {
         let (indices, classes) = (self.indices, self.classes);
         out.record(&classes.origin, indices.origin)
             .zeros(12)
@@ -732,18 +922,14 @@ impl Writer<'_> {
             out.reference(indices.origin_planes + plane);
         }
         out.reference(indices.aggregate);
-        out.record(&classes.origin_point, indices.origin_point);
-        for axis in 0..3 {
-            out.record(&classes.origin_axis, indices.origin_axes + axis);
-        }
-        for plane in 0..3 {
-            out.record(&classes.origin_plane, indices.origin_planes + plane);
-        }
     }
 
-    /// The parameter collection, its companion, and the component
-    /// aggregate.
-    fn collection(&self, out: &mut DesignRecords, parameters: &[u32]) -> Result<(), CodecError> {
+    /// The parameter collection and its companion.
+    fn parameter_collection(
+        &self,
+        out: &mut DesignRecords,
+        parameters: &[u32],
+    ) -> Result<(), CodecError> {
         let (indices, classes) = (self.indices, self.classes);
         let parameter_count = count(parameters.len())?;
         out.record(&classes.collection, indices.collection)
@@ -762,7 +948,6 @@ impl Writer<'_> {
             .u32(1)
             .reference(indices.collection)
             .zeros(9);
-        out.record(&classes.aggregate, indices.aggregate);
         Ok(())
     }
 
@@ -795,25 +980,25 @@ impl Writer<'_> {
     }
 }
 
-/// A record-timestamp table: fourteen zero bytes, `01 01` (`00 00` for a
-/// parameter companion), the entries, the owner entry and eight zero bytes.
-/// Every timestamp is `0`.
+/// A record-timestamp table: fourteen zero bytes, `01 01` for the scope's
+/// table and `00 00` for the others, the `(record, timestamp)` entries, the
+/// owner entry and eight zero bytes.
 fn timestamp_table(
     out: &mut DesignRecords,
     class: &DesignClassTag,
     record: u32,
-    table: bool,
-    entries: &[u32],
-    owner: u32,
+    scope: bool,
+    entries: &[(u32, u64)],
+    owner: (u32, u64),
 ) -> Result<(), CodecError> {
-    let prefix = u8::from(table);
+    let prefix = u8::from(scope);
     out.record(class, record)
         .zeros(14)
         .byte(prefix)
         .byte(prefix)
         .u32(count(entries.len())?);
-    for entry in entries.iter().chain([&owner]) {
-        out.reference(*entry).u64(0);
+    for (entry, timestamp) in entries.iter().chain([&owner]) {
+        out.reference(*entry).u64(*timestamp);
     }
     out.zeros(8);
     Ok(())
@@ -843,10 +1028,6 @@ fn residual_losses(indices: &Indices, bodies: &[BodyRecords]) -> Vec<LossNote> {
             "record {} (origin point 0E18EEF2: its payload)",
             indices.origin_point
         ),
-        format!(
-            "record {} (record-timestamp table of the component record: its entries)",
-            indices.component_timestamps
-        ),
     ];
     records.extend((0..3).map(|axis| {
         format!(
@@ -860,36 +1041,48 @@ fn residual_losses(indices: &Indices, bodies: &[BodyRecords]) -> Vec<LossNote> {
             indices.origin_planes + plane
         )
     }));
-    match &indices.item {
-        Some(item) => {
-            records.push(format!(
-                "record {} (Base Feature scope: the evaluation epochs and duration of its item tail)",
-                item.scope
-            ));
-            records.extend(
-                [item.result_companion, item.scope_timestamps].map(|record| {
-                    format!("record {record} (record-timestamp table: its timestamps)")
-                }),
-            );
-        }
-        None => {
-            records.extend(
-                [indices.owner_collection, indices.context_members].map(|record| {
-                    format!("record {record} (member list of a design with no Base Feature)")
-                }),
-            );
-        }
+    if indices.item.is_none() {
+        records.extend(
+            [indices.owner_collection, indices.context_members].map(|record| {
+                format!("record {record} (member list of a design with no Base Feature)")
+            }),
+        );
     }
     records.extend(bodies.iter().flat_map(|body| {
         [body.design_reference, body.parameter_reference].map(|record| {
             format!("record {record} (body-reference record D3937028: its GUID and presentation members)")
         })
     }));
+    let mut stamp_records = vec![format!(
+        "record {} (component record-timestamp table)",
+        indices.component_timestamps
+    )];
+    if let Some(item) = &indices.item {
+        stamp_records.push(format!(
+            "record {} (Base Feature scope record-timestamp table)",
+            item.scope_timestamps
+        ));
+        stamp_records.push(format!(
+            "record {} (Base Feature result record-timestamp table)",
+            item.result_companion
+        ));
+    }
     record_residual_unavailable(
         "F3D",
         "writes these Design records with zero bytes where the specification states no value",
         records,
     )
     .into_iter()
+    .chain(record_residual_unavailable(
+        "F3D",
+        "writes fixed-clock (2026-01-01 UTC) authoring timestamps in the record-timestamp tables: the document records no authoring clock",
+        stamp_records,
+    ))
+    .chain(
+        indices
+            .item
+            .as_ref()
+            .and_then(|item| item_tail_loss(item.scope)),
+    )
     .collect()
 }
