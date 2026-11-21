@@ -500,6 +500,37 @@ Parsed by:
 | 9 | 1 | `reserved_9` | `u8` | little | spec | The wide expression trailer is eleven bytes · value `0` |
 | 10 | 1 | `document` | `u8` | little | spec | The wide expression trailer is eleven bytes |
 
+## `design_parameter_discriminated_expression_trailer`
+
+Spec §3.1 · layout: byte offsets · size: 9 B
+
+This trailer is relative to the end of the variable LP-UTF16 expression of a discriminated parameter. DR-144 gives the four flag bytes before the document flag.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `zero_run_4` | `bytes[4]` | little | spec | The nine-byte trailer is four zero bytes and five flag bytes |
+| 4 | 4 | `flags` | `bytes[4]` | little | spec | DR-144 gives the other four flag bytes |
+| 8 | 1 | `document` | `u8` | little | spec | The last flag byte is `1` exactly for a document parameter |
+
+## `design_parameter_discriminated_text_expression_trailer`
+
+Spec §3.1 · layout: byte offsets · size: 10 B
+
+This trailer is relative to the end of the variable LP-UTF16 expression of a discriminated parameter. DR-144 gives the four flag bytes before the document flag.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `text` | `u8` | little | spec | The text flag is `1` exactly for a text parameter |
+| 1 | 4 | `zero_run_4` | `bytes[4]` | little | spec | The ten-byte trailer is the text flag, four zero bytes, and five flag bytes |
+| 5 | 4 | `flags` | `bytes[4]` | little | spec | DR-144 gives the other four flag bytes |
+| 9 | 1 | `document` | `u8` | little | spec | The last flag byte is `1` exactly for a document parameter |
+
 ## `design_parameter_compact_owned_expression_trailer`
 
 Spec §3.1 · layout: byte offsets · size: 5 B
@@ -14198,11 +14229,11 @@ Offsets are relative to the first byte after the property block.
 
 Spec §Records of a Sketch item · layout: byte offsets · size: 91 B
 
-Offsets are relative to the first byte after the measurement. The LP-UTF16 prefix follows at 91.
+Offsets are relative to the first byte after the measurement. The LP-UTF16 prefix follows at 91. A legacy annotated dimension frame in a segment whose serializer magic is neither 1234 nor 134225558 or more stores offsets 0 to 17 only, and its LP-UTF16 prefix follows at 18.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 1 | `style_byte` | `u8` | little | spec | a style byte and four f32 style values |
+| 0 | 1 | `style_byte` | `u8` | little | spec | The frame of a driven dimension stores the style byte `1` |
 | 1 | 16 | `style_values` | `f32[4]` | little | spec | a style byte and four f32 style values |
 | 17 | 1 | `marker` | `u8` | little | spec | a byte `1` or `0`, a zero byte |
 | 18 | 1 | `zero_byte` | `u8` | little | spec | a byte `1` or `0`, a zero byte · value `0` |
