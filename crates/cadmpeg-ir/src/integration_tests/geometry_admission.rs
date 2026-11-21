@@ -247,7 +247,7 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
         .try_map_control_points(|_, point| {
             let mut mapped = point.get();
             mapped.x = f64::INFINITY;
-            crate::features::FinitePoint3::new(mapped).ok_or(())
+            crate::features::geometry::FinitePoint3::new(mapped).ok_or(())
         })
         .is_err());
     assert!(curve_weights(&curve, vec![0.0, 1.0]).is_err());
@@ -301,7 +301,7 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
         .try_map_control_points(|_, point| {
             let mut mapped = point.get();
             mapped.y = f64::NEG_INFINITY;
-            crate::features::FinitePoint3::new(mapped).ok_or(())
+            crate::features::geometry::FinitePoint3::new(mapped).ok_or(())
         })
         .is_err());
     assert!(surface_weights(&surface, vec![vec![0.0, 1.0], vec![1.0, 1.0]]).is_err());

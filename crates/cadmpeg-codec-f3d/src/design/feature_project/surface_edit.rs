@@ -24,7 +24,8 @@ pub(in crate::design) fn project_surface_stitch(
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let operation = scope.surface_stitch_operation()?;
     let input_end = scope.reference_members().len().checked_sub(2)?;
@@ -87,9 +88,9 @@ pub(super) fn project_ruled_surface(
     use crate::records::feature::surface_ops::{
         DesignRuledSurfaceCorner, DesignRuledSurfaceMethod,
     };
-    use cadmpeg_ir::features::{
-        FaceSelection, FeatureDefinition, FeatureOperation, RuledSurfaceCorner, RuledSurfaceMode,
-    };
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::surface_inputs::{RuledSurfaceCorner, RuledSurfaceMode};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let operation = or_none!(scope.ruled_surface_operation());
     let stream = or_none!(native_stream(&scope.id));
@@ -186,9 +187,10 @@ pub(super) fn project_surface_trim(
     face_operands: &[DesignFaceOperand],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{
-        FaceSelection, FeatureDefinition, FeatureOperation, PathRef, TrimRegion,
-    };
+    use cadmpeg_ir::features::profiles::PathRef;
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::surface_inputs::TrimRegion;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::SurfaceTrim {
         return None;

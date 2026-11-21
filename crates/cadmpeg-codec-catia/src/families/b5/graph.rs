@@ -14,7 +14,7 @@ use std::ops::Range;
 use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::nurbs_pcurve_uv;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::{
     analytic::ConeSurface, nurbs::NurbsSurface, ProceduralSurfaceDefinition,
 };

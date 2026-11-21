@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature scaling routes test only what a positive scale can break.
 
-use crate::features::{
-    FeatureEllipticArc, FinitePoint3, PrimitiveSolid, PrimitiveSolidKind, PrimitiveSolidScaleError,
-};
+use crate::features::geometry::{FeatureEllipticArc, FinitePoint3};
+use crate::features::primitives::{PrimitiveSolid, PrimitiveSolidKind, PrimitiveSolidScaleError};
 use crate::geometry::DirectedParameterRange;
 use crate::math::{Point3, Vector3};
 use crate::scalar::{Angle, Length, PositiveLength, PositiveReal};

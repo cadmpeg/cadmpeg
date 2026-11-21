@@ -1334,10 +1334,10 @@ pub(super) fn sketch_plane_frames(
                     return None;
                 };
                 let frame = match reference {
-                    cadmpeg_ir::features::DatumPlaneReference::Feature { feature } => {
+                    cadmpeg_ir::features::datums::DatumPlaneReference::Feature { feature } => {
                         *frames_by_feature.get(feature.as_str())?
                     }
-                    cadmpeg_ir::features::DatumPlaneReference::ResolvedPlane { frame } => {
+                    cadmpeg_ir::features::datums::DatumPlaneReference::ResolvedPlane { frame } => {
                         SketchPlaneFrame::from_frame(
                             (
                                 frame.origin().get(),
@@ -1347,7 +1347,7 @@ pub(super) fn sketch_plane_frames(
                             SketchPlaneUAxisSource::ResolvedSupportPlane,
                         )
                     }
-                    cadmpeg_ir::features::DatumPlaneReference::Face { .. } => return None,
+                    cadmpeg_ir::features::datums::DatumPlaneReference::Face { .. } => return None,
                 };
                 Some(SketchPlaneFrame {
                     origin: Point3::new(

@@ -249,13 +249,13 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
     ir.geometry.points.extend([
         Point::new(
             point_start.clone(),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(2_000_000.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(2_000_000.0, 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
         Point::new(
             point_end.clone(),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(2_000_001.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(2_000_001.0, 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
@@ -314,7 +314,7 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
     let mut ir = CadIr::empty();
     ir.geometry.points.push(Point::new(
         PointId::mint("test:model:point#global-profile").expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(123.0, -4.0, 5.0))
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(123.0, -4.0, 5.0))
             .expect("a finite position is a point"),
         None,
     ));
@@ -411,7 +411,7 @@ fn encode_uses_neutral_linear_tolerance_as_global_floor() {
         cadmpeg_ir::scalar::PositiveLength::new(2.5).expect("positive finite tolerance");
     ir.geometry.points.push(Point::new(
         PointId::mint("test:model:point#resolution-floor").expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
             .expect("a finite position is a point"),
         None,
     ));

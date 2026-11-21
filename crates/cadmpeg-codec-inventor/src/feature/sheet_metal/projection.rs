@@ -7,13 +7,12 @@ use cadmpeg_core::{
     decode::{unique_index, DecodeContext},
     CodecError,
 };
-use cadmpeg_ir::{
-    features::{
-        DistinctMembers, EdgeSelection, Feature, FeatureContent, FeatureDefinition,
-        FeatureEvaluation, FeatureId, FeatureOperation, FeatureResultTopology,
-    },
-    ids::HistoricalEdgeId,
+use cadmpeg_ir::features::evaluation::{FeatureEvaluation, FeatureResultTopology};
+use cadmpeg_ir::features::selections::{DistinctMembers, EdgeSelection};
+use cadmpeg_ir::features::{
+    Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
 };
+use cadmpeg_ir::ids::HistoricalEdgeId;
 
 use super::{
     flange::Flange,
@@ -169,7 +168,7 @@ fn attachment_collections<'a>(
 fn generated_attachment(
     collections: &[&PmDcFeatureProperty],
     index: &ProjectionIndex<'_>,
-) -> Option<Vec<cadmpeg_ir::features::GeneratedEdgeRef>> {
+) -> Option<Vec<cadmpeg_ir::features::selections::GeneratedEdgeRef>> {
     let mut edges = Vec::new();
     for collection in collections {
         let EdgeSelection::Generated {
@@ -360,8 +359,8 @@ fn plate_result(
 
 fn plate_values(
     source: &PmDcFeature,
-    normal: cadmpeg_ir::features::FiniteVector3,
-    u_axis: cadmpeg_ir::features::FiniteVector3,
+    normal: cadmpeg_ir::features::geometry::FiniteVector3,
+    u_axis: cadmpeg_ir::features::geometry::FiniteVector3,
     index: &ProjectionIndex<'_>,
     inventory: &FeatureInventory,
 ) -> Result<operands::PlateOperands, PlateRefusal> {
@@ -669,7 +668,7 @@ pub(in crate::feature) fn project_bends(
             continue;
         }
         let FeatureDefinition::Operation(FeatureOperation::SheetMetalAttachedPlate {
-            profile: cadmpeg_ir::features::PlanarProfileRef::SketchRegions { sketch, .. },
+            profile: cadmpeg_ir::features::profiles::PlanarProfileRef::SketchRegions { sketch, .. },
             ..
         }) = projected[plate_position].feature.evaluation.definition()
         else {

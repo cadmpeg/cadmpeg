@@ -3,9 +3,8 @@
 
 use crate::ids::native_stream;
 use crate::records::sketch_geometry::SketchText;
-use cadmpeg_ir::features::{
-    Feature, FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef,
-};
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::sketches::SketchEntity;
 

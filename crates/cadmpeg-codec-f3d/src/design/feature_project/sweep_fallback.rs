@@ -14,11 +14,13 @@ use crate::records::topology::face::DesignFaceOperand;
 use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{
-    FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureOperation, PathRef,
-    PlanarProfileRef, ProfileRef, SheetSweepSection, SolidSweepOperation, SweepGuideRail,
-    SweepMode, SweepOrientation, SweepPathExtent, SweepSection, SweepShape,
+use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::sweeps::{
+    SheetSweepSection, SolidSweepOperation, SweepGuideRail, SweepMode, SweepOrientation,
+    SweepPathExtent, SweepSection, SweepShape,
 };
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::native::bytes::NativeBytes;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Angle, Fraction};

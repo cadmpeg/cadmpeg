@@ -17,9 +17,21 @@ use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::evaluation::FeatureResultTopology;
+use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+use cadmpeg_ir::features::operation_settings::{BodyRetentionMode, BodyTrimSide, BooleanOp};
+use cadmpeg_ir::features::parameters::DesignConfiguration;
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::selections::{BodySelection, DistinctMembers};
+use cadmpeg_ir::features::tree::{FeatureTreeNodeRole, TreeChildren};
+use cadmpeg_ir::features::{
+    ConfigurationId, Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
+    FeatureSourceContent, ParameterId,
+};
 use cadmpeg_ir::ids::{
     AppearanceBindingId, AppearanceId, AttributeId, BodyId, FeatureResultTopologyId, UnknownId,
 };
+use cadmpeg_ir::scalar::{Angle, FiniteReal, Length};
 use cadmpeg_ir::semantic_annotations::{SemanticAnnotation, SemanticAnnotationKind};
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
@@ -27,16 +39,6 @@ use cadmpeg_ir::sketches::{
 };
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::unknown::UnknownRecord;
-use cadmpeg_ir::{
-    features::{
-        BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ConfigurationId,
-        DesignConfiguration, DistinctMembers, ExtrudeExtent, ExtrudeSide, Feature, FeatureContent,
-        FeatureDefinition, FeatureId, FeatureOperation, FeatureResultTopology,
-        FeatureSourceContent, FeatureTreeNodeRole, LinearTermination, ParameterId,
-        PlanarProfileRef, ProfileRef, TreeChildren,
-    },
-    scalar::{Angle, FiniteReal, Length},
-};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 mod assembly_occurrences;
@@ -1175,15 +1177,17 @@ fn attach_initial_segment_bodies(
         source_tag: None,
         source_text: None,
         source_content: FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Resolved {
-                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(selection_bodies)
-                        .map_err(cadmpeg_core::CodecError::from)?,
+                    bodies: cadmpeg_ir::features::selections::DistinctMembers::try_from(
+                        selection_bodies,
+                    )
+                    .map_err(cadmpeg_core::CodecError::from)?,
                     native: "nx:segment-body-bindings".to_string(),
                 },
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(feature_outputs)
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(feature_outputs)
                 .map_err(cadmpeg_core::CodecError::from)?,
         ),
         native_ref: None,
@@ -4040,14 +4044,16 @@ fn attach_feature_operations(
             ordinal: base_ordinal + cadmpeg_core::decode::u64_from_index(ordinal),
             name: Some(label.value.clone()),
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies.into_vec())
-                .map_err(cadmpeg_core::CodecError::from)?,
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(
+                dependencies.into_vec(),
+            )
+            .map_err(cadmpeg_core::CodecError::from)?,
             source_properties: cadmpeg_core::text::named_entries(&label.id, source_properties)?,
             source_tag: Some(label.value.clone()),
             source_text: None,
             source_content,
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
                 definition,
                 DistinctMembers::try_from(outputs).map_err(CodecError::from)?,
             ),
@@ -4255,7 +4261,7 @@ fn append_feature_result_topology(
         members,
         native_ref,
     } = pending;
-    let members = cadmpeg_ir::features::FeatureResultMembers::new(
+    let members = cadmpeg_ir::features::evaluation::FeatureResultMembers::new(
         bodies,
         members.faces,
         members.edges,
@@ -5760,8 +5766,8 @@ fn extrude_feature_definition(
     };
     FeatureDefinition::Operation(FeatureOperation::Extrude {
         profile,
-        direction: cadmpeg_ir::features::ExtrudeDirection::Unresolved {},
-        start: cadmpeg_ir::features::ExtrudeStart::Unresolved {},
+        direction: cadmpeg_ir::features::extents::ExtrudeDirection::Unresolved {},
+        start: cadmpeg_ir::features::extents::ExtrudeStart::Unresolved {},
         extent: ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Unresolved {},
@@ -5850,18 +5856,18 @@ pub(super) fn boolean_feature_definition(
 
         op: match operation.kind {
             crate::native::features::FeatureBooleanKind::Unite => {
-                cadmpeg_ir::features::BooleanKind::Join
+                cadmpeg_ir::features::operation_settings::BooleanKind::Join
             }
             crate::native::features::FeatureBooleanKind::Subtract => {
-                cadmpeg_ir::features::BooleanKind::Cut
+                cadmpeg_ir::features::operation_settings::BooleanKind::Cut
             }
             crate::native::features::FeatureBooleanKind::Intersect => {
-                cadmpeg_ir::features::BooleanKind::Intersect
+                cadmpeg_ir::features::operation_settings::BooleanKind::Intersect
             }
         },
         keep_tools: false,
 
-        destination: cadmpeg_ir::features::CombineDestination::default(),
+        destination: cadmpeg_ir::features::operation_settings::CombineDestination::default(),
     }))
 }
 

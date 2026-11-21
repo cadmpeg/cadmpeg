@@ -1215,15 +1215,16 @@ fn round_envelope_rejects_an_extra_reference_circle() {
         crate::reference::ReferenceCircle::try_new(
             entity_id,
             crate::reference::ReferenceCircleCenter::Stored(
-                cadmpeg_ir::features::FinitePoint3::new(center.into())
+                cadmpeg_ir::features::geometry::FinitePoint3::new(center.into())
                     .expect("finite circle center"),
             ),
             cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
             cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(axis))
                 .expect("unit axis"),
             [
-                cadmpeg_ir::features::FinitePoint3::new(start.into()).expect("finite start"),
-                cadmpeg_ir::features::FinitePoint3::new(end.into()).expect("finite end"),
+                cadmpeg_ir::features::geometry::FinitePoint3::new(start.into())
+                    .expect("finite start"),
+                cadmpeg_ir::features::geometry::FinitePoint3::new(end.into()).expect("finite end"),
             ],
             0,
         )

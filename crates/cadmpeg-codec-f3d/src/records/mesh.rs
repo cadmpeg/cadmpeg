@@ -7,7 +7,7 @@ use super::identity::Located;
 use super::references::DesignClassTag;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::AssetId;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::native::bytes::NativeBytes;
 use cadmpeg_ir::transform::Transform;
 use serde::{Deserialize, Serialize};
