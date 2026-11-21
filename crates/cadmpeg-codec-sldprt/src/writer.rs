@@ -3356,9 +3356,10 @@ fn write_body_hierarchy(
         let mut native_regions = Vec::new();
         for region in ir.geometry.body_regions(&body.id) {
             if body.kind == BodyKind::Sheet && region.shells.len() != 1 {
-                return Err(CodecError::NotImplemented(
-                    "SLDPRT sheet regions require exactly one shell".into(),
-                ));
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT sheet regions require exactly one shell: {}",
+                    body.id
+                )));
             }
             let native_region = take_attr(next)?;
             native_regions.push(native_region);
@@ -3406,18 +3407,23 @@ fn write_body_hierarchy(
                     1,
                     native_region,
                     0x001b,
-                    &fixed_refs(&native_lumps, "SLDPRT region has more than six shells")?,
+                    &fixed_refs(&native_lumps, "SLDPRT region has more than six shells")
+                        .map_err(|error| named_record(error, body.id.as_str()))?,
                 )?;
             }
         }
         let mut root_refs = [0; 6];
         if native_regions.is_empty() {
-            return Err(CodecError::Malformed("SLDPRT body has no regions".into()));
+            return Err(CodecError::malformed(format_args!(
+                "SLDPRT body has no regions: {}",
+                body.id
+            )));
         }
         if native_regions.len() > 5 {
-            return Err(CodecError::NotImplemented(
-                "SLDPRT body has more than five regions".into(),
-            ));
+            return Err(CodecError::NotImplemented(format!(
+                "SLDPRT body has more than five regions: {}",
+                body.id
+            )));
         }
         root_refs[1..=native_regions.len()].copy_from_slice(&native_regions);
         entity51(out, 2, root, 0x0017, &root_refs)?;
@@ -3564,7 +3570,22 @@ fn write_typed_body_hierarchy(
                     )
                 })?,
         );
-        for value in [1, body_attrs[body], 1, 1, 1, 1, region_attrs[&region.id], 1] {
+        let next_shell = region
+            .shells
+            .iter()
+            .skip_while(|candidate| *candidate != &shell.id)
+            .nth(1)
+            .map_or(1, |id| shell_attrs[id]);
+        for value in [
+            1,
+            body_attrs[body],
+            next_shell,
+            1,
+            1,
+            1,
+            region_attrs[&region.id],
+            1,
+        ] {
             typed_ref(out, value)?;
         }
     }
