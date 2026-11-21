@@ -10,6 +10,15 @@ use std::io::{Cursor, Read, Write};
 
 /// A design whose one timeline item is a captured `Position`.
 fn position_design() -> Vec<u8> {
+    position_design_in(crate::test_support::assembly_test::f3d_without_brep(
+        "assembly-design",
+        "root.f3d",
+        &[("part.f3d", crate::test_support::assembly_test::XREF_ROLE)],
+    ))
+}
+
+/// The design of [`position_design`], added to the Fusion archive `base`.
+fn position_design_in(base: Vec<u8>) -> Vec<u8> {
     const PLACEMENT: &str = "CE2913AA-CFE0-4F04-9102-24424ED3BCFA";
     const POSITION: &str = "8EE00B00-76BB-49AB-8C25-E837FEC5BDA5";
     const LOCATOR: &str = "2E3AC990-483D-4A55-8662-C064B976A957";
@@ -64,11 +73,6 @@ fn position_design() -> Vec<u8> {
             (35, u64::try_from(timeline_at).unwrap()),
         ],
     );
-    let base = crate::test_support::assembly_test::f3d_without_brep(
-        "assembly-design",
-        "root.f3d",
-        &[("part.f3d", role)],
-    );
     let mut source = zip::ZipArchive::new(Cursor::new(base)).unwrap();
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
@@ -86,6 +90,33 @@ fn position_design() -> Vec<u8> {
         zip.write_all(&bytes).unwrap();
     }
     zip.finish().unwrap().into_inner()
+}
+
+/// A geometry request stops a standalone document with a B-rep body before
+/// design intent, so the document states no design record although its
+/// timeline lists an item.
+#[test]
+fn a_geometry_request_that_cuts_design_intent_states_no_design_record() {
+    use cadmpeg_core::decode::{ArenaClass, DecodeDepth};
+    use cadmpeg_ir::{Codec as _, DecodeOptions};
+    let bytes = position_design_in(crate::test_support::zip_test::f3d_with_smbh(
+        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+    ));
+    let full = super::decode(bytes.clone());
+    assert_eq!(full.ir().design.scopes.len(), 1);
+    let geometry = crate::F3dCodec
+        .decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions {
+                depth: DecodeDepth::Geometry,
+                ..DecodeOptions::default()
+            },
+        )
+        .expect("geometry-depth decode");
+    assert_eq!(geometry.report().depth(), DecodeDepth::Geometry);
+    assert_eq!(geometry.ir().populated_arena(ArenaClass::Design), None);
+    assert_eq!(geometry.ir().geometry, full.ir().geometry);
+    assert_eq!(geometry.ir().geometry.bodies.len(), 1);
 }
 
 #[test]

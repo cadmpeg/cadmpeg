@@ -3013,6 +3013,12 @@ fn model_brep_candidates<'s>(
         let mut matches = container::design_breps(scan)
             .filter(|brep| brep.name.rsplit('/').next() == Some(blob_name.as_str()));
         let Some(brep) = matches.next() else {
+            if container::brep_entries(scan).any(|entry| {
+                entry.name.rsplit('/').next() == Some(blob_name.as_str())
+                    && entry.attributes.contains_key("payload_error")
+            }) {
+                continue;
+            }
             return Err(CodecError::malformed(format_args!(
                 "Design body map references missing BREP entry {blob_name}"
             )));
@@ -4190,7 +4196,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             decoded.body.losses.extend(owned);
             crate::design::owners::release_unbound(&mut decoded.ir.model);
             crate::tree::state_root_definition(ctx, &mut decoded.ir)?;
-            crate::design_v11::project(ctx, &mut decoded.ir, &mut decoded.body.losses)?;
+            crate::design_v11::project(ctx, &mut decoded.ir, &mut decoded.body)?;
             decoded.ir.finalize();
             let hash = cadmpeg_ir::hash::document_local_sha256(
                 ctx,
@@ -4306,7 +4312,7 @@ fn decode_scanned_document<'a>(
     // arbitrary `.smbh` entry.
     if !model_breps.is_empty() {
         let mut primary_model_brep = None;
-        let qualify_ids = model_breps.len() > 1;
+        let qualify_ids = model_selection.blob_names.len() > 1;
         let mut brep = Brep::default();
         let mut body_visibilities = Vec::new();
         let mut decoded_brep_count = 0usize;
