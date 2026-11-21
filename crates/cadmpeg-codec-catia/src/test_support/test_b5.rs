@@ -6,8 +6,8 @@ use crate::test_support::test_a5a8::{a8_surface_stream, a8_surface_tail};
 use crate::test_support::test_bytes::{le_f32, le_f64};
 
 /// Admit a finite fixture point.
-pub(crate) fn point(coordinates: [f64; 3]) -> cadmpeg_ir::features::FinitePoint3 {
-    cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::from(coordinates))
+pub(crate) fn point(coordinates: [f64; 3]) -> cadmpeg_ir::features::geometry::FinitePoint3 {
+    cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::from(coordinates))
         .expect("finite fixture point")
 }
 
@@ -52,12 +52,14 @@ pub(crate) fn finite(value: f64) -> cadmpeg_ir::scalar::FiniteReal {
 }
 
 /// Admit a pair of finite fixture points.
-pub(crate) fn points(coordinates: [[f64; 3]; 2]) -> [cadmpeg_ir::features::FinitePoint3; 2] {
+pub(crate) fn points(
+    coordinates: [[f64; 3]; 2],
+) -> [cadmpeg_ir::features::geometry::FinitePoint3; 2] {
     coordinates.map(point)
 }
 
 /// The coordinates of an admitted fixture point.
-pub(crate) fn coordinates(point: cadmpeg_ir::features::FinitePoint3) -> [f64; 3] {
+pub(crate) fn coordinates(point: cadmpeg_ir::features::geometry::FinitePoint3) -> [f64; 3] {
     point.get().into()
 }
 

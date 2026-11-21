@@ -10,7 +10,8 @@ use crate::records::feature::surface_ops::{
     DesignSurfaceUntrimLoops, DesignSurfaceUntrimOperation,
 };
 use crate::records::topology::construction::DesignConstructionOperandGroup;
-use cadmpeg_ir::features::{EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::selections::{EdgeSelection, FaceSelection};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 
 const SCOPE_ID: &str = "f3d:Design/BulkStream.dat:scope#40";

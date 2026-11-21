@@ -28,9 +28,9 @@ pub(crate) fn bind_hole_sketch_point_profiles(
     sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
 ) {
     use crate::records::feature::work_geometry::DesignWorkPointInputCarrier;
-    use cadmpeg_ir::features::{
-        holes::HoleProfileFilter, FeatureDefinition, FeatureOperation, PlanarProfileRef,
-    };
+    use cadmpeg_ir::features::holes::HoleProfileFilter;
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     for feature in features.iter_mut() {
         feature.evaluation.edit(|definition, _| {
@@ -138,7 +138,7 @@ pub(super) fn hole_extent_face(
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
-) -> Option<cadmpeg_ir::features::FaceSelection> {
+) -> Option<cadmpeg_ir::features::selections::FaceSelection> {
     let group = single_operand_group(groups, scope, DesignOperandRole::ROLE_0X5)?;
     let [member] = group.members() else {
         return None;
@@ -162,7 +162,9 @@ pub(super) fn hole_extent_face(
         ),
         _ => None,
     });
-    Some(resolved.unwrap_or_else(|| cadmpeg_ir::features::FaceSelection::Native(group.id.clone())))
+    Some(resolved.unwrap_or_else(|| {
+        cadmpeg_ir::features::selections::FaceSelection::Native(group.id.clone())
+    }))
 }
 
 pub(super) fn hole_termination(
@@ -170,8 +172,8 @@ pub(super) fn hole_termination(
     parameters: &[(u32, &DesignParameter)],
     groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
-) -> Option<cadmpeg_ir::features::LinearTermination> {
-    use cadmpeg_ir::features::LinearTermination;
+) -> Option<cadmpeg_ir::features::extents::LinearTermination> {
+    use cadmpeg_ir::features::extents::LinearTermination;
     let extent = scope.hole_extent()?;
     let mut depths = parameters
         .iter()
@@ -277,12 +279,12 @@ pub(super) fn hole_placements(
             .direction
             .map(cadmpeg_ir::scalar::FiniteReal::get),
     };
-    let direction = cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(x, y, z))?;
+    let direction = cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(x, y, z))?;
     construction
         .entry_points()?
         .into_iter()
         .map(|point| {
-            let position = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+            let position = cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
                 point[0].get() * DESIGN_LENGTH_TO_MILLIMETRE,
                 point[1].get() * DESIGN_LENGTH_TO_MILLIMETRE,
                 point[2].get() * DESIGN_LENGTH_TO_MILLIMETRE,
@@ -308,10 +310,10 @@ pub(super) fn project_hole(
     face_operands: &[DesignFaceOperand],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    use cadmpeg_ir::features::{
-        holes::{HoleBottom, HoleForm, HoleKind, PartialPair},
-        FaceSelection, FeatureDefinition, FeatureOperation, LinearTermination,
-    };
+    use cadmpeg_ir::features::extents::LinearTermination;
+    use cadmpeg_ir::features::holes::{HoleBottom, HoleForm, HoleKind, PartialPair};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::Hole {
         return Ok(None);

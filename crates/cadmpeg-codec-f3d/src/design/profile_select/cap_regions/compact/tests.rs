@@ -176,9 +176,10 @@ fn added_cap_certificate_requires_the_blind_distance_and_analytic_lateral_carrie
     use crate::design::geometry::ProfileGeometryWork;
     use crate::design::profile_select::ScopedExtrudeProfileResolution;
     use crate::history_records::AsmDeltaState;
-    use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
+    use cadmpeg_ir::features::extents::{
+        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
     };
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::scalar::NonZeroLength;
     use cadmpeg_ir::sketches::{

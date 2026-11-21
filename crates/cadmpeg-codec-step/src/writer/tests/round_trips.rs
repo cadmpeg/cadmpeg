@@ -270,7 +270,7 @@ fn align_sheet_edge_to_pcurve(
             .find(|point| point.id == point_id)
             .expect("sheet edge point")
             .set_position(
-                cadmpeg_ir::features::FinitePoint3::new(position)
+                cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                     .expect("a finite position is a point"),
             );
     }

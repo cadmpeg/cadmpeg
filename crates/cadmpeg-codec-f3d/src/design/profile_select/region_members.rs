@@ -5,7 +5,7 @@ use super::{sketch_profile_member_entity, ScopedExtrudeProfileResolution};
 use crate::records::sketch_geometry::SketchCurveIdentity;
 use crate::records::topology::sketch_profile::DesignSketchProfileOperand;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::PlanarProfileRef;
+use cadmpeg_ir::features::profiles::PlanarProfileRef;
 use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchEntityUse};
 
 pub(super) fn resolve(
@@ -237,12 +237,12 @@ pub(super) fn resolve_stale(
 fn assign_region(
     index: usize,
     owned: &[Vec<cadmpeg_ir::sketches::SketchEntityId>],
-    regions: &[cadmpeg_ir::features::SketchProfileRegion],
+    regions: &[cadmpeg_ir::features::profiles::SketchProfileRegion],
     assignments: &mut [Option<usize>],
     visited: &mut [bool],
 ) -> bool {
     for (target, region) in regions.iter().enumerate() {
-        let cadmpeg_ir::features::SketchProfileRegion::Trimmed {
+        let cadmpeg_ir::features::profiles::SketchProfileRegion::Trimmed {
             outer_boundary,
             hole_boundaries,
         } = region

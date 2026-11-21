@@ -17,10 +17,11 @@ use cadmpeg_ir::features::FeatureOperation;
 #[test]
 fn dual_lane_symmetric_extrude_doubles_whole_travel() {
     crate::test_support::with_decode_context(|decode_ctx| {
-        use cadmpeg_ir::features::{
-            BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, LinearTermination,
-            PlanarProfileRef, ProfileRef,
+        use cadmpeg_ir::features::extents::{
+            ExtrudeDirection, ExtrudeExtent, ExtrudeSide, LinearTermination,
         };
+        use cadmpeg_ir::features::operation_settings::BooleanOp;
+        use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
 
         let parameter = |source_kind: &str, unit: &str, value| {
             parse_design_parameter_record(&parameter_record(

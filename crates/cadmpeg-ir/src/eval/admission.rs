@@ -730,7 +730,8 @@ mod tests {
         admission: EvaluationAdmission<'_, '_>,
         levels: usize,
         work: &WorkBudget,
-    ) -> Result<crate::features::FinitePoint3, EvaluationFailure<crate::math::Point3>> {
+    ) -> Result<crate::features::geometry::FinitePoint3, EvaluationFailure<crate::math::Point3>>
+    {
         let (ir, curve) = doubling_model(levels);
         let index = crate::index::ModelIndex::build(&ir);
         admission.within_model_work(work, |admission| {

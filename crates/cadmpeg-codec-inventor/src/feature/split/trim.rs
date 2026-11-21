@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Surface-tool body-trim operands.
 
-use cadmpeg_ir::features::{
-    BodySelection, BodyTrimSide, FeatureDefinition, FeatureOperation, TrimBodyOperands,
-};
+use cadmpeg_ir::features::operation_settings::BodyTrimSide;
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, TrimBodyOperands};
 
 use crate::{
     feature::{

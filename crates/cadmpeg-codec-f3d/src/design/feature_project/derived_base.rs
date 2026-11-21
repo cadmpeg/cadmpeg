@@ -4,7 +4,8 @@ use crate::records::bodies::DesignBodyBinding;
 use crate::records::feature::derived_base::feature_derived_base_scopes;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 
 pub(super) fn project(
     features: &mut [Feature],

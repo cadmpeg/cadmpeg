@@ -43,8 +43,12 @@ fn ir() -> CadIr {
     ir.geometry.points.extend((0..ENTITY_COUNT).map(|index| {
         Point::new(
             PointId::mint(format!("test:bench:point#{index}")).expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(f64::from(index), 2.0, 3.0))
-                .expect("a finite position is a point"),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                f64::from(index),
+                2.0,
+                3.0,
+            ))
+            .expect("a finite position is a point"),
             None,
         )
     }));

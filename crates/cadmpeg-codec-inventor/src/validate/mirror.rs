@@ -185,7 +185,7 @@ struct Joins<'a> {
     features: &'a HashMap<&'a cadmpeg_ir::features::FeatureId, Option<&'a Feature>>,
     results: &'a HashMap<
         &'a cadmpeg_ir::features::FeatureId,
-        Option<&'a cadmpeg_ir::features::FeatureResultTopology>,
+        Option<&'a cadmpeg_ir::features::evaluation::FeatureResultTopology>,
     >,
 }
 

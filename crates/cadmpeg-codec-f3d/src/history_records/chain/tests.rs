@@ -170,6 +170,7 @@ fn topology(keys: &[i64], changed: bool) -> AsmHistoricalTopology {
                 edge: key,
                 interior: origin,
                 tangent: if changed { None } else { Some(axis) },
+                carrier: None,
             })
             .collect(),
         ..AsmHistoricalTopology::default()

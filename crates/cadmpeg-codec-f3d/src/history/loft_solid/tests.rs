@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::bind;
-use cadmpeg_ir::features::{
-    BooleanOp, Feature, FeatureDefinition, FeatureId, FeatureOperation, LoftGuidance,
-};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation, LoftGuidance};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::topology::{Body, BodyKind};
 use std::collections::HashMap;
@@ -35,7 +34,7 @@ fn loft(id: &str, op: BooleanOp, outputs: &[&str]) -> Feature {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::Loft {
                 sections: Vec::new(),
                 guidance: LoftGuidance::Guides(Vec::new()),
@@ -47,7 +46,7 @@ fn loft(id: &str, op: BooleanOp, outputs: &[&str]) -> Feature {
                 max_degree: None,
                 allow_multi_profile_faces: None,
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(
                 outputs.iter().map(|id| body_id(id)).collect::<Vec<_>>(),
             )
             .unwrap(),

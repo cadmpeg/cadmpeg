@@ -3811,7 +3811,7 @@ fn rot_spl_sur(
                     origin[2] * LEN_TO_MM,
                 ),
                 axis_direction: UnitVector3::normalized_nonzero(
-                    cadmpeg_ir::features::FiniteVector3::new(Vector3::from(axis))?,
+                    cadmpeg_ir::features::geometry::FiniteVector3::new(Vector3::from(axis))?,
                 )?,
                 angular_interval,
                 parameter_interval,
@@ -3840,7 +3840,7 @@ fn rot_spl_sur(
     );
     let axis = cur.take_vector3()?;
     let axis_direction = UnitVector3::normalized_nonzero(
-        cadmpeg_ir::features::FiniteVector3::new(Vector3::from(axis))?,
+        cadmpeg_ir::features::geometry::FiniteVector3::new(Vector3::from(axis))?,
     )?;
     let (cache, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);

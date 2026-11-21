@@ -192,7 +192,7 @@ fn writer_pipeline_round_trips_supported_versions_and_connected_source_less_topo
         .points
         .push(cadmpeg_ir::topology::Point::new(
             cadmpeg_ir::ids::PointId::mint("rhino:integration:point#0").expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
                 1.25, -2.5, 3.75,
             ))
             .expect("a finite position is a point"),
@@ -1890,7 +1890,7 @@ fn opennurbs_object_walk_and_transfer_floor() {
             .push(cadmpeg_ir::topology::Point::new(
                 cadmpeg_ir::ids::PointId::mint("integration:writer:point#0")
                     .expect("identity grammar"),
-                cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
                     1.25, -2.5, 3.75,
                 ))
                 .expect("a finite position is a point"),

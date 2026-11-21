@@ -14,7 +14,7 @@
 
 use crate::framing::node_kind::NodeKind;
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::Magnification;
@@ -44,7 +44,7 @@ enum AnalyticRecord {
 /// Decode validated point records in source order.
 ///
 /// Positions are returned in millimetres. Malformed candidates are skipped.
-pub(crate) fn points(stream: &[u8]) -> Vec<cadmpeg_ir::features::FinitePoint3> {
+pub(crate) fn points(stream: &[u8]) -> Vec<cadmpeg_ir::features::geometry::FinitePoint3> {
     analytic_records(stream, |record| match record {
         AnalyticRecord::Point(point) => Some(point),
         AnalyticRecord::Surface(_) | AnalyticRecord::Curve(_) => None,

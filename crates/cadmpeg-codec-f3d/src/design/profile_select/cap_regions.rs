@@ -598,7 +598,8 @@ fn stored_profile_loops(current: &ResolvedProfileSelection) -> Option<Vec<u32>> 
         ResolvedProfileSelection::Regions(regions) => {
             let mut indices = Vec::new();
             for region in regions {
-                let cadmpeg_ir::features::SketchProfileRegion::Loops { loops } = region else {
+                let cadmpeg_ir::features::profiles::SketchProfileRegion::Loops { loops } = region
+                else {
                     return None;
                 };
                 indices.push(loops.outer());
@@ -774,7 +775,7 @@ fn trimmed_selection(
                     .collect()
             })
             .collect();
-        let Ok(region) = cadmpeg_ir::features::SketchProfileRegion::trimmed(
+        let Ok(region) = cadmpeg_ir::features::profiles::SketchProfileRegion::trimmed(
             region.region.boundary.clone(),
             holes,
         ) else {
@@ -1657,7 +1658,8 @@ fn covered_regions(
         }
         ResolvedProfileSelection::Regions(regions) => {
             for region in regions {
-                let cadmpeg_ir::features::SketchProfileRegion::Loops { loops } = region else {
+                let cadmpeg_ir::features::profiles::SketchProfileRegion::Loops { loops } = region
+                else {
                     return Ok(None);
                 };
                 let Some(outer) = contains(loops.outer())? else {

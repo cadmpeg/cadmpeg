@@ -656,7 +656,7 @@ pub(crate) struct FeatureInputBodySelection {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_mode"
     )]
-    pub(crate) mode: Option<cadmpeg_ir::features::BodyRetentionMode>,
+    pub(crate) mode: Option<cadmpeg_ir::features::operation_settings::BodyRetentionMode>,
 }
 
 /// One compact feature-local edge-selection vector.
@@ -2874,7 +2874,7 @@ cadmpeg_core::named_optional_field!(deserialize_part_name, String, "part_name");
 cadmpeg_core::named_optional_field!(deserialize_configuration, String, "configuration");
 cadmpeg_core::named_optional_field!(
     deserialize_mode,
-    cadmpeg_ir::features::BodyRetentionMode,
+    cadmpeg_ir::features::operation_settings::BodyRetentionMode,
     "mode"
 );
 cadmpeg_core::named_optional_field!(

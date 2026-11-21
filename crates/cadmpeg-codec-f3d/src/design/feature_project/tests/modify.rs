@@ -8,7 +8,8 @@ use crate::records::feature::scope::{
 };
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::extrude_selection::DesignOperandRole;
-use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 fn group(record_index: u32, role: DesignOperandRole) -> DesignConstructionOperandGroup {
     serde_json::from_value(serde_json::json!({
@@ -98,7 +99,7 @@ fn modify_projects_a_move_of_its_listed_body_groups() {
     assert_eq!(
         bodies,
         BodySelection::NativeSet(
-            cadmpeg_ir::features::NativeSelections::try_from(vec![
+            cadmpeg_ir::features::selections::NativeSelections::try_from(vec![
                 "f3d:test:group#54".to_owned(),
                 "f3d:test:group#56".to_owned(),
             ])

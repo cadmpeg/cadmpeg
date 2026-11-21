@@ -2,10 +2,12 @@ use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{
-    Feature, FeatureDefinition, FeatureOperation, GeneratedSweepSection, PathRef,
-    SolidSweepOperation, SweepCircularRegion, SweepPathExtent, SweepSection, SweepShape,
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::sweeps::{
+    GeneratedSweepSection, SolidSweepOperation, SweepCircularRegion, SweepPathExtent, SweepSection,
+    SweepShape,
 };
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Fraction, PositiveLength};
 
