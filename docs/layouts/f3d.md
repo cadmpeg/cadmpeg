@@ -5739,6 +5739,25 @@ Unstated regions:
 - `114..252` (138 B): The remainder of the scope prefix precedes the ordered reference table.
 - `256..420` (164 B): The ordered references and common scope tail precede the paired header.
 
+## `legacy_class_330_blind_cut_extrude_frame`
+
+Spec §3.1 · layout: byte offsets · size: 438 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/extrude.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 102 | 4 | `first_side_extent` | `u32` | little | spec | The extent words are `[1, 0]` at offsets 102 and 106 |
+| 106 | 4 | `second_side_extent` | `u32` | little | spec | The extent words are `[1, 0]` at offsets 102 and 106 |
+| 248 | 4 | `reference_count` | `u32` | little | spec | The reference count is at offset 248 · value `7` |
+
+Unstated regions:
+
+- `0..102` (102 B): The unshifted prologue and seven nullable reference slots precede the extent words.
+- `110..248` (138 B): The remainder of the scope prefix precedes the ordered reference table.
+- `252..438` (186 B): The ordered references and common scope tail precede the paired header.
+
 ## `shifted_reference_aware_extrude_class_323_tail`
 
 Spec §3.1 · layout: byte offsets · size: 288 B

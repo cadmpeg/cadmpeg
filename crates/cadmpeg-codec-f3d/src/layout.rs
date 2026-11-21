@@ -4947,6 +4947,8 @@ pub(crate) mod offset_23_extrude_prologue {
 /// Offsets are relative to the result-operation u32 of a current reference-aware Extrude scope. The seven variable-width nullable reference slots follow at offset 42.
 /// ```
 pub(crate) mod current_extrude_operation_fields {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 42;
     /// Offset of `direction` (`u32`, little-endian). Spec §3.1.
     pub(crate) const DIRECTION: usize = 4;
     /// Offset of `face_extend` (`u32`, little-endian). Spec §3.1.
@@ -5236,6 +5238,22 @@ pub(crate) mod legacy_class_330_symmetric_extrude_frame {
     pub(crate) const REFERENCE_COUNT: usize = 252;
     /// Stated value of `reference_count` (`u32`). Spec §3.1.
     pub(crate) const REFERENCE_COUNT_VALUE: u32 = 0x0000_0005;
+}
+
+/// Byte offsets for the `legacy_class_330_blind_cut_extrude_frame` record.
+///
+/// Spec §3.1. Record length 438 B.
+pub(crate) mod legacy_class_330_blind_cut_extrude_frame {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 438;
+    /// Offset of `first_side_extent` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FIRST_SIDE_EXTENT: usize = 102;
+    /// Offset of `second_side_extent` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SECOND_SIDE_EXTENT: usize = 106;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 248;
+    /// Stated value of `reference_count` (`u32`). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT_VALUE: u32 = 0x0000_0007;
 }
 
 /// Byte offsets for the `shifted_reference_aware_extrude_class_323_tail` record.
