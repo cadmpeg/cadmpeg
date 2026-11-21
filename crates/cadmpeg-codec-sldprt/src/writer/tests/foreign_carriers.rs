@@ -574,7 +574,7 @@ fn two_coincident_circles_are_written_without_a_shared_seam_vertex() {
 }
 
 #[test]
-fn signed_spheres_and_spindle_or_signed_tori_are_written_with_their_orientation() {
+fn a_signed_sphere_is_written_reversed_and_a_signed_or_spindle_torus_keeps_its_sense() {
     use cadmpeg_ir::geometry::analytic::{SphereSurface, TorusSurface};
     use cadmpeg_ir::math::Vector3;
     use cadmpeg_ir::topology::Sense;
@@ -592,7 +592,7 @@ fn signed_spheres_and_spindle_or_signed_tori_are_written_with_their_orientation(
             SolvedSurfaceGeometry::Torus(
                 TorusSurface::try_new(origin, axis, reference, 2.0, -0.5).unwrap(),
             ),
-            true,
+            false,
         ),
         (
             SolvedSurfaceGeometry::Torus(
@@ -706,4 +706,213 @@ fn a_face_binding_whose_colour_differs_from_the_face_colour_is_named_and_the_bod
     );
     let decoded = crate::test_support::ir::encode_decode(&ir);
     assert_eq!(decoded.geometry.faces.len(), 6);
+}
+
+#[test]
+fn an_equation_is_written_as_its_displayed_value_and_named() {
+    use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
+    let mut ir = cube_with_foreign_history();
+    let owner = ir.model.features[1].id.clone();
+    let base = ParameterId::mint("other:model:parameter#d5").unwrap();
+    let parameter =
+        |id: ParameterId, ordinal, name: &str, expression: &str, dependencies| DesignParameter {
+            product_definition: None,
+            id,
+            owner: Some(owner.clone()),
+            ordinal,
+            name: name.into(),
+            expression: expression.into(),
+            display: None,
+            value: Some(ParameterValue::Length(
+                cadmpeg_ir::scalar::Length::new(12.7).unwrap(),
+            )),
+            dependencies,
+            properties: std::collections::BTreeMap::new(),
+            pmi: None,
+            native_ref: Some(format!("other:native#{name}")),
+        };
+    ir.model.parameters.push(parameter(
+        base.clone(),
+        0,
+        "d5",
+        "12.7 mm",
+        cadmpeg_ir::features::DistinctMembers::default(),
+    ));
+    ir.model.parameters.push(parameter(
+        ParameterId::mint("other:model:parameter#d6").unwrap(),
+        1,
+        "d6",
+        "d5",
+        std::iter::once(base).collect(),
+    ));
+    let losses = plan_losses(&ir);
+    assert!(
+        loss(&losses, "writer.features-omitted").is_none(),
+        "{losses:#?}"
+    );
+    let note = loss(&losses, "writer.parameter-expressions-omitted").expect("named equation");
+    assert!(
+        note.message.contains("other:model:parameter#d6 (d6 = d5)"),
+        "{}",
+        note.message
+    );
+    assert!(!note.message.contains("parameter#d5 "), "{}", note.message);
+    let decoded = crate::test_support::ir::encode_decode(&ir);
+    let written = decoded
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "d6")
+        .expect("d6 decodes back");
+    assert_eq!(
+        written.value,
+        Some(ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(12.7).unwrap()
+        ))
+    );
+    assert!(
+        crate::history::literals::parse_parameter_literal(&written.expression).is_some(),
+        "{}",
+        written.expression
+    );
+    let report = cadmpeg_ir::validate::validate_neutral(&decoded, Vec::new()).unwrap();
+    let textless = report
+        .findings
+        .iter()
+        .filter(|finding| finding.message.contains("holds no text token"))
+        .collect::<Vec<_>>();
+    assert!(textless.is_empty(), "{textless:#?}");
+}
+
+#[test]
+fn a_curve_shared_by_two_profiles_is_written_once() {
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+    use cadmpeg_ir::math::{Point2, Vector3};
+    use cadmpeg_ir::sketches::{
+        Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
+        SketchGeometryDefinition, SketchId,
+    };
+    let mut ir = cube();
+    let sketch = SketchId::mint("other:model:sketch#squares").unwrap();
+    // Two squares side by side; the line at x = 10 bounds both.
+    let lines = [
+        ((0.0, 0.0), (10.0, 0.0)),
+        ((10.0, 0.0), (10.0, 10.0)),
+        ((10.0, 10.0), (0.0, 10.0)),
+        ((0.0, 10.0), (0.0, 0.0)),
+        ((10.0, 0.0), (20.0, 0.0)),
+        ((20.0, 0.0), (20.0, 10.0)),
+        ((20.0, 10.0), (10.0, 10.0)),
+    ];
+    let ids = (0..lines.len())
+        .map(|index| {
+            SketchEntityId::mint(format!("other:model:sketch-entity#line-{index}")).unwrap()
+        })
+        .collect::<Vec<_>>();
+    for (id, ((x0, y0), (x1, y1))) in ids.iter().zip(lines) {
+        ir.model.sketch_entities.push(SketchEntity::new(
+            id.clone(),
+            sketch.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: Point2::new(x0, y0),
+                end: Point2::new(x1, y1),
+            })
+            .unwrap(),
+        ));
+    }
+    let profile = |uses: &[(usize, bool)]| {
+        uses.iter()
+            .map(|&(index, reversed)| SketchEntityUse {
+                entity: ids[index].clone(),
+                reversed,
+            })
+            .collect::<Vec<_>>()
+    };
+    ir.model.sketches.push(Sketch {
+        id: sketch.clone(),
+        name: Some("Squares".into()),
+        configuration: None,
+        visible: None,
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![
+            profile(&[(0, false), (1, false), (2, false), (3, false)]),
+            profile(&[(1, true), (4, false), (5, false), (6, false)]),
+        ])
+        .unwrap(),
+        native_ref: None,
+    });
+    ir.model.features.push(Feature {
+        product_definition: None,
+        id: FeatureId::mint("other:model:feature#squares").unwrap(),
+        ordinal: 0,
+        name: Some("Squares".into()),
+        suppressed: Some(false),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
+            }),
+        ),
+        native_ref: Some("other:native#squares".into()),
+    });
+    let losses = plan_losses(&ir);
+    assert!(
+        loss(&losses, "writer.features-omitted").is_none(),
+        "{losses:#?}"
+    );
+    let decoded = crate::test_support::ir::encode_decode(&ir);
+    assert_eq!(decoded.model.sketches.len(), 1);
+    let curves = decoded
+        .model
+        .sketch_entities
+        .iter()
+        .filter(|entity| {
+            !matches!(
+                *entity.geometry.definition(),
+                SketchGeometryDefinition::Point { .. }
+            )
+        })
+        .count();
+    assert_eq!(curves, lines.len());
+    assert_eq!(decoded.model.sketches[0].profiles.len(), 2);
+}
+
+#[test]
+fn a_carrier_that_states_a_fit_tolerance_is_written_and_the_tolerance_named() {
+    use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+    use cadmpeg_ir::geometry::FitTolerance;
+    let mut ir = cube();
+    let mut nurbs = NurbsSurface::from_lanes(
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            ],
+            None,
+        ),
+        false,
+    )
+    .unwrap();
+    nurbs.set_cache_fit_tolerance(Some(FitTolerance::try_new(0.01).unwrap()));
+    let surface = ir.geometry.surfaces[0].id.clone();
+    ir.geometry.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs));
+    let losses = plan_losses(&ir);
+    assert!(
+        loss(&losses, "writer.bodies-omitted").is_none(),
+        "{losses:#?}"
+    );
+    let note = loss(&losses, "writer.cache-tolerances-omitted").expect("named tolerance");
+    assert!(note.message.contains("largest 0.01 mm"), "{}", note.message);
+    assert!(note.message.contains(surface.as_str()), "{}", note.message);
 }

@@ -174,6 +174,7 @@ pub(crate) fn write_semantic_with_records(
     let reducible = history_drop::HistoryDrop::applies(&normalized);
     if reducible {
         history_drop::clear_foreign_native_refs(&mut normalized, native.as_ref());
+        losses.extend(history_drop::equations_as_displayed_values(&mut normalized));
     }
     let mut dropped_history = history_drop::HistoryDrop::default();
     let feature_input_renames = loop {
@@ -234,6 +235,9 @@ pub(crate) fn write_semantic_with_records(
             generated_partitions(ir, length_scale)
         })?;
         losses.extend(encoded.losses);
+        losses.extend(reduce::cache_tolerances_omitted(
+            encoded.reduced.as_ref().unwrap_or(ir),
+        ));
         encodable = encoded.reduced;
         let (partitions, bodiless) = encoded.partitions;
         bodiless_partitions.extend(bodiless);
@@ -4052,8 +4056,9 @@ pub(super) fn surface_values(
             let center = torus_surface.center().get();
             let axis = torus_surface.frame().axis().as_raw();
             let major_radius = torus_surface.major_radius().get();
-            // A negative tube radius is the same torus with its normal
-            // reversed, which the orientation marker states (`surface_marker`).
+            // A negative tube radius is the same torus with its minor angle
+            // moved by a half turn; its natural normal still points out of
+            // the tube, so the magnitude keeps the face sense.
             let minor_radius = torus_surface.minor_radius().get().abs();
             (
                 0x36,
@@ -4577,14 +4582,13 @@ const SURFACE_MARKER: u8 = 0x2b;
 const SURFACE_REVERSED_MARKER: u8 = 0x2d;
 
 /// The orientation marker of a compact surface record (sldprt.md §7.1):
-/// `0x2d` reverses the natural normal of the stored carrier, which holds
-/// the magnitude of a signed sphere or tube radius.
+/// `0x2d` reverses the natural normal of the stored carrier. A sphere of
+/// negative radius has its natural normal pointing at its centre, so its
+/// magnitude is written reversed. A torus of negative tube radius keeps its
+/// normal pointing out of the tube and needs no reversal.
 fn surface_marker(surface: &SolvedSurfaceGeometry) -> u8 {
-    let reversed = match surface {
-        SolvedSurfaceGeometry::Sphere(sphere) => sphere.radius().get() < 0.0,
-        SolvedSurfaceGeometry::Torus(torus) => torus.minor_radius().get() < 0.0,
-        _ => false,
-    };
+    let reversed =
+        matches!(surface, SolvedSurfaceGeometry::Sphere(sphere) if sphere.radius().get() < 0.0);
     if reversed {
         SURFACE_REVERSED_MARKER
     } else {

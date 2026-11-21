@@ -330,6 +330,12 @@ pub(crate) enum SldprtLossCode {
     WriterEdgeRangesOmitted,
     /// Export omits the named PMI annotations.
     WriterPmiOmitted,
+    /// Export writes the named parameters with their displayed value, without
+    /// the expression that drives it.
+    WriterParameterExpressionsOmitted,
+    /// Export writes the named approximation caches as exact carriers, without
+    /// the fit tolerance they state.
+    WriterCacheTolerancesOmitted,
     SourceDialectDisplaced,
     /// A source record states a property whose key holds no non-whitespace
     /// character, so the property cannot be keyed and is not transferred.
@@ -511,6 +517,8 @@ impl SldprtLossCode {
         Self::WriterSketchConstraintsOmitted,
         Self::WriterEdgeRangesOmitted,
         Self::WriterPmiOmitted,
+        Self::WriterParameterExpressionsOmitted,
+        Self::WriterCacheTolerancesOmitted,
         Self::SourceDialectDisplaced,
         Self::SourcePropertyKeyBlank,
         Self::AssemblyStructureNotTransferred,
@@ -669,6 +677,8 @@ impl SldprtLossCode {
             Self::WriterSketchConstraintsOmitted => "writer.sketch-constraints-omitted",
             Self::WriterEdgeRangesOmitted => "writer.edge-ranges-omitted",
             Self::WriterPmiOmitted => "writer.pmi-omitted",
+            Self::WriterParameterExpressionsOmitted => "writer.parameter-expressions-omitted",
+            Self::WriterCacheTolerancesOmitted => "writer.cache-tolerances-omitted",
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::SourcePropertyKeyBlank => "source.property-key-blank",
             Self::MetadataPartRootUnsupported => "metadata.part-root-unsupported",
@@ -725,6 +735,8 @@ impl SldprtLossCode {
             Self::WriterSketchConstraintsOmitted => Severity::Warning,
             Self::WriterEdgeRangesOmitted => Severity::Warning,
             Self::WriterPmiOmitted => Severity::Warning,
+            Self::WriterParameterExpressionsOmitted => Severity::Warning,
+            Self::WriterCacheTolerancesOmitted => Severity::Warning,
             Self::WriterUnboundAppearancesOmitted => Severity::Warning,
             Self::WriterMaterialsOmitted => Severity::Warning,
             Self::WriterAttributesOmitted => Severity::Warning,
@@ -880,6 +892,8 @@ impl SldprtLossCode {
             Self::WriterSketchConstraintsOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterEdgeRangesOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::WriterPmiOmitted => LossTaxonomy::PmiOmitted,
+            Self::WriterParameterExpressionsOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterCacheTolerancesOmitted => LossTaxonomy::ProceduralReduced,
             Self::WriterUnboundAppearancesOmitted => LossTaxonomy::AppearanceReduced,
             Self::WriterMaterialsOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
@@ -1324,6 +1338,8 @@ mod tests {
                 "writer.sketch-constraints-omitted",
                 "writer.edge-ranges-omitted",
                 "writer.pmi-omitted",
+                "writer.parameter-expressions-omitted",
+                "writer.cache-tolerances-omitted",
                 "target.source-dialect-displaced",
                 "source.property-key-blank",
                 "assembly.structure-not-transferred",

@@ -314,6 +314,81 @@ fn note(code: SldprtLossCode, reason: &str, ids: &[String]) -> Option<LossNote> 
     (!ids.is_empty()).then(|| code.note(format!("{} {reason}: {}", ids.len(), ids.join(", "))))
 }
 
+/// A generated partition writes each carrier as an exact curve or surface
+/// record, which states no fit tolerance. A procedural cache or NURBS carrier of
+/// a written face or edge that states one approximates its construction within
+/// it; the tolerance is not written.
+pub(super) fn cache_tolerances_omitted(ir: &CadIr) -> Option<LossNote> {
+    let procedural_surfaces = ir
+        .geometry
+        .procedural_surfaces
+        .iter()
+        .map(|surface| (&surface.id, surface.cache_fit_tolerance()))
+        .collect::<HashMap<_, _>>();
+    let procedural_curves = ir
+        .geometry
+        .procedural_curves
+        .iter()
+        .map(|curve| (&curve.id, curve.cache_fit_tolerance()))
+        .collect::<HashMap<_, _>>();
+    let used_surfaces = ir
+        .geometry
+        .faces
+        .iter()
+        .map(|face| &face.surface)
+        .collect::<std::collections::HashSet<_>>();
+    let used_curves = ir
+        .geometry
+        .edges
+        .iter()
+        .filter_map(|edge| edge.curve())
+        .collect::<std::collections::HashSet<_>>();
+    let mut stated = Vec::new();
+    for surface in &ir.geometry.surfaces {
+        if !used_surfaces.contains(&surface.id) {
+            continue;
+        }
+        let tolerance = match &surface.geometry {
+            SurfaceGeometry::Procedural { construction, .. } => {
+                procedural_surfaces.get(construction).copied().flatten()
+            }
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
+                nurbs.cache_fit_tolerance()
+            }
+            SurfaceGeometry::Solved(_) => None,
+        };
+        if let Some(tolerance) = tolerance {
+            stated.push((surface.id.as_str(), tolerance.get()));
+        }
+    }
+    for curve in &ir.geometry.curves {
+        if !used_curves.contains(&curve.id) {
+            continue;
+        }
+        if let CurveGeometry::Procedural { construction, .. } = &curve.geometry {
+            if let Some(tolerance) = procedural_curves.get(construction).copied().flatten() {
+                stated.push((curve.id.as_str(), tolerance.get()));
+            }
+        }
+    }
+    let largest = stated
+        .iter()
+        .map(|(_, tolerance)| *tolerance)
+        .reduce(f64::max)?;
+    let ids = stated
+        .iter()
+        .map(|(id, tolerance)| format!("{id} ({tolerance} mm)"))
+        .collect::<Vec<_>>();
+    note(
+        SldprtLossCode::WriterCacheTolerancesOmitted,
+        &format!(
+            "carrier(s) approximate their construction within a stated fit tolerance (largest \
+             {largest} mm) and are written as exact SLDPRT records without it"
+        ),
+        &ids,
+    )
+}
+
 /// A generated partition of a document with no face holds no body.
 pub(super) fn faceless_bodies(ir: &CadIr) -> Option<LossNote> {
     note(

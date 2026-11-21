@@ -15,6 +15,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::history::literals::{format_parameter_value, parse_parameter_literal};
 use crate::loss::SldprtLossCode;
 use crate::native::SldprtNative;
 
@@ -136,6 +137,61 @@ pub(super) fn clear_foreign_native_refs(ir: &mut CadIr, native: Option<&SldprtNa
             parameter.native_ref = None;
         }
     }
+}
+
+/// Write each parameter whose expression is not a literal with its displayed
+/// value, and name the expression as left out. The Keywords dimension text
+/// holds the displayed value; the equation that drives it belongs to the
+/// equation manager in `Contents/Config-N` (`sldprt.md`, Keywords history),
+/// whose dimension references hold handle objects the format document does
+/// not state, so this writer writes no equation. A parameter with no value
+/// the text can hold is dropped and named.
+pub(super) fn equations_as_displayed_values(ir: &mut CadIr) -> Vec<LossNote> {
+    let mut written = Vec::new();
+    let mut valueless = Removed::default();
+    for parameter in &mut ir.model.parameters {
+        if parse_parameter_literal(&parameter.expression).is_some() {
+            continue;
+        }
+        let displayed = parameter
+            .value
+            .as_ref()
+            .map(format_parameter_value)
+            .filter(|text| parse_parameter_literal(text).is_some());
+        let Some(displayed) = displayed else {
+            valueless
+                .parameters
+                .insert(parameter.id.as_str().to_owned());
+            continue;
+        };
+        written.push(format!(
+            "{} ({} = {})",
+            parameter.id.as_str(),
+            parameter.name,
+            parameter.expression
+        ));
+        parameter.expression = displayed;
+        parameter.dependencies = cadmpeg_ir::features::DistinctMembers::default();
+    }
+    let mut notes = Vec::new();
+    if !written.is_empty() {
+        notes.push(
+            SldprtLossCode::WriterParameterExpressionsOmitted.note(format!(
+                "the SLDPRT writer writes {} parameter(s) with their displayed value and without \
+             the equation that drives it, which belongs to the equation manager this writer \
+             does not write: {}",
+                written.len(),
+                written.join(", ")
+            )),
+        );
+    }
+    if !valueless.is_empty() {
+        notes.extend(
+            remove(ir, &valueless)
+                .notes("an expression with no value a Keywords dimension text can hold"),
+        );
+    }
+    notes
 }
 
 /// Drop each `Native` operation of another format, with every record that
