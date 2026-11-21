@@ -323,6 +323,22 @@ fn face_recipe_ordinals_keep_zero_and_group_design_references() {
     assert!(!structure.has_valid_operand_ordinals(&[]));
 }
 
+#[test]
+fn a_face_recipe_node_with_one_endpoint_clause_has_valid_boundary_edge_ordinals() {
+    let references = [recipe_reference(100, 108), recipe_reference(125, 133)];
+    let mut structure = recipe_structure(1);
+    structure.prelude[1] = 1;
+    structure.sides.truncate(1);
+    structure.sides[0].scalars.truncate(1);
+    assert!(structure.has_valid_boundary_edge_ordinals(&references));
+    assert!(!structure.has_valid_operand_ordinals(&references));
+    structure.prelude[1] = 2;
+    assert!(!structure.has_valid_boundary_edge_ordinals(&references));
+    structure.prelude[1] = 0;
+    structure.sides.clear();
+    assert!(!structure.has_valid_boundary_edge_ordinals(&references));
+}
+
 fn recipe_reference(
     selector_offset: u64,
     token_offset: u64,

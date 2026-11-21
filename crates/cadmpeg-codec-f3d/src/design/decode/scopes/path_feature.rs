@@ -186,6 +186,14 @@ pub(super) fn referenced_revolve_reference_loss(
     )))
 }
 
+/// Whether a referenced-angle `Revolve` frame of `length` token-independent
+/// bytes and `count` ordered references has the Boolean-operation layout: the
+/// 373-byte eight-reference frame, or the 384-byte nine-reference frame that
+/// stores one more marked reference in its ordered table.
+fn referenced_boolean_revolve_frame(length: u64, count: usize) -> bool {
+    matches!((length, count), (373, 8) | (384, 9))
+}
+
 /// A referenced-angle `Revolve` scope whose angle owner can store a negative angle.
 fn referenced_angle_revolve_construction(
     bytes: &[u8],
@@ -200,17 +208,23 @@ fn referenced_angle_revolve_construction(
         parameter_scope_payload_length(scope)?,
         scope.reference_members().len(),
     ) {
-        (length @ (351 | 361 | 373), count @ (6 | 8))
+        (length, count)
             if (matches!(
                 (
                     length,
                     count,
                     View::u32_le_at(bytes, start + referenced_revolve::OPERATION)
                 ),
-                (351, 6, Some(4)) | (373, 8, Some(1..=3))
-            ) || (length, count) == (361, 6)
-                && View::u32_le_at(bytes, start + referenced_revolve::OPERATION) == Some(4)
-                && tail_second_reference(bytes, scope).is_some())
+                (351, 6, Some(4))
+            ) || referenced_boolean_revolve_frame(length, count)
+                && matches!(
+                    View::u32_le_at(bytes, start + referenced_revolve::OPERATION),
+                    Some(1..=3)
+                )
+                || (length, count) == (361, 6)
+                    && View::u32_le_at(bytes, start + referenced_revolve::OPERATION)
+                        == Some(4)
+                    && tail_second_reference(bytes, scope).is_some())
                 && bytes.get(start + referenced_revolve::MARKER) == Some(&1)
                 && View::u32_le_at(bytes, start + referenced_revolve::ZERO_VALUE) == Some(0)
                 && View::u32_le_at(bytes, start + referenced_revolve::EXTENT_KIND) == Some(2)
@@ -433,7 +447,8 @@ pub(super) fn marker_one_revolve_assumed_length(
         design_feature_family(&scope.kind()),
         Some(DesignFeatureFamily::Revolve)
     ) && marker_one_revolve_prologue(bytes, scope, start)
-        && !matches!(length, 345 | 355 | 367 | 351 | 373)
+        && !matches!(length, 345 | 355 | 367 | 351)
+        && !referenced_boolean_revolve_frame(length, scope.reference_members().len())
     {
         Some(length)
     } else {
@@ -563,7 +578,10 @@ pub(super) fn exact_path_feature_construction(
     match design_feature_family(&scope.kind())? {
         DesignFeatureFamily::Revolve
             if marker_one_revolve_prologue(bytes, scope, start)
-                && !matches!(parameter_scope_payload_length(scope), Some(351 | 373)) =>
+                && !matches!(parameter_scope_payload_length(scope), Some(351))
+                && !parameter_scope_payload_length(scope).is_some_and(|length| {
+                    referenced_boolean_revolve_frame(length, scope.reference_members().len())
+                }) =>
         {
             let angle = unique_revolve_angle_owner(scope, parameter_owners, None, 0)?;
             Some(DesignPathFeatureConstruction::Revolve(

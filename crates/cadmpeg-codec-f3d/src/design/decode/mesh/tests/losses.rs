@@ -1,8 +1,7 @@
 use super::*;
 use crate::design::decode::mesh::{
     mesh_body_frame_losses, mesh_body_identity_losses, mesh_component_flag_losses,
-    mesh_face_group_losses, mesh_history_window_losses, mesh_operation_record_losses,
-    mesh_split_stream_losses, mesh_wrapper_tail_losses,
+    mesh_face_group_losses, mesh_operation_record_losses, mesh_wrapper_tail_losses,
 };
 
 fn notes(notes: impl Iterator<Item = cadmpeg_ir::report::loss::LossNote>) -> Vec<(String, String)> {
@@ -118,9 +117,7 @@ fn stream_and_face_group_emitters_name_each_retained_record() {
         &mut no_texture_asset,
     )
     .expect("mesh graph");
-    assert!(notes(mesh_split_stream_losses(&features)).is_empty());
     assert!(notes(mesh_component_flag_losses(&features)).is_empty());
-    assert!(notes(mesh_history_window_losses(&features)).is_empty());
     assert!(notes(mesh_face_group_losses(&features)).is_empty());
     let body = features[0].body_at_mut(0).unwrap();
     body.split_streams
@@ -128,12 +125,6 @@ fn stream_and_face_group_emitters_name_each_retained_record() {
             name: "v".into(),
             descriptor: cadmpeg_ir::native::bytes::NativeBytes::new(vec![0x84]),
             component_flag: true,
-        });
-    body.history_streams
-        .push(crate::records::mesh::DesignMeshHistoryStream {
-            name: "t".into(),
-            encoding: cadmpeg_ir::native::bytes::NativeBytes::new([0x5d, 0x14]),
-            decoded_length: 1_052_800,
         });
     body.face_group_metadata = Some(crate::records::mesh::DesignMeshFaceGroups {
         declared_count: 3,
@@ -143,24 +134,10 @@ fn stream_and_face_group_emitters_name_each_retained_record() {
         }],
     });
     assert_eq!(
-        notes(mesh_split_stream_losses(&features)),
-        note(
-            "mesh.split-stream-assumed",
-            "mesh body 104 stream v reads its component segments in stored order; the native record retains the descriptor"
-        )
-    );
-    assert_eq!(
         notes(mesh_component_flag_losses(&features)),
         note(
             "mesh.component-flag-uninterpreted",
             "mesh body 104 stream v stores the component flag Z: true with no settled meaning; the native record retains the flag"
-        )
-    );
-    assert_eq!(
-        notes(mesh_history_window_losses(&features)),
-        note(
-            "mesh.history-window-assumed",
-            "mesh body 104 stream t uses its declared output length as the LZMA history bound; the native record retains its encoding"
         )
     );
     assert_eq!(
