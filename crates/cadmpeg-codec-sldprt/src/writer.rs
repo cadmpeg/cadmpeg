@@ -374,15 +374,7 @@ pub(crate) fn write_semantic_with_records(
         );
     }
     for lane in native.iter().flat_map(|native| &native.feature_input_lanes) {
-        let section = lane.configuration.as_ref().map_or_else(
-            || {
-                annotations.provenance.get(&lane.id).map_or_else(
-                    || "Contents/ResolvedFeatures".into(),
-                    |provenance| provenance.stream().to_owned(),
-                )
-            },
-            |configuration| format!("Contents/Config-{configuration}-ResolvedFeatures"),
-        );
+        let section = lane_section(lane, annotations);
         let histories = native
             .as_ref()
             .map_or(&[][..], |native| native.feature_histories.as_slice());
@@ -1684,6 +1676,25 @@ fn fit_feature_input_renames(
 /// changes that `synchronize_feature_input_names` derived from the neutral
 /// feature names; the splice loop at the end of this function writes each one
 /// into the emitted payload.
+/// The member a feature-input lane is written to: the stream it was decoded
+/// from, with the configuration index the write gave the lane. A lane the
+/// writer generated takes the `ResolvedFeatures` member of its configuration.
+fn lane_section(lane: &crate::records::FeatureInputLane, annotations: &Annotations) -> String {
+    let source = annotations
+        .provenance
+        .get(&lane.id)
+        .map(cadmpeg_ir::Provenance::stream);
+    match (source, lane.configuration.as_deref()) {
+        (Some(stream), None) => stream.to_owned(),
+        (Some(stream), Some(configuration)) => {
+            crate::resolved_features::names::renumbered_section(stream, configuration)
+                .unwrap_or_else(|| format!("Contents/Config-{configuration}-ResolvedFeatures"))
+        }
+        (None, Some(configuration)) => format!("Contents/Config-{configuration}-ResolvedFeatures"),
+        (None, None) => "Contents/ResolvedFeatures".into(),
+    }
+}
+
 fn resolved_feature_payload(
     lane: &crate::records::FeatureInputLane,
     histories: &[crate::records::FeatureHistory],
