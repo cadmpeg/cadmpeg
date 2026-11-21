@@ -51,7 +51,7 @@ use super::sketch_lists::{
     listed_entity, unchecked_record_conflict, ChordConflict, ListedEntity, SketchRecordLists,
 };
 use super::sketch_projection::is_profile_stream_sketch;
-use super::stream_readings::{marker_reading_binds, second_readings, BoundMarker, EntityIndex};
+use super::stream_readings::{marker_reading_binds, EntityIndex};
 use super::transforms::{record_top_marker_coordinates, sketch_frame_marker_transform};
 use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
@@ -1113,9 +1113,6 @@ pub(crate) struct HeldMarkerGeometry {
     /// sketch and marker reference, with the record's conflict where it
     /// states one.
     unread_admitted: Vec<((SketchId, String), Option<ChordConflict>)>,
-    /// Each profile-stream sketch that no feature binds and whose loops
-    /// repeat those of a marker sketch, with that marker sketch.
-    second_readings: Vec<(SketchId, SketchId)>,
 }
 
 impl HeldMarkerGeometry {
@@ -1158,7 +1155,6 @@ pub(crate) fn finalize_unread_marker_entities(
         unchecked,
         finalized,
         unread_admitted,
-        second_readings,
     } = held;
     sketch_entities.extend(handles);
     for entity in sketch_entities.iter_mut() {
@@ -1239,11 +1235,6 @@ pub(crate) fn finalize_unread_marker_entities(
         };
         losses.push(SldprtLossCode::SketchMarkerRecordUnread.note(format!(
             "sketch {sketch}: marker {marker}, which the marker layouts skip, gives no entity: {reason}"
-        )));
-    }
-    for (stream, marker) in second_readings {
-        losses.push(SldprtLossCode::SketchSecondReading.note(format!(
-            "sketch {stream}: a second reading of sketch {marker}; its profile loops repeat those of {marker}, which its sketch feature binds, and no feature binds it"
         )));
     }
 }
@@ -1363,7 +1354,6 @@ pub(crate) fn project_marker_backed_sketches(
         &feature_frames,
     );
     let feature_positions = FeaturePositions::new(features);
-    let mut bound_markers = Vec::new();
     for lane in lanes {
         let plane_frames = lane_sketch_plane_frames(features, histories, lane);
         let plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
@@ -2686,14 +2676,6 @@ pub(crate) fn project_marker_backed_sketches(
                     .map(|(marker, conflict)| ((sketch_id.clone(), marker), conflict)),
             );
             sketches.push(sketch);
-            if !block_definition {
-                bound_markers.push(BoundMarker {
-                    feature_name: native_feature.name.clone(),
-                    lane: lane.id.clone(),
-                    marker: sketch_id.clone(),
-                    displaced: stream_reading,
-                });
-            }
             record_top_marker_coordinates(&mut features[feature_index], top_frame.is_some());
             features[feature_index]
                 .evaluation
@@ -2714,12 +2696,6 @@ pub(crate) fn project_marker_backed_sketches(
                 });
         }
     }
-    held_geometry.second_readings.extend(second_readings(
-        &bound_markers,
-        features,
-        sketches,
-        sketch_entities,
-    ));
     Ok(())
 }
 

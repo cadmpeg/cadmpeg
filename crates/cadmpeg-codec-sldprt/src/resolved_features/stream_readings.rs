@@ -4,15 +4,16 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_ir::features::{
-    Feature, FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef,
-};
+use cadmpeg_ir::document::Model;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchGeometryDefinition, SketchId,
 };
 
 use super::sketch_projection::is_profile_stream_sketch;
 use crate::brep::graph::LINEAR_RESOLUTION_MM;
+use crate::loss::SldprtLossCode;
 
 /// The sketch entities of the sketches a comparison reads, by id.
 pub(super) struct EntityIndex<'a>(HashMap<&'a SketchEntityId, &'a SketchEntity>);
@@ -26,16 +27,6 @@ impl<'a> EntityIndex<'a> {
                 .collect(),
         )
     }
-}
-
-/// A marker sketch that the marker pass bound to the sketch feature named
-/// `feature_name`, read from lane `lane`, in place of the profile-stream
-/// sketch `displaced` where it had one.
-pub(super) struct BoundMarker {
-    pub(super) feature_name: String,
-    pub(super) lane: String,
-    pub(super) marker: SketchId,
-    pub(super) displaced: Option<SketchId>,
 }
 
 /// Whether `marker`, the sketch a feature's own marker records give, binds in
@@ -57,52 +48,61 @@ pub(super) fn marker_reading_binds(
         && !same_loops(marker, stream, entities)
 }
 
-/// The profile-stream sketches that no feature binds and whose loops repeat
-/// those of a marker sketch in `bound`, as (stream, marker) pairs. A stream
-/// sketch qualifies when it is the one the marker sketch displaced or carries
-/// the name of the marker sketch's feature, in the marker sketch's lane.
-pub(super) fn second_readings(
-    bound: &[BoundMarker],
-    features: &[Feature],
-    sketches: &[Sketch],
-    sketch_entities: &[SketchEntity],
-) -> Vec<(SketchId, SketchId)> {
-    if bound.is_empty() {
-        return Vec::new();
-    }
-    let referenced = bound_sketches(features);
-    let entities = EntityIndex::new(sketch_entities);
-    let by_id = sketches
+/// Charges `sketch.second-reading` for each profile-stream sketch that no
+/// feature or configuration state binds and whose loops repeat those of
+/// exactly one sketch of its lane that a sketch feature binds and that no
+/// profile stream gives.
+pub(crate) fn note_second_readings(model: &Model, losses: &mut Vec<LossNote>) {
+    let definitions = model
+        .features
         .iter()
-        .map(|sketch| (&sketch.id, sketch))
-        .collect::<HashMap<_, _>>();
-    let mut readings = Vec::new();
-    for binding in bound {
-        let Some(marker) = by_id.get(&binding.marker) else {
-            continue;
-        };
-        for stream in sketches {
-            if stream.id == binding.marker
-                || !is_profile_stream_sketch(&stream.id)
-                || referenced.contains(&stream.id)
-                || stream.native_ref.as_deref() != Some(binding.lane.as_str())
-                || (binding.displaced.as_ref() != Some(&stream.id)
-                    && stream.name.as_deref() != Some(binding.feature_name.as_str()))
-            {
-                continue;
-            }
-            if same_loops(marker, stream, &entities) {
-                readings.push((stream.id.clone(), binding.marker.clone()));
+        .map(|feature| feature.evaluation.definition())
+        .chain(model.configurations.iter().flat_map(|configuration| {
+            configuration
+                .feature_states
+                .values()
+                .map(|state| &state.definition)
+        }))
+        .collect::<Vec<_>>();
+    let referenced = bound_sketches(&definitions);
+    let mut feature_sketches = HashSet::new();
+    for definition in &definitions {
+        if let FeatureDefinition::Operation(FeatureOperation::Sketch { sketch }) = definition {
+            if let Some(id) = sketch.id().filter(|id| !is_profile_stream_sketch(id)) {
+                feature_sketches.insert(id);
             }
         }
     }
-    readings
+    let read = model
+        .sketches
+        .iter()
+        .filter(|sketch| feature_sketches.contains(&sketch.id))
+        .collect::<Vec<_>>();
+    if read.is_empty() {
+        return;
+    }
+    let entities = EntityIndex::new(&model.sketch_entities);
+    for stream in &model.sketches {
+        if !is_profile_stream_sketch(&stream.id) || referenced.contains(&stream.id) {
+            continue;
+        }
+        let mut repeated = read.iter().filter(|sketch| {
+            sketch.native_ref == stream.native_ref && same_loops(sketch, stream, &entities)
+        });
+        let (Some(sketch), None) = (repeated.next(), repeated.next()) else {
+            continue;
+        };
+        losses.push(SldprtLossCode::SketchSecondReading.note(format!(
+            "sketch {}: a second reading of sketch {}, which a sketch feature binds; its profile loops repeat that sketch's and no feature binds it",
+            stream.id, sketch.id
+        )));
+    }
 }
 
-fn bound_sketches(features: &[Feature]) -> HashSet<&SketchId> {
+fn bound_sketches<'a>(definitions: &[&'a FeatureDefinition]) -> HashSet<&'a SketchId> {
     let mut bound = HashSet::new();
-    for feature in features {
-        let profile = match feature.evaluation.definition() {
+    for definition in definitions {
+        let profile = match definition {
             FeatureDefinition::Operation(FeatureOperation::Sketch { sketch }) => {
                 bound.extend(sketch.id());
                 continue;

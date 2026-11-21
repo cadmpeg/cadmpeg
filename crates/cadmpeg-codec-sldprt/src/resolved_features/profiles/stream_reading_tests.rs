@@ -291,9 +291,14 @@ fn decode_markers(
     let mut losses = Vec::new();
     finalize_unread_marker_entities(&mut entities, held, &mut losses);
     crate::history::bind::bind_bound_sketch_profiles(&mut features, &sketches);
+    let mut model = cadmpeg_ir::document::Model::default();
+    model.features = features;
+    model.sketches = sketches;
+    model.sketch_entities = entities;
+    crate::resolved_features::stream_readings::note_second_readings(&model, &mut losses);
     Decoded {
-        features,
-        sketches,
+        features: model.features,
+        sketches: model.sketches,
         losses,
     }
 }
