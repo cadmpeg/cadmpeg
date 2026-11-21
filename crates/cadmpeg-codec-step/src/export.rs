@@ -3002,14 +3002,12 @@ impl<'a> Builder<'a> {
 
     fn shell_is_closed(&self, shell: &Shell) -> bool {
         let mut uses: BTreeMap<&str, [usize; 2]> = BTreeMap::new();
-        let mut vertex_bounded = false;
         let shell_faces = self.children.shell_faces(&shell.id);
         for face in shell_faces {
             for loop_id in &face.loops {
                 let Some(lp) = self.loops.get(loop_id.as_str()) else {
                     return false;
                 };
-                vertex_bounded |= lp.singular_vertex().is_some();
                 for coedge_id in lp.coedges() {
                     let Some(coedge) = self.coedges.get(coedge_id.as_str()) else {
                         return false;
@@ -3037,9 +3035,7 @@ impl<'a> Builder<'a> {
                 }
             }
         }
-        // A whole sphere is closed with no edges at all: only pole vertices bound it.
-        (vertex_bounded
-            || !uses.is_empty()
+        (!uses.is_empty()
             || (shell_faces.len() == 1
                 && self
                     .implicit_outer_bounds

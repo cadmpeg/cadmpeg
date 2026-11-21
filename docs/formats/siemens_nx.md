@@ -1230,8 +1230,6 @@ body → shell → [region] → face → loop → fin → edge → vertex → po
 
 A FACE on a SPHERE with a null loop reference covers the whole sphere. Its body is closed although it has no EDGE. The neutral model bounds the face with a one-vertex loop at each pole.
 
-A FIN with sense `?` is the only FIN of a one-vertex loop at a surface singularity. Its forward and backward FIN are the FIN itself. Its `other_fin`, `edge`, and `curve` are null, and its `vertex` is the singular vertex.
-
 Fixed-record lengths are logical lengths before framing bytes. A frame begins at
 the owned type tag, consumes its first-use schema information, reads the compact
 or extended xmt, and then parses the complete family field grammar. Each
@@ -1447,7 +1445,7 @@ Degree, pole-count, and distinct-knot-count fields have no additional numeric ce
 
 ### 6.3 Procedural intersection curves (type 38)
 
-NX stores freeform edges and blend rails as construction relations with branch witnesses. The modern type-38 record has a compact header through sense `+18` and five construction xmt references at `+19,+21,+23,+25,+27`. A first-use declaration that appends `intersection_data` adds a sixth reference at `+29`; without that declaration the record ends after `+27`, as in older schemas such as `SCH_2400143`. A byte scan that has not read the declaration takes the record to have five references when a record tag is at the sixth reference and no record tag is after it.
+NX stores freeform edges and blend rails as construction relations with branch witnesses. The modern type-38 record has a compact header through sense `+18` and five construction xmt references at `+19,+21,+23,+25,+27`. A first-use declaration that appends `intersection_data` adds a sixth reference at `+29`; without that declaration the record ends after `+27`, as in older schemas such as `SCH_2400143`. A byte scan reads every type-38 record after that declaration in its stream with six references. A type-38 record that no such declaration precedes has five references when a record tag is at the sixth reference and no record tag is after it.
 
 The neutral curve carrier references a complete typed source record. The source record retains the five common-header references, orientation sense, construction references, and the type-38 nodetype’s inflated-stream offset. First-use and subsequent instances share one type identity.
 

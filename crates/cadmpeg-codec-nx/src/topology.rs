@@ -22,7 +22,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::framing::{
     fixed_record_boundary, fixed_record_candidates as framed_record_candidates, read_sequence_at,
-    read_xmt, skip_sequence_at,
+    read_xmt, scanned_record_end, skip_sequence_at,
 };
 use crate::vec3_at::vec3_be_at;
 pub(crate) mod trimmed_curve_state;
@@ -53,6 +53,13 @@ pub(crate) fn intersection_data_schema_header_at(stream: &[u8], offset: usize) -
         .checked_add(TYPE_38_SCHEMA_HEADER.len())
         .and_then(|end| stream.get(offset..end))
         == Some(TYPE_38_SCHEMA_HEADER)
+}
+
+/// Return the offset of the first complete type-38 schema header in `stream`.
+pub(crate) fn intersection_data_declaration(stream: &[u8]) -> Option<usize> {
+    stream
+        .windows(TYPE_38_SCHEMA_HEADER.len())
+        .position(|window| window == TYPE_38_SCHEMA_HEADER)
 }
 
 /// A supported fixed-record node with its XMT identifier and source offset.
@@ -1010,8 +1017,9 @@ impl Graph {
     }
 
     fn parse_fixed(stream: &[u8], frames: Option<&PrimaryFrames>) -> Graph {
-        let baseline_records = Self::select_fixed_records(stream, false, frames);
-        let full_records = Self::select_fixed_records(stream, true, frames);
+        let declaration = intersection_data_declaration(stream);
+        let baseline_records = Self::select_fixed_records(stream, false, frames, declaration);
+        let full_records = Self::select_fixed_records(stream, true, frames, declaration);
         if full_records.matches_selection(&baseline_records) {
             return baseline_records.materialize(stream);
         }
@@ -1120,7 +1128,7 @@ impl Graph {
     /// and 83) that end at a record boundary. Their references, counts and
     /// values can read as node tags, and a tag match there can otherwise take
     /// the bytes of the node that follows or duplicate a real node's identity.
-    fn attribute_record_interiors(stream: &[u8]) -> Vec<bool> {
+    fn attribute_record_interiors(stream: &[u8], declaration: Option<usize>) -> Vec<bool> {
         let mut interior = vec![false; stream.len()];
         for pos in 0..stream.len() {
             if stream[pos] != 0 || !matches!(stream.get(pos + 1), Some(0x51..=0x53)) {
@@ -1132,9 +1140,13 @@ impl Graph {
                     && !interior[start]
                     && NodeKind::try_from(stream[start + 1]).is_ok_and(|kind| {
                         framed_record_candidates(stream, start, kind)
-                            .iter()
+                            .into_iter()
                             .flatten()
-                            .any(|frame| fixed_record_boundary(stream, frame.end()))
+                            .any(|frame| {
+                                let end =
+                                    scanned_record_end(stream, start, kind, frame, declaration);
+                                fixed_record_boundary(stream, end)
+                            })
                     })
             });
             if is_node_index {
@@ -1161,6 +1173,7 @@ impl Graph {
         stream: &[u8],
         full_node_id_domain: bool,
         frames: Option<&PrimaryFrames>,
+        declaration: Option<usize>,
     ) -> FixedRecordSelection {
         let mut candidates = Vec::new();
         let mut ownership_candidates = Vec::new();
@@ -1174,9 +1187,10 @@ impl Graph {
             if frames.is_some() && kind == NodeKind::Edge {
                 return;
             }
-            for candidate in Self::fixed_record_candidates(stream, pos, kind, full_node_id_domain)
-                .into_iter()
-                .flatten()
+            for candidate in
+                Self::fixed_record_candidates(stream, pos, kind, full_node_id_domain, declaration)
+                    .into_iter()
+                    .flatten()
             {
                 if end.is_some_and(|end| candidate.end() > end)
                     || frames.is_some_and(|frames| frames.exclude(&candidate))
@@ -1197,7 +1211,7 @@ impl Graph {
                 }
             }
             None => {
-                let attribute_interiors = Self::attribute_record_interiors(stream);
+                let attribute_interiors = Self::attribute_record_interiors(stream, declaration);
                 for pos in stream
                     .len()
                     .checked_sub(3)
@@ -1308,6 +1322,7 @@ impl Graph {
         pos: usize,
         kind: NodeKind,
         full_node_id_domain: bool,
+        declaration: Option<usize>,
     ) -> [Option<NodeCandidate>; 2] {
         let mut candidates = [None; 2];
         let mut count = 0;
@@ -1315,13 +1330,14 @@ impl Graph {
             .into_iter()
             .flatten()
         {
+            let end = scanned_record_end(stream, pos, kind, frame, declaration);
             let Some(()) = candidate_has_valid_family_framing(
                 stream,
                 pos,
                 kind,
                 frame.xmt(),
                 frame.shift(),
-                frame.end(),
+                end,
                 full_node_id_domain,
             ) else {
                 continue;
@@ -1331,7 +1347,7 @@ impl Graph {
                 xmt: frame.xmt(),
                 pos,
                 shift: frame.shift(),
-                end: frame.end(),
+                end,
             });
             count += 1;
         }

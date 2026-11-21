@@ -141,6 +141,35 @@ fn intersection_record_with_five_references_keeps_its_chart_and_the_next_record(
 }
 
 #[test]
+fn a_declared_intersection_keeps_a_sixth_reference_that_reads_as_a_record_tag() {
+    let mut stream = charted_intersection_with_edge_endpoint_witnesses_stream();
+    let [curve] = Graph::parse(&stream).composite_curves()[..] else {
+        panic!("the fixture has one intersection");
+    };
+    let record = curve.pos;
+    // The sixth reference spells a REGION tag, and the bytes after the record start no record.
+    stream[record + 29..record + 31].copy_from_slice(&[0, NodeKind::Region.code()]);
+    stream.splice(record + 31..record + 31, [0, 0x2a]);
+    let undeclared = Graph::parse(&stream).composite_curves();
+    let [undeclared] = undeclared.as_slice() else {
+        panic!("the undeclared intersection is still a record");
+    };
+    assert_eq!(undeclared.references[5], None);
+
+    stream.splice(record..record, TYPE_38_SCHEMA_HEADER.iter().copied());
+    let declared = Graph::parse(&stream).composite_curves();
+    let [declared] = declared.as_slice() else {
+        panic!("the declared intersection is still a record");
+    };
+    assert_eq!(declared.xmt, curve.xmt);
+    assert_eq!(declared.references[..5], curve.references[..5]);
+    assert_eq!(
+        declared.references[5],
+        cadmpeg_parasolid::xmt::XmtTarget::from_wire(u32::from(NodeKind::Region.code()))
+    );
+}
+
+#[test]
 fn a_tag_match_with_the_identity_of_a_real_shell_does_not_remove_the_shell() {
     let mut stream = topology_partition_stream();
     let graph = Graph::parse(&stream);
@@ -207,31 +236,6 @@ fn fin_followed_by_an_attribute_name_survives_overlapping_tag_matches() {
         .get(NodeKind::Fin, 30)
         .and_then(Node::fin_fields)
         .is_some());
-}
-
-#[test]
-fn fin_with_unset_sense_is_a_one_vertex_loop_only_without_an_edge() {
-    let vertex_fin = [
-        0x00, 0x11, 0x02, 0x9f, 0x00, 0x01, 0x14, 0x6c, 0x02, 0x9f, 0x02, 0x9f, 0x02, 0x9d, 0x00,
-        0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x3f,
-    ];
-    let graph = Graph::parse(&vertex_fin);
-    let node = graph
-        .get(NodeKind::Fin, 671)
-        .expect("the FIN record is kept");
-    let fields = node
-        .vertex_loop_fin_fields()
-        .expect("a self-linked FIN without an edge is a one-vertex loop");
-    assert_eq!(fields.loop_xmt.map(u32::from), Some(5228));
-    assert_eq!(fields.vertex.map(u32::from), Some(669));
-    assert!(node.fin_fields().is_none());
-
-    let mut with_edge = vertex_fin;
-    with_edge[17] = 0x07;
-    let graph = Graph::parse(&with_edge);
-    assert!(graph
-        .get(NodeKind::Fin, 671)
-        .is_some_and(|node| node.vertex_loop_fin_fields().is_none()));
 }
 
 #[test]

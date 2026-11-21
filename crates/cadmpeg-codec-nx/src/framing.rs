@@ -108,11 +108,6 @@ fn complete_frame(
         .checked_add(len)?
         .checked_add(shift)?
         .checked_add(payload_shift)?;
-    let end = if kind == NodeKind::Intersection && ends_before_sixth_reference(stream, end) {
-        end.checked_sub(2)?
-    } else {
-        end
-    };
     stream.get(pos..end)?;
     Some(FixedRecordFrame {
         xmt,
@@ -122,19 +117,35 @@ fn complete_frame(
     })
 }
 
-/// Return whether an INTERSECTION read with six references ends two bytes too late: older
-/// schemas declare five, so the sixth is then the tag of the next record. This only compares
-/// tags, because a full boundary check would recurse through consecutive intersections.
-fn ends_before_sixth_reference(stream: &[u8], six_reference_end: usize) -> bool {
-    six_reference_end != stream.len()
-        && six_reference_end
-            .checked_sub(2)
-            .is_some_and(|end| starts_known_record(stream, end))
-        && !starts_known_record(stream, six_reference_end)
+/// The end of `frame`, read at `pos` as a record of `kind`. INTERSECTION frames are read with
+/// six references. A record that no first-use `intersection_data` declaration precedes has the
+/// five references of older schemas when the sixth is the tag of a known record and no known
+/// record starts after it. `declaration` is the offset of the stream's first such declaration.
+pub(crate) fn scanned_record_end(
+    stream: &[u8],
+    pos: usize,
+    kind: NodeKind,
+    frame: FixedRecordFrame,
+    declaration: Option<usize>,
+) -> usize {
+    let end = frame.end();
+    let declared = declaration.is_some_and(|at| at < pos);
+    if kind != NodeKind::Intersection || declared || end == stream.len() {
+        return end;
+    }
+    match end.checked_sub(2) {
+        Some(five_reference_end)
+            if starts_known_record(stream, five_reference_end)
+                && !starts_known_record(stream, end) =>
+        {
+            five_reference_end
+        }
+        _ => end,
+    }
 }
 
 /// Return whether the tag of a record the decoder knows starts at `at`.
-pub(crate) fn starts_known_record(stream: &[u8], at: usize) -> bool {
+fn starts_known_record(stream: &[u8], at: usize) -> bool {
     stream.get(at) == Some(&0)
         && stream.get(at + 1).is_some_and(|tag| {
             NodeKind::try_from(*tag).is_ok()
