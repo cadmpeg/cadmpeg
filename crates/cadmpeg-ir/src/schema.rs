@@ -4,7 +4,7 @@
 use serde::Serialize;
 
 pub mod rewrite;
-/// Caller-accounted structural value projection and reconstruction.
+/// Caller-accounted structural JSON projection.
 pub mod structural;
 
 /// Canonical neutral arena kind.
@@ -618,9 +618,9 @@ impl EntitySchema for crate::tessellation::Tessellation {
         self.id.as_str()
     }
 }
-impl_entity_schema!(crate::appearance::Appearance, Appearance, id; id, name, asset_guid, library_id, visual_guid, physical_token, schema, category, base_color, properties, textures);
-impl_entity_schema!(crate::appearance::AppearanceBinding, AppearanceBinding, id; id, target, appearance, source_entity_id, object_type, visible, channels);
-impl_entity_schema!(crate::attributes::SourceAttribute, SourceAttribute, id; id, target, name, values);
+impl_entity_schema!(crate::appearance::Appearance, Appearance, id; id, name, asset_guid, library_id, visual_guid, physical_token, schema, category, base_color, properties, textures, native_ref);
+impl_entity_schema!(crate::appearance::AppearanceBinding, AppearanceBinding, id; id, target, appearance, source_entity_id, object_type, visible, channels, native_ref);
+impl_entity_schema!(crate::attributes::SourceAttribute, SourceAttribute, id; id, target, name, values, native_ref);
 impl_entity_schema!(crate::pmi::PmiAnnotation, PmiAnnotation, id; id, name, visible, targets, definition, native_ref, native_options, source_settings);
 impl_entity_schema!(
     crate::presentation::PresentationLayer,
@@ -635,7 +635,7 @@ impl_entity_schema!(crate::physics::Articulation, Articulation, id; id, root, na
 impl_entity_schema!(crate::physics::PhysicsScene, PhysicsScene, id; id, name, gravity_direction, gravity_magnitude, native_ref);
 impl_entity_schema!(crate::physics::solver::SolverSettings, SolverSettings, id; id, solver, schema, target, values, native_ref);
 impl_entity_schema!(crate::declared_measures::DeclaredMeasure, DeclaredMeasure, id; id, target, quantity, provenance, source_error, label, native_ref);
-impl_entity_schema!(crate::point_cloud::PointCloud, PointCloud, id; id, product_definition, name, sensor, positions, normals, colors, channels, native_ref);
+impl_entity_schema!(crate::point_cloud::PointCloud, PointCloud, id; id, definition, name, sensor, positions, normals, colors, channels, native_ref);
 impl_entity_schema!(crate::history_body::HistoryBody, HistoryBody, id; id, produced_by, consumed_by, state, topology);
 impl_entity_schema!(crate::physics::Collider, Collider, id; id, target, shape, enabled, material, native_ref);
 

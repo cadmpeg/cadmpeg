@@ -4,7 +4,8 @@
 //! A section dimension or a relation assignment keeps its Creo text, with
 //! each parameter the decoder resolved as a reference, except a literal in a
 //! unit the file states that the stored value confirms, which is a
-//! one-literal expression.
+//! one-literal expression, and a relation whose whole text is one resolved
+//! parameter of the same kind, which is that reference.
 
 use std::collections::BTreeMap;
 use std::num::NonZeroI8;
@@ -51,10 +52,16 @@ pub(super) fn project(
         .iter()
         .map(|parameter| (parameter.id.clone(), parameter.name.as_str()))
         .collect::<BTreeMap<_, _>>();
+    let kinds = ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| (parameter.id.clone(), kind_and_value(parameter).0))
+        .collect::<BTreeMap<_, _>>();
     let mut projected = Vec::new();
     for parameter in &ir.model.parameters {
         ctx.charge_entities(1, "project Creo v11 parameter")?;
-        projected.push(project_parameter(parameter, definition, &names));
+        projected.push(project_parameter(parameter, definition, &names, &kinds));
     }
     ir.design.parameters.extend(projected);
     ir.design.parameters.sort_by(|a, b| a.id.cmp(&b.id));
@@ -96,12 +103,14 @@ fn project_parameter(
     parameter: &LegacyParameter,
     scope: &ProductDefinitionId,
     names: &BTreeMap<ParameterId, &str>,
+    kinds: &BTreeMap<ParameterId, ValueKind>,
 ) -> DesignParameter {
     let (kind, value) = kind_and_value(parameter);
     let unit = declared_unit(parameter).filter(|unit| quantity(unit) == quantity_of(&kind));
     let definition = ParameterDefinition::Expression(expression(
         parameter,
         names,
+        kinds,
         &kind,
         value.as_ref(),
         unit.as_ref(),
@@ -297,6 +306,7 @@ fn canonical_factor(symbol: UnitSymbol) -> Option<f64> {
 fn expression(
     parameter: &LegacyParameter,
     names: &BTreeMap<ParameterId, &str>,
+    kinds: &BTreeMap<ParameterId, ValueKind>,
     kind: &ValueKind,
     value: Option<&ParameterValue>,
     declared: Option<&Unit>,
@@ -305,9 +315,35 @@ fn expression(
     if let Some(literal) = literal(text, kind, value, declared) {
         return Expression::Neutral(Neutral(literal));
     }
+    let tokens = tokens(&parameter.expression, parameter, names);
+    if let [ExpressionToken::Reference(reference)] = tokens.as_slice() {
+        return whole_reference(reference, &parameter.expression, kind, kinds);
+    }
     Expression::Source {
         dialect: ExpressionDialect::Creo,
-        tokens: tokens(&parameter.expression, parameter, names),
+        tokens,
+    }
+}
+
+/// A relation whose whole text is one resolved parameter is that reference
+/// where the parameter has the same kind, one with a neutral value. Otherwise
+/// the name stays text: a `Source` expression holds a `Text` token (part 10).
+fn whole_reference(
+    reference: &ParameterRef,
+    text: &str,
+    kind: &ValueKind,
+    kinds: &BTreeMap<ParameterId, ValueKind>,
+) -> Expression {
+    let typed = match &reference.target {
+        RefTarget::Parameter(target) => kinds.get(target) == Some(kind),
+        RefTarget::External { .. } => false,
+    };
+    if typed && !matches!(kind, ValueKind::Native(_)) {
+        return Expression::Neutral(Neutral(Node::Reference(reference.clone())));
+    }
+    Expression::Source {
+        dialect: ExpressionDialect::Creo,
+        tokens: vec![ExpressionToken::Text(text.to_owned())],
     }
 }
 

@@ -9,7 +9,7 @@ use crate::decode::offset::test_support::{
     offset_surface_parameters, offset_surface_parameters_with_tolerance,
 };
 use crate::decode::support_uv::{complete_ext11_support_uv, SerializedSupportUv};
-use crate::test_support::test_bytes::put_ref;
+use crate::test_support::test_bytes::{put_f64, put_ref, put_vec3, record};
 use crate::test_support::test_deltas::bspline_partition_stream;
 use crate::test_support::test_deltas::fully_extend_common_header;
 use crate::test_support::test_deltas::offset_surface_with_fully_extended_common_header;
@@ -177,29 +177,30 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
 
 #[test]
 fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
+    let stream = offset_surface_topology_partition_stream();
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let surface = result
+        .ir()
+        .geometry
+        .procedural_surface_owner(&result.ir().geometry.procedural_surfaces[0].id)
+        .expect("offset surface owner")
+        .clone();
+    let index = cadmpeg_ir::index::ModelIndex::build(result.ir());
+    let seed = Point2::new(12.0, 7.0);
+    let mut point = cadmpeg_ir::eval::model_surface_point_by_id(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &surface,
+        seed.u,
+        seed.v,
+    )
+    .unwrap()
+    .get();
+    point.x += 0.01;
+
     for work_limit in [256, 32768] {
         crate::test_support::with_decode_context(|geometry_ctx| {
-            let stream = offset_surface_topology_partition_stream();
-            let mut cur = Cursor::new(prt_with_partition(&stream));
-            let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-            let surface = result
-                .ir()
-                .geometry
-                .procedural_surface_owner(&result.ir().geometry.procedural_surfaces[0].id)
-                .expect("offset surface owner")
-                .clone();
-            let seed = Point2::new(12.0, 7.0);
-            let mut point = cadmpeg_ir::eval::model_surface_point_by_id(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                &cadmpeg_ir::index::ModelIndex::build(result.ir()),
-                &surface,
-                seed.u,
-                seed.v,
-            )
-            .unwrap()
-            .get();
-            point.x += 0.01;
-
             let actual = offset_surface_parameters_with_tolerance(
                 geometry_ctx,
                 result.ir(),
@@ -212,7 +213,6 @@ fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
 
             assert_eq!(actual, seed);
 
-            let index = cadmpeg_ir::index::ModelIndex::build(result.ir());
             let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
                 geometry_ctx,
                 work_limit,
@@ -462,6 +462,40 @@ fn decode_tracks_fully_extended_compact_geometry_headers() {
         curve.geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
     )));
+}
+
+#[test]
+fn decode_lifts_pcurve_only_fin_carrier_on_a_swept_surface() {
+    let mut stream = pcurve_topology_partition_stream();
+    let edge = stream
+        .windows(4)
+        .position(|window| window == [0, 16, 0, 8])
+        .expect("edge record");
+    put_ref(&mut stream, edge + 24, 1);
+    let surface_curve = stream
+        .windows(4)
+        .position(|window| window == [0, 137, 0, 25])
+        .expect("surface curve");
+    put_ref(&mut stream, surface_curve + 19, 12);
+    put_ref(&mut stream, surface_curve + 23, 1);
+    let mut swept = record(67, 53);
+    put_ref(&mut swept, 2, 12);
+    swept[18] = b'+';
+    put_ref(&mut swept, 19, 40);
+    put_vec3(&mut swept, 21, [0.0, 0.0, 1.0]);
+    put_f64(&mut swept, 45, 0.02);
+    stream.extend(swept);
+    let mut section = record(30, 67);
+    put_ref(&mut section, 2, 40);
+    section[18] = b'+';
+    put_vec3(&mut section, 19, [0.0, 0.0, 0.0]);
+    put_vec3(&mut section, 43, [1.0, 0.0, 0.0]);
+    stream.extend(section);
+
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    assert!(result.ir().geometry.edges[0].curve().is_some());
 }
 
 #[test]

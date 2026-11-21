@@ -182,7 +182,7 @@ fn elided_native(native: &cadmpeg_ir::Native) -> serde_json::Value {
             namespace_digests.insert(
                 arena.clone(),
                 serde_json::json!(cadmpeg_ir::hash::canonical_json_sha256(
-                    &cadmpeg_test_support::service_decode_context(),
+                    &cadmpeg_core::decode::test_support::service_decode_context(),
                     records
                 )
                 .expect("the native records state canonical JSON")),
@@ -588,7 +588,7 @@ mod native_elision {
             assert_eq!(
                 arena_digest(&block, arena),
                 serde_json::json!(cadmpeg_ir::hash::canonical_json_sha256(
-                    &cadmpeg_test_support::service_decode_context(),
+                    &cadmpeg_core::decode::test_support::service_decode_context(),
                     records
                 )
                 .expect("the native records state canonical JSON")),

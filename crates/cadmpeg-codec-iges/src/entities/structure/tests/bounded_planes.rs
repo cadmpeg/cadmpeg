@@ -303,7 +303,7 @@ fn linear_nurbs_boundary_points_close_a_square_loop() {
     use cadmpeg_ir::geometry::nurbs::NurbsCurve;
     use cadmpeg_ir::math::Point3;
 
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let nurbs = NurbsCurve::from_lanes(
         1,
         vec![0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 4.0],

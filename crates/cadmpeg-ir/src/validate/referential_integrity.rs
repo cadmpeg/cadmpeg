@@ -79,7 +79,7 @@ mod tests {
         let mut ir = unit_cube().expect("valid unit cube fixture");
         ir.model.tessellations.push(tessellation);
         let mut findings = Vec::new();
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let index = ModelIndex::build(&ir);
         let identities = crate::index::identities::BorrowedIdentities::build(|add| {
             for id in index.identities(crate::index::StandardIndex) {

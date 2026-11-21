@@ -19,6 +19,7 @@ fn metadata_document() -> CadIr {
             target: AttributeTarget::Document.into(),
             name: name.to_owned(),
             values: Vec::new(),
+            native_ref: None,
         });
     }
     ir
@@ -38,7 +39,7 @@ fn metadata_digest_preserves_source_order_and_excludes_unit_code() {
         ),
     ];
     let expected = cadmpeg_ir::hash::sha256_hex(&serde_json::to_vec_pretty(&expected).unwrap());
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert_eq!(
         crate::writer::swobjects_metadata_identity_local_sha256(&ctx, &ir).unwrap(),
         expected
@@ -89,11 +90,12 @@ fn enclosure_metadata_generation_requires_retained_opaque_prologue() {
         target: AttributeTarget::Document.into(),
         name: "transformed_reference_enclosure".into(),
         values: vec![
-            AttributeValue::vector([0., 0., 0.]).unwrap(),
-            AttributeValue::vector([100., 100., 100.]).unwrap(),
-            AttributeValue::vector([-100., -100., -100.]).unwrap(),
-            AttributeValue::float(200.).unwrap(),
+            Some(AttributeValue::vector([0., 0., 0.]).unwrap()),
+            Some(AttributeValue::vector([100., 100., 100.]).unwrap()),
+            Some(AttributeValue::vector([-100., -100., -100.]).unwrap()),
+            Some(AttributeValue::float(200.).unwrap()),
         ],
+        native_ref: None,
     });
     assert!(matches!(
         crate::writer::metadata_payloads(&ir, 0.001, false),

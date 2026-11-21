@@ -364,6 +364,7 @@ fn layout<'ir>(
         periods: carrier.periods,
         domain: carrier.domain,
         poles,
+        narrow: sampler.chord,
     };
     let rings: Vec<Ring> = traced_loops
         .iter()

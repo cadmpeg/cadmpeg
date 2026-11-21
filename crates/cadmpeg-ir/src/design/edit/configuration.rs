@@ -19,8 +19,10 @@ use crate::design::evaluation::{
 };
 use crate::design::ids::EvaluationId;
 use crate::design::refs::{Evaluated, Member, Position};
+use crate::document::Process;
 use crate::features::ConfigurationId;
 use crate::ids::{BodyId, ProductDefinitionId};
+use crate::process::state::{ProcessBase, ProcessContent};
 use crate::CadIr;
 
 /// What one current state exchanges.
@@ -44,6 +46,22 @@ fn namespace(id: &str) -> Option<String> {
     let (space, _) = id.split_once('#')?;
     let mut parts = space.splitn(3, ':');
     Some(format!("{}:{}:", parts.next()?, parts.next()?))
+}
+
+/// Rebases every process state based on the design state `from` onto `to`,
+/// which holds the same resolved state.
+fn rebase_process(process: &mut Process, from: &StateBase, to: &StateBase) {
+    for state in &mut process.states {
+        if let Some(ProcessContent {
+            base: ProcessBase::Design(base),
+            ..
+        }) = &mut state.content
+        {
+            if base == from {
+                base.clone_from(to);
+            }
+        }
+    }
 }
 
 fn position_key(at: &Position) -> String {
@@ -87,33 +105,9 @@ impl CadIr {
         EvaluationId::mint(candidate).map_err(malformed)
     }
 
-    /// Makes `configuration` the active configuration of `scope`'s design.
-    ///
-    /// For each current state of that scope it writes the outgoing extent
-    /// (its bodies and the records they reach, their names and owners, and
-    /// its poses) into an evaluation of the outgoing configuration at the
-    /// state's position, and installs the incoming configuration's
-    /// evaluation of that position in its place: its records into
-    /// `CadIr.geometry`, its names into `Design.names`, its bodies' owners
-    /// into the product definitions' `bodies`, and its poses into the current
-    /// state, which lists the installed bodies; that evaluation is removed.
-    /// The outgoing records that no other body reaches leave the geometry,
-    /// with their names and owners. Where the document holds no evaluation
-    /// of that position for `configuration`, the current state is kept and
-    /// marked `Stale`. Evaluations based on an exchanged current state are
-    /// rebased onto the outgoing evaluation, and those based on an installed
-    /// evaluation onto the current state, so their resolved states are
-    /// unchanged. Each construction of the scope's design whose `resolved`
-    /// is a cache moves it into `resolved_in` under the outgoing
-    /// configuration, and takes the incoming configuration's entry. Other
-    /// scopes, and the scope's other records, are untouched.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`EditError::UnknownScope`] for a definition with no scope,
-    /// and [`EditError::UnknownConfiguration`] for a configuration that is
-    /// not one of the scope's.
-    pub fn set_active_configuration(
+    /// [`Editor::set_active_configuration`](super::Editor::set_active_configuration)
+    /// on the document itself.
+    pub(super) fn set_active_configuration(
         &mut self,
         scope: &ProductDefinitionId,
         configuration: &ConfigurationId,
@@ -264,6 +258,11 @@ impl CadIr {
                 }
             }
         }
+        rebase_process(
+            &mut self.process,
+            &from_current,
+            &StateBase::Evaluation(id.clone()),
+        );
         self.design.evaluations.push(written);
         if exchange.incoming.is_none() {
             self.design.scopes[scope_at].current[exchange.index].status = EvaluationStatus::Stale;
@@ -351,6 +350,7 @@ impl CadIr {
                 }
             }
         }
+        rebase_process(&mut self.process, &to_current, &from_current);
         let target = &mut self.design.scopes[scope_at].current[exchange.index];
         target.bodies = bodies;
         target.poses = state.poses;
@@ -379,7 +379,7 @@ impl CadIr {
             }
             Ok(())
         }
-        let history = super::history::History::new(&self.design)?;
+        let history = super::history::History::new(&self.design);
         let in_scope = |member: Member| history.scope_of(&member) == Some(scope);
         let features: BTreeSet<_> = self
             .design

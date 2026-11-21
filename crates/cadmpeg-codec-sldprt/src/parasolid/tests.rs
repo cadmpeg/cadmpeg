@@ -124,7 +124,7 @@ fn zlib_probe_work_cap_ends_the_probe_without_fusing_the_session() {
     let mut stream = parasolid_payload("partition body", "SCH_SW_33103_11000");
     stream.extend([0; 512]);
     let within = zlib_probe_payload(&stream, 4);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let streams = crate::parasolid::extract_streams_with_offsets(&within, &ctx)
         .unwrap()
         .streams;
@@ -132,7 +132,7 @@ fn zlib_probe_work_cap_ends_the_probe_without_fusing_the_session() {
     assert_eq!(streams[0].payload, stream);
 
     let beyond = zlib_probe_payload(&stream, 200);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert!(
         crate::parasolid::extract_streams_with_offsets(&beyond, &ctx)
             .unwrap()

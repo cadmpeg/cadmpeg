@@ -948,7 +948,8 @@ pub(crate) fn custom_property_attributes(
                 id,
                 target: AttributeTarget::Document.into(),
                 name,
-                values,
+                values: values.into_iter().map(Some).collect(),
+                native_ref: None,
             });
         }
     }

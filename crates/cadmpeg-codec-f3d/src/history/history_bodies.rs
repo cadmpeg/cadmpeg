@@ -224,7 +224,7 @@ pub(crate) fn fill(
     } = inputs;
     let mut wants = BTreeMap::<usize, Vec<Want<'_>>>::new();
     for feature in features {
-        let Some(bodies) = super::stored_bodies::bound_result_bodies(feature) else {
+        let Some(bodies) = super::stored_bodies::base_feature_result_bodies(feature, scopes) else {
             continue;
         };
         let Some(current) = feature

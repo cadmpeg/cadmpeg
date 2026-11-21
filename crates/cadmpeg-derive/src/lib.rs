@@ -13,8 +13,16 @@
 //! same serde attributes, derived by serde. An enum with a tag, with
 //! `untagged`, with a conversion, with a generic parameter, or with a variant
 //! that holds data fails to compile.
+//!
+//! `#[derive(DeserializeTagged)]` takes the place of serde's derived
+//! `Deserialize` on an enum tagged by `tag`, or by `tag` and `content`. It
+//! accepts and refuses the documents that serde's derive does, and reads each
+//! payload from JSON text through `cadmpeg_core::tagged`, so the payload's
+//! types are compiled against the one deserializer that reads CADIR text.
 
 use proc_macro::{Delimiter, LexError, TokenStream, TokenTree};
+
+mod tagged;
 
 /// Derives a `Deserialize` that reads a data-free enum from its variant's
 /// name alone.
@@ -24,6 +32,17 @@ pub fn deserialize_name(input: TokenStream) -> TokenStream {
         |message| compile_error(&message),
         |enumeration| expand(&enumeration),
     );
+    expanded
+        .parse()
+        .or_else(|error: LexError| compile_error(&error.to_string()).parse())
+        .unwrap_or_default()
+}
+
+/// Derives a `Deserialize` for an enum tagged by serde's `tag`, or by `tag`
+/// and `content`, that reads each payload from JSON text.
+#[proc_macro_derive(DeserializeTagged, attributes(serde))]
+pub fn deserialize_tagged(input: TokenStream) -> TokenStream {
+    let expanded = tagged::derive(input).unwrap_or_else(|message| compile_error(&message));
     expanded
         .parse()
         .or_else(|error: LexError| compile_error(&error.to_string()).parse())

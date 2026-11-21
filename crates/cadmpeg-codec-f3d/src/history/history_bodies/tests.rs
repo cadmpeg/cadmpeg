@@ -692,7 +692,7 @@ fn consumed_fixture(
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         assert_eq!(container::history_breps(scan).count(), 1);
         fill_consumed(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             scan,
             &mut model,
             &native,
@@ -1118,7 +1118,7 @@ fn subtype_references_follow_archive_byte_order_across_revisions() {
     }
     let archive = HashMap::from([(20, definition(9, 100, 0.0)), (10, definition(1, 200, 1.0))]);
     let table = archive_subtypes(&archive, None);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for (reference, expected_z) in [(0, 0.0), (1, 10.0)] {
         let tokens = [
             Token::SubtypeOpen,
@@ -1135,7 +1135,7 @@ fn subtype_references_follow_archive_byte_order_across_revisions() {
 
 fn cube_candidate() -> HistoryBody {
     let geometry = cadmpeg_ir::examples::unit_cube().expect("cube").geometry;
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let Extract::Nest(mut topology) =
         extract(&ctx, &geometry, geometry.bodies[0].id.as_str()).expect("extract cube")
     else {
@@ -1156,7 +1156,7 @@ fn cube_candidate() -> HistoryBody {
 
 #[test]
 fn admission_preserves_a_valid_nest_and_its_producer() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let candidate = cube_candidate();
     let expected = candidate.clone();
     assert_eq!(
@@ -1167,7 +1167,7 @@ fn admission_preserves_a_valid_nest_and_its_producer() {
 
 #[test]
 fn admission_rejects_a_reference_closed_nest_with_a_radial_ring_crossing_edges() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut candidate = cube_candidate();
     let first_edge = candidate.topology.coedges[0].edge.clone();
     let other = candidate
@@ -1187,7 +1187,7 @@ fn admission_rejects_a_reference_closed_nest_with_a_radial_ring_crossing_edges()
 
 #[test]
 fn admission_rejects_a_reference_closed_nest_with_displaced_endpoints() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut candidate = cube_candidate();
     candidate.topology.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(10.0, 10.0, 10.0))

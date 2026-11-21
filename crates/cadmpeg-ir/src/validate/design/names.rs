@@ -298,7 +298,10 @@ fn check_order(
 
 /// An `Instance` name names a pattern with implicit instances by a valid
 /// index, a copying `TransformBodies` by `[k]` within its count, or an
-/// `Extract` by `[1]`.
+/// `Extract` by `[1]`. A name of a feature the document does not hold is not
+/// checked: a pick by it stays when that feature is removed, and no longer
+/// resolves (§4, D51), and a table name that mentions it breaks the order
+/// rule.
 fn check_instance(index: &DesignIndex<'_>, name: &TopoName, at: &str, findings: &mut Vec<Finding>) {
     let TopoName::Instance {
         feature, instance, ..
@@ -307,7 +310,7 @@ fn check_instance(index: &DesignIndex<'_>, name: &TopoName, at: &str, findings: 
         return;
     };
     let valid = match index.operation(feature.as_str()) {
-        None => Some(false),
+        None => None,
         Some(FeatureOperation::Unresolved { .. } | FeatureOperation::Native { .. }) => None,
         Some(FeatureOperation::Pattern(pattern)) => match &pattern.instances {
             PatternInstances::Implicit(_) => valid_pattern_index(&pattern.layout, instance),
@@ -425,16 +428,20 @@ fn layout_coordinates(layout: &PatternLayout) -> Option<LayoutCoordinates<'_>> {
                 if second.is_some() && matches!(seed_only, Some(Dimension::Literal(true))) {
                     found.seed_only.push(coordinates.len());
                 }
-                coordinates.push(run_coordinate(&first.run));
-                coordinates.extend(second.iter().map(|second| run_coordinate(&second.run)));
+                coordinates.push(run_coordinate(&first.run, false));
+                coordinates.extend(
+                    second
+                        .iter()
+                        .map(|second| run_coordinate(&second.run, false)),
+                );
             }
             PatternLayout::Circular {
                 angular, radial, ..
             } => {
-                coordinates.push(run_coordinate(angular));
-                coordinates.extend(radial.iter().map(run_coordinate));
+                coordinates.push(run_coordinate(angular, false));
+                coordinates.extend(radial.iter().map(|radial| run_coordinate(radial, false)));
             }
-            PatternLayout::Path { run, .. } => coordinates.push(run_coordinate(run)),
+            PatternLayout::Path { run, .. } => coordinates.push(run_coordinate(run, true)),
             PatternLayout::Points { points, .. } => {
                 let last = match &points.picks {
                     Picks::Named(picks) => i64::try_from(picks.as_slice().len()).ok(),
@@ -465,9 +472,14 @@ fn layout_coordinates(layout: &PatternLayout) -> Option<LayoutCoordinates<'_>> {
 }
 
 /// The coordinate range of a run whose count, and seed where `sides` reads
-/// it, are literal. A run whose `sides` is not stated may lie on either side
-/// of the seed.
-fn run_coordinate<'a, Q>(run: &PatternRun<Q>) -> Coordinate<'a> {
+/// it, are literal (§6.5, Coordinate range). A run whose `sides` is not
+/// stated reaches at most `last` and has no lower bound: an unread side may
+/// be a `Reverse` arm whose count the run does not state. In a `Path` run
+/// (`on_path`) an unread side may also be `Against`, which reaches the seed,
+/// so the bound is the greater of `last` and the seed, and there is none for
+/// a seed that is not literal. That carve-out is interim, gap
+/// 20261119-ERR1-C-H6-2: §6.5 does not yet state it.
+fn run_coordinate<'a, Q>(run: &PatternRun<Q>, on_path: bool) -> Coordinate<'a> {
     let Some(last) = spacing_count(&run.spacing).map(|count| i64::from(count) - 1) else {
         return Coordinate::ANY;
     };
@@ -494,9 +506,8 @@ fn run_coordinate<'a, Q>(run: &PatternRun<Q>) -> Coordinate<'a> {
             let low = spacing_count(reverse).map(|count| (1 - i64::from(count)).min(-seed));
             Coordinate::Range(low, Some(last - seed))
         }),
-        None => seed.map_or(Coordinate::ANY, |seed| {
-            Coordinate::between(-last.max(seed), last.max(seed))
-        }),
+        None if on_path => Coordinate::Range(None, seed.map(|seed| last.max(seed))),
+        None => Coordinate::Range(None, Some(last)),
     }
 }
 
@@ -521,6 +532,8 @@ fn spacing_count<Q>(spacing: &Spacing<Q>) -> Option<u32> {
 }
 
 /// `GenerationRole::Hole` occurs only in a `Generated` face name of a hole.
+/// As for `Instance` names, a name of a feature the document does not hold
+/// is not checked.
 fn check_hole_role(
     index: &DesignIndex<'_>,
     name: &TopoName,
@@ -537,11 +550,12 @@ fn check_hole_role(
         return;
     };
     let of_hole = match index.operation(feature.as_str()) {
+        None => return,
         Some(FeatureOperation::Hole(_) | FeatureOperation::Native { .. }) => true,
         Some(FeatureOperation::Unresolved { family }) => {
             *family == crate::design::feature::OperationFamily::Hole
         }
-        Some(_) | None => false,
+        Some(_) => false,
     };
     if *kind != NameKind::Face || !of_hole {
         super::error(

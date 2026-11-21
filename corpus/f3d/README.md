@@ -109,3 +109,56 @@ after the Revolve.
 - `open_profile_surface_revolve.f3d`: one open line from (10, 0, 0) to
   (10, 0, 10) mm, selected through createOpenProfile. 1 surface body,
   314.15927 mm², 1 cylindrical face.
+
+# Fusion API fixtures: Copy/Paste Bodies
+
+These files are CC0. Each was written through the Fusion API in Autodesk Fusion
+2706.1.17 from a new design. Each pastes boxes of 10 × 10 mm (5, 6, 7 or 8 mm
+tall) into a new component `Target`, whose occurrence is at y + 30 mm, with one
+Copy/Paste Bodies operation. The API reported the body count, volume and face
+count after the operation.
+
+- `copy_paste_one_body.f3d`: one 5 mm box. 2 bodies, 1000 mm³, 12 faces.
+- `copy_paste_two_bodies.f3d`: two boxes of one component. 4 bodies, 2600 mm³,
+  24 faces.
+- `copy_paste_two_components.f3d`: one box from each of two components.
+  4 bodies, 2600 mm³, 24 faces.
+- `copy_paste_three_bodies.f3d`: three boxes of one component. 6 bodies,
+  3600 mm³, 36 faces.
+
+# Fusion API fixtures: Reverse Normal
+
+These files are CC0. Each was written through the Fusion API in Autodesk Fusion
+2706.1.17 from a new design. Each Sketch on the XZ origin plane holds a closed
+rectangle, revolved about the Z origin axis as a new surface body (isSolid
+false), with an angle extent of 90 deg and Symmetric on. A Reverse Normal of
+the surface bodies follows. The API reported the timeline, the body count and
+face count after each feature, and the bodies that the Reverse Normal selects.
+
+- `reverse_normal_revolve.f3d`: a rectangle at x 5–10 mm, z 0–10 mm, and a
+  Reverse Normal of its one body. 1 surface body, 4 faces.
+- `reverse_normal_two_revolves.f3d`: rectangles at x 5–10 mm and x 15–20 mm,
+  z 0–10 mm, each revolved by its own Revolve, and one Reverse Normal of both
+  bodies. 2 surface bodies, 8 faces.
+
+# Fusion fixtures: Reverse Normal of several bodies and components
+
+These files are CC0, written in Autodesk Fusion 2706.1.17 from new designs.
+Each surface body is a 20 mm line extruded 10 mm as a surface.
+
+- `reverse_normal_two_bodies.f3d`: API-built. One Reverse Normal of two surface
+  bodies of one component. 2 bodies, 2 faces.
+- `reverse_normal_two_components.f3d`: the API built two components, each with
+  one surface body, the second occurrence at y + 30 mm; a person made one
+  Reverse Normal in the root that selects both surfaces in the Fusion UI.
+  Fusion stores it as `Reverse Normal1` in each component, linked, as one
+  timeline item.
+
+Reverse Normal across components, made in the Fusion UI with the root component
+active: the surfaces preselected, then Surface > Reverse Normal. Each is one
+timeline item, `Reverse Normal1`, and the API reports one linked Reverse Normal in
+each component. Every normal turns from (0, −1, 0) to (0, +1, 0).
+
+- `reverse_normal_three_components.f3d`: one surface body in each of the
+  components C1, C2 and C3, at y = 0, 30 and 60 mm.
+- `reverse_normal_two_plus_one.f3d`: two surface bodies in C1 and one in C2.
