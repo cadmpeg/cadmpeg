@@ -187,18 +187,24 @@ fn tool_replacement_loss(
 /// The body identities of `selection`, or its native expression.
 fn selection_bodies(selection: &BodySelection) -> Vec<&str> {
     match selection {
-        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
-            bodies.as_slice().iter().map(|body| body.as_str()).collect()
-        }
-        BodySelection::ResolvedSet { members } => {
-            members.bodies().map(|body| body.as_str()).collect()
-        }
-        BodySelection::Historical { bodies, .. } => {
-            bodies.as_slice().iter().map(|body| body.as_str()).collect()
-        }
-        BodySelection::HistoricalSet { members, .. } => {
-            members.bodies().map(|body| body.as_str()).collect()
-        }
+        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => bodies
+            .as_slice()
+            .iter()
+            .map(cadmpeg_ir::ids::BodyId::as_str)
+            .collect(),
+        BodySelection::ResolvedSet { members } => members
+            .bodies()
+            .map(cadmpeg_ir::ids::BodyId::as_str)
+            .collect(),
+        BodySelection::Historical { bodies, .. } => bodies
+            .as_slice()
+            .iter()
+            .map(cadmpeg_ir::ids::HistoricalBodyId::as_str)
+            .collect(),
+        BodySelection::HistoricalSet { members, .. } => members
+            .bodies()
+            .map(cadmpeg_ir::ids::HistoricalBodyId::as_str)
+            .collect(),
         BodySelection::Native(native) => vec![native.as_str()],
         _ => Vec::new(),
     }
