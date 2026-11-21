@@ -8,7 +8,8 @@
 //! order carries no meaning (a shell's faces, a body's regions) is derived
 //! from those parent pointers and is not stored.
 
-use crate::features::{FinitePoint3, NonEmptyMembers};
+use crate::features::geometry::FinitePoint3;
+use crate::features::selections::NonEmptyMembers;
 use crate::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, IdentityKey, IdentityNamespace, LoopId, PcurveId,
     PointId, RegionId, ShellId, SurfaceId, VertexId,
@@ -1828,7 +1829,7 @@ mod tests {
         coedge_ring_neighbors, AnchoredVertexUse, Coedge, CoedgeUseCurve, Face, FaceLoops, Loop,
         LoopBoundary, LoopBoundaryRole, LoopId, LoopRing,
     };
-    use crate::features::NonEmptyMembers;
+    use crate::features::selections::NonEmptyMembers;
 
     #[test]
     fn incremental_loop_ring_keeps_order_and_rejects_duplicates() {
@@ -2289,7 +2290,7 @@ mod tests {
     #[test]
     fn a_point_position_must_be_finite() {
         use super::{Point, PointWire};
-        use crate::features::FinitePoint3;
+        use crate::features::geometry::FinitePoint3;
         use crate::ids::PointId;
         use crate::math::Point3;
 
@@ -2361,7 +2362,7 @@ mod tests {
     #[test]
     fn a_point_hands_back_and_takes_its_admitted_position() {
         use super::Point;
-        use crate::features::FinitePoint3;
+        use crate::features::geometry::FinitePoint3;
         use crate::ids::PointId;
         use crate::math::Point3;
 

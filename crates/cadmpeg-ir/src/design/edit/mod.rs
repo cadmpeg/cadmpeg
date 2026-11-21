@@ -39,6 +39,7 @@ mod history;
 mod members;
 mod removal;
 mod resolve;
+pub mod state_view;
 mod states;
 mod wire;
 

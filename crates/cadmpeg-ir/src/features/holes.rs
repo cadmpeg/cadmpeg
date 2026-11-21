@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Hole construction, placement, and compatible dimensions.
 
-use super::{FeatureDirection3, FinitePoint3};
+use crate::features::geometry::{FeatureDirection3, FinitePoint3};
 use crate::scalar::{InteriorAngle, Length, PositiveLength};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_derive::DeserializeName;

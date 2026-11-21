@@ -2,16 +2,16 @@
 //! Feature-completeness predicates for NX decode.
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::math::Vector3;
-use cadmpeg_ir::units::UnitVector3;
-use cadmpeg_ir::{
-    features::{
-        BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, CurveProjectionDirection,
-        CurveProjectionDirectionState, Feature, FeatureDefinition, FeatureOperation, LoftSection,
-        ParameterId, TrimRegion,
-    },
-    scalar::Length,
+use cadmpeg_ir::features::operation_settings::{BodyRetentionMode, BodyTrimSide, BooleanOp};
+use cadmpeg_ir::features::profiles::LoftSection;
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::surface_inputs::{
+    CurveProjectionDirection, CurveProjectionDirectionState, TrimRegion,
 };
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation, ParameterId};
+use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::scalar::Length;
+use cadmpeg_ir::units::UnitVector3;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) mod operands;
@@ -95,7 +95,7 @@ pub(super) fn output_free_trim_surface_construction(
 /// values differ from the model.
 pub(crate) fn active_configuration_state_is_incomplete(
     ir: &CadIr,
-    configuration: &cadmpeg_ir::features::DesignConfiguration,
+    configuration: &cadmpeg_ir::features::parameters::DesignConfiguration,
 ) -> bool {
     if configuration_suppression_differs(ir, configuration) {
         return true;
@@ -118,7 +118,7 @@ pub(crate) fn active_configuration_state_is_incomplete(
 /// suppression state, or the feature has no suppression state.
 fn configuration_suppression_differs(
     ir: &CadIr,
-    configuration: &cadmpeg_ir::features::DesignConfiguration,
+    configuration: &cadmpeg_ir::features::parameters::DesignConfiguration,
 ) -> bool {
     ir.model.features.iter().any(|feature| {
         feature.suppressed.is_none_or(|suppressed| {
@@ -135,7 +135,7 @@ fn configuration_suppression_differs(
 /// from the model for the active features and every suppressed feature.
 fn configuration_state_differs(
     ir: &CadIr,
-    configuration: &cadmpeg_ir::features::DesignConfiguration,
+    configuration: &cadmpeg_ir::features::parameters::DesignConfiguration,
     required_features: &BTreeMap<cadmpeg_ir::features::FeatureId, usize>,
 ) -> bool {
     let mut suppressed_only = ir.model.features.iter().enumerate().filter(|(_, feature)| {
@@ -298,15 +298,16 @@ pub(crate) fn incomplete_expression_parameters(
             let stored = match (unit, parameter.value.as_ref()) {
                 (
                     Some("millimeter" | "inch"),
-                    Some(cadmpeg_ir::features::ParameterValue::Length(value)),
+                    Some(cadmpeg_ir::features::parameters::ParameterValue::Length(value)),
                 ) => Some(value.get()),
-                (Some("degree"), Some(cadmpeg_ir::features::ParameterValue::Angle(value))) => {
+                (
+                    Some("degree"),
+                    Some(cadmpeg_ir::features::parameters::ParameterValue::Angle(value)),
+                ) => Some(value.get()),
+                (None, Some(cadmpeg_ir::features::parameters::ParameterValue::Real(value))) => {
                     Some(value.get())
                 }
-                (None, Some(cadmpeg_ir::features::ParameterValue::Real(value))) => {
-                    Some(value.get())
-                }
-                (None, Some(cadmpeg_ir::features::ParameterValue::Integer(value))) => {
+                (None, Some(cadmpeg_ir::features::parameters::ParameterValue::Integer(value))) => {
                     cadmpeg_core::convert::f64_from_i64(*value)
                 }
                 _ => None,
@@ -364,7 +365,10 @@ pub(crate) fn extend_surface_definition_is_incomplete(feature: &Feature) -> bool
     };
     face_selection_is_incomplete(faces)
         || distance.is_none()
-        || matches!(method, cadmpeg_ir::features::SurfaceExtension::Unresolved)
+        || matches!(
+            method,
+            cadmpeg_ir::features::surface_inputs::SurfaceExtension::Unresolved
+        )
 }
 
 pub(crate) fn sew_bodies_definition_is_incomplete(feature: &Feature) -> bool {
@@ -566,10 +570,10 @@ pub(super) fn draft_definition_is_incomplete(feature: &Feature) -> bool {
     };
     face_selection_is_incomplete(faces)
         || match anchor {
-            cadmpeg_ir::features::DraftAnchor::NeutralPlane { plane, .. } => {
+            cadmpeg_ir::features::direct_edit::DraftAnchor::NeutralPlane { plane, .. } => {
                 face_selection_is_incomplete(plane)
             }
-            cadmpeg_ir::features::DraftAnchor::PartingLine { tool, .. } => {
+            cadmpeg_ir::features::direct_edit::DraftAnchor::PartingLine { tool, .. } => {
                 face_selection_is_incomplete(tool)
             }
         }
@@ -640,7 +644,7 @@ pub(crate) fn extrude_definition_is_incomplete(feature: &Feature) -> bool {
         || profile_dependency_is_incomplete(profile, &feature.dependencies)
         || matches!(
             direction,
-            cadmpeg_ir::features::ExtrudeDirection::Unresolved {}
+            cadmpeg_ir::features::extents::ExtrudeDirection::Unresolved {}
         )
         || extrude_start_is_incomplete(start)
         || extrude_extent_is_incomplete(extent, &feature.dependencies)
@@ -648,8 +652,8 @@ pub(crate) fn extrude_definition_is_incomplete(feature: &Feature) -> bool {
         || solid.is_none()
         || matches!(
             direction,
-            cadmpeg_ir::features::ExtrudeDirection::Explicit {
-                source: Some(cadmpeg_ir::features::ExtrusionDirectionSource::Edge { reference }),
+            cadmpeg_ir::features::extents::ExtrudeDirection::Explicit {
+                source: Some(cadmpeg_ir::features::extents::ExtrusionDirectionSource::Edge { reference }),
                 ..
             } if path_ref_is_incomplete(reference)
         )

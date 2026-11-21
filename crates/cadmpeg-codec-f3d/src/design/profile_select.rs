@@ -158,7 +158,8 @@ pub(crate) fn bind_sweep_sketch_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     resolution: &SketchCurveSelectionResolution<'_>,
 ) -> Result<(), CodecError> {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef, PlanarProfileRef};
+    use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let SketchCurveSelectionResolution {
         scopes,
         groups,
@@ -348,7 +349,9 @@ pub(crate) fn bind_split_face_sketch_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     resolution: &SketchCurveSelectionResolution<'_>,
 ) {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef, SplitFaceTool};
+    use cadmpeg_ir::features::direct_edit::SplitFaceTool;
+    use cadmpeg_ir::features::profiles::PathRef;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let path_resolution = resolution.path_resolution();
     for feature in features {
@@ -385,9 +388,9 @@ pub(crate) fn bind_path_pattern_sketch_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     resolution: &SketchCurveSelectionResolution<'_>,
 ) {
-    use cadmpeg_ir::features::{
-        patterns::PatternTransform, FeatureDefinition, FeatureOperation, PathRef,
-    };
+    use cadmpeg_ir::features::patterns::PatternTransform;
+    use cadmpeg_ir::features::profiles::PathRef;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let path_resolution = resolution.path_resolution();
     for feature in features {
@@ -442,7 +445,8 @@ pub(crate) fn bind_surface_trim_sketch_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     resolution: &SketchCurveSelectionResolution<'_>,
 ) {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef};
+    use cadmpeg_ir::features::profiles::PathRef;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let path_resolution = resolution.path_resolution();
     for feature in features {
@@ -473,22 +477,22 @@ pub(crate) fn bind_surface_trim_sketch_selections(
     }
 }
 
-pub(crate) fn has_to_termination(extent: &cadmpeg_ir::features::ExtrudeExtent) -> bool {
-    let check_side = |side: &cadmpeg_ir::features::ExtrudeSide| {
+pub(crate) fn has_to_termination(extent: &cadmpeg_ir::features::extents::ExtrudeExtent) -> bool {
+    let check_side = |side: &cadmpeg_ir::features::extents::ExtrudeSide| {
         matches!(
             side.termination,
-            cadmpeg_ir::features::LinearTermination::ToFace { .. }
-                | cadmpeg_ir::features::LinearTermination::ToPlane { .. }
-                | cadmpeg_ir::features::LinearTermination::ToShape { .. }
-                | cadmpeg_ir::features::LinearTermination::ThroughNext { .. }
+            cadmpeg_ir::features::extents::LinearTermination::ToFace { .. }
+                | cadmpeg_ir::features::extents::LinearTermination::ToPlane { .. }
+                | cadmpeg_ir::features::extents::LinearTermination::ToShape { .. }
+                | cadmpeg_ir::features::extents::LinearTermination::ThroughNext { .. }
         )
     };
     match extent {
-        cadmpeg_ir::features::ExtrudeExtent::OneSided { side } => check_side(side),
-        cadmpeg_ir::features::ExtrudeExtent::TwoSided { first, second } => {
+        cadmpeg_ir::features::extents::ExtrudeExtent::OneSided { side } => check_side(side),
+        cadmpeg_ir::features::extents::ExtrudeExtent::TwoSided { first, second } => {
             check_side(first) || check_side(second)
         }
-        cadmpeg_ir::features::ExtrudeExtent::Symmetric { side } => check_side(side),
+        cadmpeg_ir::features::extents::ExtrudeExtent::Symmetric { side } => check_side(side),
     }
 }
 
@@ -501,7 +505,8 @@ pub(crate) fn bind_extrude_profile_selections(
     curve_resolution: &SketchCurveSelectionResolution<'_>,
     resolution: ExtrudeProfileResolution<'_>,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut losses = Vec::new();
     for feature in features {
@@ -558,7 +563,7 @@ pub(crate) fn bind_extrude_profile_selections(
                     else {
                         break 'feature_edit;
                     };
-                    let cut = matches!(op, cadmpeg_ir::features::BooleanOp::Cut);
+                    let cut = matches!(op, cadmpeg_ir::features::operation_settings::BooleanOp::Cut);
                     let is_to_termination = has_to_termination(extent);
                     if let ProfileRef::Planar(PlanarProfileRef::Native(native)) = profile {
                         let mut entity_groups = curve_resolution.groups.iter().filter(|group| {
@@ -1010,13 +1015,13 @@ pub(crate) fn bind_extrude_profile_selections(
                                         cand_sketch == sketch_id
                                             && cand_slice.len() == exp.len()
                                             && cand_slice.iter().all(|reg| match reg {
-                                                cadmpeg_ir::features::SketchProfileRegion::Loops {
+                                                cadmpeg_ir::features::profiles::SketchProfileRegion::Loops {
                                                     loops,
                                                 } => {
                                                     loops.holes().is_empty()
                                                         && exp.contains(&loops.outer())
                                                 }
-                                                cadmpeg_ir::features::SketchProfileRegion::Trimmed {
+                                                cadmpeg_ir::features::profiles::SketchProfileRegion::Trimmed {
                                                     ..
                                                 } => false,
                                             })
@@ -1024,7 +1029,7 @@ pub(crate) fn bind_extrude_profile_selections(
                                                 cand_slice.iter().any(|reg| {
                                                     matches!(
                                                         reg,
-                                                        cadmpeg_ir::features::SketchProfileRegion::Loops {
+                                                        cadmpeg_ir::features::profiles::SketchProfileRegion::Loops {
                                                             loops,
                                                         } if loops.holes().is_empty()
                                                             && loops.outer() == *profile_idx
@@ -1312,12 +1317,13 @@ fn sorted(
 /// which is what the whole Sketch means. A trimmed region counts as a profile
 /// when it has no hole and bounds the same curves.
 fn selects_whole_sketch(
-    selection: &cadmpeg_ir::features::PlanarProfileRef,
+    selection: &cadmpeg_ir::features::profiles::PlanarProfileRef,
     sketch: &cadmpeg_ir::sketches::Sketch,
 ) -> bool {
-    use cadmpeg_ir::features::SketchProfileRegion;
+    use cadmpeg_ir::features::profiles::SketchProfileRegion;
 
-    let cadmpeg_ir::features::PlanarProfileRef::SketchRegions { regions, .. } = selection else {
+    let cadmpeg_ir::features::profiles::PlanarProfileRef::SketchRegions { regions, .. } = selection
+    else {
         return false;
     };
     let mut taken = Vec::new();
@@ -1413,9 +1419,8 @@ pub(crate) fn unprofiled_curve_losses(
     features: &[cadmpeg_ir::features::Feature],
     entities: &[cadmpeg_ir::sketches::SketchEntity],
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef, SketchProfileRegion,
-    };
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef, SketchProfileRegion};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut selected = HashSet::new();
     for feature in features {
@@ -1536,8 +1541,8 @@ fn live_profile_members(
 fn resolve_entity_selection_profile(
     group: &DesignConstructionOperandGroup,
     resolution: &EntitySelectionPathResolution<'_>,
-) -> Option<cadmpeg_ir::features::ProfileRef> {
-    use cadmpeg_ir::features::{PathRef, PlanarProfileRef, ProfileRef};
+) -> Option<cadmpeg_ir::features::profiles::ProfileRef> {
+    use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef, ProfileRef};
 
     if group.role() != DesignOperandRole::PROFILE {
         return None;
@@ -1634,8 +1639,8 @@ fn historical_face_profile_selection(
     feature_id: &cadmpeg_ir::features::FeatureId,
     scoped_histories: &[crate::history_records::AsmHistory],
     curved_face_note: &mut Option<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<Option<cadmpeg_ir::features::PlanarProfileRef>, CodecError> {
-    use cadmpeg_ir::features::PlanarProfileRef;
+) -> Result<Option<cadmpeg_ir::features::profiles::PlanarProfileRef>, CodecError> {
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
 
     let Some(previous_state_id) = previous_state_id else {
         return Ok(None);
@@ -1908,8 +1913,8 @@ fn compose_same_sketch_profile_group(
     curve_identities: &[SketchCurveIdentity],
     sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
     scoped_resolution: ScopedExtrudeProfileResolution<'_>,
-) -> Result<Option<cadmpeg_ir::features::ProfileRef>, CodecError> {
-    use cadmpeg_ir::features::ProfileRef;
+) -> Result<Option<cadmpeg_ir::features::profiles::ProfileRef>, CodecError> {
+    use cadmpeg_ir::features::profiles::ProfileRef;
 
     let assumed_before = scoped_resolution.profile_work.assumed_flags();
     let inferred_before = scoped_resolution.profile_work.inferred_counts();
@@ -1952,14 +1957,14 @@ fn compose_same_sketch_profile_group(
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::design) enum ResolvedProfileSelection {
     Loops(Vec<u32>),
-    Regions(Vec<cadmpeg_ir::features::SketchProfileRegion>),
+    Regions(Vec<cadmpeg_ir::features::profiles::SketchProfileRegion>),
 }
 
 fn merge_resolved_profile_selections(
     sketch: &cadmpeg_ir::sketches::SketchId,
-    selections: &[cadmpeg_ir::features::ProfileRef],
-) -> Option<cadmpeg_ir::features::ProfileRef> {
-    use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
+    selections: &[cadmpeg_ir::features::profiles::ProfileRef],
+) -> Option<cadmpeg_ir::features::profiles::ProfileRef> {
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
 
     let mut profiles = Vec::new();
     let mut regions = Vec::new();
@@ -1999,9 +2004,9 @@ fn merge_resolved_profile_selections(
 }
 
 fn copy_bound_profile(
-    profile: &cadmpeg_ir::features::ProfileRef,
-) -> Result<cadmpeg_ir::features::ProfileRef, CodecError> {
-    use cadmpeg_ir::features::ProfileRef;
+    profile: &cadmpeg_ir::features::profiles::ProfileRef,
+) -> Result<cadmpeg_ir::features::profiles::ProfileRef, CodecError> {
+    use cadmpeg_ir::features::profiles::ProfileRef;
 
     match profile {
         ProfileRef::Planar(planar) => Ok(ProfileRef::Planar(copy_bound_planar_profile(planar)?)),
@@ -2012,9 +2017,9 @@ fn copy_bound_profile(
 }
 
 fn copy_bound_planar_profile(
-    profile: &cadmpeg_ir::features::PlanarProfileRef,
-) -> Result<cadmpeg_ir::features::PlanarProfileRef, CodecError> {
-    use cadmpeg_ir::features::PlanarProfileRef;
+    profile: &cadmpeg_ir::features::profiles::PlanarProfileRef,
+) -> Result<cadmpeg_ir::features::profiles::PlanarProfileRef, CodecError> {
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
 
     match profile {
         PlanarProfileRef::Sketch(_)
@@ -2030,9 +2035,9 @@ fn copy_bound_planar_profile(
 }
 
 fn copy_bound_path(
-    path: &cadmpeg_ir::features::PathRef,
-) -> Result<cadmpeg_ir::features::PathRef, CodecError> {
-    use cadmpeg_ir::features::PathRef;
+    path: &cadmpeg_ir::features::profiles::PathRef,
+) -> Result<cadmpeg_ir::features::profiles::PathRef, CodecError> {
+    use cadmpeg_ir::features::profiles::PathRef;
 
     match path {
         PathRef::SketchCurves { .. } | PathRef::SpatialSketchCurves { .. } => Ok(path.clone()),
@@ -2058,8 +2063,8 @@ pub(super) fn resolved_extrude_profile_selection(
     sketch: &cadmpeg_ir::sketches::Sketch,
     resolution: ScopedExtrudeProfileResolution<'_>,
     transition: ExtrudeTransition,
-) -> Result<cadmpeg_ir::features::ProfileRef, CodecError> {
-    use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
+) -> Result<cadmpeg_ir::features::profiles::ProfileRef, CodecError> {
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
 
     let ExtrudeTransition {
         history_state_id,
@@ -3026,9 +3031,10 @@ fn transition_profile_selection_step(
                     .and_then(|idx| sketch.profiles.get(idx))
                     .is_some_and(|p| p.len() > 1)
             {
-                if let Ok(region) =
-                    cadmpeg_ir::features::SketchProfileRegion::loops(loops[0], cyl_loops.clone())
-                {
+                if let Ok(region) = cadmpeg_ir::features::profiles::SketchProfileRegion::loops(
+                    loops[0],
+                    cyl_loops.clone(),
+                ) {
                     return Ok(Some(ResolvedProfileSelection::Regions(vec![region])));
                 }
             }
@@ -3049,7 +3055,7 @@ fn transition_profile_selection_step(
                         .and_then(|idx| sketch.profiles.get(idx))
                         .is_some_and(|p| p.len() > 1)
                 {
-                    if let Ok(region) = cadmpeg_ir::features::SketchProfileRegion::loops(
+                    if let Ok(region) = cadmpeg_ir::features::profiles::SketchProfileRegion::loops(
                         loops[0],
                         cyl_loops.clone(),
                     ) {
@@ -3376,7 +3382,7 @@ struct BodyCircleRings<'a> {
 /// body short of the cap.
 fn rings_from_body_to_sketch_circle(
     rings: BodyCircleRings<'_>,
-) -> Option<Vec<cadmpeg_ir::features::SketchProfileRegion>> {
+) -> Option<Vec<cadmpeg_ir::features::profiles::SketchProfileRegion>> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let BodyCircleRings {
@@ -3526,7 +3532,7 @@ fn rings_from_body_to_sketch_circle(
 /// Nesting them as one loop with holes would keep only the outermost ring.
 fn rings_from_sketch_circle_in_to_body(
     rings: BodyCircleRings<'_>,
-) -> Option<Vec<cadmpeg_ir::features::SketchProfileRegion>> {
+) -> Option<Vec<cadmpeg_ir::features::profiles::SketchProfileRegion>> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let BodyCircleRings {
@@ -3689,8 +3695,8 @@ pub(super) fn concentric_ring_regions(
     circles: &[ConcentricCircle<'_>],
     indices: &[u32],
     innermost_hole: Option<&ConcentricCircle<'_>>,
-) -> Option<Vec<cadmpeg_ir::features::SketchProfileRegion>> {
-    use cadmpeg_ir::features::{SketchProfileBoundaryUse, SketchProfileRegion};
+) -> Option<Vec<cadmpeg_ir::features::profiles::SketchProfileRegion>> {
+    use cadmpeg_ir::features::profiles::{SketchProfileBoundaryUse, SketchProfileRegion};
     use cadmpeg_ir::geometry::DirectedParameterRange;
 
     let circle_use = |circle: &ConcentricCircle<'_>, reversed: bool| {
@@ -4095,7 +4101,7 @@ pub(in crate::design) fn transition_inserted_profile_selection(
     profile_work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<ResolvedProfileSelection>, CodecError> {
-    use cadmpeg_ir::features::SketchProfileRegion;
+    use cadmpeg_ir::features::profiles::SketchProfileRegion;
 
     let first_selection = selections.iter().flatten().next();
     if let Some(first) = first_selection {
@@ -4588,7 +4594,7 @@ fn region_with_boundary_selection_members(
     sketch: &cadmpeg_ir::sketches::Sketch,
     selections: &[Option<ResolvedProfileSelection>],
 ) -> Option<ResolvedProfileSelection> {
-    use cadmpeg_ir::features::SketchProfileRegion;
+    use cadmpeg_ir::features::profiles::SketchProfileRegion;
 
     let mut regions = selections.iter().filter_map(|selection| match selection {
         Some(ResolvedProfileSelection::Regions(regions)) => Some(regions.as_slice()),
@@ -4972,8 +4978,8 @@ impl<'a> SketchProfileResolution<'a> {
 fn resolve_profile_curve_regions(
     group: &DesignConstructionOperandGroup,
     resolution: &EntitySelectionPathResolution<'_>,
-) -> Option<cadmpeg_ir::features::ProfileRef> {
-    use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef, SketchProfileRegion};
+) -> Option<cadmpeg_ir::features::profiles::ProfileRef> {
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef, SketchProfileRegion};
     let stream = native_stream(&group.id)?;
     let (sketch, curves) = profile_curve_selection_candidates(group, stream, resolution, false)?;
     let source = resolution
@@ -5048,7 +5054,7 @@ fn compact_profile_loops(
     scope: &DesignParameterScope,
     sketch: &cadmpeg_ir::sketches::Sketch,
     resolution: &SketchCurveSelectionResolution<'_>,
-) -> Option<cadmpeg_ir::features::ProfileRef> {
+) -> Option<cadmpeg_ir::features::profiles::ProfileRef> {
     if sketch.profiles.is_empty() {
         return None;
     }
@@ -5069,8 +5075,8 @@ fn compact_profile_loops(
 fn compact_profile_loop_selection(
     group: &DesignConstructionOperandGroup,
     resolution: &EntitySelectionPathResolution<'_>,
-) -> Option<cadmpeg_ir::features::ProfileRef> {
-    use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef, SketchProfileRegion};
+) -> Option<cadmpeg_ir::features::profiles::ProfileRef> {
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef, SketchProfileRegion};
 
     let mut selections = resolution
         .profile_curves
@@ -5117,7 +5123,7 @@ fn resolve_profile_curve_arrangement_regions(
     group: &DesignConstructionOperandGroup,
     resolution: &EntitySelectionPathResolution<'_>,
     scoped: ScopedExtrudeProfileResolution<'_>,
-) -> Result<Option<cadmpeg_ir::features::ProfileRef>, CodecError> {
+) -> Result<Option<cadmpeg_ir::features::profiles::ProfileRef>, CodecError> {
     resolve_profile_curve_arrangement_regions_with_policy(group, resolution, scoped, true)
 }
 
@@ -5126,8 +5132,8 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
     resolution: &EntitySelectionPathResolution<'_>,
     scoped: ScopedExtrudeProfileResolution<'_>,
     allow_assumptions: bool,
-) -> Result<Option<cadmpeg_ir::features::ProfileRef>, CodecError> {
-    use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
+) -> Result<Option<cadmpeg_ir::features::profiles::ProfileRef>, CodecError> {
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
     let Some(stream) = native_stream(&group.id) else {
         return Ok(None);
     };
@@ -5381,7 +5387,7 @@ fn resolve_profile_curve_path(
     group: &DesignConstructionOperandGroup,
     stream: &str,
     resolution: &EntitySelectionPathResolution<'_>,
-) -> Option<cadmpeg_ir::features::PathRef> {
+) -> Option<cadmpeg_ir::features::profiles::PathRef> {
     if resolution
         .profile_curves
         .iter()
@@ -5404,7 +5410,7 @@ fn resolve_profile_curve_path(
     if curves.iter().any(|curve| !seen.insert(curve)) {
         return None;
     }
-    cadmpeg_ir::features::PathRef::sketch_curves(sketch, curves).ok()
+    cadmpeg_ir::features::profiles::PathRef::sketch_curves(sketch, curves).ok()
 }
 
 /// The Sketch placements that a typed profile selection names through the
@@ -5629,8 +5635,8 @@ fn profile_curve_selection_curves(
 fn resolve_entity_selection_path(
     group: &DesignConstructionOperandGroup,
     resolution: &EntitySelectionPathResolution<'_>,
-) -> Option<cadmpeg_ir::features::PathRef> {
-    use cadmpeg_ir::features::PathRef;
+) -> Option<cadmpeg_ir::features::profiles::PathRef> {
+    use cadmpeg_ir::features::profiles::PathRef;
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     macro_rules! available {
@@ -5801,7 +5807,7 @@ fn resolve_entity_selection_path(
 fn resolved_loft_entity_selection_path(
     group: &DesignConstructionOperandGroup,
     resolution: &SketchProfileResolution<'_>,
-) -> Option<cadmpeg_ir::features::PathRef> {
+) -> Option<cadmpeg_ir::features::profiles::PathRef> {
     if !matches!(
         group.role(),
         DesignOperandRole::ROLE_0X5 | DesignOperandRole::ROLE_0X7
@@ -5964,15 +5970,15 @@ fn explicit_region_matching_loop_index(
 
 fn explicit_region_agrees_with_candidate_region(
     exp_members: &[&cadmpeg_ir::sketches::SketchEntityId],
-    cand_region: &cadmpeg_ir::features::SketchProfileRegion,
+    cand_region: &cadmpeg_ir::features::profiles::SketchProfileRegion,
     sketch: &cadmpeg_ir::sketches::Sketch,
 ) -> bool {
     match cand_region {
-        cadmpeg_ir::features::SketchProfileRegion::Loops { loops } => {
+        cadmpeg_ir::features::profiles::SketchProfileRegion::Loops { loops } => {
             loops.holes().is_empty()
                 && explicit_region_matching_loop_index(exp_members, sketch) == Some(loops.outer())
         }
-        cadmpeg_ir::features::SketchProfileRegion::Trimmed { .. } => false,
+        cadmpeg_ir::features::profiles::SketchProfileRegion::Trimmed { .. } => false,
     }
 }
 
@@ -5982,9 +5988,9 @@ pub(in crate::design) fn planar_selection_agrees_with_region_operand(
     sketch: &cadmpeg_ir::sketches::Sketch,
     curve_identities: &[SketchCurveIdentity],
     sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
-    candidate: &cadmpeg_ir::features::PlanarProfileRef,
+    candidate: &cadmpeg_ir::features::profiles::PlanarProfileRef,
 ) -> bool {
-    use cadmpeg_ir::features::PlanarProfileRef;
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
 
     let Some(selection) = operand.planar_region_selection() else {
         return false;
@@ -6250,8 +6256,8 @@ fn native_revolve_profile(
     group: &DesignConstructionOperandGroup,
     profile: Option<&DesignSketchProfileOperand>,
     resolution: &SketchProfileResolution<'_>,
-) -> cadmpeg_ir::features::PlanarProfileRef {
-    use cadmpeg_ir::features::PlanarProfileRef;
+) -> cadmpeg_ir::features::profiles::PlanarProfileRef {
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
     let native = || PlanarProfileRef::Native(group.id.clone());
     let curve_selection = resolution.profile_curves.iter().find(|selection| {
         native_stream(&selection.id) == native_stream(&group.id)
@@ -6297,7 +6303,7 @@ fn resolved_revolve_axis_reference(
     native: &str,
     groups: &[DesignConstructionOperandGroup],
     resolution: &SketchProfileResolution<'_>,
-) -> Option<cadmpeg_ir::features::PathRef> {
+) -> Option<cadmpeg_ir::features::profiles::PathRef> {
     let mut matching = groups.iter().filter(|group| {
         group.role() == DesignOperandRole::ROLE_0X21
             && (group.id == native
@@ -6326,9 +6332,8 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
     resolution: &SketchProfileResolution<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, LoftSection, PathRef, PlanarProfileRef, ProfileRef,
-    };
+    use cadmpeg_ir::features::profiles::{LoftSection, PathRef, PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let scoped = ScopedExtrudeProfileResolution {
         entities: resolution.sketch_entities,

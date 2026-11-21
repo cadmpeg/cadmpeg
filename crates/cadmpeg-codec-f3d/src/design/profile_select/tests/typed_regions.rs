@@ -114,8 +114,8 @@ fn typed_profile_regions_preserve_holes_and_refuse_ambiguous_loops() {
     };
     assert_eq!(
         resolve(&sketches, &selections),
-        Some(cadmpeg_ir::features::ProfileRef::Planar(
-            cadmpeg_ir::features::PlanarProfileRef::sketch_regions(
+        Some(cadmpeg_ir::features::profiles::ProfileRef::Planar(
+            cadmpeg_ir::features::profiles::PlanarProfileRef::sketch_regions(
                 sketch_id.clone(),
                 vec![
                     SketchProfileRegion::loops(0, vec![1]).unwrap(),
@@ -134,8 +134,8 @@ fn typed_profile_regions_preserve_holes_and_refuse_ambiguous_loops() {
     repeated[1].identity_end_offset = repeated[0].identity_end_offset;
     assert_eq!(
         resolve(&sketches, &repeated),
-        Some(cadmpeg_ir::features::ProfileRef::Planar(
-            cadmpeg_ir::features::PlanarProfileRef::sketch_regions(
+        Some(cadmpeg_ir::features::profiles::ProfileRef::Planar(
+            cadmpeg_ir::features::profiles::PlanarProfileRef::sketch_regions(
                 sketch_id.clone(),
                 vec![SketchProfileRegion::loops(0, vec![1]).unwrap()],
             )
@@ -211,8 +211,8 @@ fn typed_profile_without_a_scope_placement_joins_the_container_its_scope_record_
         resolution.profile_curves = &selections;
         resolve_entity_selection_profile(&group, &resolution)
     };
-    let expected = Some(cadmpeg_ir::features::ProfileRef::Planar(
-        cadmpeg_ir::features::PlanarProfileRef::sketch_regions(
+    let expected = Some(cadmpeg_ir::features::profiles::ProfileRef::Planar(
+        cadmpeg_ir::features::profiles::PlanarProfileRef::sketch_regions(
             sketch_id,
             vec![
                 SketchProfileRegion::loops(0, vec![]).unwrap(),
@@ -299,9 +299,12 @@ fn compact_profile_loops_select_exact_subsets_and_the_full_profile_table() {
         super::super::compact_profile_loop_selection(&group, &resolution)
     };
     let expected = |indices| {
-        Some(cadmpeg_ir::features::ProfileRef::Planar(
-            cadmpeg_ir::features::PlanarProfileRef::sketch_profiles(sketch_id.clone(), indices)
-                .unwrap(),
+        Some(cadmpeg_ir::features::profiles::ProfileRef::Planar(
+            cadmpeg_ir::features::profiles::PlanarProfileRef::sketch_profiles(
+                sketch_id.clone(),
+                indices,
+            )
+            .unwrap(),
         ))
     };
     let mut selections = [first, second];
@@ -352,8 +355,8 @@ fn compact_profile_loops_select_exact_subsets_and_the_full_profile_table() {
     holed[1].identity_end_offset = holed[1].lists_end().unwrap();
     assert_eq!(
         resolve(&holed),
-        Some(cadmpeg_ir::features::ProfileRef::Planar(
-            cadmpeg_ir::features::PlanarProfileRef::sketch_regions(
+        Some(cadmpeg_ir::features::profiles::ProfileRef::Planar(
+            cadmpeg_ir::features::profiles::PlanarProfileRef::sketch_regions(
                 sketch_id.clone(),
                 vec![
                     SketchProfileRegion::loops(2, vec![]).unwrap(),

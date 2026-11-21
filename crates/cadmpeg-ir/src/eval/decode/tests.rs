@@ -339,7 +339,7 @@ fn geometry_entry_returns_the_original_refusal_in_its_single_result() {
         assert_eq!(limit.operation, "geometry evaluation nesting");
         assert_eq!(ctx.resource_refusal(), Some(limit));
         assert_eq!(
-            super::outer_refusal::<crate::features::FinitePoint3, Point3>(Err(failure)),
+            super::outer_refusal::<crate::features::geometry::FinitePoint3, Point3>(Err(failure)),
             Err(limit)
         );
         assert_eq!(super::curve_point(ctx, &geometry, 0.5), Err(failure));

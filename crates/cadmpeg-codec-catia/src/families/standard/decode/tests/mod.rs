@@ -9,7 +9,8 @@ fn checked_circle(
     radius: f64,
 ) -> crate::families::standard::records::StandardCurveGeometry {
     crate::families::standard::records::StandardCurveGeometry::Circle {
-        center: cadmpeg_ir::features::FinitePoint3::new(center).expect("finite circle center"),
+        center: cadmpeg_ir::features::geometry::FinitePoint3::new(center)
+            .expect("finite circle center"),
         radius: cadmpeg_ir::scalar::PositiveLength::new(radius).expect("positive circle radius"),
     }
 }

@@ -99,7 +99,7 @@ fn loop_selection(
 fn resolve_with_work(
     primaries: &[u64],
     work: &ProfileGeometryWork,
-) -> Option<cadmpeg_ir::features::ProfileRef> {
+) -> Option<cadmpeg_ir::features::profiles::ProfileRef> {
     let (sketch, entities, identities) = x_braced_square();
     let group = group();
     let placements = [placement()];
@@ -136,8 +136,8 @@ fn a_split_self_crossing_loop_reports_the_assumed_interpretation() {
     // Four triangles: each side once, each diagonal piece once per triangle.
     let profile =
         resolve_with_work(&[1, 6, 5, 2, 5, 6, 3, 6, 5, 4, 5, 6], &work).expect("four triangles");
-    let cadmpeg_ir::features::ProfileRef::Planar(
-        cadmpeg_ir::features::PlanarProfileRef::SketchRegions { regions, .. },
+    let cadmpeg_ir::features::profiles::ProfileRef::Planar(
+        cadmpeg_ir::features::profiles::PlanarProfileRef::SketchRegions { regions, .. },
     ) = profile
     else {
         panic!("sketch regions");
@@ -233,7 +233,7 @@ fn holed_selection(record_index: u32, ordinal: u32, hole_flag: u32) -> DesignPro
 fn resolve_holed(
     hole_flag: u32,
     work: &ProfileGeometryWork,
-) -> Option<cadmpeg_ir::features::ProfileRef> {
+) -> Option<cadmpeg_ir::features::profiles::ProfileRef> {
     let (sketch, entities, identities) = square_with_island();
     let group = group();
     let placements = [placement()];
@@ -430,8 +430,8 @@ fn a_group_whose_first_region_is_the_union_of_its_further_regions_selects_the_fu
     })
     .unwrap()
     .expect("the two halves");
-    let cadmpeg_ir::features::ProfileRef::Planar(
-        cadmpeg_ir::features::PlanarProfileRef::SketchRegions { regions, .. },
+    let cadmpeg_ir::features::profiles::ProfileRef::Planar(
+        cadmpeg_ir::features::profiles::PlanarProfileRef::SketchRegions { regions, .. },
     ) = profile
     else {
         panic!("sketch regions");

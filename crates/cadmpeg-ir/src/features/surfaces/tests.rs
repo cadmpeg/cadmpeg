@@ -2,8 +2,9 @@
 
 #[test]
 fn untrim_surface_preserves_loop_choices_and_signed_distances() {
+    use crate::features::selections::{EdgeSelection, FaceSelection};
     use crate::features::surfaces::UntrimLoops;
-    use crate::features::{EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation};
+    use crate::features::{FeatureDefinition, FeatureOperation};
     for loops in [
         UntrimLoops::Unresolved {},
         UntrimLoops::All {},

@@ -89,7 +89,8 @@ fn duplicate_identity_findings_keep_model_then_native_visit_order() {
     ] {
         ir.geometry.points.push(crate::topology::Point::new(
             id.try_into().unwrap(),
-            crate::features::FinitePoint3::new(crate::math::Point3::new(0.0, 0.0, 0.0)).unwrap(),
+            crate::features::geometry::FinitePoint3::new(crate::math::Point3::new(0.0, 0.0, 0.0))
+                .unwrap(),
             None,
         ));
     }

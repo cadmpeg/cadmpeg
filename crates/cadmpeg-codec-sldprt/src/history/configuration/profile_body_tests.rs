@@ -141,7 +141,7 @@ fn the_writer_projects_configuration_states_with_the_decoded_profile_bodies() {
         .values_mut()
         .next()
         .unwrap();
-    *value = cadmpeg_ir::features::ParameterValue::Length(
+    *value = cadmpeg_ir::features::parameters::ParameterValue::Length(
         cadmpeg_ir::scalar::Length::new(30.0).unwrap(),
     );
     assert!(matches!(

@@ -660,7 +660,10 @@ fn assert_surface_interpolation_points(surface: &cadmpeg_ir::geometry::nurbs::Nu
     }
 }
 
-fn points_match(points: &[cadmpeg_ir::features::FinitePoint3], expected: &[[f64; 3]]) -> bool {
+fn points_match(
+    points: &[cadmpeg_ir::features::geometry::FinitePoint3],
+    expected: &[[f64; 3]],
+) -> bool {
     points.len() == expected.len()
         && points.iter().zip(expected).all(|(actual, expected)| {
             let actual = actual.get();
