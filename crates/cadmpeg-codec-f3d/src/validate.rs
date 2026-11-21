@@ -82,11 +82,17 @@ fn design_stream_contains_entry(stream: &str, entry: &str) -> bool {
     ids::native_scope_matches(stream, entry)
 }
 
-/// Admit the empty reference table used by a legacy Combine tool operand.
 fn body_recipe_reference_table_is_admitted(
-    scope: Option<&records::feature::scope::DesignParameterScope>,
+    scope: Option<&DesignParameterScope>,
     operand: &records::topology::body_recipe::DesignBodyRecipeOperand,
 ) -> bool {
+    if operand.has_legacy_cut_frame() {
+        return operand.owner.group().is_some_and(|(group, _)| {
+            scope.and_then(|scope| {
+                scope.legacy_class_330_body_recipe_close(group, operand.record_index())
+            }) == Some(operand.next_record_index())
+        });
+    }
     !operand.references().is_empty()
         || matches!(
             operand.owner,
@@ -3377,6 +3383,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 == 1
         };
         let valid = match scope.extrude_prologue() {
+            Some(_) if scope.is_legacy_class_330_blind_cut() => true,
             Some(prologue) if through_all::matches_scope(scope) => {
                 through_all::valid_prologue(scope, prologue)
             }
