@@ -273,6 +273,14 @@ mod selected_path {
     /// `twin` holds, a coincident line `unnamed`. The edge name joins to
     /// `named` when `join_names` holds.
     fn resolve(join_names: bool, twin: bool) -> Option<SelectedPath> {
+        resolve_with_tail(join_names, twin, None)
+    }
+
+    fn resolve_with_tail(
+        join_names: bool,
+        twin: bool,
+        tail: Option<ProfileEdge>,
+    ) -> Option<SelectedPath> {
         let id = SketchId::mint("test:design:sketch#path").expect("id");
         let sketch = Sketch {
             id: id.clone(),
@@ -292,7 +300,7 @@ mod selected_path {
         if twin {
             entities.push(line(&id, "unnamed"));
         }
-        let body = ProfileBody {
+        let mut body = ProfileBody {
             segment_token: cadmpeg_ir::identity_key!("segment"),
             record_ordinal: BODY_ORDINAL,
             wires: vec![ProfileWire {
@@ -309,6 +317,9 @@ mod selected_path {
                 }],
             }],
         };
+        if let Some(tail) = tail {
+            body.wires[0].edges.push(tail);
+        }
         let links = [link()];
         let bodies = [body];
         let mut index = ProfileIndex::new(&bodies, &links, &[], &[], &entities);
@@ -346,6 +357,32 @@ mod selected_path {
                 end: Point3::new(30.0, 0.0, 0.0),
             }]
         );
+    }
+
+    #[test]
+    fn a_planar_prefix_keeps_the_complete_spatial_path_native() {
+        for height in [10.0, 15.0] {
+            let end = Point3::new(30.0, 20.0, height);
+            let path = resolve_with_tail(
+                true,
+                false,
+                Some(ProfileEdge {
+                    name: Some(EdgeName {
+                        naming_type: i64::from(NAMING_TYPE),
+                        associative_id: 6,
+                    }),
+                    start: Point3::new(30.0, 0.0, 0.0),
+                    end,
+                    middle: None,
+                    spline: None,
+                }),
+            )
+            .expect("complete selected wire");
+            assert!(matches!(&path.reference, PathRef::Native(value) if value == "native"));
+            assert_eq!(path.names, [5, 6]);
+            assert_eq!(path.endpoints, [Point3::new(0.0, 0.0, 0.0), end]);
+            assert!(path.curves.is_empty());
+        }
     }
 
     #[test]

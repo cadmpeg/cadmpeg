@@ -69,7 +69,9 @@ fn decode_container<'a>(
     let mut assembly_inventory = crate::assembly::inventory(ctx, &container.rse)?;
     let mut presentation_inventory = crate::presentation::inventory(ctx, &container.rse)?;
     let design_inventory = crate::design::inventory(ctx, &container.rse)?;
-    let sketch_inventory = crate::sketch::inventory(ctx, &container.rse)?;
+    let mut sketch_inventory = crate::sketch::inventory(ctx, &container.rse)?;
+    let spatial_inventory = crate::sketch::spatial::inventory(ctx, &container.rse)?;
+    sketch_inventory.issues.extend(spatial_inventory.issues);
     let feature_inventory = crate::feature::inventory(ctx, &container.rse)?;
     let mut ir = CadIr::empty();
     // Design projection derives only design-class records (features,
@@ -516,6 +518,9 @@ fn decode_container<'a>(
     namespace.set_arena(ctx, "pm_dc_model_roots", &design_inventory.model_roots)?;
     namespace.set_arena(ctx, "design_record_issues", &design_inventory.issues)?;
     namespace.set_arena(ctx, "pm_dc_sketches", &sketch_inventory.sketches)?;
+    if !spatial_inventory.records.is_empty() {
+        namespace.set_arena(ctx, "pm_dc_spatial_sketches", &spatial_inventory.records)?;
+    }
     namespace.set_arena(ctx, "pm_dc_sketch_entities", &sketch_inventory.entities)?;
     namespace.set_arena(ctx, "pm_dc_transforms", &sketch_inventory.transforms)?;
     namespace.set_arena(ctx, "pm_dc_directions", &sketch_inventory.directions)?;
