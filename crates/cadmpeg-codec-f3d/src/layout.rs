@@ -7919,6 +7919,22 @@ pub(crate) mod base_feature_typed_reference_zero_body {
     pub(crate) const SHARED_METADATA_FIELD: usize = 41;
 }
 
+/// Byte offsets for the `base_flange_scope` record.
+///
+/// Spec §3.1. Record length 416 B.
+pub(crate) mod base_flange_scope {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 416;
+    /// Offset of `settings_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SETTINGS_RECORD_INDEX: usize = 82;
+    /// Offset of `thickness_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const THICKNESS_RECORD_INDEX: usize = 113;
+    /// Offset of `thickness_copy` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const THICKNESS_COPY: usize = 123;
+    /// Offset of `profile_group_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PROFILE_GROUP_RECORD_INDEX: usize = 146;
+}
+
 /// Byte offsets for the `sheet_metal_rule_prefix` record.
 ///
 /// Spec §3.1.

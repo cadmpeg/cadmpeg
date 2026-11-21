@@ -96,6 +96,7 @@ macro_rules! or_none {
 }
 
 mod base_face;
+mod base_flange;
 mod bend_lines;
 mod chamfer;
 mod coil;
@@ -1478,11 +1479,12 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     } else if scope.kind()
                         == crate::records::feature::scope::DesignFeatureKind::BaseFlange
                     {
-                        project_base_flange(
+                        base_flange::project(
                             scope,
                             construction_groups,
                             placements,
                             sheet_metal_settings,
+                            &mut projection_losses,
                         )
                         .map_or_else(
                             || {
@@ -1491,8 +1493,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                     parameters: BTreeMap::new(),
                                 })
                             },
-                            |(definition, ruled)| {
-                                if !ruled {
+                            |(definition, stored_thickness)| {
+                                if stored_thickness {
                                     unruled_flange_thicknesses
                                         .set(unruled_flange_thicknesses.get() + 1);
                                 }
@@ -4794,68 +4796,6 @@ pub(super) fn project_remove_body(
         bodies: BodySelection::Native(group.id.clone()),
         mode: BodyRetentionMode::DeleteSelected,
     }))
-}
-
-/// The neutral base flange and whether its thickness is its sheet-metal
-/// rule's; without a rule thickness the scope's stored copy is used.
-fn project_base_flange(
-    scope: &DesignParameterScope,
-    groups: &[DesignConstructionOperandGroup],
-    placements: &[DesignSketchPlacement],
-    settings: &[crate::records::sheet_metal_settings::DesignSheetMetalSettings],
-) -> Option<(cadmpeg_ir::features::FeatureDefinition, bool)> {
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, PlanarProfileRef, SheetMetalThicknessSide,
-    };
-
-    let operation = scope.base_flange_operation()?;
-    let mut matching = groups.iter().filter(|group| {
-        native_stream(&group.id) == native_stream(&scope.id)
-            && group.scope_record_index == scope.record_index
-    });
-    let profile_group = matching.next()?;
-    if matching.next().is_some() {
-        return None;
-    }
-    if profile_group.scope_reference_ordinal != 0
-        || profile_group.record_index != operation.profile_group_record_index
-        || profile_group.role() != DesignOperandRole::PROFILE
-        || !profile_group
-            .members()
-            .iter()
-            .map(|member| member.value)
-            .eq([operation.profile_record_index])
-    {
-        return None;
-    }
-    let profile = scope.base_flange_profile()?;
-    if profile.scope_reference_ordinal != 1
-        || profile.record_index != operation.profile_record_index
-    {
-        return None;
-    }
-    let placement = placements.iter().find(|placement| {
-        native_stream(&placement.id) == native_stream(&scope.id)
-            && placement.entity_id == profile.entity_id
-    })?;
-    let rule_thickness = settings
-        .iter()
-        .find(|settings| {
-            native_stream(settings.id()) == native_stream(&scope.id)
-                && settings.record_index == u64::from(operation.settings_record_index)
-        })
-        .and_then(|settings| settings.rule_thickness);
-    let thickness = rule_thickness.unwrap_or(operation.thickness);
-    Some((
-        FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
-            profile: PlanarProfileRef::Sketch(crate::ids::neutral_sketch_id(placement)),
-            thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(
-                thickness.get() * 10.0,
-            )?),
-            side: Some(SheetMetalThicknessSide::Forward),
-        }),
-        rule_thickness.is_some(),
-    ))
 }
 
 /// Project a sheet-metal `EdgeFlange` scope onto its neutral operation.
