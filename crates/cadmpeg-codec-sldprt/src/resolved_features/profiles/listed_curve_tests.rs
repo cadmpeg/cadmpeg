@@ -95,6 +95,32 @@ fn sketch_with_line(
     (payload, offset)
 }
 
+fn sketch_with_arc(code: u32, indices: [u16; 2]) -> (Vec<u8>, usize) {
+    let mut payload = vec![0; 7];
+    payload.extend_from_slice(&3u32.to_le_bytes());
+    payload.extend_from_slice(&[0; 6]);
+    payload.extend_from_slice(&1u32.to_le_bytes());
+    point(&mut payload, 0.01, 0.0);
+    point(&mut payload, 0.0, 0.01);
+    point(&mut payload, 0.0, 0.0);
+    payload.extend_from_slice(&0u32.to_le_bytes());
+    let offset = payload.len();
+    head(&mut payload, code, 4);
+    payload.extend_from_slice(&indices[0].to_le_bytes());
+    payload.extend_from_slice(&indices[1].to_le_bytes());
+    payload.extend_from_slice(&1u32.to_le_bytes());
+    payload.extend_from_slice(&F64_MINUS_ONE);
+    payload.extend_from_slice(&1i32.to_le_bytes());
+    payload.extend_from_slice(&2u16.to_le_bytes());
+    for _ in 0..4 {
+        payload.extend_from_slice(&(-2i32).to_le_bytes());
+    }
+    payload.extend_from_slice(&0u16.to_le_bytes());
+    payload.extend_from_slice(&0u32.to_le_bytes());
+    payload.extend_from_slice(&u32::MAX.to_le_bytes());
+    (payload, offset)
+}
+
 /// The entity `project_marker_backed_sketches` emits for the curve record at
 /// `curve`, its input kind, and the projection losses.
 fn projected_curve(
@@ -169,6 +195,9 @@ fn projected_curve(
         references: Vec::new(),
         sketch_entities: markers,
     }];
+    let wire = serde_json::to_value(&lanes).expect("lane serializes");
+    let restored: Vec<FeatureInputLane> = serde_json::from_value(wire).expect("lane re-admits");
+    assert_eq!(restored, lanes);
     let mut sketches = Vec::new();
     let mut entities = Vec::new();
     let mut held = HeldMarkerGeometry::default();
@@ -209,7 +238,7 @@ fn assert_unresolved_line_handle(payload: Vec<u8>, curve: usize) {
     assert_eq!(
         losses
             .iter()
-            .filter(|loss| loss.code == SldprtLossCode::SketchListedLineRelationDropped.kind())
+            .filter(|loss| loss.code == SldprtLossCode::SketchListedCurveRelationDropped.kind())
             .count(),
         1
     );
@@ -241,7 +270,7 @@ fn a_line_with_equal_endpoint_indices_and_a_relation_code_is_a_line_handle() {
 
 #[test]
 fn a_readable_line_with_a_relation_code_is_a_line() {
-    for (code, relation) in [(CODE_FOUR, "Horizontal"), (5, "Vertical")] {
+    for code in [CODE_FOUR, 5, 7, 86] {
         let (payload, curve) = sketch_with_line(code, 4, [0, 1], 0, u32::MAX);
         let (kind, entity, losses) = projected_curve(payload, curve);
         assert_eq!(kind, SketchInputKind::LineOrCircle);
@@ -253,9 +282,12 @@ fn a_readable_line_with_a_relation_code_is_a_line() {
         assert_eq!(losses.len(), 1);
         assert_eq!(
             losses[0].code,
-            SldprtLossCode::SketchListedLineRelationDropped.kind()
+            SldprtLossCode::SketchListedCurveRelationDropped.kind()
         );
-        assert!(losses[0].message.contains(relation));
+        assert!(losses[0]
+            .message
+            .contains(&format!("relation code {code} at +17")));
+        assert!(losses[0].message.contains("listed line"));
         assert!(losses[0].message.contains(entity.sketch.as_str()));
         assert!(losses[0].message.contains("generated-profile"));
         assert!(losses[0]
@@ -266,14 +298,55 @@ fn a_readable_line_with_a_relation_code_is_a_line() {
 
 #[test]
 fn a_readable_line_with_another_code_has_no_relation_drop_loss() {
-    let (payload, curve) = sketch_with_line(1, 4, [0, 1], 0, u32::MAX);
+    for code in [0, 1] {
+        let (payload, curve) = sketch_with_line(code, 4, [0, 1], 0, u32::MAX);
+        let (kind, entity, losses) = projected_curve(payload, curve);
+        assert_eq!(kind, SketchInputKind::LineOrCircle);
+        assert!(matches!(
+            entity.expect("the line is projected").geometry.definition(),
+            SketchGeometryDefinition::Line { .. }
+        ));
+        assert!(losses.is_empty());
+    }
+}
+
+#[test]
+fn a_framed_arc_reports_its_dropped_parallel_relation() {
+    let (payload, curve) = sketch_with_arc(7, [0, 1]);
+    let (kind, entity, losses) = projected_curve(payload, curve);
+    assert_eq!(kind, SketchInputKind::Arc);
+    assert!(matches!(
+        entity.expect("the arc is projected").geometry.definition(),
+        SketchGeometryDefinition::Arc { .. }
+    ));
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        SldprtLossCode::SketchListedCurveRelationDropped.kind()
+    );
+    assert!(losses[0].message.contains("listed arc"));
+    assert!(losses[0].message.contains("relation code 7 at +17"));
+}
+
+#[test]
+fn a_framed_circle_reports_its_dropped_horizontal_relation() {
+    let (payload, curve) = sketch_with_arc(CODE_FOUR, [0, 0]);
     let (kind, entity, losses) = projected_curve(payload, curve);
     assert_eq!(kind, SketchInputKind::LineOrCircle);
     assert!(matches!(
-        entity.expect("the line is projected").geometry.definition(),
-        SketchGeometryDefinition::Line { .. }
+        entity
+            .expect("the circle is projected")
+            .geometry
+            .definition(),
+        SketchGeometryDefinition::Circle { .. }
     ));
-    assert!(losses.is_empty());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        SldprtLossCode::SketchListedCurveRelationDropped.kind()
+    );
+    assert!(losses[0].message.contains("listed circle"));
+    assert!(losses[0].message.contains("relation code 4 at +17"));
 }
 
 #[test]
@@ -283,7 +356,7 @@ fn a_curve_record_with_another_selector_keeps_its_relation_kind() {
     assert!(matches!(kind, SketchInputKind::Relation(_)));
     assert!(losses
         .iter()
-        .all(|loss| loss.code != SldprtLossCode::SketchListedLineRelationDropped.kind()));
+        .all(|loss| loss.code != SldprtLossCode::SketchListedCurveRelationDropped.kind()));
 }
 
 #[test]
@@ -337,7 +410,7 @@ fn selector_twelve_roster_line_is_construction() {
     assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].code,
-        SldprtLossCode::SketchListedLineRelationDropped.kind()
+        SldprtLossCode::SketchListedCurveRelationDropped.kind()
     );
     assert_eq!(
         marker_is_construction(&payload, &lists, curve, &entity.geometry),
@@ -367,7 +440,7 @@ fn selector_twelve_role_one_line_is_construction_on_both_paths() {
                 losses
                     .iter()
                     .filter(
-                        |loss| loss.code == SldprtLossCode::SketchListedLineRelationDropped.kind()
+                        |loss| loss.code == SldprtLossCode::SketchListedCurveRelationDropped.kind()
                     )
                     .count(),
                 usize::from(code == CODE_FOUR)

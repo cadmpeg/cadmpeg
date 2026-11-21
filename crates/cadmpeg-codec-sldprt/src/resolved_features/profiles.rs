@@ -40,7 +40,7 @@ use super::holes::{
 };
 use super::markers::{
     compact_legacy_142_profile_curve_endpoints, inline_arc_coordinates,
-    legacy_140_profile_point_variant_coordinates, marker_is_geometry_locus, marker_native_code,
+    legacy_140_profile_point_variant_coordinates, marker_is_geometry_locus,
 };
 use super::projections::bind_circular_profile_by_dimension;
 use super::reference_geometry::reference_plane_frame_key;
@@ -1646,22 +1646,10 @@ pub(crate) fn project_marker_backed_sketches(
             let mut listed = Vec::new();
             let mut chord_conflicts = Vec::new();
             for marker in markers.iter().copied() {
-                let dropped_relation = index_from_u64(marker.offset()).and_then(|offset| {
-                    if record_lists.listed_curve_kind(&lane.native_payload, offset)
-                        != Some(FramedCurve::Line)
-                    {
-                        return None;
-                    }
-                    match marker_native_code(&lane.native_payload, offset) {
-                        Some(4) => Some("Horizontal"),
-                        Some(5) => Some("Vertical"),
-                        _ => None,
-                    }
-                });
-                if let Some(relation) = dropped_relation {
+                if let Some((form, code)) = marker.listed_curve_relation_drop {
                     losses.push(
-                        crate::loss::SldprtLossCode::SketchListedLineRelationDropped.note(format!(
-                            "Sketch {sketch_id} (feature {}) marker {} drops the {relation} relation reading of +17 for a listed line (DI-77)",
+                        crate::loss::SldprtLossCode::SketchListedCurveRelationDropped.note(format!(
+                            "Sketch {sketch_id} (feature {}) marker {} drops relation code {code} at +17 for a listed {form} (DI-77)",
                             native_feature.name,
                             marker.id()
                         )),

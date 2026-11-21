@@ -897,25 +897,29 @@ pub(crate) fn admit_sketch_input_entities(
             } else {
                 SketchInputKind::from_native_code_and_layout(code, coordinates_m.is_some())
             };
-            // A curve record of an `sgSketch` list is a line or an arc, whatever
-            // its +17 code reads as under the layouts above.
-            let kind = match record_lists.listed_curve(payload, offset) {
-                Some(CurveForm::Line { .. }) => SketchInputKind::LineOrCircle,
+            let curve = match record_lists.listed_curve(payload, offset) {
+                Some(CurveForm::Line { .. }) => Some(FramedCurve::Line),
                 Some(CurveForm::Arc { start, end, .. }) if start == end => {
-                    SketchInputKind::LineOrCircle
+                    Some(FramedCurve::Circle)
                 }
-                Some(CurveForm::Arc { .. }) => SketchInputKind::Arc,
+                Some(CurveForm::Arc { .. }) => Some(FramedCurve::Arc),
                 None => match (kind, record_lists.listed_curve_kind(payload, offset)) {
-                    (
-                        SketchInputKind::Relation(_) | SketchInputKind::Native(_),
-                        Some(FramedCurve::Line | FramedCurve::Circle),
-                    ) => SketchInputKind::LineOrCircle,
-                    (
-                        SketchInputKind::Relation(_) | SketchInputKind::Native(_),
-                        Some(FramedCurve::Arc),
-                    ) => SketchInputKind::Arc,
-                    (kind, _) => kind,
+                    (SketchInputKind::Relation(_) | SketchInputKind::Native(_), curve) => curve,
+                    _ => None,
                 },
+            };
+            let dropped_relation = curve.filter(|_| kind.owns_constraint()).map(|curve| {
+                let form = match curve {
+                    FramedCurve::Line => "line",
+                    FramedCurve::Circle => "circle",
+                    FramedCurve::Arc => "arc",
+                };
+                (form, code)
+            });
+            let kind = match curve {
+                Some(FramedCurve::Line | FramedCurve::Circle) => SketchInputKind::LineOrCircle,
+                Some(FramedCurve::Arc) => SketchInputKind::Arc,
+                None => kind,
             };
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 return Err(CodecError::malformed(format_args!(
@@ -940,6 +944,7 @@ pub(crate) fn admit_sketch_input_entities(
             };
             entity.state_value = marker_state_value(payload, offset);
             entity.coordinates_m = coordinates_m;
+            entity.listed_curve_relation_drop = dropped_relation;
             entities.push(entity);
             Ok(entities)
         })

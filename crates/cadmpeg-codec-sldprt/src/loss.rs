@@ -137,8 +137,8 @@ pub(crate) enum SldprtLossCode {
     SketchProfileRejected,
     /// A list line with profile role 1 is marked construction from selector bit 3 (DI-77).
     SketchListedLineConstructionAssumed,
-    /// A list line drops the Horizontal or Vertical relation reading of +17 (DI-77).
-    SketchListedLineRelationDropped,
+    /// A framed list curve drops a constraint-owning reading of +17 (DI-77).
+    SketchListedCurveRelationDropped,
     /// Native sketch relation has no projected neutral constraint.
     SketchRelationUnprojected,
     /// Native sketch relation is claimed by multiple neutral objects.
@@ -403,7 +403,7 @@ impl SldprtLossCode {
         Self::SketchHandleReadingAssumed,
         Self::SketchProfileRejected,
         Self::SketchListedLineConstructionAssumed,
-        Self::SketchListedLineRelationDropped,
+        Self::SketchListedCurveRelationDropped,
         Self::SketchRelationUnprojected,
         Self::SketchRelationMultiplyProjected,
         Self::FeatureNativeKindRetained,
@@ -540,7 +540,7 @@ impl SldprtLossCode {
             Self::SketchNativeGeometry => "sketch.native-geometry",
             Self::SketchProfileRejected => "sketch.profile-rejected",
             Self::SketchListedLineConstructionAssumed => "sketch.listed-line-construction-assumed",
-            Self::SketchListedLineRelationDropped => "sketch.listed-line-relation-dropped",
+            Self::SketchListedCurveRelationDropped => "sketch.listed-curve-relation-dropped",
             Self::SketchHandleUnresolved => "sketch.handle-unresolved",
             Self::SketchLineDegenerate => "sketch.line-degenerate",
             Self::SketchArcRecordConflict => "sketch.arc-record-conflict",
@@ -719,7 +719,7 @@ impl SldprtLossCode {
             | Self::SketchHandleReadingAssumed
             | Self::SketchProfileRejected
             | Self::SketchListedLineConstructionAssumed
-            | Self::SketchListedLineRelationDropped
+            | Self::SketchListedCurveRelationDropped
             | Self::SketchRelationUnprojected
             | Self::SketchRelationMultiplyProjected
             | Self::FeatureNativeKindRetained
@@ -940,7 +940,7 @@ impl SldprtLossCode {
             | Self::SketchHandleReadingAssumed
             | Self::SketchProfileRejected
             | Self::SketchListedLineConstructionAssumed
-            | Self::SketchListedLineRelationDropped
+            | Self::SketchListedCurveRelationDropped
             | Self::SketchRelationUnprojected
             | Self::SketchRelationMultiplyProjected
             | Self::FeatureNativeKindRetained
@@ -1172,7 +1172,7 @@ mod tests {
                 "sketch.handle-reading-assumed",
                 "sketch.profile-rejected",
                 "sketch.listed-line-construction-assumed",
-                "sketch.listed-line-relation-dropped",
+                "sketch.listed-curve-relation-dropped",
                 "sketch.relation-unprojected",
                 "sketch.relation-multiply-projected",
                 "feature.native-kind-retained",
