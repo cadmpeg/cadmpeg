@@ -15,11 +15,13 @@ use cadmpeg_core::decode::u64_from_index;
 mod arc_extremes;
 pub(crate) mod binding;
 mod blend_spine;
+mod chamfer_supports;
 
 mod body_candidates;
 mod body_index;
 pub(crate) mod body_recipe_operands;
 mod cache;
+pub(crate) mod chamfer_blends;
 mod combine_binding;
 pub(crate) mod combine_history_tools;
 mod combine_selection;
@@ -205,6 +207,7 @@ pub(crate) fn decode(
     binding_work: &cadmpeg_core::decode::WorkBudget,
 ) -> Result<Option<AsmHistory>, cadmpeg_core::CodecError> {
     let framing = HistoryFraming::scan(bytes, stream);
+    let _chamfer_orientation = chamfer_supports::HistoryScope::enter(&framing.history_id);
     let mut states = Vec::new();
     for (ordinal, &offset) in framing.delta_offsets.iter().enumerate() {
         let header = match read_delta_state_header(bytes, offset, width) {
@@ -295,6 +298,11 @@ pub(crate) fn decode_header_index(
         return None;
     }
     Some(framing.into_history(bytes, width, false, states))
+}
+
+/// Drop chamfer face senses recorded for the design decode that just finished.
+pub(crate) fn clear_chamfer_orientation() {
+    chamfer_supports::clear();
 }
 
 /// Stream-level layout of one ASM history: its preamble and `delta_state` offsets.
@@ -4383,7 +4391,8 @@ fn project_input_topology(
     let vertices = project_input_members(&topology.vertices, |slot| {
         crate::ids::history_input_vertex_id(&prefix, slot)
     })?;
-    let edge_geometry = project_input_edge_geometry(topology, &prefix);
+    let mut edge_geometry = project_input_edge_geometry(topology, &prefix);
+    chamfer_supports::attach(feature, &history.id, topology, &prefix, &mut edge_geometry);
     let id = crate::ids::history_input_state_id(&prefix);
     let input_of = feature.id.clone();
     let native_ref = state.id.clone();
@@ -4523,6 +4532,7 @@ fn project_input_edge_geometry(
                 faces: project_input_members(&faces, |face| {
                     crate::ids::history_input_face_id(prefix, face)
                 })?,
+                supports: Vec::new(),
             })
         })
         .collect()
@@ -8713,7 +8723,20 @@ fn treatment_face_supports(
             let persists = preceding_faces.contains(&face);
             let source = loop_ancestry(face).and_then(|ancestry| {
                 let source = if persists {
-                    (preceding_carriers.get(&face).copied().flatten() == Some(carrier))
+                    // A persisting face whose carrier the transition recorded
+                    // again with the same geometry keeps its support role.
+                    preceding_carriers
+                        .get(&face)
+                        .copied()
+                        .flatten()
+                        .is_some_and(|before| {
+                            before == carrier
+                                || (!preceding_surfaces.contains(&carrier)
+                                    && blend_spine::same_surface(
+                                        (preceding, before),
+                                        (result, carrier),
+                                    ))
+                        })
                         .then_some(face)?
                 } else if let Some(only) = preceding_carrier_faces.get(&carrier).copied().flatten()
                 {
@@ -9091,6 +9114,7 @@ fn historical_topology(
         Some(collected)
     }
 
+    chamfer_supports::note(brep);
     let mut surface_radii = brep
         .surfaces
         .iter()

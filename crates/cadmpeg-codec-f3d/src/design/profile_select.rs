@@ -4,7 +4,9 @@
 use cadmpeg_core::container::ContainerRole;
 
 use crate::container::ContainerScan;
-use crate::design::decode::operands::{entity_selection_matches_curve, parse_sketch_profile};
+use crate::design::decode::operands::{
+    composable_sketch_profiles, entity_selection_matches_curve, parse_sketch_profile,
+};
 use crate::design::geometry::{
     arrangement_region_containing_points, historical_member_points_in_state, point_in_polygon,
     point_on_sketch_entity, point_segment_distance, profile_loops_are_independent,
@@ -40,6 +42,7 @@ mod group_union;
 mod region_members;
 mod spatial_regions;
 mod stored_loop_cap;
+mod text_picks;
 
 /// Bind each Extrude's counted sketch selection to exact neutral profile loops
 /// when every member identifies one unambiguous loop. Otherwise retain the
@@ -507,6 +510,9 @@ pub(crate) fn bind_extrude_profile_selections(
         let mut historical_face_sketch_info: Option<(String, String)> = None;
         let mut historical_face_offset_info: Option<f64> = None;
         let mut curved_face_note: Option<cadmpeg_ir::report::loss::LossNote> = None;
+        // A same-sketch profile group whose bind-time loss was deferred stays
+        // unresolved unless its regions compose below.
+        let mut unresolved_profile_group = false;
         feature.evaluation.edit(|definition, _| {
             edit_result = (|| -> Result<(), CodecError> {
                 'feature_edit: {
@@ -516,6 +522,9 @@ pub(crate) fn bind_extrude_profile_selections(
                     let Some(scope) = scopes.iter().find(|candidate| candidate.id == scope) else {
                         break 'feature_edit;
                     };
+                    unresolved_profile_group = scope
+                        .extrude_native_profiles()
+                        .is_some_and(composable_sketch_profiles);
                     let scoped_histories = histories_for_scope(
                         &scope.id,
                         resolution.scope_histories,
@@ -625,7 +634,7 @@ pub(crate) fn bind_extrude_profile_selections(
                                 .history_state_id()
                                 .zip(effective_previous_history_state_id),
                         ) {
-                            if let Some(selection) = stored_loop_cap::resolve(
+                            if let Some((selection, selection_losses)) = stored_loop_cap::resolve(
                                 group,
                                 &curve_resolution.path_resolution(),
                                 scoped_resolution,
@@ -638,6 +647,12 @@ pub(crate) fn bind_extrude_profile_selections(
                                 },
                             )? {
                                 *profile = ProfileRef::Planar(selection);
+                                for code in selection_losses {
+                                    losses.push(code.note(format!(
+                                        "{}: stored profile entries use their participating intervals on the certified cap boundary",
+                                        feature.id,
+                                    )));
+                                }
                                 break 'feature_edit;
                             }
                         }
@@ -749,6 +764,11 @@ pub(crate) fn bind_extrude_profile_selections(
                     };
                     let Some(sketch) = sketches.iter().find(|sketch| sketch.id == *sketch_id)
                     else {
+                        if unresolved_profile_group {
+                            *profile =
+                                ProfileRef::Planar(PlanarProfileRef::Native(scope.id.clone()));
+                            break 'feature_edit;
+                        }
                         let spatial_id_parts = sketch_id.as_str().split_once("f3d:model:sketch#");
                         if let Some(spatial_sketch) =
                             resolution.spatial_sketches.iter().find(|candidate| {
@@ -816,6 +836,17 @@ pub(crate) fn bind_extrude_profile_selections(
                         *profile = ProfileRef::Planar(PlanarProfileRef::Native(id.to_owned()));
                         break 'feature_edit;
                     };
+                    if let Some((selected, note)) = text_picks::text_glyph_selection(
+                        feature.id.as_str(),
+                        sketch,
+                        &matching_groups,
+                        members,
+                        scoped_resolution,
+                    )? {
+                        *profile = ProfileRef::Planar(selected);
+                        losses.push(note);
+                        break 'feature_edit;
+                    }
                     if let (Some(state_id), Some(prev_state_id)) = (
                         scope.history_state_id(),
                         effective_previous_history_state_id,
@@ -830,6 +861,25 @@ pub(crate) fn bind_extrude_profile_selections(
                                 prev_state_id,
                             );
                         }
+                    }
+                    if unresolved_profile_group {
+                        let sketch_key = sketch_id.clone();
+                        if let Some(merged) = compose_same_sketch_profile_group(
+                            scope,
+                            sketch,
+                            &sketch_key,
+                            curve_resolution.curve_identities,
+                            curve_resolution.sketch_entities,
+                            scoped_resolution,
+                        )? {
+                            *profile = merged;
+                            scoped_resolution.profile_work.note_composed_profile_group();
+                            unresolved_profile_group = false;
+                        } else {
+                            *profile =
+                                ProfileRef::Planar(PlanarProfileRef::Native(scope.id.clone()));
+                        }
+                        break 'feature_edit;
                     }
                     let explicit_profiles = scope
                         .extrude_profile()
@@ -1204,6 +1254,9 @@ pub(crate) fn bind_extrude_profile_selections(
                     }
                 }
             }
+        }
+        if unresolved_profile_group {
+            resolution.profile_work.note_unresolved_profile_group();
         }
         if let Some(dist) = to_distance_info {
             feature
@@ -1754,6 +1807,56 @@ fn historical_profile_face_candidates(
         }
     }
     Ok(faces)
+}
+
+/// Merge the region selections of one same-sketch extrude profile group.
+/// `Ok(None)` means the group stays a native profile.
+fn compose_same_sketch_profile_group(
+    scope: &DesignParameterScope,
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    sketch_id: &cadmpeg_ir::sketches::SketchId,
+    curve_identities: &[SketchCurveIdentity],
+    sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
+    scoped_resolution: ScopedExtrudeProfileResolution<'_>,
+) -> Result<Option<cadmpeg_ir::features::ProfileRef>, CodecError> {
+    use cadmpeg_ir::features::ProfileRef;
+
+    let assumed_before = scoped_resolution.profile_work.assumed_flags();
+    let inferred_before = scoped_resolution.profile_work.inferred_counts();
+    let outcome = (|| -> Result<Option<ProfileRef>, CodecError> {
+        let Some(stream) = native_stream(&scope.id) else {
+            return Ok(None);
+        };
+        let Some(profiles) = scope.extrude_native_profiles() else {
+            return Ok(None);
+        };
+        let mut resolved = Vec::new();
+        for operand in profiles {
+            let Some(selected) = region_members::resolve(
+                stream,
+                operand,
+                sketch,
+                curve_identities,
+                sketch_entities,
+                scoped_resolution,
+                true,
+            )?
+            else {
+                return Ok(None);
+            };
+            resolved.push(ProfileRef::Planar(selected));
+        }
+        Ok(merge_resolved_profile_selections(sketch_id, &resolved))
+    })();
+    if !matches!(outcome, Ok(Some(_))) {
+        scoped_resolution
+            .profile_work
+            .set_assumed_flags(assumed_before);
+        scoped_resolution
+            .profile_work
+            .set_inferred_counts(inferred_before);
+    }
+    outcome
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -4977,6 +5080,7 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
     let mut island_absence = false;
     let mut flags_read = false;
     let mut coincident = false;
+    let mut crossing_runs = false;
     let mut unions = Vec::new();
     let mut cursor = 0usize;
     for (ordinal, member) in group.members().iter().enumerate() {
@@ -5044,6 +5148,7 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
                                     coincident |= selected.coincident
                                         && (allow_assumptions || !selected.identity_unique);
                                     island_absence |= selected.island_absence;
+                                    crossing_runs |= selected.crossing_runs_assumed();
                                     if !regions.contains(region) {
                                         regions.push(region.clone());
                                     }
@@ -5127,13 +5232,18 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
     // A later member can repeat a group whose first region was removed as
     // the union of its further regions; the further regions still cover it.
     regions.retain(|region| !unions.contains(region));
-    if !allow_assumptions && (assumed || island_absence || flags_read || coincident) {
+    if !allow_assumptions
+        && (assumed || island_absence || flags_read || coincident || crossing_runs)
+    {
         return Ok(None);
     }
     let profile = PlanarProfileRef::sketch_regions(sketch, regions)
         .ok()
         .map(ProfileRef::Planar);
     if profile.is_some() {
+        if crossing_runs {
+            scoped.profile_work.note_crossing_runs_assumed();
+        }
         if assumed {
             scoped.profile_work.note_crossing_loop_assumed();
         }
