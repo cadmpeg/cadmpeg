@@ -323,3 +323,57 @@ fn a_carrier_without_retained_bytes_writes_the_part_and_names_every_property() {
         .all(|section| section.name() != Some(MEMBER)));
     losses.assert_charged(Held::Nothing, "saved-property edits", &saved);
 }
+
+/// The ids of the saved properties `decoded` states.
+fn property_ids(decoded: &EditableDecodeResult) -> Vec<String> {
+    decoded
+        .ir()
+        .model
+        .attributes
+        .iter()
+        .filter(|row| crate::metadata::default_properties::is_attribute(row))
+        .map(|row| row.id.as_str().to_owned())
+        .collect()
+}
+
+/// With a digest-only source image, the carrier's block record still holds
+/// its bytes: the write emits the carrier as stored, and an unedited
+/// property is written.
+#[test]
+fn imageless_write_emits_the_carrier_and_charges_no_unedited_property() {
+    let mut decoded = fixture();
+    crate::test_support::make_source_image_unavailable(decoded.source_fidelity_mut());
+    let ids = property_ids(&decoded);
+    assert_eq!(ids.len(), 2);
+    let (bytes, losses) = crate::test_support::write_with_unwritten_attributes(
+        decoded.ir(),
+        decoded.source_fidelity(),
+    )
+    .unwrap();
+    assert_eq!(carrier(&bytes), XML);
+    for id in &ids {
+        losses.assert_uncharged(id);
+    }
+}
+
+/// With a digest-only source image, a property removed from the document is
+/// still in the emitted carrier, and `export:edit.dropped` names it.
+#[test]
+fn imageless_write_charges_a_removed_property_the_carrier_keeps() {
+    let mut decoded = fixture();
+    crate::test_support::make_source_image_unavailable(decoded.source_fidelity_mut());
+    let ids = property_ids(&decoded);
+    decoded
+        .ir_mut()
+        .model
+        .attributes
+        .retain(|row| row.id.as_str() != ids[0]);
+    let (bytes, losses) = crate::test_support::write_with_unwritten_attributes(
+        decoded.ir(),
+        decoded.source_fidelity(),
+    )
+    .unwrap();
+    assert_eq!(carrier(&bytes), XML);
+    losses.assert_charged(Held::Source, "saved-property edits", &ids[0]);
+    losses.assert_uncharged(&ids[1]);
+}

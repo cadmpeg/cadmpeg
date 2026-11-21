@@ -31,6 +31,9 @@ const SYNTHESIZED_FIELDS: [&str; 4] = [
 /// A member with no source time/date word takes this word plus its index.
 const PLACEHOLDER_TIME_DATE: u32 = 0x20;
 
+/// The length of a local header's signature token.
+const LOCAL_TOKEN_LEN: usize = 4;
+
 /// The first nonzero word of SHA-256(`parts`, counter) that `taken` does not
 /// hold.
 fn derived_word(parts: &[&[u8]], taken: &[[u8; 4]]) -> [u8; 4] {
@@ -49,15 +52,26 @@ fn derived_word(parts: &[&[u8]], taken: &[[u8; 4]]) -> [u8; 4] {
 
 /// The `file_id` of a synthesized envelope: a word of the SHA-256 of the
 /// written members.
-fn content_file_id(sections: &[(String, Vec<u8>)], time_dates: &[u32]) -> [u8; 4] {
+fn content_file_id(members: &[Member<'_>]) -> [u8; 4] {
     let mut content = Sha256::new();
-    for ((name, payload), time_date) in sections.iter().zip(time_dates) {
-        for field in [name.as_bytes(), payload.as_slice()] {
+    for member in members {
+        for field in [member.name.as_bytes(), member.payload] {
             content.update(Sha256::digest(field));
         }
-        content.update(time_date.to_le_bytes());
+        content.update(member.time_date.to_le_bytes());
     }
     derived_word(&[b"file_id".as_slice(), content.finalize().as_slice()], &[])
+}
+
+/// One section the envelope stores, with its framed bytes.
+struct Member<'a> {
+    index: usize,
+    name: &'a str,
+    payload: &'a [u8],
+    time_date: u32,
+    frame: Vec<u8>,
+    /// The local header's offset from archive coordinate zero.
+    relative: u32,
 }
 
 /// The local, central and end-of-directory signature tokens of a file,
@@ -105,25 +119,23 @@ struct RetainedEnvelope {
     root: [u8; 4],
     padding_bytes: usize,
     members: Vec<SourceMember>,
+    /// The first member's local token, and whether every member shares it.
+    local: ([u8; 4], bool),
+    /// The first member's central token, and whether every member shares it.
+    central: ([u8; 6], bool),
 }
 
-impl RetainedEnvelope {
-    /// The first source member's token, and whether every source member
-    /// shares it.
-    fn token<const N: usize>(
-        &self,
-        token: impl Fn(&SourceMember) -> [u8; N],
-    ) -> Option<([u8; N], bool)> {
-        let first = token(self.members.first()?);
-        Some((
-            first,
-            self.members.iter().all(|member| token(member) == first),
-        ))
-    }
+/// The first member's token, and whether every member shares it.
+fn shared<const N: usize>(
+    members: &[SourceMember],
+    token: impl Fn(&SourceMember) -> [u8; N],
+) -> Option<([u8; N], bool)> {
+    let first = token(members.first()?);
+    Some((first, members.iter().all(|member| token(member) == first)))
 }
 
-/// The source's proved envelope, or `None` when the source has none or a
-/// stored token cannot be read.
+/// The source's proved envelope, or `None` when the source has none, it
+/// holds no member, or a stored token cannot be read.
 fn retained(scan: &ContainerScan<'_>) -> Result<Option<RetainedEnvelope>, CodecError> {
     let envelope = match native_layout::source_envelope(scan.source_image, &scan.blocks) {
         Ok(Some(envelope)) => envelope,
@@ -150,8 +162,12 @@ fn retained(scan: &ContainerScan<'_>) -> Result<Option<RetainedEnvelope>, CodecE
     else {
         return Ok(None);
     };
-    let (Some(header), Some(root)) = (bytes_array(image, 0), bytes_array(image, envelope.root))
-    else {
+    let (Some(header), Some(root), Some(local), Some(central)) = (
+        bytes_array(image, 0),
+        bytes_array(image, envelope.root),
+        shared(&members, |member| member.local),
+        shared(&members, |member| member.central),
+    ) else {
         return Ok(None);
     };
     Ok(Some(RetainedEnvelope {
@@ -159,6 +175,8 @@ fn retained(scan: &ContainerScan<'_>) -> Result<Option<RetainedEnvelope>, CodecE
         root,
         padding_bytes: envelope.padding_bytes,
         members,
+        local,
+        central,
     }))
 }
 
@@ -183,17 +201,17 @@ impl Regenerated {
             .chain(cadmpeg_ir::codec::write::record_residual_unavailable(
                 "SLDPRT",
                 "writes these opaque envelope tokens with values of its own, since no stated rule \
-                 gives the values SolidWorks stores: a synthesized envelope takes a file_id from a \
-                 SHA-256 of the written members and three nonzero, distinct tokens derived from \
-                 that file_id, and a new member of a retained envelope whose members disagree \
-                 takes the first member's token",
+                 gives the values SolidWorks stores (open item CM-16): a synthesized envelope \
+                 takes a file_id from a SHA-256 of the written members and three nonzero, \
+                 distinct tokens derived from that file_id, and a new member of a retained \
+                 envelope whose members disagree takes the first member's token",
                 self.residual.iter().cloned(),
             ))
             .chain(cadmpeg_ir::codec::write::record_residual_unavailable(
                 "SLDPRT",
                 "writes placeholders in these member fields, since no stated rule gives the values \
-                 SolidWorks stores: a time/date word of 0x20 plus the member's index, and \
-                 internal_attrs 0",
+                 SolidWorks stores (open item CM-16): a time/date word of 0x20 plus the member's \
+                 index, and internal_attrs 0",
                 self.placeholders.iter().cloned(),
             ))
             .chain(cadmpeg_ir::codec::write::native_records_omitted(
@@ -270,26 +288,43 @@ pub(super) fn build(
                 }),
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let mut placeholders = Vec::new();
     let retained = source_scan.map(retained).transpose()?.flatten();
-    let mut residual = Vec::new();
     let mut dropped = Vec::new();
-    let (header, root, new_local, new_central) = match &retained {
-        Some(retained) => {
-            let fallback = FileTokens::of(bytes_array(&retained.header, 0).unwrap_or_default());
-            (
-                retained.header,
-                retained.root,
-                retained
-                    .token(|member| member.local)
-                    .unwrap_or((fallback.local, false)),
-                retained
-                    .token(|member| member.central)
-                    .unwrap_or((fallback.central, false)),
-            )
+    let mut members = Vec::<Member<'_>>::new();
+    let mut length = 0usize;
+    for (index, ((name, payload), time_date)) in sections.iter().zip(&time_dates).enumerate() {
+        if !storable_name(name) {
+            dropped.push(name.clone());
+            continue;
         }
+        let relative = u32::try_from(length)
+            .ok()
+            .filter(|_| members.len() < usize::from(u16::MAX));
+        let Some(relative) = relative else {
+            dropped.extend(sections[index..].iter().map(|(name, _)| name.clone()));
+            break;
+        };
+        let frame = super::block(payload, name, *time_date)?;
+        length += LOCAL_TOKEN_LEN + frame.len();
+        members.push(Member {
+            index,
+            name,
+            payload,
+            time_date: *time_date,
+            frame,
+            relative,
+        });
+    }
+    let mut residual = Vec::new();
+    let (header, root, new_local, new_central) = match &retained {
+        Some(retained) => (
+            retained.header,
+            retained.root,
+            retained.local,
+            retained.central,
+        ),
         None => {
-            let file_id = content_file_id(sections, &time_dates);
+            let file_id = content_file_id(&members);
             let tokens = FileTokens::of(file_id);
             residual.extend(SYNTHESIZED_FIELDS.map(str::to_owned));
             let mut header = [0; outer::LEN];
@@ -308,21 +343,19 @@ pub(super) fn build(
         .flat_map(|retained| &retained.members)
         .map(|_| false)
         .collect::<Vec<_>>();
+    let mut placeholders = Vec::new();
     let mut output = header.to_vec();
     let mut central_entries = Vec::new();
     let mut written = Vec::new();
-    for (index, ((name, payload), time_date)) in sections.iter().zip(&time_dates).enumerate() {
-        if !storable_name(name) {
-            dropped.push(name.clone());
-            continue;
-        }
-        let relative = u32::try_from(output.len() - outer::LEN)
-            .ok()
-            .filter(|_| central_entries.len() < usize::from(u16::MAX));
-        let Some(relative) = relative else {
-            dropped.extend(sections[index..].iter().map(|(name, _)| name.clone()));
-            break;
-        };
+    for member in members {
+        let Member {
+            index,
+            name,
+            payload,
+            time_date,
+            frame,
+            relative,
+        } = member;
         if stored_time_dates.get(index).is_some_and(Option::is_none) {
             placeholders.push(format!("{name} time/date word"));
         }
@@ -332,7 +365,7 @@ pub(super) fn build(
                 .iter()
                 .zip(&used)
                 .position(|(member, used)| {
-                    !used && member.name == *name && member.type_id == *time_date
+                    !used && member.name == name && member.type_id == time_date
                 })?;
             used[position] = true;
             retained.members.get(position)
@@ -350,7 +383,6 @@ pub(super) fn build(
                 (new_local.0, new_central.0, [0; 10])
             }
         };
-        let frame = super::block(payload, name, *time_date)?;
         output.extend(local_token);
         output.extend(&frame);
         let mut directory = central_token.to_vec();
@@ -359,7 +391,7 @@ pub(super) fn build(
         directory.extend(relative.to_le_bytes());
         directory.extend(&frame[local::LEN..local::LEN + name.len()]);
         central_entries.push(directory);
-        written.push((name.as_str(), *time_date, payload.as_slice()));
+        written.push((name, time_date, payload));
     }
     let mut omitted_envelope_bytes = retained
         .as_ref()
@@ -409,6 +441,7 @@ mod tests {
     use super::*;
     use crate::test_support::container::{
         anchored_cache_cell, make_block, native_envelope_fixture, outer_header,
+        FIXTURE_CENTRAL_TOKEN, FIXTURE_LOCAL_TOKEN,
     };
 
     fn source_fixture(fill: u8) -> Vec<u8> {
@@ -479,6 +512,11 @@ mod tests {
         );
         let other = build(&[("A".into(), b"other".to_vec())], &[None], None).unwrap();
         assert_ne!(tokens(&other.bytes)[0], file_id);
+        assert_eq!(
+            build(&sections[..1], &[None], None).unwrap().bytes,
+            synthesized.bytes,
+            "file_id hashes the written members"
+        );
         let codes = synthesized
             .losses()
             .map(|note| note.code.local_code().to_owned())
@@ -579,12 +617,13 @@ mod tests {
                 );
                 assert_eq!(
                     &output[block.offset - 4..block.offset],
-                    &[0x5a, 0xd9, 0xc8, 0x87]
+                    &FIXTURE_LOCAL_TOKEN
                 );
                 assert_eq!(
-                    &output[entry.offset - 6..entry.offset],
-                    &[0x45, 0x2b, 0x7e, 0x28, 0, 0]
+                    &output[entry.offset - 6..entry.offset - 2],
+                    &FIXTURE_CENTRAL_TOKEN
                 );
+                assert_eq!(&output[entry.offset - 2..entry.offset], &VERSION_MADE_BY);
                 assert_eq!(entry.descriptor[4], u8::from(entry.name != "C"));
             }
             assert_eq!(
@@ -595,6 +634,31 @@ mod tests {
                     .unwrap()
                     .payload,
                 b"changed"
+            );
+        }
+    }
+
+    #[test]
+    fn synthesized_members_share_one_token_of_each_kind() {
+        let sections = ["A", "B", "C"]
+            .map(|name| (name.to_owned(), name.as_bytes().repeat(40)))
+            .to_vec();
+        let synthesized = build(&sections, &[None; 3], None).unwrap();
+        assert_eq!(synthesized.residual, SYNTHESIZED_FIELDS);
+        let written = crate::test_support::container::scan(&synthesized.bytes);
+        assert_eq!(written.blocks.len(), 3);
+        assert_eq!(written.directory.len(), 3);
+        let expected = FileTokens::of(bytes_array(&synthesized.bytes, 0).unwrap());
+        for block in &written.blocks {
+            assert_eq!(
+                bytes_array::<4>(&synthesized.bytes, block.offset - 4).unwrap(),
+                expected.local
+            );
+        }
+        for entry in &written.directory {
+            assert_eq!(
+                bytes_array::<6>(&synthesized.bytes, entry.offset - 6).unwrap(),
+                expected.central
             );
         }
     }
@@ -618,9 +682,10 @@ mod tests {
         let block = &written.blocks[0];
         assert_eq!(&regenerated.bytes[block.offset - 4..block.offset], &first);
         assert_eq!(block.type_id, PLACEHOLDER_TIME_DATE);
+        let central = written.directory[0].offset;
         assert_eq!(
-            &regenerated.bytes[written.directory[0].offset - 6..written.directory[0].offset],
-            &[0x45, 0x2b, 0x7e, 0x28, 0, 0]
+            &regenerated.bytes[central - 6..central - 2],
+            &FIXTURE_CENTRAL_TOKEN
         );
     }
 
