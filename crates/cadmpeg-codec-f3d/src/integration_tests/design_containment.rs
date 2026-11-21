@@ -5,8 +5,6 @@ use std::io::Cursor;
 
 use cadmpeg_core::decode::{DecodeMode, ResourceDimension, ResourceFailure, ResourceLimit};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::target::TargetRequest;
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_test_support::EditableDecodeResult;
 
@@ -116,7 +114,7 @@ fn moved_first_point(result: &EditableDecodeResult) -> cadmpeg_ir::document::Cad
 }
 
 #[test]
-fn the_patch_path_refuses_a_source_whose_design_intent_was_contained() {
+fn a_source_whose_design_intent_was_contained_regenerates_instead_of_patching() {
     let full = decode(design_archive());
     let mut patched = Vec::new();
     crate::test_support::plan_inherited_write(
@@ -130,20 +128,13 @@ fn the_patch_path_refuses_a_source_whose_design_intent_was_contained() {
     let contained = decode(design_archive());
     let edited = moved_first_point(&contained);
     inject_failure(malformed_design);
-    let refused = F3dCodec
-        .plan(
-            EncodeInput::new(&edited, Some(contained.source_fidelity())),
-            TargetRequest::Inherit,
-        )
-        .map(|_| ());
-
-    assert!(
-        matches!(
-            &refused,
-            Err(CodecError::NotImplemented(message))
-                if message.contains("design intent was not decoded")
-        ),
-        "{refused:?}"
+    crate::test_support::assert_written_with_loss(
+        &edited,
+        Some(contained.source_fidelity()),
+        &crate::loss::F3dLossCode::WriterPatchDeclined
+            .kind()
+            .to_string(),
+        "design intent was not decoded",
     );
 }
 

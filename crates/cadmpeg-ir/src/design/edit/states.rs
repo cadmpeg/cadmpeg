@@ -146,7 +146,7 @@ pub(super) fn reached(
         ($($field:ident $arm:ident),*) => {
             $(
                 for record in &topology.$field {
-                    let json = serde_json::to_value(record).map_err(malformed)?;
+                    let json = crate::hash::finite_json::to_json_value(record).map_err(malformed)?;
                     let own = record.record_identity();
                     let mut found = Vec::new();
                     let mut stack = vec![&json];

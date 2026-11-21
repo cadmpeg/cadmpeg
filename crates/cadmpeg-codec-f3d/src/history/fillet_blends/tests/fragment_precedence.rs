@@ -22,7 +22,7 @@ fn fragment_blend_operand(
             "recipe_program":[], "next_record_index":11, "next_byte_offset":160,
         })).unwrap();
     operand.recipe_structure = crate::design::decode::operands::edge_recipe_structure(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &program,
     )
     .unwrap();

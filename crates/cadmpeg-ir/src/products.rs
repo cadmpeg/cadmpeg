@@ -200,6 +200,39 @@ impl ProductDefinition {
     pub const fn is_root(&self) -> bool {
         matches!(self.storage, Storage::File { source: None, .. })
     }
+
+    /// Whether this is a root definition that states nothing beyond its kind
+    /// and the bodies and meshes its file holds at its top: the document
+    /// itself, which a writer of one document writes as that document and not
+    /// as a component or an assembly level.
+    #[must_use]
+    pub fn is_document_root(&self) -> bool {
+        matches!(&self.storage, Storage::File { document, source: None } if *document == ExternalDocument::default())
+            && self.source_name.is_none()
+            && self.label.is_none()
+            && self.description.is_none()
+            && self.part_number.is_none()
+            && self.bom_properties.is_empty()
+            && self.generated_from.is_none()
+            && self.occurrences.is_empty()
+            && self.instance_bodies.is_empty()
+            && self.representations.is_empty()
+            && self.sketches.is_empty()
+            && self.units.is_none()
+            && self.general_tolerance.is_none()
+            && self.active.is_none()
+            && self.native_ref.is_none()
+    }
+}
+
+/// The definitions that state product structure: every one but a document
+/// root ([`ProductDefinition::is_document_root`]).
+pub fn stated_definitions(
+    definitions: &[ProductDefinition],
+) -> impl Iterator<Item = &ProductDefinition> {
+    definitions
+        .iter()
+        .filter(|definition| !definition.is_document_root())
 }
 
 /// The configuration of another definition that a definition was generated
@@ -221,7 +254,7 @@ pub struct GeneratedFrom {
 }
 
 /// Where a product definition is stored.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Storage {
@@ -396,6 +429,76 @@ impl Occurrence {
     }
 }
 
+impl crate::document::CadIr {
+    /// States the root definition (§8.1) and returns it: the first
+    /// definition stored in the root file, or else a new one with `id` and
+    /// the identities `document` the root file records about itself. The
+    /// root then owns every body that no definition owns or shows for an
+    /// instance, and every tessellation that represents no body and that no
+    /// definition owns: what the file holds at its top. A new root is charged
+    /// to `ctx` as one entity, so a decoder that admits its entity total calls
+    /// this after its last admission. A container decode holds no model
+    /// records, so it states none and returns `None`.
+    pub fn state_root_definition(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        id: ProductDefinitionId,
+        document: ExternalDocument,
+    ) -> Result<Option<&mut ProductDefinition>, cadmpeg_core::CodecError> {
+        if ctx.container_only() {
+            return Ok(None);
+        }
+        let definitions = &self.model.product_definitions;
+        let held: std::collections::BTreeSet<&str> = definitions
+            .iter()
+            .flat_map(|definition| {
+                definition.bodies.iter().chain(
+                    definition
+                        .instance_bodies
+                        .iter()
+                        .flat_map(|instance| &instance.bodies),
+                )
+            })
+            .map(BodyId::as_str)
+            .collect();
+        let bodies: Vec<BodyId> = self
+            .geometry
+            .bodies
+            .iter()
+            .filter(|body| !held.contains(body.id.as_str()))
+            .map(|body| body.id.clone())
+            .collect();
+        let listed: std::collections::BTreeSet<&str> = definitions
+            .iter()
+            .flat_map(|definition| &definition.tessellations)
+            .map(TessellationId::as_str)
+            .collect();
+        let tessellations: Vec<TessellationId> = self
+            .model
+            .tessellations
+            .iter()
+            .filter(|tessellation| {
+                tessellation.body.is_none() && !listed.contains(tessellation.id.as_str())
+            })
+            .map(|tessellation| tessellation.id.clone())
+            .collect();
+        let index = match definitions.iter().position(ProductDefinition::is_root) {
+            Some(index) => index,
+            None => {
+                ctx.charge_entities(1, "root product definition")?;
+                self.model
+                    .product_definitions
+                    .push(ProductDefinition::root(id, document));
+                self.model.product_definitions.len() - 1
+            }
+        };
+        let root = &mut self.model.product_definitions[index];
+        root.bodies.extend(bodies);
+        root.tessellations.extend(tessellations);
+        Ok(Some(root))
+    }
+}
+
 /// The definition that lists `occurrence` among the occurrences it owns.
 pub fn owner<'ir>(
     definitions: &'ir [ProductDefinition],
@@ -434,6 +537,7 @@ pub struct InstanceBodies {
 #[cfg(test)]
 mod tests {
     mod joints;
+    mod root;
     mod wire;
     use super::{ExternalDocument, JointLimits, JointOperand};
     use crate::ids::OccurrenceId;
@@ -598,7 +702,7 @@ mod tests {
 }
 
 /// Container that owns a joint operand object.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum OperandContainer {
@@ -765,7 +869,7 @@ impl JointLimits {
 }
 
 /// The wire spelling of [`JointLimits`], before the ordered-pair mint.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -846,7 +950,7 @@ pub struct JointConnector {
 }
 
 /// Structurally complete operands and frames for an assembly joint.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -923,7 +1027,7 @@ pub enum TangentContact {
 /// identity for an aligned frame sense and a half-turn about the local X axis
 /// for an opposed one. The offset and angle therefore apply on the second
 /// connector.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PairedJointKind {
@@ -1287,7 +1391,7 @@ pub enum FrameAxis {
 
 /// The degree of freedom that a drive acts on, along or about an axis of
 /// the first connector frame.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum DriveAxis {

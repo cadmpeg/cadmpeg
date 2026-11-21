@@ -42,7 +42,10 @@ fn native_a8_sampled_map_retains_exact_payload_and_checked_wire() {
     let mut owned = cadmpeg_ir::NativeNamespace::default();
     native
         .clone()
-        .store_owned(&cadmpeg_test_support::service_decode_context(), &mut owned)
+        .store_owned(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &mut owned,
+        )
         .expect("owned store");
     assert_eq!(owned, namespace);
     assert_eq!(

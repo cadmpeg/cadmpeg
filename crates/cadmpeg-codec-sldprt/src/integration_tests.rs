@@ -4,6 +4,7 @@
 mod extrude_direction;
 mod mesh_bodies;
 mod profile_data;
+mod root_definition;
 mod scalar_relation_values;
 mod swift_nominal;
 
@@ -61,7 +62,7 @@ fn assert_valid(result: &EditableDecodeResult) {
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
     let native = crate::resolved_features::validate::validate_native(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         result.ir(),
     )
     .unwrap();

@@ -208,6 +208,9 @@ fn turned(turn: Option<f64>, vector: [f64; 3]) -> [f64; 3] {
 #[derive(Default)]
 struct Unwritten {
     tessellated_bodies: usize,
+    /// Bodies with a transform of their own and physics, written as a group of
+    /// prims: their physics was not written.
+    body_physics: Vec<String>,
     /// Bodies with faces and no `BrepArray` prim, with the reason.
     breps: Vec<String>,
     /// Bodies whose `BrepArray` prim has no trim curves.
@@ -231,6 +234,9 @@ struct Unwritten {
     /// Faces of bodies with no tessellation that do not mesh, with the
     /// reason.
     unmeshed: Vec<String>,
+    /// Triangle groups that name the face whose triangles they hold. No
+    /// `GeomSubset` property states the face.
+    group_faces: usize,
 }
 
 /// The placement of a prim: its up-axis turn, transform, per-axis scale,
@@ -421,10 +427,8 @@ impl<'ir> Writer<'ir> {
                 (definition.id.clone(), name)
             })
             .collect();
-        let owned = ir
-            .model
-            .product_definitions
-            .iter()
+        // The document root's bodies are the layer's own.
+        let owned = cadmpeg_ir::products::stated_definitions(&ir.model.product_definitions)
             .flat_map(|definition| definition.bodies.iter().cloned())
             .collect();
         // A definition is above parts when an occurrence it owns places a
@@ -515,9 +519,9 @@ impl<'ir> Writer<'ir> {
     }
 
     fn layer(&mut self) -> String {
-        // A root definition the source names, or one that owns bodies, is
-        // written as the root prim; an unnamed one is the layer itself, and
-        // its occurrences are the root prims.
+        // A root definition the source names, or one that owns bodies beside
+        // stating structure, is written as the root prim; an unnamed one is
+        // the layer itself, and its occurrences are the root prims.
         let root_definition = self
             .ir
             .model
@@ -526,9 +530,10 @@ impl<'ir> Writer<'ir> {
             .find(|definition| definition.is_root());
         let root_prim = root_definition
             .filter(|definition| {
-                definition.source_name.is_some()
-                    || definition.label.is_some()
-                    || !definition.bodies.is_empty()
+                !definition.is_document_root()
+                    && (definition.source_name.is_some()
+                        || definition.label.is_some()
+                        || !definition.bodies.is_empty())
             })
             .and_then(|definition| {
                 let id = cadmpeg_ir::ids::OccurrenceId::mint(format!(
@@ -1115,11 +1120,23 @@ impl<'ir> Writer<'ir> {
             }
             return;
         }
-        self.prim_head("def Xform", &name, &placement.metadata);
+        // The body's own physics goes on the group prim, whose space is the
+        // body's when the body has no transform of its own.
+        let (schemas, physics) = self.physics.body(&body.id, placement.turn);
+        let mut metadata = placement.metadata.clone();
+        let mut properties = placement.properties.clone();
+        if body.transform.is_none() {
+            metadata.extend(schemas);
+            properties.extend(physics);
+        } else if !schemas.is_empty() || !physics.is_empty() {
+            self.unwritten.body_physics.push(name.clone());
+        }
+        self.prim_head("def Xform", &name, &metadata);
         self.out.open();
         self.placement(&Placement {
             hidden,
             metadata: Vec::new(),
+            properties,
             ..placement.clone()
         });
         let inner = Placement {
@@ -1398,7 +1415,9 @@ impl<'ir> Writer<'ir> {
                     .and_then(|id| self.group_binding_path(&tessellation_id, id))
             })
             .collect();
-        // The triangles of the faces that each material binds.
+        // The triangles of the faces that each material binds: the faces of a
+        // mesh the writer made, and the faces that triangle groups name. A
+        // group bound itself keeps its own material.
         let mut face_materials: BTreeMap<String, Vec<usize>> = BTreeMap::new();
         for (face, triangles) in faces {
             if let Some(path) = self.binding_path(&face.to_string()) {
@@ -1408,12 +1427,32 @@ impl<'ir> Writer<'ir> {
                     .extend(triangles.clone());
             }
         }
+        for (group, own) in tessellation.triangle_groups().iter().zip(&bound) {
+            let Some(face) = group.face.as_ref().filter(|_| own.is_none()) else {
+                continue;
+            };
+            if let Some(path) = self.binding_path(&face.to_string()) {
+                face_materials.entry(path).or_default().extend(
+                    group
+                        .triangles
+                        .iter()
+                        .filter_map(|triangle| usize::try_from(*triangle).ok()),
+                );
+            }
+        }
+        for triangles in face_materials.values_mut() {
+            triangles.sort_unstable();
+            triangles.dedup();
+        }
         if bound.iter().any(Option::is_some) || !face_materials.is_empty() {
             self.out
                 .line("uniform token subsetFamily:materialBind:familyType = \"nonOverlapping\"");
         }
         let mut subsets = Names::default();
         for (group, binding) in tessellation.triangle_groups().iter().zip(bound) {
+            if group.face.is_some() {
+                self.unwritten.group_faces += 1;
+            }
             // A group with no source identity holds the triangles that the
             // named groups do not; it needs no subset.
             let Some(source) = group.source_id.as_deref() else {
@@ -1775,10 +1814,18 @@ impl<'ir> Writer<'ir> {
 
     /// The losses of the write.
     fn losses(&self) -> Vec<LossNote> {
+        let mut losses = Vec::new();
+        if !self.unwritten.body_physics.is_empty() {
+            losses.push(UsdLossCode::ExportPhysicsNotWritten.note(format!(
+                "the rigid body, mass, or velocities of {} bodies with a transform of their own \
+                 were not written: {}",
+                self.unwritten.body_physics.len(),
+                self.unwritten.body_physics.join(", ")
+            )));
+        }
         let unwritten = &self.unwritten;
         let model = &self.ir.model;
         let geometry = &self.ir.geometry;
-        let mut losses = Vec::new();
         if unwritten.solver_properties > 0 {
             losses.push(UsdLossCode::ExportSolverPropertyNotWritten.note(format!(
                 "{} solver properties have no PhysX attribute, prim, or relationship target to \
@@ -1853,6 +1900,12 @@ impl<'ir> Writer<'ir> {
                 "{} curves with no line or NURBS form and {free_surfaces} surfaces that no face \
                  uses were not written",
                 unwritten.free_carriers
+            )));
+        }
+        if unwritten.group_faces > 0 {
+            losses.push(UsdLossCode::ExportGroupFaceNotWritten.note(format!(
+                "{} triangle group faces were not written",
+                unwritten.group_faces
             )));
         }
         if unwritten.channels > 0 {

@@ -3,7 +3,7 @@
 //! parameters, dimensions, bodies, fillets, sheet metal, patterns and
 //! geometry records.
 
-use super::super::reader::{bad, ParameterRecord, Ptr, Reader, Res, Stop, V};
+use super::super::reader::{bad, MarkOwner, ParameterRecord, Ptr, Reader, Res, Stop, V};
 use super::{ctx, sketch};
 
 const FFFEFF: [u8; 3] = [0xff, 0xfe, 0xff];
@@ -147,6 +147,9 @@ pub(crate) fn named(r: &mut Reader<'_>) -> Res<V> {
         Ptr::Obj { value, .. } => value,
         other => V::from(other),
     };
+    if let (V::Str(text), Some(&(_, at))) = (&name, r.open.last()) {
+        r.names.insert(at, text.clone());
+    }
     Ok(V::map([
         ("name", name),
         ("fam", V::from(fam)),
@@ -2055,8 +2058,17 @@ pub(crate) fn compsolid(r: &mut Reader<'_>) -> Res<V> {
     Ok(V::from(r.ptr(None)?))
 }
 
-/// `moPMarkRecord_c`.
+/// `moPMarkRecord_c`, noted with the named object that holds it.
 pub(crate) fn pmark(r: &mut Reader<'_>) -> Res<V> {
+    let at = r.p;
+    let owner = r.holder_name();
+    let value = pmark_record(r)?;
+    r.marks.push(MarkOwner { at, owner });
+    Ok(value)
+}
+
+/// The body of a `moPMarkRecord_c`.
+fn pmark_record(r: &mut Reader<'_>) -> Res<V> {
     let big_x = r.u32()?;
     let f = r.u32()?;
     if f == 1 {

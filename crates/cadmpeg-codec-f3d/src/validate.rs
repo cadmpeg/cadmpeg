@@ -1731,7 +1731,7 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
             let mut projected = feature
                 .bodies()
                 .iter()
-                .filter(|body| body.scope_record_index == mesh_scope.record().record_index())
+                .filter(|body| body.scope_record_index == Some(mesh_scope.record().record_index()))
                 .collect::<Vec<_>>();
             projected.sort_by_key(|body| body.scope_body_ordinal);
             let projected = || {
