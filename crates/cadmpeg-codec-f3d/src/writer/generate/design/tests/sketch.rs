@@ -652,26 +652,30 @@ fn written_sketches_leave_evaluation_missing() {
 fn the_sketch_note_names_the_point_and_curve_identities() {
     let (ir, _) = scoped_sketches();
     let (report, _) = write(&ir);
-    let notes = loss(&report, "export/record.residual-unavailable")
-        .into_iter()
-        .filter(|message| message.contains("DR-901"))
-        .collect::<Vec<_>>();
-    let [note] = notes.as_slice() else {
-        panic!("one DR-901 note: {:#?}", report.losses);
-    };
+    let notes = loss(&report, "export/record.residual-unavailable");
     for named in [
         "point and curve identities (`pt_tag`, `crv_primary_id`): one sequence from 100",
         "record 10 (sketch collection: `crv_tag_id_idx`",
     ] {
-        assert!(note.contains(named), "{named}: {note}");
+        let holding = notes
+            .iter()
+            .filter(|message| message.contains(named))
+            .collect::<Vec<_>>();
+        let [note] = holding.as_slice() else {
+            panic!("{named} in one note: {notes:#?}");
+        };
+        assert!(note.contains("DR-901 leaves their rule open"), "{note}");
+        assert_eq!(note.matches(named).count(), 1, "{note}");
     }
 }
 
-#[test]
-fn the_fixed_clock_note_names_every_record_timestamp_table() {
-    let (ir, _) = scoped_sketches();
-    let (report, _, bytes) = write_bytes(&ir);
-    let design = segment(&bytes, "FusionDesignSegmentType1");
+/// The record-timestamp tables of the written Design segment `bytes`, each
+/// of which the one fixed-clock note of `report` names.
+pub(super) fn fixed_clock_tables(
+    report: &cadmpeg_ir::report::export::ExportReport,
+    bytes: &[u8],
+) -> Vec<u64> {
+    let design = segment(bytes, "FusionDesignSegmentType1");
     let tables = design
         .primary
         .iter()
@@ -683,22 +687,29 @@ fn the_fixed_clock_note_names_every_record_timestamp_table() {
                 .eq_ignore_ascii_case(super::super::types::RECORD_TIMESTAMPS.guid)
         })
         .collect::<Vec<_>>();
-    // The component, Base Feature scope and result tables, and three for
-    // each of the four sketches.
-    assert_eq!(tables.len(), 3 + 3 * 4);
-    let notes = loss(&report, "export/record.residual-unavailable")
+    let notes = loss(report, "export/record.residual-unavailable")
         .into_iter()
         .filter(|message| message.contains("fixed-clock"))
         .collect::<Vec<_>>();
     let [note] = notes.as_slice() else {
         panic!("one fixed-clock note: {:#?}", report.losses);
     };
-    for table in tables {
+    for table in &tables {
         assert!(
             note.contains(&format!("record {table} (")),
             "{table}: {note}"
         );
     }
+    tables
+}
+
+#[test]
+fn the_fixed_clock_note_names_every_record_timestamp_table() {
+    let (ir, _) = scoped_sketches();
+    let (report, _, bytes) = write_bytes(&ir);
+    // The component, Base Feature scope and result tables, and three for
+    // each of the four sketches.
+    assert_eq!(fixed_clock_tables(&report, &bytes).len(), 3 + 3 * 4);
 }
 
 #[test]
