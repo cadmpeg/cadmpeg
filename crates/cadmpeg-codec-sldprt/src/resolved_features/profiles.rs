@@ -1597,7 +1597,34 @@ pub(crate) fn project_marker_backed_sketches(
                 }
                 continue;
             }
-            if sketches.iter().any(|sketch| sketch.id == sketch_id) {
+            let stream_reading = bound_sketch.clone().filter(is_profile_stream_sketch);
+            if let Some(read) = sketches.iter().find(|sketch| sketch.id == sketch_id) {
+                // A later pass over configuration states meets the marker
+                // sketch the first pass read, and takes it in place of a
+                // stream circle only where the first pass did.
+                let stream = stream_reading
+                    .as_ref()
+                    .and_then(|stream| sketches.iter().find(|sketch| sketch.id == *stream));
+                if let Some(stream) = stream {
+                    let entities =
+                        EntityIndex::new(sketch_entities.iter().filter(|entity| {
+                            entity.sketch == sketch_id || entity.sketch == stream.id
+                        }));
+                    let planar = finalizes_planar(
+                        sketch_entities
+                            .iter()
+                            .filter(|entity| entity.sketch == sketch_id),
+                        |_| false,
+                    );
+                    let revolve_profile =
+                        is_revolve_profile(features, &features[feature_index], &stream.id);
+                    if !matches!(
+                        marker_reading(read, stream, &entities, planar, revolve_profile),
+                        MarkerReading::Binds(_)
+                    ) {
+                        continue;
+                    }
+                }
                 features[feature_index]
                     .evaluation
                     .set_definition(if block_definition {
@@ -1617,7 +1644,6 @@ pub(crate) fn project_marker_backed_sketches(
                     });
                 continue;
             }
-            let stream_reading = bound_sketch.clone().filter(is_profile_stream_sketch);
             if stream_reading.is_none()
                 && bound_sketch
                     .as_ref()

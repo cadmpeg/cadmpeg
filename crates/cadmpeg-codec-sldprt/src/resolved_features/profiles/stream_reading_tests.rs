@@ -187,6 +187,10 @@ struct Decoded {
     features: Vec<Feature>,
     sketches: Vec<Sketch>,
     losses: Vec<LossNote>,
+    /// The sketch a second marker pass binds the sketch feature to, from
+    /// the feature's first binding and the first pass's sketches, as the
+    /// pass over configuration states does.
+    rebound: Option<SketchId>,
 }
 
 /// Runs the marker pass, the finalize pass and the consumer binding over one
@@ -273,6 +277,7 @@ fn decode_markers(
     let (mut sketches, entities): (Vec<_>, Vec<Vec<_>>) = streams.into_iter().unzip();
     let mut entities = entities.into_iter().flatten().collect::<Vec<_>>();
     let mut held = HeldMarkerGeometry::default();
+    let initial = features.clone();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
@@ -292,6 +297,19 @@ fn decode_markers(
     .unwrap();
     let mut losses = Vec::new();
     let unbound = finalize_unread_marker_entities(&mut entities, held, &mut losses);
+    let mut again = initial;
+    let mut finalized = HeldMarkerGeometry::after_finalized(&entities);
+    project_marker_backed_sketches(
+        &ctx,
+        &mut again,
+        &mut sketches,
+        &mut entities,
+        &mut finalized,
+        &histories,
+        &lanes,
+    )
+    .unwrap();
+    let rebound = bound_sketch(&again).cloned();
     crate::history::bind::bind_bound_sketch_profiles(&mut features, &sketches);
     let mut model = cadmpeg_ir::document::Model::default();
     model.features = features;
@@ -302,6 +320,7 @@ fn decode_markers(
         features: model.features,
         sketches: model.sketches,
         losses,
+        rebound,
     }
 }
 
@@ -346,6 +365,7 @@ fn a_feature_bound_to_a_stream_circle_binds_the_profile_of_its_own_records() {
         &circle_id,
     );
     assert_eq!(bound_sketch(&decoded.features), Some(&marker_sketch_id()));
+    assert_eq!(decoded.rebound.as_ref(), Some(&marker_sketch_id()));
     assert_eq!(
         revolve_profile(&decoded.features),
         Some(&PlanarProfileRef::Sketch(marker_sketch_id()))
@@ -485,6 +505,11 @@ fn a_marker_sketch_off_the_stream_plane_is_an_unbound_reading() {
     .unwrap();
     let decoded = decode_markers(vec![(stream, entities)], &circle_id, box_markers(), false);
     assert_eq!(bound_sketch(&decoded.features), Some(&circle_id));
+    assert_eq!(
+        decoded.rebound.as_ref(),
+        Some(&circle_id),
+        "a second pass leaves the unbound reading unbound"
+    );
     let marker = decoded
         .sketches
         .iter()
