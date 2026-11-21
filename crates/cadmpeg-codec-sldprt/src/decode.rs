@@ -2373,6 +2373,7 @@ fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::Sldpr
             .iter()
             .map(|marker| (marker.id(), marker))
             .collect::<HashMap<_, _>>();
+        let curve_markers = crate::resolved_features::sketch_lists::curve_record_markers(lane);
         let instances = lane
             .relation_instances
             .iter()
@@ -2402,6 +2403,7 @@ fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::Sldpr
                 .feature_ref
                 .as_deref()
                 .is_some_and(|feature_ref| sketch_feature_refs.contains(feature_ref))
+                && !curve_markers.contains(marker.id())
                 && crate::resolved_features::typed_relations::marker_owns_constraint(
                     marker,
                     &markers_by_id,
@@ -2440,11 +2442,14 @@ fn multiply_projected_sketch_relation_records(
         for relation in &lane.relation_instances {
             native_relation_ids.insert(relation.id.as_str());
         }
+        let curve_markers = crate::resolved_features::sketch_lists::curve_record_markers(lane);
         for marker in &lane.sketch_entities {
-            if crate::resolved_features::typed_relations::marker_owns_constraint(
-                marker,
-                &markers_by_id,
-            ) {
+            if !curve_markers.contains(marker.id())
+                && crate::resolved_features::typed_relations::marker_owns_constraint(
+                    marker,
+                    &markers_by_id,
+                )
+            {
                 native_relation_ids.insert(marker.id());
             }
         }

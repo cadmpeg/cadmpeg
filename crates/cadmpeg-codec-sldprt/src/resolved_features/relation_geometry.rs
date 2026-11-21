@@ -21,6 +21,7 @@ use super::relation_loci::{
 use super::relation_records::{
     relation_uses_dynamic_operands, relation_uses_solver_points, CircleHandleDrivers,
 };
+use super::sketch_lists::curve_record_markers;
 use super::transforms::{
     feature_sketch_marker_transform, marker_entities, sketch_entity_locus_points,
     MarkerEntityFilter, ProfileAxis,
@@ -2560,6 +2561,7 @@ pub(crate) fn project_relation_bindings(
             .rsplit_once('#')
             .map_or(lane.id.as_str(), |(_, key)| key);
         let ids = LaneIds::new(lane);
+        let curve_markers = curve_record_markers(lane);
         for relation in &lane.relation_instances {
             let existing = constraints_by_native_ref.get(relation.id.as_str()).copied();
             if existing.is_some_and(|index| {
@@ -2728,6 +2730,9 @@ pub(crate) fn project_relation_bindings(
             }
         }
         for marker in &lane.sketch_entities {
+            if curve_markers.contains(marker.id()) {
+                continue;
+            }
             let existing = constraints_by_native_ref.get(marker.id()).copied();
             if existing.is_some_and(|index| {
                 !matches!(

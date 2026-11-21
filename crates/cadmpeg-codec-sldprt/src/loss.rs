@@ -129,6 +129,10 @@ pub(crate) enum SldprtLossCode {
     /// `sgSketch` curve record states an arc or another form that gives no
     /// entity.
     SketchArcRecordConflict,
+    /// A sketch marker that the marker layouts skip and only its `sgSketch`
+    /// record admits gives no entity, because that record gives none in the
+    /// sketch.
+    SketchMarkerRecordUnread,
     /// A compact sketch profile failed neutral profile admission.
     SketchProfileRejected,
     /// Native sketch relation has no projected neutral constraint.
@@ -392,6 +396,7 @@ impl SldprtLossCode {
         Self::SketchHandleUnresolved,
         Self::SketchLineDegenerate,
         Self::SketchArcRecordConflict,
+        Self::SketchMarkerRecordUnread,
         Self::SketchProfileRejected,
         Self::SketchRelationUnprojected,
         Self::SketchRelationMultiplyProjected,
@@ -531,6 +536,7 @@ impl SldprtLossCode {
             Self::SketchHandleUnresolved => "sketch.handle-unresolved",
             Self::SketchLineDegenerate => "sketch.line-degenerate",
             Self::SketchArcRecordConflict => "sketch.arc-record-conflict",
+            Self::SketchMarkerRecordUnread => "sketch.marker-record-unread",
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
             Self::SketchRelationMultiplyProjected => "sketch.relation-multiply-projected",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
@@ -702,6 +708,7 @@ impl SldprtLossCode {
             | Self::SketchHandleUnresolved
             | Self::SketchLineDegenerate
             | Self::SketchArcRecordConflict
+            | Self::SketchMarkerRecordUnread
             | Self::SketchProfileRejected
             | Self::SketchRelationUnprojected
             | Self::SketchRelationMultiplyProjected
@@ -920,6 +927,7 @@ impl SldprtLossCode {
             | Self::SketchHandleUnresolved
             | Self::SketchLineDegenerate
             | Self::SketchArcRecordConflict
+            | Self::SketchMarkerRecordUnread
             | Self::SketchProfileRejected
             | Self::SketchRelationUnprojected
             | Self::SketchRelationMultiplyProjected
@@ -1149,6 +1157,7 @@ mod tests {
                 "sketch.handle-unresolved",
                 "sketch.line-degenerate",
                 "sketch.arc-record-conflict",
+                "sketch.marker-record-unread",
                 "sketch.profile-rejected",
                 "sketch.relation-unprojected",
                 "sketch.relation-multiply-projected",
