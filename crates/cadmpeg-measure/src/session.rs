@@ -153,10 +153,15 @@ pub fn findings(
 /// differences:
 ///
 /// - A face on a plane, cylinder, extrusion or NURBS carrier whose region
-///   does not classify has the box of its boundary pieces.
+///   does not classify, and whose loop, coedge and edge records all
+///   resolve, has the box of its boundary pieces.
 /// - A sphere or torus face whose region rests on its declared orientation,
 ///   and which only its area or its shell's volume sign would settle, has
 ///   its declared box with the complement box as a candidate.
+///
+/// A body box under [`Reading::Declared`](crate::value::Reading::Declared)
+/// is therefore more frequent here than in a full pass. Such a box is not
+/// an outer bound of the body; [`BodyBox::bbox`] says what holds.
 ///
 /// The pass runs in a session of its own under [`DecodePolicy::service`]
 /// and the [`WorkProfile::Service`] allowance. A session refusal, or an

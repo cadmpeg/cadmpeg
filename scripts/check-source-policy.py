@@ -1617,8 +1617,9 @@ def scan_authoring_paths() -> list[Finding]:
 
 
 MEASUREMENT_CRATE = "cadmpeg-measure"
-MEASUREMENT_CONSUMERS = {"cadmpeg", "cadmpeg-registry", "cadmpeg-codec-f3d"}
-MEASUREMENT_WRITER_ROOT = "crates/cadmpeg-codec-f3d/src/writer/"
+MEASUREMENT_WRITER_CRATE = "cadmpeg-codec-f3d"
+MEASUREMENT_CONSUMERS = {"cadmpeg", "cadmpeg-registry", MEASUREMENT_WRITER_CRATE}
+MEASUREMENT_WRITER_ROOT = f"crates/{MEASUREMENT_WRITER_CRATE}/src/writer/"
 PRODUCTION_DEPENDENCY_HEADER = re.compile(
     r"^\s*\[\s*(?:target\.[^\]]+?\.)?(?:build-)?dependencies\s*(?:\.|\])"
 )
@@ -1637,11 +1638,11 @@ def dependency_packages(table: object) -> set[str]:
 
 
 def scan_measurement_dependency() -> list[Finding]:
-    """Report a production dependency on the measurement crate outside MEASUREMENT_CONSUMERS."""
+    """Report a production dependency on the measurement crate outside MEASUREMENT_CONSUMERS,
+    and one the writer crate renames, which `measurement_use` would not see."""
     findings: list[Finding] = []
     for manifest in sorted((ROOT / "crates").glob("*/Cargo.toml")):
-        if manifest.parent.name in MEASUREMENT_CONSUMERS:
-            continue
+        crate = manifest.parent.name
         text = manifest.read_text(encoding="utf-8", errors="replace")
         try:
             data = tomllib.loads(text)
@@ -1655,6 +1656,11 @@ def scan_measurement_dependency() -> list[Finding]:
                     tables += [target.get(name) for name in ("dependencies", "build-dependencies")]
         if not any(MEASUREMENT_CRATE in dependency_packages(table) for table in tables):
             continue
+        renamed = crate == MEASUREMENT_WRITER_CRATE and any(
+            key != MEASUREMENT_CRATE and dependency_packages({key: value}) == {MEASUREMENT_CRATE}
+            for table in tables if isinstance(table, dict) for key, value in table.items())
+        if crate in MEASUREMENT_CONSUMERS and not renamed:
+            continue
         line = 1
         production = False
         for number, content in enumerate(text.splitlines(), start=1):
@@ -1667,9 +1673,11 @@ def scan_measurement_dependency() -> list[Finding]:
             "measurement_dependency",
             manifest.relative_to(ROOT).as_posix(),
             line,
-            f"The cadmpeg CLI, cadmpeg-registry and cadmpeg-codec-f3d can list {MEASUREMENT_CRATE} "
-            "outside [dev-dependencies]; a codec selects its layout, carrier and interpretation "
-            "from format semantics.",
+            f"{MEASUREMENT_WRITER_CRATE} lists {MEASUREMENT_CRATE} under no other name: "
+            "measurement_use reads the name cadmpeg_measure." if renamed else
+            f"The cadmpeg CLI, cadmpeg-registry and {MEASUREMENT_WRITER_CRATE} can list "
+            f"{MEASUREMENT_CRATE} outside [dev-dependencies]; a codec selects its layout, carrier "
+            "and interpretation from format semantics.",
         ))
     return findings
 

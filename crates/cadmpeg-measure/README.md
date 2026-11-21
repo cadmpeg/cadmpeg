@@ -9,9 +9,9 @@ or unavailable with a pinned reason and a closed category. The output
 contract is in `docs/measurement.md` of the repository.
 
 Measurement is an oracle on decoded output. A decoder or encoder selects its
-layout, carrier and interpretation from format semantics. The Fusion encoder
-writes the box that `body_boxes` measures for each body into the design it
-encodes.
+layout, carrier and interpretation from format semantics. The source policy
+admits one production use in a codec: the Fusion writer may call `body_boxes`
+for the boxes it writes.
 
 ```rust
 use cadmpeg_measure::{MeasureInput, MeasureOptions, Measurer, Selection};

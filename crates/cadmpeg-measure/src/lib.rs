@@ -10,8 +10,8 @@
 //!
 //! Measurement is an oracle on decoded output. A decoder or encoder never
 //! selects a layout, carrier, sense, unit or interpretation by measuring
-//! geometry. The Fusion encoder writes the box that [`body_boxes`] measures
-//! for each body into the design it encodes.
+//! geometry. The source policy admits one production use in a codec: the
+//! Fusion writer may call [`body_boxes`] for the boxes it writes.
 //!
 //! ```
 //! use cadmpeg_measure::{MeasureInput, MeasureOptions, Measurer, Selection};

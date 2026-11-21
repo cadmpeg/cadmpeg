@@ -1148,7 +1148,13 @@ pub struct BodyBox {
 accessors!(BodyBox {
     /// The body ID.
     body: String;
-    /// Union of member boxes, as [`BodyMeasures::bbox`] reports it.
+    /// Union of member boxes, as [`BodyMeasures::bbox`] reports it. When
+    /// its [`reading`](crate::value::Measured::reading) is
+    /// [`Reading::Declared`](crate::value::Reading::Declared), the box rests
+    /// on a declared face orientation that no witness confirmed, and it can
+    /// be smaller than the body whatever its [`BoxKind`](crate::value::BoxKind).
+    /// Its union with its [`Reading::Complement`](crate::value::Reading::Complement)
+    /// candidate, when it has one, contains the body.
     bbox: Quantity<BoxValue>;
     /// Box of the vertex points; absent for a body with no vertex.
     vertex_box: Option<Quantity<BoxValue>>;
