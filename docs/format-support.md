@@ -611,6 +611,7 @@ These gaps remain:
 - Subdivision meshes transfer as their control cages (`usd/mesh.subdivision-not-applied`).
 - Wire edges and point shells of `BrepArray` prims, and their geometry subsets other than `face` and `brep` subsets that bind a material, do not transfer (`usd/brep.element-not-transferred`, `usd/brep.subset-not-transferred`, USD-07, USD-08). A B-rep with a face between two solid regions does not transfer (`usd/brep.rejected`).
 - A NURBS patch whose trim curves do not form closed loops in its parameter range is bounded by the sides of that range (`usd/nurbs.trim-not-transferred`).
+- The face of a NURBS patch is the region inside an odd number of its trim loops; a loop whose direction disagrees with its nesting depth reports `usd/nurbs.trim-region-assumed` (USD-01).
 - Primvars other than normals, texture coordinates, and display color; texture networks other than the image nodes of §15.6, such as packed `ORM_texture` inputs and procedural nodes; and materials other than UsdPreviewSurface, `MaterialX` OpenPBR and Standard Surface, and OmniPBR do not transfer.
 - Time samples and splines transfer as their default value or first sample (`usd/attribute.animation-not-transferred`).
 

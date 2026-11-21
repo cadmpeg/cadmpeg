@@ -1001,7 +1001,17 @@ The sum of `trimCurve:counts` is the number of trim curves. `trimCurve:orders`, 
 
 A trim-curve point `(x, y, w)` is homogeneous: its parameter-space position is `(x / w, y / w)` and its weight is `w`.
 
-The trim loops bound the surface. A point of the `(u, v)` domain is inside the trim loops when a ray from it crosses the loops an odd number of times. The loops are also directed: the inside is to the left of each curve as the curve is traced, so a loop at an even nesting depth runs counterclockwise in `(u, v)` and a loop at an odd depth runs clockwise. The surface is the part of the domain inside the trim loops.
+The UsdGeom schema states that the encoding follows `RiTrimCurve` (<https://openusd.org/release/api/class_usd_geom_nurbs_patch.html>):
+
+> The encoding mostly follows that of RiNuPatch and RiTrimCurve
+
+The `RiTrimCurve` reference that the schema links to defines the inside of the trim loops (<https://web.archive.org/web/20220626115506/https://renderman.pixar.com/resources/RenderMan_20/geometricPrimitives.html>):
+
+> Trim curves exclude certain areas from the non-uniform B-spline surface definition. The inside must be specified consistently using two rules: an odd winding rule that states that the inside consists of all regions for which an infinite ray from any point in the region will intersect the trim curve an odd number of times, and a curve orientation rule that states that the inside consists of the regions to the "left" as the curve is traced.
+
+In loops that obey both rules, a loop at an even nesting depth runs counterclockwise in `(u, v)` and a loop at an odd depth runs clockwise.
+
+This codec reads the region inside the trim loops by the odd winding rule as the surface, and writes each outer loop counterclockwise and each inner loop clockwise. The region that a `NurbsPatch` keeps, and the region of loops that disobey the curve orientation rule, are open item USD-01.
 
 ## 15. Shading
 
