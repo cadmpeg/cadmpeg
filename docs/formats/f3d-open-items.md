@@ -3953,11 +3953,11 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Question.** What does the `Z: true` key in the descriptor of a packed-direction split component encode?
 
-**Known.** A flagged component stores f32 values in the `{T: 3}` layout. A flagged corner-normal stream decoded with that layout matches the triangle face normals with mean dot product 0.997; the mirror component order gives -0.997.
+**Known.** The flagged components inflate to their declared byte counts, the two components have equal lengths divisible by four, and every value read as f32 is finite and lies in [-1, 1]. One flagged corner-normal stream is known. Decoded with the `{T: 3}` layout, it matches the triangle face normals with mean dot product 0.997; the mirror component order gives -0.997.
 
 **Need.** Paired containers of one mesh saved with and without the flag.
 
-**Note.** The decoder retains the flag on the native split-stream record and reports `mesh.component-flag-uninterpreted`.
+**Note.** The decoder reads the flagged payload with the `{T: 3}` layout, retains the flag on the native split-stream record, and reports `mesh.component-flag-uninterpreted`.
 
 ### DR-889. Extrude selection members in sketch text
 
