@@ -133,6 +133,11 @@ pub(crate) enum SldprtLossCode {
     /// record admits gives no entity, because that record gives none in the
     /// sketch.
     SketchMarkerRecordUnread,
+    /// A geometry-locus curve uses assumed zero-based sketch point-record indices.
+    SketchPointRecordIndexBasisAssumed,
+    /// A sketch handle takes the arc of its `sgSketch` curve record although
+    /// the arc, placed in the sketch, ends off its endpoint point records.
+    SketchArcRecordOffChord,
     /// A compact sketch profile failed neutral profile admission.
     SketchProfileRejected,
     /// A list line with profile role 1 is marked construction from selector bit 3 (DI-77).
@@ -401,6 +406,8 @@ impl SldprtLossCode {
         Self::SketchLineDegenerate,
         Self::SketchArcRecordConflict,
         Self::SketchMarkerRecordUnread,
+        Self::SketchPointRecordIndexBasisAssumed,
+        Self::SketchArcRecordOffChord,
         Self::SketchProfileRejected,
         Self::SketchListedLineConstructionAssumed,
         Self::SketchListedCurveRelationDropped,
@@ -545,6 +552,8 @@ impl SldprtLossCode {
             Self::SketchLineDegenerate => "sketch.line-degenerate",
             Self::SketchArcRecordConflict => "sketch.arc-record-conflict",
             Self::SketchMarkerRecordUnread => "sketch.marker-record-unread",
+            Self::SketchPointRecordIndexBasisAssumed => "sketch.point-record-index-basis-assumed",
+            Self::SketchArcRecordOffChord => "sketch.arc-record-off-chord",
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
             Self::SketchRelationMultiplyProjected => "sketch.relation-multiply-projected",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
@@ -717,6 +726,8 @@ impl SldprtLossCode {
             | Self::SketchLineDegenerate
             | Self::SketchArcRecordConflict
             | Self::SketchMarkerRecordUnread
+            | Self::SketchPointRecordIndexBasisAssumed
+            | Self::SketchArcRecordOffChord
             | Self::SketchProfileRejected
             | Self::SketchListedLineConstructionAssumed
             | Self::SketchListedCurveRelationDropped
@@ -938,6 +949,8 @@ impl SldprtLossCode {
             | Self::SketchLineDegenerate
             | Self::SketchArcRecordConflict
             | Self::SketchMarkerRecordUnread
+            | Self::SketchPointRecordIndexBasisAssumed
+            | Self::SketchArcRecordOffChord
             | Self::SketchProfileRejected
             | Self::SketchListedLineConstructionAssumed
             | Self::SketchListedCurveRelationDropped
@@ -1170,6 +1183,8 @@ mod tests {
                 "sketch.line-degenerate",
                 "sketch.arc-record-conflict",
                 "sketch.marker-record-unread",
+                "sketch.point-record-index-basis-assumed",
+                "sketch.arc-record-off-chord",
                 "sketch.profile-rejected",
                 "sketch.listed-line-construction-assumed",
                 "sketch.listed-curve-relation-dropped",
