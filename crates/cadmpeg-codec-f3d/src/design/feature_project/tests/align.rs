@@ -1,4 +1,5 @@
 use crate::design::decode::scopes::align::decode_align_envelope;
+
 use crate::design::feature_project::{
     project_parameter_design_with_edge_identities, ProjectInputs, ProjectedParameterDesign,
 };
@@ -207,7 +208,7 @@ fn align_without_its_exact_nonempty_unique_body_group_projects_an_unresolved_sel
     malformed.id = "malformed".into();
     let mut losses = Vec::new();
     assert!(matches!(
-        super::super::project_align(&malformed, &[group], &mut losses),
+        crate::design::feature_project::body_ops::project_align(&malformed, &[group], &mut losses),
         Some(FeatureDefinition::Operation(FeatureOperation::MoveBody {
             bodies: BodySelection::Unresolved,
             ..

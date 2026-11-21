@@ -52,6 +52,7 @@ const SELECTOR_OPEN_BIT: u16 = 1;
 /// The selectors of the curve records that [`ListedReading::Roster`] reads.
 const ROSTER_SELECTORS: [u16; 2] = [4, 12];
 const OBJECT_INDEX_LOCUS: [u8; 4] = [0x05, 0x00, 0x01, 0x00];
+const CONSTRUCTION_SELECTOR_BIT: u16 = 0x08;
 /// Where a current-layout line record stores its trailer u32.
 const LINE_TRAILER: usize = line::TRAILER;
 /// Where a current-layout line record stores its identity.
@@ -192,6 +193,48 @@ impl SketchRecordLists {
         Self { lists, records }
     }
 
+    /// The form of the curve record of a list that starts at `offset`, when
+    /// it is a line or an arc ([`curve_form`]).
+    pub(super) fn listed_curve(&self, payload: &[u8], offset: usize) -> Option<CurveForm> {
+        match self.record(offset)? {
+            ListedRecord::Curve { later: false, .. } => {
+                curve_form(payload, offset, ListedReading::Roster)
+            }
+            ListedRecord::Curve { later: true, .. } => None,
+            ListedRecord::Point => None,
+        }
+    }
+
+    /// The kind of the curve record of a list that starts at `offset`,
+    /// decided from the record's own shape ([`framed_curve`]).
+    pub(super) fn listed_curve_kind(&self, payload: &[u8], offset: usize) -> Option<FramedCurve> {
+        match self.record(offset)? {
+            ListedRecord::Curve { .. } => framed_curve(payload, offset).map(|(_, kind)| kind),
+            ListedRecord::Point => None,
+        }
+    }
+
+    /// The stream offsets of the point records at the two ends of the
+    /// listed line or arc at `offset`; `None` for a full circle, which has no
+    /// ends, and for a record that is not a readable curve.
+    pub(super) fn listed_curve_ends(&self, payload: &[u8], offset: usize) -> Option<[usize; 2]> {
+        let ListedRecord::Curve { sketch, .. } = self.record(offset)? else {
+            return None;
+        };
+        let (start, end) = match self.listed_curve(payload, offset)? {
+            CurveForm::Line { start, end } => (start, end),
+            CurveForm::Arc { start, end, .. } if start != end => (start, end),
+            CurveForm::Arc { .. } => return None,
+        };
+        Some([sketch.point(start)?, sketch.point(end)?])
+    }
+
+    /// Whether `offset` starts a curve record of a list whose form is a line
+    /// or an arc.
+    pub(super) fn readable_curve(&self, payload: &[u8], offset: usize) -> bool {
+        self.listed_curve(payload, offset).is_some()
+    }
+
     /// The listed record that starts at `offset`.
     pub(super) fn record(&self, offset: usize) -> Option<ListedRecord<'_>> {
         let &(list, place) = self.records.get(&offset)?;
@@ -213,7 +256,9 @@ impl SketchRecordLists {
 /// The sketch whose first point record is `heads[first]`: the 14-byte header
 /// before it states *N*, the *N* heads from there are point records (or
 /// records projected from outside the sketch), and the next head is a curve
-/// record. The curve list is the run of curve records from there.
+/// record or a record projected from outside the sketch. The curve list is
+/// the run of curve records and projected records from there, up to its last
+/// curve record.
 fn sketch_at(payload: &[u8], heads: &[usize], first: usize) -> Option<SketchRecordList> {
     let head = *heads.get(first)?;
     let header = head.checked_sub(SKETCH_HEADER_LEN)?;
@@ -233,15 +278,18 @@ fn sketch_at(payload: &[u8], heads: &[usize], first: usize) -> Option<SketchReco
     {
         return None;
     }
-    let curves = heads
+    let run = heads
         .get(end..)?
         .iter()
         .copied()
-        .take_while(|&curve| curve_record(payload, curve))
+        .take_while(|&curve| curve_record(payload, curve) || external_record(payload, curve))
         .collect::<Vec<_>>();
-    if curves.is_empty() {
-        return None;
-    }
+    // Projected records stand among the curve records; the list ends at its
+    // last curve record.
+    let last = run
+        .iter()
+        .rposition(|&curve| curve_record(payload, curve))?;
+    let curves = run.get(..=last)?.to_vec();
     Some(SketchRecordList {
         points: points.to_vec(),
         curves,
@@ -338,6 +386,53 @@ pub(super) fn point_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2
     (u.is_finite() && v.is_finite()).then_some([u, v])
 }
 
+/// The kind of a curve record from its own shape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum FramedCurve {
+    /// Type `0`.
+    Line,
+    /// Sense `1` or `-1` in its arc layout with equal endpoint indices.
+    Circle,
+    /// Sense `1` or `-1` in its arc layout with distinct endpoint indices.
+    Arc,
+}
+
+/// The kind of the curve record at `offset` in the current layout with a
+/// roster selector: a low sense half of `0` is a line; sense `1` or `-1`
+/// is an arc when four i32 `-2` follow the centre index.
+fn framed_curve(payload: &[u8], offset: usize) -> Option<(usize, FramedCurve)> {
+    let fields = curve_fields(payload, offset)?;
+    if fields != offset.checked_add(CURRENT_FIELDS)?
+        || !ROSTER_SELECTORS.contains(&View::u16_le_at(payload, offset.checked_add(SELECTOR)?)?)
+    {
+        return None;
+    }
+    match View::i32_le_at(payload, fields.checked_add(SENSE)?)? {
+        sense if sense & LINE_TYPE_MASK == 0 => Some((fields, FramedCurve::Line)),
+        COUNTERCLOCKWISE | CLOCKWISE => {
+            let tail = fields.checked_add(MINUS_TWO)?;
+            if !payload
+                .get(tail..tail.checked_add(4 * I32_MINUS_TWO.len())?)?
+                .chunks_exact(4)
+                .all(|word| word == I32_MINUS_TWO)
+            {
+                return None;
+            }
+            let start = View::u16_le_at(payload, fields)?;
+            let end = View::u16_le_at(payload, fields.checked_add(2)?)?;
+            Some((
+                fields,
+                if start == end {
+                    FramedCurve::Circle
+                } else {
+                    FramedCurve::Arc
+                },
+            ))
+        }
+        _ => None,
+    }
+}
+
 /// The form of the curve record at `offset`, in either head layout, when its
 /// selector has bit 0 clear:
 /// a line when the low half of its sense word is `0`, and an arc when the
@@ -418,6 +513,15 @@ fn identifier_trailer_line(payload: &[u8], offset: usize) -> Option<bool> {
     let trailer = View::u32_le_at(payload, offset.checked_add(LINE_TRAILER)?)?;
     let identity = View::u32_le_at(payload, offset.checked_add(LINE_IDENTITY)?)?;
     Some(trailer == 1 || (trailer == 0 && identity != 0 && identity != u32::MAX))
+}
+
+/// Whether bit 3 of the selector of the record at `offset` is set: the
+/// record is construction geometry.
+pub(super) fn construction_record(payload: &[u8], offset: usize) -> bool {
+    offset
+        .checked_add(SELECTOR)
+        .and_then(|at| View::u16_le_at(payload, at))
+        .is_some_and(|selector| selector & CONSTRUCTION_SELECTOR_BIT != 0)
 }
 
 /// What the `sgSketch` curve record of a marker gives in place of the
