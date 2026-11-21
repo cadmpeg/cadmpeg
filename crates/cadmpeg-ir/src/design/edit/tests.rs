@@ -1997,5 +1997,4 @@ fn positions_and_constructions_rewrite_in_the_wire_form() {
         "a construction with no inputs or steps keeps its value"
     );
 }
-
 mod unproduced;
