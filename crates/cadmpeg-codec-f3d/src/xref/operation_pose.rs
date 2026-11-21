@@ -28,6 +28,8 @@ pub(crate) struct OperationPose {
     source_root_record_index: u64,
     /// The path-ordinal value of a version-four table.
     pub(super) path_ordinal: Option<u32>,
+    /// The type version of the table.
+    pub(super) table_version: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -273,6 +275,7 @@ fn register(
                 carrier,
                 source_root_record_index: pose.source_root_record_index,
                 path_ordinal: pose.path_ordinal,
+                table_version: version,
             }));
         }
         std::collections::btree_map::Entry::Occupied(mut entry) => {
@@ -767,6 +770,19 @@ pub(crate) fn project(
     if path_ordinals != 0 {
         losses.push(F3dLossCode::OperationPosePathOrdinalAssumed.note(format!(
             "{path_ordinals} occurrence definition(s) take the pose of a version-four operation table; the path-ordinal value of the table is assumed to leave that pose unchanged (DR-520)."
+        )));
+    }
+    let assumed_versions = applied
+        .iter()
+        .filter(|key| {
+            poses
+                .get(*key)
+                .is_some_and(|pose| matches!(pose.table_version, Some(2 | 3)))
+        })
+        .count();
+    if assumed_versions != 0 {
+        losses.push(F3dLossCode::OperationPoseVersionAssumed.note(format!(
+            "{assumed_versions} occurrence definition(s) take the pose of a version-two or version-three operation table; these tables are assumed to carry the pose semantics of a version-one table (DR-520)."
         )));
     }
     if !applied.is_empty() {

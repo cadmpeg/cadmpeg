@@ -68,7 +68,7 @@ fn path_ordinal_frame(path: &[u64], count: u32, ordinals: &[u32]) -> Vec<u8> {
 
 #[test]
 fn version_4_table_poses_the_occurrence_of_its_one_reference_path() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let stream = "Design/BulkStream.dat";
     let body = path_ordinal_frame(&[10], 1, &[1]);
     let pose = parse(&body).expect("version 4 table");
@@ -257,6 +257,7 @@ fn model() -> (cadmpeg_ir::CadIr, BTreeMap<String, OperationPose>) {
                 carrier: 20,
                 source_root_record_index: 3,
                 path_ordinal: None,
+                table_version: Some(1),
             },
         )]),
     )
@@ -296,7 +297,7 @@ fn applied_version_4_table_charges_the_path_ordinal_loss() {
             pose.path_ordinal = path_ordinal;
         }
         let mut losses = Vec::new();
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         project(&ctx, &mut ir, &poses, &BTreeSet::new(), &mut losses).unwrap();
         assert_eq!(
             losses
@@ -305,6 +306,56 @@ fn applied_version_4_table_charges_the_path_ordinal_loss() {
             charged,
             "{path_ordinal:?}"
         );
+    }
+}
+
+#[test]
+fn applied_version_2_or_3_table_charges_the_version_loss() {
+    for (version, charged) in [
+        (None, false),
+        (Some(0), false),
+        (Some(1), false),
+        (Some(2), true),
+        (Some(3), true),
+        (Some(4), false),
+    ] {
+        let (mut ir, mut poses) = model();
+        for pose in poses.values_mut() {
+            pose.table_version = version;
+        }
+        let mut losses = Vec::new();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+        project(&ctx, &mut ir, &poses, &BTreeSet::new(), &mut losses).unwrap();
+        assert_eq!(
+            losses
+                .iter()
+                .any(|loss| loss.code == F3dLossCode::OperationPoseVersionAssumed.kind()),
+            charged,
+            "{version:?}"
+        );
+    }
+}
+
+#[test]
+fn a_registered_pose_keeps_the_version_of_its_table() {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    for version in [0, 1, 2, 3] {
+        let mut table = OperationTables::default();
+        let prefix = if version == 0 { 2 } else { 6 };
+        register(
+            &ctx,
+            &mut table,
+            "Design/BulkStream.dat",
+            &frame(prefix, true),
+            Some(version),
+        )
+        .unwrap();
+        let versions = table
+            .poses
+            .values()
+            .map(|pose| pose.as_ref().and_then(|pose| pose.table_version))
+            .collect::<Vec<_>>();
+        assert_eq!(versions, [Some(version)]);
     }
 }
 
