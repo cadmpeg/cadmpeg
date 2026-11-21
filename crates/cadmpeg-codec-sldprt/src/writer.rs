@@ -134,6 +134,16 @@ pub(crate) fn write_semantic_with_records(
             "SLDPRT semantic writes require parsed retained auxiliary Parasolid owners".into(),
         ));
     }
+    let member_records = source_scan
+        .as_ref()
+        .map(|scan| member_records(scan, retained_records, annotations))
+        .transpose()?
+        .flatten();
+    let (retained_records, annotations): (&[SourceRecord<'_>], &Annotations) = match &member_records
+    {
+        Some((records, annotations)) => (records.as_slice(), annotations),
+        None => (retained_records, annotations),
+    };
     let mut source_baseline = None;
     let mut unwritten = UnwrittenAttributes::default();
     let mut losses = content_losses;
@@ -383,15 +393,18 @@ pub(crate) fn write_semantic_with_records(
         );
     }
     for lane in native.iter().flat_map(|native| &native.feature_input_lanes) {
-        let section = lane.configuration.as_ref().map_or_else(
-            || {
-                annotations.provenance.get(&lane.id).map_or_else(
-                    || "Contents/ResolvedFeatures".into(),
-                    |provenance| provenance.stream().to_owned(),
-                )
-            },
-            |configuration| format!("Contents/Config-{configuration}-ResolvedFeatures"),
-        );
+        let section = match &lane.configuration {
+            Some(configuration)
+                if crate::resolved_features::assembly::is_supplemental_config_lane(lane) =>
+            {
+                format!("Contents/Config-{configuration}")
+            }
+            Some(configuration) => format!("Contents/Config-{configuration}-ResolvedFeatures"),
+            None => annotations.provenance.get(&lane.id).map_or_else(
+                || "Contents/ResolvedFeatures".into(),
+                |provenance| provenance.stream().to_owned(),
+            ),
+        };
         let histories = native
             .as_ref()
             .map_or(&[][..], |native| native.feature_histories.as_slice());
@@ -440,11 +453,6 @@ pub(crate) fn write_semantic_with_records(
         }
     }
     for (section, payload) in opaque.blocks {
-        members.push(&mut sections, &mut unwritten, section, payload);
-    }
-    for (section, payload) in
-        source_image_pmi_members(ir, native.as_ref(), source_scan.as_ref(), &sections)?
-    {
         members.push(&mut sections, &mut unwritten, section, payload);
     }
     let written_declaration = document_envelope.and_then(|envelope| envelope.sw_version);
@@ -716,6 +724,70 @@ fn sort_arenas(ir: &mut CadIr) {
     ir.model
         .appearance_bindings
         .sort_by(|left, right| left.id.cmp(&right.id));
+}
+
+/// `retained` and a record of each member of the source image that no
+/// retained record holds, with the provenance the decode notes for a retained
+/// member; `None` when every member has a record. A record holds the member
+/// of its id, or else a member of its provenance stream. A part decoded with
+/// no face keeps records of its source image and active Parasolid site; with
+/// these records the write carries or names each of its other members as it
+/// does for a part with faces.
+fn member_records<'a>(
+    scan: &'a crate::container::ContainerScan<'_>,
+    retained: &[SourceRecord<'a>],
+    annotations: &Annotations,
+) -> Result<Option<(Vec<SourceRecord<'a>>, Annotations)>, CodecError> {
+    let members = scan
+        .sections()
+        .map(|member| (member.native_id(), member))
+        .collect::<Vec<_>>();
+    let member_ids = members
+        .iter()
+        .map(|(id, _)| id.as_str())
+        .collect::<HashSet<_>>();
+    let record_ids = retained
+        .iter()
+        .map(|record| record.id.as_str())
+        .collect::<HashSet<_>>();
+    let mut unplaced = HashMap::<&str, usize>::new();
+    for record in retained
+        .iter()
+        .filter(|record| !member_ids.contains(record.id.as_str()))
+    {
+        if let Some(provenance) = annotations.provenance.get(record.id.as_str()) {
+            *unplaced.entry(provenance.stream()).or_default() += 1;
+        }
+    }
+    let mut unrecorded = Vec::new();
+    for (id, member) in members {
+        if record_ids.contains(id.as_str()) {
+            continue;
+        }
+        match unplaced.get_mut(member.source_stream().as_str()) {
+            Some(count) if *count > 0 => *count -= 1,
+            _ => unrecorded.push((id, member)),
+        }
+    }
+    if unrecorded.is_empty() {
+        return Ok(None);
+    }
+    let mut annotations = annotations.clone();
+    let mut records = retained
+        .iter()
+        .map(|record| SourceRecord {
+            id: record.id.clone(),
+            data: record.data,
+        })
+        .collect::<Vec<_>>();
+    for (id, member) in unrecorded {
+        crate::annotations::note_member_record(&mut annotations, member)?;
+        records.push(SourceRecord {
+            id,
+            data: Some(member.stored_payload()),
+        });
+    }
+    Ok(Some((records, annotations)))
 }
 
 fn source_image<'a>(records: &[SourceRecord<'a>]) -> Option<&'a [u8]> {
@@ -1198,39 +1270,6 @@ fn opaque_blocks(
         replaced,
         unavailable,
     })
-}
-
-/// The `PMISemanticDataDB` members whose dimensions the document holds and no
-/// written member carries, from the retained source image with the
-/// document's edits patched in. The writer has no PMI encoder.
-fn source_image_pmi_members(
-    ir: &CadIr,
-    native: Option<&SldprtNative>,
-    scan: Option<&crate::container::ContainerScan<'_>>,
-    written: &[(String, Vec<u8>)],
-) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
-    let (Some(native), Some(scan)) = (native, scan) else {
-        return Ok(Vec::new());
-    };
-    let parents = native
-        .pmi_dimensions
-        .iter()
-        .map(|record| record.parent.as_str())
-        .collect::<HashSet<_>>();
-    let mut members = Vec::new();
-    for section in scan.sections() {
-        let id = section.native_id();
-        let Some(name) = section.name() else {
-            continue;
-        };
-        if !parents.contains(id.as_str()) || written.iter().any(|(member, _)| member == name) {
-            continue;
-        }
-        let mut payload = section.payload().to_vec();
-        crate::pmi::patch_payload(ir, id.as_str(), &mut payload)?;
-        members.push((name.to_owned(), payload));
-    }
-    Ok(members)
 }
 
 /// [`opaque_blocks`]'s result.

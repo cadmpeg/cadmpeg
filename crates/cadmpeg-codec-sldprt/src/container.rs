@@ -289,6 +289,14 @@ impl<'a> Section<'a> {
         }
     }
 
+    /// The member's bytes as the file stores them, before `__ZLB` inflation.
+    pub(crate) fn stored_payload(self) -> &'a [u8] {
+        match self {
+            Self::Block(block) => &block.payload,
+            Self::Compound(stream) => &stream.payload,
+        }
+    }
+
     pub(crate) fn payload(self) -> &'a [u8] {
         match self {
             Self::Block(block) => &block.payload,

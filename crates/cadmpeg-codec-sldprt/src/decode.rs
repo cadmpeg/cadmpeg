@@ -4190,21 +4190,12 @@ fn build_geometry_ir(
     }
     let mut annotations = annotation_builder.build();
     for source_block in &mut scan.blocks {
-        let id = UnknownId::compose(
-            &cadmpeg_ir::identity_namespace!("sldprt", "file", "block"),
-            source_block.offset,
-        );
+        let member = container::Section::Block(source_block);
+        let id = member.native_id();
         if unknowns.iter().any(|record| record.id() == &id) {
             continue;
         }
-        crate::annotations::note(
-            &mut annotations,
-            id.as_str(),
-            source_block.section.source_stream(),
-            u64_from_index(source_block.offset),
-            source_block.family.label(),
-            Exactness::ByteExact,
-        )?;
+        crate::annotations::note_member_record(&mut annotations, member)?;
         unknowns.push(UnknownRecord::retained(
             id,
             0,
@@ -4213,18 +4204,9 @@ fn build_geometry_ir(
         ));
     }
     for source_stream in &mut scan.compound_streams {
-        let id = UnknownId::compose(
-            &cadmpeg_ir::identity_namespace!("sldprt", "file", "compound-stream"),
-            source_stream.directory_id,
-        );
-        crate::annotations::note(
-            &mut annotations,
-            id.as_str(),
-            &source_stream.path,
-            0,
-            container::payload_family(&source_stream.payload).label(),
-            Exactness::ByteExact,
-        )?;
+        let member = container::Section::Compound(source_stream);
+        let id = member.native_id();
+        crate::annotations::note_member_record(&mut annotations, member)?;
         unknowns.push(UnknownRecord::retained(
             id,
             0,
