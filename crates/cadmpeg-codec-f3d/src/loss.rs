@@ -282,6 +282,9 @@ pub(crate) enum F3dLossCode {
     /// A joint operand path continues inside an unmerged inserted document; the
     /// remaining keys stay a nested occurrence path.
     AssemblyOperandNestedPathRetained,
+    /// A projected joint reads an occurrence path with a nonzero identity-pair
+    /// word as though the word were zero.
+    AssemblyOperandPathWordAssumed,
     /// An F3Z drawing root was omitted while its derived 3D model transferred.
     DrawingDocumentOmitted,
     /// ASM history estimated retained size exceeded the session's remaining retained-byte allowance.
@@ -697,6 +700,10 @@ pub(crate) enum F3dLossCode {
     FeatureProfileSelectionNative,
     /// Multiple Sketch-profile operands retain an unresolved group composition.
     FeatureExtrudeProfileGroupNative,
+    /// An extrude selects only sketch text and its cut was not projected.
+    FeatureExtrudeSketchTextSkipped,
+    /// Multiple same-sketch region operands are composed as the union of their regions.
+    FeatureExtrudeProfileGroupUnionAssumed,
     /// An Extrude profile names a Sketch entity that the Design stream does not register.
     FeatureExtrudeProfileSketchAbsent,
     FeatureExtrudeSurfaceProfileAssumed,
@@ -756,6 +763,9 @@ pub(crate) enum F3dLossCode {
     /// Extrude profile selections assume that an inserted region's holes belong to the selected
     /// profile.
     FeatureProfileRegionHoleInferred,
+    /// Extrude profile selections assume the smallest concentric sketch-circle ring set that
+    /// covers a cap bounded by a preceding body cylinder.
+    FeatureProfileBodyCircleRingsAssumed,
     /// Extrude profile selections stated the stored spatial profiles of a
     /// spatial Sketch frame that the Extrude transition did not certify.
     FeatureSpatialProfileTransitionAssumed,
@@ -1211,6 +1221,12 @@ pub(crate) enum F3dLossCode {
     WriterAppearanceOmitted,
     /// The retained source could not carry an edit; the file was regenerated.
     WriterPatchDeclined,
+    /// An integer parameter was written as a Fusion user parameter, which
+    /// holds a real.
+    WriterIntegerAsReal,
+    /// A design scope, container, or value of the written timeline was not
+    /// written.
+    WriterDesignRecordOmitted,
     /// An appearance's Protein asset was written under a GUID the writer
     /// allocated, in place of a missing or shared source GUID.
     WriterAppearanceGuidAllocated,
@@ -1412,6 +1428,7 @@ impl F3dLossCode {
         Self::AssemblyExtendedTailAssumed,
         Self::AssemblyExtendedTypedTailAssumed,
         Self::AssemblyOperandNestedPathRetained,
+        Self::AssemblyOperandPathWordAssumed,
         Self::DrawingDocumentOmitted,
         Self::HistoryBindingBudgetExceeded,
         Self::HistoryBindingWorkExceeded,
@@ -1679,6 +1696,8 @@ impl F3dLossCode {
         Self::DimensionUnprojected,
         Self::FeatureProfileSelectionNative,
         Self::FeatureExtrudeProfileGroupNative,
+        Self::FeatureExtrudeSketchTextSkipped,
+        Self::FeatureExtrudeProfileGroupUnionAssumed,
         Self::FeatureExtrudeProfileSketchAbsent,
         Self::FeatureExtrudeSurfaceProfileAssumed,
         Self::FeatureExtrudeSymmetricDistanceAssumed,
@@ -1712,6 +1731,7 @@ impl F3dLossCode {
         Self::FeatureProfileCapCarrierAssumed,
         Self::FeatureProfileHoleBoundaryInferred,
         Self::FeatureProfileRegionHoleInferred,
+        Self::FeatureProfileBodyCircleRingsAssumed,
         Self::FeatureSpatialProfileTransitionAssumed,
         Self::FeaturePathSelectionNative,
         Self::FeatureFaceSelectionNative,
@@ -2003,6 +2023,8 @@ impl F3dLossCode {
         Self::BodyDisplayNameAmbiguous,
         Self::WorkPlaneDisplayNameAmbiguous,
         Self::WorkPlaneDisplayNameUndecoded,
+        Self::WriterIntegerAsReal,
+        Self::WriterDesignRecordOmitted,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -2230,6 +2252,7 @@ impl F3dLossCode {
             Self::AssemblyExtendedTailAssumed => "assembly.extended-tail-assumed",
             Self::AssemblyExtendedTypedTailAssumed => "assembly.extended-typed-tail-assumed",
             Self::AssemblyOperandNestedPathRetained => "assembly.operand-nested-path-retained",
+            Self::AssemblyOperandPathWordAssumed => "assembly.operand-path-word-assumed",
             Self::DrawingDocumentOmitted => "drawing.document-omitted",
             Self::HistoryBindingBudgetExceeded => "history.binding-budget-exceeded",
             Self::HistoryBindingWorkExceeded => "history.binding-work-exceeded",
@@ -2638,6 +2661,10 @@ impl F3dLossCode {
             Self::DimensionUnprojected => "dimension.unprojected",
             Self::FeatureSketchProfileFlagsAssumed => "feature.sketch-profile-flags-assumed",
             Self::FeatureExtrudeProfileGroupNative => "feature.extrude-profile-group-native",
+            Self::FeatureExtrudeSketchTextSkipped => "feature.extrude-sketch-text-skipped",
+            Self::FeatureExtrudeProfileGroupUnionAssumed => {
+                "feature.extrude-profile-group-union-assumed"
+            }
             Self::FeatureExtrudeProfileSketchAbsent => "feature.extrude-profile-sketch-absent",
             Self::FeatureExtrudeSurfaceProfileAssumed => "feature.extrude-surface-profile-assumed",
             Self::FeatureExtrudeSymmetricDistanceAssumed => {
@@ -2691,6 +2718,9 @@ impl F3dLossCode {
             Self::FeatureProfileCapCarrierAssumed => "feature.profile-cap-carrier-assumed",
             Self::FeatureProfileHoleBoundaryInferred => "feature.profile-hole-boundary-inferred",
             Self::FeatureProfileRegionHoleInferred => "feature.profile-region-hole-inferred",
+            Self::FeatureProfileBodyCircleRingsAssumed => {
+                "feature.profile-body-circle-rings-assumed"
+            }
             Self::FeatureSpatialProfileTransitionAssumed => {
                 "feature.spatial-profile-transition-assumed"
             }
@@ -3107,6 +3137,8 @@ impl F3dLossCode {
             Self::WriterGeometryOmitted => "writer.geometry-omitted",
             Self::WriterAppearanceOmitted => "writer.appearance-omitted",
             Self::WriterPatchDeclined => "writer.patch-declined",
+            Self::WriterIntegerAsReal => "writer.integer-as-real",
+            Self::WriterDesignRecordOmitted => "writer.design-record-omitted",
             Self::WriterAppearanceGuidAllocated => "writer.appearance-guid-allocated",
             Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
             Self::KernelCarrierUnparseable => "source.kernel-carrier-unparseable",
@@ -3210,6 +3242,8 @@ impl F3dLossCode {
             Self::WriterGeometryOmitted => Severity::Warning,
             Self::WriterAppearanceOmitted => Severity::Warning,
             Self::WriterPatchDeclined => Severity::Warning,
+            Self::WriterIntegerAsReal => Severity::Info,
+            Self::WriterDesignRecordOmitted => Severity::Warning,
             Self::WriterAppearanceGuidAllocated => Severity::Warning,
             Self::ScopeOwnerUnresolved
             | Self::ScopeOutputOwnerUnresolved
@@ -3348,6 +3382,7 @@ impl F3dLossCode {
             | Self::AssemblyExtendedTailAssumed
             | Self::AssemblyExtendedTypedTailAssumed
             | Self::AssemblyOperandNestedPathRetained
+            | Self::AssemblyOperandPathWordAssumed
             | Self::AssemblyOperandDescentAmbiguous
             | Self::AssemblyRootPathIdentitiesNative
             | Self::DrawingDocumentOmitted
@@ -3607,6 +3642,8 @@ impl F3dLossCode {
             | Self::DimensionUnprojected
             | Self::FeatureProfileSelectionNative
             | Self::FeatureExtrudeProfileGroupNative
+            | Self::FeatureExtrudeSketchTextSkipped
+            | Self::FeatureExtrudeProfileGroupUnionAssumed
             | Self::FeatureExtrudeProfileSketchAbsent
             | Self::FeatureExtrudeSurfaceProfileAssumed
             | Self::FeatureExtrudeSymmetricDistanceAssumed
@@ -3640,6 +3677,7 @@ impl F3dLossCode {
             | Self::FeatureProfileCapCarrierAssumed
             | Self::FeatureProfileHoleBoundaryInferred
             | Self::FeatureProfileRegionHoleInferred
+            | Self::FeatureProfileBodyCircleRingsAssumed
             | Self::FeatureSpatialProfileTransitionAssumed
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
@@ -3975,6 +4013,8 @@ impl F3dLossCode {
             Self::WriterGeometryOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::WriterAppearanceOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::WriterPatchDeclined => LossTaxonomy::PreservedSourceUnavailable,
+            Self::WriterIntegerAsReal => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterDesignRecordOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterAppearanceGuidAllocated => LossTaxonomy::MetadataNotTransferred,
             Self::DimensionCompanionUntyped
             | Self::BodyReferenceTailUntyped
@@ -4316,6 +4356,8 @@ impl F3dLossCode {
             | Self::DimensionUnprojected
             | Self::FeatureProfileSelectionNative
             | Self::FeatureExtrudeProfileGroupNative
+            | Self::FeatureExtrudeSketchTextSkipped
+            | Self::FeatureExtrudeProfileGroupUnionAssumed
             | Self::FeatureExtrudeProfileSketchAbsent
             | Self::FeatureExtrudeSurfaceProfileAssumed
             | Self::FeatureExtrudeSymmetricDistanceAssumed
@@ -4349,6 +4391,7 @@ impl F3dLossCode {
             | Self::FeatureProfileCapCarrierAssumed
             | Self::FeatureProfileHoleBoundaryInferred
             | Self::FeatureProfileRegionHoleInferred
+            | Self::FeatureProfileBodyCircleRingsAssumed
             | Self::FeatureSpatialProfileTransitionAssumed
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
@@ -4553,6 +4596,7 @@ impl F3dLossCode {
             | Self::AssemblyExtendedTailAssumed
             | Self::AssemblyExtendedTypedTailAssumed
             | Self::AssemblyOperandNestedPathRetained
+            | Self::AssemblyOperandPathWordAssumed
             | Self::AssemblyOperandDescentAmbiguous
             | Self::AssemblyRootPathIdentitiesNative
             | Self::HistoryOnlyBodyOmitted => LossTaxonomy::FeatureHistoryRetained,
@@ -4866,6 +4910,7 @@ mod tests {
                 "assembly.extended-tail-assumed",
                 "assembly.extended-typed-tail-assumed",
                 "assembly.operand-nested-path-retained",
+                "assembly.operand-path-word-assumed",
                 "drawing.document-omitted",
                 "history.binding-budget-exceeded",
                 "history.binding-work-exceeded",
@@ -5133,6 +5178,8 @@ mod tests {
                 "dimension.unprojected",
                 "feature.profile-selection-native",
                 "feature.extrude-profile-group-native",
+                "feature.extrude-sketch-text-skipped",
+                "feature.extrude-profile-group-union-assumed",
                 "feature.extrude-profile-sketch-absent",
                 "feature.extrude-surface-profile-assumed",
                 "feature.extrude-symmetric-distance-assumed",
@@ -5166,6 +5213,7 @@ mod tests {
                 "feature.profile-cap-carrier-assumed",
                 "feature.profile-hole-boundary-inferred",
                 "feature.profile-region-hole-inferred",
+                "feature.profile-body-circle-rings-assumed",
                 "feature.spatial-profile-transition-assumed",
                 "feature.path-selection-native",
                 "feature.face-selection-native",
@@ -5457,6 +5505,8 @@ mod tests {
                 "design.body-display-name-ambiguous",
                 "work-plane.display-name-ambiguous",
                 "work-plane.display-name-undecoded",
+                "writer.integer-as-real",
+                "writer.design-record-omitted",
             ]
         );
     }

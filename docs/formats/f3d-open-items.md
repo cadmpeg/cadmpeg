@@ -687,7 +687,7 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Conflict.** None.
 
-**Note.** The decoder retains each profile operand in the native scope and emits `feature.extrude-profile-group-native` for each scope with multiple Sketch-profile operands.
+**Note.** The decoder retains each profile operand in the native scope. When all operands of an Extrude group name the same planar Sketch and each carries a region selection, the decoder composes them as the union of their selected regions under `feature.extrude-profile-group-union-assumed`. Every other multi-operand group, and any same-sketch group whose composition cannot run (including on a spatial Sketch), stays native and emits `feature.extrude-profile-group-native`.
 
 ### DR-257. Entity-selection serialization form
 
@@ -2180,17 +2180,17 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** Enclosing node framing is not decoded. The local transform reader leaves visibility and material override attributes unread. Binding uses the root design scene; member scenes retain their separate saved state.
 
-### DR-253. Typed occurrence path identity-word variants
+### DR-253. Typed occurrence path identity-pair words
 
-**Question.** What do the eight-byte word between the two identity-GUID pairs and the eight-byte tail after the final u32 `2` mean in a positive-count typed occurrence path, and how do they affect binding?
+**Question.** What does the u32 pair word after each u32 `2` in a positive-count typed occurrence path state, and how does it affect binding?
 
-**Known.** The admitted identity suffix in `f3d.md` §3.1 "A class-329 path begins with its indexed header" stores eight-byte value `2` between the two GUID pairs and an eight-byte zero tail. Twenty-six live version-4 paths of type `96CBEA21-17E0-4BCB-BA77-04EA87B47934`, in four documents, store `0x0000000100000002` and `1` at those positions. Each path has one or two occurrence keys and four identity GUIDs. Each 425-byte path is bounded by its indexed wrapper. The paths belong to thirteen 806-byte Assemble scopes. The primary record index fixes their live offsets. Their scopes retain explicit connector matrices and the `assembly.joint-unprojected` loss. On all thirteen scopes the occurrence keys resolve, and the connector frames at the current occurrence poses, with the identity for an occurrence that stores no pose, satisfy the joint relation in "Assembly operands" in rotation and translation. These scopes do not separate the two word pairs, because no such scope stores `(2, 0)`.
+**Known.** `f3d.md` "Assembly operands" gives the two pair words of a typed path record. Each word is `0` or `1`, and the records of one continued path store the same pair. Twenty-six live version-4 paths of type `96CBEA21-17E0-4BCB-BA77-04EA87B47934`, in four documents, store `(1, 1)` (encoded as `0x0000000100000002` between the two GUID pairs and u32 `1` after the second `u32 2`); other observed typed paths store `(0, 0)`. Each path has one or two occurrence keys and four identity GUIDs. Each 425-byte path is bounded by its indexed wrapper. The 26 `(1, 1)` paths belong to thirteen 806-byte Assemble scopes whose occurrence keys resolve and whose connector frames at current occurrence poses satisfy the joint relation in "Assembly operands". The decoder reads the occurrence and identity GUIDs of a path with word `1` as it reads them with word `0`, projects the joint, and charges `assembly.operand-path-word-assumed`.
 
-**Need.** Make controlled saves of one joint between two fixed component occurrences. Give each occurrence an identity-transform child with a coincident connector. In separate saves, change the first operand from its root connector to its child connector, then change the second operand in the same way. Hold both connector matrices fixed. In further independent saves, update only the first component revision, only the second component revision, and only the joint suppression state. Create two component configuration rows with equal geometry and equal connector matrices; switch each operand between those rows independently. Compare both identity words and all five GUID fields with the baseline. Obtain both word pairs `(2, 0)` and `(0x0000000100000002, 1)`. Establish which controlled changes affect each word and whether the words can vary independently before projection.
+**Need.** Make controlled saves of one joint between two fixed component occurrences. Give each occurrence an identity-transform child with a coincident connector. In separate saves, change the first operand from its root connector to its child connector, then change the second operand in the same way. Hold both connector matrices fixed. In further independent saves, update only the first component revision, only the second component revision, and only the joint suppression state. Create two component configuration rows with equal geometry and equal connector matrices; switch each operand between those rows independently. Compare both pair words and all five GUID fields with the baseline. Obtain both `(0, 0)` and `(1, 1)` and establish which controlled changes affect each word so a writer knows when to emit word `1`.
 
-**Conflict.** The nonzero words change the admitted identity suffix. Treating them as padding would discard stored values.
+**Conflict.** None.
 
-**Note.** The current path decoder retains these scopes natively. Their thirteen paired-frame findings remain errors until the identity state has a complete grammar and binding rule.
+**Note.** The decoder projects joints backed by paths with word `1` and charges `assembly.operand-path-word-assumed`.
 
 ### DR-255. Decal target selected by a face-recipe entity selection
 
@@ -3047,7 +3047,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** None.
 
-**Note.** Projection retains each distance-reversal flag in its native set, keeps owner-slot order with forward neutral direction, and reports `feature.chamfer-reference-face-assumed`. The neutral representation needs a reference-face binding for each selected edge before it can retain a proven assignment.
+**Note.** Projection retains each distance-reversal flag in its native set, keeps owner-slot order with forward neutral direction, and reports `feature.chamfer-reference-face-assumed`. For an unequal two-distance chamfer whose selected edge meets two planar or plane-and-cylinder faces with one forward coedge, input-edge support records store both faces and their outward normals with the forward-coedge face marked `with_edge` as the assumed Distance 1 side under `feature.chamfer-reference-face-assumed`. The neutral representation still needs a proven reference-face binding per selected edge to retire the assumption.
 
 ### DR-342. Chamfer recipes with conflicting transition selections
 
