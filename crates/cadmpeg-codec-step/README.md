@@ -31,7 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for loss in &result.report().losses {
         eprintln!("{:?}: {}", loss.severity, loss.message);
     }
-    println!("{} bodies", result.ir().model.bodies.len());
+    println!("{} bodies", result.ir().geometry.bodies.len());
     Ok(())
 }
 ```
@@ -55,6 +55,12 @@ them. Supported surface carriers are planes, cylinders, cones, spheres, tori,
 and rational or non-rational NURBS surfaces. Supported curve carriers are lines,
 circles, ellipses, parabolas, hyperbolas, and rational or non-rational NURBS
 curves. The writer preserves shared carriers by reusing STEP instances.
+
+For non-periodic NURBS curves and pcurves, an internal knot of multiplicity
+`degree + 1` becomes a shared-pole join of multiplicity `degree` when both
+endpoint poles encode the same point and their rational weights are equal and
+positive. Polynomial joins use the same point condition. This preserves the
+curve and its parameterization exactly.
 
 Bodies absent from every product definition's body list are written once in
 model coordinates in a representation linked to the root product. Claimed
@@ -108,6 +114,10 @@ selected by `Encoder::plan`, not stored in the options. An empty timestamp produ
 default output deterministic. The first body name, when present, supplies the
 STEP product name. `product_name` supplies the `FILE_NAME` name instead.
 
+The decoder keeps the `FILE_DESCRIPTION`, `FILE_NAME`, and `FILE_SCHEMA` strings
+as source attributes, for example `file_name.originating_system` and
+`file_name.author.0`. The [specification][spec], §6, lists the keys.
+
 The writer creates a parent product for distinct local root definitions when no
 repeated root definition has a representable child. It also creates a parent for
 a rigid root occurrence with a non-identity placement.
@@ -155,6 +165,7 @@ Requires Rust 1.88 or later. Licensed under Apache-2.0.
 [docs]: https://docs.rs/cadmpeg-codec-step
 [legal]: https://github.com/cadmpeg/cadmpeg/blob/main/LEGAL.md
 [repo]: https://github.com/cadmpeg/cadmpeg
+[spec]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/step.md#6-header
 [support]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#step-part-21
 [`CadIr`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/document/struct.CadIr.html
 [`Codec`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/codec/trait.Codec.html

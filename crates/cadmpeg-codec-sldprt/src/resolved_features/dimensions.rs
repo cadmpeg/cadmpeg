@@ -813,7 +813,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
         };
         let candidates =
             if let Some(sketch) = sketches.iter().find(|sketch| sketch.id == **sketch_id) {
-                marker_transforms_with_frame_fallback(candidates, sketch, QUANTUM)
+                marker_transforms_with_frame_fallback(candidates, sketch, QUANTUM, features)
             } else {
                 candidates
             };

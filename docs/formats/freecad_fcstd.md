@@ -9,7 +9,8 @@ The primary write envelope is a ZIP archive containing `Document.xml` with docum
 The application graph may contain core App, Part, PartDesign, Sketcher,
 Spreadsheet, Assembly, TechDraw, and GUI persistence records. Exact shapes may use text or binary
 B-rep side entries. GUI state, thumbnails, persistent element maps, and string-hasher tables are
-independently optional.
+independently optional. Each archive entry is one part. A Geometry property needs the side entry
+that holds its payload.
 
 The synthesis catalog is `fcstd:schema-4`, the one band an explicit write target may name. A
 retained document write regenerates the ZIP container deterministically, writes `Document.xml`
@@ -99,6 +100,12 @@ Each provider has one direct `Properties` container, and direct property names a
 that container. Registered GUI property types define the cardinality of their value elements;
 unregistered properties retain their ordered values without semantic dispatch.
 
+An `Expand` element in `GuiDocument.xml` records the saved expansion of the document tree. Each
+child `Expand` element names one expanded tree item by object name in its `name` attribute and
+nests the expanded items beneath that item. An empty `Expand` element records that no item is
+expanded. A `ViewProvider` may also
+carry its own `expanded` attribute.
+
 Each `ObjectData` object has at most one direct `Extensions` container and at most one direct
 `Properties` container. When both are present, `Extensions` precedes `Properties`. An extension
 container's `Count` equals its `Extension` records. Extension names and runtime types are unique
@@ -153,7 +160,7 @@ containers are invalid. `Properties.Count` equals the number of `Property` recor
 Property names are unique across both record kinds within one container. A property family is
 selected by an exact registered runtime type. An unregistered runtime type does not select a family
 from a substring of its name.
-A missing unrelated file attachment does not supply admitted side-entry data. Required shape payloads must remain readable. A malformed link-property payload has source-only XML and no admitted values or links; no empty link or replacement scalar is inferred.
+A missing unrelated file attachment does not supply admitted side-entry data. A Geometry property needs only the side entry that holds its payload; for an exact shape, that is the entry its direct `Part` carrier names. A malformed link-property payload has source-only XML and no admitted values or links; no empty link or replacement scalar is inferred.
 
 A `Property` contains its runtime-type-specific value XML. A `_Property` has no persisted value.
 Status and dynamic-property metadata are optional record attributes. Property container dispatch
@@ -382,9 +389,9 @@ retain their serialized root order as an occurrence discriminator; they do not s
 region, shell, face, loop, coedge, edge, vertex, or point identity.
 A body's kind is its topology's dimension. An edge occurrence in a shell is an edge shape at the
 location identity of its composed face, wire, and edge use locations, so one edge shape at two
-location identities is two occurrences. Each use of an edge occurrence by a face's wire is
+location identities is two occurrences. Each boundary use of an edge occurrence by a face's wire is
 forward or reversed by the composed orientation of its face, wire, and edge uses. A shell is
-closed when each non-degenerate edge occurrence of its faces' wires has as many forward as
+closed when each non-degenerate boundary edge occurrence has as many forward as
 reversed uses, and at least one of each. The closed flag (the fifth of the `free,
 modified, checked, orientable, closed, infinite, convex` flags) does not determine closure. A
 `Solid` whose children are all closed shells is a solid body. A `Solid` whose children are all
@@ -392,6 +399,14 @@ shells, with at least one open shell, is a sheet body. A `Solid` with no child o
 that is not a shell is a general body. A `Shell` or `Face` is a sheet and a `Wire` or `Edge` a
 wire. A `Compound` or `CompSolid` has the kind its member shapes share, so a compound that holds
 one closed solid is a solid body; members of different kinds make it a general body.
+
+`Forward` and `Reversed` wire and edge uses supply the face boundary incidence.
+An `Internal` or `External` use supplies non-boundary topology. A wire can contain both
+boundary and non-boundary edge uses. A seam can use the same edge twice with opposite orientations.
+CADIR decision: non-boundary edges transfer as shell wire geometry. An edge that also has boundary
+uses retains its boundary ownership. Repeated non-boundary uses share one shell wire edge. Their
+face incidence and native orientation remain in the native shape record, with
+`fcstd/topology.non-boundary-incidence-retained`.
 
 An edge endpoint accessor visits the edge's direct child uses in serialized order. Its endpoint
 incidence has exactly one `Forward` vertex use and exactly one `Reversed` vertex use: `Forward`
@@ -1878,7 +1893,18 @@ both taper angles and offsets, whether length follows the profile normal, and wh
 profile faces are allowed. Direction provenance distinguishes the profile normal, an explicit
 custom vector, and a selected reference axis while also retaining the normalized resolved
 direction. A non-sketch planar profile supplies its profile normal from its persisted placement
-frame. Reversal inverts the direction. A pad joins and a pocket cuts. Missing required lengths
+frame. Reversal inverts the direction.
+
+A body's `Group` list orders its solid features. Its first solid feature creates a new body
+when it adds material and both the body's `BaseFeature` link and the feature's `BaseFeature` link
+are empty.
+An absent `BaseFeature` property also denotes an empty link. Later features add to or remove from
+the result of the same body. A body with a `BaseFeature` link starts from that base. These rules
+apply to PartDesign pads, revolutions, primitives, lofts, pipes, and helices. Pockets, grooves,
+holes, and subtractive primitives, lofts, pipes, and helices remove material. A subtractive first
+solid feature with empty body and feature `BaseFeature` links has an empty input solid.
+
+Missing required lengths
 or selections and invalid directions remain attributable native operations instead of being
 rewritten as zero-length or blind features.
 
@@ -1901,7 +1927,8 @@ at most one turn. The sum of two fixed side magnitudes is at most one turn.
 Revolution `Type=1` selects last-intersection termination; Groove `Type=1` selects through-all
 termination. `Type=2` selects first-intersection termination, and `Type=3` selects the face in
 `UpToFace`. These terminations have no fixed angular endpoint.
-Standalone Part revolutions create a new body, PartDesign revolutions join, and grooves cut.
+Standalone Part revolutions create a new body, PartDesign revolutions join, and grooves cut,
+subject to the first-feature rule of the extrusion section.
 
 Part and PartDesign fillets distinguish an explicit edge selection from the persisted all-edges
 mode and require a finite positive constant radius. Chamfers retain equal-distance,

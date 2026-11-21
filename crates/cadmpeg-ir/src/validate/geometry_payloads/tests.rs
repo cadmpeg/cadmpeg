@@ -66,14 +66,8 @@ fn tessellation_triangle_groups_and_texture_assignments_validate() {
     )
     .expect("valid tessellation")
     .with_triangle_groups(vec![
-        TessellationTriangleGroup {
-            source_id: Some("group-a".into()),
-            triangles: vec![0],
-        },
-        TessellationTriangleGroup {
-            source_id: Some("group-b".into()),
-            triangles: vec![1],
-        },
+        TessellationTriangleGroup::new(Some("group-a".into()), vec![0]),
+        TessellationTriangleGroup::new(Some("group-b".into()), vec![1]),
     ])
     .expect("valid triangle group partition")
     .with_texture_assignments(vec![
@@ -145,7 +139,7 @@ fn tessellation_triangle_groups_and_texture_assignments_validate() {
 #[test]
 fn finite_nonzero_signed_sphere_radius_is_valid_without_a_size_floor() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+    ir.geometry.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
         crate::geometry::analytic::SphereSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -202,4 +196,98 @@ fn tessellation_reference_validation_preserves_finding_order() {
         assert_eq!(finding.entity.as_deref(), Some(owner));
         assert_eq!(finding.message, message);
     }
+}
+
+/// A two-triangle mesh of the unit cube's body whose first group holds the
+/// triangles of `face`.
+fn face_grouped(ir: &crate::document::CadIr, face: crate::ids::FaceId, body: bool) -> Tessellation {
+    use crate::tessellation::TessellationTriangleGroup;
+    let mesh = Tessellation::new(
+        crate::tessellation::TessellationId::mint("synthetic:test:tessellation#face-groups")
+            .expect("valid identity"),
+        TessellationMesh::List {
+            vertices: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+            ],
+            triangles: vec![[0, 1, 2], [1, 3, 2]],
+        },
+        Vec::new(),
+    )
+    .expect("valid tessellation")
+    .with_triangle_groups(vec![
+        TessellationTriangleGroup::new(None, vec![0]).with_face(face),
+        TessellationTriangleGroup::new(None, vec![1]),
+    ])
+    .expect("valid triangle group partition");
+    mesh.with_body(body.then(|| ir.geometry.bodies[0].id.clone()))
+}
+
+fn tessellation_errors(ir: &mut crate::document::CadIr) -> Vec<String> {
+    use crate::report::{check::Check, Severity};
+    ir.finalize();
+    validate_neutral(ir, Vec::new())
+        .expect("validate the neutral model")
+        .findings
+        .into_iter()
+        .filter(|finding| {
+            finding.check == Check::Tessellation && finding.severity == Severity::Error
+        })
+        .map(|finding| finding.message)
+        .collect()
+}
+
+#[test]
+fn a_triangle_group_names_a_face_of_the_tessellation_body() {
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    let face = ir.geometry.faces[0].id.clone();
+    let mesh = face_grouped(&ir, face.clone(), true).with_faces(vec![face]);
+    ir.model.tessellations.push(mesh);
+    assert_eq!(tessellation_errors(&mut ir), Vec::<String>::new());
+}
+
+#[test]
+fn a_triangle_group_face_needs_a_tessellation_body() {
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    let face = ir.geometry.faces[0].id.clone();
+    ir.model.tessellations.push(face_grouped(&ir, face, false));
+    let errors = tessellation_errors(&mut ir);
+    assert!(
+        errors
+            .iter()
+            .any(|message| message.contains("triangle group face and no tessellation body")),
+        "{errors:?}"
+    );
+}
+
+#[test]
+fn a_triangle_group_face_is_a_face_of_the_tessellation_body() {
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    let face = crate::ids::FaceId::mint("synthetic:test:face#elsewhere").expect("valid identity");
+    ir.model.tessellations.push(face_grouped(&ir, face, true));
+    let errors = tessellation_errors(&mut ir);
+    assert!(
+        errors
+            .iter()
+            .any(|message| message.contains("triangle group face outside the tessellation body")),
+        "{errors:?}"
+    );
+}
+
+#[test]
+fn a_triangle_group_face_is_one_of_the_tessellation_faces() {
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    let grouped = ir.geometry.faces[0].id.clone();
+    let listed = ir.geometry.faces[1].id.clone();
+    let mesh = face_grouped(&ir, grouped, true).with_faces(vec![listed]);
+    ir.model.tessellations.push(mesh);
+    let errors = tessellation_errors(&mut ir);
+    assert!(
+        errors
+            .iter()
+            .any(|message| message.contains("triangle group face outside the tessellation faces")),
+        "{errors:?}"
+    );
 }

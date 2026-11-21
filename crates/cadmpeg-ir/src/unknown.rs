@@ -32,15 +32,14 @@ pub struct NativeUnknownRecord {
     /// Arena id.
     pub id: UnknownId,
     /// Related entity IDs from any document arena.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub links: Vec<Identity>,
 }
 
 /// Raw source retention facts. Digest text and extents are producer evidence;
 /// authoritative sidecar admission checks them before recovery or replay.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "retention", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum RawRetainedBytes {
     Inline {
         #[serde(with = "crate::bytes")]
@@ -81,19 +80,17 @@ impl From<&NativeUnknownRecord> for crate::native::NativeRecord {
     /// The projection states one field, a list of identity strings, so the
     /// record it builds cannot nest and this conversion cannot fail.
     fn from(record: &NativeUnknownRecord) -> Self {
-        let links = (!record.links.is_empty()).then(|| {
-            (
-                "links".to_owned(),
-                crate::native::NativeField::TextList(
-                    record
-                        .links
-                        .iter()
-                        .map(|link| link.as_str().to_owned())
-                        .collect(),
-                ),
-            )
-        });
-        Self::from_identity(record.id.clone(), links)
+        let links = (
+            "links".to_owned(),
+            crate::native::NativeField::TextList(
+                record
+                    .links
+                    .iter()
+                    .map(|link| link.as_str().to_owned())
+                    .collect(),
+            ),
+        );
+        Self::from_identity(record.id.clone(), Some(links))
     }
 }
 
@@ -113,7 +110,6 @@ pub struct UnknownRecord {
     /// contradicts the bytes beside it.
     retention: RawRetainedBytes,
     /// Related entity IDs from any document arena.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     links: Vec<String>,
 }
 
@@ -288,21 +284,24 @@ mod tests {
     }
 
     #[test]
-    fn product_unknown_projection_refuses_extra_fields_and_accepts_absent_links() {
-        for links in [None, Some(serde_json::json!([]))] {
-            let mut wire = serde_json::json!({"id": "synthetic:source:unknown#0"});
-            if let Some(links) = links {
-                wire["links"] = links;
-            }
-            let record = serde_json::from_value::<NativeUnknownRecord>(wire.clone()).unwrap();
-            assert!(record.links.is_empty());
-            wire["zz_bogus"] = true.into();
-            let error = serde_json::from_value::<NativeUnknownRecord>(wire).unwrap_err();
-            assert_eq!(
-                error.to_string(),
-                "unknown field `zz_bogus`, expected `id` or `links`"
-            );
-        }
+    fn product_unknown_projection_refuses_extra_fields_and_absent_links() {
+        let mut wire = serde_json::json!({"id": "synthetic:source:unknown#0", "links": []});
+        let record = serde_json::from_value::<NativeUnknownRecord>(wire.clone()).unwrap();
+        assert!(record.links.is_empty());
+        let error = serde_json::from_value::<NativeUnknownRecord>(
+            serde_json::json!({"id": "synthetic:source:unknown#0"}),
+        )
+        .unwrap_err();
+        assert!(
+            error.to_string().contains("missing field `links`"),
+            "{error}"
+        );
+        wire["zz_bogus"] = true.into();
+        let error = serde_json::from_value::<NativeUnknownRecord>(wire).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "unknown field `zz_bogus`, expected `id` or `links`"
+        );
     }
 
     #[test]
@@ -323,8 +322,7 @@ mod tests {
             "id": "synthetic:model:unknown#0",
             "offset": 7,
             "retention": {
-                "retention": "digest",
-                "byte_len": 99,
+                "kind": "digest", "byte_len": 99,
                 "sha256": "wire-value"
             },
             "links": ["synthetic:model:point#0"]
@@ -350,7 +348,8 @@ mod tests {
         let wire = serde_json::json!({
             "id": "synthetic:model:unknown#0",
             "offset": 7,
-            "retention": {"retention": "inline", "data": "AQID"}
+            "retention": {"kind": "inline", "data": "AQID"},
+            "links": []
         });
         let record: UnknownRecord =
             serde_json::from_value(wire.clone()).expect("deserialize unknown-record wire");
@@ -388,3 +387,4 @@ mod tests {
 }
 
 mod identity_rewrite;
+pub mod part;

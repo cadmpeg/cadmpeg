@@ -16,6 +16,7 @@ fn surface(geometry: SolvedSurfaceGeometry) -> Surface {
         id: cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#s").unwrap(),
         geometry: SurfaceGeometry::Solved(geometry),
         source_object: None,
+        native_ref: None,
     }
 }
 

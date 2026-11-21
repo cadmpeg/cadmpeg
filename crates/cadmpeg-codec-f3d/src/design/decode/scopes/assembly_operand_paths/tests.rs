@@ -93,6 +93,7 @@ fn assembly_path_span_keeps_its_record_index() {
         64,
         0,
         0,
+        |_| Ok(()),
     )
     .unwrap()
     .unwrap();
@@ -218,13 +219,14 @@ fn wide_scope_locator_is_admitted_by_its_record_type() {
         let bytes = wide_envelope_bytes(scope.record_index, transform);
         let locator_length = if transform { 225 } else { 97 };
         assert_eq!(bytes.len(), locator_length + path_bytes().len() + 37 + 11);
-        let path = exact_assembly_operand_path_envelope(&bytes, &scope, &typed, 64, 0, 0)
-            .unwrap()
-            .expect("wide locator");
+        let path =
+            exact_assembly_operand_path_envelope(&bytes, &scope, &typed, 64, 0, 0, |_| Ok(()))
+                .unwrap()
+                .expect("wide locator");
         assert_eq!(path.record_index, 65);
         let untyped = std::collections::HashMap::new();
         assert!(
-            exact_assembly_operand_path_envelope(&bytes, &scope, &untyped, 64, 0, 0)
+            exact_assembly_operand_path_envelope(&bytes, &scope, &untyped, 64, 0, 0, |_| Ok(()))
                 .unwrap()
                 .is_none()
         );
@@ -437,7 +439,7 @@ fn wide_locator_path_continues_over_typed_records() {
         (66, (TYPED, 4)),
     ]);
     let bytes = envelope(true);
-    let path = exact_assembly_operand_path_envelope(&bytes, &scope, &types, 64, 0, 0)
+    let path = exact_assembly_operand_path_envelope(&bytes, &scope, &types, 64, 0, 0, |_| Ok(()))
         .unwrap()
         .expect("continued wide path");
     let occurrences = path
@@ -464,7 +466,7 @@ fn wide_locator_path_continues_over_typed_records() {
         (65, (TYPED, 4)),
     ]);
     assert!(
-        exact_assembly_operand_path_envelope(&bytes, &scope, &untyped, 64, 0, 0)
+        exact_assembly_operand_path_envelope(&bytes, &scope, &untyped, 64, 0, 0, |_| Ok(()))
             .unwrap()
             .is_none()
     );
@@ -533,6 +535,83 @@ fn versioned_rigid_group_envelope(version: u32, matrix: bool, construction: bool
 }
 
 #[test]
+fn as_built_reads_one_typed_path_before_a_wrapper_with_an_index_gap() {
+    use crate::layout::assembly_ordinary_rigid_group_identity_locator as identity;
+    use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
+
+    let mut scope = DesignParameterScope::empty("generated:scope", DesignFeatureKind::AsBuilt, 10);
+    scope
+        .try_edit(|draft| {
+            crate::design::test_support::lengthen_scope_frame(draft, 257);
+            draft.reference_count_offset = 153;
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(Vec::new());
+            draft.layout_fixture_references();
+            draft.feature_ordinal_offset = 181;
+        })
+        .unwrap();
+    scope.class_tag = "283".to_owned().try_into().unwrap();
+    scope.paired_class_tag = "264".to_owned().try_into().unwrap();
+
+    let template = versioned_rigid_group_envelope(3, false, true);
+    let mut bytes = template[..identity::LEN].to_vec();
+    write_reference(&mut bytes, identity::WRAPPER_REFERENCE, 67);
+    let count = bytes.len() + 21;
+    let first_key_end = bytes.len() + path_bytes().len();
+    bytes.extend_from_slice(&identity_qualified_path_bytes(*b"304", true));
+    let second_key = "66666666-6666-6666-6666-666666666666";
+    let mut key_bytes = Vec::new();
+    push_guid(&mut key_bytes, second_key);
+    let second_key_end = first_key_end + key_bytes.len();
+    bytes.splice(first_key_end..first_key_end, key_bytes);
+    bytes[count..count + 4].copy_from_slice(&2_u32.to_le_bytes());
+    let wrapper = bytes.len();
+    bytes.extend_from_slice(&template[identity::LEN + path_bytes().len()..]);
+    bytes[wrapper + 7..wrapper + 11].copy_from_slice(&67_u32.to_le_bytes());
+    let next_record = wrapper + super::path_wrapper::LEN;
+    bytes[next_record + 7..next_record + 11].copy_from_slice(&68_u32.to_le_bytes());
+
+    let types = std::collections::HashMap::from([
+        (64, (super::WIDE_PATH_LOCATOR_TYPE_GUID, 3)),
+        (65, (TYPED_OCCURRENCE_PATH_TYPE_GUID, 4)),
+        (67, ("FF415D89-A1DB-44AC-B824-E9A772B86ED4", 1)),
+    ]);
+    let read = |bytes: &[u8], types: &super::StreamTypes<'_>| {
+        exact_assembly_operand_path_envelope(bytes, &scope, types, 64, 1, 0, |_| Ok(())).unwrap()
+    };
+    let path = read(&bytes, &types).unwrap();
+    assert_eq!(path.link().wrapper_record_index, 67);
+    assert_eq!(
+        path.occurrence_guids()
+            .iter()
+            .map(|key| key.value.as_str())
+            .collect::<Vec<_>>(),
+        [GUID, second_key],
+    );
+    assert!(path.two_keys_in_one_typed_record());
+
+    let mut one_key = bytes.clone();
+    drop(one_key.drain(first_key_end..second_key_end));
+    one_key[count..count + 4].copy_from_slice(&1_u32.to_le_bytes());
+    assert!(read(&one_key, &types).is_none());
+
+    for (at, value) in [
+        (wrapper + super::path_wrapper::CONSTANT_ONE_WORD, 2),
+        (wrapper + super::path_wrapper::PATH_REFERENCE + 1, 66),
+    ] {
+        let mut wrong = bytes.clone();
+        wrong[at..at + 4].copy_from_slice(&u32::to_le_bytes(value));
+        assert!(read(&wrong, &types).is_none());
+    }
+
+    let mut unregistered = types.clone();
+    unregistered.remove(&67);
+    assert!(read(&bytes, &unregistered).is_none());
+    unregistered.insert(67, types[&67]);
+    unregistered.insert(65, (TYPED_OCCURRENCE_PATH_TYPE_GUID, 3));
+    assert!(read(&bytes, &unregistered).is_none());
+}
+
+#[test]
 fn rigid_group_locator_version_selects_its_exact_frame_and_reference_width() {
     use crate::design::decode::scopes::assembly_operand_frames::exact_as_built_operand_frame;
     let mut scope = DesignParameterScope::empty("generated:scope", DesignFeatureKind::AsBuilt, 10);
@@ -563,7 +642,8 @@ fn rigid_group_locator_version_selects_its_exact_frame_and_reference_width() {
                 64,
                 (super::WIDE_PATH_LOCATOR_TYPE_GUID, version),
             )]);
-            exact_assembly_operand_path_envelope(bytes, &scope, &types, 64, 1, 0).unwrap()
+            exact_assembly_operand_path_envelope(bytes, &scope, &types, 64, 1, 0, |_| Ok(()))
+                .unwrap()
         };
         assert!(exact_assembly_operand_path_envelope(
             &bytes,
@@ -572,6 +652,7 @@ fn rigid_group_locator_version_selects_its_exact_frame_and_reference_width() {
             64,
             1,
             0,
+            |_| Ok(()),
         )
         .unwrap()
         .is_none());
@@ -721,7 +802,8 @@ fn rigid_group_nullable_locators_keep_counted_path_order_and_reference_width() {
             (66, (TYPED, 4)),
         ]);
         let read = |bytes: &[u8]| {
-            exact_assembly_operand_path_envelope(bytes, &scope, &types, 64, 1, 0).unwrap()
+            exact_assembly_operand_path_envelope(bytes, &scope, &types, 64, 1, 0, |_| Ok(()))
+                .unwrap()
         };
         let path = read(&bytes).unwrap();
         assert_eq!(path.occurrence_guids().len(), 2);
@@ -768,9 +850,10 @@ fn rigid_group_locator_refuses_cross_version_lengths() {
             64,
             (super::WIDE_PATH_LOCATOR_TYPE_GUID, frame_version),
         )]);
-        let path = exact_assembly_operand_path_envelope(&bytes, &scope, &types, 64, 1, 0)
-            .unwrap()
-            .unwrap();
+        let path =
+            exact_assembly_operand_path_envelope(&bytes, &scope, &types, 64, 1, 0, |_| Ok(()))
+                .unwrap()
+                .unwrap();
         assert!(exact_as_built_operand_frame(&bytes, &path, &scope, &types).is_some());
         for version in [1, 2, 3, 4, 5, 6] {
             let types = std::collections::HashMap::from([(
@@ -778,7 +861,8 @@ fn rigid_group_locator_refuses_cross_version_lengths() {
                 (super::WIDE_PATH_LOCATOR_TYPE_GUID, version),
             )]);
             let decoded =
-                exact_assembly_operand_path_envelope(&bytes, &scope, &types, 64, 1, 0).unwrap();
+                exact_assembly_operand_path_envelope(&bytes, &scope, &types, 64, 1, 0, |_| Ok(()))
+                    .unwrap();
             assert_eq!(decoded.is_some(), version == frame_version);
             assert_eq!(
                 exact_as_built_operand_frame(&bytes, &path, &scope, &types).is_some(),
@@ -789,32 +873,66 @@ fn rigid_group_locator_refuses_cross_version_lengths() {
 }
 
 #[test]
-fn typed_path_refuses_unsettled_identity_words() {
+fn typed_path_keeps_its_identity_pair_words() {
     use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
 
     let bytes = identity_qualified_path_bytes(*b"340", true);
     let identity_word = bytes.len() - (8 + 2 * 76 + 4 + 8);
     let tail_word = bytes.len() - 8;
-    let read = |bytes: &[u8]| {
-        exact_assembly_operand_path(
-            bytes,
-            0,
-            65,
-            bytes.len(),
-            path_link(),
+    let read = |bytes: &[u8], type_guid| {
+        exact_assembly_operand_path(bytes, 0, 65, bytes.len(), path_link(), type_guid).unwrap()
+    };
+    let with_words = |first: u32, second: u32| {
+        let mut changed = bytes.clone();
+        changed[identity_word + 4..identity_word + 8].copy_from_slice(&first.to_le_bytes());
+        changed[tail_word..tail_word + 4].copy_from_slice(&second.to_le_bytes());
+        changed
+    };
+    for (first, second) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+        let path = read(
+            &with_words(first, second),
             Some(TYPED_OCCURRENCE_PATH_TYPE_GUID),
         )
-        .unwrap()
-    };
-    assert!(read(&bytes).is_some());
-    for (identity, tail) in [
-        (0x0000_0001_0000_0002u64, 0u64),
-        (2, 1),
-        (0x0000_0001_0000_0002, 1),
-    ] {
-        let mut changed = bytes.clone();
-        changed[identity_word..identity_word + 8].copy_from_slice(&identity.to_le_bytes());
-        changed[tail_word..tail_word + 8].copy_from_slice(&tail.to_le_bytes());
-        assert!(read(&changed).is_none());
+        .expect("typed path");
+        assert_eq!(
+            path.identity_pair_words()
+                .iter()
+                .map(|word| (word.value, word.offset))
+                .collect::<Vec<_>>(),
+            [
+                (first, u64::try_from(identity_word + 4).unwrap()),
+                (second, u64::try_from(tail_word).unwrap()),
+            ]
+        );
     }
+    let path = read(&with_words(1, 0), Some(TYPED_OCCURRENCE_PATH_TYPE_GUID)).unwrap();
+    let wire = serde_json::to_value(&path).unwrap();
+    assert_eq!(wire["identity_pair_words"], serde_json::json!([1, 0]));
+    let round: crate::records::feature::assembly::DesignAssemblyOperandPath =
+        serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(round, path);
+    for (field, value) in [
+        ("identity_pair_words", serde_json::json!([2, 0])),
+        ("identity_pair_word_offsets", serde_json::json!([1])),
+    ] {
+        let mut invalid = wire.clone();
+        invalid[field] = value;
+        assert!(serde_json::from_value::<
+            crate::records::feature::assembly::DesignAssemblyOperandPath,
+        >(invalid)
+        .is_err());
+    }
+    for (first, second) in [(2, 0), (0, 2)] {
+        assert!(read(
+            &with_words(first, second),
+            Some(TYPED_OCCURRENCE_PATH_TYPE_GUID)
+        )
+        .is_none());
+    }
+
+    let listed = identity_qualified_path_bytes(*b"390", true);
+    let mut changed = listed.clone();
+    changed[identity_word + 4..identity_word + 8].copy_from_slice(&1_u32.to_le_bytes());
+    assert!(read(&listed, None).is_some_and(|path| path.identity_pair_words().is_empty()));
+    assert!(read(&changed, None).is_none());
 }

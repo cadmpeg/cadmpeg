@@ -43,6 +43,15 @@ impl<'a> StateRows<'a> {
         }
     }
 
+    /// The one surface binding of a face.
+    pub(super) fn surface(&self, face: i64) -> Option<i64> {
+        self.bindings
+            .get(&face)
+            .copied()
+            .flatten()
+            .map(|binding| binding.carrier)
+    }
+
     /// The one plane or cylinder row of a face's surface.
     pub(super) fn carrier(&self, face: i64) -> Option<Carrier<'a>> {
         let surface = (*self.bindings.get(&face)?)?.carrier;

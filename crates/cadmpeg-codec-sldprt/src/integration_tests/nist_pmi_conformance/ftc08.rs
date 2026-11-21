@@ -1,13 +1,39 @@
-use super::{datum_names, specimen, MM_PER_INCH, VALUE_TOLERANCE};
+use super::{datum_names, MM_PER_INCH, VALUE_TOLERANCE};
+use crate::test_support::nist::ftc_08;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::pmi::{
-    DimensionKind, GeometricToleranceKind, PmiAnnotation, PmiDefinition, PmiTarget,
+    GeometricToleranceKind, PmiAnnotation, PmiDefinition, PmiDimensionKind as DimensionKind,
+    PmiTarget,
 };
 use cadmpeg_ir::CadIr;
 
 #[test]
+fn ftc_08_internal_flatness_display_depicts_both_semantic_frames() {
+    let result = ftc_08();
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code.local_code() == "pmi.swift-internal-flatness-symbol-assumed" }));
+    let ir = result.ir();
+    let frames = ["Flatness1", "Flatness2"].map(|name| {
+        ir.model
+            .pmi
+            .iter()
+            .find(|annotation| annotation.name.as_deref() == Some(name))
+            .expect("native flatness annotation")
+            .id
+            .clone()
+    });
+    assert!(ir.model.pmi.iter().any(|annotation| {
+        matches!(&annotation.definition, PmiDefinition::Presentation { semantics, .. }
+            if semantics.len() == frames.len() && frames.iter().all(|id| semantics.contains(id)))
+    }));
+}
+
+#[test]
 fn ftc_08_row_54_emits_the_size_and_opposed_face_pair() {
-    let result = specimen("nist_ftc_08_asme1_rc_sw1802.SLDPRT");
+    let result = ftc_08();
     let ir = result.ir();
     let annotation = ir
         .model
@@ -18,17 +44,17 @@ fn ftc_08_row_54_emits_the_size_and_opposed_face_pair() {
     let PmiDefinition::Dimension(dimension) = &annotation.definition else {
         panic!("Width4 dimension")
     };
-    assert_eq!(dimension.kind(), &DimensionKind::Size);
+    assert_eq!(dimension.dimension, DimensionKind::Size);
     assert!(
-        (dimension.nominal().expect("nominal").value.get() - 1.1 * MM_PER_INCH).abs()
+        (dimension.literal_nominal().expect("nominal").value.get() - 1.1 * MM_PER_INCH).abs()
             < VALUE_TOLERANCE
     );
 
     let faces = annotation
         .targets
         .iter()
-        .filter_map(|target| match target {
-            PmiTarget::Face { face } => ir.model.faces.iter().find(|item| &item.id == face),
+        .filter_map(|target| match &target.entity {
+            PmiTarget::Face { face } => ir.geometry.faces.iter().find(|item| &item.id == face),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -38,7 +64,7 @@ fn ftc_08_row_54_emits_the_size_and_opposed_face_pair() {
         .iter()
         .map(|face| {
             let surface = ir
-                .model
+                .geometry
                 .surfaces
                 .iter()
                 .find(|surface| surface.id == face.surface)
@@ -118,20 +144,24 @@ fn assert_single_cylinder_target(
     axis_point_mm: [f64; 3],
     axis_direction: [f64; 3],
 ) {
-    let [PmiTarget::Face { face }] = annotation.targets.as_slice() else {
+    let [cadmpeg_ir::references::InstanceTarget {
+        entity: PmiTarget::Face { face },
+        ..
+    }] = annotation.targets.as_slice()
+    else {
         panic!(
             "{} has one face target",
             annotation.name.as_deref().unwrap_or("PMI")
         );
     };
     let face = ir
-        .model
+        .geometry
         .faces
         .iter()
         .find(|candidate| &candidate.id == face)
         .expect("position target face");
     let surface = ir
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|candidate| candidate.id == face.surface)
@@ -178,7 +208,7 @@ fn assert_single_cylinder_target(
 
 #[test]
 fn ftc_08_row_66_and_92_preserve_the_native_parallelism_modifier_subset() {
-    let result = specimen("nist_ftc_08_asme1_rc_sw1802.SLDPRT");
+    let result = ftc_08();
     let ir = result.ir();
     let free_state = ir
         .model
@@ -212,7 +242,7 @@ fn ftc_08_row_66_and_92_preserve_the_native_parallelism_modifier_subset() {
     assert!(free_state
         .targets
         .iter()
-        .any(|target| matches!(target, PmiTarget::Face { .. })));
+        .any(|target| matches!(&target.entity, PmiTarget::Face { .. })));
 
     let tangent_plane = ir
         .model
@@ -248,7 +278,7 @@ fn ftc_08_row_66_and_92_preserve_the_native_parallelism_modifier_subset() {
 
 #[test]
 fn ftc_08_emits_surface_profile16_value_and_face_targets() {
-    let result = specimen("nist_ftc_08_asme1_rc_sw1802.SLDPRT");
+    let result = ftc_08();
     let ir = result.ir();
     let annotation = ir
         .model
@@ -270,12 +300,12 @@ fn ftc_08_emits_surface_profile16_value_and_face_targets() {
     assert!(annotation
         .targets
         .iter()
-        .all(|target| matches!(target, PmiTarget::Face { .. })));
+        .all(|target| matches!(&target.entity, PmiTarget::Face { .. })));
 }
 
 #[test]
 fn ftc_08_emits_flatness4_value_and_face_target() {
-    let result = specimen("nist_ftc_08_asme1_rc_sw1802.SLDPRT");
+    let result = ftc_08();
     let annotation = result
         .ir()
         .model
@@ -295,13 +325,16 @@ fn ftc_08_emits_flatness4_value_and_face_target() {
     assert!((magnitude.get().value.get() - 0.015 * MM_PER_INCH).abs() < VALUE_TOLERANCE);
     assert!(matches!(
         annotation.targets.as_slice(),
-        [PmiTarget::Face { .. }]
+        [cadmpeg_ir::references::InstanceTarget {
+            entity: PmiTarget::Face { .. },
+            ..
+        }]
     ));
 }
 
 #[test]
 fn ftc_08_row_99_emits_four_candidate_position_pairs_and_shared_targets() {
-    let result = specimen("nist_ftc_08_asme1_rc_sw1802.SLDPRT");
+    let result = ftc_08();
     let ir = result.ir();
     let candidate_pairs = [
         (
@@ -379,7 +412,7 @@ fn ftc_08_row_99_emits_four_candidate_position_pairs_and_shared_targets() {
 
 #[test]
 fn ftc_08_row_99_groups_each_position_pair_under_its_simultaneous_requirement() {
-    let result = specimen("nist_ftc_08_asme1_rc_sw1802.SLDPRT");
+    let result = ftc_08();
     let ir = result.ir();
     let mut groups = super::depicted_names(ir)
         .into_iter()
@@ -401,7 +434,7 @@ fn ftc_08_row_99_groups_each_position_pair_under_its_simultaneous_requirement() 
 
 #[test]
 fn ftc_08_row_77_face_attached_display_depicts_the_profile_to_d_and_h_j() {
-    let result = specimen("nist_ftc_08_asme1_rc_sw1802.SLDPRT");
+    let result = ftc_08();
     let ir = result.ir();
     let depicts_row_77 = |semantics: &[cadmpeg_ir::ids::PmiId]| {
         let [profile] = semantics else {

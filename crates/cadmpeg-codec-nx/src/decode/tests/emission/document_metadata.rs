@@ -44,13 +44,13 @@ fn decode_projects_part_attributes_to_document_attributes() {
     assert_eq!(attribute.name, "Material");
     assert_eq!(
         attribute.target,
-        cadmpeg_ir::attributes::AttributeTarget::Document
+        cadmpeg_ir::attributes::AttributeTarget::Document.into()
     );
     assert_eq!(
         attribute.values,
-        vec![cadmpeg_ir::attributes::AttributeValue::String(
+        vec![Some(cadmpeg_ir::attributes::AttributeValue::String(
             "Steel".to_string()
-        )]
+        ))]
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
@@ -74,15 +74,21 @@ fn decode_exposes_strict_nx_jpeg_preview_metadata() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let attributes = &result.ir().source.as_ref().unwrap().attributes;
-    assert_eq!(attributes["jpeg_preview_count"], "1");
     assert_eq!(attributes["jpeg_preview_0_width"], "247");
     assert_eq!(attributes["jpeg_preview_0_height"], "185");
     assert_eq!(attributes["jpeg_preview_0_precision"], "8");
     assert_eq!(attributes["jpeg_preview_0_components"], "3");
-    assert_eq!(
-        attributes["jpeg_preview_0_byte_len"],
-        preview.len().to_string()
-    );
+    for key in [
+        "jpeg_preview_count",
+        "jpeg_preview_0_byte_len",
+        "jpeg_preview_0_sha256",
+        "file_size",
+        "directory_entries",
+        "header_entry_count",
+        "partition_streams",
+    ] {
+        assert!(!attributes.keys().any(|name| name.as_str() == key), "{key}");
+    }
     assert_eq!(result.ir().model.assets.len(), 1);
     let asset = &result.ir().model.assets[0];
     assert_eq!(
@@ -116,10 +122,7 @@ fn decode_exposes_strict_nx_jpeg_preview_metadata() {
             },
         )
         .unwrap();
-    assert_eq!(
-        container_only_result.ir().model.assets,
-        result.ir().model.assets
-    );
+    assert!(container_only_result.ir().model.assets.is_empty());
 
     let mut malformed = preview;
     malformed[10..12].copy_from_slice(&16u16.to_be_bytes());

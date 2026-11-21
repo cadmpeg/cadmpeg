@@ -46,12 +46,14 @@ fn appearance_loss_clears_when_an_assignment_resolves() {
         target: cadmpeg_ir::appearance::AppearanceTarget::Body(
             cadmpeg_ir::ids::BodyId::mint("f3d:brep/a.smbh/brep:entity#1".to_owned())
                 .expect("identity grammar"),
-        ),
+        )
+        .into(),
         appearance: appearance.id.clone(),
         source_entity_id: None,
         object_type: None,
         visible: None,
         channels: std::collections::BTreeMap::new(),
+        native_ref: None,
     }];
     ir.model.appearances = vec![appearance];
     let mut report = appearance_loss_report();

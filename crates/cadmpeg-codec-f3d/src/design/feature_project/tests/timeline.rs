@@ -98,7 +98,14 @@ fn history_state_predecessors_are_component_qualified() {
         naming_space(10, "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"),
         naming_space(20, "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb"),
     ];
-    let graph = ScopeHistoryGraph::new(&scopes, &[], &[], &naming_spaces, &[]);
+    let graph = ScopeHistoryGraph::new(
+        &scopes,
+        &[],
+        &[],
+        crate::history::edge_recipe_scope::Sources::default(),
+        &naming_spaces,
+        &[],
+    );
 
     let predecessor = graph
         .predecessor(&second, |_| true)
@@ -253,6 +260,123 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
     assert!(error
         .to_string()
         .contains("multiple nonempty Design timelines"));
+}
+
+#[test]
+fn a_reciprocal_thread_projects_after_its_hole() {
+    use crate::records::entity_header::DesignTimelineFrame;
+    use crate::records::feature::scope::{DesignFeatureKind, DesignScopePayloadMut};
+    use crate::records::feature::thread::{
+        DesignThreadConstruction, DesignThreadDiameters, DesignThreadForm,
+    };
+    use crate::records::identity::Located;
+    use std::num::{NonZeroU32, NonZeroU64};
+
+    let stream = "f3d:Design/BulkStream.dat";
+    let scope = |kind, record_index, current, previous| {
+        let mut scope = DesignParameterScope::empty(
+            &format!("{stream}:design-parameter-scope#{record_index}"),
+            kind,
+            record_index,
+        );
+        scope
+            .try_edit(|draft| {
+                draft.history_state_id = current;
+                draft.previous_history_state_id = previous;
+                draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+                draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        scope
+    };
+    let thread = |record_index, previous, owner| {
+        let mut scope = scope(DesignFeatureKind::Thread, record_index, Some(57), previous);
+        let DesignScopePayloadMut::Thread(construction) = scope.payload_mut() else {
+            panic!("Thread scope");
+        };
+        *construction = Some(DesignThreadConstruction {
+            angle: crate::records::feature::thread::DesignThreadAngle::SIXTY,
+            form: DesignThreadForm::Compact(Some(Located {
+                value: NonZeroU32::new(owner).unwrap(),
+                offset: 0,
+            })),
+            designation_offset: 0,
+            designation: cadmpeg_core::text::NonBlankString::new("M8x1").unwrap(),
+            nominal_size: "8".to_owned().try_into().unwrap(),
+            profile: cadmpeg_core::text::NonBlankString::new("Metric").unwrap(),
+            pitch: cadmpeg_ir::scalar::PositiveReal::new(0.1).unwrap(),
+            face_group_record_indices: vec![111],
+            diameters: DesignThreadDiameters::new(0.8, 0.65, 0.72).unwrap(),
+            modeled: true,
+            extended: None,
+        });
+        scope
+    };
+    let timeline = |items: &[u64]| {
+        DesignFeatureTimeline::try_new(
+            crate::ids::native_design_feature_timeline_id_in_stream(stream, 10),
+            DesignTimelineFrame::test_items(
+                10,
+                items
+                    .iter()
+                    .map(|&value| Located { value, offset: 0 })
+                    .collect(),
+            ),
+            "256".to_owned().try_into().unwrap(),
+            NonZeroU64::new(35).unwrap(),
+            0,
+            NonZeroU64::new(17).unwrap(),
+        )
+        .unwrap()
+    };
+    let mut scopes = vec![
+        scope(DesignFeatureKind::Hole, 100, Some(56), Some(55)),
+        thread(110, Some(56), 100),
+        scope(DesignFeatureKind::Sketch, 120, None, None),
+        thread(130, Some(54), 100),
+        thread(140, Some(56), 99),
+    ];
+    crate::test_support::with_decode_context(|ctx| {
+        let result = project_parameter_design_with_edge_identities(
+            ctx,
+            &super::super::ProjectInputs {
+                scopes: &scopes,
+                timelines: &[timeline(&[100, 120])],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let feature = |index: usize| {
+            result
+                .features
+                .iter()
+                .find(|feature| feature.native_ref.as_deref() == Some(scopes[index].id.as_str()))
+        };
+        assert_eq!(feature(0).unwrap().ordinal, 0);
+        let companion = feature(1).unwrap();
+        assert_eq!(companion.ordinal, 1);
+        assert!(companion.dependencies.contains(&feature(0).unwrap().id));
+        assert!(matches!(
+            companion.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+                designation: Some(designation),
+                modeled: Some(true),
+                ..
+            }) if designation.as_str() == "M8x1"
+        ));
+        assert_eq!(feature(2).unwrap().ordinal, 2);
+        assert_eq!(result.features.len(), 3);
+    });
+
+    let direct =
+        super::super::authored_scope_ordinals(&scopes, &[timeline(&[100, 120, 110])]).unwrap();
+    assert_eq!(direct.get(&(stream, 110)), Some(&2));
+    scopes.push(thread(150, Some(56), 100));
+    let ambiguous =
+        super::super::authored_scope_ordinals(&scopes, &[timeline(&[100, 120])]).unwrap();
+    assert_eq!(ambiguous.len(), 2);
+    assert_eq!(ambiguous.get(&(stream, 120)), Some(&1));
 }
 
 #[test]
@@ -1040,6 +1164,7 @@ fn owned_base_feature_takes_its_timeline_object_position() {
                     owner_record,
                     owner_reference_offset: 0,
                     copy_sources: Vec::new(),
+                    owner_timeline_name: None,
                 },
             );
         }

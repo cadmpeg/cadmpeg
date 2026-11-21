@@ -77,10 +77,9 @@ fn root_sketch_owner_follows_document_membership() {
         .id
         .as_str()
         .ends_with("archive:product-definition#0"));
-    assert!(model.occurrences.iter().any(|occurrence| matches!(
-        &occurrence.prototype,
-        cadmpeg_ir::products::PrototypeReference::Local { definition }
-            if definition == &holders[0].id
-    )));
+    assert!(model
+        .occurrences
+        .iter()
+        .any(|occurrence| occurrence.prototype == holders[0].id));
     assert_valid(&merged);
 }

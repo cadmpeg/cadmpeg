@@ -12,7 +12,7 @@ fn finds(
     checker: impl Fn(&DecodeContext<'_>, &CadIr, &mut Vec<Finding>) -> Result<(), CodecError>,
     message: &str,
 ) {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut findings = Vec::new();
     checker(&ctx, ir, &mut findings).unwrap();
     assert!(!findings.is_empty());
@@ -40,7 +40,7 @@ fn support_side_finding_is_reported() {
 #[test]
 fn surface_offset_distance_finding_is_reported() {
     let mut ir = super::mapped_surface_offset();
-    ir.model.curves[1].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+    ir.geometry.curves[1].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
         crate::geometry::analytic::LineCurve::try_new(
             Point3::new(0.0, 2.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -65,8 +65,8 @@ fn surface_offset_distance_finding_is_reported() {
 #[test]
 fn edge_endpoint_finding_is_reported() {
     let mut ir = crate::examples::unit_cube().unwrap();
-    let id = ir.model.edges[0].curve().unwrap().clone();
-    ir.model
+    let id = ir.geometry.edges[0].curve().unwrap().clone();
+    ir.geometry
         .curves
         .iter_mut()
         .find(|curve| curve.id == id)
@@ -88,7 +88,7 @@ fn edge_endpoint_finding_is_reported() {
 #[test]
 fn coedge_use_curve_finding_is_reported() {
     let mut ir = crate::examples::unit_cube().unwrap();
-    let mut curve = ir.model.curves[0].clone();
+    let mut curve = ir.geometry.curves[0].clone();
     curve.id = "test:model:curve#use".try_into().unwrap();
     curve.geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
         crate::geometry::analytic::LineCurve::try_new(
@@ -97,11 +97,11 @@ fn coedge_use_curve_finding_is_reported() {
         )
         .unwrap(),
     ));
-    ir.model.coedges[0].use_curve = Some(crate::topology::CoedgeUseCurve {
+    ir.geometry.coedges[0].use_curve = Some(crate::topology::CoedgeUseCurve {
         curve: curve.id.clone(),
         parameter_range: crate::topology::ParameterInterval::new([0.0, 1.0]).unwrap(),
     });
-    ir.model.curves.push(curve);
+    ir.geometry.curves.push(curve);
     finds(
         &ir,
         super::super::check_edge_endpoint_consistency,
@@ -112,11 +112,11 @@ fn coedge_use_curve_finding_is_reported() {
 #[test]
 fn mapped_pcurve_finding_is_reported() {
     let mut ir = super::untrimmed_surface_curve();
-    let crate::geometry::pcurve::PcurveGeometry::Circle(circle) = &ir.model.pcurves[0].geometry
+    let crate::geometry::pcurve::PcurveGeometry::Circle(circle) = &ir.geometry.pcurves[0].geometry
     else {
         panic!("circle fixture");
     };
-    ir.model.pcurves[0].geometry = crate::geometry::pcurve::PcurveGeometry::Circle(
+    ir.geometry.pcurves[0].geometry = crate::geometry::pcurve::PcurveGeometry::Circle(
         crate::geometry::pcurve::CirclePcurve::try_new(
             circle.center().get(),
             circle.x_axis().get(),
@@ -152,7 +152,7 @@ fn charted(with_supports: bool) -> CadIr {
             .iter()
             .zip([Vector3::new(0.0, 0.0, 1.0), Vector3::new(0.0, -1.0, 0.0)])
         {
-            ir.model.surfaces.push(Surface {
+            ir.geometry.surfaces.push(Surface {
                 id: id.clone(),
                 source_object: None,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -163,11 +163,12 @@ fn charted(with_supports: bool) -> CadIr {
                     )
                     .unwrap(),
                 )),
+                native_ref: None,
             });
         }
     }
     let curve: crate::ids::CurveId = "test:model:curve#charted".try_into().unwrap();
-    ir.model.curves.push(crate::geometry::Curve {
+    ir.geometry.curves.push(crate::geometry::Curve {
         parameter_range: None,
         id: curve.clone(),
         source_object: None,
@@ -178,6 +179,7 @@ fn charted(with_supports: bool) -> CadIr {
             )
             .unwrap(),
         )),
+        native_ref: None,
     });
     let pcurve = crate::geometry::pcurve::PcurveGeometry::Line(
         crate::geometry::pcurve::LinePcurve::try_new(
@@ -186,7 +188,7 @@ fn charted(with_supports: bool) -> CadIr {
         )
         .unwrap(),
     );
-    ir.model
+    ir.geometry
         .add_procedural_curve(
             &curve,
             ProceduralCurve::new(
@@ -249,7 +251,7 @@ fn charted_intersection_witness_finding_is_reported() {
 
 #[test]
 fn cache_support_failures_return_side_indexes_with_the_validator_allowance() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for (mapping, fit, expected) in [
         ([2.0, 3.0], None, Vec::new()),
         ([3.0, 2.0], None, vec![0]),
@@ -258,7 +260,7 @@ fn cache_support_failures_return_side_indexes_with_the_validator_allowance() {
         let ir = super::mapped_surface_curve(mapping);
         let index = crate::index::ModelIndex::new_model_only(&ir);
         let crate::geometry::ProceduralCurveDefinition::SurfaceCurve { family } =
-            ir.model.procedural_curves[0].definition()
+            ir.geometry.procedural_curves[0].definition()
         else {
             panic!("surface curve");
         };
@@ -266,7 +268,7 @@ fn cache_support_failures_return_side_indexes_with_the_validator_allowance() {
             super::super::cache_support_endpoint_failures(
                 &ctx,
                 &index,
-                &ir.model.curves[0],
+                &ir.geometry.curves[0],
                 family.context(),
                 fit,
             )

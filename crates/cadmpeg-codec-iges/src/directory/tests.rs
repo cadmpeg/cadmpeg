@@ -95,7 +95,7 @@ fn blank_directory_status_defaults_to_zero_fields() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -278,14 +278,14 @@ fn unreadable_directory_metadata_preserves_independent_point_geometry() {
         assert_eq!(
             decoded
                 .ir()
-                .model
+                .geometry
                 .points
                 .iter()
                 .map(|point| (&point.id, point.position()))
                 .collect::<Vec<_>>(),
             expected
                 .ir()
-                .model
+                .geometry
                 .points
                 .iter()
                 .map(|point| (&point.id, point.position()))
@@ -293,8 +293,8 @@ fn unreadable_directory_metadata_preserves_independent_point_geometry() {
             "{field}"
         );
         assert_eq!(
-            decoded.ir().model.bodies,
-            expected.ir().model.bodies,
+            decoded.ir().geometry.bodies,
+            expected.ir().geometry.bodies,
             "{field}"
         );
         assert_eq!(
@@ -327,7 +327,7 @@ fn late_directory_status_padding_preserves_required_use_codes_with_a_loss() {
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     assert!(result
         .report()
         .losses

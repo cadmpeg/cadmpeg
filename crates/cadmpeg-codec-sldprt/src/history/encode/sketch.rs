@@ -83,6 +83,16 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         face: &FaceSelection,
         mode: &WrapMode,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
+        let (mode_name, depth) = match mode {
+            WrapMode::Emboss { depth } => ("Emboss", Some(depth)),
+            WrapMode::Deboss { depth } => ("Deboss", Some(depth)),
+            WrapMode::Scribe => ("Scribe", None),
+            WrapMode::Unresolved { .. } => {
+                return Err(CodecError::NotImplemented(
+                    "cannot encode an unresolved wrap material effect".into(),
+                ));
+            }
+        };
         let feature = self.feature;
         let existing = self.existing;
         let record_sources = self.record_sources;
@@ -107,29 +117,18 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let mut parameters = existing
                 .map(|record| record.parameters.clone())
                 .unwrap_or_default();
-            match mode {
-                WrapMode::Emboss { depth } | WrapMode::Deboss { depth } => {
-                    parameters.insert(
-                        cadmpeg_core::nonblank_literal!("Depth"),
-                        format_length_mm((*depth).into()),
-                    );
-                }
-                WrapMode::Scribe => {
-                    parameters.remove("Depth");
-                }
+            if let Some(depth) = depth {
+                parameters.insert(
+                    cadmpeg_core::nonblank_literal!("Depth"),
+                    format_length_mm((*depth).into()),
+                );
+            } else {
+                parameters.remove("Depth");
             }
             let mut properties = feature.source_properties.clone();
             properties.insert(cadmpeg_core::nonblank_literal!("Profile"), profile);
             properties.insert(cadmpeg_core::nonblank_literal!("Face"), face);
-            properties.insert(
-                cadmpeg_core::nonblank_literal!("Mode"),
-                match mode {
-                    WrapMode::Emboss { .. } => "Emboss",
-                    WrapMode::Deboss { .. } => "Deboss",
-                    WrapMode::Scribe => "Scribe",
-                }
-                .into(),
-            );
+            properties.insert(cadmpeg_core::nonblank_literal!("Mode"), mode_name.into());
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "Wrap".into(), |record| record.kind.clone()),
                 parameters,

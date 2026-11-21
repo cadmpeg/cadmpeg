@@ -33,21 +33,21 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
     use cadmpeg_ir::ids::{PcurveId, ProceduralCurveId};
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    let edge = ir.model.edges[0].clone();
+    let edge = ir.geometry.edges[0].clone();
     let incident = ir
-        .model
+        .geometry
         .coedges
         .iter()
         .filter(|coedge| coedge.edge == edge.id)
         .filter_map(|coedge| {
             let face = ir
-                .model
+                .geometry
                 .loops
                 .iter()
                 .find(|loop_| loop_.id == coedge.owner_loop)?
                 .face
                 .clone();
-            ir.model
+            ir.geometry
                 .faces
                 .iter()
                 .find(|candidate| candidate.id == face)
@@ -56,7 +56,7 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
         .collect::<Vec<_>>();
     assert_eq!(incident.len(), 2);
     let curve = edge.curve().cloned().expect("cube edge curve");
-    let _attached = ir.model.add_procedural_curve(
+    let _attached = ir.geometry.add_procedural_curve(
         &curve,
         ProceduralCurve::new(
             ProceduralCurveId::mint("nx:test:intersection#0").expect("identity grammar"),
@@ -84,7 +84,7 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
 
     complete_intersection_supports_from_edge_incidence(&mut ir);
     let ProceduralCurveDefinition::Intersection { context, .. } =
-        ir.model.procedural_curves[0].definition()
+        ir.geometry.procedural_curves[0].definition()
     else {
         panic!("intersection");
     };
@@ -98,7 +98,7 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
         )
         .unwrap(),
     );
-    ir.model.pcurves.push(Pcurve {
+    ir.geometry.pcurves.push(Pcurve {
         id: pcurve_id.clone(),
         geometry: pcurve_geometry.clone(),
         metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
@@ -106,9 +106,10 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
             Some(cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]).expect("finite fixture range")),
             None,
         ),
+        native_ref: None,
     });
     let second_face = ir
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.surface == incident[1])
@@ -116,14 +117,14 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
         .id
         .clone();
     let second_loop = ir
-        .model
+        .geometry
         .loops
         .iter()
         .find(|loop_| loop_.face == second_face)
         .expect("second incident loop")
         .id
         .clone();
-    ir.model
+    ir.geometry
         .coedges
         .iter_mut()
         .find(|coedge| coedge.edge == edge.id && coedge.owner_loop == second_loop)
@@ -136,7 +137,7 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
 
     complete_intersection_pcurves_from_coedge_incidence(&mut ir);
     let ProceduralCurveDefinition::Intersection { context, .. } =
-        ir.model.procedural_curves[0].definition()
+        ir.geometry.procedural_curves[0].definition()
     else {
         panic!("intersection");
     };
@@ -237,6 +238,36 @@ fn intersection_auxiliaries_reject_duplicate_identities() {
     let mut blend_bound = blend_bound_charted_intersection_curve_stream();
     append_record(&mut blend_bound, &[0, 59, 0, 14], 24);
     assert!(crate::intersection::blend_bounds(&blend_bound).is_empty());
+}
+
+#[test]
+fn blend_bound_in_the_first_support_slot_resolves_to_its_blend_surface() {
+    let mut stream = blend_bound_charted_intersection_curve_stream();
+    let intersection = stream
+        .windows(4)
+        .position(|window| window == [0, 38, 0, 12])
+        .expect("intersection record");
+    let first = cadmpeg_core::decode::View::u16_be_at(&stream, intersection + 19).unwrap();
+    put_ref(&mut stream, intersection + 19, 14);
+    put_ref(&mut stream, intersection + 21, first);
+    put_ref(&mut stream, intersection + 29, 1);
+
+    let graph = crate::topology::Graph::parse(&stream);
+    let scan = crate::intersection::scan_with_graph(
+        &stream,
+        &graph,
+        crate::intersection::ChartPointLayout::Xyz3,
+    )
+    .unwrap();
+
+    let [curve] = scan.curves.as_slice() else {
+        panic!("the intersection has supports through the blend bound");
+    };
+    assert_eq!(u32::from(curve.primary_support), 13);
+    assert_eq!(
+        curve.secondary_support.map(u32::from),
+        Some(u32::from(first))
+    );
 }
 
 #[test]
@@ -548,17 +579,17 @@ fn intersection_pcurve_attachment_requires_face_incidence() {
         let edge =
             cadmpeg_ir::ids::EdgeId::mint("synthetic:cube:edge#0").expect("identity grammar");
         let surface = ir
-            .model
+            .geometry
             .coedges
             .iter()
             .find(|coedge| coedge.edge == edge && coedge.id.as_str().contains("bottom"))
             .and_then(|coedge| {
                 let loop_ = ir
-                    .model
+                    .geometry
                     .loops
                     .iter()
                     .find(|loop_| loop_.id == coedge.owner_loop)?;
-                ir.model
+                ir.geometry
                     .faces
                     .iter()
                     .find(|face| face.id == loop_.face)
@@ -850,6 +881,24 @@ fn a_limit_without_term_use_reads_its_point_after_the_limit_type() {
         followed.extend([0, 29]);
         let tagged = super::term_use_at(&followed, 0, super::ChartPointLayout::Xyz3, true);
         assert!(tagged.is_none_or(|(term, _)| term.form != super::TermUseForm::L));
+    });
+}
+
+#[test]
+fn a_two_row_limit_without_term_use_reads_the_one_byte_t_form() {
+    let mut bytes = vec![0, 41];
+    bytes.extend(2u32.to_be_bytes());
+    bytes.extend(7u16.to_be_bytes());
+    bytes.push(b'T');
+    for value in [0.25f64, -0.15, -0.06, 0.2, -0.1, -0.05] {
+        bytes.extend(value.to_be_bytes());
+    }
+    crate::test_support::with_decode_context(|_ctx| {
+        let (term, end) =
+            super::term_use_at(&bytes, 0, super::ChartPointLayout::Xyz3, false).unwrap();
+        assert_eq!(term.form, super::TermUseForm::T);
+        assert_eq!(end, bytes.len());
+        assert_eq!(term.data.point().get(), [250.0, -150.0, -60.0]);
     });
 }
 

@@ -290,6 +290,9 @@ pub(crate) struct AsmHistoricalTopology {
     /// Persistent tag groups attached to face and edge revisions in this state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) persistent_subentity_tags: Vec<AsmHistoricalPersistentSubentityTag>,
+    /// The last persistent design link of each body in this state.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) body_design_links: Vec<AsmHistoricalBodyDesignLink>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) body_regions: Vec<AsmHistoricalRelation>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -331,8 +334,18 @@ pub(crate) struct AsmHistoricalPersistentSubentityTag {
     pub(crate) entity_ref: i64,
     pub(crate) selector: i64,
     pub(crate) token: String,
+    #[serde(default, skip_serializing_if = "crate::history_records::is_default")]
+    pub(crate) token_integer: u32,
     pub(crate) design_references: Vec<i64>,
     pub(crate) ordinal: u32,
+}
+
+/// The last persistent design link attached to one historical body.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct AsmHistoricalBodyDesignLink {
+    pub(crate) body: i64,
+    pub(crate) design_id: String,
+    pub(crate) design_reference: i64,
 }
 
 /// Stable axis-bearing curve carrier value in one historical B-rep state.
@@ -448,6 +461,8 @@ pub(crate) struct AsmHistoricalOptionalCarrierBinding {
 /// Forward change from the older `next_ref` neighbour, or empty on the tail.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalTransition {
+    #[serde(skip)]
+    pub(crate) geometry_unchanged: bool,
     /// Older state identity; absent only at the end of the reverse-history chain.
     #[serde(
         default,
@@ -1174,6 +1189,8 @@ pub(crate) struct AsmHistoricalRowsDelta {
     #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
     pub(crate) shell_free_vertices: AsmHistoricalRowDelta<AsmHistoricalRelation>,
     #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
+    pub(crate) body_design_links: AsmHistoricalRowDelta<AsmHistoricalBodyDesignLink>,
+    #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
     pub(crate) face_loops: AsmHistoricalRowDelta<AsmHistoricalRelation>,
     #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
     pub(crate) loop_coedges: AsmHistoricalRowDelta<AsmHistoricalRelation>,
@@ -1255,6 +1272,12 @@ impl AsmHistoricalRow for AsmHistoricalPlane {
 impl AsmHistoricalRow for AsmHistoricalPoint {
     fn key(&self) -> i64 {
         self.point
+    }
+}
+
+impl AsmHistoricalRow for AsmHistoricalBodyDesignLink {
+    fn key(&self) -> i64 {
+        self.body
     }
 }
 

@@ -658,27 +658,27 @@ fn decode_selects_dominant_rmfastload_body() {
         .arena_as::<super::super::RmFastLoadObjectId>("rmfastload_object_ids")
         .expect("RMFastLoad object IDs");
 
-    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
     assert_eq!(tables.len(), 1);
     assert_eq!(tables[0].members.as_slice().len(), 50);
     assert_eq!(object_ids.len(), 50);
     assert_eq!(object_ids[0].value, 1_000);
     assert_eq!(object_ids[49].value, 1_049);
-    assert!(result.ir().model.bodies[0]
+    assert!(result.ir().geometry.bodies[0]
         .id
         .as_str()
         .starts_with("nx:s0:"));
-    assert_eq!(result.ir().model.faces.len(), 50);
-    assert_eq!(result.ir().model.surfaces.len(), 50);
+    assert_eq!(result.ir().geometry.faces.len(), 50);
+    assert_eq!(result.ir().geometry.surfaces.len(), 50);
     assert!(result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .all(|face| face.id.as_str().starts_with("nx:s0:")));
     assert!(result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .all(|surface| surface.id.as_str().starts_with("nx:s0:")));
@@ -833,6 +833,48 @@ fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
         175,
     );
     assert!(data_block_column_index_tables(&linked_rows, &incomplete_mode).is_empty());
+}
+
+#[test]
+fn records_numbered_alike_in_two_streams_keep_distinct_string_use_ids() {
+    use super::super::{
+        external_reference_record_string_uses, ExternalReference, ExternalReferenceRecord,
+    };
+
+    let streams = ["fast-load", "part"];
+    let references = streams
+        .iter()
+        .flat_map(|stream| {
+            (0..4).map(move |ordinal| ExternalReference {
+                id: format!("reference:{stream}#{ordinal}"),
+                ordinal,
+                path: format!("value-{ordinal}"),
+                source_entry: (*stream).into(),
+                source_offset: 100 + u64::from(ordinal),
+            })
+        })
+        .collect::<Vec<_>>();
+    let records = streams
+        .iter()
+        .map(|stream| ExternalReferenceRecord {
+            id: format!("record:{stream}#6"),
+            record_id: 6,
+            declared_count: 2,
+            id_slots: [0, 1, 2, 3],
+            handles: crate::container::extref_handles::ExtrefHandles::new(vec![10, 20, 20])
+                .unwrap(),
+            tail_byte_len: 5,
+            source_entry: (*stream).into(),
+            source_offset: 20,
+        })
+        .collect::<Vec<_>>();
+    let uses = external_reference_record_string_uses(&records, &references).unwrap();
+    let ids = uses
+        .iter()
+        .map(|use_| use_.id.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(uses.len(), 8);
+    assert_eq!(ids.len(), 8);
 }
 
 #[test]

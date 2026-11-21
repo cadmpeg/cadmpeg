@@ -18,11 +18,15 @@ use std::collections::BTreeMap;
 use std::io::Read;
 
 use cadmpeg_container::ArchiveSnapshot;
-use cadmpeg_core::decode::{DecodeArena, DecodeCheckpoint, DecodeContext, View};
+use cadmpeg_core::decode::{
+    ArenaClass, DecodeArena, DecodeCheckpoint, DecodeContext, LimitScope, ResourceLimit, View,
+};
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::hash::digest::Sha256Digest;
+use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::ContainerSummary;
+use cadmpeg_ir::StreamName;
 use std::sync::Arc;
 
 use cadmpeg_asm::kernel_header::{BinaryHeader, KernelHeader};
@@ -124,6 +128,19 @@ pub(crate) fn classify(name: &str) -> ContainerRole {
     }
 }
 
+/// The content classes an entry of `role` can hold.
+fn held_classes(role: ContainerRole) -> &'static [ArenaClass] {
+    match role {
+        ContainerRole::Directory => &[],
+        ContainerRole::DesignConfig => &[ArenaClass::Design],
+        ContainerRole::Metastream | ContainerRole::Bulkstream => {
+            &[ArenaClass::Model, ArenaClass::Design]
+        }
+        ContainerRole::Other => &ArenaClass::ALL,
+        _ => &[ArenaClass::Model],
+    }
+}
+
 /// Owned kernel framing for one BREP stream.
 #[derive(Debug, Clone)]
 pub(crate) enum KernelFraming {
@@ -212,6 +229,8 @@ pub(crate) enum F3dContainerKind {
     Document {
         /// Exact archive folder of the Design asset.
         design_asset_folder: String,
+        /// Primary GUID of the Design asset's per-asset manifest.
+        design_asset_guid: String,
         /// Dialect classified from the document manifest.
         matched: DialectMatch,
     },
@@ -253,8 +272,8 @@ pub(crate) struct ContainerScan<'a> {
     pub(crate) kind: F3dContainerKind,
     /// Optional manifest payloads rejected after their byte spans were admitted.
     pub(crate) manifest_diagnostics: Vec<manifest::MetadataDiagnostic>,
-    /// Optional archive payload failures; complete stored bytes remain in `source_image`.
-    pub(crate) entry_diagnostics: Vec<String>,
+    /// Optional archive entries the scan could not open.
+    pub(crate) given_up: Vec<GivenUpPart>,
     /// Design `BulkStream` record runs after the last indexed record, by
     /// entry name, with the stream's stored length. Their entry views end
     /// where the run starts; complete stored bytes remain in `source_image`.
@@ -295,7 +314,7 @@ impl<'a> ContainerScan<'a> {
             text_breps: self.text_breps.clone(),
             kind: self.kind.clone(),
             manifest_diagnostics: self.manifest_diagnostics.clone(),
-            entry_diagnostics: self.entry_diagnostics.clone(),
+            given_up: self.given_up.clone(),
             unindexed_record_runs: self.unindexed_record_runs.clone(),
             inflated_entries: self.inflated_entries.clone(),
             archive: self.archive.clone(),
@@ -407,6 +426,17 @@ impl<'a> ContainerScan<'a> {
         }
     }
 
+    /// Primary GUID of the manifest-selected Design asset. An outer F3Z
+    /// archive has no Design asset of its own.
+    pub(crate) fn design_asset_guid(&self) -> Option<&str> {
+        match &self.kind {
+            F3dContainerKind::Document {
+                design_asset_guid, ..
+            } => Some(design_asset_guid),
+            F3dContainerKind::MultiDocument { .. } => None,
+        }
+    }
+
     /// Whether `name` is inside the manifest-selected Design asset folder.
     pub(crate) fn belongs_to_design_asset(&self, name: &str) -> bool {
         self.design_asset_folder().is_some_and(|folder| {
@@ -467,10 +497,30 @@ fn is_numbered_segment(segment: &str, prefix: &str) -> bool {
 /// Read and classify every entry, decoding ASM headers for BREP streams.
 ///
 /// Readable entries are registered as stored slices or decompressed spaces.
-/// Unreadable optional assets retain their declared storage and source bytes.
+/// An unreadable optional asset is given up as one part.
 pub(crate) fn scan<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
+) -> Result<ContainerScan<'a>, CodecError> {
+    scan_in(ctx, root, None)
+}
+
+/// [`scan`] of the F3Z member stored at `path`, whose given-up parts are
+/// placed in the member's stream.
+pub(crate) fn scan_member<'a>(
+    ctx: &DecodeContext<'a>,
+    root: View<'a>,
+    path: &str,
+) -> Result<ContainerScan<'a>, CodecError> {
+    let stream = StreamName::try_from(path.to_owned())
+        .map_err(|_| CodecError::malformed("F3Z member path is empty"))?;
+    scan_in(ctx, root, Some(&stream))
+}
+
+fn scan_in<'a>(
+    ctx: &DecodeContext<'a>,
+    root: View<'a>,
+    stream: Option<&StreamName>,
 ) -> Result<ContainerScan<'a>, CodecError> {
     #[cfg(test)]
     crate::test_support::scan_counts::record(root);
@@ -484,7 +534,7 @@ pub(crate) fn scan<'a>(
     let mut entries = Vec::new();
     let mut breps = Vec::new();
     let mut inflated_entries = BTreeMap::new();
-    let mut entry_diagnostics = Vec::new();
+    let mut given_up = Vec::new();
 
     for file in archive.entries() {
         let name = file.name.clone();
@@ -508,13 +558,15 @@ pub(crate) fn scan<'a>(
                     .is_some_and(|extension| extension.eq_ignore_ascii_case("f2d")));
         let checkpoint = ctx.checkpoint();
         let temporary = DecodeArena::new();
-        let opened = if deferred {
-            ctx.with_arena(&temporary, |local| {
-                archive.open(local, &file.name).map(|_| None)
-            })
-        } else {
-            archive.open(ctx, &file.name).map(Some)
-        };
+        let opened = ctx.run_part(|| {
+            if deferred {
+                ctx.with_arena(&temporary, |local| {
+                    archive.open(local, &file.name).map(|_| None)
+                })
+            } else {
+                archive.open(ctx, &file.name).map(Some)
+            }
+        })?;
         let view = match opened {
             Ok(view) => {
                 if deferred {
@@ -522,7 +574,6 @@ pub(crate) fn scan<'a>(
                 }
                 view
             }
-            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error)
                 if matches!(
                     role,
@@ -530,18 +581,40 @@ pub(crate) fn scan<'a>(
                         | ContainerRole::Image
                         | ContainerRole::OgsCache
                         | ContainerRole::Other
+                ) || matches!(
+                    error,
+                    CodecError::ResourceLimit(ResourceLimit {
+                        scope: LimitScope::Part,
+                        ..
+                    })
                 ) =>
             {
-                let diagnostic =
-                    format!("{name} cannot be opened: {error}; stored payload retained");
-                attributes.insert("payload_error".to_owned(), diagnostic.clone());
-                entry_diagnostics.push(diagnostic);
+                let range = file.stored_range()?;
+                let stored = usize::try_from(range.start)
+                    .ok()
+                    .zip(usize::try_from(range.end).ok())
+                    .and_then(|(start, end)| View::over_retained(source_image).child(start, end))
+                    .ok_or_else(|| CodecError::malformed("F3D ZIP payload escapes the archive"))?;
+                attributes.insert("payload_error".to_owned(), error.to_string());
+                // The source image record keeps every stored byte of the archive.
+                let mut part = Part::new(
+                    "f3d",
+                    "archive-entry",
+                    stored,
+                    held_classes(role).iter().copied(),
+                )
+                .named(name.as_str())
+                .digest_only();
+                if let Some(stream) = stream {
+                    part = part.in_stream(stream.clone());
+                }
+                given_up.push(ctx.give_up_part(part, error)?);
                 None
             }
             Err(error) => return Err(error),
         };
         let buf = view.map_or(&[][..], |view| view.window());
-        if is_brep {
+        if is_brep && view.is_some() {
             let kernel = if asm_header::has_asm_magic(buf) {
                 asm_header::parse(buf).map(|header| KernelFraming::Asm {
                     solved_record_limit: asm_header::solved_record_limit_with_header(buf, &header),
@@ -650,14 +723,15 @@ pub(crate) fn scan<'a>(
     let kind = if let Some(top_level_manifest) = inflated_entries.get("Manifest.dat") {
         let top_level_manifest = manifest::parse_top_level(top_level_manifest.window())?;
         let matched = F3dDialect::classify_document(top_level_manifest.declared_version());
-        let design_asset_folder = manifest::resolve_design_folder(
+        let design_asset = manifest::resolve_design_folder(
             &top_level_manifest,
             inflated_entries.keys().map(String::as_str),
             |name| inflated_entries.get(name).map(|view| view.window()),
         )?;
         manifest_diagnostics = top_level_manifest.diagnostics;
         F3dContainerKind::Document {
-            design_asset_folder,
+            design_asset_folder: design_asset.folder,
+            design_asset_guid: design_asset.asset_guid,
             matched,
         }
     } else if inflated_entries.contains_key("Manifest.json")
@@ -702,7 +776,7 @@ pub(crate) fn scan<'a>(
         text_breps: std::collections::HashMap::new(),
         kind,
         manifest_diagnostics,
-        entry_diagnostics,
+        given_up,
         unindexed_record_runs: Vec::new(),
         inflated_entries,
         archive,
@@ -906,6 +980,28 @@ pub(crate) fn design_breps<'s>(
     scan.breps
         .iter()
         .filter(|brep| scan.belongs_to_design_asset(&brep.name))
+}
+
+/// Mesh geometry container entries inside the manifest-selected Design asset.
+pub(crate) fn paramesh_entries<'s>(
+    scan: &'s ContainerScan<'_>,
+) -> impl Iterator<Item = &'s ContainerEntry> + 's {
+    scan.entries
+        .iter()
+        .filter(|entry| scan.is_design_asset_entry(entry, ContainerRole::Paramesh))
+}
+
+/// Binary and text BREP entries inside the manifest-selected Design asset,
+/// including entries whose payload did not open.
+pub(crate) fn brep_entries<'s>(
+    scan: &'s ContainerScan<'_>,
+) -> impl Iterator<Item = &'s ContainerEntry> + 's {
+    scan.entries.iter().filter(|entry| {
+        matches!(
+            entry.role,
+            ContainerRole::BrepSmb | ContainerRole::BrepSmbh | ContainerRole::BrepText
+        ) && scan.belongs_to_design_asset(&entry.name)
+    })
 }
 
 /// Names of the text-encoded ASM BREP entries, in archive order.

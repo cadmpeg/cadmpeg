@@ -23,6 +23,11 @@ pub struct Selection {
     /// The occurrence whose instance space the rows are measured in; model
     /// space when absent. The scope is then the bodies of its subtree.
     pub occurrence: Option<OccurrenceId>,
+    /// Occurrences above `occurrence`, outermost first, that select one of
+    /// its instances where its prototype's owner is placed more than once.
+    /// Each places the definition that owns the next, and the last places
+    /// the owner of `occurrence`.
+    pub occurrence_above: Vec<OccurrenceId>,
     /// Measure every face in scope.
     pub all_faces: bool,
     /// Measure every edge in scope.

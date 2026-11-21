@@ -300,6 +300,7 @@ pub(crate) struct DesignAssemblyAlignment {
     /// How the two operand frames mate, when the scope stores it.
     pub(crate) frame_sense: Option<DesignJointFrameSense>,
     pub(crate) additional_owner_run: Option<DesignAssemblyOwnerRun>,
+    pub(crate) additional_tail_reference: Option<Located<u32>>,
     /// Members of a rigid group after the two in `form`, in scope order.
     pub(crate) additional_members: Vec<DesignQualifiedAssemblyOperand>,
 }
@@ -395,6 +396,7 @@ impl DesignAssemblyAlignment {
             form,
             frame_sense: None,
             additional_owner_run: None,
+            additional_tail_reference: None,
             additional_members: Vec::new(),
         })
     }
@@ -556,11 +558,23 @@ struct DesignAssemblyAlignmentSerde {
         deserialize_with = "deserialize_additional_owner_run"
     )]
     additional_owner_run: Option<DesignAssemblyOwnerRun>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_additional_tail_reference"
+    )]
+    additional_tail_reference: Option<Located<u32>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     additional_operand_frames: Vec<DesignAssemblyOperandFrame>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     additional_operand_qualifiers: Vec<DesignAssemblyOperandQualifier>,
 }
+
+cadmpeg_core::named_optional_field!(
+    deserialize_additional_tail_reference,
+    Located<u32>,
+    "additional_tail_reference"
+);
 
 cadmpeg_core::named_optional_field!(
     deserialize_additional_owner_run,
@@ -637,13 +651,14 @@ impl TryFrom<DesignAssemblyAlignmentSerde> for DesignAssemblyAlignment {
             .with_frame_sense(wire.frame_sense)
             .with_additional_members(additional_members)?;
         alignment.additional_owner_run = wire.additional_owner_run;
+        alignment.additional_tail_reference = wire.additional_tail_reference;
         Ok(alignment)
     }
 }
 
 impl Serialize for DesignAssemblyAlignment {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut record = serializer.serialize_struct("DesignAssemblyAlignmentSerde", 14)?;
+        let mut record = serializer.serialize_struct("DesignAssemblyAlignmentSerde", 15)?;
         record.serialize_field("angle", &self.angle.get())?;
         record.serialize_field("offset", &self.offset.map(FiniteReal::get))?;
         record.serialize_field("owner_record_indices", &OwnerRecordIndices(&self.owners))?;
@@ -725,6 +740,9 @@ impl Serialize for DesignAssemblyAlignment {
         }
         if let Some(run) = &self.additional_owner_run {
             record.serialize_field("additional_owner_run", run)?;
+        }
+        if let Some(reference) = &self.additional_tail_reference {
+            record.serialize_field("additional_tail_reference", reference)?;
         }
         if let Some(sense) = &self.frame_sense {
             record.serialize_field("frame_sense", sense)?;
@@ -1310,6 +1328,9 @@ pub(crate) struct DesignAssemblyOperandPath {
     /// The occurrence identity lists that follow the identity GUIDs, and the
     /// UTF-16 code-unit locations of their keys.
     occurrence_lists: Vec<Vec<Located<DesignOccurrenceKey>>>,
+    /// The u32 word after each u32 value 2 that closes an identity pair of a
+    /// typed path record, and its byte offset.
+    identity_pair_words: Vec<Located<u32>>,
 }
 
 #[cfg(test)]
@@ -1330,6 +1351,7 @@ impl Clone for DesignAssemblyOperandPath {
             occurrence_guids: self.occurrence_guids.clone(),
             identity_guids: self.identity_guids.clone(),
             occurrence_lists: self.occurrence_lists.clone(),
+            identity_pair_words: self.identity_pair_words.clone(),
         }
     }
 }
@@ -1381,6 +1403,10 @@ struct DesignAssemblyOperandPathRef<'a> {
     occurrence_list_key_offsets: PathGuidOffsets<'a, DesignOccurrenceKey>,
     #[serde(skip_serializing_if = "<[usize]>::is_empty")]
     occurrence_list_lengths: &'a [usize],
+    #[serde(skip_serializing_if = "PathGuidValues::is_empty")]
+    identity_pair_words: PathGuidValues<'a, u32>,
+    #[serde(skip_serializing_if = "PathGuidOffsets::is_empty")]
+    identity_pair_word_offsets: PathGuidOffsets<'a, u32>,
 }
 
 impl Serialize for DesignAssemblyOperandPath {
@@ -1404,6 +1430,8 @@ impl Serialize for DesignAssemblyOperandPath {
             occurrence_list_keys: PathGuidValues(&keys),
             occurrence_list_key_offsets: PathGuidOffsets(&keys),
             occurrence_list_lengths: &lengths,
+            identity_pair_words: PathGuidValues(&self.identity_pair_words),
+            identity_pair_word_offsets: PathGuidOffsets(&self.identity_pair_words),
         }
         .serialize(serializer)
     }
@@ -1446,6 +1474,12 @@ struct DesignAssemblyOperandPathWire {
     /// The number of keys of each list, in stored order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     occurrence_list_lengths: Vec<usize>,
+    /// The word after each u32 value 2 that closes an identity pair.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    identity_pair_words: Vec<u32>,
+    /// Byte offsets parallel to `identity_pair_words`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    identity_pair_word_offsets: Vec<u64>,
 }
 
 impl DesignAssemblyOperandPath {
@@ -1545,6 +1579,7 @@ impl DesignAssemblyOperandPath {
             occurrence_guids,
             identity_guids,
             occurrence_lists: Vec::new(),
+            identity_pair_words: Vec::new(),
         })
     }
     pub(crate) fn link(&self) -> &DesignAssemblyOperandPathLink {
@@ -1557,6 +1592,19 @@ impl DesignAssemblyOperandPath {
     pub(crate) fn admitted_by_type(&self) -> bool {
         self.type_guid.is_some()
     }
+    pub(crate) fn two_keys_in_one_typed_record(&self) -> bool {
+        let [first, second] = self.occurrence_guids() else {
+            return false;
+        };
+        self.admitted_by_type()
+            && self.identity_guids().len() == 4
+            && self.occurrence_lists().is_empty()
+            && u64::try_from(first.value.as_str().encode_utf16().count())
+                .ok()
+                .and_then(|units| first.offset.checked_add(4 + 2 * units))
+                == Some(second.offset)
+    }
+
     pub(crate) fn is_root(&self) -> bool {
         self.admitted_by_type()
             && self.occurrence_guids.len() == 1
@@ -1574,6 +1622,34 @@ impl DesignAssemblyOperandPath {
     }
     pub(crate) fn occurrence_lists(&self) -> &[Vec<Located<DesignOccurrenceKey>>] {
         &self.occurrence_lists
+    }
+    pub(crate) fn identity_pair_words(&self) -> &[Located<u32>] {
+        &self.identity_pair_words
+    }
+    /// This path with the word after the u32 value 2 of each identity pair,
+    /// in source order. Only a typed path stores the words, each 0 or 1, at
+    /// most one per identity pair.
+    pub(crate) fn with_identity_pair_words(
+        mut self,
+        words: Vec<Located<u32>>,
+    ) -> Result<Self, String> {
+        if !words.is_empty() && self.type_guid.is_none() {
+            return Err("identity_pair_words require a typed path".into());
+        }
+        if words.len() > self.identity_guids.len() / 2 {
+            return Err("identity_pair_words hold at most one word per identity pair".into());
+        }
+        if words.iter().any(|word| word.value > 1) {
+            return Err("identity_pair_words must be 0 or 1".into());
+        }
+        if words
+            .windows(2)
+            .any(|pair| pair[0].offset >= pair[1].offset)
+        {
+            return Err("identity_pair_words must be in source order".into());
+        }
+        self.identity_pair_words = words;
+        Ok(self)
     }
     /// This path with the occurrence identity lists that follow its identity
     /// GUIDs, two entries per pair, in source order after its first
@@ -1618,6 +1694,8 @@ impl DesignAssemblyOperandPath {
         identities.extend(continuation.identity_guids);
         let mut lists = self.occurrence_lists;
         lists.extend(continuation.occurrence_lists);
+        let mut words = self.identity_pair_words;
+        words.extend(continuation.identity_pair_words);
         Self::try_new_typed(
             self.link,
             self.record_index,
@@ -1629,6 +1707,7 @@ impl DesignAssemblyOperandPath {
         )
         .ok()?
         .with_occurrence_lists(lists)
+        .and_then(|path| path.with_identity_pair_words(words))
         .ok()
     }
 }
@@ -1658,6 +1737,17 @@ impl TryFrom<DesignAssemblyOperandPathWire> for DesignAssemblyOperandPath {
         if listed != Some(wire.occurrence_list_keys.len()) {
             return Err("occurrence_list_lengths must count every occurrence_list_keys".into());
         }
+        if wire.identity_pair_words.len() != wire.identity_pair_word_offsets.len() {
+            return Err(
+                "identity_pair_words and identity_pair_word_offsets must have equal lengths".into(),
+            );
+        }
+        let words = wire
+            .identity_pair_words
+            .into_iter()
+            .zip(wire.identity_pair_word_offsets)
+            .map(|(value, offset)| Located { value, offset })
+            .collect();
         let mut keys = wire
             .occurrence_list_keys
             .into_iter()
@@ -1685,7 +1775,8 @@ impl TryFrom<DesignAssemblyOperandPathWire> for DesignAssemblyOperandPath {
                 .map(|(value, offset)| Located { value, offset })
                 .collect(),
         )?
-        .with_occurrence_lists(lists)
+        .with_occurrence_lists(lists)?
+        .with_identity_pair_words(words)
     }
 }
 
@@ -1709,6 +1800,11 @@ impl From<DesignAssemblyOperandPath> for DesignAssemblyOperandPathWire {
             .flatten()
             .map(|key| (key.value, key.offset))
             .unzip();
+        let (identity_pair_words, identity_pair_word_offsets) = path
+            .identity_pair_words
+            .into_iter()
+            .map(|word| (word.value, word.offset))
+            .unzip();
         Self {
             link: path.link,
             record_index: path.record_index,
@@ -1722,6 +1818,8 @@ impl From<DesignAssemblyOperandPath> for DesignAssemblyOperandPathWire {
             occurrence_list_keys,
             occurrence_list_key_offsets,
             occurrence_list_lengths,
+            identity_pair_words,
+            identity_pair_word_offsets,
         }
     }
 }

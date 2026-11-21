@@ -44,11 +44,11 @@ fn decode_resolves_feature_topology_selections() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert_eq!(base.ir().model.bodies.len(), 2);
-    let body = &base.ir().model.bodies[0].id.as_str();
-    let tool_body = &base.ir().model.bodies[1].id.as_str();
-    let face = &base.ir().model.faces[0].id.as_str();
-    let edge = &base.ir().model.edges[0].id.as_str();
+    assert_eq!(base.ir().geometry.bodies.len(), 2);
+    let body = &base.ir().geometry.bodies[0].id.as_str();
+    let tool_body = &base.ir().geometry.bodies[1].id.as_str();
+    let face = &base.ir().geometry.faces[0].id.as_str();
+    let edge = &base.ir().geometry.edges[0].id.as_str();
     let keywords = format!(
         r#"<Keywords>
             <Fillet Name="Round" Type="Fillet" id="1" Edges="{edge}"><Dimension Name="Radius">1mm</Dimension></Fillet>
@@ -65,10 +65,10 @@ fn decode_resolves_feature_topology_selections() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let edge_id = decoded.ir().model.edges[0].id.clone();
-    let face_id = decoded.ir().model.faces[0].id.clone();
-    let body_id = decoded.ir().model.bodies[0].id.clone();
-    let tool_body_id = decoded.ir().model.bodies[1].id.clone();
+    let edge_id = decoded.ir().geometry.edges[0].id.clone();
+    let face_id = decoded.ir().geometry.faces[0].id.clone();
+    let body_id = decoded.ir().geometry.bodies[0].id.clone();
+    let tool_body_id = decoded.ir().geometry.bodies[1].id.clone();
 
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
@@ -76,14 +76,14 @@ fn decode_resolves_feature_topology_selections() {
             groups,
         }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
             edges: EdgeSelection::Resolved { edges, native }, ..
-        }] if edges == &[base.ir().model.edges[0].id.clone()] && native == edge)
+        }] if edges == &[base.ir().geometry.edges[0].id.clone()] && native == edge)
     ));
     assert!(matches!(
         decoded.ir().model.features[1].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DeleteFace {
             faces: FaceSelection::Resolved { faces, native },
             ..
-        }) if faces == &[base.ir().model.faces[0].id.clone()] && native == face
+        }) if faces == &[base.ir().geometry.faces[0].id.clone()] && native == face
     ));
     assert!(matches!(
     decoded.ir().model.features[2].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Combine {
@@ -92,7 +92,7 @@ fn decode_resolves_feature_topology_selections() {
     }) if matches!(
         (operands.target(), operands.tools(),),
         (BodySelection::Resolved { bodies, native }, BodySelection::Resolved { .. },)
-            if bodies.as_slice() == [base.ir().model.bodies[0].id.clone()] && native == body
+            if bodies.as_slice() == [base.ir().geometry.bodies[0].id.clone()] && native == body
     )));
     assert!(matches!(
         decoded.ir().model.features[3].evaluation.definition(),
@@ -108,15 +108,15 @@ fn decode_resolves_feature_topology_selections() {
                 }
             },
             ..
-        }) if profile_faces == &[base.ir().model.faces[0].id.clone()]
-            && faces == &[base.ir().model.faces[0].id.clone()] && native == face
+        }) if profile_faces == &[base.ir().geometry.faces[0].id.clone()]
+            && faces == &[base.ir().geometry.faces[0].id.clone()] && native == face
     ));
     assert!(matches!(
         decoded.ir().model.features[4].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Hole {
             face: Some(FaceSelection::Resolved { faces, native }),
             ..
-        }) if faces == &[base.ir().model.faces[0].id.clone()] && native == face
+        }) if faces == &[base.ir().geometry.faces[0].id.clone()] && native == face
     ));
     assert!(matches!(
     decoded.ir().model.features[5].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep {

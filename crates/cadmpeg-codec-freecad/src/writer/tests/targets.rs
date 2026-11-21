@@ -14,15 +14,16 @@ use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput};
 use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
 use cadmpeg_ir::{CadIr, Codec, DecodeOptions};
 use std::io::Cursor;
+use std::sync::LazyLock;
+
+/// The full decode of `CORE_DESIGN_PRODUCT`, shared by the tests that only
+/// read it or edit a clone of it.
+static CORE_DESIGN: LazyLock<cadmpeg_ir::DecodeResult> =
+    LazyLock::new(|| decode_at(DecodeDepth::Full));
 
 #[test]
 pub(crate) fn write_target_and_source_requirements_are_explicit() {
-    let decoded = FcstdCodec
-        .decode(
-            &mut Cursor::new(CORE_DESIGN_PRODUCT),
-            &DecodeOptions::default(),
-        )
-        .expect("decode source");
+    let decoded = &*CORE_DESIGN;
     let unsupported = FcstdCodec
         .plan(
             EncodeInput::new(decoded.ir(), None),
@@ -66,7 +67,7 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
     };
     assert_eq!(
         serde_json::to_value(refusal).expect("serialize refusal")["refusal"],
-        serde_json::json!({"kind": "no_default", "source": {"kind": "foreign_format", "format": "step"}})
+        serde_json::json!({"kind": "no_default", "source": {"kind": "foreign_format", "value": "step"}})
     );
     assert_eq!(refusal.format(), "fcstd");
     assert_eq!(
@@ -116,12 +117,7 @@ fn entry_payloads(archive: &[u8]) -> std::collections::BTreeMap<String, Vec<u8>>
 /// This is the catalog dialect, and the report states it.
 #[test]
 fn inherit_preserves_a_schema_four_source_entry_for_entry() {
-    let decoded = FcstdCodec
-        .decode(
-            &mut Cursor::new(CORE_DESIGN_PRODUCT),
-            &DecodeOptions::default(),
-        )
-        .expect("decode source");
+    let decoded = &*CORE_DESIGN;
     let plan = inherit(decoded.ir()).expect("schema 4 is preserved");
 
     assert!(matches!(
@@ -271,7 +267,7 @@ fn inherit_refuses_a_schema_two_source_with_no_usable_baseline() {
     ir.native
         .namespace_mut("fcstd")
         .set_arena::<DocumentFacts>(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "document",
             &[],
         )
@@ -367,18 +363,12 @@ fn an_explicit_schema_four_target_refuses_a_schema_two_source_by_name() {
 /// with every other encoder, and quotes no dialect id because none exists.
 #[test]
 fn inherit_refuses_a_source_that_records_no_dialect() {
-    let decoded = FcstdCodec
-        .decode(
-            &mut Cursor::new(CORE_DESIGN_PRODUCT),
-            &DecodeOptions::default(),
-        )
-        .expect("decode source");
-    let (mut ir, _, _) = decoded.into_parts();
+    let mut ir = CORE_DESIGN.ir().clone();
     let source = ir.source.take().expect("the decode records a source");
     let format = source.format().to_owned();
     ir.source = Some(
         serde_json::from_value(serde_json::json!({
-            "identity": {"classification": "unclassified", "format": format},
+            "identity": {"kind": "unclassified", "format": format},
             "attributes": source.attributes,
         }))
         .unwrap(),
@@ -486,12 +476,12 @@ fn recorded_digest(ir: &CadIr) -> Option<&String> {
 
 #[test]
 fn only_a_full_decode_records_the_digest() {
-    let full = decode_at(DecodeDepth::Full);
-    assert_eq!(full.ir().decode_depth(), DecodeDepth::Full);
+    let full = &*CORE_DESIGN;
+    assert_eq!(full.ir().scope(), DecodeDepth::Full.scope());
     assert!(recorded_digest(full.ir()).is_some());
     for depth in [DecodeDepth::Geometry, DecodeDepth::Container] {
         let decoded = decode_at(depth);
-        assert_eq!(decoded.ir().decode_depth(), depth);
+        assert_eq!(decoded.ir().scope(), depth.scope());
         assert_eq!(recorded_digest(decoded.ir()), None, "{depth}");
     }
 }
@@ -528,8 +518,7 @@ fn a_document_below_full_is_refused_by_depth_edited_or_not() {
 /// A `Full` document that lost its digest cannot prove that it is unedited.
 #[test]
 fn a_full_document_without_its_digest_is_refused() {
-    let decoded = decode_at(DecodeDepth::Full);
-    let mut stripped = decoded.ir().clone();
+    let mut stripped = CORE_DESIGN.ir().clone();
     stripped
         .source
         .as_mut()
@@ -549,12 +538,7 @@ fn a_full_document_without_its_digest_is_refused() {
 /// serializer. It is refused rather than written as the unedited source.
 #[test]
 fn a_neutral_edit_is_refused_and_the_unedited_document_still_writes() {
-    let decoded = FcstdCodec
-        .decode(
-            &mut Cursor::new(CORE_DESIGN_PRODUCT),
-            &DecodeOptions::default(),
-        )
-        .expect("decode source");
+    let decoded = &*CORE_DESIGN;
     let mut control = Vec::new();
     inherit(decoded.ir())
         .expect("an unedited document is preserved")
@@ -567,7 +551,7 @@ fn a_neutral_edit_is_refused_and_the_unedited_document_still_writes() {
 
     let mut edited = decoded.ir().clone();
     let body = edited
-        .model
+        .geometry
         .bodies
         .first_mut()
         .expect("the fixture decodes a body");

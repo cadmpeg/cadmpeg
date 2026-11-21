@@ -26,6 +26,7 @@ use cadmpeg_ir::sketches::SketchId;
 fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     let stream = "f3d:A";
     let placement = DesignSketchPlacement {
+        display_name: None,
         frame: crate::records::sketch_placement::DesignSketchFrame::new(
             0,
             crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
@@ -296,6 +297,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         secondary_id: 0,
         geometry: None,
         planar_z_noise: None,
+        tail_marker: None,
     };
     let annotation_point_entity = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#radial-extension-point").unwrap(),
@@ -395,6 +397,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         secondary_id: 0,
         geometry: None,
         planar_z_noise: None,
+        tail_marker: None,
     });
     let mut entities_with_refs = entities.clone();
     for (entity, curve) in entities_with_refs.iter_mut().zip(&curves) {
@@ -596,7 +599,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
                 parameter: Some(actual_parameter),
                 operands,
                 ..
-            } if native_kind == "Linear Dimension-4"
+            } if native_kind == "Linear Dimension"
             && entities.is_empty()
             && actual_parameter.as_str() == expected_parameter.as_str()
             && native_ref == companion.id()
@@ -609,6 +612,68 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
                 && field == "companion_payload"
                 && operand_ref == companion.id())
     )));
+
+    // The native kind is the kind stem; the instance name is a native property.
+    for (source_kind, kind) in [
+        ("Linear Dimension-2", "Linear Dimension"),
+        ("Linear Dimension-3", "Linear Dimension"),
+        ("Linear Dimension-10", "Linear Dimension"),
+        ("Linear-Dimension-2", "Linear-Dimension"),
+        ("Linear Dimension", "Linear Dimension"),
+        ("Linear Dimension-", "Linear Dimension-"),
+        ("Linear Dimension-2a", "Linear Dimension-2a"),
+    ] {
+        let instance_name = (kind != source_kind).then_some(source_kind);
+        let mut instance = parameter.clone();
+        instance
+            .try_set_source(
+                crate::records::parameters::DesignParameterSource::new(
+                    source_kind.into(),
+                    instance.owner_record_index(),
+                    instance.family_discriminator(),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        let retained = project_dimension_constraints(
+            &crate::design::dimensions::DimensionConstraintInputs {
+                placements: std::slice::from_ref(&placement),
+                parameters: std::slice::from_ref(&instance),
+                owners: std::slice::from_ref(&owner),
+                pairs: &[],
+                groups: &[],
+                annotation_frames: &[],
+                null_pairs: &[],
+                companions: std::slice::from_ref(&companion),
+                recipe_records: &[],
+                points: &[],
+                curves: &[],
+                entities: &[],
+            },
+            &[],
+        );
+        let [constraint] = retained.as_slice() else {
+            panic!("{source_kind}: one native constraint");
+        };
+        let SketchConstraintDefinitionInput::Native {
+            native_kind,
+            native_properties,
+            ..
+        } = constraint.definition.kind()
+        else {
+            panic!("{source_kind}: native definition");
+        };
+        assert_eq!(native_kind.as_str(), kind);
+        assert_eq!(
+            native_properties.get("instance_name").map(String::as_str),
+            instance_name,
+            "{source_kind}"
+        );
+        assert_eq!(
+            native_properties.len(),
+            usize::from(instance_name.is_some())
+        );
+    }
 
     let mut radial_parameter = parameter.clone();
     radial_parameter

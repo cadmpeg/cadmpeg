@@ -193,12 +193,14 @@ fn marked_reference(bytes: &mut Vec<u8>, record: u64) {
     bytes.extend_from_slice(&[0, 0]);
 }
 
-fn selection_frame(version: u32, settings: &[u64], interior: &[u64], tool: u64) -> Vec<u8> {
-    let (start, interior_zeros, tool_zeros) = match version {
-        5 => (31, 8, 4),
-        6 => (31, 12, 8),
-        _ => (32, 12, 8),
-    };
+fn selection_frame(
+    start: usize,
+    version: u32,
+    settings: &[u64],
+    interior: &[u64],
+    tool: u64,
+) -> Vec<u8> {
+    let (interior_zeros, tool_zeros) = if version == 5 { (8, 4) } else { (12, 8) };
     let mut frame = vec![0; start];
     frame.extend_from_slice(&4_u32.to_le_bytes());
     frame.extend_from_slice(&1_u32.to_le_bytes());
@@ -243,11 +245,12 @@ fn selection_prefix_names_settings_interior_groups_and_tool_body_in_each_version
         tool_body: 390,
     };
     for (version, frame_bytes, start, interior_prefix) in [
-        (5_u32, 114_usize, 31, 12),
+        (5_u32, 110_usize, 27, 12),
+        (5, 114, 31, 12),
         (6, 122, 31, 16),
         (7, 123, 32, 16),
     ] {
-        let frame = selection_frame(version, &[360, 369], &[371, 380], 390);
+        let frame = selection_frame(start, version, &[360, 369], &[371, 380], 390);
         assert_eq!(frame.len(), frame_bytes);
         let scope = selection_scope(200);
         let mut bytes = vec![0; 17];
@@ -294,7 +297,7 @@ fn selection_prefix_names_settings_interior_groups_and_tool_body_in_each_version
         }
     }
     for version in [1, 4, 8] {
-        let frame = selection_frame(5, &[360], &[371], 390);
+        let frame = selection_frame(31, 5, &[360], &[371], 390);
         let mut bytes = vec![0; 17];
         bytes.extend_from_slice(&frame);
         bytes.resize(217, 0);

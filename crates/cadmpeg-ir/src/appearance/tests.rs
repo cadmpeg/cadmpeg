@@ -15,7 +15,7 @@ fn appearance_asset_and_binding_round_trip() {
     let real = |value| FiniteReal::new(value).unwrap();
     let length = |value| Length::new(value).unwrap();
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     ir.model.appearances.push(Appearance {
         id: AppearanceId::mint("synthetic:test:appearance#prism-001").expect("valid identity"),
         name: Some("Prism-001".into()),
@@ -55,42 +55,46 @@ fn appearance_asset_and_binding_round_trip() {
                 normal_scale: real(0.75),
             }),
         }],
+        native_ref: None,
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "synthetic:test:appearance-binding#0"
             .try_into()
             .expect("valid identity"),
-        target: AppearanceTarget::Body(body),
+        target: AppearanceTarget::Body(body).into(),
         appearance: AppearanceId::mint("synthetic:test:appearance#prism-001")
             .expect("valid identity"),
         source_entity_id: Some("0_1".into()),
         object_type: Some("Body".into()),
         visible: Some(false),
         channels: std::collections::BTreeMap::new(),
+        native_ref: None,
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "synthetic:test:appearance-binding#edge"
             .try_into()
             .expect("valid identity"),
-        target: AppearanceTarget::Edge(ir.model.edges[0].id.clone()),
+        target: AppearanceTarget::Edge(ir.geometry.edges[0].id.clone()).into(),
         appearance: AppearanceId::mint("synthetic:test:appearance#prism-001")
             .expect("valid identity"),
         source_entity_id: Some("0_1".into()),
         object_type: Some("Edge".into()),
         visible: None,
         channels: std::collections::BTreeMap::new(),
+        native_ref: None,
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "synthetic:test:appearance-binding#vertex"
             .try_into()
             .expect("valid identity"),
-        target: AppearanceTarget::Vertex(ir.model.vertices[0].id.clone()),
+        target: AppearanceTarget::Vertex(ir.geometry.vertices[0].id.clone()).into(),
         appearance: AppearanceId::mint("synthetic:test:appearance#prism-001")
             .expect("valid identity"),
         source_entity_id: Some("0_1".into()),
         object_type: Some("Vertex".into()),
         visible: None,
         channels: std::collections::BTreeMap::new(),
+        native_ref: None,
     });
 
     let json = ir.to_canonical_json().unwrap();
@@ -129,14 +133,8 @@ fn a_triangle_group_binding_names_a_group_of_its_tessellation() {
     )
     .unwrap()
     .with_triangle_groups(vec![
-        TessellationTriangleGroup {
-            source_id: Some("/Mesh/Front".into()),
-            triangles: vec![0],
-        },
-        TessellationTriangleGroup {
-            source_id: None,
-            triangles: vec![1],
-        },
+        TessellationTriangleGroup::new(Some("/Mesh/Front".into()), vec![0]),
+        TessellationTriangleGroup::new(None, vec![1]),
     ])
     .unwrap();
     let tessellation = mesh.id.to_string();
@@ -154,6 +152,7 @@ fn a_triangle_group_binding_names_a_group_of_its_tessellation() {
         base_color: None,
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     });
     let binding = |group: &str| AppearanceBinding {
         id: "synthetic:test:appearance-binding#group"
@@ -162,12 +161,14 @@ fn a_triangle_group_binding_names_a_group_of_its_tessellation() {
         target: AppearanceTarget::TriangleGroup {
             tessellation: tessellation.clone(),
             group: group.to_owned(),
-        },
+        }
+        .into(),
         appearance: appearance.clone(),
         source_entity_id: None,
         object_type: None,
         visible: None,
         channels: std::collections::BTreeMap::new(),
+        native_ref: None,
     };
     ir.model.appearance_bindings.push(binding("/Mesh/Front"));
     let json = ir.to_canonical_json().unwrap();
@@ -191,4 +192,58 @@ fn a_triangle_group_binding_names_a_group_of_its_tessellation() {
         .findings
         .iter()
         .any(|finding| finding.check == Check::ReferentialIntegrity));
+}
+
+#[test]
+fn occurrence_and_record_targets_and_native_refs_read_back() {
+    use crate::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+    use cadmpeg_core::decode::ResourceLimits;
+    use serde_json::{json, Value};
+
+    let read = |wire: &Value| {
+        crate::design::read::from_str::<AppearanceBinding>(
+            &wire.to_string(),
+            &ResourceLimits::desktop(),
+        )
+    };
+    for target in [
+        json!({"kind": "occurrence", "value": "test:model:occurrence#1"}),
+        json!({"kind": "record", "value": {"arena": "point_clouds", "id": "test:model:cloud#1"}}),
+    ] {
+        let wire = json!({
+            "id": "test:model:appearance-binding#1",
+            "target": {"entity": target},
+            "appearance": "test:model:appearance#1",
+            "channels": {},
+            "native_ref": "test:native:record#1"
+        });
+        let binding = read(&wire).unwrap();
+        assert!(matches!(
+            binding.target.entity,
+            AppearanceTarget::Occurrence(_) | AppearanceTarget::Record { .. }
+        ));
+        assert_eq!(serde_json::to_value(&binding).unwrap(), wire);
+        let mut null_ref = wire.clone();
+        null_ref["native_ref"] = Value::Null;
+        assert!(read(&null_ref).is_err());
+    }
+    assert!(read(&json!({
+        "id": "test:model:appearance-binding#1",
+        "target": {"entity": {"kind": "record", "value": {"arena": "", "id": "x"}}},
+        "appearance": "test:model:appearance#1",
+        "channels": {}
+    }))
+    .is_err());
+    let appearance = json!({
+        "id": "test:model:appearance#1", "properties": {}, "textures": [],
+        "native_ref": "test:native:record#1"
+    });
+    let read_appearance = |wire: &Value| {
+        crate::design::read::from_str::<Appearance>(&wire.to_string(), &ResourceLimits::desktop())
+    };
+    let read_back = read_appearance(&appearance).unwrap();
+    assert_eq!(serde_json::to_value(&read_back).unwrap(), appearance);
+    let mut null_ref = appearance.clone();
+    null_ref["native_ref"] = Value::Null;
+    assert!(read_appearance(&null_ref).is_err());
 }

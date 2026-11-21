@@ -18,6 +18,9 @@ use crate::pmdc::PmDcReference;
 
 const EPS_PLATE_DIRECTION: f64 = 1.0e-10;
 const EPS_ATTACHMENT_DIRECTION: f64 = 1.0e-10;
+/// Smallest V component of an oblique second attachment direction; a smaller
+/// component leaves the plate plane parallel to the attached face.
+const EPS_OBLIQUE_SECOND_DIRECTION: f64 = 1.0e-6;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PlateOperands {
@@ -92,14 +95,14 @@ pub(crate) fn sheet(property: &PmDcFeatureProperty) -> Option<&SheetMetalPropert
     }
 }
 
-fn boolean(property: &PmDcFeatureProperty) -> Option<bool> {
+pub(crate) fn boolean(property: &PmDcFeatureProperty) -> Option<bool> {
     match property.kind {
         PmDcFeaturePropertyKind::Boolean { value, .. } => Some(value),
         _ => None,
     }
 }
 
-fn enumeration(property: &PmDcFeatureProperty) -> Option<(i16, u16)> {
+pub(crate) fn enumeration(property: &PmDcFeatureProperty) -> Option<(i16, u16)> {
     match sheet(property)? {
         SheetMetalProperty::Enumeration { type_value, value } => Some((*type_value, *value)),
         _ => None,
@@ -234,13 +237,20 @@ pub(crate) fn plate<'a>(
         first_direction.as_raw().dot(*u_axis.as_raw()).abs() >= 1.0 - EPS_ATTACHMENT_DIRECTION,
         PlateRefusal::FirstDirection,
     )?;
-    // The second direction is parallel to V, or antiparallel to V when the
-    // first direction is antiparallel to U.
+    // The second direction is perpendicular to the first direction. It has a
+    // positive component along V, or it is antiparallel to V when the first
+    // direction is antiparallel to U. An oblique second direction belongs to
+    // a plate whose sketch plane is not perpendicular to the attached face.
     let along_v = second_direction.as_raw().dot(*v_axis.as_raw());
     let first_reversed = first_direction.as_raw().dot(*u_axis.as_raw()) < 0.0;
     require(
-        along_v >= 1.0 - EPS_ATTACHMENT_DIRECTION
-            || (first_reversed && along_v <= -1.0 + EPS_ATTACHMENT_DIRECTION),
+        second_direction
+            .as_raw()
+            .dot(*first_direction.as_raw())
+            .abs()
+            <= EPS_ATTACHMENT_DIRECTION
+            && (along_v >= EPS_OBLIQUE_SECOND_DIRECTION
+                || (first_reversed && along_v <= -1.0 + EPS_ATTACHMENT_DIRECTION)),
         PlateRefusal::SecondDirection,
     )?;
     require(same(*thickness, slots[3]), PlateRefusal::ThicknessReference)?;
@@ -258,50 +268,99 @@ pub(crate) fn plate<'a>(
     )?;
     require(states.as_ref() == [1, 1, 1], PlateRefusal::AttachmentStates)?;
     if let Some(reference) = extension {
-        let Some(SheetMetalProperty::AttachmentState {
-            state: 10,
-            thickness: other_thickness,
-            radius: other_radius,
-            attachment,
-            relief_width: other_width,
-            minimum_remnant: other_remnant,
-            options,
-        }) = property(*reference).and_then(sheet)
-        else {
-            return Err(PlateRefusal::AttachmentExtension);
-        };
         require(
-            same(*other_thickness, *thickness)
-                && same(*other_radius, *radius)
-                && same(*attachment, slots[4])
-                && same(*other_width, *relief_width)
-                && same(*other_remnant, *minimum_remnant)
-                && same(options[0], *first_option)
-                && same(options[1], *second_option),
+            extension_repeats(
+                property(*reference),
+                slots[4],
+                [*thickness, *radius, *relief_width, *minimum_remnant],
+                [*first_option, *second_option],
+            ),
             PlateRefusal::AttachmentExtension,
         )?;
     }
+    let relief = relief(
+        property(slots[10]),
+        style,
+        [*relief_width, *minimum_remnant],
+        &property,
+        &length,
+    )?;
+    let transition = transition(property(slots[11]), style, &property, &length)?;
+    Ok(PlateOperands {
+        thickness: length(*thickness)
+            .and_then(|v| PositiveLength::try_from(v).ok())
+            .refuse(PlateRefusal::Length)?,
+        side: property(slots[2])
+            .and_then(flange_side)
+            .refuse(PlateRefusal::Side)?,
+        inside_radius: length(*radius)
+            .and_then(|v| PositiveLength::try_from(v).ok())
+            .refuse(PlateRefusal::Length)?,
+        relief,
+        transition,
+    })
+}
+
+/// Whether an attachment extension is the state-10 record that repeats the
+/// attachment's thickness, radius, relief width, minimum remnant, and option
+/// references, and names `attachment`.
+pub(crate) fn extension_repeats(
+    extension: Option<&PmDcFeatureProperty>,
+    attachment: PmDcReference,
+    lengths: [PmDcReference; 4],
+    options: [PmDcReference; 2],
+) -> bool {
+    let Some(SheetMetalProperty::AttachmentState {
+        state: 10,
+        thickness,
+        radius,
+        attachment: other_attachment,
+        relief_width,
+        minimum_remnant,
+        options: other_options,
+    }) = extension.and_then(sheet)
+    else {
+        return false;
+    };
+    same(*other_attachment, attachment)
+        && [*thickness, *radius, *relief_width, *minimum_remnant]
+            .iter()
+            .zip(lengths)
+            .all(|(a, b)| same(*a, b))
+        && other_options.iter().zip(options).all(|(a, b)| same(*a, b))
+}
+
+/// The bend relief of a plate: a relief record whose width and minimum
+/// remnant repeat the attachment references `[width, minimum_remnant]` and
+/// whose form is the document-style bend-relief form.
+pub(crate) fn relief<'a>(
+    source: Option<&PmDcFeatureProperty>,
+    style: &Style,
+    attachment: [PmDcReference; 2],
+    property: &impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
+    length: &impl Fn(PmDcReference) -> Option<Length>,
+) -> Result<SheetMetalRelief, PlateRefusal> {
     let Some(SheetMetalProperty::Relief {
         control,
         width,
         depth,
         form,
-        minimum_remnant: relief_remnant,
+        minimum_remnant,
         seam_gap,
-    }) = property(slots[10]).and_then(sheet)
+    }) = source.and_then(sheet)
     else {
         return Err(PlateRefusal::Relief);
     };
     let style_relief = property(style.bend_relief_form).and_then(enumeration);
     require(
-        property(*control).and_then(boolean) == Some(true)
-            && same(*width, *relief_width)
-            && same(*relief_remnant, *minimum_remnant)
+        property(*control).and_then(boolean).is_some()
+            && same(*width, attachment[0])
+            && same(*minimum_remnant, attachment[1])
             && property(*form).and_then(enumeration).is_some()
             && property(*form).and_then(enumeration) == style_relief,
         PlateRefusal::Relief,
     )?;
-    let relief = SheetMetalRelief {
+    Ok(SheetMetalRelief {
         form: SheetMetalReliefForm::StyleDefault,
         width: length(*width)
             .and_then(|v| PositiveLength::try_from(v).ok())
@@ -315,43 +374,41 @@ pub(crate) fn plate<'a>(
         seam_gap: length(*seam_gap)
             .and_then(|v| NonNegativeLength::try_from(v).ok())
             .refuse(PlateRefusal::Length)?,
-    };
+    })
+}
+
+/// The transition of a plate: a transition record with a true control and
+/// the document-style transition form.
+pub(crate) fn transition<'a>(
+    source: Option<&PmDcFeatureProperty>,
+    style: &Style,
+    property: &impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
+    length: &impl Fn(PmDcReference) -> Option<Length>,
+) -> Result<SheetMetalTransition, PlateRefusal> {
     let Some(SheetMetalProperty::Transition {
         form,
         control,
-        radius: transition_radius,
-    }) = property(slots[11]).and_then(sheet)
+        radius,
+    }) = source.and_then(sheet)
     else {
         return Err(PlateRefusal::Transition);
     };
     let style_transition = property(style.transition_form).and_then(enumeration);
     require(
-        property(*control).and_then(boolean) == Some(true)
+        property(*control).and_then(boolean).is_some()
             && property(*form).and_then(enumeration).is_some()
             && property(*form).and_then(enumeration) == style_transition,
         PlateRefusal::Transition,
     )?;
-    Ok(PlateOperands {
-        thickness: length(*thickness)
-            .and_then(|v| PositiveLength::try_from(v).ok())
+    Ok(SheetMetalTransition {
+        form: SheetMetalTransitionForm::StyleDefault,
+        radius: length(*radius)
+            .and_then(|v| NonNegativeLength::try_from(v).ok())
             .refuse(PlateRefusal::Length)?,
-        side: property(slots[2])
-            .and_then(flange_side)
-            .refuse(PlateRefusal::Side)?,
-        inside_radius: length(*radius)
-            .and_then(|v| PositiveLength::try_from(v).ok())
-            .refuse(PlateRefusal::Length)?,
-        relief,
-        transition: SheetMetalTransition {
-            form: SheetMetalTransitionForm::StyleDefault,
-            radius: length(*transition_radius)
-                .and_then(|v| NonNegativeLength::try_from(v).ok())
-                .refuse(PlateRefusal::Length)?,
-        },
     })
 }
 
-fn corner<'a>(
+pub(crate) fn corner<'a>(
     source: &PmDcFeatureProperty,
     property: &impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
     length: &impl Fn(PmDcReference) -> Option<Length>,

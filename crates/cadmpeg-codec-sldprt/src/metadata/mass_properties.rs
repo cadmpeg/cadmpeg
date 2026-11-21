@@ -103,14 +103,14 @@ pub(crate) fn append(
         );
         return Ok(());
     };
-    if ir.model.bodies.len() != 1 || ir.model.bodies[0].id != *body_id {
+    if ir.geometry.bodies.len() != 1 || ir.geometry.bodies[0].id != *body_id {
         not_compared(
             losses,
             "the active configuration body does not resolve uniquely",
         );
         return Ok(());
     }
-    if ir.model.bodies[0].visible == Some(false) {
+    if ir.geometry.bodies[0].visible == Some(false) {
         not_compared(losses, "the active configuration body is hidden");
         return Ok(());
     }
@@ -208,7 +208,7 @@ fn property_configuration_index(name: &str) -> Option<u32> {
 }
 
 fn saved_measures(attribute: &SourceAttribute) -> Option<SavedMeasures> {
-    let [AttributeValue::String(value)] = attribute.values.as_slice() else {
+    let [Some(AttributeValue::String(value))] = attribute.values.as_slice() else {
         return None;
     };
     let mut count = 0usize;
@@ -300,9 +300,10 @@ mod tests {
         SourceAttribute {
             id: AttributeId::mint("sldprt:metadata:default_property#1:18:SW-MassProp-Config-0")
                 .expect("attribute id"),
-            target: AttributeTarget::Document,
+            target: AttributeTarget::Document.into(),
             name: name.to_owned(),
-            values: vec![AttributeValue::String(value.to_owned())],
+            values: vec![Some(AttributeValue::String(value.to_owned()))],
+            native_ref: None,
         }
     }
 

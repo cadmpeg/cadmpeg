@@ -42,13 +42,20 @@ fn decode_keeps_section_and_model_entity_admission_additive() {
             .len(),
         1
     );
-    assert_eq!(decoded.ir().model.entity_count(), 2);
+    let design = &decoded.ir().design;
+    let design_records = design.scopes.len()
+        + design.containers.len()
+        + design.features.len()
+        + design.parameters.len();
+    let name_entries = design.names.entries().len();
+    assert_eq!(decoded.ir().model.product_definitions.len(), 1);
+    assert_eq!(decoded.ir().entity_count() - design_records, 3);
 
     let mut options = DecodeOptions::default();
     options.policy.limits.max_entities = 2;
     let error = CreoCodec
         .decode(&mut Cursor::new(fixture), &options)
-        .expect_err("one section plus two model entities require an entity limit of three");
+        .expect_err("one section plus three model entities require an entity limit of four");
     assert!(
         matches!(
             error,
@@ -60,34 +67,63 @@ fn decode_keeps_section_and_model_entity_admission_additive() {
     );
 
     options.policy.limits.max_entities = 3;
+    let error = CreoCodec
+        .decode(&mut Cursor::new(fixture), &options)
+        .expect_err("the root definition the header names no model for takes a slot");
+    assert!(
+        matches!(
+            &error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "admit Creo model product_definitions"
+        ),
+        "{error:?}"
+    );
+
+    options.policy.limits.max_entities = 4;
+    let error = CreoCodec
+        .decode(&mut Cursor::new(fixture), &options)
+        .expect_err("the design records take entity slots of their own");
+    assert!(
+        matches!(
+            &error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation.starts_with("project Creo v11")
+        ),
+        "{error:?}"
+    );
+
+    options.policy.limits.max_entities = 4 + u64::try_from(design_records + name_entries).unwrap();
     CreoCodec
         .decode(&mut Cursor::new(fixture), &options)
         .expect("the exact additive entity limit must admit the fixture");
 }
 
 #[test]
-fn part_product_occurrence_refuses_before_model_insertion() {
+fn part_product_definition_refuses_before_model_insertion() {
     use cadmpeg_core::decode::ResourceDimension;
 
     let data = include_bytes!("../../../tests/golden/fixtures/native_model_name.prt");
     let mut options = DecodeOptions::default();
-    options.policy.limits.max_entities = 1;
+    options.policy.limits.max_entities = 0;
     let error = CreoCodec
         .decode(&mut Cursor::new(data), &options)
-        .expect_err("a product definition and occurrence require two entity slots");
+        .expect_err("the root product definition requires one entity slot");
     assert!(matches!(
         error,
         cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::Entities
-                && limit.operation == "admit Creo model occurrences"
+                && limit.operation == "admit Creo model product_definitions"
     ));
 
-    options.policy.limits.max_entities = 2;
+    // §8.1: the part is the root definition, which no occurrence places. Its
+    // feature list is not read, so it states no design records.
+    options.policy.limits.max_entities = 1;
     let decoded = CreoCodec
         .decode(&mut Cursor::new(data), &options)
         .expect("the exact model entity limit admits the part product");
     assert_eq!(decoded.ir().model.product_definitions.len(), 1);
-    assert_eq!(decoded.ir().model.occurrences.len(), 1);
+    assert!(decoded.ir().model.occurrences.is_empty());
+    assert!(decoded.ir().design.scopes.is_empty());
 }
 
 fn sketch_admission_prt() -> Vec<u8> {
@@ -151,7 +187,7 @@ fn sketch_constraint_refuses_before_model_insertion() {
 
     let mut exact = DecodeOptions::default();
     exact.policy.limits.max_entities =
-        u64::try_from(1 + decoded.ir().model.entity_count()).expect("fixture count fits u64");
+        u64::try_from(1 + decoded.ir().entity_count()).expect("fixture count fits u64");
     CreoCodec
         .decode(&mut Cursor::new(sketch_admission_prt()), &exact)
         .expect("section and each model identity are charged once");
@@ -189,19 +225,18 @@ fn decode_extracts_jpeg_thumbnail_as_native_asset() {
         Exactness::ByteExact,
     );
     let source = result.ir().source.as_ref().expect("source metadata");
-    assert_eq!(source.attributes["section_count"], "1");
     assert_eq!(source.attributes["section.0.name"], "THMB_IMG_MAIN");
     assert_eq!(source.attributes["section.0.raw_name"], "THMB_IMG_MAIN");
     assert_eq!(
         source.attributes["section.0.role"],
         ContainerRole::Thumbnail.as_str()
     );
-    assert!(source.attributes["section.0.offset"]
-        .parse::<usize>()
-        .is_ok());
-    assert!(source.attributes["section.0.length"]
-        .parse::<usize>()
-        .is_ok());
+    for key in ["section_count", "section.0.offset", "section.0.length"] {
+        assert!(
+            !source.attributes.keys().any(|name| name.as_str() == key),
+            "{key}"
+        );
+    }
 }
 
 #[test]
@@ -288,7 +323,7 @@ fn decode_projects_orphan_geometry_generator_as_stored_geometry() {
     );
     let surface = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
@@ -416,7 +451,7 @@ fn decode_annotations_cover_every_emitted_entity() {
 
     let unknowns = result.ir().native_unknowns("creo").unwrap();
     assert_eq!(unknowns.len(), 3);
-    assert_eq!(result.ir().model.surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.surfaces.len(), 1);
     for unknown in &unknowns {
         let section_name = unknown
             .id
@@ -438,7 +473,7 @@ fn decode_annotations_cover_every_emitted_entity() {
             Exactness::Unknown,
         );
     }
-    for surface in &result.ir().model.surfaces {
+    for surface in &result.ir().geometry.surfaces {
         assert_annotation(
             &result.source_fidelity().annotations,
             surface.id.as_str(),
@@ -449,7 +484,7 @@ fn decode_annotations_cover_every_emitted_entity() {
         );
     }
     let emitted_entity_count =
-        unknowns.len() + result.ir().model.surfaces.len() + result.ir().model.features.len();
+        unknowns.len() + result.ir().geometry.surfaces.len() + result.ir().model.features.len();
     assert_eq!(
         result.source_fidelity().annotations.provenance.len(),
         emitted_entity_count
@@ -674,19 +709,12 @@ fn decode_is_honest_geometryless_with_preserved_sections() {
     assert!(unknowns.iter().any(|u| u.id.as_str().contains("VisibGeom")));
     assert!(unknowns.iter().any(|u| u.id.as_str().contains("NovisGeom")));
     // No geometry arenas populated.
-    assert!(result.ir().model.surfaces.is_empty());
-    assert!(result.ir().model.points.is_empty());
-    assert!(result.ir().model.faces.is_empty());
-    // Source attributes carry the census.
+    assert!(result.ir().geometry.surfaces.is_empty());
+    assert!(result.ir().geometry.points.is_empty());
+    assert!(result.ir().geometry.faces.is_empty());
     let source = result.ir().source.as_ref().expect("source");
-    assert_eq!(
-        source.attributes.get("srf_array_count").map(String::as_str),
-        Some("5")
-    );
-    assert_eq!(
-        source.attributes.get("crv_array_count").map(String::as_str),
-        Some("12")
-    );
+    assert!(!source.attributes.contains_key("srf_array_count"));
+    assert!(!source.attributes.contains_key("crv_array_count"));
     assert_eq!(
         source.attributes.get("principal_unit").map(String::as_str),
         Some("mmNs")
@@ -745,7 +773,7 @@ fn container_only_preserves_sections_without_transferring_entities() {
 
     assert!(result.report().container_only());
     assert!(!result.report().geometry_transferred());
-    assert!(result.ir().model.surfaces.is_empty());
+    assert!(result.ir().geometry.surfaces.is_empty());
     assert!(result.ir().model.features.is_empty());
     assert_eq!(result.ir().native_unknowns("creo").unwrap().len(), 1);
     assert!(result

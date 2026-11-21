@@ -1,70 +1,386 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "10",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "assembly_joints": [],
-      "attributes": [],
-      "bodies": [],
-      "coedges": [],
+    "design": {
+      "arrangements": [],
       "configurations": [],
-      "curves": [],
-      "drawings": [],
-      "edges": [],
-      "faces": [],
+      "containers": [
+        {
+          "kind": "ordered",
+          "value": {
+            "folders": [],
+            "id": "creo:model:timeline#root",
+            "kind": "timeline",
+            "members": [
+              {
+                "kind": "feature",
+                "value": "creo:model:sketch_feature#917"
+              },
+              {
+                "kind": "feature",
+                "value": "creo:model:feature#40"
+              },
+              {
+                "kind": "feature",
+                "value": "creo:depdb:curve_expression_feature#7-269"
+              }
+            ],
+            "rollback": {
+              "kind": "end"
+            }
+          }
+        }
+      ],
+      "evaluations": [],
       "features": [
         {
           "definition": {
-            "definition": "native",
-            "kind": "CurveFromEquation",
-            "parameters": {
-              "assignment_count": "1",
-              "entity_id": "7"
+            "operation": {
+              "kind": "native",
+              "value": {
+                "kind": "creo:CurveFromEquation",
+                "native_options": {},
+                "source_settings": {}
+              }
             }
           },
           "id": "creo:depdb:curve_expression_feature#7-269",
           "name": "Curve Equation 7",
+          "native_ref": "creo:depdb:curve_expression#active-7-269"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "extrude",
+              "value": {
+                "native_options": {},
+                "output": {},
+                "profile": {
+                  "at": {
+                    "kind": "input"
+                  },
+                  "native": [
+                    "creo:featdefs:sketch#917"
+                  ],
+                  "picks": {
+                    "kind": "unread"
+                  }
+                },
+                "source_settings": {}
+              }
+            }
+          },
+          "id": "creo:model:feature#40",
+          "name": "Extrude id 40",
+          "native_ref": "creo:featdefs:feature_definition#917"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "sketch",
+              "value": "creo:model:sketch#917"
+            }
+          },
+          "id": "creo:model:sketch_feature#917",
+          "native_ref": "creo:featdefs:sketch#917"
+        }
+      ],
+      "names": [],
+      "parameters": [
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "source",
+              "value": {
+                "dialect": {
+                  "kind": "creo"
+                },
+                "tokens": [
+                  {
+                    "kind": "text",
+                    "value": "d42+1[deg]"
+                  }
+                ]
+              }
+            }
+          },
+          "id": "creo:depdb:curve_expression_parameter#7-269-0",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 1,
+              "length": 0,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "result",
+          "native_options": {},
+          "native_ref": "creo:depdb:curve_expression#active-7-269",
+          "owner": {
+            "kind": "feature",
+            "value": "creo:depdb:curve_expression_feature#7-269"
+          },
+          "scope": "creo:model:product_definition#root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 1.0174532925199433
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "source",
+              "value": {
+                "dialect": {
+                  "kind": "creo"
+                },
+                "tokens": [
+                  {
+                    "kind": "text",
+                    "value": "1"
+                  }
+                ]
+              }
+            }
+          },
+          "id": "creo:featdefs:parameter#917:42:1",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 1,
+              "length": 0,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "d917_42_1",
+          "native_options": {},
+          "native_ref": "creo:featdefs:sketch#917",
+          "owner": {
+            "kind": "feature",
+            "value": "creo:model:sketch_feature#917"
+          },
+          "scope": "creo:model:product_definition#root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 1.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "source",
+              "value": {
+                "dialect": {
+                  "kind": "creo"
+                },
+                "tokens": [
+                  {
+                    "kind": "text",
+                    "value": "1"
+                  }
+                ]
+              }
+            }
+          },
+          "id": "creo:featdefs:parameter#917:42:2",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 1,
+              "length": 0,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "d917_42_2",
+          "native_options": {},
+          "native_ref": "creo:featdefs:sketch#917",
+          "owner": {
+            "kind": "feature",
+            "value": "creo:model:sketch_feature#917"
+          },
+          "scope": "creo:model:product_definition#root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 1.0
+          }
+        }
+      ],
+      "programs": [],
+      "publications": [],
+      "scopes": [
+        {
+          "active_arrangements": [],
+          "current": [
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "creo:depdb:curve_expression_feature#7-269"
+                }
+              },
+              "bodies": [],
+              "poses": [],
+              "status": "current"
+            }
+          ],
+          "definition": "creo:model:product_definition#root",
+          "occurrences": {},
+          "roots": [
+            "creo:model:timeline#root"
+          ]
+        }
+      ],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [
+        {
+          "id": "creo:model:sketch#917",
+          "native_options": {},
+          "native_ref": "creo:featdefs:sketch#917",
+          "owner": "creo:model:sketch_feature#917",
+          "plane": {
+            "after": [],
+            "inputs": [
+              {
+                "reference": {
+                  "kind": "picks",
+                  "value": {
+                    "at": {
+                      "kind": "input"
+                    },
+                    "picks": {
+                      "kind": "unread"
+                    }
+                  }
+                }
+              }
+            ],
+            "kind": "placed",
+            "resolved_in": {}
+          },
+          "solve": {
+            "status": "current"
+          },
+          "source_settings": {}
+        }
+      ],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
+    "fragment": false,
+    "geometry": {
+      "bodies": [],
+      "coedges": [],
+      "curves": [],
+      "edges": [],
+      "faces": [],
+      "loops": [],
+      "pcurves": [],
+      "points": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [],
+      "shells": [],
+      "subds": [],
+      "surfaces": [],
+      "vertices": []
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "native",
+              "value": {
+                "kind": "CurveFromEquation",
+                "parameters": {
+                  "assignment_count": "1",
+                  "entity_id": "7"
+                }
+              }
+            }
+          },
+          "dependencies": [],
+          "id": "creo:depdb:curve_expression_feature#7-269",
+          "name": "Curve Equation 7",
           "native_ref": "creo:depdb:curve_expression#active-7-269",
           "ordinal": 2,
+          "outputs": [],
           "source_content": [
             {
               "kind": "parameter",
               "value": "creo:depdb:curve_expression_parameter#7-269-0"
             }
           ],
+          "source_properties": {},
           "source_tag": "crv_fr_eqn",
           "source_text": "result=d42+1[deg]",
           "suppressed": false
         },
         {
           "definition": {
-            "definition": "extrude",
-            "direction": {
-              "kind": "profile_normal"
-            },
-            "extent": {
-              "kind": "one_sided",
-              "side": {
-                "termination": {
-                  "kind": "unresolved"
+            "kind": "operation",
+            "value": {
+              "kind": "extrude",
+              "value": {
+                "direction": {
+                  "kind": "profile_normal"
+                },
+                "extent": {
+                  "kind": "one_sided",
+                  "side": {
+                    "termination": {
+                      "kind": "unresolved"
+                    }
+                  }
+                },
+                "op": "unresolved",
+                "profile": {
+                  "kind": "planar",
+                  "value": {
+                    "kind": "native",
+                    "value": "creo:featdefs:sketch#917"
+                  }
+                },
+                "start": {
+                  "kind": "profile_plane"
                 }
               }
-            },
-            "op": "unresolved",
-            "profile": {
-              "kind": "native",
-              "value": "creo:featdefs:sketch#917"
-            },
-            "start": {
-              "kind": "profile_plane"
             }
           },
+          "dependencies": [],
           "id": "creo:model:feature#40",
           "name": "Extrude id 40",
           "native_ref": "creo:featdefs:feature_definition#917",
           "ordinal": 1,
+          "outputs": [],
+          "source_content": [],
           "source_properties": {
             "native_parameter.dimension_count": "2",
             "native_parameter.sketch_segment_count": "0"
@@ -73,15 +389,22 @@
         },
         {
           "definition": {
-            "definition": "sketch",
-            "sketch": {
-              "sketch": "creo:model:sketch#917",
-              "space": "planar"
+            "kind": "operation",
+            "value": {
+              "kind": "sketch",
+              "value": {
+                "sketch": {
+                  "kind": "planar",
+                  "sketch": "creo:model:sketch#917"
+                }
+              }
             }
           },
+          "dependencies": [],
           "id": "creo:model:sketch_feature#917",
           "native_ref": "creo:featdefs:sketch#917",
           "ordinal": 0,
+          "outputs": [],
           "source_content": [
             {
               "kind": "parameter",
@@ -92,14 +415,17 @@
               "value": "creo:featdefs:parameter#917:42:2"
             }
           ],
+          "source_properties": {},
           "source_tag": "section",
           "suppressed": false
         }
       ],
-      "loops": [],
+      "history_bodies": [],
+      "mass_properties": [],
       "occurrences": [],
       "parameters": [
         {
+          "dependencies": [],
           "expression": "d42+1[deg]",
           "id": "creo:depdb:curve_expression_parameter#7-269-0",
           "name": "result",
@@ -117,6 +443,7 @@
           }
         },
         {
+          "dependencies": [],
           "expression": "1",
           "id": "creo:featdefs:parameter#917:42:1",
           "name": "d917_42_1",
@@ -137,6 +464,7 @@
           }
         },
         {
+          "dependencies": [],
           "expression": "1",
           "id": "creo:featdefs:parameter#917:42:2",
           "name": "d917_42_2",
@@ -157,17 +485,31 @@
           }
         }
       ],
-      "pcurves": [],
+      "physical_materials": [],
+      "physics_scenes": [],
       "pmi": [],
-      "points": [],
+      "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "procedural_curves": [],
-      "procedural_surfaces": [],
-      "product_definitions": [],
-      "regions": [],
+      "product_definitions": [
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "creo:model:product_definition#root",
+          "instance_bodies": [],
+          "kind": "part",
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
+      "rigid_bodies": [],
       "semantic_annotations": [],
-      "shells": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [
@@ -176,16 +518,16 @@
           "native_ref": "creo:featdefs:sketch#917",
           "placement": {
             "kind": "unresolved"
-          }
+          },
+          "profiles": []
         }
       ],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
-      "subds": [],
-      "surfaces": [],
       "tessellations": [],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {
@@ -320,42 +662,52 @@
         ]
       }
     },
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
-        "expanded_section_byte_count": "0",
-        "expanded_section_count": "0",
-        "file_size": "328",
-        "section.0.length": "140",
         "section.0.name": "FeatDefs",
-        "section.0.offset": "76",
         "section.0.raw_name": "FeatDefs",
         "section.0.role": "model-data",
-        "section.1.length": "27",
         "section.1.name": "MdlStatus",
-        "section.1.offset": "216",
         "section.1.raw_name": "MdlStatus",
         "section.1.role": "metadata",
-        "section.2.length": "85",
         "section.2.name": "DEPDB_DATA",
-        "section.2.offset": "243",
         "section.2.raw_name": "DEPDB_DATA",
         "section.2.role": "metadata",
-        "section_count": "3",
         "unresolved_feature_state_selection_count": "0",
         "version_line": "#UGC:2 P c"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "version_line": "#UGC:2 P c"
             },
             "dialect": "creo:depdb"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -363,7 +715,10 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
@@ -735,88 +1090,104 @@
       "visible_torus_or_sphere_surface_row_count": 0
     },
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "version_line": "#UGC:2 P c"
           },
           "dialect": "creo:depdb"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "container.census",
-          "kind": "carrier_summary",
-          "namespace": "creo",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "container.census",
+            "kind": "carrier_summary",
+            "namespace": "creo"
+          }
         },
         "message": "PSB container decoded structurally: 3 section(s), DEPDB layout, VisibGeom namespace census srf_array=n/a / crv_array=n/a; 0 typed surface rows, 0 labeled curve prototypes, 0 canonical curve-topology rows, and 0 closed native loops were decoded. Outline-backed planes, guarded non-axis support frames, complete ND first-instance plane, cylinder, cone, torus, and interpolation-spline prototypes, unbound straight positional surface-of-extrusion planes, topology-bound planes with analytic boundary carriers, `fc 05` cylinders with a resolved axis-normal cap plane, four-entry two-cap and blind circular-sweep cylinders, four-entry simple-hole cylinders with complete cap outlines, radius-anchored class-911 counterbore and bore patches, and compact simple-hole cylinders with complete positional carriers, complementary split-outline cylinders bound to an axis-normal plane, complete positional cylinder bodies, complete support-apex and planar-envelope positional cones, and complete local-system positional tori transfer as carriers; other parameter bodies remain structural records.",
         "severity": "info"
       },
       {
         "code": {
-          "code": "geometry.brep-incomplete",
-          "kind": "geometry_not_transferred",
-          "namespace": "creo",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "geometry.brep-incomplete",
+            "kind": "geometry_not_transferred",
+            "namespace": "creo",
+            "strict_floor": "warning"
+          }
         },
         "message": "General model B-rep transfer remains incomplete. Native face components transfer when every boundary edge has solved vertex orbits, face orientation is unique, and every loop is complete; a multi-loop face additionally requires strict parameter-space containment or a complete common-center, distinct-radius circular-loop proof on a plane. Selected cylinders transfer when an exact `fc 05` record and placed cap outline binds a row, a four-entry class-917 circular-sweep or class-911 simple-hole table with a complete square cap outline establishes the complete axis placement and radius, or a compact class-911 table owns a complete positional cylinder carrier, a class-911 counterbore dimension replay agrees with its generated larger-cylinder carrier, or two same-feature patches have complementary square outline bounds on one axis-normal plane. Later positional instances do not inherit prototype placement or scalar defaults; they require their per-instance parameter bodies ([spec §4.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#32-surface-prototypes)). Face admission considered 0 candidate(s): 0 passed, 0 emitted, and 0 were rejected. First-failure rejection counts are: none. Component admission gate: 0 admitted component(s), selected body count 0; passed. Boundary evidence: 0 curve(s), 0 without a unique incidence pair, 0 with an unsolved endpoint vertex. Vertex solver: 0 topological, 0 carrier intersections, 0 carrier-bearing vertices, 0 pair-intersection candidate(s), 0 triple-intersection candidate(s), 0 validated carrier candidate(s), 0 carrier vertices with no candidate, 0 ambiguous carrier vertices, 0 pcurve record(s), 0 pcurve path(s), 0 path(s) without a unique surface, 0 unevaluable path(s), 0 mapped path(s), 0 unmapped record(s), 0 inconsistent record(s), 0 accepted record(s) (0 complete), 0 conflicting curve(s), 0 pcurve endpoint evidence (0 complete), 0 pcurve constraint(s), 0 analytic domain(s), 0 NURBS endpoint constraint(s), 0 directed endpoint conflict(s), 0 solved. 0 PSB geometry section(s) were preserved verbatim as unknown records.",
         "severity": "blocking"
       },
       {
         "code": {
-          "code": "geometry.instance-carriers-gated",
-          "kind": "geometry_not_transferred",
-          "namespace": "creo",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "geometry.instance-carriers-gated",
+            "kind": "geometry_not_transferred",
+            "namespace": "creo",
+            "strict_floor": "warning"
+          }
         },
         "message": "Additional model-space carriers are gated by unresolved lane-specific scalar prefixes, feature-local transform bindings, placement-incomplete or untagged `0x26` torus/sphere variants, and the round/fillet feature evaluator. These gaps prevent transfer of the remaining non-plane per-instance surfaces, curves, and vertices.",
         "severity": "blocking"
       },
       {
         "code": {
-          "code": "topology.incomplete-components",
-          "kind": "topology_not_transferred",
-          "namespace": "creo",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "topology.incomplete-components",
+            "kind": "topology_not_transferred",
+            "namespace": "creo",
+            "strict_floor": "warning"
+          }
         },
         "message": "Native curve half-edges and closed loops were decoded. Components with complete solved boundaries and unique face orientations transfer as body/region/shell/face/loop/coedge/edge/vertex graphs; multi-loop faces use strict containment in a placed or boundary-proven plane. Remaining components require face-instance partitioning, surface parameter bindings, curve geometry, or vertex coordinates.",
         "severity": "blocking"
       },
       {
         "code": {
-          "code": "feature.neutral-semantics-incomplete",
-          "kind": "feature_history_retained",
-          "namespace": "creo",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "feature.neutral-semantics-incomplete",
+            "kind": "feature_history_retained",
+            "namespace": "creo"
+          }
         },
         "message": "Named feature operations and their decoded dependency/input tables transfer as typed or native design records. Curve-equation assignments transfer with their source, dependencies, and closed numeric and string operator and deterministic function values. Full neutral operation semantics, configuration presence, graph, case-study, cabling, and cross-model relation functions, materials, and display data remain untransferred.",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "feature.sweep-incomplete",
-          "kind": "feature_history_retained",
-          "namespace": "creo",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "feature.sweep-incomplete",
+            "kind": "feature_history_retained",
+            "namespace": "creo"
+          }
         },
         "message": "1 profile sweep history feature(s) retain incomplete required construction operands (extrude=1).",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "feature.native-semantics",
-          "kind": "feature_history_retained",
-          "namespace": "creo",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "feature.native-semantics",
+            "kind": "feature_history_retained",
+            "namespace": "creo"
+          }
         },
         "message": "1 history feature definition(s) retain only source-native semantics.",
         "severity": "warning"
@@ -830,7 +1201,10 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
@@ -838,31 +1212,38 @@
       "exactness": {
         "creo:depdb:curve_expression_feature#7-269": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:depdb:curve_expression_parameter#7-269-0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:featdefs:parameter#917:42:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:featdefs:parameter#917:42:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:featdefs:sketch#917": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:model:sketch#917": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:model:sketch_feature#917": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         }
       },
       "provenance": {
@@ -922,6 +1303,10 @@
           "tag": "section_sketch_feature"
         }
       }
-    }
+    },
+    "decode_digest": "7c795c17e8927fb2f83b7ed6bac3bdb3754956f53274c382c57fa255091b14cc",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

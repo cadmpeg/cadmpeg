@@ -8,8 +8,8 @@
         "data_offset": "42",
         "header_offset": "0"
       },
-      "compression": "deflate",
       "expanded": 7424,
+      "kind": "deflate",
       "name": "Document.xml",
       "role": "document",
       "stored": 1503
@@ -21,19 +21,20 @@
         "data_offset": "1602",
         "header_offset": "1545"
       },
-      "compression": "deflate",
       "expanded": 3361,
+      "kind": "deflate",
       "name": "ExternalPrototype.Shape.brp",
       "role": "brep",
       "stored": 438
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "file_version": "1",
           "program_version": "1.1R20260414 (Git shallow)",
@@ -41,8 +42,10 @@
         },
         "dialect": "fcstd:schema-4"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "SchemaVersion=4",
     "FileVersion=1",

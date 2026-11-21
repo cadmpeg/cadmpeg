@@ -5,17 +5,23 @@ use std::io::Cursor;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef};
 use cadmpeg_ir::topology::BodyKind;
-use cadmpeg_ir::{Codec, DecodeOptions};
+use cadmpeg_ir::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_measure::{MeasureInput, MeasureOptions, Measurer, Selection};
 
 use crate::F3dCodec;
 
+/// Both checks read one decode of the 1.28 MB controller.
 #[test]
-fn controller_manifest_feature_families_and_closed_bodies() {
+fn controller_1wire_rgbw_corpus_decode() {
     let bytes = include_bytes!("../../../../corpus/1WireRGBWController.f3d");
     let decoded = F3dCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
+    controller_manifest_feature_families_and_closed_bodies(&decoded);
+    controller_1wire_rgbw_corpus_decodes_display_names(&decoded);
+}
+
+fn controller_manifest_feature_families_and_closed_bodies(decoded: &DecodeResult) {
     let ir = decoded.ir();
     let validation = cadmpeg_ir::validate_neutral(ir, decoded.report().losses.clone()).unwrap();
     assert!(validation.is_ok(), "{validation:#?}");
@@ -51,7 +57,7 @@ fn controller_manifest_feature_families_and_closed_bodies() {
         .any(|entity| entity.construction));
 
     let bodies = ir
-        .model
+        .geometry
         .bodies
         .iter()
         .filter(|body| body.kind == BodyKind::Solid)
@@ -83,4 +89,82 @@ fn controller_manifest_feature_families_and_closed_bodies() {
         assert!(body.shells().iter().all(|shell| *shell.closed()));
     }
     ctx.finish_session().unwrap();
+}
+
+fn controller_1wire_rgbw_corpus_decodes_display_names(decoded: &DecodeResult) {
+    let ir = decoded.ir();
+
+    let body_names: Vec<&str> = ir
+        .geometry
+        .bodies
+        .iter()
+        .filter_map(|b| b.name.as_deref())
+        .collect();
+    assert!(
+        body_names.contains(&"Bottom"),
+        "Bottom body name expected in {body_names:?}"
+    );
+    assert!(
+        body_names.contains(&"Top"),
+        "Top body name expected in {body_names:?}"
+    );
+
+    let sketch_names: Vec<&str> = ir
+        .model
+        .sketches
+        .iter()
+        .filter_map(|s| s.name.as_deref())
+        .collect();
+    assert!(
+        sketch_names.contains(&"DJ Jack"),
+        "DJ Jack sketch expected in {sketch_names:?}"
+    );
+    assert!(
+        sketch_names.contains(&"InnerLip"),
+        "InnerLip sketch expected in {sketch_names:?}"
+    );
+    assert!(
+        sketch_names.contains(&"ClipesLeft"),
+        "ClipesLeft sketch expected in {sketch_names:?}"
+    );
+
+    let feature_names: Vec<&str> = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|f| f.name.as_deref())
+        .collect();
+    assert!(
+        feature_names.contains(&"DJ Jack"),
+        "DJ Jack feature expected in {feature_names:?}"
+    );
+    assert!(
+        feature_names.contains(&"InnerLip"),
+        "InnerLip feature expected in {feature_names:?}"
+    );
+    assert!(
+        feature_names.contains(&"ClipesLeft"),
+        "ClipesLeft feature expected in {feature_names:?}"
+    );
+
+    let losses = &decoded.report().losses;
+    let composed_losses: Vec<_> = losses
+        .iter()
+        .filter(|loss| {
+            loss.code
+                == crate::loss::F3dLossCode::SketchNameComposedFromFeatureOrdinal
+                    .note("")
+                    .code
+        })
+        .collect();
+    assert_eq!(
+        composed_losses.len(),
+        1,
+        "expected exactly one composed sketch name loss note for the remaining 5 default-named sketches"
+    );
+    assert!(
+        composed_losses[0].message.contains("5 sketch name(s)"),
+        "composed sketch names loss note must report exactly 5 default sketches, got: {:?}",
+        composed_losses[0].message
+    );
 }

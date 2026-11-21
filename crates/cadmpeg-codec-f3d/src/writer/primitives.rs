@@ -54,13 +54,21 @@ pub(crate) fn validate_assembly_projection(
                 )
             });
     };
+    // The decoder projects joints over the expanded instance tree, then names
+    // each instance's occurrence.
+    let expanded = crate::tree::expand(
+        &cadmpeg_core::decode::ResourceLimits::default(),
+        &target.model.product_definitions,
+        &target.model.occurrences,
+        &std::collections::BTreeMap::new(),
+    )?;
     let mut inserts = crate::design::components::ComponentInserts::decide(
         &native.design_parameter_scopes,
         &native.design_feature_timelines,
         &native.xref_references,
     );
-    inserts.bind_external_paths(&native.xref_references, &target.model.occurrences);
-    let projected = crate::design::assembly::project_assembly_joints_with_paths(
+    inserts.bind_external_paths(&native.xref_references, &expanded.occurrences);
+    let mut projected = crate::design::assembly::project_assembly_joints_with_paths(
         &native.design_parameter_scopes,
         &native.design_component_occurrences,
         &inserts,
@@ -68,9 +76,30 @@ pub(crate) fn validate_assembly_projection(
         &crate::design::components::paths::LocalOccurrencePaths::new(
             &native.design_component_occurrences,
             &native.xref_references,
-            &target.model.occurrences,
+            &expanded.definitions,
+            &expanded.occurrences,
+            &native.design_parameter_scopes,
         ),
     );
+    crate::f3z::merge::rebind_standalone_projected_joints(
+        native,
+        &expanded.definitions,
+        &expanded.occurrences,
+        &mut projected.joints,
+    );
+    for connector in projected
+        .joints
+        .iter_mut()
+        .flat_map(cadmpeg_ir::products::AssemblyJoint::connectors_mut)
+    {
+        if let cadmpeg_ir::products::OperandContainer::Occurrence { occurrence, .. } =
+            &mut connector.operand.container
+        {
+            if let Some(own) = expanded.occurrence_of.get(occurrence) {
+                occurrence.clone_from(own);
+            }
+        }
+    }
     if target.model.assembly_joints != projected.joints {
         return Err(CodecError::NotImplemented(
             "editing F3D assembly joints is not supported".into(),

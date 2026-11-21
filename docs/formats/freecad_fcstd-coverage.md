@@ -273,6 +273,14 @@ attachment properties keep an absent neutral placement and emit the same loss. T
 attachment summary product is separate from the neutral primitive frame. Multiple parent
 containers violate product or feature-tree ownership and refuse the document.
 
+## First body feature
+
+The first solid feature of a `PartDesign::Body` decodes with a new-body operation when it adds
+material and both the body and feature `BaseFeature` links are empty. When that first solid feature
+removes material, it keeps its typed removal operation with an empty input solid and emits
+`fcstd/feature.removal-without-base`. Each body owns its result;
+a feature outside every body keeps its additive operation.
+
 ## Revolution admission
 
 The neutral revolution axis retains the normalized resolved direction, origin, and native
@@ -284,3 +292,13 @@ A nonzero Type with `Midplane=true`, an unknown Type, an invalid flag, a missing
 selection, a malformed axis origin, a zero axis, or an angular extent outside one turn remains native and emits
 `fcstd/feature.revolution-not-transferred`. Two fixed sides must have a sum at most one turn.
 An inactive `Angle2` does not change a Type 0 extent.
+
+## Non-boundary face edges
+
+Synthetic text BRep tests cover a placed closed cylinder with one additional open edge in a
+second face wire. Internal and external edge uses, an internal wire, and a mixed wire retain
+that edge as shell wire geometry. Repeated uses share one wire edge; an edge with boundary
+coedges keeps its boundary ownership. A face root retains the same edge roles. Boundary loops retain their continuous order, and the body
+remains solid. STEP keeps all three cylinder faces and the additional edge. A forward open edge
+continues to fail the boundary-order check. Native records retain the non-boundary face incidence;
+`topology.non-boundary-incidence-retained` reports that neutral association limit.

@@ -17,11 +17,11 @@ use cadmpeg_ir::{
 
 fn cube() -> CadIr {
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    ir.model.bodies[0].name = None;
-    for face in &mut ir.model.faces {
+    ir.geometry.bodies[0].name = None;
+    for face in &mut ir.geometry.faces {
         face.name = None;
     }
-    for edge in &mut ir.model.edges {
+    for edge in &mut ir.geometry.edges {
         edge.set_param_range(None);
     }
     ir
@@ -40,6 +40,7 @@ fn appearance(schema: Option<&str>) -> Appearance {
         base_color: Some(Color::new(0.2, 0.3, 0.4, 1.0).unwrap()),
         properties: std::collections::BTreeMap::default(),
         textures: Vec::new(),
+        native_ref: None,
     }
 }
 
@@ -65,11 +66,12 @@ fn attributes_outside_sldprt_namespace_have_counted_export_loss() {
         .attributes
         .push(cadmpeg_ir::attributes::SourceAttribute {
             id: "test:model:attribute#other".try_into().unwrap(),
-            target: cadmpeg_ir::attributes::AttributeTarget::Document {},
+            target: cadmpeg_ir::attributes::AttributeTarget::Document {}.into(),
             name: "other".into(),
-            values: vec![cadmpeg_ir::attributes::AttributeValue::String(
+            values: vec![Some(cadmpeg_ir::attributes::AttributeValue::String(
                 "value".into(),
-            )],
+            ))],
+            native_ref: None,
         });
     assert_loss(
         &ir,
@@ -81,19 +83,20 @@ fn attributes_outside_sldprt_namespace_have_counted_export_loss() {
 #[test]
 fn edge_and_vertex_appearance_bindings_have_counted_export_loss() {
     for target in [
-        AppearanceTarget::Edge(cube().model.edges[0].id.clone()),
-        AppearanceTarget::Vertex(cube().model.vertices[0].id.clone()),
+        AppearanceTarget::Edge(cube().geometry.edges[0].id.clone()),
+        AppearanceTarget::Vertex(cube().geometry.vertices[0].id.clone()),
     ] {
         let mut ir = cube();
         let appearance = appearance(Some("moVisualProperties_c"));
         ir.model.appearance_bindings.push(AppearanceBinding {
             id: "test:model:appearance-binding#other".try_into().unwrap(),
-            target,
+            target: target.into(),
             appearance: appearance.id.clone(),
             source_entity_id: None,
             object_type: None,
             visible: None,
             channels: std::collections::BTreeMap::default(),
+            native_ref: None,
         });
         ir.model.appearances.push(appearance);
         assert_loss(
@@ -142,8 +145,8 @@ fn tessellation_body_faces_and_deflection_each_have_export_loss() {
         Vec::new(),
     )
     .unwrap();
-    mesh.body = Some(ir.model.bodies[0].id.clone());
-    mesh.faces = vec![ir.model.faces[0].id.clone()];
+    mesh.body = Some(ir.geometry.bodies[0].id.clone());
+    mesh.faces = vec![ir.geometry.faces[0].id.clone()];
     mesh.set_chordal_deflection(Some(0.001)).unwrap();
     ir.model.tessellations.push(mesh);
     let plan = crate::test_support::plan_fixture_with_native_envelope(
@@ -164,7 +167,7 @@ fn tessellation_body_faces_and_deflection_each_have_export_loss() {
 fn generated_wire_and_general_bodies_refuse_solid_lump_conversion() {
     for kind in [BodyKind::Wire, BodyKind::General] {
         let mut ir = cube();
-        ir.model.bodies[0].kind = kind;
+        ir.geometry.bodies[0].kind = kind;
         let error = crate::writer::brep_body(&ir, 0.001, false).unwrap_err();
         assert!(error.to_string().contains("as a solid lump"));
     }
@@ -173,30 +176,29 @@ fn generated_wire_and_general_bodies_refuse_solid_lump_conversion() {
 #[test]
 fn regenerated_shell_wire_members_and_pcurve_uses_have_counted_losses() {
     let mut ir = cube();
-    let shell = &ir.model.shells[0];
-    ir.model.shells[0] = cadmpeg_ir::topology::Shell::new(
+    let shell = &ir.geometry.shells[0];
+    ir.geometry.shells[0] = cadmpeg_ir::topology::Shell::with_members(
         shell.id.clone(),
         shell.region.clone(),
-        shell.faces().to_vec(),
-        vec![ir.model.edges[0].id.clone()],
-        vec![ir.model.vertices[0].id.clone()],
-    )
-    .unwrap();
+        vec![ir.geometry.edges[0].id.clone()],
+        vec![ir.geometry.vertices[0].id.clone()],
+    );
     let pcurve = Pcurve {
         id: "test:model:pcurve#use".try_into().unwrap(),
         geometry: PcurveGeometry::Line(
             LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)).unwrap(),
         ),
         metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
+        native_ref: None,
     };
-    ir.model.coedges[0]
+    ir.geometry.coedges[0]
         .pcurves
         .push(cadmpeg_ir::topology::PcurveUse {
             pcurve: pcurve.id.clone(),
             isoparametric: None,
             parameter_range: None,
         });
-    ir.model.pcurves.push(pcurve);
+    ir.geometry.pcurves.push(pcurve);
     // The topology writer ignores the shell members and the coedge relation;
     // accounting belongs to that write, irrespective of neutral admission.
     crate::writer::brep_body(&ir, 0.001, false).unwrap();
@@ -227,7 +229,7 @@ fn regenerated_shell_wire_members_and_pcurve_uses_have_counted_losses() {
 #[test]
 fn derived_degenerate_sphere_seam_curve_has_counted_export_loss() {
     let mut ir = cube();
-    let mut curve = ir.model.curves[0].clone();
+    let mut curve = ir.geometry.curves[0].clone();
     curve.id = "sldprt:brep:curve#sphere-seam-face:synthetic"
         .try_into()
         .unwrap();
@@ -245,7 +247,7 @@ fn derived_degenerate_sphere_seam_curve_has_counted_export_loss() {
         layer: None,
         instance_path: Vec::new(),
     });
-    ir.model.curves.push(curve);
+    ir.geometry.curves.push(curve);
     assert_loss(
         &ir,
         SldprtLossCode::WriterSphereSeamCurvesOmitted,
@@ -256,7 +258,7 @@ fn derived_degenerate_sphere_seam_curve_has_counted_export_loss() {
 #[test]
 fn opaque_carriers_require_a_retained_partition_before_generated_accounting() {
     let mut ir = cube();
-    ir.model.curves[0].geometry =
+    ir.geometry.curves[0].geometry =
         CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None });
     let error = SldprtCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)

@@ -215,6 +215,24 @@ fn container_only_stops_before_geometry() {
         .expect("retained record");
     assert_eq!(retained.sha256().len(), 64);
     assert!(retained.data().is_some());
+    assert_eq!(
+        retained.untyped().iter().copied().collect::<Vec<_>>(),
+        [cadmpeg_core::decode::ArenaClass::Model]
+    );
+}
+
+#[test]
+fn records_a_route_decoded_carry_no_untyped_mark() {
+    let result = EditableDecodeResult::from(
+        CatiaCodec
+            .decode(
+                &mut Cursor::new(standard_catpart()),
+                &DecodeOptions::default(),
+            )
+            .unwrap(),
+    );
+    assert!(result.report().geometry_transferred());
+    assert!(result.source_fidelity().unrepresented().is_empty());
 }
 
 /// A route that refuses a carrier record and then leaves through a `?` between

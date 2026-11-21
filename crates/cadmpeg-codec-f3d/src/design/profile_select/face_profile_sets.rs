@@ -422,14 +422,14 @@ enum Carrier<'a> {
 }
 
 /// The surface carrier of each face of one topology.
-struct FacePlanes<'a> {
+pub(super) struct FacePlanes<'a> {
     surfaces: HashMap<i64, Option<i64>>,
     planes: HashMap<i64, Option<&'a AsmHistoricalPlane>>,
     curved: HashSet<i64>,
 }
 
 impl<'a> FacePlanes<'a> {
-    fn of(topology: &'a AsmHistoricalTopology) -> Self {
+    pub(super) fn of(topology: &'a AsmHistoricalTopology) -> Self {
         let mut planes: HashMap<i64, Option<&AsmHistoricalPlane>> = HashMap::new();
         for plane in &topology.surface_planes {
             planes
@@ -468,6 +468,12 @@ impl<'a> FacePlanes<'a> {
             None if self.curved.contains(surface) => Carrier::Curved,
             None => Carrier::Unknown,
         }
+    }
+
+    /// Whether the face's one surface binding has a cylinder, axis or radius
+    /// row and no plane row.
+    pub(super) fn is_curved(&self, face: i64) -> bool {
+        matches!(self.carrier(face), Carrier::Curved)
     }
 
     fn get(&self, face: i64) -> Option<&'a AsmHistoricalPlane> {

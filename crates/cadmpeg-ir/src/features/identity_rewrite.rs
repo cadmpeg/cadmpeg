@@ -6,7 +6,7 @@ use super::{
     BodyRetentionMode, BodyTrimSide, BooleanKind, BooleanOp, CoilExtent, CoilSection,
     CoilSectionPlacement, CosmeticThreadExtent, CurveProjectionDirection,
     CurveProjectionDirectionState, DecalMapping, DesignConfiguration, DesignParameter,
-    DimensionDisplay, FeatureCircularArc, FeatureCoordinateFrame, FeatureEllipticArc,
+    DimensionDisplay, EdgeSupport, FeatureCircularArc, FeatureCoordinateFrame, FeatureEllipticArc,
     FeatureImageBounds, FeatureInputTopology, FeatureLineSegment, FeatureResultMembers,
     FeatureResultTopology, FeatureTreeNodeRole, FeatureUnitPlaneFrame,
     FilledSurfaceBoundaryCondition, FlexForm, FlexMode, FuzzyTolerance, GeometryImportFormat,
@@ -37,14 +37,15 @@ rewrite_scalar!(CurveProjectionDirection);
 rewrite_scalar!(CurveProjectionDirectionState);
 rewrite_scalar!(DecalMapping);
 rewrite_record!(DesignConfiguration, []; {id, ordinal, active, source_index, name, material, properties, parameter_overrides, bodies, parameter_values, feature_states, native_ref});
-rewrite_record!(DesignParameter, []; {id, product_definition, owner, ordinal, name, expression, display, value, dependencies, properties, pmi, native_ref});
+rewrite_record!(DesignParameter, []; {id, product_definition, owner, dependencies, pmi, native_ref}; literal {ordinal, name, expression, display, value, properties});
 rewrite_scalar!(DimensionDisplay);
 rewrite_scalar!(FeatureCircularArc);
 rewrite_scalar!(FeatureCoordinateFrame);
 rewrite_scalar!(FeatureEllipticArc);
 rewrite_scalar!(FeatureImageBounds);
 rewrite_record!(FeatureInputTopology, []; {id, input_of, bodies, faces, edges, vertices, edge_geometry, native_ref});
-rewrite_record!(HistoricalEdgeGeometry, []; {edge, interior, tangent, start, end, faces});
+rewrite_record!(EdgeSupport, []; {face, normal, with_edge});
+rewrite_record!(HistoricalEdgeGeometry, []; {edge, interior, tangent, start, end, faces, supports});
 rewrite_scalar!(FeatureLineSegment);
 rewrite_record!(FeatureResultMembers, []; {bodies, faces, edges, vertices});
 rewrite_record!(FeatureResultTopology, []; {id, output_of, members, native_ref});
@@ -60,16 +61,8 @@ rewrite_scalar!(HelixConstructionStyle);
 rewrite_scalar!(HelixShape);
 rewrite_scalar!(InnerWireTaper);
 rewrite_scalar!(NoGeneratedSection);
-rewrite_record!(ParameterPmi, []; {subtype, precision, display_text, basic, inspection, reference_only, native_ref});
-rewrite_enum!(PmiDimensionSubtype, []; {
-    Linear,
-    Angle,
-    Diameter,
-    Radial,
-    Ordinate,
-    Count,
-    Native(field0),
-});
+rewrite_record!(ParameterPmi, []; {native_ref}; literal {subtype, precision, display_text, basic, inspection, reference_only});
+rewrite_scalar!(PmiDimensionSubtype);
 rewrite_scalar!(PolygonSideCount);
 rewrite_scalar!(PrincipalPlane);
 rewrite_scalar!(RevolutionFuseOrder);
@@ -105,3 +98,5 @@ rewrite_scalar!(super::SheetMetalReliefForm);
 rewrite_scalar!(super::SheetMetalTransitionForm);
 rewrite_record!(super::SheetMetalRelief, []; {form, width, depth, minimum_remnant, seam_gap});
 rewrite_record!(super::SheetMetalTransition, []; {form, radius});
+
+rewrite_scalar!(super::sheet_metal::SheetMetalContourThicknessSide);

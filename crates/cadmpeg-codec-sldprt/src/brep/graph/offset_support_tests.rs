@@ -30,7 +30,7 @@ fn offset(support: u16, distance: f64) -> Vec<F> {
 fn indexed_support(nodes: &[(u16, u16, Vec<F>)], profile: Option<CurveCarrier>) -> CarrierIndex {
     let (bytes, start) = sequence_of(nodes);
     let records = topology::nodes::sequence(&bytes).unwrap();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut carriers = super::super::index::index_carriers_with_nodes(
         &ctx,
         &bytes[start..],
@@ -56,7 +56,7 @@ fn emit_support(
     profile: Option<CurveCarrier>,
 ) -> (cadmpeg_ir::CadIr, SurfaceId) {
     let carriers = indexed_support(nodes, profile);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut out = Brep::default();
     let mut annotations = AnnotationBuilder::new();
     let source = StreamHandle::new(cadmpeg_ir::stream_name!("offset-fixture"));
@@ -92,9 +92,9 @@ fn emit_support(
     assert_eq!(sink.out.surfaces.len(), count);
     prune_rejected_topology(&mut out);
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.surfaces = out.surfaces;
-    ir.model.curves = out.curves;
-    ir.model.procedural_surfaces = out.procedural_surfaces;
+    ir.geometry.surfaces = out.surfaces;
+    ir.geometry.curves = out.curves;
+    ir.geometry.procedural_surfaces = out.procedural_surfaces;
     (ir, surface)
 }
 
@@ -159,7 +159,7 @@ fn hidden_swept_offset_support_keeps_native_travel_units_and_normal_side() {
             &[(60, 3, offset(20, distance)), (67, 20, sweep)],
             Some(profile),
         );
-        assert_eq!(ir.model.curves.len(), 1);
+        assert_eq!(ir.geometry.curves.len(), 1);
         let actual = point(&ir, &surface, 0.25, 0.002);
         assert!(
             actual.distance(cadmpeg_ir::math::Point3::new(1.0, -distance * 1000.0, 2.0)) < 1.0e-12
@@ -259,7 +259,7 @@ fn offset_support_alias_keeps_a_resolved_sweep_with_chart_boundaries() {
         withheld_forward_links: 0,
         unlinked_loops: HashSet::new(),
     };
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert!(!face_has_exact_boundary(&face, &tables, &HashSet::new()));
     assert!(sweep_face_can_alias(&ctx, &face, &tables, &carriers, &HashSet::new()).unwrap());
     face.loops = vec![(6, vec![70])];

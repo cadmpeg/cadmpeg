@@ -357,6 +357,7 @@ fn analytic_chart(geometry: &SolvedSurfaceGeometry, placement: Placement) -> Sha
                 axis,
                 major: torus.major_radius().get() * s,
                 minor: torus.minor_radius().get() * s,
+                sheet: None,
             })
         }
         SolvedSurfaceGeometry::Nurbs(_)

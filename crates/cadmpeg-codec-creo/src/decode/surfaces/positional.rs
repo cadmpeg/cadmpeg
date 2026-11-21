@@ -26,9 +26,7 @@ use crate::decode::sketch_transfer::recipe::FeatureSchemaClasses;
 use crate::decode::source_carriers::SourceUnitCarriers;
 use crate::vecmath::cross;
 
-use super::prototypes::{
-    prototype_scalar, surface_prototype_frame_bounds, unique_surface_prototype_associations,
-};
+use super::prototypes::{prototype_scalar, unique_surface_prototype_associations};
 
 pub(in super::super) fn transfer_paired_envelope_spheres(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -41,14 +39,10 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
         return Ok(0);
     }
     let mut transferred = 0;
-    let mut associations = Vec::new();
-    for (prototype, associated_row, section) in unique_surface_prototype_associations(scan)? {
-        let prototype = prototype.record();
-        let Some(frame) = surface_prototype_frame_bounds(scan, section, prototype.offset)? else {
-            continue;
-        };
-        associations.push((prototype, associated_row, section, frame));
-    }
+    let associations = unique_surface_prototype_associations(scan)?
+        .into_iter()
+        .map(|(prototype, row, section, frame)| (prototype.record(), row, section, frame))
+        .collect::<Vec<_>>();
     for (prototype, associated_row, section, (frame_start, frame_end)) in &associations {
         if !matches!(
             prototype.family,
@@ -101,7 +95,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
                 &crate::identity::VISIBGEOM_SURFACE,
                 row.id,
             )?;
-            if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            if ir.geometry.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
             let Ok(sphere_surface) = cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
@@ -143,6 +137,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
                         layer: None,
                         instance_path: Vec::new(),
                     }),
+                    native_ref: None,
                 },
             )?;
             transferred += 1;
@@ -209,7 +204,7 @@ pub(in super::super) fn transfer_positional_tori(
             &crate::identity::VISIBGEOM_SURFACE,
             row.id,
         )?;
-        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+        if ir.geometry.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
         let Some(section) = scan
@@ -268,6 +263,7 @@ pub(in super::super) fn transfer_positional_tori(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         transferred += 1;
@@ -319,7 +315,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
             record.surface_id,
         )?;
         if ir
-            .model
+            .geometry
             .surfaces
             .iter()
             .any(|surface| surface.id == surface_id)
@@ -392,6 +388,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         ctx.charge_entities(1, "admit Creo model surfaces")?;
@@ -414,6 +411,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         source_carriers.admit_procedural_surface(
@@ -561,7 +559,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             replay.surface_id,
         )?;
         if ir
-            .model
+            .geometry
             .surfaces
             .iter()
             .any(|surface| surface.id == surface_id)
@@ -617,6 +615,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         ctx.charge_entities(1, "admit Creo model surfaces")?;
@@ -639,6 +638,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         source_carriers.admit_procedural_surface(

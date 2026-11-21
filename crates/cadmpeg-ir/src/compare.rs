@@ -717,11 +717,11 @@ mod tests {
     #[test]
     fn a_nested_path_is_reported() {
         let error = agree(
-            r#"{"ir": {"model": {"pcurves": [{"v": 1.0}, {"v": 2.0}]}}}"#,
-            r#"{"ir": {"model": {"pcurves": [{"v": 1.0}, {"v": 9.0}]}}}"#,
+            r#"{"ir": {"geometry": {"pcurves": [{"v": 1.0}, {"v": 2.0}]}}}"#,
+            r#"{"ir": {"geometry": {"pcurves": [{"v": 1.0}, {"v": 9.0}]}}}"#,
         )
         .expect_err("a moved value must be reported");
-        assert!(error.contains(".ir.model.pcurves[1].v"), "{error}");
+        assert!(error.contains(".ir.geometry.pcurves[1].v"), "{error}");
     }
 
     #[test]

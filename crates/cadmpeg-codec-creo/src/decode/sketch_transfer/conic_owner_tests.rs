@@ -152,8 +152,8 @@ fn emit(definition: &FeatureDefinition) -> Vec<SketchEntity> {
     })
     .expect("emit authored source rows");
     assert!(profiles.is_empty());
-    assert!(ir.model.curves.is_empty());
-    assert!(ir.model.surfaces.is_empty());
+    assert!(ir.geometry.curves.is_empty());
+    assert!(ir.geometry.surfaces.is_empty());
     assert!(entities.iter().all(|entity| entity.geometry_ref.is_none()));
     entities
 }

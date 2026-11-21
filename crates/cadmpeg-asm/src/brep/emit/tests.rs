@@ -603,7 +603,8 @@ fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
         let mut ir = cadmpeg_ir::CadIr::empty();
         super::super::transfer::transfer_into_ir(&asm_decode_ctx, &mut ir, "f3d", out)
             .expect("transfer the decoded curve and its support");
-        let ProceduralCurveDefinition::Spring(spring) = ir.model.procedural_curves[0].definition()
+        let ProceduralCurveDefinition::Spring(spring) =
+            ir.geometry.procedural_curves[0].definition()
         else {
             panic!("spring")
         };
@@ -612,7 +613,7 @@ fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
             cadmpeg_ir::validate::geometry_consistency::cache_support_endpoint_failures(
                 &asm_decode_ctx,
                 &index,
-                &ir.model.curves[0],
+                &ir.geometry.curves[0],
                 spring.support_context(),
                 None,
             )
@@ -882,12 +883,14 @@ fn failed_procedural_curves_discard_only_their_candidate_children() {
             id: SurfaceId::mint("f3d:brep:entity#existing-surface").unwrap(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
         out.curves.push(Curve {
             parameter_range: None,
             id: CurveId::mint("f3d:brep:entity#existing-curve").unwrap(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
         let mut carriers = Carriers::default();
         carriers.curve_geo.insert(
@@ -1514,9 +1517,12 @@ fn a_reversed_subset_record_localizes_its_cache_and_edge_ranges() {
             let mut edges = vec![Edge {
                 id: EdgeId::mint("test:asm:edge#0").unwrap(),
                 carrier: EdgeCarrier::new(Some(owner.clone()), Some(native)).unwrap(),
-                start: VertexId::mint("test:asm:vertex#0").unwrap(),
-                end: VertexId::mint("test:asm:vertex#1").unwrap(),
+                ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                    VertexId::mint("test:asm:vertex#0").unwrap(),
+                    VertexId::mint("test:asm:vertex#1").unwrap(),
+                )),
                 tolerance: None,
+                native_ref: None,
             }];
             let owner = owner.clone();
             let procedurals = out.procedural_curves.clone();

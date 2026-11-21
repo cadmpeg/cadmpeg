@@ -6,7 +6,7 @@ Reach for `cadmpeg query` first: `summary` names the artifact kind,
 with empty cells for absent values). Walk identity references with
 `query graph FILE ARENA [ID...]` (`--hops`, `--follow`, `--reverse`).
 Join two arenas with `query join FILE LEFT RIGHT --left-key PATH
---right-key PATH`. Discover those paths with `query schema FILE ARENA`
+--right-key PATH`. Discover those paths with `query schema file FILE ARENA`
 (`relation=ref|refs` marks graph `--follow` fields and join keys). jq is
 for field predicates and aggregation after those nouns. These
 recipes exist because every mistake below has been made repeatedly; copy
@@ -14,7 +14,7 @@ the shapes instead of re-deriving them.
 
 ## Prefer graph and join
 
-Feature `native_ref` to a native record, after `query schema FILE ARENA`
+Feature `native_ref` to a native record, after `query schema file FILE ARENA`
 shows `native_ref` as `ref`:
 
 ```sh
@@ -30,16 +30,17 @@ cadmpeg query graph doc.json model.features ID \
   --follow definition.parameters.segment_0_object --hops 1
 ```
 
-Walk BREP children (`body.regions` → `region.shells` → `shell.faces`):
+Walk BREP children, which name their parents (`region.body`, `shell.region`,
+`face.shell`):
 
 ```sh
-cadmpeg query graph doc.json model.bodies BODY_ID --hops 3
+cadmpeg query graph doc.json geometry.bodies BODY_ID --reverse --hops 3
 ```
 
 Incoming references to one record:
 
 ```sh
-cadmpeg query graph doc.json model.faces FACE_ID --reverse --hops 1
+cadmpeg query graph doc.json geometry.faces FACE_ID --reverse --hops 1
 ```
 
 jq remains for predicates (`select(.kind == "extrude")`) and
@@ -49,7 +50,7 @@ fallback.
 ## Ground rules
 
 - Most CADIR fields are optional and serialize as absent, not as `[]` or
-  `{}`. Guard every access: `.model.faces[]?`, `(.outputs // [])`,
+  `{}`. Guard every access: `.geometry.faces[]?`, `(.outputs // [])`,
   `(.name // "")`. An unguarded access fails loudly on the first record
   that omits the field — or worse, `select` chains return nothing and
   look like a real "no matches".
@@ -79,9 +80,9 @@ jq -f face-surfaces.jq doc.json
 ```jq
 # face-surfaces.jq — face id, surface id, surface kind
 . as $doc
-| INDEX($doc.model.surfaces[]?; .id) as $surface
-| $doc.model.faces[]?
-| [.id, .surface, ($surface[.surface].geometry.type // "absent")]
+| INDEX($doc.geometry.surfaces[]?; .id) as $surface
+| $doc.geometry.faces[]?
+| [.id, .surface, ($surface[.surface].geometry | .value.kind // .kind // "absent")]
 | @tsv
 ```
 
@@ -94,7 +95,7 @@ Count faces per shell without a quadratic scan:
 
 ```jq
 . as $doc
-| ($doc.model.faces // [])
+| ($doc.geometry.faces // [])
 | group_by(.shell)
 | map({shell: .[0].shell, faces: length})
 | .[] | [.shell, .faces] | @tsv
@@ -110,8 +111,8 @@ hop:
 
 ```jq
 . as $doc
-| INDEX($doc.model.faces[]?; .id) as $face
-| INDEX($doc.model.surfaces[]?; .id) as $surface
+| INDEX($doc.geometry.faces[]?; .id) as $face
+| INDEX($doc.geometry.surfaces[]?; .id) as $surface
 | $doc.model.features[]?
 | . as $f
 | ($f.outputs // [])[]

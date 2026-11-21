@@ -18,19 +18,19 @@ pub(in crate::decode) fn orient_edge_range(
 ) -> Option<([f64; 2], bool)> {
     let geometry_budget = GeometryWorkBudget::from_context(ctx, MAX_ADAPTIVE_GEOMETRY_WORK);
     let geometry = &ir
-        .model
+        .geometry
         .curves
         .iter()
         .find(|candidate| candidate.id == *curve)?
         .geometry;
     let vertex_position = |vertex: &VertexId| {
         let vertex = ir
-            .model
+            .geometry
             .vertices
             .iter()
             .find(|candidate| candidate.id == *vertex)?;
         let point = ir
-            .model
+            .geometry
             .points
             .iter()
             .find(|candidate| candidate.id == vertex.point)?;
@@ -42,10 +42,10 @@ pub(in crate::decode) fn orient_edge_range(
     let (start_position, start_tolerance) = vertex_position(start)?;
     let (end_position, end_tolerance) = vertex_position(end)?;
     let procedural_curve = ir
-        .model
+        .geometry
         .procedural_curves
         .iter()
-        .any(|procedural| ir.model.procedural_curve_owner(&procedural.id) == Some(curve));
+        .any(|procedural| ir.geometry.procedural_curve_owner(&procedural.id) == Some(curve));
     let mut curve_point_cache = CurvePointCache::default();
     orient_edge_range_for_geometry_with_budget(
         &EdgeGeometryRange {

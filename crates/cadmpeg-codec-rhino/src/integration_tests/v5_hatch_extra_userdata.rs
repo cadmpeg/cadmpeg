@@ -98,7 +98,7 @@ fn current_v5_hatch_extra_reaches_the_hatch_basepoint() {
     let parameters = hatch_parameters(&result);
     assert_eq!(parameters["basepoint"], "2.5,3.5");
     assert_eq!(parameters["pattern_index"], "7");
-    assert_eq!(result.ir().model.curves.len(), 1);
+    assert_eq!(result.ir().geometry.curves.len(), 1);
     assert_object_record(&result, &record);
     assert_valid(&result);
 }
@@ -115,7 +115,7 @@ fn future_v5_hatch_extra_retains_typed_hatch_and_complete_object_record() {
 
     let parameters = hatch_parameters(&result);
     assert_eq!(parameters["basepoint"], "0,0");
-    assert_eq!(result.ir().model.curves.len(), 1);
+    assert_eq!(result.ir().geometry.curves.len(), 1);
     assert!(result.report().losses.iter().any(|loss| {
         loss.message.contains("hatch userdata extension failed")
             && loss.message.contains("unsupported V5 hatch-extra version")
@@ -136,7 +136,7 @@ fn malformed_v5_hatch_extra_retains_typed_hatch_and_complete_object_record() {
 
     let parameters = hatch_parameters(&result);
     assert_eq!(parameters["basepoint"], "0,0");
-    assert_eq!(result.ir().model.curves.len(), 1);
+    assert_eq!(result.ir().geometry.curves.len(), 1);
     assert!(result.report().losses.iter().any(|loss| {
         loss.message.contains("hatch userdata extension failed")
             && loss.message.contains("exceeds bound")

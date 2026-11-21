@@ -25,7 +25,7 @@ fn a_support_side_whose_nurbs_pcurve_overflows_misses_its_contract_by_nan() {
     let ir = mapped_surface_curve_with_pcurve(pcurve, [2.0, 3.0]);
     let mut findings = Vec::new();
     check_procedural_support_consistency(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&ir),
         &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
@@ -43,11 +43,11 @@ fn a_support_side_whose_placed_support_overflows_misses_its_contract_by_inf() {
     // The pcurve maps the range to u = 1e300 and u = 2e300; the placement
     // adds f64::MAX to x, which leaves the finite range at both ends.
     let mut ir = super::mapped_surface_curve([1.0e300, 2.0e300]);
-    let plane = ir.model.surfaces[0].geometry.clone();
+    let plane = ir.geometry.surfaces[0].geometry.clone();
     let crate::geometry::SurfaceGeometry::Solved(plane) = plane else {
         panic!("the fixture support is solved");
     };
-    ir.model.surfaces[0].geometry = crate::geometry::SurfaceGeometry::Solved(
+    ir.geometry.surfaces[0].geometry = crate::geometry::SurfaceGeometry::Solved(
         crate::geometry::SolvedSurfaceGeometry::Transformed(
             crate::geometry::PlacedSurface::try_new(
                 Box::new(plane),
@@ -63,7 +63,7 @@ fn a_support_side_whose_placed_support_overflows_misses_its_contract_by_inf() {
     );
     let mut findings = Vec::new();
     check_procedural_support_consistency(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&ir),
         &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
@@ -84,7 +84,7 @@ fn a_coedge_placed_pcurve_whose_mapped_points_overflow_misses_the_vertices_by_na
     let mut ir = crate::examples::unit_cube().expect("valid unit cube fixture");
     let id = crate::ids::PcurveId::mint("synthetic:cube:pcurve#placed-overflow")
         .expect("valid identity");
-    ir.model.pcurves.push(crate::geometry::pcurve::Pcurve {
+    ir.geometry.pcurves.push(crate::geometry::pcurve::Pcurve {
         id: id.clone(),
         geometry: PcurveGeometry::Transformed(
             crate::geometry::pcurve::PlacedPcurve::try_new(
@@ -100,9 +100,10 @@ fn a_coedge_placed_pcurve_whose_mapped_points_overflow_misses_the_vertices_by_na
             .unwrap(),
         ),
         metadata: crate::geometry::pcurve::PcurveMetadata::default(),
+        native_ref: None,
     });
     let coedge = ir
-        .model
+        .geometry
         .coedges
         .iter_mut()
         .find(|coedge| {
@@ -117,7 +118,7 @@ fn a_coedge_placed_pcurve_whose_mapped_points_overflow_misses_the_vertices_by_na
     let coedge_id = coedge.id.as_str().to_owned();
     let mut findings = Vec::new();
     super::check_pcurve_surface_consistency(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&ir),
         &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
@@ -162,13 +163,13 @@ fn a_surface_curve_whose_end_overflows_misses_its_support_contract_by_nan() {
     // 2 MAX t at t = 1, which overflows: its end reaches no coordinate, and
     // the NaN mismatch there is the finding's measure.
     let mut ir = super::mapped_surface_curve([2.0, 3.0]);
-    *ir.model.curves[0]
+    *ir.geometry.curves[0]
         .geometry
         .solved_cache_mut()
         .expect("mapped curve has a solved cache") = parabola(Point3::new(2.0, 0.0, 0.0), f64::MAX);
     let mut findings = Vec::new();
     check_procedural_support_consistency(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&ir),
         &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
@@ -183,14 +184,14 @@ fn a_surface_curve_whose_end_overflows_misses_its_support_contract_by_nan() {
 #[test]
 fn a_surface_offset_whose_solved_end_overflows_misses_its_offset_distance_by_nan() {
     let mut ir = super::mapped_surface_offset();
-    *ir.model.curves[0]
+    *ir.geometry.curves[0]
         .geometry
         .solved_cache_mut()
         .expect("mapped curve has a solved cache") =
         parabola(Point3::new(2.0, 0.0, 25.0), f64::MAX);
     let mut findings = Vec::new();
     check_procedural_support_consistency(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&ir),
         &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
@@ -208,13 +209,13 @@ fn a_surface_offset_whose_base_end_overflows_misses_its_contracts_by_nan() {
     // -MAX / 2, 0) reaches the origin at t = 2; at t = 3 its coefficient
     // 9 MAX / 8 overflows.
     let mut ir = super::mapped_surface_offset();
-    ir.model.curves[1].geometry = CurveGeometry::Solved(parabola(
+    ir.geometry.curves[1].geometry = CurveGeometry::Solved(parabola(
         Point3::new(-f64::MAX / 2.0, -f64::MAX / 2.0, 0.0),
         f64::MAX / 8.0,
     ));
     let mut findings = Vec::new();
     check_procedural_support_consistency(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&ir),
         &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
@@ -246,20 +247,22 @@ fn a_charted_tolerant_intersection_whose_end_overflows_misses_its_witnesses_by_n
     };
     let supports = ["test:model:surface#first", "test:model:surface#second"]
         .map(|id| crate::ids::SurfaceId::mint(id).unwrap());
-    ir.model.surfaces.extend([
+    ir.geometry.surfaces.extend([
         crate::geometry::Surface {
             id: supports[0].clone(),
             geometry: plane(Vector3::new(0.0, 0.0, 1.0)),
             source_object: None,
+            native_ref: None,
         },
         crate::geometry::Surface {
             id: supports[1].clone(),
             geometry: plane(Vector3::new(0.0, -1.0, 0.0)),
             source_object: None,
+            native_ref: None,
         },
     ]);
     let curve = crate::ids::CurveId::mint("test:model:curve#intersection").unwrap();
-    ir.model.curves.push(crate::geometry::Curve {
+    ir.geometry.curves.push(crate::geometry::Curve {
         parameter_range: None,
         id: curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -270,6 +273,7 @@ fn a_charted_tolerant_intersection_whose_end_overflows_misses_its_witnesses_by_n
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     let pcurve = PcurveGeometry::Line(
         crate::geometry::pcurve::LinePcurve::try_new(
@@ -278,7 +282,7 @@ fn a_charted_tolerant_intersection_whose_end_overflows_misses_its_witnesses_by_n
         )
         .unwrap(),
     );
-    ir.model
+    ir.geometry
         .add_procedural_curve(
             &curve,
             crate::geometry::ProceduralCurve::new(
@@ -304,7 +308,7 @@ fn a_charted_tolerant_intersection_whose_end_overflows_misses_its_witnesses_by_n
         .unwrap();
     let mut findings = Vec::new();
     check_procedural_support_consistency(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&ir),
         &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
@@ -321,14 +325,14 @@ fn a_charted_tolerant_intersection_whose_end_overflows_misses_its_witnesses_by_n
 /// parameter 10 its coefficient 100 MAX / 64 overflows.
 fn cube_with_an_overflowing_edge_curve() -> crate::document::CadIr {
     let mut ir = crate::examples::unit_cube().expect("valid unit cube fixture");
-    let edge = ir.model.edges[0].clone();
+    let edge = ir.geometry.edges[0].clone();
     let start = ir
-        .model
+        .geometry
         .vertices
         .iter()
-        .find(|vertex| vertex.id == edge.start)
+        .find(|vertex| vertex.id == edge.ends.as_ref().unwrap().start)
         .and_then(|vertex| {
-            ir.model
+            ir.geometry
                 .points
                 .iter()
                 .find(|point| point.id == vertex.point)
@@ -337,7 +341,7 @@ fn cube_with_an_overflowing_edge_curve() -> crate::document::CadIr {
         .position()
         .get();
     let curve = edge.curve().expect("cube edge curve").clone();
-    ir.model
+    ir.geometry
         .curves
         .iter_mut()
         .find(|candidate| candidate.id == curve)
@@ -349,10 +353,10 @@ fn cube_with_an_overflowing_edge_curve() -> crate::document::CadIr {
 #[test]
 fn an_edge_curve_whose_end_overflows_misses_its_vertices_by_nan() {
     let ir = cube_with_an_overflowing_edge_curve();
-    let edge = ir.model.edges[0].id.as_str().to_owned();
+    let edge = ir.geometry.edges[0].id.as_str().to_owned();
     let mut findings = Vec::new();
     super::super::check_edge_endpoint_consistency(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut findings,
     )
@@ -369,9 +373,9 @@ fn an_edge_curve_whose_end_overflows_misses_its_vertices_by_nan() {
 #[test]
 fn a_coedge_use_curve_whose_end_overflows_misses_its_traversal_vertices_by_nan() {
     let mut ir = cube_with_an_overflowing_edge_curve();
-    let edge = ir.model.edges[0].clone();
+    let edge = ir.geometry.edges[0].clone();
     let coedge = ir
-        .model
+        .geometry
         .coedges
         .iter_mut()
         .find(|coedge| coedge.edge == edge.id)
@@ -383,7 +387,7 @@ fn a_coedge_use_curve_whose_end_overflows_misses_its_traversal_vertices_by_nan()
     let coedge = coedge.id.as_str().to_owned();
     let mut findings = Vec::new();
     super::super::check_edge_endpoint_consistency(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut findings,
     )
@@ -419,7 +423,7 @@ fn make_steep_circular_blend(ir: &mut crate::document::CadIr, surface: &crate::i
     let construction = crate::ids::ProceduralSurfaceId::mint("test:model:procedural#steep-blend")
         .expect("valid identity");
     let ramp_end = f64::from_bits(3.0_f64.to_bits() + 1);
-    ir.model.surfaces.extend([
+    ir.geometry.surfaces.extend([
         Surface {
             id: first.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
@@ -445,6 +449,7 @@ fn make_steep_circular_blend(ir: &mut crate::document::CadIr, surface: &crate::i
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: second.clone(),
@@ -457,9 +462,10 @@ fn make_steep_circular_blend(ir: &mut crate::document::CadIr, surface: &crate::i
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
     ]);
-    ir.model.curves.push(crate::geometry::Curve {
+    ir.geometry.curves.push(crate::geometry::Curve {
         parameter_range: None,
         id: slice.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -470,8 +476,9 @@ fn make_steep_circular_blend(ir: &mut crate::document::CadIr, surface: &crate::i
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
-    ir.model
+    ir.geometry
         .surfaces
         .iter_mut()
         .find(|candidate| candidate.id == *surface)
@@ -538,7 +545,7 @@ fn make_steep_circular_blend(ir: &mut crate::document::CadIr, surface: &crate::i
         post_curve: None,
         post_pcurve: None,
     };
-    ir.model
+    ir.geometry
         .procedural_surfaces
         .push(crate::geometry::ProceduralSurface::new(
             construction,
@@ -567,11 +574,11 @@ fn a_support_side_on_a_blend_whose_support_partial_overflows_misses_its_contract
         ),
         [0.0, 1.0],
     );
-    let support = ir.model.surfaces[0].id.clone();
+    let support = ir.geometry.surfaces[0].id.clone();
     make_steep_circular_blend(&mut ir, &support);
     let mut findings = Vec::new();
     check_procedural_support_consistency(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&ir),
         &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
@@ -593,7 +600,7 @@ fn a_charted_tolerant_intersection_on_a_blend_whose_support_partial_overflows_mi
     let mut ir = crate::document::CadIr::empty();
     let supports = ["test:model:surface#first", "test:model:surface#second"]
         .map(|id| crate::ids::SurfaceId::mint(id).unwrap());
-    ir.model.surfaces.extend(supports.clone().map(|id| {
+    ir.geometry.surfaces.extend(supports.clone().map(|id| {
         crate::geometry::Surface {
             id,
             geometry: crate::geometry::SurfaceGeometry::Solved(
@@ -607,11 +614,12 @@ fn a_charted_tolerant_intersection_on_a_blend_whose_support_partial_overflows_mi
                 ),
             ),
             source_object: None,
+            native_ref: None,
         }
     }));
     make_steep_circular_blend(&mut ir, &supports[0]);
     let curve = crate::ids::CurveId::mint("test:model:curve#intersection").unwrap();
-    ir.model.curves.push(crate::geometry::Curve {
+    ir.geometry.curves.push(crate::geometry::Curve {
         parameter_range: None,
         id: curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -622,6 +630,7 @@ fn a_charted_tolerant_intersection_on_a_blend_whose_support_partial_overflows_mi
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     let pcurve = PcurveGeometry::Line(
         crate::geometry::pcurve::LinePcurve::try_new(
@@ -630,7 +639,7 @@ fn a_charted_tolerant_intersection_on_a_blend_whose_support_partial_overflows_mi
         )
         .unwrap(),
     );
-    ir.model
+    ir.geometry
         .add_procedural_curve(
             &curve,
             crate::geometry::ProceduralCurve::new(
@@ -656,7 +665,7 @@ fn a_charted_tolerant_intersection_on_a_blend_whose_support_partial_overflows_mi
         .unwrap();
     let mut findings = Vec::new();
     check_procedural_support_consistency(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&ir),
         &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,

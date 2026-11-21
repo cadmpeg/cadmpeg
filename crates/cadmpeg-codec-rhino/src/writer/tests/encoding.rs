@@ -115,7 +115,7 @@ fn object_attribute_items_are_written_in_ascending_order() {
 #[test]
 fn nonempty_user_string_presentation_is_refused_before_output() {
     let mut source = CadIr::empty();
-    source.model.points.push(Point::new(
+    source.geometry.points.push(Point::new(
         PointId::mint("cadir:model:point#user-strings").expect("identity grammar"),
         cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
             .expect("a finite position is a point"),
@@ -170,7 +170,7 @@ fn nonempty_user_string_presentation_is_refused_before_output() {
 #[test]
 fn nonempty_mesh_modifier_presentation_is_refused_before_output() {
     let mut source = CadIr::empty();
-    source.model.points.push(Point::new(
+    source.geometry.points.push(Point::new(
         PointId::mint("cadir:model:point#mesh-modifiers").expect("identity grammar"),
         cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
             .expect("a finite position is a point"),
@@ -225,7 +225,7 @@ fn nonempty_mesh_modifier_presentation_is_refused_before_output() {
 #[test]
 fn nonempty_layer_per_viewport_settings_are_refused_before_output() {
     let mut source = CadIr::empty();
-    source.model.points.push(Point::new(
+    source.geometry.points.push(Point::new(
         PointId::mint("cadir:model:point#layer-settings").expect("identity grammar"),
         cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
             .expect("a finite position is a point"),

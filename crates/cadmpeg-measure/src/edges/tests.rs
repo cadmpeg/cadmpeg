@@ -24,7 +24,7 @@ fn edges(ir: &cadmpeg_ir::CadIr) -> Vec<Measured> {
     let owners = Owners::new(ir);
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let pass = PassAllowance::new(WorkProfile::Desktop.pass_allowance(1).unwrap());
-    ir.model
+    ir.geometry
         .edges
         .iter()
         .map(|edge| {
@@ -83,12 +83,12 @@ fn an_open_arc_without_a_range_runs_in_the_increasing_parameter_direction() {
     );
     let mut ir = builder.finish(BodyKind::Wire);
     let edge = ir
-        .model
+        .geometry
         .edges
         .iter_mut()
         .find(|edge| edge.id == arc)
         .unwrap();
-    edge.end = end;
+    edge.ends.as_mut().unwrap().end = end;
     let [(interval, length)] = edges(&ir).try_into().ok().unwrap();
     let [t0, t1] = interval.unwrap();
     assert!((t0 + PI / 2.0).abs() < 1.0e-15, "{t0}");
@@ -104,19 +104,75 @@ fn a_closed_edge_on_a_curve_without_a_period_has_no_interval() {
     let line = builder.line(&a, &b);
     let mut ir = builder.finish(BodyKind::Wire);
     let edge = ir
-        .model
+        .geometry
         .edges
         .iter_mut()
         .find(|edge| edge.id == line)
         .unwrap();
     edge.carrier = cadmpeg_ir::topology::EdgeCarrier::unbounded(edge.carrier.curve().cloned());
-    edge.end = edge.start.clone();
+    edge.ends.as_mut().unwrap().end = edge.ends.as_ref().unwrap().start.clone();
     let [(interval, length)] = edges(&ir).try_into().ok().unwrap();
     assert_eq!(
         interval.unwrap_err().reason,
         UnavailableReason::BoundaryEdgeRangeUnresolved
     );
     assert!(length.is_none());
+}
+
+/// `ir` with every edge's vertices removed.
+fn without_vertices(mut ir: cadmpeg_ir::CadIr) -> cadmpeg_ir::CadIr {
+    for edge in &mut ir.geometry.edges {
+        edge.ends = None;
+    }
+    ir
+}
+
+#[test]
+fn an_edge_with_no_vertex_on_a_clamped_closed_spline_admits_its_knot_domain() {
+    let mut builder = Builder::new();
+    let vertex = builder.vertex([0.0, 0.0, 0.0]);
+    builder.closed_polyline(
+        &[
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ],
+        &vertex,
+    );
+    let ir = without_vertices(builder.finish(BodyKind::Wire));
+    let [(interval, length)] = edges(&ir).try_into().ok().unwrap();
+    assert_eq!(interval.unwrap(), [0.0, 4.0]);
+    assert!((length.unwrap().0 - 4.0).abs() < 1.0e-12);
+}
+
+#[test]
+fn an_edge_with_no_vertex_on_a_circle_admits_its_stated_range_only_where_it_closes() {
+    for (range, closed) in [(None, true), (Some([0.0, PI]), false)] {
+        let mut builder = Builder::new();
+        let vertex = builder.vertex([3.0, 0.0, 0.0]);
+        builder.circle(
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+            3.0,
+            &vertex,
+        );
+        let mut ir = without_vertices(builder.finish(BodyKind::Wire));
+        ir.geometry.curves[0].parameter_range =
+            range.and_then(cadmpeg_ir::topology::IncreasingParameterInterval::new);
+        let [(interval, length)] = edges(&ir).try_into().ok().unwrap();
+        if closed {
+            assert_eq!(interval.unwrap(), [0.0, 2.0 * PI]);
+            assert!((length.unwrap().0 - 6.0 * PI).abs() < 1.0e-12);
+        } else {
+            assert_eq!(
+                interval.unwrap_err().reason,
+                UnavailableReason::BoundaryEdgeRangeUnresolved
+            );
+            assert!(length.is_none());
+        }
+    }
 }
 
 #[test]
@@ -133,14 +189,14 @@ fn an_ellipse_quarter_integrates_to_its_series_length() {
     );
     let mut ir = builder.finish(BodyKind::Wire);
     let curve_id = ir
-        .model
+        .geometry
         .edges
         .iter()
         .find(|edge| edge.id == arc)
         .and_then(|edge| edge.carrier.curve().cloned())
         .unwrap();
     let curve = ir
-        .model
+        .geometry
         .curves
         .iter_mut()
         .find(|curve| curve.id == curve_id)
@@ -156,12 +212,12 @@ fn an_ellipse_quarter_integrates_to_its_series_length() {
         .unwrap(),
     ));
     let edge = ir
-        .model
+        .geometry
         .edges
         .iter_mut()
         .find(|edge| edge.id == arc)
         .unwrap();
-    edge.end = end;
+    edge.ends.as_mut().unwrap().end = end;
     let [(interval, length)] = edges(&ir).try_into().ok().unwrap();
     let [t0, t1] = interval.unwrap();
     assert!((t1 - t0 - PI / 2.0).abs() < 1.0e-15);
@@ -196,7 +252,7 @@ fn cuboid_rows(
     let owners = Owners::new(&ir);
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
     let pass = PassAllowance::new(WorkProfile::Desktop.pass_allowance(1).unwrap());
-    ir.model
+    ir.geometry
         .edges
         .iter()
         .map(|edge| {
@@ -207,7 +263,9 @@ fn cuboid_rows(
                 work: &slice,
             };
             let geometry = measure_edge(&eval, &owners, edge, placement, Work::Row).unwrap();
-            let stored = owners.vertex_position(edge.start.as_str()).unwrap();
+            let stored = owners
+                .vertex_position(edge.ends.as_ref().unwrap().start.as_str())
+                .unwrap();
             (stored, geometry.row(&owners, None))
         })
         .collect()

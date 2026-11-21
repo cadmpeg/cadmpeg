@@ -941,6 +941,54 @@ fn mesh_scope_constructs_only_same_index_closing_bases() {
 }
 
 #[test]
+fn flagged_mesh_collection_extent_matches_its_entry_table() {
+    for (length, has_entries, valid) in [
+        (88, false, true),
+        (92, false, true),
+        (107, false, false),
+        (88, true, false),
+        (92, true, false),
+        (107, true, true),
+        (89, false, false),
+    ] {
+        let identity = |offset, size| {
+            super::DesignMeshRecordIdentity::new(
+                crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
+                104,
+                offset,
+                size,
+            )
+            .unwrap()
+        };
+        let entries = if has_entries {
+            vec![super::DesignMeshFlaggedEntry {
+                body_record_index: 105,
+                reference_offset: 181,
+                value: 1,
+                value_offset: 192,
+            }]
+        } else {
+            Vec::new()
+        };
+        let collection = super::DesignMeshCollection::new(
+            identity(100, length),
+            identity(142, length - 42),
+            1,
+            Some(super::DesignMeshFlaggedCollection {
+                word: 9,
+                word_offset: 125,
+                entries,
+            }),
+        );
+        assert_eq!(
+            collection.is_ok(),
+            valid,
+            "length={length}, entries={has_entries}"
+        );
+    }
+}
+
+#[test]
 fn mesh_collection_constructs_only_complete_nested_body_runs() {
     let identity = |index, offset, length| {
         crate::records::mesh::DesignMeshRecordIdentity::new(

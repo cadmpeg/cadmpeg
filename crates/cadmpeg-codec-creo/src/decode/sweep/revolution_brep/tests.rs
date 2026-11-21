@@ -173,8 +173,8 @@ fn axis_endpoint_with_offset_neighbor_reports_boundary_rejection() {
     })
     .expect("transfer");
     assert_eq!(count, 0);
-    assert!(ir.model.faces.is_empty());
-    assert!(ir.model.bodies.is_empty());
+    assert!(ir.geometry.faces.is_empty());
+    assert!(ir.geometry.bodies.is_empty());
     assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].code,
@@ -272,7 +272,7 @@ fn closed_off_axis_revolution_reaches_brep_admission() {
     })
     .expect("transfer resolved revolution B-reps");
     assert_eq!(count, 1);
-    assert_eq!(ir.model.bodies.len(), 1);
+    assert_eq!(ir.geometry.bodies.len(), 1);
     assert!(losses.is_empty());
 }
 

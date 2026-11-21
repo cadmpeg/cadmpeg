@@ -161,6 +161,7 @@ fn appearance(
             base_color: Some(color),
             properties: BTreeMap::new(),
             textures: Vec::new(),
+            native_ref: None,
         });
     }
     Ok(())
@@ -471,10 +472,7 @@ pub(super) fn project(
             );
             continue;
         }
-        let color = cadmpeg_core::convert::f32_from_f64(red / 100.0)
-            .zip(cadmpeg_core::convert::f32_from_f64(green / 100.0))
-            .zip(cadmpeg_core::convert::f32_from_f64(blue / 100.0))
-            .and_then(|((red, green), blue)| Color::new(red, green, blue, 1.0));
+        let color = Color::new(red / 100.0, green / 100.0, blue / 100.0, 1.0);
         let Some(color) = color else {
             push_presentation_loss(
                 &mut losses,
@@ -577,7 +575,7 @@ pub(super) fn project(
         }
     }
 
-    for curve in &mut ir.model.curves {
+    for curve in &mut ir.geometry.curves {
         if let Some(source) = &mut curve.source_object {
             source.color = sequences
                 .curve(&curve.id)
@@ -585,7 +583,7 @@ pub(super) fn project(
                 .and_then(|entry| entry.color.and_then(resolve_color));
         }
     }
-    for surface in &mut ir.model.surfaces {
+    for surface in &mut ir.geometry.surfaces {
         if let Some(source) = &mut surface.source_object {
             source.color = sequences
                 .surface(&surface.id)
@@ -594,9 +592,9 @@ pub(super) fn project(
         }
     }
 
-    for index in 0..ir.model.bodies.len() {
+    for index in 0..ir.geometry.bodies.len() {
         let Some((sequence, color_number, visible)) = (|| {
-            let body = &ir.model.bodies[index];
+            let body = &ir.geometry.bodies[index];
             let sequence = sequences.body(&body.id)?;
             let entry = entries.get(&sequence)?;
             Some((sequence, entry.color?, entry.status.is_visible()))
@@ -606,7 +604,7 @@ pub(super) fn project(
         let Some((appearance_id, color)) = resolve(color_number)? else {
             continue;
         };
-        let body = &mut ir.model.bodies[index];
+        let body = &mut ir.geometry.bodies[index];
         let body_id = body.id.clone();
         body.color = Some(color);
         body.visible = Some(visible);
@@ -618,15 +616,16 @@ pub(super) fn project(
                 crate::ids::Word::Body,
                 sequence,
             )),
-            target: AppearanceTarget::Body(body_id),
+            target: AppearanceTarget::Body(body_id).into(),
             appearance: appearance_id,
             source_entity_id: None,
             object_type: Some("Body".to_string()),
             visible: None,
             channels: BTreeMap::new(),
+            native_ref: None,
         });
     }
-    for body in &mut ir.model.bodies {
+    for body in &mut ir.geometry.bodies {
         if body.visible.is_none() {
             body.visible = sequences
                 .body(&body.id)
@@ -673,9 +672,9 @@ pub(super) fn project(
         }
     }
 
-    for index in 0..ir.model.faces.len() {
+    for index in 0..ir.geometry.faces.len() {
         let Some((sequence, color_number)) = (|| {
-            let face = &ir.model.faces[index];
+            let face = &ir.geometry.faces[index];
             let sequence = sequences.face(&face.id)?;
             let entry = entries.get(&sequence)?;
             Some((sequence, entry.color?))
@@ -685,7 +684,7 @@ pub(super) fn project(
         let Some((appearance_id, color)) = resolve(color_number)? else {
             continue;
         };
-        let face = &mut ir.model.faces[index];
+        let face = &mut ir.geometry.faces[index];
         let face_id = face.id.clone();
         face.color = Some(color);
         appearance(ir, appearance_id.clone(), None, color, ctx)?;
@@ -696,12 +695,13 @@ pub(super) fn project(
                 crate::ids::Word::Face,
                 sequence,
             )),
-            target: AppearanceTarget::Face(face_id),
+            target: AppearanceTarget::Face(face_id).into(),
             appearance: appearance_id,
             source_entity_id: None,
             object_type: Some("Face".to_string()),
             visible: None,
             channels: BTreeMap::new(),
+            native_ref: None,
         });
     }
 

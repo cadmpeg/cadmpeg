@@ -11,7 +11,7 @@ use cadmpeg_core::CodecError;
 use crate::annotations::Annotations;
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
-use crate::document::{CadIr, Model};
+use crate::document::{CadIr, Model, Topology};
 use crate::drawings::Drawing;
 use crate::features::{
     DesignConfiguration, DesignParameter, Feature, FeatureInputTopology, FeatureResultTopology,
@@ -35,34 +35,37 @@ mod private {
     pub trait Sealed {}
 }
 
-/// Entity type owned by one registry-declared model arena.
+/// Entity type owned by one registry-declared neutral arena.
 pub trait ArenaEntity: private::Sealed + EntitySchema + Sized {
-    /// Returns this entity type's arena.
-    fn arena(model: &Model) -> &Vec<Self>;
+    /// Returns this entity type's arena in `document`.
+    fn arena(document: &CadIr) -> &Vec<Self>;
 
-    /// Returns this entity type's mutable arena.
-    fn arena_mut(model: &mut Model) -> &mut Vec<Self>;
+    /// Returns this entity type's mutable arena in `document`.
+    fn arena_mut(document: &mut CadIr) -> &mut Vec<Self>;
 }
 
 /// Registry-complete arena lengths captured at a model transaction boundary.
 #[derive(Debug)]
 pub struct ModelCheckpoint {
-    lengths: [usize; EntityKind::ALL.len()],
+    lengths: [usize; crate::document::MODEL_ARENA_COUNT],
     feature_parents: crate::document::FeatureRegenerationParents,
 }
 
 impl ModelCheckpoint {
-    /// Capture a decoded model's arena lengths and feature-parent table.
-    pub fn capture(model: &Model) -> Self {
-        Self::with_parents(model, model.feature_regeneration_parents.clone())
+    /// Capture a decoded document's arena lengths and feature-parent table.
+    pub fn capture(document: &CadIr) -> Self {
+        Self::with_parents(
+            document,
+            document.model.feature_regeneration_parents.clone(),
+        )
     }
 
     fn with_parents(
-        model: &Model,
+        document: &CadIr,
         feature_parents: crate::document::FeatureRegenerationParents,
     ) -> Self {
         macro_rules! capture_lengths {
-            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => { [$(model.$field.len()),*] };
+            ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => { [$(document.$home.$field.len()),*] };
         }
         Self {
             lengths: crate::document::arena_registry!(capture_lengths),
@@ -80,8 +83,8 @@ impl ModelCheckpoint {
     }
 
     /// Returns mutable entities of `T` added since this checkpoint.
-    pub fn added_mut<'a, T: ArenaEntity>(&self, model: &'a mut Model) -> Option<&'a mut [T]> {
-        T::arena_mut(model).get_mut(self.length::<T>()..)
+    pub fn added_mut<'a, T: ArenaEntity>(&self, document: &'a mut CadIr) -> Option<&'a mut [T]> {
+        T::arena_mut(document).get_mut(self.length::<T>()..)
     }
 
     /// Discards appended entities and restores captured feature-parent relations.
@@ -89,17 +92,17 @@ impl ModelCheckpoint {
     /// This is an append-only checkpoint, not a snapshot of existing entities.
     /// Between capture and discard, callers must not remove, reorder, or modify
     /// entities that preceded the checkpoint.
-    pub fn discard_appended(&self, model: &mut Model) -> Result<(), CodecError> {
+    pub fn discard_appended(&self, document: &mut CadIr) -> Result<(), CodecError> {
         let parents = self.feature_parents.clone();
         macro_rules! admit_truncation {
-            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
-                if model.$field.len() < self.length::<$ty>() {
+            ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
+                if document.$home.$field.len() < self.length::<$ty>() {
                     return Err(CodecError::malformed("checkpoint cannot restore removed entities"));
                 }
             )*};
         }
         crate::document::arena_registry!(admit_truncation);
-        self.restore(model, parents);
+        self.restore(document, parents);
         Ok(())
     }
 
@@ -108,27 +111,27 @@ impl ModelCheckpoint {
         self.lengths == other.lengths && self.feature_parents == other.feature_parents
     }
 
-    fn restore(&self, model: &mut Model, parents: crate::document::FeatureRegenerationParents) {
+    fn restore(&self, document: &mut CadIr, parents: crate::document::FeatureRegenerationParents) {
         macro_rules! truncate_arenas {
-            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => { $(model.$field.truncate(self.length::<$ty>());)* };
+            ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => { $(document.$home.$field.truncate(self.length::<$ty>());)* };
         }
         crate::document::arena_registry!(truncate_arenas);
-        model.feature_regeneration_parents = parents;
+        document.model.feature_regeneration_parents = parents;
     }
 }
 
 macro_rules! impl_arena_entities {
-    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
+    ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
         $(
             impl private::Sealed for $ty {}
 
             impl ArenaEntity for $ty {
-                fn arena(model: &Model) -> &Vec<Self> {
-                    &model.$field
+                fn arena(document: &CadIr) -> &Vec<Self> {
+                    &document.$home.$field
                 }
 
-                fn arena_mut(model: &mut Model) -> &mut Vec<Self> {
-                    &mut model.$field
+                fn arena_mut(document: &mut CadIr) -> &mut Vec<Self> {
+                    &mut document.$home.$field
                 }
             }
         )*
@@ -158,12 +161,12 @@ fn insert_identity<T>(index: &mut HashMap<u64, Vec<T>>, hash: u64, value: T) {
     index.entry(hash).or_default().push(value);
 }
 
-fn index_model_identities(model: &Model) -> Result<IdentityIndex, &str> {
+fn index_model_identities(staged: &CadIr) -> Result<IdentityIndex, &str> {
     let mut identity_index = IdentityIndex::new();
     macro_rules! index_arenas {
-        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
-            $(for (slot_index, entity) in model.$field.iter().enumerate() {
-                if identity_index_contains(model, &identity_index, entity.identity()) {
+        ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
+            $(for (slot_index, entity) in staged.$home.$field.iter().enumerate() {
+                if identity_index_contains(staged, &identity_index, entity.identity()) {
                     return Err(entity.identity());
                 }
                 insert_identity(&mut identity_index, identity_hash(entity.identity()), IdentitySlot { kind: <$ty as EntitySchema>::KIND, index: slot_index });
@@ -174,11 +177,11 @@ fn index_model_identities(model: &Model) -> Result<IdentityIndex, &str> {
     Ok(identity_index)
 }
 
-fn identity_index_contains(model: &Model, index: &IdentityIndex, identity: &str) -> bool {
+fn identity_index_contains(staged: &CadIr, index: &IdentityIndex, identity: &str) -> bool {
     let hash = identity_hash(identity);
 
     for slot in index.get(&hash).into_iter().flatten() {
-        if let Some(candidate) = model.identity_at(slot.kind, slot.index) {
+        if let Some(candidate) = staged.arenas().identity_at(slot.kind, slot.index) {
             if candidate == identity {
                 return true;
             }
@@ -233,7 +236,7 @@ impl From<CodecError> for DraftError {
 /// commit route that accepts every accounting destination.
 #[derive(Debug)]
 pub struct ModelDraft<A = ()> {
-    model: Model,
+    staged: CadIr,
     insertion_index: Option<IdentityIndex>,
     accounting: A,
 }
@@ -247,7 +250,7 @@ pub struct DraftAccounting {
 impl Default for ModelDraft {
     fn default() -> Self {
         Self {
-            model: Model::default(),
+            staged: CadIr::empty(),
             insertion_index: Some(IdentityIndex::new()),
             accounting: (),
         }
@@ -282,7 +285,7 @@ impl ModelDraft {
     /// ```
     pub fn with_accounting(self) -> ModelDraft<DraftAccounting> {
         ModelDraft {
-            model: self.model,
+            staged: self.staged,
             insertion_index: self.insertion_index,
             accounting: DraftAccounting::default(),
         }
@@ -304,30 +307,44 @@ impl<A> ModelDraft<A> {
         let identity = entity.identity();
         let index = match self.insertion_index.take() {
             Some(index) => index,
-            None => match index_model_identities(&self.model) {
+            None => match index_model_identities(&self.staged) {
                 Ok(index) => index,
                 Err(identity) => return Err(DraftError::IdentityCollision(identity.to_owned())),
             },
         };
         let index = self.insertion_index.insert(index);
-        if identity_index_contains(&self.model, index, identity) {
+        if identity_index_contains(&self.staged, index, identity) {
             return Err(DraftError::IdentityCollision(identity.to_owned()));
         }
 
         let hash = identity_hash(identity);
         let slot = IdentitySlot {
             kind: T::KIND,
-            index: T::arena(&self.model).len(),
+            index: T::arena(&self.staged).len(),
         };
 
         insert_identity(index, hash, slot);
-        T::arena_mut(&mut self.model).push(entity);
+        T::arena_mut(&mut self.staged).push(entity);
         Ok(())
+    }
+
+    /// Returns the staged geometry for coordinated multi-arena construction.
+    pub fn geometry(&self) -> &Topology {
+        &self.staged.geometry
+    }
+
+    /// Returns the staged geometry for coordinated multi-arena construction.
+    ///
+    /// Commit still checks all identities and references, including entities inserted
+    /// through this lower-level surface.
+    pub fn geometry_mut(&mut self) -> &mut Topology {
+        self.insertion_index = None;
+        &mut self.staged.geometry
     }
 
     /// Returns the staged model for coordinated multi-arena construction.
     pub fn model(&self) -> &Model {
-        &self.model
+        &self.staged.model
     }
 
     /// Returns the staged model for coordinated multi-arena construction.
@@ -336,12 +353,22 @@ impl<A> ModelDraft<A> {
     /// through this lower-level surface.
     pub fn model_mut(&mut self) -> &mut Model {
         self.insertion_index = None;
-        &mut self.model
+        &mut self.staged.model
+    }
+
+    /// Returns the staged geometry and model together, for construction that
+    /// writes both homes at once.
+    ///
+    /// Commit still checks all identities and references, including entities inserted
+    /// through this lower-level surface.
+    pub fn homes_mut(&mut self) -> (&mut Topology, &mut Model) {
+        self.insertion_index = None;
+        (&mut self.staged.geometry, &mut self.staged.model)
     }
 
     /// Number of staged entities.
     pub fn entity_count(&self) -> usize {
-        self.model.entity_count()
+        self.staged.entity_count()
     }
 
     fn validate_with_contains(
@@ -350,14 +377,14 @@ impl<A> ModelDraft<A> {
         contains: impl Fn(&str) -> bool,
         ctx: &DecodeContext<'_>,
     ) -> Result<Result<(), DraftError>, CodecError> {
-        let indexed = index_model_identities(&self.model);
+        let indexed = index_model_identities(&self.staged);
         let identity_index = match &indexed {
             Ok(index) => index,
             Err(identity) => return Ok(Err(DraftError::IdentityCollision((*identity).to_owned()))),
         };
         macro_rules! check_external_identities {
-            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
-                $(for entity in &self.model.$field {
+            ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
+                $(for entity in &self.staged.$home.$field {
                     if contains(entity.identity()) {
                         let identity = entity.identity().to_owned();
                         return Ok(Err(DraftError::IdentityCollision(identity)));
@@ -367,15 +394,15 @@ impl<A> ModelDraft<A> {
         }
         crate::document::arena_registry!(check_external_identities);
         macro_rules! validate_arenas {
-            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
-                $(for entity in &self.model.$field {
+            ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
+                $(for entity in &self.staged.$home.$field {
                     let owner = entity.identity();
                     let mut missing = None;
                     entity.visit_references(ctx, &mut |target| {
                         if missing.is_some() {
                             return Ok(());
                         }
-                        if !contains(target) && !identity_index_contains(&self.model, identity_index, target) {
+                        if !contains(target) && !identity_index_contains(&self.staged, identity_index, target) {
                             missing = Some(target.to_owned());
                         }
                         Ok(())
@@ -388,8 +415,12 @@ impl<A> ModelDraft<A> {
             };
         }
         crate::document::arena_registry!(validate_arenas);
-        if !self.model.features.is_empty() || self.model.has_feature_regeneration_parents() {
-            if let Err(error) = crate::document::feature_parents::validate(&[base, &self.model]) {
+        if !self.staged.model.features.is_empty()
+            || self.staged.model.has_feature_regeneration_parents()
+        {
+            if let Err(error) =
+                crate::document::feature_parents::validate(&[base, &self.staged.model])
+            {
                 return Ok(Err(DraftError::FeatureParents {
                     owner: error.owner().clone(),
                     message: format!("{error}"),
@@ -440,6 +471,15 @@ enum CommittedIdentity {
     StagedUnknown(usize),
 }
 
+impl CommittedIdentity {
+    /// The identity of the neutral entity at `index` of the arena of `kind`.
+    /// The arena macros call it, so the source census, which does not expand
+    /// them, sees no use of the expression type `Neutral` in their bodies.
+    const fn entity(kind: EntityKind, index: usize) -> Self {
+        Self::Neutral(IdentitySlot { kind, index })
+    }
+}
+
 type CommittedIdentityIndex = HashMap<u64, Vec<CommittedIdentity>>;
 
 /// A document owner or exclusive borrow with a caller-owned identity cache.
@@ -454,7 +494,7 @@ type CommittedIdentityIndex = HashMap<u64, Vec<CommittedIdentity>>;
 /// let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
 /// let mut ir = CadIr::empty();
 /// let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
-/// ir.model.points.clear();
+/// ir.geometry.points.clear();
 /// session.contains("test:model:point#1").unwrap();
 /// ```
 ///
@@ -465,7 +505,7 @@ type CommittedIdentityIndex = HashMap<u64, Vec<CommittedIdentity>>;
 /// let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
 /// let mut ir = CadIr::empty();
 /// let session = CommitSession::new(&mut ir, &ctx, None).unwrap();
-/// session.document().model.points.clear();
+/// session.document().geometry.points.clear();
 /// ```
 #[derive(Debug)]
 pub struct CommitSession<'ctx, D: BorrowMut<CadIr>> {
@@ -480,7 +520,7 @@ struct CommitState<'ctx, D: BorrowMut<CadIr>> {
     unknown_namespace: Option<&'ctx str>,
     identities: Option<CommittedIdentityIndex>,
     admission: Option<crate::validate::admit::incremental::AdmittedState>,
-    unindexed_start: Option<[usize; EntityKind::ALL.len()]>,
+    unindexed_start: Option<[usize; crate::document::MODEL_ARENA_COUNT]>,
     source_admission: Option<crate::validate::admit::NativeUnknownAdmission>,
 }
 
@@ -566,13 +606,25 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
     /// Expose model arenas for append-only staging. Existing entities and native
     /// records must remain unchanged. Candidate admission checks the new suffix.
     pub fn append_model_mut(&mut self) -> Result<&mut Model, CodecError> {
+        self.mark_unindexed_suffix();
+        Ok(&mut self.state.base.borrow_mut().model)
+    }
+
+    /// Expose geometry arenas for append-only staging. Existing entities and
+    /// native records must remain unchanged. Candidate admission checks the
+    /// new suffix.
+    pub fn append_geometry_mut(&mut self) -> Result<&mut Topology, CodecError> {
+        self.mark_unindexed_suffix();
+        Ok(&mut self.state.base.borrow_mut().geometry)
+    }
+
+    fn mark_unindexed_suffix(&mut self) {
         if self.state.identities.is_some() && self.state.unindexed_start.is_none() {
             macro_rules! lengths {
-                ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {[$(self.state.base.borrow().model.$field.len()),*]};
+                ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {[$(self.state.base.borrow().$home.$field.len()),*]};
             }
             self.state.unindexed_start = Some(crate::document::arena_registry!(lengths));
         }
-        Ok(&mut self.state.base.borrow_mut().model)
     }
 
     /// Edit only entities appended after `checkpoint`, invalidating admission
@@ -580,13 +632,13 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
     pub fn edit_appended_model(
         &mut self,
         checkpoint: &ModelCheckpoint,
-    ) -> Result<&mut Model, CodecError> {
+    ) -> Result<&mut CadIr, CodecError> {
         if let Some(admission) = &mut self.state.admission {
-            admission.rewind(&self.state.base.borrow().model, checkpoint)?;
+            admission.rewind(self.state.base.borrow(), checkpoint)?;
         }
         self.state.identities = None;
         self.state.unindexed_start = None;
-        Ok(&mut self.state.base.borrow_mut().model)
+        Ok(self.state.base.borrow_mut())
     }
 
     /// Move an owned source population into the session and invalidate cached positions.
@@ -655,7 +707,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
         let ctx = self.ctx;
         let mut transaction = annotations.sparse_transaction();
         let ModelDraft {
-            model,
+            staged,
             accounting,
             insertion_index,
         } = draft;
@@ -665,13 +717,13 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
             .as_ref()
             .is_some_and(|state| state.annotations_admitted);
         let annotation_owners = if annotations_admitted && !accounting.exactness.is_empty() {
-            Some(index_model_identities(&model))
+            Some(index_model_identities(&staged))
         } else {
             None
         };
         for (identity, exactness) in accounting.exactness {
             if let Some(Ok(owners)) = &annotation_owners {
-                annotations_admitted &= identity_index_contains(&model, owners, &identity);
+                annotations_admitted &= identity_index_contains(&staged, owners, &identity);
             } else if annotation_owners.is_some() {
                 annotations_admitted = false;
             }
@@ -679,7 +731,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
         }
         match self.state.commit_draft(
             ModelDraft {
-                model,
+                staged,
                 insertion_index,
                 accounting: (),
             },
@@ -700,6 +752,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
     /// Append a candidate under read-only admission and extend only accepted cache positions.
     pub fn try_append<T, E>(
         &mut self,
+        geometry: Topology,
         model: Model,
         native: crate::native::Native,
         admit: impl FnOnce(&CadIr, &[crate::unknown::UnknownRecord]) -> Result<Result<T, E>, CodecError>,
@@ -712,16 +765,18 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
             .ok_or_else(|| CodecError::malformed("committed identity index is absent"))?;
         let staged = stage_committed_identities(
             self.state.base.borrow(),
-            &model,
+            (&geometry, &model),
             Some(&native),
             self.state.unknown_namespace,
         );
         let unknowns = &self.state.unknowns;
-        let result = self
-            .state
-            .base
-            .borrow_mut()
-            .try_append(model, native, |combined| admit(combined, unknowns))?;
+        let result =
+            self.state
+                .base
+                .borrow_mut()
+                .try_append(geometry, model, native, |combined| {
+                    admit(combined, unknowns)
+                })?;
         if result.is_ok() {
             for (hash, group) in staged {
                 index.entry(hash).or_default().extend(group);
@@ -765,8 +820,8 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
         if let Some(admitted) = &mut state {
             let mut suffix_annotations = annotations.sparse_transaction();
             macro_rules! select_suffix_annotations {
-                ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
-                    for entity in self.state.base.borrow().model.$field.get(admitted.lengths[<$ty as EntitySchema>::KIND.index()]..).ok_or_else(|| CodecError::malformed("admitted prefix was removed"))? {
+                ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
+                    for entity in self.state.base.borrow().$home.$field.get(admitted.lengths[<$ty as EntitySchema>::KIND.index()]..).ok_or_else(|| CodecError::malformed("admitted prefix was removed"))? {
                         suffix_annotations.select(entity.identity());
                     }
                 )*};
@@ -798,7 +853,10 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
                 (format, &self.state.unknowns),
                 changes.annotations(),
                 allowed,
-                ([0; EntityKind::ALL.len()], CandidateScope::Detached),
+                (
+                    [0; crate::document::MODEL_ARENA_COUNT],
+                    CandidateScope::Detached,
+                ),
             )?,
             None => None,
         };
@@ -808,31 +866,36 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
                 .is_ok_and(crate::report::check::ValidationReport::is_ok)
         });
         let is_local = local.is_some();
-        let result = self.try_append(candidate.model, candidate.native, |combined, unknowns| {
-            let report = match local {
-                Some(report) => report,
-                None => crate::validate::admit::admit_annotation_delta(
-                    ctx,
-                    combined,
-                    (format, unknowns),
-                    &changes,
-                    allowed,
-                )?,
-            };
-            let accepted = accept(report.as_ref(), changes)?;
-            if accepted.is_ok()
-                && reuse
-                && report
-                    .as_ref()
-                    .is_ok_and(crate::report::check::ValidationReport::is_ok)
-            {
-                match &mut state {
-                    Some(admitted) if is_local => admitted.accept(combined)?,
-                    _ => state = Some(AdmittedState::build(combined, format, unknowns)),
+        let result = self.try_append(
+            candidate.geometry,
+            candidate.model,
+            candidate.native,
+            |combined, unknowns| {
+                let report = match local {
+                    Some(report) => report,
+                    None => crate::validate::admit::admit_annotation_delta(
+                        ctx,
+                        combined,
+                        (format, unknowns),
+                        &changes,
+                        allowed,
+                    )?,
+                };
+                let accepted = accept(report.as_ref(), changes)?;
+                if accepted.is_ok()
+                    && reuse
+                    && report
+                        .as_ref()
+                        .is_ok_and(crate::report::check::ValidationReport::is_ok)
+                {
+                    match &mut state {
+                        Some(admitted) if is_local => admitted.accept(combined)?,
+                        _ => state = Some(AdmittedState::build(combined, format, unknowns)),
+                    }
                 }
-            }
-            Ok(accepted)
-        });
+                Ok(accepted)
+            },
+        );
         // A rejected candidate rolls back to the model these facts describe.
         match &result {
             Ok(Ok(_)) => self.state.admission = state,
@@ -868,8 +931,8 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
         let local = if let Some(admitted) = &mut state {
             let mut suffix = annotations.sparse_transaction();
             macro_rules! select_annotations {
-                ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
-                    for entity in self.state.base.borrow().model.$field.get(admitted.lengths[<$ty as EntitySchema>::KIND.index()]..).ok_or_else(|| CodecError::malformed("admitted prefix was removed"))? { suffix.select(entity.identity()); }
+                ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
+                    for entity in self.state.base.borrow().$home.$field.get(admitted.lengths[<$ty as EntitySchema>::KIND.index()]..).ok_or_else(|| CodecError::malformed("admitted prefix was removed"))? { suffix.select(entity.identity()); }
                 )*};
             }
             if allowed.contains(&crate::report::check::Check::Annotations) {
@@ -943,9 +1006,9 @@ fn index_committed_identities(
 ) -> CommittedIdentityIndex {
     let mut identities = CommittedIdentityIndex::new();
     macro_rules! collect_model_identities {
-        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
-            $(for (index, entity) in base.model.$field.iter().enumerate() {
-                insert_identity(&mut identities, identity_hash(entity.identity()), CommittedIdentity::Neutral(IdentitySlot { kind: <$ty as EntitySchema>::KIND, index }));
+        ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
+            $(for (index, entity) in base.$home.$field.iter().enumerate() {
+                insert_identity(&mut identities, identity_hash(entity.identity()), CommittedIdentity::entity(<$ty as EntitySchema>::KIND, index));
             })*
         };
     }
@@ -996,7 +1059,7 @@ fn committed_identity_contains(
 
     for owner in identities.get(&hash).into_iter().flatten() {
         let candidate = match owner {
-            CommittedIdentity::Neutral(slot) => base.model.identity_at(slot.kind, slot.index),
+            CommittedIdentity::Neutral(slot) => base.arenas().identity_at(slot.kind, slot.index),
             CommittedIdentity::StagedUnknown(index) => {
                 unknowns.get(*index).map(|record| record.id().as_str())
             }
@@ -1035,16 +1098,22 @@ fn committed_identity_contains(
 
 fn stage_committed_identities(
     base: &CadIr,
-    model: &Model,
+    (geometry, model): (&Topology, &Model),
     native: Option<&crate::native::Native>,
     unknown_namespace: Option<&str>,
 ) -> CommittedIdentityIndex {
     let mut staged = CommittedIdentityIndex::new();
+    let candidate = crate::document::Arenas {
+        geometry,
+        model,
+        design: &base.design,
+        process: &base.process,
+    };
     macro_rules! stage_model {
-        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
-            for (offset, entity) in model.$field.iter().enumerate() {
-                let index = base.model.$field.len() + offset;
-                insert_identity(&mut staged, identity_hash(entity.identity()), CommittedIdentity::Neutral(IdentitySlot { kind: <$ty as EntitySchema>::KIND, index }));
+        ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
+            for (offset, entity) in candidate.$home.$field.iter().enumerate() {
+                let index = base.$home.$field.len() + offset;
+                insert_identity(&mut staged, identity_hash(entity.identity()), CommittedIdentity::entity(<$ty as EntitySchema>::KIND, index));
             }
         )*};
     }
@@ -1121,10 +1190,10 @@ impl<D: BorrowMut<CadIr>> CommitState<'_, D> {
                 .as_mut()
                 .ok_or_else(|| CodecError::malformed("committed identity index is absent"))?;
             macro_rules! index_appended {
-                ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
+                ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
                     let start = starts[<$ty as EntitySchema>::KIND.index()];
-                    for (offset, entity) in self.base.borrow().model.$field.get(start..).ok_or_else(|| CodecError::malformed("append-only staging removed an arena prefix"))?.iter().enumerate() {
-                        insert_identity(identities, identity_hash(entity.identity()), CommittedIdentity::Neutral(IdentitySlot { kind: <$ty as EntitySchema>::KIND, index: start + offset }));
+                    for (offset, entity) in self.base.borrow().$home.$field.get(start..).ok_or_else(|| CodecError::malformed("append-only staging removed an arena prefix"))?.iter().enumerate() {
+                        insert_identity(identities, identity_hash(entity.identity()), CommittedIdentity::entity(<$ty as EntitySchema>::KIND, start + offset));
                     }
                 )*};
             }
@@ -1156,12 +1225,18 @@ impl<D: BorrowMut<CadIr>> CommitState<'_, D> {
         )? {
             return Ok(Err(error));
         }
-        let staged = stage_committed_identities(base, &draft.model, None, self.unknown_namespace);
+        let staged = stage_committed_identities(
+            base,
+            (&draft.staged.geometry, &draft.staged.model),
+            None,
+            self.unknown_namespace,
+        );
         let transferred = before_apply();
         for (hash, group) in staged {
             identities.entry(hash).or_default().extend(group);
         }
-        base.model.append(draft.model);
+        base.geometry.append(draft.staged.geometry);
+        base.model.append(draft.staged.model);
         Ok(Ok(transferred))
     }
 }
@@ -1205,6 +1280,7 @@ mod tests {
                 id: id.try_into().expect("valid identity"),
                 point: point.try_into().expect("valid identity"),
                 tolerance: None,
+                native_ref: None,
             })
             .expect("insert vertex into draft");
         draft
@@ -1233,10 +1309,10 @@ mod tests {
     fn direct_draft_edits_invalidate_insertion_identity_slots() {
         let mut draft = ModelDraft::new();
         draft.insert(point("test:model:point#old")).unwrap();
-        draft.model_mut().points.clear();
+        draft.geometry_mut().points.clear();
         draft.insert(point("test:model:point#old")).unwrap();
         draft
-            .model_mut()
+            .geometry_mut()
             .points
             .push(point("test:model:point#direct"));
         assert!(matches!(
@@ -1268,11 +1344,13 @@ mod tests {
         use crate::assets::{Asset, AssetContent, AssetData};
         use crate::features::{Feature, FeatureDefinition, FeatureOperation};
 
-        let mut model = crate::document::Model::default();
-        model.points.push(point("test:checkpoint:point#existing"));
-        let original = model.clone();
-        let checkpoint = ModelCheckpoint::capture(&model);
-        model.assets.push(Asset {
+        let mut ir = CadIr::empty();
+        ir.geometry
+            .points
+            .push(point("test:checkpoint:point#existing"));
+        let original = ir.clone();
+        let checkpoint = ModelCheckpoint::capture(&ir);
+        ir.model.assets.push(Asset {
             id: "test:checkpoint:asset#new".try_into().unwrap(),
             name: None,
             media_type: None,
@@ -1282,7 +1360,7 @@ mod tests {
             native_ref: None,
         });
         for (ordinal, key) in ["parent", "child"].into_iter().enumerate() {
-            model.features.push(Feature {
+            ir.model.features.push(Feature {
                 product_definition: None,
                 id: format!("test:checkpoint:feature#{key}").try_into().unwrap(),
                 ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
@@ -1299,14 +1377,14 @@ mod tests {
                 native_ref: None,
             });
         }
-        model
+        ir.model
             .set_feature_regeneration_parent(
                 &("test:checkpoint:feature#child".try_into().unwrap()),
                 &("test:checkpoint:feature#parent".try_into().unwrap()),
             )
             .unwrap();
-        checkpoint.discard_appended(&mut model).unwrap();
-        assert_eq!(model, original);
+        checkpoint.discard_appended(&mut ir).unwrap();
+        assert_eq!(ir, original);
     }
 
     #[test]
@@ -1357,7 +1435,10 @@ mod tests {
         let expected = draft.model().clone();
         let mut ir = CadIr::empty();
         draft
-            .commit_model(&mut ir, &cadmpeg_test_support::service_decode_context())
+            .commit_model(
+                &mut ir,
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+            )
             .unwrap()
             .unwrap();
         assert_eq!(ir.model, expected);
@@ -1373,7 +1454,7 @@ mod tests {
     #[test]
     fn collision_refuses_without_mutating_any_destination() {
         let mut ir = CadIr::empty();
-        ir.model.points.push(point("test:model:point#1"));
+        ir.geometry.points.push(point("test:model:point#1"));
         let mut draft = ModelDraft::new().with_accounting();
         draft
             .insert(point("test:model:point#1"))
@@ -1385,12 +1466,12 @@ mod tests {
                 .commit(
                     &mut ir,
                     &mut annotations,
-                    &cadmpeg_test_support::service_decode_context()
+                    &cadmpeg_core::decode::test_support::service_decode_context()
                 )
                 .unwrap(),
             Err(DraftError::IdentityCollision(_))
         ));
-        assert_eq!(ir.model.points.len(), 1);
+        assert_eq!(ir.geometry.points.len(), 1);
         assert!(annotations.exactness().is_empty());
     }
 
@@ -1398,17 +1479,20 @@ mod tests {
     fn direct_model_staging_rebuilds_identity_cache_before_commit() {
         let identity = "test:model:point#direct-duplicate";
         let mut draft = ModelDraft::new();
-        draft.model_mut().points.push(point(identity));
-        draft.model_mut().points.push(point(identity));
+        draft.geometry_mut().points.push(point(identity));
+        draft.geometry_mut().points.push(point(identity));
         let mut ir = CadIr::empty();
 
         assert_eq!(
             draft
-                .commit_model(&mut ir, &cadmpeg_test_support::service_decode_context())
+                .commit_model(
+                    &mut ir,
+                    &cadmpeg_core::decode::test_support::service_decode_context()
+                )
                 .unwrap(),
             Err(DraftError::IdentityCollision(identity.into()))
         );
-        assert!(ir.model.points.is_empty());
+        assert!(ir.geometry.points.is_empty());
     }
 
     #[test]
@@ -1416,29 +1500,33 @@ mod tests {
         let owner = "test:model:vertex#direct-missing";
         let target = "test:model:point#direct-missing";
         let mut draft = ModelDraft::new();
-        draft.model_mut().vertices.push(Vertex {
+        draft.geometry_mut().vertices.push(Vertex {
             id: owner.try_into().expect("valid identity"),
             point: target.try_into().expect("valid identity"),
             tolerance: None,
+            native_ref: None,
         });
         let mut ir = CadIr::empty();
 
         assert_eq!(
             draft
-                .commit_model(&mut ir, &cadmpeg_test_support::service_decode_context())
+                .commit_model(
+                    &mut ir,
+                    &cadmpeg_core::decode::test_support::service_decode_context()
+                )
                 .unwrap(),
             Err(DraftError::UnresolvedReference {
                 owner: owner.into(),
                 target: target.into(),
             })
         );
-        assert!(ir.model.vertices.is_empty());
+        assert!(ir.geometry.vertices.is_empty());
     }
 
     #[test]
     fn commit_session_matches_sequential_model_commits() {
         let mut session_ir = CadIr::empty();
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut session = CommitSession::new(&mut session_ir, &ctx, None).unwrap();
         session
             .commit_model(point_draft("test:model:point#1"))
@@ -1453,14 +1541,14 @@ mod tests {
         point_draft("test:model:point#1")
             .commit_model(
                 &mut sequential_ir,
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
             )
             .unwrap()
             .expect("first sequential commit");
         point_draft("test:model:point#2")
             .commit_model(
                 &mut sequential_ir,
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
             )
             .unwrap()
             .expect("second sequential commit");
@@ -1472,7 +1560,7 @@ mod tests {
     #[test]
     fn commit_session_rejects_cross_draft_identity_collision() {
         let mut ir = CadIr::empty();
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
         let identity = "test:model:point#cross-draft";
         session
@@ -1485,15 +1573,15 @@ mod tests {
             Err(DraftError::IdentityCollision(identity.into()))
         );
         drop(session);
-        assert_eq!(ir.model.points.len(), 1);
+        assert_eq!(ir.geometry.points.len(), 1);
     }
 
     #[test]
     fn commit_session_rejects_pre_existing_neutral_identity() {
         let identity = "test:model:point#existing";
         let mut ir = CadIr::empty();
-        ir.model.points.push(point(identity));
-        let ctx = cadmpeg_test_support::service_decode_context();
+        ir.geometry.points.push(point(identity));
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 
         assert_eq!(
@@ -1501,7 +1589,7 @@ mod tests {
             Err(DraftError::IdentityCollision(identity.into()))
         );
         drop(session);
-        assert_eq!(ir.model.points.len(), 1);
+        assert_eq!(ir.geometry.points.len(), 1);
     }
 
     #[test]
@@ -1516,7 +1604,7 @@ mod tests {
             )
             .expect("valid native identity")],
         );
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 
         assert_eq!(
@@ -1524,7 +1612,7 @@ mod tests {
             Err(DraftError::IdentityCollision(identity.into()))
         );
         drop(session);
-        assert!(ir.model.points.is_empty());
+        assert!(ir.geometry.points.is_empty());
     }
 
     #[test]
@@ -1532,7 +1620,7 @@ mod tests {
         let owner = "test:model:vertex#missing";
         let target = "test:model:point#missing";
         let mut ir = CadIr::empty();
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 
         assert_eq!(
@@ -1543,14 +1631,14 @@ mod tests {
             })
         );
         drop(session);
-        assert!(ir.model.vertices.is_empty());
+        assert!(ir.geometry.vertices.is_empty());
     }
 
     #[test]
     fn commit_session_resolves_reference_into_earlier_draft() {
         let point_id = "test:model:point#earlier";
         let mut ir = CadIr::empty();
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
         session
             .commit_model(point_draft(point_id))
@@ -1562,8 +1650,8 @@ mod tests {
             .expect("reference into committed draft resolves");
 
         drop(session);
-        assert_eq!(ir.model.points.len(), 1);
-        assert_eq!(ir.model.vertices.len(), 1);
+        assert_eq!(ir.geometry.points.len(), 1);
+        assert_eq!(ir.geometry.vertices.len(), 1);
     }
 
     #[test]
@@ -1571,7 +1659,7 @@ mod tests {
         let rejected_identity = "test:model:vertex#rejected";
         let mut ir = CadIr::empty();
         let before = ir.clone();
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 
         assert!(session
@@ -1588,7 +1676,7 @@ mod tests {
             .unwrap()
             .expect("rejected identity was not absorbed into the session");
         drop(session);
-        assert_eq!(ir.model.points.len(), 1);
+        assert_eq!(ir.geometry.points.len(), 1);
     }
 
     #[test]
@@ -1596,7 +1684,7 @@ mod tests {
         let committed_identity = "test:model:point#committed";
         let rejected_identity = "test:model:point#rejected";
         let mut ir = CadIr::empty();
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 
         assert!(!session.contains(committed_identity).unwrap());
@@ -1614,6 +1702,7 @@ mod tests {
                     .try_into()
                     .expect("valid identity"),
                 tolerance: None,
+                native_ref: None,
             })
             .expect("insert rejected vertex");
         assert!(!session.contains(rejected_identity).unwrap());

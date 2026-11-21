@@ -31,11 +31,11 @@ fn base_edges_without_curve_carriers_remain_topological_edges() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode base edges");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.edges.len(), 3);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.edges.len(), 3);
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .edges
         .iter()
         .all(|edge| edge.curve().is_none()));
@@ -69,8 +69,8 @@ fn unresolved_vertex_point_does_not_enter_a_topology_draft() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode missing vertex point carrier");
 
-    assert!(decoded.ir().model.bodies.is_empty());
-    assert!(decoded.ir().model.vertices.is_empty());
+    assert!(decoded.ir().geometry.bodies.is_empty());
+    assert!(decoded.ir().geometry.vertices.is_empty());
     assert!(decoded.report().losses.iter().any(|loss| loss
         .message
         .contains("VERTEX_POINT #6 has unresolved point carrier #3")));
@@ -102,13 +102,19 @@ fn shell_wire_edge_applies_edge_and_occurrence_sense() {
 
     let first = decoded
         .ir()
-        .model
+        .geometry
         .edges
         .iter()
         .find(|edge| edge.id.as_str().contains("19-wire-31-33-22-0"))
         .expect("first wire edge");
-    assert_eq!(first.start.as_str(), "step:data:vertex#7-wire-31-shell-33");
-    assert_eq!(first.end.as_str(), "step:data:vertex#6-wire-31-shell-33");
+    assert_eq!(
+        first.ends.as_ref().unwrap().start.as_str(),
+        "step:data:vertex#7-wire-31-shell-33"
+    );
+    assert_eq!(
+        first.ends.as_ref().unwrap().end.as_str(),
+        "step:data:vertex#6-wire-31-shell-33"
+    );
 }
 
 #[test]
@@ -124,7 +130,7 @@ fn disconnected_edge_loop_is_not_committed() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode disconnected edge loop");
 
-    assert!(decoded.ir().model.bodies.is_empty());
+    assert!(decoded.ir().geometry.bodies.is_empty());
     assert!(decoded
         .ir()
         .native_unknowns("step")
@@ -151,7 +157,7 @@ fn single_edge_loop_must_close_at_its_endpoint() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode open single-edge loop");
 
-    assert!(decoded.ir().model.bodies.is_empty());
+    assert!(decoded.ir().geometry.bodies.is_empty());
     assert!(decoded.report().losses.iter().any(|loss| loss
         .message
         .contains("STEP topology root #31 rejected: edge loop continuity #25")));
@@ -174,8 +180,8 @@ fn seam_edge_preserves_its_explicit_pcurve_reference() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode seam edge");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert!(decoded.ir().model.coedges.iter().any(|coedge| {
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert!(decoded.ir().geometry.coedges.iter().any(|coedge| {
         coedge
             .pcurves
             .iter()
@@ -201,7 +207,7 @@ fn seam_edge_does_not_guess_an_unlisted_pcurve_reference() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode seam edge with an unlisted pcurve");
 
-    assert!(decoded.ir().model.coedges.iter().all(|coedge| {
+    assert!(decoded.ir().geometry.coedges.iter().all(|coedge| {
         coedge
             .pcurves
             .iter()
@@ -236,7 +242,7 @@ fn seam_edge_rejects_an_explicit_pcurve_outside_its_curve() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode seam edge with an unlisted pcurve");
 
-    assert!(decoded.ir().model.coedges.iter().all(|coedge| {
+    assert!(decoded.ir().geometry.coedges.iter().all(|coedge| {
         coedge
             .pcurves
             .iter()
@@ -266,10 +272,10 @@ fn surface_curve_without_a_basis_keeps_a_curve_less_edge_and_reports_loss() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode surface curve without basis");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .edges
         .iter()
         .find(|edge| edge.id.as_str() == "step:data:edge#19")
@@ -308,8 +314,8 @@ fn subedge_inherits_parent_edge_geometry_without_losing_topology() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode subedge");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert!(decoded.ir().model.edges.iter().any(|edge| {
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert!(decoded.ir().geometry.edges.iter().any(|edge| {
         edge.id.as_str() == "step:data:edge#19"
             && edge
                 .curve()
@@ -345,9 +351,9 @@ fn shell_based_wireframe_model_owns_wire_shell_edges() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode shell-based wireframe model");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.bodies[0].kind, BodyKind::Wire);
-    assert_eq!(decoded.ir().model.edges.len(), 3);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies[0].kind, BodyKind::Wire);
+    assert_eq!(decoded.ir().geometry.edges.len(), 3);
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -372,9 +378,9 @@ fn shell_based_wireframe_model_retains_vertex_shells() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode vertex shell");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.bodies[0].kind, BodyKind::Wire);
-    assert_eq!(decoded.ir().model.shells[0].free_vertices().len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies[0].kind, BodyKind::Wire);
+    assert_eq!(decoded.ir().geometry.shells[0].free_vertices().count(), 1);
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -398,9 +404,9 @@ fn connected_edge_sub_set_is_accepted_as_a_wire_boundary() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode connected edge sub set");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.bodies[0].kind, BodyKind::Wire);
-    assert_eq!(decoded.ir().model.edges.len(), 3);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies[0].kind, BodyKind::Wire);
+    assert_eq!(decoded.ir().geometry.edges.len(), 3);
     assert!(!decoded
         .report()
         .losses
@@ -434,7 +440,7 @@ fn connected_edge_sub_set_keeps_topology_when_parent_is_invalid() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode subset with invalid parent");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
     assert!(decoded
         .report()
         .losses
@@ -469,18 +475,30 @@ fn connected_edge_set_resolves_direct_oriented_and_seam_members() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode direct oriented and seam edge members");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.bodies[0].kind, BodyKind::Wire);
-    assert_eq!(decoded.ir().model.edges.len(), 3);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies[0].kind, BodyKind::Wire);
+    assert_eq!(decoded.ir().geometry.edges.len(), 3);
     let reversed = decoded
         .ir()
-        .model
+        .geometry
         .edges
         .iter()
         .find(|edge| edge.id.as_str().starts_with("step:data:edge#71-"))
         .expect("oriented edge carrier");
-    assert!(reversed.start.as_str().contains("vertex#7"));
-    assert!(reversed.end.as_str().contains("vertex#6"));
+    assert!(reversed
+        .ends
+        .as_ref()
+        .unwrap()
+        .start
+        .as_str()
+        .contains("vertex#7"));
+    assert!(reversed
+        .ends
+        .as_ref()
+        .unwrap()
+        .end
+        .as_str()
+        .contains("vertex#6"));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -503,8 +521,8 @@ fn complex_edge_and_oriented_edge_instances_use_named_attributes() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode complex edge instances");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.edges.len(), 3);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.edges.len(), 3);
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -531,8 +549,8 @@ fn complex_vertex_point_instances_retain_their_point_carriers() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode complex vertex points");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.vertices.len(), 3);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.vertices.len(), 3);
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -551,7 +569,7 @@ fn shared_edge_wire_model_marks_every_representation_typed() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode shared wire model representations");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
     assert!(!decoded
         .ir()
         .native_unknowns("step")
@@ -580,9 +598,9 @@ fn complex_representation_items_reach_edge_based_wire_models() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode complex wire representation");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.bodies[0].kind, BodyKind::Wire);
-    assert_eq!(decoded.ir().model.edges.len(), 3);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies[0].kind, BodyKind::Wire);
+    assert_eq!(decoded.ir().geometry.edges.len(), 3);
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);

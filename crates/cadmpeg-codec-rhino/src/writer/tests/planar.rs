@@ -46,12 +46,12 @@ fn planar_sheet_round_trips_object_attributes() {
         Point3::new(2.0, 0.0, 0.0),
         Point3::new(0.0, 2.0, 0.0),
     ]);
-    ir.model.bodies[0].name = Some("named sheet".into());
-    ir.model.bodies[0].color = Some(
+    ir.geometry.bodies[0].name = Some("named sheet".into());
+    ir.geometry.bodies[0].color = Some(
         cadmpeg_ir::topology::Color::new(64.0 / 255.0, 128.0 / 255.0, 1.0, 192.0 / 255.0)
             .expect("valid color"),
     );
-    ir.model.bodies[0].visible = Some(false);
+    ir.geometry.bodies[0].visible = Some(false);
     for version in [
         RhinoArchiveVersion::V5,
         RhinoArchiveVersion::V6,
@@ -69,9 +69,9 @@ fn planar_sheet_round_trips_object_attributes() {
         let decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("required invariant");
-        let body = &decoded.ir().model.bodies[0];
+        let body = &decoded.ir().geometry.bodies[0];
         assert_eq!(body.name.as_deref(), Some("named sheet"), "{version:?}");
-        assert_eq!(body.color, ir.model.bodies[0].color, "{version:?}");
+        assert_eq!(body.color, ir.geometry.bodies[0].color, "{version:?}");
         assert_eq!(body.visible, Some(false), "{version:?}");
     }
 }
@@ -116,31 +116,31 @@ fn adjacent_planar_faces_round_trip_shared_edge_and_domains() {
         let decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("required invariant");
-        assert_eq!(decoded.ir().model.bodies.len(), 1, "{version:?}");
+        assert_eq!(decoded.ir().geometry.bodies.len(), 1, "{version:?}");
         assert_eq!(
-            decoded.ir().model.bodies[0].kind,
+            decoded.ir().geometry.bodies[0].kind,
             cadmpeg_ir::topology::BodyKind::Sheet,
             "{version:?}"
         );
-        assert_eq!(decoded.ir().model.shells.len(), 1, "{version:?}");
-        assert_eq!(decoded.ir().model.faces.len(), 2, "{version:?}");
-        assert_eq!(decoded.ir().model.loops.len(), 2, "{version:?}");
-        assert_eq!(decoded.ir().model.coedges.len(), 8, "{version:?}");
-        assert_eq!(decoded.ir().model.edges.len(), 7, "{version:?}");
-        assert_eq!(decoded.ir().model.vertices.len(), 6, "{version:?}");
-        assert!(decoded.ir().model.edges.iter().all(|edge| edge
+        assert_eq!(decoded.ir().geometry.shells.len(), 1, "{version:?}");
+        assert_eq!(decoded.ir().geometry.faces.len(), 2, "{version:?}");
+        assert_eq!(decoded.ir().geometry.loops.len(), 2, "{version:?}");
+        assert_eq!(decoded.ir().geometry.coedges.len(), 8, "{version:?}");
+        assert_eq!(decoded.ir().geometry.edges.len(), 7, "{version:?}");
+        assert_eq!(decoded.ir().geometry.vertices.len(), 6, "{version:?}");
+        assert!(decoded.ir().geometry.edges.iter().all(|edge| edge
             .param_range()
             .map(cadmpeg_ir::units::FiniteVector::get)
             == Some([2.0, 3.0])));
         let shared = decoded
             .ir()
-            .model
+            .geometry
             .edges
             .iter()
             .find(|edge| {
                 decoded
                     .ir()
-                    .model
+                    .geometry
                     .coedges
                     .iter()
                     .filter(|coedge| coedge.edge == edge.id)
@@ -150,7 +150,7 @@ fn adjacent_planar_faces_round_trip_shared_edge_and_domains() {
             .expect("one shared edge");
         let uses = decoded
             .ir()
-            .model
+            .geometry
             .coedges
             .iter()
             .filter(|coedge| coedge.edge == shared.id)
@@ -184,24 +184,24 @@ fn planar_tetrahedron_round_trips_as_closed_solid() {
         let decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("required invariant");
-        assert_eq!(decoded.ir().model.bodies.len(), 1, "{version:?}");
+        assert_eq!(decoded.ir().geometry.bodies.len(), 1, "{version:?}");
         assert_eq!(
-            decoded.ir().model.bodies[0].kind,
+            decoded.ir().geometry.bodies[0].kind,
             cadmpeg_ir::topology::BodyKind::Solid,
             "{version:?}"
         );
-        assert_eq!(decoded.ir().model.shells.len(), 1, "{version:?}");
-        assert_eq!(decoded.ir().model.faces.len(), 4, "{version:?}");
-        assert_eq!(decoded.ir().model.loops.len(), 4, "{version:?}");
-        assert_eq!(decoded.ir().model.coedges.len(), 12, "{version:?}");
-        assert_eq!(decoded.ir().model.edges.len(), 6, "{version:?}");
-        assert_eq!(decoded.ir().model.vertices.len(), 4, "{version:?}");
-        for (actual, expected) in decoded.ir().model.edges.iter().zip(&ir.model.edges) {
+        assert_eq!(decoded.ir().geometry.shells.len(), 1, "{version:?}");
+        assert_eq!(decoded.ir().geometry.faces.len(), 4, "{version:?}");
+        assert_eq!(decoded.ir().geometry.loops.len(), 4, "{version:?}");
+        assert_eq!(decoded.ir().geometry.coedges.len(), 12, "{version:?}");
+        assert_eq!(decoded.ir().geometry.edges.len(), 6, "{version:?}");
+        assert_eq!(decoded.ir().geometry.vertices.len(), 4, "{version:?}");
+        for (actual, expected) in decoded.ir().geometry.edges.iter().zip(&ir.geometry.edges) {
             assert_eq!(actual.param_range(), expected.param_range(), "{version:?}");
             assert_eq!(
                 decoded
                     .ir()
-                    .model
+                    .geometry
                     .coedges
                     .iter()
                     .filter(|coedge| coedge.edge == actual.id)
@@ -212,7 +212,7 @@ fn planar_tetrahedron_round_trips_as_closed_solid() {
         }
         assert!(decoded
             .ir()
-            .model
+            .geometry
             .coedges
             .iter()
             .all(|coedge| coedge.radial_next != coedge.id));
@@ -230,18 +230,18 @@ fn multiple_brep_objects_round_trip_in_one_archive() {
         Point3::new(-1.5, 1.0, 0.0),
     ]);
     let mut adjacent = adjacent_quad_sheet();
-    ir.model.bodies.append(&mut adjacent.model.bodies);
-    ir.model.regions.append(&mut adjacent.model.regions);
-    ir.model.shells.append(&mut adjacent.model.shells);
-    ir.model.faces.append(&mut adjacent.model.faces);
-    ir.model.loops.append(&mut adjacent.model.loops);
-    ir.model.coedges.append(&mut adjacent.model.coedges);
-    ir.model.edges.append(&mut adjacent.model.edges);
-    ir.model.vertices.append(&mut adjacent.model.vertices);
-    ir.model.points.append(&mut adjacent.model.points);
-    ir.model.surfaces.append(&mut adjacent.model.surfaces);
-    ir.model.curves.append(&mut adjacent.model.curves);
-    ir.model.pcurves.append(&mut adjacent.model.pcurves);
+    ir.geometry.bodies.append(&mut adjacent.geometry.bodies);
+    ir.geometry.regions.append(&mut adjacent.geometry.regions);
+    ir.geometry.shells.append(&mut adjacent.geometry.shells);
+    ir.geometry.faces.append(&mut adjacent.geometry.faces);
+    ir.geometry.loops.append(&mut adjacent.geometry.loops);
+    ir.geometry.coedges.append(&mut adjacent.geometry.coedges);
+    ir.geometry.edges.append(&mut adjacent.geometry.edges);
+    ir.geometry.vertices.append(&mut adjacent.geometry.vertices);
+    ir.geometry.points.append(&mut adjacent.geometry.points);
+    ir.geometry.surfaces.append(&mut adjacent.geometry.surfaces);
+    ir.geometry.curves.append(&mut adjacent.geometry.curves);
+    ir.geometry.pcurves.append(&mut adjacent.geometry.pcurves);
     ir.finalize();
     for version in [
         RhinoArchiveVersion::V5,
@@ -269,9 +269,9 @@ fn multiple_brep_objects_round_trip_in_one_archive() {
             "{version:?}: {:?}",
             decoded.report().losses
         );
-        assert_eq!(decoded.ir().model.bodies.len(), 2, "{version:?}");
-        assert_eq!(decoded.ir().model.faces.len(), 3, "{version:?}");
-        assert_eq!(decoded.ir().model.edges.len(), 10, "{version:?}");
+        assert_eq!(decoded.ir().geometry.bodies.len(), 2, "{version:?}");
+        assert_eq!(decoded.ir().geometry.faces.len(), 3, "{version:?}");
+        assert_eq!(decoded.ir().geometry.edges.len(), 10, "{version:?}");
         assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
             .expect("validate the neutral model")
             .is_ok());
@@ -291,13 +291,13 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
         Point3::new(2.0, 0.0, 0.0),
         Point3::new(0.0, 2.0, 0.0),
     ]);
-    ir.model.points.push(Point::new(
+    ir.geometry.points.push(Point::new(
         PointId::mint("cadir:model:point#free").expect("identity grammar"),
         cadmpeg_ir::features::FinitePoint3::new(Point3::new(5.0, 6.0, 7.0))
             .expect("a finite position is a point"),
         None,
     ));
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: CurveId::mint("cadir:model:curve#free").expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -310,8 +310,9 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: SurfaceId::mint("cadir:model:surface#free").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -322,6 +323,7 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.finalize();
     for version in [
@@ -341,20 +343,20 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
         let decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("required invariant");
-        assert_eq!(decoded.ir().model.bodies.len(), 2, "{version:?}");
+        assert_eq!(decoded.ir().geometry.bodies.len(), 2, "{version:?}");
         assert!(decoded
             .ir()
-            .model
+            .geometry
             .points
             .iter()
             .any(|point| point.position().get() == Point3::new(5.0, 6.0, 7.0)));
         assert!(decoded
             .ir()
-            .model
+            .geometry
             .curves
             .iter()
             .any(|curve| matches!(curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) if { circle_curve.radius().get() == 2.0 })));
-        assert!(decoded.ir().model.surfaces.iter().any(
+        assert!(decoded.ir().geometry.surfaces.iter().any(
             |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
             if {
                 let origin = plane_surface.origin();
@@ -370,7 +372,7 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
 #[test]
 fn open_planar_solid_is_rejected_before_output() {
     let mut ir = adjacent_quad_sheet();
-    ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Solid;
+    ir.geometry.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Solid;
     let mut output = vec![0xaa];
     let error = RhinoCodec
         .plan(
@@ -396,7 +398,7 @@ fn sub_resolution_edge_tolerance_is_refused_before_output() {
         Point3::new(2.0, 0.0, 0.0),
         Point3::new(0.0, 2.0, 0.0),
     ]);
-    ir.model.edges[0].tolerance = Some(
+    ir.geometry.edges[0].tolerance = Some(
         cadmpeg_ir::scalar::PositiveReal::new(EPS_BELOW_WRITE_BOUND)
             .expect("positive finite tolerance"),
     );
@@ -422,7 +424,7 @@ fn sub_resolution_face_tolerance_is_refused_before_output() {
         Point3::new(2.0, 0.0, 0.0),
         Point3::new(0.0, 2.0, 0.0),
     ]);
-    ir.model.faces[0].tolerance = Some(
+    ir.geometry.faces[0].tolerance = Some(
         cadmpeg_ir::scalar::PositiveReal::new(EPS_BELOW_WRITE_BOUND)
             .expect("positive finite tolerance"),
     );

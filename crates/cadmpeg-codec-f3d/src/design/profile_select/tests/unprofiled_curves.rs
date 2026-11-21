@@ -129,3 +129,101 @@ fn open_curve_keeps_its_loss_without_a_selecting_feature_or_in_another_sketch() 
     let notes = unprofiled_curve_losses(vec![unprofiled(curve.id())], &[feature], &[curve]);
     assert_eq!(notes[0].code, F3dLossCode::SketchCurveUnprofiled.kind());
 }
+
+fn empty_sketch(id: SketchId) -> cadmpeg_ir::sketches::Sketch {
+    cadmpeg_ir::sketches::Sketch {
+        id,
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
+        native_ref: None,
+    }
+}
+
+#[test]
+fn interior_intersections_report_region_boundaries_and_keep_open_curve_warnings() {
+    let sketch = empty_sketch(SketchId::mint("synthetic:test:id#interior-intersections").unwrap());
+    let segment = |id, start: (f64, f64), end: (f64, f64)| {
+        SketchEntity::new(
+            SketchEntityId::mint(id).unwrap(),
+            sketch.id.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: Point2::new(start.0, start.1),
+                end: Point2::new(end.0, end.1),
+            })
+            .unwrap(),
+        )
+    };
+    let entities = vec![
+        segment("synthetic:test:id#left", (0.0, -1.0), (0.0, 2.0)),
+        segment("synthetic:test:id#right", (1.0, -1.0), (1.0, 2.0)),
+        segment("synthetic:test:id#bottom", (0.0, 0.0), (1.0, 0.0)),
+        segment("synthetic:test:id#top", (0.0, 1.0), (1.0, 1.0)),
+        segment("synthetic:test:id#open", (2.0, 0.0), (3.0, 0.0)),
+    ];
+    let notes = crate::test_support::with_decode_context(|ctx| {
+        super::super::unprofiled_region_losses(
+            ctx,
+            entities
+                .iter()
+                .map(|entity| unprofiled(entity.id()))
+                .collect(),
+            std::slice::from_ref(&sketch),
+            &entities,
+            1.0e-6,
+        )
+    })
+    .unwrap();
+    assert_eq!(notes.len(), 5);
+    for (id, note) in &notes[..4] {
+        assert_eq!(note.code, F3dLossCode::SketchCurveRegionBoundary.kind());
+        assert_eq!(note.severity, cadmpeg_ir::report::Severity::Info);
+        assert!(note.message.contains(id.as_str()));
+    }
+    assert_eq!(notes[4].1.code, F3dLossCode::SketchCurveUnprofiled.kind());
+    assert_eq!(notes[4].1.severity, cadmpeg_ir::report::Severity::Warning);
+}
+
+#[test]
+fn construction_curve_keeps_an_open_chain_out_of_the_region_diagnostic() {
+    let sketch = empty_sketch(SketchId::mint("synthetic:test:id#construction-boundary").unwrap());
+    let entities = [
+        ((0.0, 0.0), (1.0, 0.0)),
+        ((1.0, 0.0), (1.0, 1.0)),
+        ((1.0, 1.0), (0.0, 1.0)),
+        ((0.0, 1.0), (0.0, 0.0)),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, (start, end))| {
+        SketchEntity::new(
+            SketchEntityId::mint(format!("synthetic:test:id#edge-{index}")).unwrap(),
+            sketch.id.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: Point2::new(start.0, start.1),
+                end: Point2::new(end.0, end.1),
+            })
+            .unwrap(),
+        )
+        .with_construction(index == 3)
+    })
+    .collect::<Vec<_>>();
+    let notes = crate::test_support::with_decode_context(|ctx| {
+        super::super::unprofiled_region_losses(
+            ctx,
+            vec![unprofiled(entities[0].id())],
+            &[sketch],
+            &entities,
+            1.0e-6,
+        )
+    })
+    .unwrap();
+    assert_eq!(notes[0].1.code, F3dLossCode::SketchCurveUnprofiled.kind());
+}

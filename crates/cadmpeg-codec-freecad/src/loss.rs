@@ -57,8 +57,6 @@ pub(crate) enum FreecadLossCode {
     DrawingDimensionGeometryNotTransferred,
     /// Persisted drawing content remains native.
     DrawingDimensionToleranceNotTransferred,
-    /// A bounded archive payload cannot be opened; its stored bytes remain retained.
-    ArchiveEntryUnreadable,
     /// A mesh use has no complete neutral placement path.
     MeshPlacementNotTransferred,
     /// Mesh occurrence expansion reached its input-scaled local work cap.
@@ -75,6 +73,8 @@ pub(crate) enum FreecadLossCode {
     FeatureNativeKindRetained,
     /// A revolution has no complete admitted angular construction.
     FeatureRevolutionNotTransferred,
+    /// A removal feature starts from an empty body.
+    FeatureRemovalWithoutBase,
     /// A primitive has no admitted local-to-model frame.
     FeaturePrimitivePlacementUnresolved,
     /// Sketch geometry record retains a native kind without solved geometry.
@@ -113,6 +113,8 @@ pub(crate) enum FreecadLossCode {
     PcurveLocationAmbiguous,
     /// Native topology remains retained when location identity expansion reaches its local cap.
     TopologyLocationIdentityBounded,
+    /// Non-boundary edge geometry transfers with its face incidence retained natively.
+    TopologyNonBoundaryIncidenceRetained,
     /// Producer version metadata used an alias or conflicting declarations.
     ProgramVersionNoncanonical,
     /// Persistence version metadata used a lowercase alias.
@@ -143,7 +145,6 @@ impl FreecadLossCode {
         Self::DrawingDimensionKindNotTransferred,
         Self::DrawingDimensionGeometryNotTransferred,
         Self::DrawingDimensionToleranceNotTransferred,
-        Self::ArchiveEntryUnreadable,
         Self::MeshPlacementNotTransferred,
         Self::MeshPlacementBounded,
         Self::PersistencePayloadUnresolved,
@@ -152,6 +153,7 @@ impl FreecadLossCode {
         Self::FeatureCyclicHistory,
         Self::FeatureNativeKindRetained,
         Self::FeatureRevolutionNotTransferred,
+        Self::FeatureRemovalWithoutBase,
         Self::FeaturePrimitivePlacementUnresolved,
         Self::SketchNativeGeometry,
         Self::SketchNurbsNative,
@@ -171,6 +173,7 @@ impl FreecadLossCode {
         Self::PcurveNotTransferred,
         Self::PcurveLocationAmbiguous,
         Self::TopologyLocationIdentityBounded,
+        Self::TopologyNonBoundaryIncidenceRetained,
         Self::ProgramVersionNoncanonical,
         Self::FileVersionNoncanonical,
         Self::FileVersionUnverified,
@@ -201,7 +204,6 @@ impl FreecadLossCode {
             Self::DrawingDimensionToleranceNotTransferred => {
                 "drawing.dimension-tolerance-not-transferred"
             }
-            Self::ArchiveEntryUnreadable => "source.archive-entry-unreadable",
             Self::MeshPlacementNotTransferred => "geometry.mesh-placement-not-transferred",
             Self::MeshPlacementBounded => "geometry.mesh-placement-bounded",
             Self::PersistencePayloadUnresolved => "metadata.persistence-payload-unresolved",
@@ -211,6 +213,7 @@ impl FreecadLossCode {
             Self::FeaturePrimitivePlacementUnresolved => "feature.primitive-placement-unresolved",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
             Self::FeatureRevolutionNotTransferred => "feature.revolution-not-transferred",
+            Self::FeatureRemovalWithoutBase => "feature.removal-without-base",
             Self::SketchNativeGeometry => "sketch.native-geometry",
             Self::SketchNurbsNative => "sketch.nurbs-native",
             Self::SketchNativeConstraint => "sketch.native-constraint",
@@ -233,6 +236,9 @@ impl FreecadLossCode {
             Self::PcurveNotTransferred => "pcurve.not-transferred",
             Self::PcurveLocationAmbiguous => "pcurve.location-ambiguous",
             Self::TopologyLocationIdentityBounded => "topology.location-identity-bounded",
+            Self::TopologyNonBoundaryIncidenceRetained => {
+                "topology.non-boundary-incidence-retained"
+            }
             Self::ProgramVersionNoncanonical => "metadata.program-version-noncanonical",
             Self::FileVersionNoncanonical => "metadata.file-version-noncanonical",
             Self::FileVersionUnverified => "metadata.file-version-unverified",
@@ -249,6 +255,7 @@ impl FreecadLossCode {
             | Self::FeatureCyclicHistory
             | Self::FeatureNativeKindRetained
             | Self::FeatureRevolutionNotTransferred
+            | Self::FeatureRemovalWithoutBase
             | Self::FeaturePrimitivePlacementUnresolved
             | Self::SketchNativeGeometry
             | Self::SketchNurbsNative
@@ -276,7 +283,6 @@ impl FreecadLossCode {
             | Self::SketchExternalCacheUnresolved
             | Self::SketchExternalReferenceUnresolved
             | Self::SketchProfileMatchingBounded
-            | Self::ArchiveEntryUnreadable
             | Self::PersistencePayloadUnresolved
             | Self::PersistenceSideEntryUnresolved
             | Self::PersistenceCountNoncanonical
@@ -288,6 +294,7 @@ impl FreecadLossCode {
             | Self::SourceGuiMetadataUnresolved
             | Self::ElementMapMetadataUnresolved
             | Self::PcurveNotTransferred
+            | Self::TopologyNonBoundaryIncidenceRetained
             | Self::ProgramVersionNoncanonical
             | Self::FileVersionNoncanonical
             | Self::FileVersionUnverified
@@ -316,12 +323,12 @@ impl FreecadLossCode {
             | Self::DrawingDimensionKindNotTransferred
             | Self::DrawingDimensionGeometryNotTransferred
             | Self::DrawingDimensionToleranceNotTransferred
-            | Self::ArchiveEntryUnreadable
             | Self::PersistencePayloadUnresolved
             | Self::PersistenceSideEntryUnresolved => LossTaxonomy::RecordNotTyped,
             Self::FeatureCyclicHistory
             | Self::FeatureNativeKindRetained
             | Self::FeatureRevolutionNotTransferred
+            | Self::FeatureRemovalWithoutBase
             | Self::FeaturePrimitivePlacementUnresolved => LossTaxonomy::FeatureHistoryRetained,
             Self::SketchExternalCacheUnresolved
             | Self::SketchExternalReferenceUnresolved
@@ -336,7 +343,8 @@ impl FreecadLossCode {
             | Self::ElementMapMetadataUnresolved
             | Self::PcurveNotTransferred
             | Self::PcurveLocationAmbiguous
-            | Self::TopologyLocationIdentityBounded => LossTaxonomy::RecordNotTyped,
+            | Self::TopologyLocationIdentityBounded
+            | Self::TopologyNonBoundaryIncidenceRetained => LossTaxonomy::RecordNotTyped,
             Self::AppearanceTopologyColorCountMismatch
             | Self::AppearancePrimitiveSizeNotTransferred => LossTaxonomy::MaterialNotTransferred,
             Self::PersistenceCountNoncanonical
@@ -400,7 +408,6 @@ mod tests {
                 "drawing.dimension-kind-not-transferred",
                 "drawing.dimension-geometry-not-transferred",
                 "drawing.dimension-tolerance-not-transferred",
-                "source.archive-entry-unreadable",
                 "geometry.mesh-placement-not-transferred",
                 "geometry.mesh-placement-bounded",
                 "metadata.persistence-payload-unresolved",
@@ -409,6 +416,7 @@ mod tests {
                 "feature.cyclic-history",
                 "feature.native-kind-retained",
                 "feature.revolution-not-transferred",
+                "feature.removal-without-base",
                 "feature.primitive-placement-unresolved",
                 "sketch.native-geometry",
                 "sketch.nurbs-native",
@@ -428,6 +436,7 @@ mod tests {
                 "pcurve.not-transferred",
                 "pcurve.location-ambiguous",
                 "topology.location-identity-bounded",
+                "topology.non-boundary-incidence-retained",
                 "metadata.program-version-noncanonical",
                 "metadata.file-version-noncanonical",
                 "metadata.file-version-unverified",

@@ -37,7 +37,7 @@ fn custom_properties_are_document_attributes_not_model_features() {
     assert_eq!(attributes[0].name, "PartNumber");
     assert_eq!(
         attributes[0].values,
-        vec![AttributeValue::String("A-123".into())]
+        vec![Some(AttributeValue::String("A-123".into()))]
     );
 
     let mut native = Some(crate::native::SldprtNative {
@@ -45,13 +45,8 @@ fn custom_properties_are_document_attributes_not_model_features() {
         feature_input_lanes: Vec::new(),
         pmi_dimensions: Vec::new(),
     });
-    sync_neutral_features(
-        &cadmpeg_ir::document::Model::default(),
-        &[],
-        &[],
-        &mut native,
-    )
-    .expect("required invariant");
+    sync_neutral_features(&cadmpeg_ir::CadIr::empty(), &[], &[], &mut native)
+        .expect("required invariant");
     assert_eq!(
         native.expect("required invariant").feature_histories[0]
             .features

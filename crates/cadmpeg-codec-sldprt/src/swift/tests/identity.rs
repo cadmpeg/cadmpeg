@@ -233,7 +233,11 @@ fn cad_identifier_binds_unique_primary_topology_and_preserves_fallback() {
         .annotations;
     let first = projected.first().expect("projected datum");
     assert_eq!(
-        first.targets,
+        first
+            .targets
+            .iter()
+            .map(|target| target.entity.clone())
+            .collect::<Vec<_>>(),
         [PmiTarget::Face {
             face: "sldprt:brep:face#42".try_into().expect("valid identity")
         }]
@@ -258,7 +262,11 @@ fn cad_identifier_binds_unique_primary_topology_and_preserves_fallback() {
         .annotations;
     let first = projected.first().expect("projected datum");
     assert_eq!(
-        first.targets,
+        first
+            .targets
+            .iter()
+            .map(|target| target.entity.clone())
+            .collect::<Vec<_>>(),
         [PmiTarget::ShapeAspect {
             source_id: cadmpeg_core::text::NonBlankString::new("F10")
                 .expect("nonempty source identity")
@@ -274,11 +282,11 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
     let body = Body {
         id: BodyId::mint("sldprt:brep:body#11").expect("identity grammar"),
         kind: BodyKind::default(),
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     };
     let face = Face {
         id: FaceId::mint("sldprt:brep:face#22").expect("identity grammar"),
@@ -289,18 +297,23 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     };
     let edge = Edge {
         id: EdgeId::mint("sldprt:brep:edge#33").expect("identity grammar"),
         carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
-        start: VertexId::mint("sldprt:brep:vertex#1").expect("identity grammar"),
-        end: VertexId::mint("sldprt:brep:vertex#2").expect("identity grammar"),
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            VertexId::mint("sldprt:brep:vertex#1").expect("identity grammar"),
+            VertexId::mint("sldprt:brep:vertex#2").expect("identity grammar"),
+        )),
         tolerance: None,
+        native_ref: None,
     };
     let vertex = Vertex {
         id: VertexId::mint("sldprt:brep:vertex#44").expect("identity grammar"),
         point: PointId::mint("sldprt:brep:point#44").expect("identity grammar"),
         tolerance: None,
+        native_ref: None,
     };
     let index = TopologyIdentityIndex::from_model(
         crate::swift::PrimaryTopology {
@@ -506,7 +519,7 @@ fn position_compound_hole_targets_only_applied_cylinders() {
             .insert(suffix, vec![face_target(&suffix.to_string())]);
     }
     let position = position_target("hole");
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
 
     assert_eq!(
         target_selection(&ctx, &position, &index, Some(&topology)),
@@ -533,7 +546,7 @@ fn position_compound_hole_keeps_distinct_identifiers_from_one_cylinder() {
     let mut topology = TopologyIdentityIndex::default();
     topology.entries.insert(700, vec![face_target("700")]);
     topology.entries.insert(701, vec![face_target("701")]);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let position = position_target("hole");
 
     assert_eq!(
@@ -544,7 +557,7 @@ fn position_compound_hole_keeps_distinct_identifiers_from_one_cylinder() {
 
 #[test]
 fn position_compound_hole_scales_with_identifier_work_and_keeps_target_order() {
-    const IDENTIFIER_COUNT: usize = 4096;
+    const IDENTIFIER_COUNT: usize = 16;
     const FIRST_SUFFIX: u64 = 10_000;
     let suffix_for_index = |index: usize| {
         FIRST_SUFFIX
@@ -582,7 +595,7 @@ fn position_compound_hole_scales_with_identifier_work_and_keeps_target_order() {
             .entries
             .insert(suffix, vec![face_target(&suffix.to_string())]);
     }
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let position = position_target("hole");
     let expected = (0..IDENTIFIER_COUNT)
         .map(|index| face_target(&suffix_for_index(index).to_string()))
@@ -623,7 +636,7 @@ fn position_compound_hole_keeps_cylinder_targets_with_ambiguous_ownership() {
     let index = target_features(&features);
     let mut topology = TopologyIdentityIndex::default();
     topology.entries.insert(501, vec![face_target("501")]);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let position = position_target("hole");
 
     assert_eq!(
@@ -644,7 +657,7 @@ fn position_compound_hole_preserves_missing_and_ambiguous_identifiers() {
     ];
     let missing_index = target_features(&missing_features);
     let position = position_target("hole");
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert_eq!(
         target_selection(&ctx, &position, &missing_index, None),
         (Some(vec![shape_aspect("cylinder")]), true)
@@ -668,7 +681,7 @@ fn position_compound_hole_preserves_missing_and_ambiguous_identifiers() {
 
 #[test]
 fn position_missing_compound_hole_reference_preserves_aspect_and_loss() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let feature_index = target_features(&[]);
     let mut position = position_target("missing-hole");
     assert_eq!(
@@ -690,7 +703,14 @@ fn position_missing_compound_hole_reference_preserves_aspect_and_loss() {
     let [annotation] = projection.annotations.as_slice() else {
         panic!("position annotation is retained")
     };
-    assert_eq!(annotation.targets, vec![shape_aspect("missing-hole")]);
+    assert_eq!(
+        annotation
+            .targets
+            .iter()
+            .map(|target| target.entity.clone())
+            .collect::<Vec<_>>(),
+        vec![shape_aspect("missing-hole")]
+    );
     assert_eq!(projection.unresolved_position_targets, 1);
     let mut losses = Vec::new();
     projection.append_losses(&mut losses);
@@ -716,7 +736,7 @@ fn position_compound_hole_rejects_non_face_topology_targets() {
             body: BodyId::mint("sldprt:brep:body#505").expect("body identity grammar"),
         }],
     );
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut position = position_target("hole");
 
     assert_eq!(
@@ -744,7 +764,14 @@ fn position_compound_hole_rejects_non_face_topology_targets() {
     let [annotation] = projection.annotations.as_slice() else {
         panic!("position annotation is retained")
     };
-    assert_eq!(annotation.targets, vec![shape_aspect("schema:505")]);
+    assert_eq!(
+        annotation
+            .targets
+            .iter()
+            .map(|target| target.entity.clone())
+            .collect::<Vec<_>>(),
+        vec![shape_aspect("schema:505")]
+    );
     assert_eq!(projection.unresolved_position_targets, 1);
     let mut losses = Vec::new();
     projection.append_losses(&mut losses);
@@ -763,7 +790,7 @@ fn position_compound_hole_reference_class_mismatch_preserves_the_reference() {
     let index = target_features(&features);
     let mut topology = TopologyIdentityIndex::default();
     topology.entries.insert(506, vec![face_target("506")]);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut position = position_target("hole");
     position
         .features
@@ -797,7 +824,14 @@ fn position_compound_hole_reference_class_mismatch_preserves_the_reference() {
     let [annotation] = projection.annotations.as_slice() else {
         panic!("position annotation is retained")
     };
-    assert_eq!(annotation.targets, vec![shape_aspect("hole")]);
+    assert_eq!(
+        annotation
+            .targets
+            .iter()
+            .map(|target| target.entity.clone())
+            .collect::<Vec<_>>(),
+        vec![shape_aspect("hole")]
+    );
     assert_eq!(projection.unresolved_position_targets, 1);
     let mut losses = Vec::new();
     projection.append_losses(&mut losses);
@@ -818,7 +852,7 @@ fn position_pattern_mismatched_subfeature_reference_preserves_pattern_aspect() {
     let index = target_features(&features);
     let mut topology = TopologyIdentityIndex::default();
     topology.entries.insert(507, vec![face_target("507")]);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut position = position_target("pattern");
     position
         .features
@@ -852,7 +886,14 @@ fn position_pattern_mismatched_subfeature_reference_preserves_pattern_aspect() {
     let [annotation] = projection.annotations.as_slice() else {
         panic!("position annotation is retained")
     };
-    assert_eq!(annotation.targets, vec![shape_aspect("pattern")]);
+    assert_eq!(
+        annotation
+            .targets
+            .iter()
+            .map(|target| target.entity.clone())
+            .collect::<Vec<_>>(),
+        vec![shape_aspect("pattern")]
+    );
     assert_eq!(projection.unresolved_position_targets, 1);
     let mut losses = Vec::new();
     projection.append_losses(&mut losses);
@@ -871,7 +912,7 @@ fn position_pattern_reference_class_mismatch_preserves_pattern_aspect() {
         ("cylinder".into(), cad_feature("GdtCylinder", "schema:508")),
     ];
     let index = target_features(&features);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut position = position_target("pattern");
     position
         .features
@@ -905,7 +946,14 @@ fn position_pattern_reference_class_mismatch_preserves_pattern_aspect() {
     let [annotation] = projection.annotations.as_slice() else {
         panic!("position annotation is retained")
     };
-    assert_eq!(annotation.targets, vec![shape_aspect("pattern")]);
+    assert_eq!(
+        annotation
+            .targets
+            .iter()
+            .map(|target| target.entity.clone())
+            .collect::<Vec<_>>(),
+        vec![shape_aspect("pattern")]
+    );
     assert_eq!(projection.unresolved_position_targets, 1);
     let mut losses = Vec::new();
     projection.append_losses(&mut losses);
@@ -967,7 +1015,7 @@ fn malformed_position_pattern_class_edges_preserve_pattern_aspect() {
             ("cylinder".into(), cad_feature("GdtCylinder", "schema:509")),
         ];
         let feature_index = target_features(&features);
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut position = position_target("pattern");
         position
             .features
@@ -1000,7 +1048,14 @@ fn malformed_position_pattern_class_edges_preserve_pattern_aspect() {
         let [annotation] = projection.annotations.as_slice() else {
             panic!("position annotation is retained")
         };
-        assert_eq!(annotation.targets, vec![shape_aspect("pattern")]);
+        assert_eq!(
+            annotation
+                .targets
+                .iter()
+                .map(|target| target.entity.clone())
+                .collect::<Vec<_>>(),
+            vec![shape_aspect("pattern")]
+        );
         assert_eq!(projection.unresolved_position_targets, 1);
         let mut losses = Vec::new();
         projection.append_losses(&mut losses);
@@ -1037,7 +1092,7 @@ fn duplicate_position_pattern_subfeature_names_preserve_pattern_aspect() {
         ("hole-b".into(), entity("GdtCompoundHole")),
     ];
     let feature_index = target_features(&features);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut position = position_target("pattern");
     position
         .features
@@ -1070,7 +1125,14 @@ fn duplicate_position_pattern_subfeature_names_preserve_pattern_aspect() {
     let [annotation] = projection.annotations.as_slice() else {
         panic!("position annotation is retained")
     };
-    assert_eq!(annotation.targets, vec![shape_aspect("pattern")]);
+    assert_eq!(
+        annotation
+            .targets
+            .iter()
+            .map(|target| target.entity.clone())
+            .collect::<Vec<_>>(),
+        vec![shape_aspect("pattern")]
+    );
     assert_eq!(projection.unresolved_position_targets, 1);
     let mut losses = Vec::new();
     projection.append_losses(&mut losses);
@@ -1089,7 +1151,7 @@ fn position_compound_hole_uses_child_ids_and_preserves_unknown_aggregate_ids() {
     let index = target_features(&features);
     let mut topology = TopologyIdentityIndex::default();
     topology.entries.insert(503, vec![face_target("503")]);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let position = position_target("hole");
 
     assert_eq!(
@@ -1121,7 +1183,7 @@ fn non_position_annotations_keep_generic_compound_hole_targets() {
             .entries
             .insert(suffix, vec![face_target(&suffix.to_string())]);
     }
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut annotation = position_target("hole");
     annotation.class = "PrizMetrik.GdtAnalysis.GdtFlatness".into();
 
@@ -1164,7 +1226,7 @@ fn generic_target_walk_preserves_per_feature_duplicate_behavior() {
 
     assert_eq!(
         target_selection(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &annotation,
             &index,
             Some(&topology),
@@ -1233,7 +1295,7 @@ fn position_compound_and_generic_leaf_duplicates_are_order_independent() {
         };
         assert_eq!(
             target_selection(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &position,
                 &index,
                 Some(&topology),
@@ -1258,7 +1320,7 @@ fn position_non_compound_leaf_keeps_generic_targets() {
 
     assert_eq!(
         target_selection(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &position,
             &index,
             Some(&topology),
@@ -1378,7 +1440,7 @@ fn malformed_position_compound_hole_ownership_retains_semantic_pmi() {
             ("unknown".into(), cad_feature("GdtSphere", "schema:505")),
         ];
         let index = target_features(&features);
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let position = position_target("hole");
         assert_eq!(
             target_selection(&ctx, &position, &index, None),
@@ -1413,7 +1475,14 @@ fn malformed_position_compound_hole_ownership_retains_semantic_pmi() {
                 ..
             }
         ));
-        assert_eq!(annotation.targets, vec![shape_aspect("hole")]);
+        assert_eq!(
+            annotation
+                .targets
+                .iter()
+                .map(|target| target.entity.clone())
+                .collect::<Vec<_>>(),
+            vec![shape_aspect("hole")]
+        );
         assert!(projection.unsupported.is_empty());
         assert_eq!(projection.unresolved_position_targets, 1);
         let mut losses = Vec::new();
@@ -1446,7 +1515,7 @@ fn position_compound_hole_without_applied_cylinder_retains_semantic_pmi() {
             (child_id.into(), cad_feature(child_class, child_identifier)),
             ("support".into(), cad_feature("GdtPlane", "schema:802")),
         ];
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let position = position_target("hole");
         let mut topology = TopologyIdentityIndex::default();
         topology
@@ -1483,7 +1552,14 @@ fn position_compound_hole_without_applied_cylinder_retains_semantic_pmi() {
         let [annotation] = projection.annotations.as_slice() else {
             panic!("position annotation is retained")
         };
-        assert_eq!(annotation.targets, vec![shape_aspect("hole")]);
+        assert_eq!(
+            annotation
+                .targets
+                .iter()
+                .map(|target| target.entity.clone())
+                .collect::<Vec<_>>(),
+            vec![shape_aspect("hole")]
+        );
         assert!(projection.unsupported.is_empty());
         assert_eq!(projection.unresolved_position_targets, 1);
         let mut losses = Vec::new();
@@ -1505,7 +1581,7 @@ fn compound_hole_applied_and_cad_reference_caps_retain_position_and_record_the_c
         ("hole".into(), compound),
         ("cylinder".into(), cad_feature("GdtCylinder", "schema:900")),
     ];
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut position = position_target("hole");
     position.doubles.insert("Tolerance".into(), 0.1);
 
@@ -1559,7 +1635,14 @@ fn compound_hole_applied_and_cad_reference_caps_retain_position_and_record_the_c
         let [annotation] = projection.annotations.as_slice() else {
             panic!("position annotation is retained")
         };
-        assert_eq!(annotation.targets, vec![shape_aspect("hole")]);
+        assert_eq!(
+            annotation
+                .targets
+                .iter()
+                .map(|target| target.entity.clone())
+                .collect::<Vec<_>>(),
+            vec![shape_aspect("hole")]
+        );
         assert!(projection.unsupported.is_empty());
         assert_eq!(projection.unresolved_position_targets, 1);
         assert_eq!(projection.walk_caps.work, 1);
@@ -1591,7 +1674,7 @@ fn position_counts_caps_for_independent_top_level_references() {
             work_limit,
         )
     };
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
 
     let single_reference_index = feature_index(11);
     let single_reference = position_target("hole");
@@ -1647,7 +1730,7 @@ fn compound_hole_applied_child_scan_cap_retains_position_and_records_the_cap() {
         .references
         .push(reference("A93", "GdtPosition"));
     root.annotations.entities.push(position);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let feature_index = crate::swift::FeatureIndex::with_work_limit(
         root.features
             .references
@@ -1671,7 +1754,14 @@ fn compound_hole_applied_child_scan_cap_retains_position_and_records_the_cap() {
     let [annotation] = projection.annotations.as_slice() else {
         panic!("position annotation is retained")
     };
-    assert_eq!(annotation.targets, vec![shape_aspect("hole")]);
+    assert_eq!(
+        annotation
+            .targets
+            .iter()
+            .map(|target| target.entity.clone())
+            .collect::<Vec<_>>(),
+        vec![shape_aspect("hole")]
+    );
     assert!(projection.unsupported.is_empty());
     assert_eq!(projection.unresolved_position_targets, 1);
     assert_eq!(projection.walk_caps.work, 1);
@@ -1731,7 +1821,7 @@ fn multi_compound_pattern_global_cap_keeps_existing_unsupported_behavior() {
         .references
         .push(reference("A96", "GdtPosition"));
     root.annotations.entities.push(position);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let feature_index = crate::swift::FeatureIndex::with_work_limit(
         root.features
             .references

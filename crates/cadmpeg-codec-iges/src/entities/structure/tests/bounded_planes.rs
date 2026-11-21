@@ -29,7 +29,7 @@ fn bounded_plane_builds_a_sheet_face_in_v4_and_v5() {
         );
         let face = result
             .ir()
-            .model
+            .geometry
             .faces
             .iter()
             .find(|face| face.id.as_str() == "iges:model:face#bounded-plane-D1")
@@ -38,7 +38,7 @@ fn bounded_plane_builds_a_sheet_face_in_v4_and_v5() {
         assert_eq!(face.loops.len(), 1);
         let loop_ = result
             .ir()
-            .model
+            .geometry
             .loops
             .iter()
             .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
@@ -46,7 +46,7 @@ fn bounded_plane_builds_a_sheet_face_in_v4_and_v5() {
         assert_eq!(
             result
                 .ir()
-                .model
+                .geometry
                 .faces
                 .iter()
                 .find(|face| face.id == loop_.face)
@@ -57,7 +57,7 @@ fn bounded_plane_builds_a_sheet_face_in_v4_and_v5() {
         assert_eq!(loop_.coedges().len(), 1);
         let coedge = result
             .ir()
-            .model
+            .geometry
             .coedges
             .iter()
             .find(|coedge| coedge.id == loop_.coedges()[0])
@@ -84,11 +84,11 @@ fn bounded_plane_requires_a_closed_boundary_curve() {
 
     assert!(result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .any(|surface| surface.id.as_str() == "iges:model:surface#D1"));
-    assert!(result.ir().model.faces.is_empty());
+    assert!(result.ir().geometry.faces.is_empty());
     assert!(has_entity_projection_loss(&result));
 }
 
@@ -100,7 +100,7 @@ fn bounded_plane_requires_the_boundary_curve_to_lie_in_the_plane() {
         "100,1,0,0,1,0,1,0;",
     ));
 
-    assert!(result.ir().model.faces.is_empty());
+    assert!(result.ir().geometry.faces.is_empty());
     assert!(has_entity_projection_loss(&result));
 }
 
@@ -114,7 +114,7 @@ fn bounded_plane_accepts_a_simple_piecewise_linear_nurbs_boundary() {
 
     let face = result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.id.as_str() == "iges:model:face#bounded-plane-D1")
@@ -138,7 +138,7 @@ fn bounded_plane_rejects_a_self_intersecting_piecewise_linear_nurbs_boundary() {
         "126,4,1,1,1,1,0,0,0,1,2,3,4,4,1,1,1,1,1,0,0,0,1,1,0,0,1,0,1,0,0,0,0,0,0,4,0,0,1;",
     ));
 
-    assert!(result.ir().model.faces.is_empty());
+    assert!(result.ir().geometry.faces.is_empty());
     assert!(has_entity_projection_loss(&result));
 }
 
@@ -150,7 +150,7 @@ fn bounded_plane_over_the_pair_budget_is_skipped_with_a_loss() {
         &crate::test_support::test_curves_and_surfaces::closed_ring_linear_nurbs_parameters(32_770),
     ));
 
-    assert!(result.ir().model.faces.is_empty());
+    assert!(result.ir().geometry.faces.is_empty());
     assert!(
         result.report().losses.iter().any(|loss| {
             loss.code == IgesLossCode::EntityNotProjected.kind()
@@ -169,7 +169,7 @@ fn bounded_plane_rejects_a_discontinuous_piecewise_linear_nurbs_boundary() {
         "126,4,1,1,1,1,0,0,0,1,1,1,2,2,1,1,1,1,1,0,0,0,1,0,0,1,1,0,0,1,0,0,0,0,0,2,0,0,1;",
     ));
 
-    assert!(result.ir().model.faces.is_empty());
+    assert!(result.ir().geometry.faces.is_empty());
     assert!(has_entity_projection_loss(&result));
 }
 
@@ -226,7 +226,7 @@ fn bounded_plane_accepts_a_simple_composite_line_boundary() {
 
     let face = result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.id.as_str() == "iges:model:face#bounded-plane-D1")
@@ -258,8 +258,8 @@ fn bounded_plane_requires_a_resolvable_boundary_pointer() {
         ),
     );
 
-    assert!(result.ir().model.surfaces.is_empty());
-    assert!(result.ir().model.faces.is_empty());
+    assert!(result.ir().geometry.surfaces.is_empty());
+    assert!(result.ir().geometry.faces.is_empty());
     assert!(has_entity_projection_loss(&result));
 }
 
@@ -290,11 +290,11 @@ fn negative_bounded_plane_without_an_owner_is_not_invented_as_a_face() {
 
     assert!(result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .any(|surface| surface.id.as_str() == "iges:model:surface#D1"));
-    assert!(result.ir().model.faces.is_empty());
+    assert!(result.ir().geometry.faces.is_empty());
     assert!(has_entity_projection_loss(&result));
 }
 
@@ -303,7 +303,7 @@ fn linear_nurbs_boundary_points_close_a_square_loop() {
     use cadmpeg_ir::geometry::nurbs::NurbsCurve;
     use cadmpeg_ir::math::Point3;
 
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let nurbs = NurbsCurve::from_lanes(
         1,
         vec![0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 4.0],

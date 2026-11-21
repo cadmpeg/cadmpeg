@@ -36,9 +36,15 @@ fn draft() -> DesignParameterDraft {
 }
 
 #[test]
-fn parameter_rejects_empty_text_and_unlocated_units() {
+fn parameter_keeps_literal_names_and_checks_required_text_and_units() {
     let wire = serde_json::to_value(DesignParameter::try_from(draft()).unwrap()).unwrap();
-    for field in ["expression", "name", "unit"] {
+    let mut unnamed = wire.clone();
+    unnamed["name"] = json!("");
+    unnamed["name_offset"] = unnamed["evaluated_value_offset"].clone();
+    let decoded = serde_json::from_value::<DesignParameter>(unnamed.clone()).unwrap();
+    assert_eq!(decoded.name(), "");
+    assert_eq!(serde_json::to_value(decoded).unwrap(), unnamed);
+    for field in ["expression", "unit"] {
         let mut invalid = wire.clone();
         invalid[field] = json!("");
         assert!(serde_json::from_value::<DesignParameter>(invalid)

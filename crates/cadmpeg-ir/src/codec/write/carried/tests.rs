@@ -39,7 +39,11 @@ fn insert_native(ir: &mut CadIr, format: &str, ids: &[&str]) {
 #[test]
 fn no_entity_is_unlocated_even_with_a_resolving_related_id() {
     let ir = unit_cube().expect("valid cube");
-    let finding = finding(None, &[ir.model.faces[0].identity()], "invalid reference");
+    let finding = finding(
+        None,
+        &[ir.geometry.faces[0].identity()],
+        "invalid reference",
+    );
     let locator = FindingLocator::new(&ir, [&finding]);
     assert_eq!(locator.scope(&finding), None);
 }
@@ -49,7 +53,7 @@ fn absent_entity_is_unlocated_even_with_a_resolving_related_id() {
     let ir = unit_cube().expect("valid cube");
     let finding = finding(
         Some("test:model:face#missing"),
-        &[ir.model.faces[0].identity()],
+        &[ir.geometry.faces[0].identity()],
         "invalid reference",
     );
     let locator = FindingLocator::new(&ir, [&finding]);
@@ -59,7 +63,7 @@ fn absent_entity_is_unlocated_even_with_a_resolving_related_id() {
 #[test]
 fn model_entity_resolves_to_its_arena() {
     let ir = unit_cube().expect("valid cube");
-    let finding = finding(Some(ir.model.faces[0].identity()), &[], "invalid face");
+    let finding = finding(Some(ir.geometry.faces[0].identity()), &[], "invalid face");
     let locator = FindingLocator::new(&ir, [&finding]);
     assert_eq!(
         locator.scope(&finding),
@@ -85,8 +89,8 @@ fn native_related_id_resolves_a_face() {
     insert_native(&mut ir, "f3d", &[NATIVE_ID]);
     let finding = finding(
         Some(NATIVE_ID),
-        &[ir.model.faces[0].identity()],
-        &format!("invalid reference `{}`.", ir.model.faces[0].identity()),
+        &[ir.geometry.faces[0].identity()],
+        &format!("invalid reference `{}`.", ir.geometry.faces[0].identity()),
     );
     let locator = FindingLocator::new(&ir, [&finding]);
     assert_eq!(
@@ -102,7 +106,7 @@ fn native_related_id_resolves_a_face() {
 fn unresolved_related_ids_are_ignored() {
     let ir = unit_cube().expect("valid cube");
     let finding = finding(
-        Some(ir.model.faces[0].identity()),
+        Some(ir.geometry.faces[0].identity()),
         &["test:model:surface#missing"],
         "unresolved typed reference test:model:surface#missing ordinary:word #fragment",
     );
@@ -116,9 +120,9 @@ fn unresolved_related_ids_are_ignored() {
 #[test]
 fn duplicate_identities_keep_each_distinct_location_once() {
     let mut ir = unit_cube().expect("valid cube");
-    let face = ir.model.faces[0].clone();
+    let face = ir.geometry.faces[0].clone();
     let id = face.identity().to_owned();
-    ir.model.faces.push(face);
+    ir.geometry.faces.push(face);
     insert_native(&mut ir, "f3d", &[&id, &id]);
     insert_native(&mut ir, "step", &[&id]);
     let finding = finding(Some(&id), &[&id, &id], &format!("{id} `{id}`."));
@@ -157,8 +161,8 @@ fn distinct_related_ids_resolve_exactly() {
 fn multiple_findings_share_the_index_and_keep_related_order() {
     let mut ir = unit_cube().expect("valid cube");
     insert_native(&mut ir, "f3d", &[NATIVE_ID]);
-    let face = ir.model.faces[0].identity();
-    let edge = ir.model.edges[0].identity();
+    let face = ir.geometry.faces[0].identity();
+    let edge = ir.geometry.edges[0].identity();
     let findings = [
         finding(Some(face), &[], ""),
         finding(
@@ -186,7 +190,7 @@ fn multiple_findings_share_the_index_and_keep_related_order() {
 fn message_only_identity_is_not_located() {
     let mut ir = unit_cube().expect("valid cube");
     insert_native(&mut ir, "f3d", &[NATIVE_ID]);
-    let finding = finding(Some(NATIVE_ID), &[], ir.model.faces[0].identity());
+    let finding = finding(Some(NATIVE_ID), &[], ir.geometry.faces[0].identity());
     let locator = FindingLocator::new(&ir, [&finding]);
     assert_eq!(
         locator.scope(&finding),

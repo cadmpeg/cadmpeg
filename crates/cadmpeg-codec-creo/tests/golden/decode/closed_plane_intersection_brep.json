@@ -1,19 +1,483 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "10",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "assembly_joints": [],
-      "attributes": [],
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [
+        {
+          "kind": "ordered",
+          "value": {
+            "folders": [],
+            "id": "creo:model:timeline#root",
+            "kind": "timeline",
+            "members": [
+              {
+                "kind": "feature",
+                "value": "creo:model:feature#4"
+              }
+            ],
+            "rollback": {
+              "kind": "end"
+            }
+          }
+        }
+      ],
+      "evaluations": [],
+      "features": [
+        {
+          "definition": {
+            "operation": {
+              "kind": "fillet",
+              "value": {
+                "controls": {
+                  "corners": [],
+                  "limits": [],
+                  "transitions": []
+                },
+                "native_options": {},
+                "sets": [
+                  {
+                    "edges": {
+                      "at": {
+                        "kind": "input"
+                      },
+                      "native": [
+                        "creo:allfeatur:edgs_affected#4:10,11"
+                      ],
+                      "picks": {
+                        "kind": "named",
+                        "value": [
+                          {
+                            "native": {
+                              "codec": "creo",
+                              "value": {
+                                "kind": "integers",
+                                "value": [
+                                  10
+                                ]
+                              }
+                            },
+                            "target": {
+                              "kind": "native",
+                              "value": {}
+                            }
+                          },
+                          {
+                            "native": {
+                              "codec": "creo",
+                              "value": {
+                                "kind": "integers",
+                                "value": [
+                                  11
+                                ]
+                              }
+                            },
+                            "target": {
+                              "kind": "native",
+                              "value": {}
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    "hold": [
+                      null,
+                      null
+                    ],
+                    "kind": "edges",
+                    "section": {}
+                  }
+                ],
+                "source_settings": {}
+              }
+            }
+          },
+          "id": "creo:model:feature#4",
+          "name": "Round id 4"
+        }
+      ],
+      "names": [
+        [
+          {
+            "kind": "face",
+            "value": "creo:visibgeom:face#1"
+          },
+          {
+            "name": {
+              "kind": "generated",
+              "value": {
+                "feature": "creo:model:feature#4",
+                "kind": "face"
+              }
+            },
+            "native": {
+              "codec": "creo",
+              "value": {
+                "kind": "integers",
+                "value": [
+                  1
+                ]
+              }
+            }
+          }
+        ],
+        [
+          {
+            "kind": "face",
+            "value": "creo:visibgeom:face#2"
+          },
+          {
+            "name": {
+              "kind": "generated",
+              "value": {
+                "feature": "creo:model:feature#4",
+                "kind": "face"
+              }
+            },
+            "native": {
+              "codec": "creo",
+              "value": {
+                "kind": "integers",
+                "value": [
+                  2
+                ]
+              }
+            }
+          }
+        ],
+        [
+          {
+            "kind": "face",
+            "value": "creo:visibgeom:face#3"
+          },
+          {
+            "name": {
+              "kind": "generated",
+              "value": {
+                "feature": "creo:model:feature#4",
+                "kind": "face"
+              }
+            },
+            "native": {
+              "codec": "creo",
+              "value": {
+                "kind": "integers",
+                "value": [
+                  3
+                ]
+              }
+            }
+          }
+        ],
+        [
+          {
+            "kind": "face",
+            "value": "creo:visibgeom:face#4"
+          },
+          {
+            "name": {
+              "kind": "generated",
+              "value": {
+                "feature": "creo:model:feature#4",
+                "kind": "face"
+              }
+            },
+            "native": {
+              "codec": "creo",
+              "value": {
+                "kind": "integers",
+                "value": [
+                  4
+                ]
+              }
+            }
+          }
+        ],
+        [
+          {
+            "kind": "edge",
+            "value": "creo:visibgeom:edge#10"
+          },
+          {
+            "name": {
+              "kind": "generated",
+              "value": {
+                "feature": "creo:model:feature#4",
+                "kind": "edge"
+              }
+            },
+            "native": {
+              "codec": "creo",
+              "value": {
+                "kind": "integers",
+                "value": [
+                  10
+                ]
+              }
+            }
+          }
+        ],
+        [
+          {
+            "kind": "edge",
+            "value": "creo:visibgeom:edge#11"
+          },
+          {
+            "name": {
+              "kind": "generated",
+              "value": {
+                "feature": "creo:model:feature#4",
+                "kind": "edge"
+              }
+            },
+            "native": {
+              "codec": "creo",
+              "value": {
+                "kind": "integers",
+                "value": [
+                  11
+                ]
+              }
+            }
+          }
+        ],
+        [
+          {
+            "kind": "edge",
+            "value": "creo:visibgeom:edge#12"
+          },
+          {
+            "name": {
+              "kind": "generated",
+              "value": {
+                "feature": "creo:model:feature#4",
+                "kind": "edge"
+              }
+            },
+            "native": {
+              "codec": "creo",
+              "value": {
+                "kind": "integers",
+                "value": [
+                  12
+                ]
+              }
+            }
+          }
+        ],
+        [
+          {
+            "kind": "edge",
+            "value": "creo:visibgeom:edge#13"
+          },
+          {
+            "name": {
+              "kind": "generated",
+              "value": {
+                "feature": "creo:model:feature#4",
+                "kind": "edge"
+              }
+            },
+            "native": {
+              "codec": "creo",
+              "value": {
+                "kind": "integers",
+                "value": [
+                  13
+                ]
+              }
+            }
+          }
+        ],
+        [
+          {
+            "kind": "edge",
+            "value": "creo:visibgeom:edge#14"
+          },
+          {
+            "name": {
+              "kind": "generated",
+              "value": {
+                "feature": "creo:model:feature#4",
+                "kind": "edge"
+              }
+            },
+            "native": {
+              "codec": "creo",
+              "value": {
+                "kind": "integers",
+                "value": [
+                  14
+                ]
+              }
+            }
+          }
+        ],
+        [
+          {
+            "kind": "edge",
+            "value": "creo:visibgeom:edge#15"
+          },
+          {
+            "name": {
+              "kind": "generated",
+              "value": {
+                "feature": "creo:model:feature#4",
+                "kind": "edge"
+              }
+            },
+            "native": {
+              "codec": "creo",
+              "value": {
+                "kind": "integers",
+                "value": [
+                  15
+                ]
+              }
+            }
+          }
+        ],
+        [
+          {
+            "kind": "surface",
+            "value": "creo:visibgeom:surface#1"
+          },
+          {
+            "name": {
+              "kind": "generated",
+              "value": {
+                "feature": "creo:model:feature#4",
+                "kind": "surface"
+              }
+            },
+            "native": {
+              "codec": "creo",
+              "value": {
+                "kind": "integers",
+                "value": [
+                  1
+                ]
+              }
+            }
+          }
+        ],
+        [
+          {
+            "kind": "surface",
+            "value": "creo:visibgeom:surface#2"
+          },
+          {
+            "name": {
+              "kind": "generated",
+              "value": {
+                "feature": "creo:model:feature#4",
+                "kind": "surface"
+              }
+            },
+            "native": {
+              "codec": "creo",
+              "value": {
+                "kind": "integers",
+                "value": [
+                  2
+                ]
+              }
+            }
+          }
+        ],
+        [
+          {
+            "kind": "surface",
+            "value": "creo:visibgeom:surface#3"
+          },
+          {
+            "name": {
+              "kind": "generated",
+              "value": {
+                "feature": "creo:model:feature#4",
+                "kind": "surface"
+              }
+            },
+            "native": {
+              "codec": "creo",
+              "value": {
+                "kind": "integers",
+                "value": [
+                  3
+                ]
+              }
+            }
+          }
+        ],
+        [
+          {
+            "kind": "surface",
+            "value": "creo:visibgeom:surface#4"
+          },
+          {
+            "name": {
+              "kind": "generated",
+              "value": {
+                "feature": "creo:model:feature#4",
+                "kind": "surface"
+              }
+            },
+            "native": {
+              "codec": "creo",
+              "value": {
+                "kind": "integers",
+                "value": [
+                  4
+                ]
+              }
+            }
+          }
+        ]
+      ],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [
+        {
+          "active_arrangements": [],
+          "current": [
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "creo:model:feature#4"
+                }
+              },
+              "bodies": [
+                "creo:visibgeom:body#1"
+              ],
+              "poses": [],
+              "status": "current"
+            }
+          ],
+          "definition": "creo:model:product_definition#root",
+          "occurrences": {},
+          "roots": [
+            "creo:model:timeline#root"
+          ]
+        }
+      ],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
+    "fragment": false,
+    "geometry": {
       "bodies": [
         {
           "id": "creo:visibgeom:body#1",
-          "kind": "solid",
-          "regions": [
-            "creo:visibgeom:region#1"
-          ]
+          "kind": "solid"
         }
       ],
       "coedges": [
@@ -162,130 +626,152 @@
           "sense": "forward"
         }
       ],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": -1.6613637599827195e-18,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": -1.6613637599827195e-18,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "creo:visibgeom:curve#10",
           "source_object": {
             "format": "creo",
+            "instance_path": [],
             "object_id": "VisibGeom:10"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": -1.0,
-              "z": 1.6613637599827195e-18
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.5000000000000002,
-              "z": -8.3068187999136015e-19
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 1.6613637599827195e-18
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.5000000000000002,
+                "z": -8.3068187999136015e-19
+              }
             }
           },
           "id": "creo:visibgeom:curve#11",
           "source_object": {
             "format": "creo",
+            "instance_path": [],
             "object_id": "VisibGeom:11"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.7071067811865476,
-              "z": -0.7071067811865476
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": -8.3068187999136015e-19,
-              "z": 0.5000000000000002
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.7071067811865476,
+                "z": -0.7071067811865476
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": -8.3068187999136015e-19,
+                "z": 0.5000000000000002
+              }
             }
           },
           "id": "creo:visibgeom:curve#12",
           "source_object": {
             "format": "creo",
+            "instance_path": [],
             "object_id": "VisibGeom:12"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -4.715744251715768e-17
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -4.715744251715768e-17
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "creo:visibgeom:curve#13",
           "source_object": {
             "format": "creo",
+            "instance_path": [],
             "object_id": "VisibGeom:13"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": -0.8944271909999159,
-              "y": -7.429844605352011e-19,
-              "z": 0.4472135954999579
-            },
-            "kind": "line",
-            "origin": {
-              "x": 1.0000000000000004,
-              "y": 0.0,
-              "z": -4.71574425171577e-17
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -0.8944271909999159,
+                "y": -7.429844605352011e-19,
+                "z": 0.4472135954999579
+              },
+              "kind": "line",
+              "origin": {
+                "x": 1.0000000000000004,
+                "y": 0.0,
+                "z": -4.71574425171577e-17
+              }
             }
           },
           "id": "creo:visibgeom:curve#14",
           "source_object": {
             "format": "creo",
+            "instance_path": [],
             "object_id": "VisibGeom:14"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.8944271909999159,
-              "y": -0.4472135954999579,
-              "z": -4.143591438482614e-17
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.5000000000000002,
-              "z": -8.3068187999136015e-19
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.8944271909999159,
+                "y": -0.4472135954999579,
+                "z": -4.143591438482614e-17
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.5000000000000002,
+                "z": -8.3068187999136015e-19
+              }
             }
           },
           "id": "creo:visibgeom:curve#15",
           "source_object": {
             "format": "creo",
+            "instance_path": [],
             "object_id": "VisibGeom:15"
           }
         }
       ],
-      "drawings": [],
       "edges": [
         {
           "carrier": {
@@ -295,9 +781,11 @@
               0.5000000000000002
             ]
           },
-          "end": "creo:visibgeom:vertex#2",
-          "id": "creo:visibgeom:edge#10",
-          "start": "creo:visibgeom:vertex#1"
+          "ends": {
+            "end": "creo:visibgeom:vertex#2",
+            "start": "creo:visibgeom:vertex#1"
+          },
+          "id": "creo:visibgeom:edge#10"
         },
         {
           "carrier": {
@@ -307,9 +795,11 @@
               0.5000000000000002
             ]
           },
-          "end": "creo:visibgeom:vertex#1",
-          "id": "creo:visibgeom:edge#11",
-          "start": "creo:visibgeom:vertex#3"
+          "ends": {
+            "end": "creo:visibgeom:vertex#1",
+            "start": "creo:visibgeom:vertex#3"
+          },
+          "id": "creo:visibgeom:edge#11"
         },
         {
           "carrier": {
@@ -319,9 +809,11 @@
               0.7071067811865478
             ]
           },
-          "end": "creo:visibgeom:vertex#3",
-          "id": "creo:visibgeom:edge#12",
-          "start": "creo:visibgeom:vertex#2"
+          "ends": {
+            "end": "creo:visibgeom:vertex#3",
+            "start": "creo:visibgeom:vertex#2"
+          },
+          "id": "creo:visibgeom:edge#12"
         },
         {
           "carrier": {
@@ -331,9 +823,11 @@
               1.0000000000000004
             ]
           },
-          "end": "creo:visibgeom:vertex#4",
-          "id": "creo:visibgeom:edge#13",
-          "start": "creo:visibgeom:vertex#1"
+          "ends": {
+            "end": "creo:visibgeom:vertex#4",
+            "start": "creo:visibgeom:vertex#1"
+          },
+          "id": "creo:visibgeom:edge#13"
         },
         {
           "carrier": {
@@ -343,9 +837,11 @@
               1.1180339887498953
             ]
           },
-          "end": "creo:visibgeom:vertex#2",
-          "id": "creo:visibgeom:edge#14",
-          "start": "creo:visibgeom:vertex#4"
+          "ends": {
+            "end": "creo:visibgeom:vertex#2",
+            "start": "creo:visibgeom:vertex#4"
+          },
+          "id": "creo:visibgeom:edge#14"
         },
         {
           "carrier": {
@@ -355,17 +851,19 @@
               1.1180339887498953
             ]
           },
-          "end": "creo:visibgeom:vertex#4",
-          "id": "creo:visibgeom:edge#15",
-          "start": "creo:visibgeom:vertex#3"
+          "ends": {
+            "end": "creo:visibgeom:vertex#4",
+            "start": "creo:visibgeom:vertex#3"
+          },
+          "id": "creo:visibgeom:edge#15"
         }
       ],
       "faces": [
         {
           "id": "creo:visibgeom:face#1",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "creo:visibgeom:loop#1"
           },
           "sense": "reversed",
@@ -375,8 +873,8 @@
         {
           "id": "creo:visibgeom:face#2",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "creo:visibgeom:loop#2"
           },
           "sense": "forward",
@@ -386,8 +884,8 @@
         {
           "id": "creo:visibgeom:face#3",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "creo:visibgeom:loop#3"
           },
           "sense": "forward",
@@ -397,8 +895,8 @@
         {
           "id": "creo:visibgeom:face#4",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "creo:visibgeom:loop#4"
           },
           "sense": "forward",
@@ -406,6 +904,561 @@
           "surface": "creo:visibgeom:surface#4"
         }
       ],
+      "loops": [
+        {
+          "boundary": {
+            "coedges": [
+              "creo:visibgeom:coedge#11:0",
+              "creo:visibgeom:coedge#12:0",
+              "creo:visibgeom:coedge#10:0"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "creo:visibgeom:face#1",
+          "id": "creo:visibgeom:loop#1"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "creo:visibgeom:coedge#14:0",
+              "creo:visibgeom:coedge#13:0",
+              "creo:visibgeom:coedge#10:1"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "creo:visibgeom:face#2",
+          "id": "creo:visibgeom:loop#2"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "creo:visibgeom:coedge#13:1",
+              "creo:visibgeom:coedge#15:0",
+              "creo:visibgeom:coedge#11:1"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "creo:visibgeom:face#3",
+          "id": "creo:visibgeom:loop#3"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "creo:visibgeom:coedge#15:1",
+              "creo:visibgeom:coedge#14:1",
+              "creo:visibgeom:coedge#12:1"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "creo:visibgeom:face#4",
+          "id": "creo:visibgeom:loop#4"
+        }
+      ],
+      "pcurves": [
+        {
+          "geometry": {
+            "direction": {
+              "u": -1.6613637599827195e-18,
+              "v": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "creo:visibgeom:pcurve#10:1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                0.5000000000000002
+              ]
+            },
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "creo:visibgeom:pcurve#10:2",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                0.5000000000000002
+              ]
+            },
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": -1.0,
+              "v": 1.6613637599827195e-18
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.5000000000000002,
+              "v": -8.3068187999136015e-19
+            }
+          },
+          "id": "creo:visibgeom:pcurve#11:1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                0.5000000000000002
+              ]
+            },
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.0,
+              "v": -1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.5000000000000002
+            }
+          },
+          "id": "creo:visibgeom:pcurve#11:3",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                0.5000000000000002
+              ]
+            },
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.7071067811865476,
+              "v": -0.7071067811865476
+            },
+            "kind": "line",
+            "origin": {
+              "u": -8.3068187999136015e-19,
+              "v": 0.5000000000000002
+            }
+          },
+          "id": "creo:visibgeom:pcurve#12:1",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                0.7071067811865478
+              ]
+            },
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": -0.7071067811865477,
+              "v": -0.7071067811865477
+            },
+            "kind": "line",
+            "origin": {
+              "u": 1.0000000000000002,
+              "v": -0.5
+            }
+          },
+          "id": "creo:visibgeom:pcurve#12:4",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                0.7071067811865478
+              ]
+            },
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": -4.715744251715768e-17,
+              "v": 1.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "creo:visibgeom:pcurve#13:2",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                1.0000000000000004
+              ]
+            },
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 1.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.0
+            }
+          },
+          "id": "creo:visibgeom:pcurve#13:3",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                1.0000000000000004
+              ]
+            },
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.4472135954999579,
+              "v": -0.8944271909999159
+            },
+            "kind": "line",
+            "origin": {
+              "u": -4.71574425171577e-17,
+              "v": 1.0000000000000004
+            }
+          },
+          "id": "creo:visibgeom:pcurve#14:2",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                1.1180339887498953
+              ]
+            },
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.894427190999916,
+              "v": -0.447213595499958
+            },
+            "kind": "line",
+            "origin": {
+              "u": -3.274977682448136e-16,
+              "v": 2.803403257276559e-16
+            }
+          },
+          "id": "creo:visibgeom:pcurve#14:4",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                1.1180339887498953
+              ]
+            },
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": 0.8944271909999159,
+              "v": -0.4472135954999579
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.0,
+              "v": 0.5000000000000002
+            }
+          },
+          "id": "creo:visibgeom:pcurve#15:3",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                1.1180339887498953
+              ]
+            },
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "direction": {
+              "u": -0.447213595499958,
+              "v": 0.894427190999916
+            },
+            "kind": "line",
+            "origin": {
+              "u": 0.5,
+              "v": -1.0000000000000002
+            }
+          },
+          "id": "creo:visibgeom:pcurve#15:4",
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                1.1180339887498953
+              ]
+            },
+            "kind": "general"
+          }
+        }
+      ],
+      "points": [
+        {
+          "id": "creo:visibgeom:point#1",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "source_object": {
+            "format": "creo",
+            "instance_path": [],
+            "object_id": "topology:vertex#1"
+          }
+        },
+        {
+          "id": "creo:visibgeom:point#2",
+          "position": {
+            "x": 0.0,
+            "y": -8.3068187999136015e-19,
+            "z": 0.5000000000000002
+          },
+          "source_object": {
+            "format": "creo",
+            "instance_path": [],
+            "object_id": "topology:vertex#2"
+          }
+        },
+        {
+          "id": "creo:visibgeom:point#3",
+          "position": {
+            "x": 0.0,
+            "y": 0.5000000000000002,
+            "z": -8.3068187999136015e-19
+          },
+          "source_object": {
+            "format": "creo",
+            "instance_path": [],
+            "object_id": "topology:vertex#3"
+          }
+        },
+        {
+          "id": "creo:visibgeom:point#4",
+          "position": {
+            "x": 1.0000000000000004,
+            "y": 0.0,
+            "z": -4.71574425171577e-17
+          },
+          "source_object": {
+            "format": "creo",
+            "instance_path": [],
+            "object_id": "topology:vertex#4"
+          }
+        }
+      ],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [
+        {
+          "body": "creo:visibgeom:body#1",
+          "id": "creo:visibgeom:region#1",
+          "shells": [
+            "creo:visibgeom:shell#1"
+          ]
+        }
+      ],
+      "shells": [
+        {
+          "id": "creo:visibgeom:shell#1",
+          "members": [],
+          "region": "creo:visibgeom:region#1"
+        }
+      ],
+      "subds": [],
+      "surfaces": [
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "creo:visibgeom:surface#1",
+          "source_object": {
+            "format": "creo",
+            "instance_path": [],
+            "object_id": "VisibGeom:1"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": -0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
+            }
+          },
+          "id": "creo:visibgeom:surface#2",
+          "source_object": {
+            "format": "creo",
+            "instance_path": [],
+            "object_id": "VisibGeom:2"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "creo:visibgeom:surface#3",
+          "source_object": {
+            "format": "creo",
+            "instance_path": [],
+            "object_id": "VisibGeom:3"
+          }
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.33333333333333337,
+                "y": 0.6666666666666667,
+                "z": 0.6666666666666667
+              },
+              "origin": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": -0.6666666666666667,
+                "y": -0.33333333333333337,
+                "z": 0.6666666666666667
+              }
+            }
+          },
+          "id": "creo:visibgeom:surface#4",
+          "source_object": {
+            "format": "creo",
+            "instance_path": [],
+            "object_id": "VisibGeom:4"
+          }
+        }
+      ],
+      "vertices": [
+        {
+          "id": "creo:visibgeom:vertex#1",
+          "point": "creo:visibgeom:point#1"
+        },
+        {
+          "id": "creo:visibgeom:vertex#2",
+          "point": "creo:visibgeom:point#2"
+        },
+        {
+          "id": "creo:visibgeom:vertex#3",
+          "point": "creo:visibgeom:point#3"
+        },
+        {
+          "id": "creo:visibgeom:vertex#4",
+          "point": "creo:visibgeom:point#4"
+        }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
       "feature_result_topologies": [
         {
           "id": "creo:model:feature-result-topology#4",
@@ -441,31 +1494,38 @@
       "features": [
         {
           "definition": {
-            "definition": "fillet",
-            "groups": [
-              {
-                "edges": {
-                  "kind": "resolved",
-                  "value": {
-                    "edges": [
-                      "creo:visibgeom:edge#10",
-                      "creo:visibgeom:edge#11"
-                    ],
-                    "native": "creo:allfeatur:edgs_affected#4:10,11"
+            "kind": "operation",
+            "value": {
+              "kind": "fillet",
+              "value": {
+                "groups": [
+                  {
+                    "edges": {
+                      "kind": "resolved",
+                      "value": {
+                        "edges": [
+                          "creo:visibgeom:edge#10",
+                          "creo:visibgeom:edge#11"
+                        ],
+                        "native": "creo:allfeatur:edgs_affected#4:10,11"
+                      }
+                    },
+                    "radius": {
+                      "kind": "unresolved"
+                    }
                   }
-                },
-                "radius": {
-                  "kind": "unresolved"
-                }
+                ]
               }
-            ]
+            }
           },
+          "dependencies": [],
           "id": "creo:model:feature#4",
           "name": "Round id 4",
           "ordinal": 0,
           "outputs": [
             "creo:visibgeom:body#1"
           ],
+          "source_content": [],
           "source_properties": {
             "featdefs_row_schema_classes": "913",
             "featdefs_schema_class": "913",
@@ -475,554 +1535,46 @@
           "suppressed": false
         }
       ],
-      "loops": [
-        {
-          "boundary": {
-            "coedges": [
-              "creo:visibgeom:coedge#11:0",
-              "creo:visibgeom:coedge#12:0",
-              "creo:visibgeom:coedge#10:0"
-            ],
-            "kind": "ring"
-          },
-          "face": "creo:visibgeom:face#1",
-          "id": "creo:visibgeom:loop#1"
-        },
-        {
-          "boundary": {
-            "coedges": [
-              "creo:visibgeom:coedge#14:0",
-              "creo:visibgeom:coedge#13:0",
-              "creo:visibgeom:coedge#10:1"
-            ],
-            "kind": "ring"
-          },
-          "face": "creo:visibgeom:face#2",
-          "id": "creo:visibgeom:loop#2"
-        },
-        {
-          "boundary": {
-            "coedges": [
-              "creo:visibgeom:coedge#13:1",
-              "creo:visibgeom:coedge#15:0",
-              "creo:visibgeom:coedge#11:1"
-            ],
-            "kind": "ring"
-          },
-          "face": "creo:visibgeom:face#3",
-          "id": "creo:visibgeom:loop#3"
-        },
-        {
-          "boundary": {
-            "coedges": [
-              "creo:visibgeom:coedge#15:1",
-              "creo:visibgeom:coedge#14:1",
-              "creo:visibgeom:coedge#12:1"
-            ],
-            "kind": "ring"
-          },
-          "face": "creo:visibgeom:face#4",
-          "id": "creo:visibgeom:loop#4"
-        }
-      ],
+      "history_bodies": [],
+      "mass_properties": [],
       "occurrences": [],
       "parameters": [],
-      "pcurves": [
-        {
-          "geometry": {
-            "direction": {
-              "u": -1.6613637599827195e-18,
-              "v": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "u": 0.0,
-              "v": 0.0
-            }
-          },
-          "id": "creo:visibgeom:pcurve#10:1",
-          "metadata": {
-            "form": {
-              "parameter_range": [
-                0.0,
-                0.5000000000000002
-              ]
-            },
-            "source": "general"
-          }
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": 1.0,
-              "v": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "u": 0.0,
-              "v": 0.0
-            }
-          },
-          "id": "creo:visibgeom:pcurve#10:2",
-          "metadata": {
-            "form": {
-              "parameter_range": [
-                0.0,
-                0.5000000000000002
-              ]
-            },
-            "source": "general"
-          }
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": -1.0,
-              "v": 1.6613637599827195e-18
-            },
-            "kind": "line",
-            "origin": {
-              "u": 0.5000000000000002,
-              "v": -8.3068187999136015e-19
-            }
-          },
-          "id": "creo:visibgeom:pcurve#11:1",
-          "metadata": {
-            "form": {
-              "parameter_range": [
-                0.0,
-                0.5000000000000002
-              ]
-            },
-            "source": "general"
-          }
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": 0.0,
-              "v": -1.0
-            },
-            "kind": "line",
-            "origin": {
-              "u": 0.0,
-              "v": 0.5000000000000002
-            }
-          },
-          "id": "creo:visibgeom:pcurve#11:3",
-          "metadata": {
-            "form": {
-              "parameter_range": [
-                0.0,
-                0.5000000000000002
-              ]
-            },
-            "source": "general"
-          }
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": 0.7071067811865476,
-              "v": -0.7071067811865476
-            },
-            "kind": "line",
-            "origin": {
-              "u": -8.3068187999136015e-19,
-              "v": 0.5000000000000002
-            }
-          },
-          "id": "creo:visibgeom:pcurve#12:1",
-          "metadata": {
-            "form": {
-              "parameter_range": [
-                0.0,
-                0.7071067811865478
-              ]
-            },
-            "source": "general"
-          }
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": -0.7071067811865477,
-              "v": -0.7071067811865477
-            },
-            "kind": "line",
-            "origin": {
-              "u": 1.0000000000000002,
-              "v": -0.5
-            }
-          },
-          "id": "creo:visibgeom:pcurve#12:4",
-          "metadata": {
-            "form": {
-              "parameter_range": [
-                0.0,
-                0.7071067811865478
-              ]
-            },
-            "source": "general"
-          }
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": -4.715744251715768e-17,
-              "v": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "u": 0.0,
-              "v": 0.0
-            }
-          },
-          "id": "creo:visibgeom:pcurve#13:2",
-          "metadata": {
-            "form": {
-              "parameter_range": [
-                0.0,
-                1.0000000000000004
-              ]
-            },
-            "source": "general"
-          }
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": 1.0,
-              "v": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "u": 0.0,
-              "v": 0.0
-            }
-          },
-          "id": "creo:visibgeom:pcurve#13:3",
-          "metadata": {
-            "form": {
-              "parameter_range": [
-                0.0,
-                1.0000000000000004
-              ]
-            },
-            "source": "general"
-          }
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": 0.4472135954999579,
-              "v": -0.8944271909999159
-            },
-            "kind": "line",
-            "origin": {
-              "u": -4.71574425171577e-17,
-              "v": 1.0000000000000004
-            }
-          },
-          "id": "creo:visibgeom:pcurve#14:2",
-          "metadata": {
-            "form": {
-              "parameter_range": [
-                0.0,
-                1.1180339887498953
-              ]
-            },
-            "source": "general"
-          }
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": 0.894427190999916,
-              "v": -0.447213595499958
-            },
-            "kind": "line",
-            "origin": {
-              "u": -3.274977682448136e-16,
-              "v": 2.803403257276559e-16
-            }
-          },
-          "id": "creo:visibgeom:pcurve#14:4",
-          "metadata": {
-            "form": {
-              "parameter_range": [
-                0.0,
-                1.1180339887498953
-              ]
-            },
-            "source": "general"
-          }
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": 0.8944271909999159,
-              "v": -0.4472135954999579
-            },
-            "kind": "line",
-            "origin": {
-              "u": 0.0,
-              "v": 0.5000000000000002
-            }
-          },
-          "id": "creo:visibgeom:pcurve#15:3",
-          "metadata": {
-            "form": {
-              "parameter_range": [
-                0.0,
-                1.1180339887498953
-              ]
-            },
-            "source": "general"
-          }
-        },
-        {
-          "geometry": {
-            "direction": {
-              "u": -0.447213595499958,
-              "v": 0.894427190999916
-            },
-            "kind": "line",
-            "origin": {
-              "u": 0.5,
-              "v": -1.0000000000000002
-            }
-          },
-          "id": "creo:visibgeom:pcurve#15:4",
-          "metadata": {
-            "form": {
-              "parameter_range": [
-                0.0,
-                1.1180339887498953
-              ]
-            },
-            "source": "general"
-          }
-        }
-      ],
+      "physical_materials": [],
+      "physics_scenes": [],
       "pmi": [],
-      "points": [
-        {
-          "id": "creo:visibgeom:point#1",
-          "position": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          },
-          "source_object": {
-            "format": "creo",
-            "object_id": "topology:vertex#1"
-          }
-        },
-        {
-          "id": "creo:visibgeom:point#2",
-          "position": {
-            "x": 0.0,
-            "y": -8.3068187999136015e-19,
-            "z": 0.5000000000000002
-          },
-          "source_object": {
-            "format": "creo",
-            "object_id": "topology:vertex#2"
-          }
-        },
-        {
-          "id": "creo:visibgeom:point#3",
-          "position": {
-            "x": 0.0,
-            "y": 0.5000000000000002,
-            "z": -8.3068187999136015e-19
-          },
-          "source_object": {
-            "format": "creo",
-            "object_id": "topology:vertex#3"
-          }
-        },
-        {
-          "id": "creo:visibgeom:point#4",
-          "position": {
-            "x": 1.0000000000000004,
-            "y": 0.0,
-            "z": -4.71574425171577e-17
-          },
-          "source_object": {
-            "format": "creo",
-            "object_id": "topology:vertex#4"
-          }
-        }
-      ],
+      "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "procedural_curves": [],
-      "procedural_surfaces": [],
-      "product_definitions": [],
-      "regions": [
+      "product_definitions": [
         {
-          "body": "creo:visibgeom:body#1",
-          "id": "creo:visibgeom:region#1",
-          "shells": [
-            "creo:visibgeom:shell#1"
-          ]
-        }
-      ],
-      "semantic_annotations": [],
-      "shells": [
-        {
-          "id": "creo:visibgeom:shell#1",
-          "members": [
-            {
-              "id": "creo:visibgeom:face#1",
-              "kind": "face"
-            },
-            {
-              "id": "creo:visibgeom:face#2",
-              "kind": "face"
-            },
-            {
-              "id": "creo:visibgeom:face#3",
-              "kind": "face"
-            },
-            {
-              "id": "creo:visibgeom:face#4",
-              "kind": "face"
-            }
+          "bodies": [
+            "creo:visibgeom:body#1"
           ],
-          "region": "creo:visibgeom:region#1"
+          "bom_properties": {},
+          "id": "creo:model:product_definition#root",
+          "instance_bodies": [],
+          "kind": "part",
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
         }
       ],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
-      "subds": [],
-      "surfaces": [
-        {
-          "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            }
-          },
-          "id": "creo:visibgeom:surface#1",
-          "source_object": {
-            "format": "creo",
-            "object_id": "VisibGeom:1"
-          }
-        },
-        {
-          "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": -0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            }
-          },
-          "id": "creo:visibgeom:surface#2",
-          "source_object": {
-            "format": "creo",
-            "object_id": "VisibGeom:2"
-          }
-        },
-        {
-          "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
-          },
-          "id": "creo:visibgeom:surface#3",
-          "source_object": {
-            "format": "creo",
-            "object_id": "VisibGeom:3"
-          }
-        },
-        {
-          "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.33333333333333337,
-              "y": 0.6666666666666667,
-              "z": 0.6666666666666667
-            },
-            "origin": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": -0.6666666666666667,
-              "y": -0.33333333333333337,
-              "z": 0.6666666666666667
-            }
-          },
-          "id": "creo:visibgeom:surface#4",
-          "source_object": {
-            "format": "creo",
-            "object_id": "VisibGeom:4"
-          }
-        }
-      ],
       "tessellations": [],
-      "vertices": [
-        {
-          "id": "creo:visibgeom:vertex#1",
-          "point": "creo:visibgeom:point#1"
-        },
-        {
-          "id": "creo:visibgeom:vertex#2",
-          "point": "creo:visibgeom:point#2"
-        },
-        {
-          "id": "creo:visibgeom:vertex#3",
-          "point": "creo:visibgeom:point#3"
-        },
-        {
-          "id": "creo:visibgeom:vertex#4",
-          "point": "creo:visibgeom:point#4"
-        }
-      ],
       "view_presentations": []
     },
     "native": {
@@ -3086,49 +3638,58 @@
         ],
         "unknowns": [
           {
-            "id": "creo:VisibGeom:section#76"
+            "id": "creo:VisibGeom:section#76",
+            "links": []
           }
         ]
       }
     },
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
-        "crv_array_count": "6",
-        "expanded_section_byte_count": "0",
-        "expanded_section_count": "0",
-        "file_size": "469",
-        "section.0.length": "305",
         "section.0.name": "VisibGeom",
-        "section.0.offset": "76",
         "section.0.raw_name": "VisibGeom",
         "section.0.role": "psb-geometry",
-        "section.1.length": "66",
         "section.1.name": "AllFeatur",
-        "section.1.offset": "381",
         "section.1.raw_name": "AllFeatur",
         "section.1.role": "model-data",
-        "section.2.length": "22",
         "section.2.name": "MdlStatus",
-        "section.2.offset": "447",
         "section.2.raw_name": "MdlStatus",
         "section.2.role": "metadata",
-        "section_count": "3",
-        "srf_array_count": "4",
         "unresolved_feature_state_selection_count": "0",
         "version_line": "#UGC:2 P c"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "residual",
+            "admission": {
+              "kind": "residual"
+            },
             "declared": {
               "version_line": "#UGC:2 P c"
             },
             "dialect": "creo:unknown"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -3136,7 +3697,10 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
@@ -3497,119 +4061,141 @@
       "visible_torus_or_sphere_surface_row_count": 0
     },
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "residual",
+          "admission": {
+            "kind": "residual"
+          },
           "declared": {
             "version_line": "#UGC:2 P c"
           },
           "dialect": "creo:unknown"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "source.dialect-unverified",
-          "kind": "source_dialect_unverified",
-          "namespace": "creo",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "source.dialect-unverified",
+            "kind": "source_dialect_unverified",
+            "namespace": "creo",
+            "strict_floor": "warning"
+          }
         },
         "message": "the PSB section table carries no layout discriminant: no DEPDB_DATA section with the p_dep_db root record, no ND: section-name decoration, and no complete legacy ASCII #P_OBJECT frame. This decode ran the layout-independent path only, so every ND, DEPDB, and legacy ASCII decode gate was skipped",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "container.census",
-          "kind": "carrier_summary",
-          "namespace": "creo",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "container.census",
+            "kind": "carrier_summary",
+            "namespace": "creo"
+          }
         },
         "message": "PSB container decoded structurally: 3 section(s), unknown layout, VisibGeom namespace census srf_array=4 / crv_array=6; 4 typed surface rows, 0 labeled curve prototypes, 6 canonical curve-topology rows, and 4 closed native loops were decoded. Outline-backed planes, guarded non-axis support frames, complete ND first-instance plane, cylinder, cone, torus, and interpolation-spline prototypes, unbound straight positional surface-of-extrusion planes, topology-bound planes with analytic boundary carriers, `fc 05` cylinders with a resolved axis-normal cap plane, four-entry two-cap and blind circular-sweep cylinders, four-entry simple-hole cylinders with complete cap outlines, radius-anchored class-911 counterbore and bore patches, and compact simple-hole cylinders with complete positional carriers, complementary split-outline cylinders bound to an axis-normal plane, complete positional cylinder bodies, complete support-apex and planar-envelope positional cones, and complete local-system positional tori transfer as carriers; other parameter bodies remain structural records.",
         "severity": "info"
       },
       {
         "code": {
-          "code": "geometry.brep-incomplete",
-          "kind": "geometry_not_transferred",
-          "namespace": "creo",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "geometry.brep-incomplete",
+            "kind": "geometry_not_transferred",
+            "namespace": "creo",
+            "strict_floor": "warning"
+          }
         },
         "message": "General model B-rep transfer remains incomplete. Native face components transfer when every boundary edge has solved vertex orbits, face orientation is unique, and every loop is complete; a multi-loop face additionally requires strict parameter-space containment or a complete common-center, distinct-radius circular-loop proof on a plane. Selected cylinders transfer when an exact `fc 05` record and placed cap outline binds a row, a four-entry class-917 circular-sweep or class-911 simple-hole table with a complete square cap outline establishes the complete axis placement and radius, or a compact class-911 table owns a complete positional cylinder carrier, a class-911 counterbore dimension replay agrees with its generated larger-cylinder carrier, or two same-feature patches have complementary square outline bounds on one axis-normal plane. Later positional instances do not inherit prototype placement or scalar defaults; they require their per-instance parameter bodies ([spec §4.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#32-surface-prototypes)). Face admission considered 4 candidate(s): 4 passed, 4 emitted, and 0 were rejected. First-failure rejection counts are: none. Component admission gate: 1 admitted component(s), selected body count 1; passed. Boundary evidence: 6 curve(s), 0 without a unique incidence pair, 0 with an unsolved endpoint vertex. Vertex solver: 4 topological, 4 carrier intersections, 4 carrier-bearing vertices, 0 pair-intersection candidate(s), 4 triple-intersection candidate(s), 4 validated carrier candidate(s), 0 carrier vertices with no candidate, 0 ambiguous carrier vertices, 0 pcurve record(s), 0 pcurve path(s), 0 path(s) without a unique surface, 0 unevaluable path(s), 0 mapped path(s), 0 unmapped record(s), 0 inconsistent record(s), 0 accepted record(s) (0 complete), 0 conflicting curve(s), 0 pcurve endpoint evidence (0 complete), 0 pcurve constraint(s), 4 analytic domain(s), 0 NURBS endpoint constraint(s), 0 directed endpoint conflict(s), 4 solved. 1 PSB geometry section(s) were preserved verbatim as unknown records.",
         "severity": "blocking"
       },
       {
         "code": {
-          "code": "carrier.visibgeom-planes",
-          "kind": "carrier_summary",
-          "namespace": "creo",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "carrier.visibgeom-planes",
+            "kind": "carrier_summary",
+            "namespace": "creo"
+          }
         },
         "message": "Transferred 4 model-space plane carrier(s) from admitted VisibGeom plane rows.",
         "severity": "info"
       },
       {
         "code": {
-          "code": "carrier.topological-points",
-          "kind": "carrier_summary",
-          "namespace": "creo",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "carrier.topological-points",
+            "kind": "carrier_summary",
+            "namespace": "creo"
+          }
         },
         "message": "Transferred 4 exact model-space point(s) for native topological vertex orbits from unique placed-carrier intersections or pcurve endpoint domains constrained by agreeing face maps and incident analytic edge carriers.",
         "severity": "info"
       },
       {
         "code": {
-          "code": "carrier.topological-edges",
-          "kind": "carrier_summary",
-          "namespace": "creo",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "carrier.topological-edges",
+            "kind": "carrier_summary",
+            "namespace": "creo"
+          }
         },
         "message": "Transferred 6 native topological edge(s) whose endpoint vertex orbits have exact model-space points.",
         "severity": "info"
       },
       {
         "code": {
-          "code": "geometry.instance-carriers-gated",
-          "kind": "geometry_not_transferred",
-          "namespace": "creo",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "geometry.instance-carriers-gated",
+            "kind": "geometry_not_transferred",
+            "namespace": "creo",
+            "strict_floor": "warning"
+          }
         },
         "message": "Additional model-space carriers are gated by unresolved lane-specific scalar prefixes, feature-local transform bindings, placement-incomplete or untagged `0x26` torus/sphere variants, and the round/fillet feature evaluator. These gaps prevent transfer of the remaining non-plane per-instance surfaces, curves, and vertices.",
         "severity": "blocking"
       },
       {
         "code": {
-          "code": "topology.incomplete-components",
-          "kind": "topology_not_transferred",
-          "namespace": "creo",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "topology.incomplete-components",
+            "kind": "topology_not_transferred",
+            "namespace": "creo",
+            "strict_floor": "warning"
+          }
         },
         "message": "Native curve half-edges and closed loops were decoded. Components with complete solved boundaries and unique face orientations transfer as body/region/shell/face/loop/coedge/edge/vertex graphs; multi-loop faces use strict containment in a placed or boundary-proven plane. Remaining components require face-instance partitioning, surface parameter bindings, curve geometry, or vertex coordinates.",
         "severity": "blocking"
       },
       {
         "code": {
-          "code": "feature.neutral-semantics-incomplete",
-          "kind": "feature_history_retained",
-          "namespace": "creo",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "feature.neutral-semantics-incomplete",
+            "kind": "feature_history_retained",
+            "namespace": "creo"
+          }
         },
         "message": "Named feature operations and their decoded dependency/input tables transfer as typed or native design records. Curve-equation assignments transfer with their source, dependencies, and closed numeric and string operator and deterministic function values. Full neutral operation semantics, configuration presence, graph, case-study, cabling, and cross-model relation functions, materials, and display data remain untransferred.",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "feature.recognized-incomplete",
-          "kind": "feature_history_retained",
-          "namespace": "creo",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "feature.recognized-incomplete",
+            "kind": "feature_history_retained",
+            "namespace": "creo"
+          }
         },
         "message": "1 recognized non-sweep history feature(s) retain incomplete required construction operands (fillet=1).",
         "severity": "warning"
@@ -3623,7 +4209,10 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
@@ -3631,291 +4220,363 @@
       "exactness": {
         "creo:VisibGeom:section#76": {
           "entity": "unknown",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:topology:half_edge#10:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:topology:half_edge#10:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:topology:half_edge#11:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:topology:half_edge#11:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:topology:half_edge#12:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:topology:half_edge#12:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:topology:half_edge#13:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:topology:half_edge#13:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:topology:half_edge#14:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:topology:half_edge#14:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:topology:half_edge#15:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:topology:half_edge#15:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:body#1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:coedge#10:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:coedge#10:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:coedge#11:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:coedge#11:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:coedge#12:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:coedge#12:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:coedge#13:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:coedge#13:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:coedge#14:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:coedge#14:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:coedge#15:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:coedge#15:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:curve#10": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:curve#11": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:curve#12": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:curve#13": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:curve#14": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:curve#15": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:edge#10": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:edge#11": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:edge#12": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:edge#13": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:edge#14": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:edge#15": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:face#1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:face#2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:face#3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:face#4": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:loop#1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:loop#2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:loop#3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:loop#4": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:pcurve#10:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:pcurve#10:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:pcurve#11:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:pcurve#11:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:pcurve#12:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:pcurve#12:4": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:pcurve#13:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:pcurve#13:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:pcurve#14:2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:pcurve#14:4": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:pcurve#15:3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:pcurve#15:4": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:point#1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:point#2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:point#3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:point#4": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:region#1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:shell#1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:surface#1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:surface#2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:surface#3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:surface#4": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:vertex#1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:vertex#2": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:vertex#3": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "creo:visibgeom:vertex#4": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         }
       },
       "provenance": {
@@ -4406,15 +5067,23 @@
         }
       }
     },
+    "decode_digest": "675ef957208bdaf491a9d684ed7a30b65d179ebb2add906aef3ff846a015b59d",
+    "file_digests": {},
     "retained_records": {
       "creo:VisibGeom:section#76": {
         "bytes": {
           "data": "I1Zpc2liR2VvbQpzcmZfYXJyYXkA+AQBIgT2AAAPDw8PD0PwAEPwAA8vAAAvAADjD+QPDw/kDw8PDw8P4wIiBAEAAA8PDw9D8AAPQ/AA5A8vAADjDw/k5A8PDw8PDw8P4wMiBAEAAA8PDw9D8ABD8AAP5C8AAA/j5A8PD+QPDw8PDw8P4wQiBAEAAA8PDw8PDw8PDw/jSAAAQ/AALwAALwAASAAA5A8PD+QPD+NjcnZfYXJyYXkA8/gGdG9wb2xfcmVmX2RhdGEACggEAfYBAgwNAADj4fUF9uMLCAQB9gEDCg8AAOPh9QX24wwIBAH2AQQLDgAA4+H1BfbjDQgEAfYCAw4LAADj4fUF9uMOCAQB9gIECg8AAOPh9QX24w8IBAH2AwQNDAAA4+H1BfbjIwo=",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 76,
-        "stream": "creo:VisibGeom"
+        "stream": "creo:VisibGeom",
+        "untyped": [
+          "model"
+        ]
       }
-    }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

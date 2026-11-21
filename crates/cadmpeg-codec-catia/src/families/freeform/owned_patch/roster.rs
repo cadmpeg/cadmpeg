@@ -8,7 +8,7 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
 use crate::layout::consolidated_wide_face_roster_prefix as prefix;
-use crate::wire::bytes::{allocation_reference, compact_int, AllocationReferenceEncoding};
+use crate::wire::bytes::{allocation_reference, compact_int};
 use crate::wire::records::{
     parse_consolidated_record, records_are_contiguous, ConsolidatedFamily as Family,
     ConsolidatedFrameFlag as Flag, ConsolidatedRecord, SourceExtent,
@@ -16,10 +16,29 @@ use crate::wire::records::{
 
 pub(super) type RecordKey = (usize, usize);
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Member {
     pub(super) body: RecordKey,
     pub(super) forward: bool,
+}
+
+pub(super) type SheetMembers = BTreeMap<RecordKey, Vec<Member>>;
+pub(super) type BodyRoots = BTreeMap<RecordKey, BTreeSet<usize>>;
+
+pub(super) fn fallback_members(
+    key: RecordKey,
+    face: usize,
+    legacy: Member,
+    sheets: &SheetMembers,
+    recovered: &BTreeSet<(RecordKey, usize)>,
+) -> Vec<Member> {
+    sheets
+        .get(&key)
+        .map_or(std::slice::from_ref(&legacy), Vec::as_slice)
+        .iter()
+        .copied()
+        .filter(|member| !recovered.contains(&(member.body, face)))
+        .collect()
 }
 
 pub(super) fn payload<'a>(bytes: &'a [u8], frame: &ConsolidatedRecord) -> Option<&'a [u8]> {
@@ -61,33 +80,25 @@ pub(super) fn wide_roster(bytes: &[u8], flags: u8) -> Option<(Vec<usize>, &[u8])
     Some((refs, roster_bits(view, count, flags)?))
 }
 
-pub(super) fn backward_roster(bytes: &[u8]) -> Option<(Vec<usize>, &[u8])> {
-    if *bytes.get(prefix::MARKER)? != 0x18 {
-        return None;
-    }
-    let count = usize::from(View::u16_le_at(bytes, prefix::FACE_COUNT)?);
-    let payload = bytes.get(prefix::LEN..)?;
-    let view = View::over_retained(payload);
+pub(super) fn sheet_references(
+    bytes: &[u8],
+    family: Family,
+) -> Option<(Vec<crate::wire::bytes::AllocationReference>, &[u8])> {
+    let (count, mut at) = match (*bytes.first()?, family) {
+        (0x18, Family::A) => (usize::from(View::u16_le_at(bytes, 1)?), 3),
+        (0x08, Family::A) => (usize::from(*bytes.get(1)?), 2),
+        (lead, _) => (usize::from(lead.checked_sub(0x80)?), 1),
+    };
     if count == 0 {
         return None;
     }
-    view.counted(u64::try_from(count).ok()?, 2)?;
-    let mut at = 0;
-    let mut refs = Vec::new();
-    for _ in 0..count {
-        let reference = allocation_reference(payload, &mut at)?;
-        if !matches!(
-            reference.encoding,
-            AllocationReferenceEncoding::BackwardDistance | AllocationReferenceEncoding::WidthCoded
-        ) || reference.value == 0
-        {
-            return None;
-        }
-        refs.push(usize::try_from(reference.value).ok()?);
-    }
+    View::over_retained(bytes.get(at..)?).counted(u64::try_from(count).ok()?, 1)?;
+    let references = (0..count)
+        .map(|_| allocation_reference(bytes, &mut at))
+        .collect::<Option<Vec<_>>>()?;
     Some((
-        refs,
-        roster_bits(View::over_retained(payload.get(at..)?), count, 3)?,
+        references,
+        roster_bits(View::over_retained(bytes.get(at..)?), count, 3)?,
     ))
 }
 
@@ -192,12 +203,11 @@ pub(super) fn members(
     data: &[u8],
     sources: &[Vec<SourceExtent>],
     records: &[ConsolidatedRecord],
-    backward_sources: &BTreeSet<usize>,
 ) -> Result<BTreeMap<RecordKey, Member>, CodecError> {
     let mut roots: BTreeMap<usize, Vec<(&ConsolidatedRecord, &ConsolidatedRecord)>> =
         BTreeMap::new();
     for group in records.windows(3) {
-        if !backward_sources.contains(&group[0].source_index()) && legacy_body(group, data) {
+        if legacy_body(group, data) {
             let body = &group[0];
             let roster = &group[2];
             roots
@@ -239,6 +249,36 @@ mod tests {
     use super::*;
 
     #[test]
+    fn legacy_recovery_retains_each_unrecovered_native_owner() {
+        let legacy = Member {
+            body: (0, 10),
+            forward: false,
+        };
+        let first = Member {
+            body: (0, 20),
+            forward: true,
+        };
+        let second = Member {
+            body: (0, 30),
+            forward: false,
+        };
+        let sheets = [((0, 100), vec![first, second])].into();
+        let recovered = [((0, 20), 200)].into();
+        assert_eq!(
+            fallback_members((0, 100), 200, legacy, &sheets, &recovered),
+            vec![second]
+        );
+        assert_eq!(
+            fallback_members((0, 101), 201, legacy, &sheets, &recovered),
+            vec![legacy]
+        );
+        assert_eq!(
+            fallback_members((0, 100), 200, legacy, &sheets, &BTreeSet::new()),
+            vec![first, second]
+        );
+    }
+
+    #[test]
     fn wide_roster_uses_allocation_width_and_member_bits_across_extents() {
         let header = [
             0xb2, 0x03, 0x65, 4, 5, 0x81, 0x03, 0x05, 0x0d, 0xb2, 0x03, 0x60, 2, 5, 0x81, 0x03,
@@ -257,8 +297,7 @@ mod tests {
         let records = crate::wire::records::consolidated_records_in_sources(&bytes, &sources)
             .expect("valid fixture roster");
         crate::test_support::with_service_context(|ctx| {
-            let found = members(ctx, &bytes, &sources, &records, &BTreeSet::new())
-                .expect("valid fixture roster");
+            let found = members(ctx, &bytes, &sources, &records).expect("valid fixture roster");
             assert_eq!(found.len(), 2);
             assert_eq!(found[&(0, header.len())].body, (0, 0));
             assert!(!found[&(0, header.len())].forward);
@@ -266,7 +305,7 @@ mod tests {
 
             let mut bad = bytes.clone();
             bad[29] = 3;
-            assert!(members(ctx, &bad, &sources, &records, &BTreeSet::new())
+            assert!(members(ctx, &bad, &sources, &records)
                 .expect("valid fixture roster")
                 .is_empty());
         });

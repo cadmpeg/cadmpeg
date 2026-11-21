@@ -5,6 +5,9 @@ use super::exact_component_insert_construction;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::lp_utf16;
 
+mod partial_placement;
+mod typed_insert;
+
 fn tested_component_insert_construction(
     bytes: &[u8],
     records: &crate::design::decode::sketch::IndexedRecordOffsets,
@@ -1067,6 +1070,11 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
             bytes[scope_at + 268..scope_at + 272].copy_from_slice(&u32::MAX.to_le_bytes());
             bytes[scope_at + 339..scope_at + 343].copy_from_slice(&u32::MAX.to_le_bytes());
         }
+        let table = if frame_length == 257 { 125 } else { 253 };
+        let ordinal = if frame_length == 257 { 180 } else { 308 };
+        bytes[scope_at + table + 19..scope_at + ordinal]
+            .copy_from_slice(&crate::bytes::lp_utf16_bytes("Component Insert").unwrap());
+        bytes[scope_at + ordinal..scope_at + ordinal + 4].copy_from_slice(&1_u32.to_le_bytes());
         header(&mut bytes, b"262", 30);
 
         let mut scope = DesignParameterScope::empty(
@@ -1077,39 +1085,19 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
         scope
             .try_edit(|draft| {
                 draft.byte_offset = u64_from_index(scope_at);
-                draft.reference_count_offset = draft.byte_offset + 9;
-                draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-                draft.layout_fixture_references();
-                draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
-                draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
-                draft.layout_fixture_tail();
-            })
-            .unwrap();
-        scope.class_tag =
-            crate::records::references::DesignClassTag::try_from("283".to_owned()).unwrap();
-        scope
-            .try_edit(|draft| {
                 draft.frame_length = u64_from_index(frame_length);
+                draft.paired_byte_offset = u64_from_index(scope_at + frame_length);
+                draft.class_tag = "283".to_owned().try_into().unwrap();
+                draft.paired_class_tag = "262".to_owned().try_into().unwrap();
+                draft.reference_count_offset = u64_from_index(scope_at + table);
                 draft.reference_members = crate::records::identity::ReferenceRun::from_columns(
                     vec![20],
-                    vec![u64_from_index(scope_at + 34)],
+                    vec![u64_from_index(scope_at + table + 5)],
                     "reference_members",
                 )
                 .unwrap();
-                draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-                draft.reference_count_offset =
-                    *draft.reference_members.offsets().next().unwrap() - 5;
-                draft.layout_fixture_references();
-                draft.layout_fixture_tail();
-            })
-            .unwrap();
-        scope.paired_class_tag =
-            crate::records::references::DesignClassTag::try_from("262".to_owned()).unwrap();
-        scope
-            .try_edit(|draft| {
-                draft.paired_byte_offset = u64_from_index(scope_at + frame_length);
-                draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
-                draft.layout_fixture_tail();
+                draft.kind_offset = u64_from_index(scope_at + table + 23);
+                draft.feature_ordinal_offset = u64_from_index(scope_at + ordinal);
             })
             .unwrap();
         (bytes, scope, scope_at)
@@ -1417,6 +1405,18 @@ fn localized_insert_scopes_join_an_attributed_placement_carrier() {
         assert_eq!(construction.neutron_role, role);
         assert_eq!(construction.occurrence_identity, Some(19));
         assert_eq!(construction.carrier_record_index, 10);
+        let key = construction
+            .occurrence_key
+            .as_ref()
+            .expect("source occurrence key");
+        assert_eq!(key.value.as_str(), "66666666-7777-8888-9999-aaaaaaaaaaaa");
+        let key_at = usize::try_from(key.offset).unwrap();
+        assert_eq!(
+            bytes.get(key_at - 4..key_at + 72),
+            crate::bytes::lp_utf16_bytes("66666666-7777-8888-9999-aaaaaaaaaaaa")
+                .ok()
+                .as_deref()
+        );
         assert_eq!(
             construction
                 .placement

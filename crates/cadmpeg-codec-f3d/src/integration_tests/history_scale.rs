@@ -90,7 +90,7 @@ fn assert_history_bound(result: &DecodeResult, scale: DesignScale) {
         .losses
         .iter()
         .any(|loss| loss.code == F3dLossCode::HistoryBindingBudgetExceeded.kind()));
-    assert_eq!(result.ir().model.bodies.len(), scale.bodies);
+    assert_eq!(result.ir().geometry.bodies.len(), scale.bodies);
     let native = result
         .ir()
         .native

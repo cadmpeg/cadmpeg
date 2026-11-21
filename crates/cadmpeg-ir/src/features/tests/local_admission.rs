@@ -1,4 +1,4 @@
-use cadmpeg_test_support::edit;
+use crate::test_support::edit;
 
 use crate::features::FeatureOperation;
 use crate::features::{
@@ -322,15 +322,15 @@ fn an_inserted_body_selection_does_not_restate_the_feature_outputs() {
 #[test]
 fn local_feature_wire_rejects_empty_collections_and_invalid_strings() {
     for wire in [
-        serde_json::json!({"definition":"mesh_import","tessellations":[]}),
-        serde_json::json!({"definition":"mesh_import","tessellations":["same","same"]}),
-        serde_json::json!({"definition":"fillet","groups":[]}),
-        serde_json::json!({"definition":"chamfer","groups":[]}),
-        serde_json::json!({"definition":"full_round_fillet","groups":[]}),
-        serde_json::json!({"definition":"composite_curve","segments":[],"closed":false}),
-        serde_json::json!({"definition":"boundary_fill","tools":{"kind":"unresolved"},"cells":[]}),
-        serde_json::json!({"definition":"imported_geometry","path":"","format":"step"}),
-        serde_json::json!({"definition":"imported_geometry","path":"a\u{0}b","format":"step"}),
+        serde_json::json!({"kind": "operation", "value": {"kind": "mesh_import", "value": {"tessellations":[]}}}),
+        serde_json::json!({"kind": "operation", "value": {"kind": "mesh_import", "value": {"tessellations":["same","same"]}}}),
+        serde_json::json!({"kind": "operation", "value": {"kind": "fillet", "value": {"groups":[]}}}),
+        serde_json::json!({"kind": "operation", "value": {"kind": "chamfer", "value": {"groups":[]}}}),
+        serde_json::json!({"kind": "operation", "value": {"kind": "full_round_fillet", "value": {"groups":[]}}}),
+        serde_json::json!({"kind": "operation", "value": {"kind": "composite_curve", "value": {"segments":[],"closed":false}}}),
+        serde_json::json!({"kind": "operation", "value": {"kind": "boundary_fill", "value": {"tools":{"kind":"unresolved"},"cells":[]}}}),
+        serde_json::json!({"kind": "operation", "value": {"kind": "imported_geometry", "value": {"path":"","format":"step"}}}),
+        serde_json::json!({"kind": "operation", "value": {"kind": "imported_geometry", "value": {"path":"a\u{0}b","format":"step"}}}),
     ] {
         assert!(
             serde_json::from_value::<FeatureDefinition>(wire.clone()).is_err(),
@@ -375,14 +375,14 @@ fn a_post_process_inside_a_post_process_is_refused_as_an_unknown_variant() {
         fuzzy_tolerance: FuzzyTolerance::KernelDefault,
     };
     let wire = serde_json::to_value(&inner).unwrap();
-    assert_eq!(wire["definition"], "post_process");
+    assert_eq!(wire["kind"], "post_process");
     assert_eq!(
         serde_json::from_value::<FeatureDefinition>(wire.clone()).unwrap(),
         inner
     );
 
     let mut nested = wire.clone();
-    nested["operation"] = wire.clone();
+    nested["value"]["operation"] = wire.clone();
     assert!(serde_json::from_value::<FeatureDefinition>(nested).is_err());
     let error = serde_json::from_value::<FeatureOperation>(wire)
         .expect_err("a post-processed operation carries no post-processing layer of its own");
@@ -394,31 +394,31 @@ fn local_wire_errors_name_the_rejected_field() {
     for (field, wire) in [
         (
             "tessellations",
-            serde_json::json!({"definition":"mesh_import","tessellations":[]}),
+            serde_json::json!({"kind": "mesh_import", "value": {"tessellations":[]}}),
         ),
         (
             "groups",
-            serde_json::json!({"definition":"fillet","groups":[]}),
+            serde_json::json!({"kind": "fillet", "value": {"groups":[]}}),
         ),
         (
             "groups",
-            serde_json::json!({"definition":"chamfer","groups":[]}),
+            serde_json::json!({"kind": "chamfer", "value": {"groups":[]}}),
         ),
         (
             "groups",
-            serde_json::json!({"definition":"full_round_fillet","groups":[]}),
+            serde_json::json!({"kind": "full_round_fillet", "value": {"groups":[]}}),
         ),
         (
             "segments",
-            serde_json::json!({"definition":"composite_curve","segments":[],"closed":false}),
+            serde_json::json!({"kind": "composite_curve", "value": {"segments":[],"closed":false}}),
         ),
         (
             "cells",
-            serde_json::json!({"definition":"boundary_fill","tools":{"kind":"unresolved"},"cells":[]}),
+            serde_json::json!({"kind": "boundary_fill", "value": {"tools":{"kind":"unresolved"},"cells":[]}}),
         ),
         (
             "path",
-            serde_json::json!({"definition":"imported_geometry","path":"","format":"step"}),
+            serde_json::json!({"kind": "imported_geometry", "value": {"path":"","format":"step"}}),
         ),
     ] {
         let error = serde_json::from_value::<FeatureOperation>(wire).unwrap_err();
@@ -468,12 +468,12 @@ fn selection_operand_parts_move_retained_storage() {
     let replacements_text = String::from("replacements-native");
     let targets_pointer = targets_text.as_ptr();
     let replacements_pointer = replacements_text.as_ptr();
-    let operands = crate::features::ReplaceFaceOperands::new(
+    let operands = crate::features::replace_face::ReplaceFaceOperands::new(
         crate::features::FaceSelection::Native(targets_text),
         crate::features::FaceSelection::Native(replacements_text),
     )
     .unwrap();
-    let (targets, replacements) = operands.into_parts();
+    let (targets, replacements) = (operands.targets(), operands.replacements());
     let crate::features::FaceSelection::Native(targets) = targets else {
         panic!("native targets");
     };
@@ -489,7 +489,7 @@ fn tree_children_wire_and_decode_share_membership_validation() {
     use crate::features::FeatureCollectionError;
     let first = feature_id("first");
     let second = feature_id("second");
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for (children, active, message) in [
         (
             vec![first.clone(), first.clone()],
@@ -694,4 +694,22 @@ fn selection_reference_constructors_keep_padded_text() {
         };
         result.unwrap();
     }
+}
+
+#[cfg(feature = "schema")]
+#[test]
+fn nonempty_members_schema_requires_a_member() {
+    for (value, valid) in [
+        (serde_json::json!([]), false),
+        (serde_json::json!([7]), true),
+        (serde_json::json!([7, 7]), true),
+    ] {
+        assert_eq!(
+            serde_json::from_value::<NonEmptyMembers<u32>>(value).is_ok(),
+            valid
+        );
+    }
+    let schema = serde_json::to_value(schemars::schema_for!(NonEmptyMembers<u32>)).unwrap();
+    assert_eq!(schema["type"], "array");
+    assert_eq!(schema["minItems"], 1);
 }

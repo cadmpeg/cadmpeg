@@ -26,6 +26,29 @@ fn sketch_placement_borrowed_wire_matches_owned_wire_bytes() {
 }
 
 #[test]
+fn null_reference_head_wire_preserves_its_matrix_and_extent() {
+    let transform = [
+        [1.0, 0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0, 2.0],
+        [0.0, -1.0, 0.0, 3.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let mut wire = serde_json::to_value(placement(true)).unwrap();
+    wire["frame_length"] = serde_json::json!(152);
+    wire["transform"] = serde_json::json!(transform);
+    wire["transform_offset"] = serde_json::json!(122);
+    wire["paired_byte_offset"] = serde_json::json!(50);
+    let record: DesignSketchPlacement = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(record.frame_length(), 152);
+    assert_eq!(*record.transform(), transform);
+    assert_eq!(serde_json::to_value(&record).unwrap(), wire);
+    assert_eq!(
+        serde_json::to_vec(&record).unwrap(),
+        serde_json::to_vec(&DesignSketchPlacementWire::from(record)).unwrap()
+    );
+}
+
+#[test]
 fn sketch_placement_native_retained_limit_refuses_before_record_clone() {
     let record = placement(true);
     crate::test_support::native_test::assert_borrowed_native_retained_limit(
@@ -83,4 +106,23 @@ fn sketch_visibility_sketch_flag_wire_reads_back() {
     let read = serde_json::from_value::<super::DesignSketchVisibility>(wire).unwrap();
     assert!(read.sketch_flag);
     assert_eq!(read, visibility);
+}
+
+#[test]
+fn sketch_placement_display_name_wire_validates_non_blank_non_control_bounds() {
+    let mut record = placement(false);
+    record.display_name = Some("MountingHoles".into());
+    let valid = serde_json::to_value(&record).unwrap();
+    assert_eq!(
+        serde_json::from_value::<DesignSketchPlacement>(valid.clone())
+            .unwrap()
+            .display_name
+            .as_deref(),
+        Some("MountingHoles")
+    );
+    for bad in ["", "   ", "Bad\nName", &"x".repeat(257)] {
+        let mut invalid = valid.clone();
+        invalid["display_name"] = serde_json::json!(bad);
+        assert!(serde_json::from_value::<DesignSketchPlacement>(invalid).is_err());
+    }
 }

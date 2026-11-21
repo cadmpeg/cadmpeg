@@ -126,6 +126,8 @@ fn analytic_reprojection_preserves_both_torus_chart_branches() {
         pcurve: crate::families::freeform::owned_patch::line_pcurve([0.0, 1.0], uv)
             .expect("torus pcurve"),
         forward: true,
+        inferred_accuracy: None,
+        lift_error_mm: 0.0,
     };
     let mut occurrence = first.clone();
     occurrence.forward = false;

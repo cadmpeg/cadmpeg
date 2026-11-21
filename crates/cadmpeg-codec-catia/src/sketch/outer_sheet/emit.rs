@@ -7,7 +7,7 @@ use std::fmt::Display;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::AnnotationStorage;
-use cadmpeg_ir::document::{CadIr, Model};
+use cadmpeg_ir::document::{CadIr, Topology};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{LineCurve, PlaneSurface};
 use cadmpeg_ir::geometry::{
@@ -40,7 +40,7 @@ struct Annotation {
 
 #[derive(Default)]
 struct Prepared {
-    model: Model,
+    geometry: Topology,
     annotations: Vec<Annotation>,
     identities: HashSet<String>,
 }
@@ -198,15 +198,16 @@ fn prepare_component(
             "sketch_endpoint_identity",
             &["point"],
         )?;
-        prepared.model.points.push(Point::new(
+        prepared.geometry.points.push(Point::new(
             point.clone(),
             if line.forward { start_point } else { end_point },
             None,
         ));
-        prepared.model.vertices.push(Vertex {
+        prepared.geometry.vertices.push(Vertex {
             id: vertex,
             point,
             tolerance: None,
+            native_ref: None,
         });
 
         let line_key = format!("{key}:{}", line.source_offset);
@@ -227,7 +228,7 @@ fn prepare_component(
             &edge,
             line.source_offset,
             "sketch_boundary_edge",
-            &["carrier", "start", "end"],
+            &["carrier", "ends.start", "ends.end"],
         )?;
         annotation(
             prepared,
@@ -237,29 +238,33 @@ fn prepare_component(
             "directed_sketch_boundary",
             &["owner_loop", "edge", "radial_next", "sense"],
         )?;
-        prepared.model.curves.push(Curve {
+        prepared.geometry.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(geometry)),
             parameter_range: Some(interval),
             source_object: None,
+            native_ref: None,
         });
-        prepared.model.edges.push(Edge {
+        prepared.geometry.edges.push(Edge {
             id: edge.clone(),
             carrier: EdgeCarrier::new(Some(curve), Some(line.interval))
                 .map_err(CodecError::malformed)?,
-            start: sheet_id(
-                "vertex",
-                format_args!("{key}:{}", line.start_id),
-                VertexId::mint,
-            )?,
-            end: sheet_id(
-                "vertex",
-                format_args!("{key}:{}", line.end_id),
-                VertexId::mint,
-            )?,
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                sheet_id(
+                    "vertex",
+                    format_args!("{key}:{}", line.start_id),
+                    VertexId::mint,
+                )?,
+                sheet_id(
+                    "vertex",
+                    format_args!("{key}:{}", line.end_id),
+                    VertexId::mint,
+                )?,
+            )),
             tolerance: None,
+            native_ref: None,
         });
-        prepared.model.coedges.push(Coedge {
+        prepared.geometry.coedges.push(Coedge {
             id: coedge.clone(),
             owner_loop: loop_id.clone(),
             edge,
@@ -271,6 +276,7 @@ fn prepare_component(
             },
             pcurves: Vec::new(),
             use_curve: None,
+            native_ref: None,
         });
         coedges.push(coedge);
     }
@@ -278,11 +284,7 @@ fn prepare_component(
         return Ok(false);
     };
     for (id, tag, fields) in [
-        (
-            body.as_str(),
-            "split_fill_component",
-            &["kind", "regions"][..],
-        ),
+        (body.as_str(), "split_fill_component", &["kind"][..]),
         (
             region.as_str(),
             "fill_component_region",
@@ -307,30 +309,32 @@ fn prepare_component(
     ] {
         annotation(prepared, existing, id, plan.source_offset, tag, fields)?;
     }
-    prepared.model.bodies.push(Body {
+    prepared.geometry.bodies.push(Body {
         id: body.clone(),
         kind: BodyKind::Sheet,
-        regions: vec![region.clone()],
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
-    prepared.model.regions.push(Region {
+    prepared.geometry.regions.push(Region {
         id: region.clone(),
         body,
         shells: vec![shell.clone()],
+        native_ref: None,
     });
     prepared
-        .model
+        .geometry
         .shells
-        .push(Shell::with_face(shell.clone(), region, face.clone()));
-    prepared.model.surfaces.push(Surface {
+        .push(Shell::new(shell.clone(), region));
+    prepared.geometry.surfaces.push(Surface {
         id: surface.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(carrier)),
         source_object: None,
+        native_ref: None,
     });
-    prepared.model.faces.push(Face {
+    prepared.geometry.faces.push(Face {
         id: face.clone(),
         shell,
         surface,
@@ -343,18 +347,20 @@ fn prepare_component(
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
-    prepared.model.loops.push(Loop {
+    prepared.geometry.loops.push(Loop {
         id: loop_id,
         face,
         boundary: LoopBoundary::Ring(
             LoopRing::new(coedges, Vec::new()).map_err(CodecError::malformed)?,
         ),
+        native_ref: None,
     });
     Ok(true)
 }
 
-fn append_model(target: &mut Model, source: &mut Model) {
+fn append_topology(target: &mut Topology, source: &mut Topology) {
     target.points.append(&mut source.points);
     target.vertices.append(&mut source.vertices);
     target.curves.append(&mut source.curves);
@@ -411,17 +417,17 @@ pub(super) fn emit(
                 }
             }
             if supported {
-                append_model(&mut prepared.model, &mut candidate.model);
+                append_topology(&mut prepared.geometry, &mut candidate.geometry);
                 prepared.annotations.append(&mut candidate.annotations);
                 prepared.identities.extend(candidate.identities);
             }
         }
     }
-    let bodies = prepared.model.bodies.len();
+    let bodies = prepared.geometry.bodies.len();
     if bodies == 0 {
         return Ok(0);
     }
-    ctx.charge_entities(u64_from_index(prepared.model.entity_count()), ADMIT)?;
+    ctx.charge_entities(u64_from_index(prepared.geometry.entity_count()), ADMIT)?;
     for note in prepared.annotations {
         crate::assemble::annotate(
             annotations,
@@ -435,7 +441,7 @@ pub(super) fn emit(
             annotations.derived(&note.id, field)?;
         }
     }
-    append_model(&mut ir.model, &mut prepared.model);
+    append_topology(&mut ir.geometry, &mut prepared.geometry);
     Ok(bodies)
 }
 

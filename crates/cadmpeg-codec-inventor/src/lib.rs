@@ -16,6 +16,7 @@ mod coverage;
 mod database;
 mod decode;
 mod design;
+mod design_v11;
 mod dialect;
 mod drawing;
 mod external_reference;

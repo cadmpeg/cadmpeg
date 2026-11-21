@@ -17,7 +17,6 @@ fn one_row_index() -> Container<'static> {
     data.extend_from_slice(b"Version ");
     Container {
         data: data.into(),
-        physical_size: 32,
         layout: crate::container::test_modern_layout(6),
         entries: vec![DirEntry {
             name: "/Root/UG_PART/DisplayJT".to_string(),

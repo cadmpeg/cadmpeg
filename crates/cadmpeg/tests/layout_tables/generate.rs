@@ -292,6 +292,38 @@ pub(crate) const GENERATED_LAYOUT_RS: &[(&str, &str)] = &[
     ("zip", "crates/cadmpeg-container/src/layout.rs"),
 ];
 
+pub(crate) fn external_layout_files(
+    format: &str,
+    rendered: &mut String,
+) -> Result<Vec<(String, String)>, String> {
+    if format != "f3d" {
+        return Ok(Vec::new());
+    }
+    let mut files = Vec::new();
+    for module in [
+        "base_feature_class_452_262_compact",
+        "base_feature_class_452_262_expanded",
+    ] {
+        let opening = format!("pub(crate) mod {module} {{\n");
+        let start = rendered.find(&opening).ok_or_else(|| {
+            format!("external layout module {module} is absent from generated output")
+        })?;
+        let body_start = start + opening.len();
+        let body_end = body_start
+            + rendered[body_start..].find("\n}").ok_or_else(|| {
+                format!("external layout module {module} has no closing boundary")
+            })?;
+        let mut body = rendered.lines().next().unwrap_or_default().to_string();
+        body.push('\n');
+        body.push_str(&rendered[body_start..body_end]);
+        body.push('\n');
+        files.push((format!("layout/{module}.rs"), rustfmt_source(&body)));
+        rendered.replace_range(start..body_end + 2, &format!("pub(crate) mod {module};"));
+    }
+    *rendered = rustfmt_source(rendered);
+    Ok(files)
+}
+
 const RUST_KEYWORDS: &[&str] = &[
     "Self", "abstract", "as", "async", "await", "become", "box", "break", "const", "continue",
     "crate", "do", "dyn", "else", "enum", "extern", "false", "final", "fn", "for", "if", "impl",
@@ -357,6 +389,16 @@ fn endian_phrase(endian: Option<&str>) -> Option<&'static str> {
 
 fn fence_text(text: &str) -> String {
     normalize(text).replace("```", "'''")
+}
+
+fn record_doc(record: &Record, text: &str) -> String {
+    if record.rust_doc_attributes {
+        format!("#[doc = {text:?}]")
+    } else if text.is_empty() {
+        "///".to_owned()
+    } else {
+        format!("/// {text}")
+    }
 }
 
 /// Turn one validated table into the checked-in `layout.rs` source.
@@ -449,8 +491,14 @@ fn emit_layout_source(file: &LayoutFile, reads: &read_set::Reads) -> Result<Stri
             if reads.contains(&record.name, &const_name) {
                 writeln!(
                     fields_out,
-                    "    /// Offset of `{0}` ({ty_part}). Spec §{1}.",
-                    field.name, record.section
+                    "    {}",
+                    record_doc(
+                        record,
+                        &format!(
+                            "Offset of `{}` ({ty_part}). Spec §{}.",
+                            field.name, record.section
+                        )
+                    )
                 )?;
                 if reads.test_only(&record.name, &const_name) {
                     writeln!(fields_out, "    #[cfg(test)]")?;
@@ -476,8 +524,14 @@ fn emit_layout_source(file: &LayoutFile, reads: &read_set::Reads) -> Result<Stri
                         if reads.contains(&record.name, &value_name) {
                             writeln!(
                                 fields_out,
-                                "    /// Stated value of `{0}` (`{1}`). Spec §{2}.",
-                                field.name, field.ty, record.section
+                                "    {}",
+                                record_doc(
+                                    record,
+                                    &format!(
+                                        "Stated value of `{}` (`{}`). Spec §{}.",
+                                        field.name, field.ty, record.section
+                                    )
+                                )
                             )?;
                             if reads.test_only(&record.name, &value_name) {
                                 writeln!(fields_out, "    #[cfg(test)]")?;
@@ -490,52 +544,116 @@ fn emit_layout_source(file: &LayoutFile, reads: &read_set::Reads) -> Result<Stri
             }
         }
 
+        for (name, read) in [
+            ("TEMPLATE", reads.contains(&record.name, "TEMPLATE")),
+            ("UNSTATED", reads.contains(&record.name, "UNSTATED")),
+        ] {
+            if !read {
+                continue;
+            }
+            let (template, unstated) = match record_template(file, record) {
+                Ok(parts) => parts,
+                Err(message) => {
+                    errors.push(format!("{at}: {message}"));
+                    continue;
+                }
+            };
+            let (doc, ty, value) = if name == "TEMPLATE" {
+                (
+                    "The record with each stated field value at its offset and zero bytes elsewhere.",
+                    format!("[u8; {}]", template.len()),
+                    rust_byte_array(&template),
+                )
+            } else {
+                (
+                    "The `(offset, width)` of each field with no stated value, the header included.",
+                    format!("[(usize, usize); {}]", unstated.len()),
+                    format!(
+                        "[{}]",
+                        unstated
+                            .iter()
+                            .map(|(offset, width)| format!("({offset}, {width})"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                )
+            };
+            writeln!(
+                fields_out,
+                "    {}",
+                record_doc(record, &format!("{doc} Spec §{}.", record.section))
+            )?;
+            if reads.test_only(&record.name, name) {
+                writeln!(fields_out, "    #[cfg(test)]")?;
+            }
+            writeln!(fields_out, "    pub(crate) const {name}: {ty} = {value};")?;
+        }
+
         if fields_out.is_empty() && !reads.contains(&record.name, "LEN") {
             continue;
         }
         writeln!(
             modules,
-            "/// Byte offsets for the `{}` record.",
-            record.name
+            "{}",
+            record_doc(
+                record,
+                &format!("Byte offsets for the `{}` record.", record.name)
+            )
         )?;
-        writeln!(modules, "///")?;
+        writeln!(modules, "{}", record_doc(record, ""))?;
         match record.size {
             Some(size) => {
                 writeln!(
                     modules,
-                    "/// Spec §{}. Record length {size} B.",
-                    record.section
+                    "{}",
+                    record_doc(
+                        record,
+                        &format!("Spec §{}. Record length {size} B.", record.section)
+                    )
                 )?;
             }
             None => {
-                writeln!(modules, "/// Spec §{}.", record.section)?;
+                writeln!(
+                    modules,
+                    "{}",
+                    record_doc(record, &format!("Spec §{}.", record.section))
+                )?;
             }
         }
         if !record.dialects.is_empty() {
-            writeln!(modules, "///")?;
+            writeln!(modules, "{}", record_doc(record, ""))?;
             writeln!(
                 modules,
-                "/// Dialects: {}.",
-                record
-                    .dialects
-                    .iter()
-                    .map(|id| format!("`{id}`"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                "{}",
+                record_doc(
+                    record,
+                    &format!(
+                        "Dialects: {}.",
+                        record
+                            .dialects
+                            .iter()
+                            .map(|id| format!("`{id}`"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                )
             )?;
         }
         if !record.note.trim().is_empty() {
-            writeln!(modules, "///")?;
-            writeln!(modules, "/// ```text")?;
-            writeln!(modules, "/// {}", fence_text(&record.note))?;
-            writeln!(modules, "/// ```")?;
+            writeln!(modules, "{}", record_doc(record, ""))?;
+            writeln!(modules, "{}", record_doc(record, "```text"))?;
+            writeln!(modules, "{}", record_doc(record, &fence_text(&record.note)))?;
+            writeln!(modules, "{}", record_doc(record, "```"))?;
         }
         writeln!(modules, "pub(crate) mod {} {{", record.name)?;
         if let Some(size) = record.size.filter(|_| reads.contains(&record.name, "LEN")) {
             writeln!(
                 modules,
-                "    /// Record length in bytes. Spec §{}.",
-                record.section
+                "    {}",
+                record_doc(
+                    record,
+                    &format!("Record length in bytes. Spec §{}.", record.section)
+                )
             )?;
             if reads.test_only(&record.name, "LEN") {
                 writeln!(modules, "    #[cfg(test)]")?;
@@ -638,6 +756,147 @@ fn emit_layout_source(file: &LayoutFile, reads: &read_set::Reads) -> Result<Stri
     Ok(rustfmt_source(&out))
 }
 
+/// A record template and the `(offset, width)` of its unstated slots.
+type RecordTemplate = (Vec<u8>, Vec<(usize, usize)>);
+
+/// A byte record's stated bytes: the record with each field that states a
+/// `value` written at its offset and zero bytes elsewhere, and the
+/// `(offset, width)` of every other field in offset order.
+fn record_template(file: &LayoutFile, record: &Record) -> Result<RecordTemplate, String> {
+    let size = record
+        .size
+        .ok_or("a record template needs the record size")?;
+    let size = usize::try_from(size).map_err(|_| "record size exceeds usize")?;
+    let custom: BTreeMap<String, u64> = file
+        .types
+        .iter()
+        .map(|declared| (declared.name.clone(), declared.bytes))
+        .collect();
+    let mut template = vec![0u8; size];
+    let mut unstated = Vec::new();
+    for field in &record.fields {
+        let offset = field
+            .offset
+            .ok_or_else(|| format!("field `{}` has no offset", field.name))?;
+        let width = type_width(&field.ty, &custom)?
+            .ok_or_else(|| format!("field `{}` has no fixed width", field.name))?;
+        let (offset, width) = (
+            usize::try_from(offset).map_err(|_| "offset exceeds usize")?,
+            usize::try_from(width).map_err(|_| "width exceeds usize")?,
+        );
+        let slot = template
+            .get_mut(offset..offset + width)
+            .ok_or_else(|| format!("field `{}` ends past the record", field.name))?;
+        match &field.value {
+            Some(raw) => {
+                let big = match resolved_endian(file, record, field) {
+                    Some("big") => true,
+                    Some("little") | None => false,
+                    Some(other) => return Err(format!("field `{}` is {other}-endian", field.name)),
+                };
+                slot.copy_from_slice(&field_value_bytes(raw, &field.ty, width, big)?);
+            }
+            None => unstated.push((offset, width)),
+        }
+    }
+    unstated.sort_unstable();
+    Ok((template, unstated))
+}
+
+/// The bytes of a stated field value of type `ty`, `width` bytes wide.
+fn field_value_bytes(
+    raw: &toml::Value,
+    ty: &str,
+    width: usize,
+    big: bool,
+) -> Result<Vec<u8>, String> {
+    let element = ty.split_once('[').map_or(ty, |(head, _)| head);
+    let integer = || {
+        raw.as_integer()
+            .ok_or_else(|| "integer value required".to_string())
+    };
+    let float = || {
+        raw.as_float()
+            .or_else(|| {
+                raw.as_integer()
+                    .and_then(cadmpeg_core::convert::f64_from_i64)
+            })
+            .ok_or_else(|| "float value required".to_string())
+    };
+    let ordered = |mut bytes: Vec<u8>| {
+        if big {
+            bytes.reverse();
+        }
+        bytes
+    };
+    let fits = |error: std::num::TryFromIntError| format!("value does not fit `{ty}`: {error}");
+    let bytes = match element {
+        "bytes" => match raw {
+            toml::Value::String(text) => text.as_bytes().to_vec(),
+            toml::Value::Array(items) => items
+                .iter()
+                .map(|item| {
+                    item.as_integer()
+                        .and_then(|n| u8::try_from(n).ok())
+                        .ok_or_else(|| format!("byte value {item} is out of 0..=255"))
+                })
+                .collect::<Result<Vec<u8>, _>>()?,
+            _ => return Err("bytes value must be a string or an array of integers".into()),
+        },
+        "u8" | "enum8" | "bool8" | "char" => vec![u8::try_from(integer()?).map_err(fits)?],
+        "i8" => i8::try_from(integer()?)
+            .map_err(fits)?
+            .to_le_bytes()
+            .to_vec(),
+        "u16" => ordered(
+            u16::try_from(integer()?)
+                .map_err(fits)?
+                .to_le_bytes()
+                .to_vec(),
+        ),
+        "i16" => ordered(
+            i16::try_from(integer()?)
+                .map_err(fits)?
+                .to_le_bytes()
+                .to_vec(),
+        ),
+        "u32" => ordered(
+            u32::try_from(integer()?)
+                .map_err(fits)?
+                .to_le_bytes()
+                .to_vec(),
+        ),
+        "i32" => ordered(
+            i32::try_from(integer()?)
+                .map_err(fits)?
+                .to_le_bytes()
+                .to_vec(),
+        ),
+        "u64" => ordered(
+            u64::try_from(integer()?)
+                .map_err(fits)?
+                .to_le_bytes()
+                .to_vec(),
+        ),
+        "i64" => ordered(integer()?.to_le_bytes().to_vec()),
+        "f32" => ordered(
+            cadmpeg_core::convert::f32_from_f64(float()?)
+                .ok_or("value does not fit `f32`")?
+                .to_le_bytes()
+                .to_vec(),
+        ),
+        "f64" => ordered(float()?.to_le_bytes().to_vec()),
+        _ => return Err(format!("value is not supported on type `{ty}`")),
+    };
+    if bytes.len() != width {
+        return Err(format!(
+            "value is {} bytes, type `{ty}` is {width} bytes",
+            bytes.len()
+        ));
+    }
+    Ok(bytes)
+}
+
 /// rustfmt the emitter output so checked-in `layout.rs` files stay equal to
 /// `cargo fmt` (long byte arrays wrap) and to `UPDATE_LAYOUT_CODE=1`.
 fn rustfmt_source(src: &str) -> String {
@@ -667,13 +926,153 @@ fn rustfmt_source(src: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::emit_layout_rs;
+    use super::{emit_layout_rs, external_layout_files};
     use crate::LayoutFile;
+
+    #[test]
+    fn external_layout_modules_preserve_items_and_test_gates() {
+        let mut source = "// SPDX-License-Identifier: Apache-2.0\npub(crate) mod base_feature_class_452_262_compact {\n    #[cfg(test)]\n    pub(crate) const VALUE: usize = 7;\n}\npub(crate) mod base_feature_class_452_262_expanded {\n    pub(crate) const VALUE: usize = 11;\n}\n".to_string();
+        let files = external_layout_files("f3d", &mut source).unwrap();
+        assert_eq!(files.len(), 2);
+        let root = syn::parse_file(&source).unwrap();
+        assert_eq!(root.items.len(), 2);
+        assert!(root
+            .items
+            .iter()
+            .all(|item| matches!(item, syn::Item::Mod(module) if module.content.is_none())));
+        for ((_, body), expected) in files.iter().zip([7, 11]) {
+            let file = syn::parse_file(body).unwrap();
+            assert_eq!(file.items.len(), 1);
+            let syn::Item::Const(item) = &file.items[0] else {
+                panic!("constant item required")
+            };
+            let syn::Expr::Lit(value) = item.expr.as_ref() else {
+                panic!("literal value required")
+            };
+            let syn::Lit::Int(value) = &value.lit else {
+                panic!("integer value required")
+            };
+            assert_eq!(value.base10_parse::<u32>().unwrap(), expected);
+            assert_eq!(item.attrs.len(), usize::from(expected == 7));
+        }
+    }
+
+    #[test]
+    fn external_layout_modules_reject_missing_boundaries() {
+        for input in ["", "pub(crate) mod base_feature_class_452_262_compact {\n"] {
+            assert!(external_layout_files("f3d", &mut input.to_string()).is_err());
+        }
+        let mut other = "pub(crate) mod ordinary {}".to_string();
+        let original = other.clone();
+        assert!(external_layout_files("demo", &mut other)
+            .unwrap()
+            .is_empty());
+        assert_eq!(other, original);
+    }
+
+    fn integers(expr: &syn::Expr) -> Result<Vec<usize>, syn::Error> {
+        match expr {
+            syn::Expr::Array(array) => array.elems.iter().try_fold(Vec::new(), |mut all, e| {
+                all.extend(integers(e)?);
+                Ok(all)
+            }),
+            syn::Expr::Tuple(tuple) => tuple.elems.iter().try_fold(Vec::new(), |mut all, e| {
+                all.extend(integers(e)?);
+                Ok(all)
+            }),
+            syn::Expr::Lit(syn::ExprLit {
+                lit: syn::Lit::Int(value),
+                ..
+            }) => Ok(vec![value.base10_parse()?]),
+            _ => Err(syn::Error::new(
+                proc_macro2::Span::call_site(),
+                "integer literal",
+            )),
+        }
+    }
+
+    #[test]
+    fn a_record_template_lays_out_stated_values_and_lists_unstated_slots(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let file: LayoutFile = toml::from_str(
+            r#"
+schema = 1
+format = "demo"
+spec = "demo.md"
+endianness = "little"
+[[record]]
+name = "linked"
+kind = "byte"
+section = "1"
+anchor = "linked"
+size = 26
+[[record.field]]
+name = "header"
+type = "bytes[11]"
+offset = 0
+source = "spec"
+anchor = "header"
+[[record.field]]
+name = "count"
+type = "u32"
+offset = 11
+value = 7
+source = "spec"
+anchor = "count"
+[[record.field]]
+name = "target"
+type = "bytes[11]"
+offset = 15
+source = "spec"
+anchor = "target"
+"#,
+        )?;
+        let temporary = tempfile::tempdir()?;
+        std::fs::write(
+            temporary.path().join("lib.rs"),
+            "use crate::layout::linked as l; const T: [u8; 26] = l::TEMPLATE; #[cfg(test)] mod tests { const U: [(usize, usize); 2] = super::l::UNSTATED; }",
+        )?;
+        let rendered =
+            emit_layout_rs(&file, temporary.path()).map_err(|errors| errors.join("\n"))?;
+        let mut expected = [0u8; 26];
+        expected[11] = 7;
+        let syntax = syn::parse_file(&rendered)?;
+        let module = syntax
+            .items
+            .iter()
+            .find_map(|item| match item {
+                syn::Item::Mod(module) if module.ident == "linked" => module.content.as_ref(),
+                _ => None,
+            })
+            .ok_or("module `linked`")?;
+        let constant = |name: &str| {
+            module.1.iter().find_map(|item| match item {
+                syn::Item::Const(constant) if constant.ident == name => Some(constant),
+                _ => None,
+            })
+        };
+        let template = constant("TEMPLATE").ok_or("TEMPLATE")?;
+        assert_eq!(
+            integers(&template.expr)?,
+            expected.map(usize::from).to_vec()
+        );
+        assert!(template
+            .attrs
+            .iter()
+            .all(|attribute| !attribute.path().is_ident("cfg")));
+        let unstated = constant("UNSTATED").ok_or("UNSTATED")?;
+        assert!(unstated
+            .attrs
+            .iter()
+            .any(|attribute| attribute.path().is_ident("cfg")));
+        assert_eq!(integers(&unstated.expr)?, [0, 11, 15, 11]);
+        Ok(())
+    }
 
     #[test]
     fn layout_emission_filters_records_values_tokens_and_test_reads(
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let file: LayoutFile = toml::from_str(
+        let mut file: LayoutFile = toml::from_str(
             r#"
 schema = 1
 format = "demo"
@@ -735,6 +1134,17 @@ anchor = "tag"
         assert!(!rendered.contains("mod unread_record"));
         assert!(!rendered.contains("UNUSED_TAG"));
         assert!(!rendered.contains("allow("));
+        assert!(rendered.contains("/// Byte offsets for the `header` record."));
+        file.records[0].rust_doc_attributes = true;
+        file.records[0].note = "The \"header\" note.".to_owned();
+        let attributed =
+            emit_layout_rs(&file, temporary.path()).map_err(|errors| errors.join("\n"))?;
+        assert!(attributed.contains("#[doc = \"Byte offsets for the `header` record.\"]"));
+        assert!(attributed.contains("#[doc = \"The \\\"header\\\" note.\"]"));
+        assert!(attributed.contains("#[doc = \"Record length in bytes. Spec §1.\"]"));
+        assert!(attributed.contains("#[doc = \"Stated value of `magic` (`u8`). Spec §1.\"]"));
+        assert!(!attributed.contains("/// Byte offsets for the `header` record."));
+        syn::parse_file(&attributed)?;
         Ok(())
     }
 }

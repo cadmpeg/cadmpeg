@@ -63,17 +63,17 @@ fn closed_cylinder_gets_derived_seam() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir().model.faces[0].loops.len(), 1);
-    assert_eq!(result.ir().model.loops[0].coedges().len(), 4);
-    assert_eq!(result.ir().model.pcurves.len(), 4);
+    assert_eq!(result.ir().geometry.faces[0].loops.len(), 1);
+    assert_eq!(result.ir().geometry.loops[0].coedges().len(), 4);
+    assert_eq!(result.ir().geometry.pcurves.len(), 4);
     assert!(result
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .all(|coedge| !coedge.pcurves.is_empty()));
-    assert_eq!(result.ir().model.edges.len(), 3);
-    assert!(result.ir().model.curves.iter().any(|curve| matches!(
+    assert_eq!(result.ir().geometry.edges.len(), 3);
+    assert!(result.ir().geometry.curves.iter().any(|curve| matches!(
         curve.geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
     )));
@@ -99,7 +99,7 @@ fn sentinel_vertices_without_partners_withhold_the_rim_edges() {
         )
         .unwrap();
 
-    assert_eq!(decoded.ir().model.faces.len(), 0);
+    assert_eq!(decoded.ir().geometry.faces.len(), 0);
     assert_eq!(
         decoded
             .report()
@@ -144,8 +144,11 @@ fn a_closed_circle_with_conflicting_markers_has_no_range() {
         )
         .unwrap();
 
-    let edge = &decoded.ir().model.edges[0];
-    assert_eq!(edge.start, edge.end);
+    let edge = &decoded.ir().geometry.edges[0];
+    assert_eq!(
+        edge.ends.as_ref().unwrap().start,
+        edge.ends.as_ref().unwrap().end
+    );
     assert!(edge.param_range().is_none());
     assert!(decoded
         .report()
@@ -183,20 +186,23 @@ fn closed_circle_edge_gets_a_derived_seam_vertex() {
         )
         .unwrap();
 
-    assert_eq!(decoded.ir().model.faces.len(), 1);
-    assert_eq!(decoded.ir().model.loops[0].coedges().len(), 1);
-    let edge = &decoded.ir().model.edges[0];
-    assert_eq!(edge.start, edge.end);
+    assert_eq!(decoded.ir().geometry.faces.len(), 1);
+    assert_eq!(decoded.ir().geometry.loops[0].coedges().len(), 1);
+    let edge = &decoded.ir().geometry.edges[0];
+    assert_eq!(
+        edge.ends.as_ref().unwrap().start,
+        edge.ends.as_ref().unwrap().end
+    );
     let vertex = decoded
         .ir()
-        .model
+        .geometry
         .vertices
         .iter()
-        .find(|vertex| vertex.id == edge.start)
+        .find(|vertex| vertex.id == edge.ends.as_ref().unwrap().start)
         .unwrap();
     let point = decoded
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .find(|point| point.id == vertex.point)
@@ -210,7 +216,7 @@ fn closed_circle_edge_gets_a_derived_seam_vertex() {
         [1500.0, 2000.0, 0.0]
     );
     assert!(
-        matches!(decoded.ir().model.pcurves[0].geometry, cadmpeg_ir::geometry::pcurve::PcurveGeometry::Circle(circle_pcurve)
+        matches!(decoded.ir().geometry.pcurves[0].geometry, cadmpeg_ir::geometry::pcurve::PcurveGeometry::Circle(circle_pcurve)
                 if {
                     let center = circle_pcurve.center();
         let y_axis = circle_pcurve.y_axis();
@@ -252,9 +258,9 @@ fn oblique_cylinder_section_gets_an_exact_polar_harmonic_pcurve() {
         )
         .unwrap();
 
-    assert_eq!(decoded.ir().model.pcurves.len(), 1);
+    assert_eq!(decoded.ir().geometry.pcurves.len(), 1);
     assert!(
-        matches!(decoded.ir().model.pcurves[0].geometry, cadmpeg_ir::geometry::pcurve::PcurveGeometry::PolarHarmonic(polar_harmonic_pcurve)
+        matches!(decoded.ir().geometry.pcurves[0].geometry, cadmpeg_ir::geometry::pcurve::PcurveGeometry::PolarHarmonic(polar_harmonic_pcurve)
                 if {
                     let radial_center = polar_harmonic_pcurve.radial_center();
         let radial_cos = polar_harmonic_pcurve.radial_cos();
@@ -300,7 +306,7 @@ fn coaxial_cone_circle_preserves_parameter_direction() {
         )
         .unwrap();
     let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line_pcurve) =
-        decoded.ir().model.pcurves[0].geometry
+        decoded.ir().geometry.pcurves[0].geometry
     else {
         panic!("expected line pcurve");
     };
@@ -341,7 +347,7 @@ fn coaxial_torus_circle_gets_constant_minor_angle_pcurve() {
         )
         .unwrap();
     let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line_pcurve) =
-        decoded.ir().model.pcurves[0].geometry
+        decoded.ir().geometry.pcurves[0].geometry
     else {
         panic!("expected line pcurve");
     };
@@ -366,9 +372,9 @@ fn a_great_circle_pcurve_keeps_its_latitude_within_the_poles() {
             .decode(&mut cur, &DecodeOptions::default())
             .unwrap(),
     );
-    let model = &result.ir().model;
+    let geometry = &result.ir().geometry;
     let Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Sphere(sphere)) =
-        model.surfaces[0].geometry.solved()
+        geometry.surfaces[0].geometry.solved()
     else {
         panic!("the fixture's support is a sphere");
     };
@@ -385,12 +391,12 @@ fn a_great_circle_pcurve_keeps_its_latitude_within_the_poles() {
         )
     };
     let position = |vertex: &cadmpeg_ir::ids::VertexId| {
-        let vertex = model
+        let vertex = geometry
             .vertices
             .iter()
             .find(|item| &item.id == vertex)
             .unwrap();
-        model
+        geometry
             .points
             .iter()
             .find(|point| point.id == vertex.point)
@@ -398,13 +404,13 @@ fn a_great_circle_pcurve_keeps_its_latitude_within_the_poles() {
             .position()
             .get()
     };
-    for coedge in &model.coedges {
-        let edge = model
+    for coedge in &geometry.coedges {
+        let edge = geometry
             .edges
             .iter()
             .find(|edge| edge.id == coedge.edge)
             .unwrap();
-        let Some(circle) = model
+        let Some(circle) = geometry
             .curves
             .iter()
             .find(|curve| edge.curve() == Some(&curve.id))
@@ -417,7 +423,7 @@ fn a_great_circle_pcurve_keeps_its_latitude_within_the_poles() {
         else {
             continue;
         };
-        let pcurve = model
+        let pcurve = geometry
             .pcurves
             .iter()
             .find(|pcurve| pcurve.id == coedge.pcurves[0].pcurve)
@@ -435,13 +441,17 @@ fn a_great_circle_pcurve_keeps_its_latitude_within_the_poles() {
         // Without a range an edge runs forward along its circle.
         let [first, last] = edge.param_range().map_or_else(
             || {
-                let start = angle(&edge.start);
-                let sweep = (angle(&edge.end) - start).rem_euclid(std::f64::consts::TAU);
+                let start = angle(&edge.ends.as_ref().unwrap().start);
+                let sweep = (angle(&edge.ends.as_ref().unwrap().end) - start)
+                    .rem_euclid(std::f64::consts::TAU);
                 [start, start + sweep]
             },
             cadmpeg_ir::units::FiniteVector::get,
         );
-        for (parameter, vertex) in [(first, &edge.start), (last, &edge.end)] {
+        for (parameter, vertex) in [
+            (first, &edge.ends.as_ref().unwrap().start),
+            (last, &edge.ends.as_ref().unwrap().end),
+        ] {
             let (u, v) = (
                 origin.u + parameter * direction.u,
                 origin.v + parameter * direction.v,
@@ -463,36 +473,42 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
             .decode(&mut cur, &DecodeOptions::default())
             .unwrap(),
     );
-    assert_eq!(result.ir().model.edges.len(), 4);
-    assert_eq!(result.ir().model.vertices.len(), 3);
-    assert_eq!(result.ir().model.points.len(), 3);
-    assert_eq!(result.ir().model.loops[0].coedges().len(), 4);
-    assert_eq!(result.ir().model.pcurves.len(), 4);
-    let model = &result.ir().model;
+    assert_eq!(result.ir().geometry.edges.len(), 4);
+    assert_eq!(result.ir().geometry.vertices.len(), 3);
+    assert_eq!(result.ir().geometry.points.len(), 3);
+    assert_eq!(result.ir().geometry.loops[0].coedges().len(), 4);
+    assert_eq!(result.ir().geometry.pcurves.len(), 4);
+    let geometry = &result.ir().geometry;
     let ends = |id: &cadmpeg_ir::ids::CoedgeId| {
-        let coedge = model
+        let coedge = geometry
             .coedges
             .iter()
             .find(|coedge| &coedge.id == id)
             .unwrap();
-        let edge = model
+        let edge = geometry
             .edges
             .iter()
             .find(|edge| edge.id == coedge.edge)
             .unwrap();
         match coedge.sense {
-            cadmpeg_ir::topology::Sense::Forward => (edge.start.clone(), edge.end.clone()),
-            cadmpeg_ir::topology::Sense::Reversed => (edge.end.clone(), edge.start.clone()),
+            cadmpeg_ir::topology::Sense::Forward => (
+                edge.ends.as_ref().unwrap().start.clone(),
+                edge.ends.as_ref().unwrap().end.clone(),
+            ),
+            cadmpeg_ir::topology::Sense::Reversed => (
+                edge.ends.as_ref().unwrap().end.clone(),
+                edge.ends.as_ref().unwrap().start.clone(),
+            ),
         }
     };
-    let ring = model.loops[0].coedges();
+    let ring = geometry.loops[0].coedges();
     for (index, id) in ring.iter().enumerate() {
         let next = &ring[(index + 1) % ring.len()];
         assert_eq!(ends(id).1, ends(next).0, "{id} -> {next}");
     }
     let pole = result
         .ir()
-        .model
+        .geometry
         .pcurves
         .iter()
         .find(|pcurve| pcurve.id.as_str().contains("sphere-seam"))
@@ -513,7 +529,7 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
     );
     let seam = result
         .ir()
-        .model
+        .geometry
         .edges
         .iter()
         .find(|edge| {
@@ -526,10 +542,13 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
                 == Some("derived_sphere_seam")
         })
         .expect("sphere seam");
-    assert_eq!(seam.start, seam.end);
+    assert_eq!(
+        seam.ends.as_ref().unwrap().start,
+        seam.ends.as_ref().unwrap().end
+    );
     let curve = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| seam.curve() == Some(&curve.id))
@@ -543,14 +562,14 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
     );
     let vertex = result
         .ir()
-        .model
+        .geometry
         .vertices
         .iter()
-        .find(|vertex| vertex.id == seam.start)
+        .find(|vertex| vertex.id == seam.ends.as_ref().unwrap().start)
         .unwrap();
     let point = result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .find(|point| point.id == vertex.point)
@@ -577,7 +596,7 @@ fn existing_sphere_seam_endpoint_is_normalized_to_axis_pole() {
     );
     let seam_curve = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| {
@@ -592,21 +611,21 @@ fn existing_sphere_seam_endpoint_is_normalized_to_axis_pole() {
         .expect("existing sphere seam curve");
     let seam = result
         .ir()
-        .model
+        .geometry
         .edges
         .iter()
         .find(|edge| edge.curve() == Some(&seam_curve.id))
         .expect("existing sphere seam edge");
     let vertex = result
         .ir()
-        .model
+        .geometry
         .vertices
         .iter()
-        .find(|vertex| vertex.id == seam.start)
+        .find(|vertex| vertex.id == seam.ends.as_ref().unwrap().start)
         .expect("sphere seam pole vertex");
     let point = result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .find(|point| point.id == vertex.point)
@@ -633,7 +652,7 @@ fn nurbs_boundary_curve_gets_isoparametric_pcurve() {
             .decode(&mut cur, &DecodeOptions::default())
             .unwrap(),
     );
-    assert!(result.ir().model.pcurves.iter().any(|pcurve| {
+    assert!(result.ir().geometry.pcurves.iter().any(|pcurve| {
         result
             .source_fidelity()
             .annotations
@@ -669,7 +688,7 @@ fn linear_nurbs_surface_boundary_gets_affine_line_pcurve() {
             )
             .unwrap(),
     );
-    assert!(result.ir().model.pcurves.iter().any(|pcurve| {
+    assert!(result.ir().geometry.pcurves.iter().any(|pcurve| {
         result
             .source_fidelity()
             .annotations
@@ -686,7 +705,7 @@ fn linear_nurbs_surface_boundary_gets_affine_line_pcurve() {
     assert_eq!(
         result
             .ir()
-            .model
+            .geometry
             .edges
             .iter()
             .find(|edge| edge.curve().is_some_and(|id| id.as_str().ends_with("#192")))
@@ -728,7 +747,7 @@ fn bounded_planar_line_pcurve_keeps_the_curve_parameterization() {
     assert_eq!(
         result
             .ir()
-            .model
+            .geometry
             .edges
             .iter()
             .find(|edge| edge.curve().is_some_and(|id| id.as_str().ends_with("#192")))
@@ -769,7 +788,7 @@ fn rational_nurbs_surface_row_gets_isoparametric_pcurve() {
             )
             .unwrap(),
     );
-    assert!(result.ir().model.pcurves.iter().any(|pcurve| {
+    assert!(result.ir().geometry.pcurves.iter().any(|pcurve| {
         result
             .source_fidelity()
             .annotations
@@ -844,5 +863,5 @@ fn geometry_isocurve_route_derives_pcurves() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(&source), &options)
         .unwrap();
-    assert!(!decoded.ir().model.pcurves.is_empty());
+    assert!(!decoded.ir().geometry.pcurves.is_empty());
 }

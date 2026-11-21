@@ -350,6 +350,7 @@ pub(crate) fn bind_mirror_constructions(
                 bytes,
                 records,
                 crate::design::decode::operands::FaceOperandFrame {
+                    registered_frame: None,
                     scope: &scopes[index],
                     scope_reference_ordinal: plane_group.scope_reference_ordinal,
                     group_ownership: Some((plane_group.record_index, 0)),
@@ -466,6 +467,7 @@ pub(crate) fn bind_mirror_constructions(
                 plane_scope_record_index,
                 plane_selection_record_index,
                 plane: None,
+                construction_plane_scope: None,
                 assumed_plane_scope: None,
             });
             if let scope::DesignScopePayloadMut::Mirror(slot) = scopes[index].payload_mut() {

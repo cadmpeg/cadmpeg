@@ -13,11 +13,11 @@
         "startTimeCode": "1",
         "upAxis": "Y"
       },
-      "compression": "stored",
+      "kind": "stored",
       "name": "layer",
       "role": "document",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 1093
       }
     },
@@ -25,49 +25,52 @@
       "attributes": {
         "arc": "subLayers"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "./lighting.usda",
       "role": "external-reference",
       "size": {
-        "form": "unreported"
+        "kind": "unreported"
       }
     },
     {
       "attributes": {
         "arc": "payload"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "./robot/payload.usd",
       "role": "external-reference",
       "size": {
-        "form": "unreported"
+        "kind": "unreported"
       }
     },
     {
       "attributes": {
         "arc": "references"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "shelf.usda",
       "role": "external-reference",
       "size": {
-        "form": "unreported"
+        "kind": "unreported"
       }
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "header": "#usda 1.0"
         },
         "dialect": "usd:usda-1.0"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "prim types: Camera 1, Cube 1, DistantLight 1, Mesh 2, Xform 3, untyped 3"
   ]

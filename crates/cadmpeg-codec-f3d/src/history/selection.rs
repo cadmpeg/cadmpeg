@@ -296,9 +296,94 @@ pub(super) fn bind_face_selection(
         return;
     };
     if native == &scope.id {
-        if let Some(resolved) =
-            crate::design::feature_project::direct_face_selection(scope, operands)
+        let split_target = if scope.kind()
+            == crate::records::feature::scope::DesignFeatureKind::SplitFace
         {
+            let Some(stream) = crate::ids::native_stream(&scope.id) else {
+                return;
+            };
+            let scoped = groups.iter().filter(|group| {
+                crate::ids::native_stream(&group.id) == Some(stream)
+                    && group.scope_record_index == scope.record_index
+            });
+            let mut targets = scoped.filter(|group| group.role() == DesignOperandRole::ROLE_0X10);
+            let Some(target) = targets.next() else {
+                return;
+            };
+            if targets.next().is_some()
+                || target.scope_reference_ordinal == 0
+                || usize::try_from(target.scope_reference_ordinal)
+                    .ok()
+                    .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
+                    != Some(&target.record_index)
+                || groups
+                    .iter()
+                    .filter(|group| {
+                        crate::ids::native_stream(&group.id) == Some(stream)
+                            && group.scope_record_index == scope.record_index
+                            && group.record_index == target.record_index
+                    })
+                    .count()
+                    != 1
+            {
+                return;
+            }
+            if target.members().is_empty()
+                || target
+                    .members()
+                    .iter()
+                    .enumerate()
+                    .any(|(ordinal, member)| {
+                        let Ok(ordinal) = u32::try_from(ordinal) else {
+                            return true;
+                        };
+                        operands
+                            .iter()
+                            .filter(|operand| {
+                                crate::ids::native_stream(&operand.id) == Some(stream)
+                                    && operand.scope_record_index == scope.record_index
+                                    && operand.scope_reference_ordinal
+                                        == target.scope_reference_ordinal
+                                    && operand.group_record_index() == Some(target.record_index)
+                                    && operand.group_member_ordinal() == Some(ordinal)
+                                    && operand.record_index() == member.value
+                            })
+                            .count()
+                            != 1
+                    })
+            {
+                return;
+            }
+            Some(target)
+        } else {
+            None
+        };
+        let selected =
+            |operand: &&crate::records::topology::face::DesignFaceOperand| match scope.payload() {
+                crate::records::feature::scope::DesignScopePayload::Thicken(Some(operation)) => {
+                    operation.group_record_indices.is_empty()
+                        || operand
+                            .group_record_index()
+                            .is_none_or(|index| operation.group_record_indices.contains(&index))
+                }
+                _ if split_target.is_some() => split_target.is_some_and(|target| {
+                    operand.group_record_index() == Some(target.record_index)
+                        && operand.scope_reference_ordinal == target.scope_reference_ordinal
+                        && operand
+                            .group_member_ordinal()
+                            .and_then(|ordinal| {
+                                usize::try_from(ordinal)
+                                    .ok()
+                                    .and_then(|ordinal| target.members().get(ordinal))
+                            })
+                            .is_some_and(|member| member.value == operand.record_index())
+                }),
+                _ => true,
+            };
+        if let Some(resolved) = crate::design::feature_project::direct_face_selection(
+            scope,
+            operands.iter().filter(selected),
+        ) {
             if !matches!(resolved, cadmpeg_ir::features::FaceSelection::Native(_)) {
                 *selection = resolved;
             }
@@ -354,6 +439,19 @@ pub(super) fn bind_face_selection(
         if matches.next().is_some() {
             return;
         }
+        let termination = group.extrude_face_role()
+            == Some(
+                crate::records::topology::extrude_selection::DesignExtrudeFaceRole::Termination,
+            );
+        if termination && !operand.resolved_face_slots.is_empty() {
+            for slot in &operand.resolved_face_slots {
+                let candidate = crate::ids::brep_face_id(*slot);
+                if !faces.contains(&candidate) {
+                    faces.push(candidate);
+                }
+            }
+            continue;
+        }
         let previous_candidates = &operand.preceding_candidate_faces;
         let candidate = match previous_candidates.as_slice() {
             [face] => face,
@@ -364,6 +462,21 @@ pub(super) fn bind_face_selection(
                 face
             }
         };
+        if termination {
+            let referenced: HashSet<_> = operand
+                .recipe_references
+                .iter()
+                .flat_map(|reference| {
+                    reference
+                        .candidate_faces
+                        .iter()
+                        .chain(&reference.alternate_selector_faces)
+                })
+                .collect();
+            if !referenced.is_empty() && !referenced.contains(candidate) {
+                return;
+            }
+        }
         if faces.contains(candidate) {
             continue;
         }
@@ -848,6 +961,12 @@ pub(crate) fn bind_entity_selection_history(
             .filter_map(crate::records::topology::entity_selection::DesignEntitySelectionOperand::topology_identities)
             .flat_map(|(primary, secondary)| std::iter::once(primary).chain(secondary)),
     );
+    let primaries = operands
+        .iter()
+        .filter_map(crate::records::topology::entity_selection::DesignEntitySelectionOperand::topology_identities)
+        .map(|(primary, _)| primary)
+        .collect::<Vec<_>>();
+    let identities_by_history = per_history_identities(histories, &primaries);
     for operand in operands {
         operand.historical_edge_candidates.clear();
         operand.historical_face_candidates.clear();
@@ -855,7 +974,8 @@ pub(crate) fn bind_entity_selection_history(
         let Some((primary, secondary)) = operand.topology_identities() else {
             continue;
         };
-        operand.historical_face_candidates = entity_selection_face_candidates(primary, histories);
+        operand.historical_face_candidates =
+            entity_selection_face_candidates(primary, &identities_by_history);
         let stream = crate::ids::native_stream(&operand.id);
         let mut matching_scopes = scopes.iter().filter(|scope| {
             scope.record_index == operand.scope_record_index
@@ -897,6 +1017,12 @@ pub(crate) fn bind_hole_selection_history(
     scopes: &mut [crate::records::feature::scope::DesignParameterScope],
     histories: &[AsmHistory],
 ) {
+    let primaries = scopes
+        .iter()
+        .filter_map(|scope| scope.hole_construction()?.face_selection.as_ref())
+        .map(|selection| selection.primary_identity)
+        .collect::<Vec<_>>();
+    let identities_by_history = per_history_identities(histories, &primaries);
     for scope in scopes {
         let Some(construction) = scope.hole_construction_mut() else {
             continue;
@@ -905,7 +1031,7 @@ pub(crate) fn bind_hole_selection_history(
             continue;
         };
         selection.historical_face_candidates =
-            entity_selection_face_candidates(selection.primary_identity, histories);
+            entity_selection_face_candidates(selection.primary_identity, &identities_by_history);
     }
 }
 
@@ -1144,12 +1270,16 @@ pub(crate) fn bind_mirror_selection_planes(
         let stream = crate::ids::native_stream(&scope.id).map(str::to_owned);
         let record_index = scope.record_index;
         let history_state_id = scope.history_state_id();
-        let previous_history_state_id = scope.previous_history_state_id();
+        // A scope that stores no preceding state takes it from its history
+        // state.
+        let previous_history_state_id =
+            crate::history::effective_scope_previous_history_state_id(scope, histories);
         let Some(construction) = scope.mirror_construction_mut() else {
             continue;
         };
         construction.plane = None;
         construction.assumed_plane_scope = None;
+        construction.construction_plane_scope = None;
         let (Some(selection_record_index), Some(state_id), Some(previous_state_id)) = (
             construction.plane_selection_record_index,
             history_state_id,
@@ -1201,6 +1331,12 @@ pub(crate) fn bind_mirror_selection_planes(
         if matching_face_operands.next().is_some() {
             continue;
         }
+        // A face-recipe member keeps its recipe before the indexed header that closes an
+        // entity-selection reading of the same record, so a later recipe is not this member's.
+        let matching_face_operand = matching_face_operand.filter(|face| {
+            matching_operand
+                .is_none_or(|operand| face.recipe_program_offset < operand.next_byte_offset())
+        });
         let plane = if let Some(operand) = matching_operand {
             if matching_face_operand.is_some() {
                 continue;
@@ -1216,6 +1352,12 @@ pub(crate) fn bind_mirror_selection_planes(
             let Some(stream) = stream.as_deref() else {
                 continue;
             };
+            let construction_plane_identity = operand.secondary().is_none()
+                && crate::design::decode::meta::is_construction_plane_entity(
+                    design_types,
+                    stream,
+                    operand.primary_identity,
+                );
             match crate::design::decode::meta::classify_origin_entity(
                 design_types,
                 stream,
@@ -1228,20 +1370,45 @@ pub(crate) fn bind_mirror_selection_planes(
                     crate::design::decode::meta::OriginEntity::Axis(_),
                 )
                 | crate::design::decode::meta::OriginClassification::Unknown => continue,
-                crate::design::decode::meta::OriginClassification::NotOrigin => {
-                    let persistent_candidates = if let Some(identity) = identity
-                        .and_then(crate::records::topology::construction::DesignConstructionOperandIdentity::persistent_identity) {
-                        entity_selection_face_candidates(identity.local_id, histories)
-                    } else {
-                        Vec::new()
+                crate::design::decode::meta::OriginClassification::NotOrigin
+                    if construction_plane_identity =>
+                {
+                    let Some(scope_record_index) = u32::try_from(operand.primary_identity)
+                        .ok()
+                        .and_then(|identity| identity.checked_add(1))
+                        .filter(|next_record| {
+                            construction
+                                .plane_scope_record_index
+                                .is_none_or(|scope| scope.value == *next_record)
+                        })
+                    else {
+                        continue;
                     };
-                    let primary_candidates =
-                        entity_selection_face_candidates(operand.primary_identity, histories);
+                    construction.construction_plane_scope = Some(
+                        crate::records::feature::mirror::DesignMirrorConstructionPlaneScope {
+                            scope_record_index,
+                            identity_offset: operand.primary_identity_offset(),
+                        },
+                    );
+                    continue;
+                }
+                crate::design::decode::meta::OriginClassification::NotOrigin => {
                     let mut local_ids = vec![operand.primary_identity];
                     local_ids.extend(
                         identity
                             .and_then(crate::records::topology::construction::DesignConstructionOperandIdentity::persistent_identity)
                             .map(|identity| identity.local_id),
+                    );
+                    let identities_by_history = per_history_identities(histories, &local_ids);
+                    let persistent_candidates = if let Some(identity) = identity
+                        .and_then(crate::records::topology::construction::DesignConstructionOperandIdentity::persistent_identity) {
+                        entity_selection_face_candidates(identity.local_id, &identities_by_history)
+                    } else {
+                        Vec::new()
+                    };
+                    let primary_candidates = entity_selection_face_candidates(
+                        operand.primary_identity,
+                        &identities_by_history,
                     );
                     let mut faces = Vec::new();
                     for candidate in primary_candidates.iter().chain(&persistent_candidates) {
@@ -1807,15 +1974,33 @@ pub(super) fn historical_mirror_coedge_plane(
         .then_some(first.clone())
 }
 
+/// Each history paired with its own identity index over `local_ids`.
+pub(super) fn per_history_identities<'a>(
+    histories: &'a [AsmHistory],
+    local_ids: &[u64],
+) -> Vec<(&'a AsmHistory, HistoricalIdentityIndex)> {
+    histories
+        .iter()
+        .map(|history| {
+            (
+                history,
+                HistoricalIdentityIndex::build(
+                    std::slice::from_ref(history),
+                    local_ids.iter().copied(),
+                ),
+            )
+        })
+        .collect()
+}
+
 pub(super) fn entity_selection_face_candidates(
     local_id: u64,
-    histories: &[AsmHistory],
+    histories: &[(&AsmHistory, HistoricalIdentityIndex)],
 ) -> Vec<crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate> {
     use crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate;
 
     let mut candidates = Vec::new();
-    'histories: for history in histories {
-        let identities = HistoricalIdentityIndex::build(std::slice::from_ref(history), [local_id]);
+    'histories: for (history, identities) in histories {
         let Some((kind, entity_ref, state_ids)) = identities.selection_identity_kind(local_id)
         else {
             continue;
@@ -2488,4 +2673,96 @@ fn historical_identity_faces(
         faces.insert(face);
     }
     faces
+}
+
+pub(super) fn feature_selected_input_state_id(
+    feature: &cadmpeg_ir::features::Feature,
+) -> Option<i64> {
+    use cadmpeg_ir::features::{
+        BodySelection, EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation,
+    };
+    let parse_state = |state: &cadmpeg_ir::ids::FeatureInputTopologyId| {
+        state
+            .as_str()
+            .rsplit_once(':')
+            .and_then(|(_, s)| s.parse::<i64>().ok())
+    };
+    let op = match feature.evaluation.definition() {
+        FeatureDefinition::Operation(op) => op,
+        FeatureDefinition::PostProcess { operation, .. } => operation,
+    };
+    match op {
+        FeatureOperation::BaseFeature {
+            bodies: BodySelection::Historical { state, .. },
+        } => {
+            return parse_state(state);
+        }
+        FeatureOperation::Fillet { groups } => {
+            for g in groups {
+                if let EdgeSelection::Historical { state, .. }
+                | EdgeSelection::HistoricalPartial { state, .. } = &g.edges
+                {
+                    if let Some(id) = parse_state(state) {
+                        return Some(id);
+                    }
+                }
+            }
+        }
+        FeatureOperation::Chamfer { groups, .. } => {
+            for g in groups {
+                if let EdgeSelection::Historical { state, .. }
+                | EdgeSelection::HistoricalPartial { state, .. } = &g.edges
+                {
+                    if let Some(id) = parse_state(state) {
+                        return Some(id);
+                    }
+                }
+            }
+        }
+        FeatureOperation::SplitBody {
+            targets:
+                BodySelection::Historical { state, .. } | BodySelection::HistoricalSet { state, .. },
+            ..
+        } => {
+            if let Some(id) = parse_state(state) {
+                return Some(id);
+            }
+        }
+        FeatureOperation::SplitFace { targets, tool, .. } => {
+            for selection in std::iter::once(targets).chain(match tool {
+                cadmpeg_ir::features::SplitFaceTool::Faces(faces) => Some(faces),
+                _ => None,
+            }) {
+                if let FaceSelection::Historical { state, .. }
+                | FaceSelection::HistoricalPartial { state, .. } = selection
+                {
+                    if let Some(id) = parse_state(state) {
+                        return Some(id);
+                    }
+                }
+            }
+        }
+        FeatureOperation::Shell {
+            removed_faces,
+            bodies,
+            ..
+        } => {
+            if let FaceSelection::Historical { state, .. } = removed_faces {
+                if let Some(id) = parse_state(state) {
+                    return Some(id);
+                }
+            }
+            if let Some(
+                BodySelection::Historical { state, .. }
+                | BodySelection::HistoricalSet { state, .. },
+            ) = bodies
+            {
+                if let Some(id) = parse_state(state) {
+                    return Some(id);
+                }
+            }
+        }
+        _ => {}
+    }
+    None
 }

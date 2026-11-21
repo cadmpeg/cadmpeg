@@ -479,9 +479,6 @@ pub(super) fn walk_reachable_topology(
                                                     });
                                                 out.stats.nurbs_curves += 1;
                                                 kept_curves.insert(cv);
-                                            } else if purpose == DecodePurpose::History {
-                                                curve_geo.insert(cv, CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }));
-                                                kept_curves.insert(cv);
                                             } else if let Some(definition) =
                                                 nurbs::proc_curve::cacheless_procedural_curve_resolving_refs(
                                                     ctx,
@@ -505,6 +502,9 @@ pub(super) fn walk_reachable_topology(
                                                         cache: None,
                                                     });
                                                 procedural_curve_defs.insert(cv, super::ProceduralCurveSource::Cacheless(Box::new(definition)));
+                                                kept_curves.insert(cv);
+                                            } else if purpose == DecodePurpose::History {
+                                                curve_geo.insert(cv, CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }));
                                                 kept_curves.insert(cv);
                                             } else {
                                                 undecoded_carriers.insert(cv);
@@ -767,11 +767,6 @@ fn keep_wire_edge(
             );
             kept_curves.insert(curve_index);
             out.stats.nurbs_curves += 1;
-        } else if purpose == DecodePurpose::History {
-            entry.insert(CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                record: None,
-            }));
-            kept_curves.insert(curve_index);
         } else if let Some(definition) =
             nurbs::proc_curve::cacheless_procedural_curve_resolving_refs(
                 ctx,
@@ -795,6 +790,11 @@ fn keep_wire_edge(
                 curve_index,
                 super::ProceduralCurveSource::Cacheless(Box::new(definition)),
             );
+            kept_curves.insert(curve_index);
+        } else if purpose == DecodePurpose::History {
+            entry.insert(CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
+                record: None,
+            }));
             kept_curves.insert(curve_index);
         } else {
             undecoded_carriers.insert(curve_index);

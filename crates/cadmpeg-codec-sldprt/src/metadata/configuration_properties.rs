@@ -459,9 +459,10 @@ fn project_rows(
         }
         out.push(SourceAttribute {
             id,
-            target: AttributeTarget::Document,
+            target: AttributeTarget::Document.into(),
             name: ATTRIBUTE_NAME.into(),
-            values,
+            values: values.into_iter().map(Some).collect(),
+            native_ref: None,
         });
     }
     Ok(())

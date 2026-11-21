@@ -29,17 +29,17 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
         let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
         let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
         let mut result = EditableDecodeResult::from(result);
-        let validated_id = result.ir().model.procedural_curves[0].id.clone();
+        let validated_id = result.ir().geometry.procedural_curves[0].id.clone();
         let unvalidated_id =
             ProceduralCurveId::mint("test:model:entity#synthetic:unvalidated-support-uv")
                 .expect("identity grammar");
-        let mut unvalidated = result.ir().model.procedural_curves[0].clone();
+        let mut unvalidated = result.ir().geometry.procedural_curves[0].clone();
         unvalidated.id = unvalidated_id.clone();
         {
             let mut ir = result.ir_mut();
-            let original_owner = ir.model.procedural_curve_owner(&validated_id).unwrap();
+            let original_owner = ir.geometry.procedural_curve_owner(&validated_id).unwrap();
             let mut carrier = ir
-                .model
+                .geometry
                 .curves
                 .iter()
                 .find(|curve| curve.id == *original_owner)
@@ -53,11 +53,11 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
                 panic!("procedural carrier");
             };
             *construction = unvalidated_id.clone();
-            ir.model.curves.push(carrier);
-            ir.model.procedural_curves.push(unvalidated);
+            ir.geometry.curves.push(carrier);
+            ir.geometry.procedural_curves.push(unvalidated);
             for procedural_id in [&validated_id, &unvalidated_id] {
                 let procedural = ir
-                    .model
+                    .geometry
                     .procedural_curves
                     .iter_mut()
                     .find(|procedural| procedural.id == *procedural_id)
@@ -145,7 +145,7 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
         let pcurve_present = |procedural_id: &ProceduralCurveId| {
             let procedural = result
                 .ir()
-                .model
+                .geometry
                 .procedural_curves
                 .iter()
                 .find(|procedural| procedural.id == *procedural_id)
@@ -168,7 +168,7 @@ fn validated_support_uv_exposes_ordered_endpoint_witnesses() {
         two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
     let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    let procedural = &result.ir().model.procedural_curves[0];
+    let procedural = &result.ir().geometry.procedural_curves[0];
     let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() else {
         panic!("typed intersection");
     };
@@ -196,7 +196,7 @@ fn validated_support_uv_exposes_ordered_endpoint_witnesses() {
     let validated_lanes = BTreeSet::from([(procedural.id.clone(), side.0)]);
     let owner = result
         .ir()
-        .model
+        .geometry
         .procedural_curve_owner(&procedural.id)
         .expect("intersection owner")
         .clone();
@@ -241,7 +241,7 @@ fn full_support_uv_validation_publishes_endpoint_witnesses() {
         let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
         let mut result = EditableDecodeResult::from(result);
         let (procedural_id, curve_id, surface, pcurve, parameter_range) = {
-            let procedural = &result.ir().model.procedural_curves[0];
+            let procedural = &result.ir().geometry.procedural_curves[0];
             let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
             else {
                 panic!("typed intersection");
@@ -256,7 +256,7 @@ fn full_support_uv_validation_publishes_endpoint_witnesses() {
                 procedural.id.clone(),
                 result
                     .ir()
-                    .model
+                    .geometry
                     .procedural_curve_owner(&procedural.id)
                     .expect("intersection owner")
                     .clone(),
@@ -358,7 +358,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
             ProceduralCurveId::mint("test:model:entity#synthetic:seeded-intersection")
                 .expect("identity grammar");
         let mut ir = cadmpeg_ir::document::CadIr::empty();
-        ir.model.surfaces.extend([
+        ir.geometry.surfaces.extend([
             Surface {
                 id: support.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
@@ -387,6 +387,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
                     .expect("valid seeded offset support"),
                 )),
                 source_object: None,
+                native_ref: None,
             },
             Surface {
                 id: offset.clone(),
@@ -395,6 +396,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
                     cache: None,
                 },
                 source_object: None,
+                native_ref: None,
             },
             Surface {
                 id: plane.clone(),
@@ -407,9 +409,10 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             },
         ]);
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
             offset_construction,
             ProceduralSurfaceDefinition::Offset(
                 cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
@@ -427,13 +430,14 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
             ),
             None,
         ));
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
-        let _attached = ir.model.add_procedural_curve(
+        let _attached = ir.geometry.add_procedural_curve(
             &curve,
             ProceduralCurve::new(
                 procedural_id.clone(),
@@ -492,7 +496,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
                 None,
             ]),
         )];
-        let limited_ctx = cadmpeg_test_support::service_decode_context();
+        let limited_ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut limited = ir.clone();
         // The original slice cannot admit the typed carrier walk: the lane
         // reports its exhausted geometry work and the session continues.
@@ -533,7 +537,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
 
         let pcurve_present = |ir: &cadmpeg_ir::document::CadIr| {
             let ProceduralCurveDefinition::Intersection { context, .. } =
-                ir.model.procedural_curves[0].definition()
+                ir.geometry.procedural_curves[0].definition()
             else {
                 panic!("intersection");
             };
@@ -553,7 +557,7 @@ fn support_uv_validation_skips_pending_lanes_after_local_geometry_exhaustion() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let mut result = EditableDecodeResult::from(result);
     let (procedural_id, parameter_range) = {
-        let procedural = &result.ir().model.procedural_curves[0];
+        let procedural = &result.ir().geometry.procedural_curves[0];
         let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
         else {
             panic!("typed intersection");
@@ -574,7 +578,7 @@ fn support_uv_validation_skips_pending_lanes_after_local_geometry_exhaustion() {
         0.01,
         SerializedSupportUv::default(),
     )];
-    let lanes_before = serde_json::to_value(&result.ir().model.procedural_curves).unwrap();
+    let lanes_before = serde_json::to_value(&result.ir().geometry.procedural_curves).unwrap();
 
     crate::test_support::with_decode_context(|ctx| {
         let support_budget = WorkBudget::new(crate::decode::support_uv::MAX_SUPPORT_UV_SAMPLES);
@@ -597,7 +601,7 @@ fn support_uv_validation_skips_pending_lanes_after_local_geometry_exhaustion() {
         assert!(ctx.resource_refusal().is_none());
     });
     assert_eq!(
-        serde_json::to_value(&result.ir().model.procedural_curves).unwrap(),
+        serde_json::to_value(&result.ir().geometry.procedural_curves).unwrap(),
         lanes_before
     );
     // A loose-fit/prior-validation certificate cannot rescue a structural
@@ -605,7 +609,7 @@ fn support_uv_validation_skips_pending_lanes_after_local_geometry_exhaustion() {
     let constant_side = 0;
     {
         let mut ir = result.ir_mut();
-        ir.model.procedural_curves[0].edit_definition(|definition| {
+        ir.geometry.procedural_curves[0].edit_definition(|definition| {
             let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                 panic!("typed intersection");
             };
@@ -641,7 +645,7 @@ fn support_uv_validation_skips_pending_lanes_after_local_geometry_exhaustion() {
         assert!(validation.endpoint_witnesses.is_empty());
         assert!(ctx.resource_refusal().is_none());
     });
-    let definition = result.ir().model.procedural_curves[0].definition();
+    let definition = result.ir().geometry.procedural_curves[0].definition();
     let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
         panic!("typed intersection");
     };
@@ -660,7 +664,7 @@ fn support_uv_validation_reports_an_exhausted_lane_slice() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let mut result = EditableDecodeResult::from(result);
     let (procedural_id, support, parameter_range) = {
-        let procedural = &result.ir().model.procedural_curves[0];
+        let procedural = &result.ir().geometry.procedural_curves[0];
         let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
         else {
             panic!("typed intersection");
@@ -682,7 +686,7 @@ fn support_uv_validation_reports_an_exhausted_lane_slice() {
     {
         let mut ir = result.ir_mut();
         let surface = ir
-            .model
+            .geometry
             .surfaces
             .iter_mut()
             .find(|surface| surface.id == support)
@@ -706,7 +710,7 @@ fn support_uv_validation_reports_an_exhausted_lane_slice() {
     )];
     let support_lane_is_charted = |ir: &cadmpeg_ir::CadIr| {
         let ProceduralCurveDefinition::Intersection { context, .. } =
-            ir.model.procedural_curves[0].definition()
+            ir.geometry.procedural_curves[0].definition()
         else {
             panic!("typed intersection");
         };

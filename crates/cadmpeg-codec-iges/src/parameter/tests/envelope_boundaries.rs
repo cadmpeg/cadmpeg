@@ -143,7 +143,7 @@ fn blank_parameter_field_is_an_omitted_value() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
@@ -170,7 +170,7 @@ fn a_back_pointer_naming_no_other_entry_defers_to_the_declared_range() {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
         let losses = &result.report().losses;
-        assert_eq!(result.ir().model.points.len(), 1, "{pointer}");
+        assert_eq!(result.ir().geometry.points.len(), 1, "{pointer}");
         assert_eq!(losses.len(), 1, "{pointer}: {losses:#?}");
         assert_eq!(losses[0].code, IgesLossCode::CardFramingRecovered.kind());
     }
@@ -201,7 +201,7 @@ fn a_parameter_card_count_disagreement_recovers_from_the_card_census() {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
         let losses = &result.report().losses;
-        assert_eq!(result.ir().model.points.len(), 1, "{declared}");
+        assert_eq!(result.ir().geometry.points.len(), 1, "{declared}");
         assert_eq!(losses.len(), 1, "{declared}: {losses:#?}");
         assert_eq!(losses[0].code, IgesLossCode::CardFramingRecovered.kind());
     }
@@ -239,7 +239,7 @@ fn a_back_pointer_naming_another_entry_quarantines_both_records() {
     let losses = &result.report().losses;
     let code = IgesLossCode::ParameterDataQuarantined.kind();
     assert_eq!(native.arenas()["quarantined_parameter_records"].len(), 2);
-    assert!(result.ir().model.points.is_empty());
+    assert!(result.ir().geometry.points.is_empty());
     assert_eq!(losses.len(), 2, "{losses:#?}");
     assert!(losses.iter().all(|loss| loss.code == code));
 }

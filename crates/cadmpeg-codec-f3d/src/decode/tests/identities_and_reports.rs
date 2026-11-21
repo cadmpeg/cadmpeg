@@ -9,6 +9,7 @@ fn annotation_placement() -> crate::records::sketch_placement::DesignSketchPlace
         class_tag: "330".to_owned().try_into().unwrap(),
         record_index: 4,
         paired_class_tag: "330".to_owned().try_into().unwrap(),
+        display_name: None,
         frame: crate::records::sketch_placement::DesignSketchFrame::new(
             0,
             crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
@@ -37,6 +38,9 @@ fn sketch_annotation_ids_preserve_identity_text() {
 #[test]
 fn failed_mesh_resource_limit_propagates() {
     let refusal = cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
+        scope: cadmpeg_core::decode::LimitScope::for_dimension(
+            cadmpeg_core::decode::ResourceDimension::DecompressedBytes,
+        ),
         dimension: cadmpeg_core::decode::ResourceDimension::DecompressedBytes,
         reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
         limit: 0,

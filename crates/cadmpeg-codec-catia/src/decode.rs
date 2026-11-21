@@ -10,14 +10,17 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
+use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::codec::Decoded;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{Annotations, SourceFidelity};
+use std::collections::BTreeSet;
 
 use crate::assemble::{build_container_report, build_metadata_fallback};
 use crate::container::{self, ContainerScan};
@@ -76,10 +79,17 @@ fn decode_over_routes(
     let matched = crate::dialect::classify(&scan)?;
 
     if ctx.container_only() {
-        let (ir, annotations, unknowns) = build_metadata_fallback(ctx, &scan)?;
+        let (ir, annotations, unknowns, untyped) = build_metadata_fallback(ctx, &scan)?;
         let mut report = build_container_report(&scan);
         report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {};
-        return decode_result(ctx, &scan, &matched, ir, report, annotations, unknowns);
+        return decode_result(
+            ctx,
+            &scan,
+            &matched,
+            ir,
+            report,
+            (annotations, unknowns, untyped),
+        );
     }
 
     let applicable = routes
@@ -100,6 +110,7 @@ fn decode_over_routes(
                     report: out.report,
                     annotations: out.annotations,
                     unknowns: out.unknowns,
+                    untyped: BTreeSet::new(),
                     admitted_model_entities: out.admitted_model_entities,
                     standard_face_population: route.standard_face_population,
                     fell_through: &fell_through,
@@ -121,7 +132,7 @@ fn decode_over_routes(
         }
     }
 
-    let (ir, annotations, unknowns) = build_metadata_fallback(ctx, &scan)?;
+    let (ir, annotations, unknowns, untyped) = build_metadata_fallback(ctx, &scan)?;
     let report = build_container_report(&scan);
     finish_decode(
         ctx,
@@ -132,6 +143,7 @@ fn decode_over_routes(
             report,
             annotations,
             unknowns,
+            untyped,
             admitted_model_entities: 0,
             standard_face_population: false,
             fell_through: &fell_through,
@@ -196,6 +208,9 @@ struct FinishDecodeInputs<'input0, 'input1, 'input2, 'input3> {
     report: DecodeBody,
     annotations: Annotations,
     unknowns: Vec<UnknownRecord>,
+    /// Classes every retained unknown holds undecoded; empty when a route
+    /// decoded their bytes.
+    untyped: BTreeSet<ArenaClass>,
     admitted_model_entities: u64,
     standard_face_population: bool,
     fell_through: &'input2 [String],
@@ -213,6 +228,7 @@ fn finish_decode(
         mut report,
         mut annotations,
         unknowns,
+        untyped,
         mut admitted_model_entities,
         standard_face_population,
         fell_through,
@@ -235,7 +251,7 @@ fn finish_decode(
         report.losses.push(note);
     }
     ctx.admit_entities(
-        u64_from_index(ir.model.entity_count()),
+        u64_from_index(ir.entity_count()),
         &mut admitted_model_entities,
         "admit CATIA route entities",
     )?;
@@ -252,7 +268,7 @@ fn finish_decode(
     }
     let modeling_graph_scope =
         modeling_graph_scope(scan.has_outer_container_declarations, &native.object_graphs);
-    crate::native::project_range::bind(ctx, &mut native, &ir.model, &modeling_graph_scope)?;
+    crate::native::project_range::bind(ctx, &mut native, &ir.geometry, &modeling_graph_scope)?;
     let modeling_object_records = (native
         .object_graphs
         .iter()
@@ -282,6 +298,110 @@ fn finish_decode(
         &modeling_graph_scope,
         &transferred_constraint_range_records,
     )?;
+    let mut pmi_annotations =
+        cadmpeg_ir::AnnotationBuilder::resume(std::mem::take(&mut annotations));
+    let tolerance_transfer = pmi::geometric_tolerance::transfer(
+        ctx,
+        cadmpeg_core::decode::View::over_retained(&scan.data),
+        &mut ir,
+        &mut pmi_annotations,
+        &native,
+        &modeling_graph_scope,
+    )?;
+    annotations = pmi_annotations.build();
+    let transferred_pmi_annotations = transferred_pmi_dimension_count
+        .checked_add(tolerance_transfer.annotations)
+        .ok_or_else(|| CodecError::malformed("CATIA PMI annotation count overflow"))?;
+    if transferred_pmi_annotations != 0 {
+        report.coverage.record(
+            crate::coverage::TRANSFERRED_PMI_ANNOTATION_COUNT,
+            transferred_pmi_annotations,
+        );
+    }
+    if tolerance_transfer.main_tolerances != 0 {
+        report.coverage.record(
+            crate::coverage::TRANSFERRED_PMI_MAIN_TOLERANCE_COUNT,
+            tolerance_transfer.main_tolerances,
+        );
+    }
+    if tolerance_transfer.secondary_tolerances != 0 {
+        report.coverage.record(
+            crate::coverage::TRANSFERRED_PMI_SECONDARY_TOLERANCE_COUNT,
+            tolerance_transfer.secondary_tolerances,
+        );
+    }
+    if tolerance_transfer.unresolved_identity_collisions != 0 {
+        report
+            .losses
+            .push(CatiaLossCode::SourceAnnotationCollision.note(format!(
+                "Retained {} PMI candidates with conflicting neutral identities",
+                tolerance_transfer.unresolved_identity_collisions
+            )));
+    }
+    if tolerance_transfer.unresolved_candidates != 0 {
+        report.losses.push(
+            CatiaLossCode::AttributesPmiToleranceUntransferred.note(format!(
+                "Retained {} untransferred source geometric tolerances",
+                tolerance_transfer.unresolved_candidates
+            )),
+        );
+    }
+    if tolerance_transfer.unresolved_secondaries != 0 {
+        report.losses.push(
+            CatiaLossCode::AttributesPmiSecondaryToleranceUntransferred.note(format!(
+                "Retained {} untransferred secondary geometric tolerance values",
+                tolerance_transfer.unresolved_secondaries
+            )),
+        );
+    }
+    if tolerance_transfer.unresolved_target_bindings != 0 {
+        report.losses.push(
+            CatiaLossCode::AttributesPmiTargetRosterUnresolved.note(format!(
+                "Retained {} unresolved PMI target-roster members in source records",
+                tolerance_transfer.unresolved_target_bindings
+            )),
+        );
+    }
+    if tolerance_transfer.unresolved_bindings != 0 {
+        report.losses.push(
+            CatiaLossCode::AttributesPmiTopologyTargetUnresolved.note(format!(
+                "Retained {} source ShapeAspect identities without neutral face or edge bindings",
+                tolerance_transfer.unresolved_bindings
+            )),
+        );
+    }
+    if tolerance_transfer.unresolved_datum_systems != 0 {
+        report.losses.push(
+            CatiaLossCode::AttributesPmiDatumSystemUnresolved.note(format!(
+                "Retained {} unresolved PMI datum systems in source records",
+                tolerance_transfer.unresolved_datum_systems
+            )),
+        );
+    }
+    if tolerance_transfer.unresolved_semantics != 0 {
+        report.losses.push(
+            CatiaLossCode::AttributesPmiSemanticsUnresolved.note(format!(
+                "Retained unassigned fields for {} source geometric tolerances",
+                tolerance_transfer.unresolved_semantics
+            )),
+        );
+    }
+    if tolerance_transfer.unresolved_field_keys != 0 {
+        report
+            .losses
+            .push(CatiaLossCode::AttributesPmiFieldKeyUnresolved.note(format!(
+                "Retained unbound source field keys for {} geometric tolerances",
+                tolerance_transfer.unresolved_field_keys
+            )));
+    }
+    if tolerance_transfer.unresolved_composite_links != 0 {
+        report.losses.push(
+            CatiaLossCode::AttributesPmiCompositeLinkUntransferred.note(format!(
+                "Retained {} composite tolerance relationships without neutral links",
+                tolerance_transfer.unresolved_composite_links
+            )),
+        );
+    }
     let formula_transfer = formula::transfer_parameters(
         ctx,
         &mut ir,
@@ -922,11 +1042,9 @@ fn finish_decode(
                     slots
                         .iter()
                         .fold((0_usize, 0_usize), |(finite, unset), slot| match slot {
-                            crate::entity_table::RangeIntervalSlot::Binary64 { .. } => {
+                            crate::entity_table::RangeIntervalSlot::Binary64 { .. }
+                            | crate::entity_table::RangeIntervalSlot::ZeroLiteral { .. } => {
                                 (finite + 1, unset)
-                            }
-                            crate::entity_table::RangeIntervalSlot::Unset { .. } => {
-                                (finite, unset + 1)
                             }
                         });
                 (
@@ -963,7 +1081,9 @@ fn finish_decode(
                     }
                 };
                 let (evaluated, unset) = match range.evaluation {
-                    crate::native::CatiaEntityEvaluation::Scalar { .. } => (evaluated + 1, unset),
+                    crate::native::CatiaEntityEvaluation::Scalar { .. }
+                    | crate::native::CatiaEntityEvaluation::UnitLiteral
+                    | crate::native::CatiaEntityEvaluation::ZeroLiteral => (evaluated + 1, unset),
                     crate::native::CatiaEntityEvaluation::Unset => (evaluated, unset + 1),
                 };
                 (total + 1, dimensions, complex, evaluated, unset)
@@ -980,12 +1100,10 @@ fn finish_decode(
                     | crate::native::CatiaConstraintRangeFraming::DimensionC1
                     | crate::native::CatiaConstraintRangeFraming::DimensionDC
                     | crate::native::CatiaConstraintRangeFraming::DimensionDF
-            ) && match range.evaluation {
-                crate::native::CatiaEntityEvaluation::Scalar { bits } => {
-                    f64::from_bits(bits).is_finite()
-                }
-                crate::native::CatiaEntityEvaluation::Unset => false,
-            }
+            ) && range
+                .evaluation
+                .bits()
+                .is_some_and(|bits| f64::from_bits(bits).is_finite())
         })
         .count();
     let constraint_range_incidences = incoming_entity_incidence_counts(
@@ -1077,7 +1195,10 @@ fn finish_decode(
                 };
                 match &value.value {
                     Selected::Evaluation {
-                        evaluation: CatiaEntityEvaluation::Scalar { .. },
+                        evaluation:
+                            CatiaEntityEvaluation::Scalar { .. }
+                            | CatiaEntityEvaluation::UnitLiteral
+                            | CatiaEntityEvaluation::ZeroLiteral,
                         ..
                     } => (
                         total + 1,
@@ -1109,16 +1230,6 @@ fn finish_decode(
                         unset,
                         atoms + 1,
                         controls,
-                        separators,
-                        schemas,
-                    ),
-                    Selected::ControlE8 => (
-                        total + 1,
-                        evaluations,
-                        evaluated,
-                        unset,
-                        atoms,
-                        controls + 1,
                         separators,
                         schemas,
                     ),
@@ -1635,7 +1746,9 @@ fn finish_decode(
                 matches!(
                     value.payload,
                     crate::native::CatiaEntitySuffixPayload::Evaluation {
-                        evaluation: crate::native::CatiaEntityEvaluation::Scalar { .. },
+                        evaluation: crate::native::CatiaEntityEvaluation::Scalar { .. }
+                            | crate::native::CatiaEntityEvaluation::UnitLiteral
+                            | crate::native::CatiaEntityEvaluation::ZeroLiteral,
                         ..
                     }
                 )
@@ -1662,7 +1775,6 @@ fn finish_decode(
         .iter()
         .fold((0, 0), |(e8, e9), record| {
             match record.suffix_value().map(|value| &value.payload) {
-                Some(crate::native::CatiaEntitySuffixPayload::ControlE8) => (e8 + 1, e9),
                 Some(crate::native::CatiaEntitySuffixPayload::ControlE9) => (e8, e9 + 1),
                 _ => (e8, e9),
             }
@@ -1713,9 +1825,6 @@ fn finish_decode(
                 }
                 crate::native::CatiaEntitySuffixSelectedValue::Evaluation { .. } => {
                     (atoms, evaluations + 1, controls, separators, schemas)
-                }
-                crate::native::CatiaEntitySuffixSelectedValue::ControlE8 => {
-                    (atoms, evaluations, controls + 1, separators, schemas)
                 }
                 crate::native::CatiaEntitySuffixSelectedValue::Separator37 => {
                     (atoms, evaluations, controls, separators + 1, schemas)
@@ -1886,7 +1995,7 @@ fn finish_decode(
         .map(|block| block.schema_selections.len())
         .sum();
     let transferred_line_profile_count = ir
-        .model
+        .geometry
         .curves
         .iter()
         .filter(|curve| {
@@ -2003,7 +2112,7 @@ fn finish_decode(
         ),
         (
             crate::coverage::TRANSFERRED_CONSOLIDATED_REVOLUTION_COUNT,
-            ir.model
+            ir.geometry
                 .procedural_surfaces
                 .iter()
                 .filter(|surface| {
@@ -3519,6 +3628,37 @@ fn finish_decode(
                 formula_transfer.native_only_definition_chain_count
             )));
     }
+    let literal_range_nominal_count = native
+        .entity_records
+        .iter()
+        .filter(|record| {
+            record
+                .range_interval
+                .as_ref()
+                .is_some_and(|range| range.nominal.is_some())
+                && record.suffix_value().is_some_and(|suffix| {
+                    matches!(
+                        suffix.payload,
+                        crate::native::CatiaEntitySuffixPayload::Evaluation {
+                            evaluation: crate::native::CatiaEntityEvaluation::UnitLiteral
+                                | crate::native::CatiaEntityEvaluation::ZeroLiteral,
+                            ..
+                        }
+                    )
+                })
+        })
+        .count();
+    if formula_transfer.literal_value_count != 0
+        || formula_transfer.contradicted_literal_count != 0
+        || literal_range_nominal_count != 0
+    {
+        report
+            .losses
+            .push(CatiaLossCode::HistoryParameterLiteralAssumed.note(format!(
+                "{} design parameter(s) and {literal_range_nominal_count} Range nominal(s) read a stored E7 or E8 literal as the value one or zero; {} formula output(s) whose evaluated expression contradicts that value keep no value.",
+                formula_transfer.literal_value_count, formula_transfer.contradicted_literal_count
+            )));
+    }
     if unresolved_object_record_count != 0 {
         report.losses.push((CatiaLossCode::HistoryObjectRecordsUnresolved).note(format!(
             "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), {object_record_count} object-graph field record(s), including {unassigned_owner_slot_count} with an explicit literal unassigned owner slot, {object_record_reference_count} payload reference(s), comprising {resolved_object_record_reference_count} resolved, {null_object_record_reference_count} terminal-null, and {unresolved_object_record_reference_count} unresolved identities, {entity_value_field_count} entity-value field(s), {entity_value_schema_selection_count} entity-value schema selection(s), {numeric_entity_value_pair_count} complete numeric entity-value pair(s), {reference_signature_count} complete reference-signature packet(s) containing {reference_signature_token_count} descriptor token(s) and selecting {resolved_reference_signature_entity_count} resolved, {null_reference_signature_entity_count} terminal-null, and {unresolved_reference_signature_entity_count} unresolved entity incidences, including {classified_reference_signature_entity_count} with a resolved class, {numeric_entity_value_packet_count} embedded numeric entity-value packet(s), {compact_entity_value_packet_count} compact value packet(s), {layout_entity_value_packet_count} layout-bearing value packet(s), {e9_scalar_entity_value_packet_count} E9 scalar packet(s), {escaped_word_entity_suffix_count} escaped-word entity suffix(es), {token_8149_entity_suffix_count} standalone 8149 suffix token(s), {fixed_fe_f6_entity_suffix_count} fixed FE-F6 suffix frame(s), {paged_atom_state_01_entity_suffix_count} paged-atom state-01 suffix(es), {scalar_entity_suffix_value_count} scalar entity-suffix value(s), {unset_entity_suffix_value_count} unset entity-suffix value(s), {atom_entity_suffix_value_count} atom entity-suffix value(s), {separator_entity_suffix_value_count} separator entity-suffix value(s), {schema_selected_atom_entity_suffix_value_count} schema-selected atom value(s), {schema_selected_evaluation_entity_suffix_value_count} schema-selected evaluation(s), {schema_selected_control_entity_suffix_value_count} schema-selected control value(s), {schema_selected_separator_entity_suffix_value_count} schema-selected separator(s), {schema_selected_schema_entity_suffix_value_count} schema-selected schema value(s), {schema_selected_entity_suffix_value_count} suffix value(s) with resolved schema selectors, {wide_prefix_entity_suffix_value_count} suffix value(s) with multi-byte prefix atoms, {control_entity_suffix_value_count} direct control entity-suffix value(s), comprising {control_e8_entity_suffix_value_count} E8 and {control_e9_entity_suffix_value_count} E9 state(s), {relation_expression_count} complete relation expression(s), {relation_program_instance_count} complete compound relation-program instance(s), comprising {lead12_relation_program_instance_count} lead-12 and {lead54_relation_program_instance_count} lead-54 frames, {resolved_relation_program_instance_count} resolved and {unresolved_relation_program_instance_count} unresolved program identities, with {resolved_relation_program_repeated_reference_count} resolved and {unresolved_relation_program_repeated_reference_count} unresolved repeated-reference identities, {resolved_lead12_relation_program_context_entity_count} resolved and {unresolved_lead12_relation_program_context_entity_count} unresolved lead-12 context identities, and {resolved_lead54_relation_program_trailing_entity_count} resolved and {unresolved_lead54_relation_program_trailing_entity_count} unresolved lead-54 trailing identities; {relation_expression_instance_count} select relation-expression programs, {other_relation_program_instance_count} select other resolved entities, and those relation-expression instances select {instanced_relation_expression_count} distinct expression entity or entities and retain {relation_program_parameter_dependency_count} parameter symbol occurrence(s), comprising {resolved_relation_program_parameter_dependency_count} uniquely resolved and {unresolved_relation_program_parameter_dependency_count} unresolved, including {ambiguous_relation_program_parameter_dependency_count} with multiple candidates; {typed_relation_program_instance_count} typed program instance(s) comprise {resolved_relation_program_input_instance_count} with complete ordered inputs and {unresolved_relation_program_input_instance_count} with incomplete input binding, retaining {resolved_relation_program_input_count} resolved input occurrence(s) selecting {distinct_relation_program_input_entity_count} distinct entity identity or identities; {schema_configuration_record_count} complete schema-configuration Configuration record(s) retain {resolved_schema_configuration_reference_count} resolved, {null_schema_configuration_reference_count} terminal-null, and {unresolved_schema_configuration_reference_count} unresolved reference identities; {schema_configuration_row_link_count} complete configrow link(s) retain {resolved_schema_configuration_row_class_count} resolved and {null_schema_configuration_row_class_count} terminal-null class identities plus {resolved_schema_configuration_row_successor_count} resolved and {null_schema_configuration_row_successor_count} terminal-null successor identities, with {ordered_schema_configuration_row_link_count} row link(s) in {complete_schema_configuration_row_chain_count} complete chain(s), comprising {resolved_schema_configuration_row_chain_terminal_count} resolved, {null_schema_configuration_row_chain_terminal_count} terminal-null, and {unresolved_schema_configuration_row_chain_terminal_count} unresolved terminals; {schema_configuration_row_source_interval_chain_count} source-ordered chain(s) retain {schema_configuration_row_intervening_entity_count} entity or entities from the open intervals between rows and successors, including {schema_configuration_row_intervening_schema_configuration_count} complete schema-configuration Configuration record(s), while {unordered_schema_configuration_row_link_count} row link(s) have unresolved order; {parameter_value_count} complete named parameter value(s), {range_interval_count} complete source-schema Range interval(s), comprising {range_interval_no_slot_count} no-slot production(s), {range_interval_nominal_count} finite nominal(s), {range_interval_finite_slot_count} finite deviation slot(s), and {range_interval_unset_slot_count} unset deviation slot(s), {constraint_range_count} complete constraint-range value(s), comprising {dimension_constraint_range_count} dimension and {complex_constraint_range_count} complex-constraint range(s), with {evaluated_constraint_range_count} finite evaluation(s) and {unset_constraint_range_count} unset evaluation(s), {definition_value_count} definition-bound suffix value(s), including {owned_definition_value_count} assigned to design objects and {unowned_definition_value_count} without a resolved owner, {definition_chain_evaluation_count} two-definition chain evaluation(s), comprising {evaluated_definition_chain_count} finite and {unset_definition_chain_count} unset value(s), with {structurally_owned_definition_chain_evaluation_count} structurally owned and {unowned_definition_chain_evaluation_count} without a resolved structural owner; {unassigned_definition_chain_value_count} chain value(s), including {unassigned_definition_chain_evaluation_count} evaluation(s), occupy explicit literal unassigned owner slots; {formula_relation_count} complete formula relation(s), comprising {resolved_formula_output_count} resolved, {null_formula_output_count} terminal-null, and {unresolved_formula_output_count} unresolved output identities, {formula_parameter_dependency_count} formula parameter symbol occurrence(s), comprising {resolved_formula_parameter_dependency_count} uniquely resolved and {unresolved_formula_parameter_dependency_count} unresolved, including {ambiguous_formula_parameter_dependency_count} with multiple candidates, {repeated_reference_suffix_count} repeated-reference suffix(es), {repeated_reference_schema_selection_count} repeated-reference schema selection(s), {definition_schema_selection_count} definition-schema selection(s), {design_object_owner_link_count} structural owner link(s), and {design_object_relation_count} exact outbound design-field relation occurrence(s), including {design_same_object_relation_count} within one design object, {design_reflexive_field_relation_count} reflexive field occurrence(s), and {design_unowned_field_relation_count} to fields without owner groups; {classified_design_object_count} design object(s) have class evidence and {unresolved_design_owner_count} owner identity or identities remain unresolved; {} typed parameter(s), including {} selected through complete relation-program inputs, {} exact formula, expression, or parameter field record(s), and {} exact principal-plane field record(s) transferred, while {unresolved_object_record_count} modeling-scope field record(s) across {unresolved_design_object_count} design object(s), neutral features with unresolved semantics, other parameters, sketch placement, geometry, profiles, constraints, configurations, and re-derivable history remain unresolved; {} sketch identity record(s) transfer.",
@@ -3556,8 +3696,18 @@ fn finish_decode(
                 appearance_transfer.transferred_packets(),
             )));
     }
+    if ctx.depth() >= cadmpeg_core::decode::DecodeDepth::Design {
+        crate::design_v11::project(ctx, &mut ir)?;
+    }
     native.store_owned(ctx, ir.native.namespace_mut("catia"))?;
-    decode_result(ctx, scan, matched, ir, report, annotations, unknowns)
+    decode_result(
+        ctx,
+        scan,
+        matched,
+        ir,
+        report,
+        (annotations, unknowns, untyped),
+    )
 }
 
 /// Modeling scope of a part's decoded object graphs.
@@ -3626,16 +3776,38 @@ fn decode_result(
     matched: &DialectMatch,
     mut ir: CadIr,
     mut body: DecodeBody,
-    annotations: Annotations,
-    unknowns: Vec<UnknownRecord>,
+    retained: (Annotations, Vec<UnknownRecord>, BTreeSet<ArenaClass>),
 ) -> Result<Decoded, CodecError> {
+    let (annotations, unknowns, untyped) = retained;
+    // A scoped root lists no body: no member the design states produces one
+    // (interim, errata A1).
+    if ir.design.scopes.is_empty() {
+        ir.state_root_definition(
+            ctx,
+            cadmpeg_ir::ids::ProductDefinitionId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "model", "product-definition"),
+                cadmpeg_ir::identity_key!("root"),
+            ),
+            cadmpeg_ir::products::ExternalDocument::default(),
+        )?;
+    }
     ir.source = Some(crate::assemble::source_meta(scan, matched)?);
     body.notes = crate::container::notes(scan);
     if let Some(loss) = crate::dialect::dialect_loss(matched) {
         body.losses.push(loss);
     }
-    let mut source_fidelity = SourceFidelity::with_annotations(annotations);
+    let mut source_fidelity =
+        SourceFidelity::with_annotations(annotations, Sha256Digest::digest(&scan.data));
+    let ids = unknowns
+        .iter()
+        .map(|record| record.id().clone())
+        .collect::<Vec<_>>();
     source_fidelity.attach_native_unknown_records(&mut ir, "catia", unknowns, ctx)?;
+    if !untyped.is_empty() {
+        for id in &ids {
+            source_fidelity.mark_untyped(id.as_str(), untyped.iter().copied())?;
+        }
+    }
     Ok(Decoded {
         ir,
         body,

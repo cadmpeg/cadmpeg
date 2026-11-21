@@ -449,7 +449,7 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
     .get();
     assert_eq!(
         point_on_surface(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             signed_sphere_point,
             &signed_sphere
         ),
@@ -476,7 +476,7 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
     .get();
     assert_eq!(
         point_on_surface(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             torus_point,
             &torus
         ),
@@ -643,7 +643,7 @@ fn circle_pair_selection_bound_rejects_the_solution_with_a_loss() {
 
     let mut ir = CadIr::empty();
     for (index, angle) in [0.0_f64, 1.0, 0.5, 3.0].into_iter().enumerate() {
-        ir.model.points.push(Point::new(
+        ir.geometry.points.push(Point::new(
             PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
             cadmpeg_ir::features::FinitePoint3::new(Point3::new(angle.cos(), angle.sin(), 0.0))
                 .expect("a finite position is a point"),
@@ -652,7 +652,7 @@ fn circle_pair_selection_bound_rejects_the_solution_with_a_loss() {
     }
     let surface_id =
         SurfaceId::mint("catia:test:surface#plane".to_string()).expect("identity grammar");
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -663,6 +663,7 @@ fn circle_pair_selection_bound_rejects_the_solution_with_a_loss() {
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
     let bindings = [(surface_id.clone(), false, 0)];
     let surface_indices = HashMap::from([(surface_id, 0)]);
@@ -1020,7 +1021,7 @@ fn standard_plane_normals_require_signed_face_frame_vectors() {
 #[test]
 fn standard_spline_uses_identity_bound_native_support_pcurves() {
     let mut ir = CadIr::empty();
-    ir.model.points.extend(
+    ir.geometry.points.extend(
         [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)]
             .into_iter()
             .enumerate()
@@ -1097,15 +1098,15 @@ fn standard_spline_uses_identity_bound_native_support_pcurves() {
     .expect("valid source object identity");
     let curve = curve.expect("native support identifies the curve");
     assert_eq!(range, Some([2.0, 5.0]));
-    assert_eq!(ir.model.surfaces.len(), 2);
-    let [procedural] = ir.model.procedural_curves.as_slice() else {
+    assert_eq!(ir.geometry.surfaces.len(), 2);
+    let [procedural] = ir.geometry.procedural_curves.as_slice() else {
         panic!("one procedural curve");
     };
     let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() else {
         panic!("intersection construction");
     };
     assert_eq!(
-        ir.model.procedural_curve_owner(&procedural.id),
+        ir.geometry.procedural_curve_owner(&procedural.id),
         Some(&curve)
     );
     assert_eq!(context.parameter_range().endpoints(), [2.0, 5.0]);
@@ -1163,7 +1164,7 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
 
     assert_eq!(
         standard_native_support_endpoint_pair(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &native,
             &points,
             &[0, 1],
@@ -1200,7 +1201,7 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
     );
     assert_eq!(
         standard_native_support_endpoint_pair(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &native,
             &points,
             &[0, 1],
@@ -1220,7 +1221,7 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
     );
     assert_eq!(
         standard_native_support_endpoint_pair(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &reversed,
             &points,
             &[0, 1],
@@ -1238,7 +1239,7 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
     ));
     assert_eq!(
         standard_native_support_endpoint_pair(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &native,
             &points,
             &[0, 1, 2],
@@ -1258,7 +1259,7 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
     );
     assert_eq!(
         standard_native_support_endpoint_pair(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &disagreeing,
             &points,
             &[0, 1],
@@ -1294,7 +1295,7 @@ fn limit_curve_point_binding_rejects_separated_occurrences_with_unequal_residual
 #[test]
 fn limit_curve_binding_retains_correlated_edge_candidates() {
     let mut ir = CadIr::empty();
-    ir.model.points.extend(
+    ir.geometry.points.extend(
         [Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)]
             .into_iter()
             .enumerate()
@@ -1310,7 +1311,7 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
     );
     let surface_id =
         SurfaceId::mint("catia:test:surface#surface".to_string()).expect("identity grammar");
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1321,6 +1322,7 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
     let support = StandardCurveSupport {
         pos: 10,
@@ -1386,7 +1388,7 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
     assert_eq!(range, Some(binding.parameter_range));
     assert!(matches!(
         curve
-            .and_then(|id| ir.model.curves.iter().find(|curve| curve.id == id))
+            .and_then(|id| ir.geometry.curves.iter().find(|curve| curve.id == id))
             .map(|curve| &curve.geometry),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve))) if curve == &limit_curve
     ));
@@ -1419,7 +1421,7 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
 #[test]
 fn limit_curve_point_search_bound_skips_the_curve_with_a_loss() {
     let mut ir = CadIr::empty();
-    ir.model.points.extend(
+    ir.geometry.points.extend(
         [Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)]
             .into_iter()
             .enumerate()
@@ -1435,7 +1437,7 @@ fn limit_curve_point_search_bound_skips_the_curve_with_a_loss() {
     );
     let surface_id =
         SurfaceId::mint("catia:test:surface#surface".to_string()).expect("identity grammar");
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1446,6 +1448,7 @@ fn limit_curve_point_search_bound_skips_the_curve_with_a_loss() {
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
     let support = StandardCurveSupport {
         pos: 10,
@@ -1517,7 +1520,7 @@ fn standard_line_edge_uses_distance_parameterization() {
         .into_iter()
         .enumerate()
     {
-        ir.model.points.push(Point::new(
+        ir.geometry.points.push(Point::new(
             PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
             cadmpeg_ir::features::FinitePoint3::new(position)
                 .expect("a finite position is a point"),
@@ -1561,7 +1564,7 @@ fn standard_line_edge_accepts_a_finite_nonzero_distance() {
         .into_iter()
         .enumerate()
     {
-        ir.model.points.push(Point::new(
+        ir.geometry.points.push(Point::new(
             PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
             cadmpeg_ir::features::FinitePoint3::new(position)
                 .expect("a finite position is a point"),
@@ -1604,7 +1607,7 @@ fn witnessed_cylinder_circle_edge_uses_complementary_angular_range() {
     let mut ir = CadIr::empty();
     let surface_id =
         SurfaceId::mint("catia:test:surface#cylinder".to_string()).expect("identity grammar");
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -1616,6 +1619,7 @@ fn witnessed_cylinder_circle_edge_uses_complementary_angular_range() {
             .expect("valid CylinderSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
     let bindings = [(surface_id.clone(), true, 0), (surface_id.clone(), true, 0)];
     let indices = [(surface_id, 0)].into_iter().collect();
@@ -1781,7 +1785,7 @@ fn native_support_matches_endpoints_and_reverses_pcurves() {
     };
     assert_eq!(
         standard_native_support_endpoint_pair(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &native,
             &points,
             &[0, 1],
@@ -1806,7 +1810,7 @@ fn native_support_matches_endpoints_and_reverses_pcurves() {
 fn bspline_edge_takes_its_limit_curve_geometry() {
     let mut ir = CadIr::empty();
     for (index, x) in [0.0, 1.0].into_iter().enumerate() {
-        ir.model.points.push(Point::new(
+        ir.geometry.points.push(Point::new(
             PointId::mint(format!("catia:test:point#{index}")).expect("identity"),
             cadmpeg_ir::features::FinitePoint3::new(Point3::new(x, 0.0, 0.0))
                 .expect("finite point"),
@@ -1849,6 +1853,6 @@ fn bspline_edge_takes_its_limit_curve_geometry() {
     })
     .expect("build standard edge curve");
     assert!(admitted.0.is_some());
-    assert!(matches!(&ir.model.curves[0].geometry,
+    assert!(matches!(&ir.geometry.curves[0].geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) if curve == &limit_curve));
 }

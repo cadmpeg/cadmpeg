@@ -1,44 +1,95 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "10",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "assembly_joints": [],
-      "attributes": [],
-      "bodies": [],
-      "coedges": [],
+    "design": {
+      "arrangements": [],
       "configurations": [],
-      "curves": [],
-      "drawings": [],
-      "edges": [],
-      "faces": [],
+      "containers": [],
+      "evaluations": [],
       "features": [],
-      "loops": [],
-      "occurrences": [],
+      "names": [],
       "parameters": [],
-      "pcurves": [],
-      "pmi": [],
-      "points": [],
-      "presentation_documents": [],
-      "presentation_layers": [],
-      "procedural_curves": [],
-      "procedural_surfaces": [],
-      "product_definitions": [],
-      "regions": [],
-      "semantic_annotations": [],
-      "shells": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
+    "fragment": false,
+    "geometry": {
+      "bodies": [],
+      "coedges": [],
+      "curves": [],
+      "edges": [],
+      "faces": [],
+      "loops": [],
+      "pcurves": [],
+      "points": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [],
+      "shells": [],
+      "subds": [],
+      "surfaces": [],
+      "vertices": []
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "iges:model:product-definition#root",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
-      "subds": [],
-      "surfaces": [],
       "tessellations": [],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {
@@ -851,22 +902,49 @@
         ]
       }
     },
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
+        "author": "author",
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "drafting_standard": "0",
+        "iges_version_flag": "11",
+        "model_scale": "1",
         "native_file_name": "part.igs",
+        "native_system_id": "cadmpeg",
         "native_units": "MM",
+        "organization": "org",
         "parameter_delimiter": ",",
+        "preprocessor_version": "0.1",
         "record_delimiter": ";",
         "representation": "fixed-ascii",
-        "sender_product": "product"
+        "sender_product": "product",
+        "units_flag": "2"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "effective_version": "5.3",
               "representation": "fixed-ascii",
@@ -874,7 +952,8 @@
             },
             "dialect": "iges:5.3-fixed-ascii"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -882,16 +961,21 @@
       "linear": 0.001
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "effective_version": "5.3",
             "representation": "fixed-ascii",
@@ -899,15 +983,18 @@
           },
           "dialect": "iges:5.3-fixed-ascii"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "entity.not-projected",
-          "kind": "record_not_typed",
-          "namespace": "iges",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "entity.not-projected",
+            "kind": "record_not_typed",
+            "namespace": "iges"
+          }
         },
         "message": "IGES entity type 410 form 0 was not projected: view number, projection, transform, scale, or clipping fields are invalid",
         "provenance": {
@@ -920,10 +1007,12 @@
       },
       {
         "code": {
-          "code": "entity.not-projected",
-          "kind": "record_not_typed",
-          "namespace": "iges",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "entity.not-projected",
+            "kind": "record_not_typed",
+            "namespace": "iges"
+          }
         },
         "message": "IGES entity type 410 form 0 was not projected: view number, projection, transform, scale, or clipping fields are invalid",
         "provenance": {
@@ -936,10 +1025,12 @@
       },
       {
         "code": {
-          "code": "entity.not-projected",
-          "kind": "record_not_typed",
-          "namespace": "iges",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "entity.not-projected",
+            "kind": "record_not_typed",
+            "namespace": "iges"
+          }
         },
         "message": "IGES entity type 402 form 3 was not projected: view-visibility blocks, display overrides, entities, or back pointers are invalid",
         "provenance": {
@@ -952,10 +1043,12 @@
       },
       {
         "code": {
-          "code": "entity.not-projected",
-          "kind": "record_not_typed",
-          "namespace": "iges",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "entity.not-projected",
+            "kind": "record_not_typed",
+            "namespace": "iges"
+          }
         },
         "message": "IGES entity type 402 form 4 was not projected: view-visibility blocks, display overrides, entities, or back pointers are invalid",
         "provenance": {
@@ -979,13 +1072,13 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "kind": "full"
     },
     "transfer_ledger": {
       "entries": [
         {
           "outcome": {
-            "disposition": "retained",
+            "kind": "retained",
             "note": "native record retained; semantic projection omitted with an attributed loss",
             "target": "iges:entity:directory#1"
           },
@@ -993,7 +1086,7 @@
         },
         {
           "outcome": {
-            "disposition": "retained",
+            "kind": "retained",
             "note": "native record retained; semantic projection omitted with an attributed loss",
             "target": "iges:entity:directory#3"
           },
@@ -1001,7 +1094,7 @@
         },
         {
           "outcome": {
-            "disposition": "retained",
+            "kind": "retained",
             "note": "native record retained; semantic projection omitted with an attributed loss",
             "target": "iges:entity:directory#5"
           },
@@ -1009,7 +1102,7 @@
         },
         {
           "outcome": {
-            "disposition": "retained",
+            "kind": "retained",
             "note": "native record retained; semantic projection omitted with an attributed loss",
             "target": "iges:entity:directory#7"
           },
@@ -1019,16 +1112,23 @@
     }
   },
   "source_fidelity": {
-    "annotations": {},
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "decode_digest": "ee4087791ed52693283c9701a3f76656d028c76d31ddc476c61b3e7136a0059e",
+    "file_digests": {},
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {
           "data": "b3JpZ2luYWwgZml4dHVyZSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgUyAgICAgIDEKMUgsLDFIOyw3SHByb2R1Y3QsOEhwYXJ0Lmlncyw3SGNhZG1wZWcsM0gwLjEsMzIsMzgsNiwzMDgsMTUsMEgsMS4wLDIsMkhNRyAgICAgIDEKTSwxLDEuMCwxNUgyMDI2MDcxNC4wMDAwMDAsMC4wMDEsMTAwMC4wLDZIYXV0aG9yLDNIb3JnLDExLDAsMEgsMEg7ICAgICAgRyAgICAgIDIKICAgICA0MTAgICAgICAgMSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMDAwRCAgICAgIDEKICAgICA0MTAgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgICBWSUVXMSAgICAgICAwRCAgICAgIDIKICAgICA0MDIgICAgICAgMiAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMDAwRCAgICAgIDMKICAgICA0MDIgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMyAgICAgICAgICAgICAgICAgVklTSUJMRSAgICAgICAwRCAgICAgIDQKICAgICA0MTAgICAgICAgMyAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMDAwRCAgICAgIDUKICAgICA0MTAgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgICBWSUVXMiAgICAgICAwRCAgICAgIDYKICAgICA0MDIgICAgICAgNCAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMDAwRCAgICAgIDcKICAgICA0MDIgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgNCAgICAgICAgICAgICAgICAgRElTUExBWSAgICAgICAwRCAgICAgIDgKNDEwLDEsMSwwLDAsMCwwLDAsMCwxLDMsMDsgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAxUCAgICAgIDEKNDAyLDEsMCwxOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAzUCAgICAgIDIKNDEwLDIsMSwwLDAsMCwwLDAsMCwxLDcsMDsgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA1UCAgICAgIDMKNDAyLDEsMCw1LDEsMCwyLDM7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA3UCAgICAgIDQKUzAwMDAwMDFHMDAwMDAwMkQwMDAwMDA4UDAwMDAwMDQgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgVCAgICAgIDEK",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 0,
-        "stream": "iges"
+        "stream": "iges",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

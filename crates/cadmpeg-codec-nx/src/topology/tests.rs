@@ -14,7 +14,9 @@ use crate::test_support::test_prt::prt_with_partition;
 use crate::test_support::test_streams::charted_intersection_with_edge_endpoint_witnesses_stream;
 use crate::test_support::test_streams::deltas_intersection_curve_stream;
 use crate::test_support::test_streams::offset_surface_topology_partition_stream;
+use crate::test_support::test_streams::push_vertex_loop;
 use crate::test_support::test_streams::topology_partition_stream;
+use crate::test_support::test_streams::vertex_loop_topology_partition_stream;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -27,6 +29,214 @@ use crate::NxCodec;
 use cadmpeg_core::decode::View;
 
 mod primary_edges;
+
+#[test]
+fn fin_followed_by_an_attribute_record_survives_overlapping_tag_matches() {
+    // The FIN's reference bytes also read as other record tags, so only the
+    // attribute record at its end identifies the FIN as the owner of those bytes.
+    let stream = [
+        0x00, 0x11, 0x00, 0x1e, 0x00, 0x01, 0x00, 0x6d, 0x00, 0x1d, 0x00, 0x24, 0x00, 0x0b, 0x00,
+        0x1f, 0x00, 0x18, 0x00, 0x01, 0x00, 0x23, 0x2d, 0x00, 0x51, 0x00, 0x00, 0x00, 0x01, 0x00,
+        0x52, 0x00, 0x00, 0x00, 0x55, 0x00, 0x51, 0x00, 0x4e, 0x00, 0x01, 0x00, 0x01, 0x00, 0x4f,
+        0x00, 0x16, 0x00, 0xbd, 0x00, 0x54, 0x00, 0x00, 0x00, 0x20, 0x00, 0x69, 0x61, 0x38,
+    ];
+    let graph = Graph::parse(&stream);
+    let fin = graph
+        .get(NodeKind::Fin, 30)
+        .and_then(Node::fin_fields)
+        .expect("the FIN record is kept");
+    assert_eq!(fin.forward.map(u32::from), Some(29));
+    assert_eq!(fin.other.map(u32::from), Some(31));
+}
+
+#[test]
+fn a_tag_match_inside_an_integer_attribute_does_not_duplicate_a_real_vertex() {
+    let stream = [
+        0x00, 0x12, 0x00, 0x51, 0x00, 0x00, 0x00, 0xbc, 0x00, 0x01, 0x00, 0x53, 0x00, 0x4e, 0x00,
+        0x54, 0x00, 0x4f, 0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00, 0x00, 0x03, 0x00, 0x52,
+        0x00, 0x00, 0x00, 0x01, 0x01, 0xed, 0x00, 0x00, 0x00, 0x12, 0x00, 0x51, 0x00, 0x00, 0x00,
+        0x01, 0x01, 0xee, 0x00, 0x00, 0x01, 0xff, 0x00, 0x10, 0x01, 0x50, 0x01, 0xf0, 0x00, 0x01,
+        0x01, 0xf1, 0x01, 0x9f, 0x01, 0xf2, 0x00, 0x51, 0x00, 0x00, 0x00, 0x01, 0x01, 0x83, 0x00,
+        0x00, 0x01, 0xff, 0x00, 0x10, 0x00, 0x60, 0x00, 0x61, 0x00, 0x01, 0x00, 0x62, 0x00, 0x63,
+        0x00, 0x64,
+    ];
+    let graph = Graph::parse(&stream);
+    let vertex = graph
+        .get(NodeKind::Vertex, 81)
+        .expect("the real VERTEX keeps its identity");
+    assert_eq!(vertex.pos(), 0);
+}
+
+#[test]
+fn attribute_reference_with_a_high_byte_of_one_does_not_hide_the_real_edge() {
+    let mut stream = vec![
+        0x00, 0x10, 0x01, 0x20, 0x00, 0x00, 0x01, 0x31, 0x01, 0x22, 0xc2, 0xbc, 0x92, 0x8f, 0x99,
+        0x6e, 0x00, 0x00, 0x01, 0x23, 0x01, 0x24, 0x01, 0x1c, 0x01, 0x1d, 0x00, 0x01, 0x00, 0x01,
+        0x00, 0x03,
+    ];
+    stream.extend([
+        0x00, 0x51, 0x00, 0x00, 0x00, 0x01, 0x01, 0x22, 0x00, 0x00, 0x01, 0xf7, 0x00, 0x10, 0x01,
+        0x20, 0x00, 0x01, 0x00, 0x01, 0x01, 0x11, 0x01, 0x1e, 0x02, 0x4d, 0x00, 0x54, 0x00, 0x00,
+        0x00, 0x02, 0x02, 0x4c, 0x32, 0x64, 0x00, 0x00,
+    ]);
+    let graph = Graph::parse(&stream);
+    let edge = graph
+        .get(NodeKind::Edge, 288)
+        .expect("the real EDGE is kept");
+    assert_eq!(edge.pos(), 0);
+}
+
+#[test]
+fn cliff_edge_blend_and_its_zero_radius_edge_support_are_blend_records() {
+    let mut stream = crate::test_support::test_streams::blend_surface_topology_partition_stream();
+    let blend = stream
+        .windows(4)
+        .position(|window| window == [0, 56, 0, 12])
+        .expect("blend record");
+    stream[blend + 19] = b'E';
+    let mut edge_support = record(56, 66);
+    put_ref(&mut edge_support, 2, 40);
+    edge_support[18] = b'+';
+    edge_support[19] = b'R';
+    put_ref(&mut edge_support, 20, 6);
+    put_ref(&mut edge_support, 22, 6);
+    put_ref(&mut edge_support, 24, 41);
+    put_f64(&mut edge_support, 42, 1.0);
+    put_f64(&mut edge_support, 50, 1.0);
+    for at in [58, 60, 62, 64] {
+        put_ref(&mut edge_support, at, 1);
+    }
+    stream.extend(edge_support);
+
+    let graph = Graph::parse(&stream);
+    let blends = graph.blend_surfaces();
+    assert_eq!(blends.len(), 1);
+    assert_eq!(blends[0].xmt, 12);
+    let edges = graph.zero_radius_blends();
+    assert_eq!(edges.len(), 1);
+    assert_eq!((edges[0].xmt, edges[0].spine), (40, 41));
+}
+
+#[test]
+fn intersection_record_with_five_references_keeps_its_chart_and_the_next_record() {
+    let mut stream = charted_intersection_with_edge_endpoint_witnesses_stream();
+    let modern = Graph::parse(&stream).composite_curves();
+    let [curve] = modern.as_slice() else {
+        panic!("the fixture has one intersection");
+    };
+    let nodes = Graph::parse(&stream).node_count();
+    let record = curve.pos;
+    let sixth = record + 29;
+    stream.drain(sixth..sixth + 2);
+
+    let graph = Graph::parse(&stream);
+    let older = graph.composite_curves();
+    let [older_curve] = older.as_slice() else {
+        panic!("the five-reference intersection is still a record");
+    };
+    assert_eq!(older_curve.xmt, curve.xmt);
+    assert_eq!(older_curve.references[..5], curve.references[..5]);
+    assert_eq!(older_curve.references[5], None);
+    assert_eq!(graph.node_count(), nodes);
+}
+
+#[test]
+fn a_declared_intersection_keeps_a_sixth_reference_that_reads_as_a_record_tag() {
+    let mut stream = charted_intersection_with_edge_endpoint_witnesses_stream();
+    let [curve] = Graph::parse(&stream).composite_curves()[..] else {
+        panic!("the fixture has one intersection");
+    };
+    let record = curve.pos;
+    // The sixth reference spells a REGION tag, and the bytes after the record start no record.
+    stream[record + 29..record + 31].copy_from_slice(&[0, NodeKind::Region.code()]);
+    stream.splice(record + 31..record + 31, [0, 0x2a]);
+    let undeclared = Graph::parse(&stream).composite_curves();
+    let [undeclared] = undeclared.as_slice() else {
+        panic!("the undeclared intersection is still a record");
+    };
+    assert_eq!(undeclared.references[5], None);
+
+    stream.splice(record..record, TYPE_38_SCHEMA_HEADER.iter().copied());
+    let declared = Graph::parse(&stream).composite_curves();
+    let [declared] = declared.as_slice() else {
+        panic!("the declared intersection is still a record");
+    };
+    assert_eq!(declared.xmt, curve.xmt);
+    assert_eq!(declared.references[..5], curve.references[..5]);
+    assert_eq!(
+        declared.references[5],
+        cadmpeg_parasolid::xmt::XmtTarget::from_wire(u32::from(NodeKind::Region.code()))
+    );
+}
+
+#[test]
+fn a_tag_match_with_the_identity_of_a_real_shell_does_not_remove_the_shell() {
+    let mut stream = topology_partition_stream();
+    let graph = Graph::parse(&stream);
+    let shell = graph.of_kind(NodeKind::Shell).next().unwrap().xmt();
+    assert_eq!(graph.body_shape_shells().count(), 1);
+
+    stream.extend_from_slice(&[0, 13]);
+    stream.extend_from_slice(&u16::try_from(shell).unwrap().to_be_bytes());
+    stream.extend_from_slice(&[0, 1, 0x53, 0]);
+    stream.extend_from_slice(&[0x41; 24]);
+
+    assert_eq!(Graph::parse(&stream).body_shape_shells().count(), 1);
+}
+
+#[test]
+fn schema_text_read_as_an_attribute_record_does_not_hide_the_topology_after_it() {
+    let topology = topology_partition_stream();
+    let expected_faces = Graph::parse(&topology).of_kind(NodeKind::Face).count();
+    assert!(expected_faces > 0);
+
+    let count = 82_196_u32;
+    let span = usize::try_from(count).unwrap() * 4;
+    let mut stream = vec![0, 0x52];
+    stream.extend_from_slice(&count.to_be_bytes());
+    stream.extend_from_slice(b"sc");
+    stream.extend_from_slice(&topology);
+    let padding = 8 + span - stream.len();
+    stream.extend_from_slice(&vec![0; padding]);
+
+    assert_eq!(
+        Graph::parse(&stream).of_kind(NodeKind::Face).count(),
+        expected_faces
+    );
+}
+
+#[test]
+fn a_tag_match_inside_an_attribute_record_does_not_take_the_following_fin() {
+    let stream = [
+        0x00, 0x51, 0x00, 0x00, 0x00, 0x01, 0x00, 0x14, 0x00, 0x00, 0x00, 0x1d, 0x00, 0x17, 0x00,
+        0x09, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x18, 0x00, 0x19, 0x00, 0x11, 0xff, 0x00,
+        0x15, 0x00, 0x01, 0x00, 0x1a, 0x00, 0x15, 0x00, 0x15, 0x00, 0x01, 0x00, 0x1b, 0x00, 0x09,
+        0x00, 0x01, 0x00, 0x01, 0x2b, 0x00, 0x10, 0x00, 0x16, 0x00, 0x00, 0x00, 0x06, 0x00, 0x18,
+        0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00, 0x00, 0x1c, 0x00, 0x09, 0x00, 0x01, 0x00,
+        0x12, 0x00, 0x01, 0x00, 0x01, 0x00, 0x02,
+    ];
+    let graph = Graph::parse(&stream);
+    assert!(graph
+        .get(NodeKind::Fin, 21)
+        .and_then(Node::fin_fields)
+        .is_some());
+    assert!(graph.get(NodeKind::Point, 23).is_none());
+}
+
+#[test]
+fn fin_followed_by_an_attribute_name_survives_overlapping_tag_matches() {
+    let stream = [
+        0x00, 0x11, 0x00, 0x1e, 0x00, 0x01, 0x00, 0x8c, 0x00, 0x1d, 0x00, 0x24, 0x00, 0x0b, 0x00,
+        0x1f, 0x00, 0x18, 0x00, 0x01, 0x00, 0x23, 0x2d, 0x00, 0x4f, 0x00, 0x00, 0x00, 0x0f, 0x00,
+        0x67, 0x55, 0x47, 0x53, 0x2f, 0x4f, 0x62, 0x6a, 0x65, 0x63, 0x74, 0x53, 0x74, 0x61, 0x74,
+        0x65, 0x00, 0x54, 0x00, 0x00, 0x00, 0x20, 0x00, 0x53, 0x32, 0x65, 0x65, 0x34, 0x63,
+    ];
+    let graph = Graph::parse(&stream);
+    assert!(graph
+        .get(NodeKind::Fin, 30)
+        .and_then(Node::fin_fields)
+        .is_some());
+}
 
 #[test]
 fn unique_candidate_filter_reuses_input_storage() {
@@ -128,9 +338,9 @@ fn topology_retains_shell_body_identity_without_body_record() {
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.bodies[0].id.as_str(), "nx:s0:body#2");
-    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.bodies[0].id.as_str(), "nx:s0:body#2");
+    assert_eq!(result.ir().geometry.faces.len(), 1);
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
@@ -165,8 +375,8 @@ fn topology_accepts_complete_fixed_nodes_across_the_u32_identifier_domain() {
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
@@ -220,9 +430,9 @@ fn topology_admits_high_identity_carriers_from_typed_topology_slots() {
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.surfaces.len(), 1);
-    assert_eq!(result.ir().model.curves.len(), 1);
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.curves.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
 }
 
 #[test]
@@ -290,7 +500,7 @@ fn topology_closes_high_identity_procedural_surface_dependencies() {
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.procedural_surfaces.len(), 1);
 }
 
 #[test]
@@ -352,9 +562,12 @@ fn topology_accepts_cached_last_face_and_implicit_region_identity() {
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.regions.len(), 1);
-    assert_eq!(result.ir().model.regions[0].id.as_str(), "nx:s0:region#12");
-    assert_eq!(result.ir().model.faces.len(), 2);
+    assert_eq!(result.ir().geometry.regions.len(), 1);
+    assert_eq!(
+        result.ir().geometry.regions[0].id.as_str(),
+        "nx:s0:region#12"
+    );
+    assert_eq!(result.ir().geometry.faces.len(), 2);
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
@@ -369,15 +582,15 @@ fn topology_rejects_nonreciprocal_fin_ring() {
         .expect("fin record");
     put_ref(&mut stream, fin + 8, 99);
     let graph = crate::topology::Graph::parse(&stream);
-    assert!(graph.face_loop_rings(4).is_err());
+    assert!(graph.face_loops(4).is_err());
 
     let mut input = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
-    assert!(result.ir().model.loops.is_empty());
-    assert!(result.ir().model.coedges.is_empty());
-    assert!(result.ir().model.edges.is_empty());
+    assert!(result.ir().geometry.loops.is_empty());
+    assert!(result.ir().geometry.coedges.is_empty());
+    assert!(result.ir().geometry.edges.is_empty());
 
     let mut broken_partner = topology_partition_stream();
     let fin = broken_partner
@@ -386,7 +599,7 @@ fn topology_rejects_nonreciprocal_fin_ring() {
         .expect("fin record");
     put_ref(&mut broken_partner, fin + 14, 99);
     let graph = Graph::parse(&broken_partner);
-    assert!(graph.face_loop_rings(4).is_err());
+    assert!(graph.face_loops(4).is_err());
 }
 
 #[test]
@@ -399,7 +612,7 @@ fn unresolved_fin_edge_records_face_boundary_loss() {
     put_ref(&mut stream, fin + 16, 99);
     let graph = Graph::parse(&stream);
     assert!(matches!(
-        graph.face_loop_rings(4),
+        graph.face_loops(4),
         Err(FaceLoopFailure::UnresolvedFinEdge {
             loop_xmt: 5,
             fin_xmt: 7,
@@ -411,8 +624,8 @@ fn unresolved_fin_edge_records_face_boundary_loss() {
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .expect("decode");
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert!(result.ir().model.loops.is_empty());
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert!(result.ir().geometry.loops.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == NxLossCode::TopologyFaceLoopUnresolved.kind()
             && loss.message.contains("FIN 7")
@@ -427,14 +640,14 @@ fn admitted_loop_records_loss_when_its_edge_cannot_emit() {
     let vertex = graph.get(NodeKind::Vertex, 10).expect("vertex");
     put_ref(&mut stream, vertex.pos() + 16, 99);
     let graph = Graph::parse(&stream);
-    assert!(graph.face_loop_rings(4).is_ok());
+    assert!(graph.face_loops(4).is_ok());
 
     let mut input = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .expect("decode");
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert!(result.ir().model.loops.is_empty());
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert!(result.ir().geometry.loops.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == NxLossCode::TopologyLoopRingUnresolved.kind()
             && loss.message.contains("LOOP 5")
@@ -464,15 +677,15 @@ fn linked_fin_ring_order_is_emitted() {
     stream.extend(third_fin);
     let graph = Graph::parse(&stream);
     assert_eq!(
-        graph.face_loop_rings(4).expect("source ring")[0].1,
-        vec![13, 7, 6]
+        graph.face_loops(4).expect("source ring")[0].1,
+        crate::topology::FaceLoop::Ring(vec![13, 7, 6])
     );
 
     let mut input = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .expect("decode");
-    let ids = result.ir().model.loops[0]
+    let ids = result.ir().geometry.loops[0]
         .coedges()
         .iter()
         .map(cadmpeg_ir::ids::CoedgeId::as_str)
@@ -495,7 +708,7 @@ fn face_loop_chain_order_is_emitted() {
     put_ref(&mut stream, second_loop.pos + 14, 5);
     put_ref(&mut stream, first_loop.pos + 14, 1);
     let graph = Graph::parse(&stream);
-    let source = graph.face_loop_rings(4).expect("linked loop chain");
+    let source = graph.face_loops(4).expect("linked loop chain");
     assert_eq!(
         source.iter().map(|(xmt, _)| *xmt).collect::<Vec<_>>(),
         vec![21, 5]
@@ -507,7 +720,7 @@ fn face_loop_chain_order_is_emitted() {
         .expect("decode");
     let face = result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.id.as_str().ends_with("#4"))
@@ -536,7 +749,7 @@ fn topology_accepts_fixed_record_envelope_escape() {
             .attribute_field_offset(),
         Some(fin + 5)
     );
-    assert_eq!(graph.face_loop_rings(4).unwrap().len(), 1);
+    assert_eq!(graph.face_loops(4).unwrap().len(), 1);
 }
 
 #[test]
@@ -1242,4 +1455,180 @@ fn edge_endpoint_witness_uses_partner_and_only_null_falls_back() {
             }
         });
     }
+}
+
+#[test]
+fn vertex_loop_fin_emits_a_vertex_boundary_beside_the_ring_loop() {
+    let stream = vertex_loop_topology_partition_stream(40);
+    let graph = Graph::parse(&stream);
+    assert_eq!(
+        graph.face_loops(4).expect("face loops"),
+        vec![
+            (5, crate::topology::FaceLoop::Ring(vec![7])),
+            (
+                21,
+                crate::topology::FaceLoop::Vertex {
+                    fin_xmt: 22,
+                    vertex: cadmpeg_parasolid::xmt::XmtTarget::from_wire(40),
+                }
+            ),
+        ]
+    );
+    assert!(graph.has_complete_body_topology());
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .expect("decode");
+    let model = &result.ir().geometry;
+    assert_eq!(model.faces.len(), 1);
+    let loops = model.faces[0]
+        .loops
+        .iter()
+        .map(cadmpeg_ir::ids::LoopId::as_str)
+        .collect::<Vec<_>>();
+    assert!(
+        loops.len() == 2 && loops[0].ends_with("#5") && loops[1].ends_with("#21"),
+        "{loops:?}"
+    );
+    let vertex_loop = model
+        .loops
+        .iter()
+        .find(|loop_| loop_.id.as_str().ends_with("#21"))
+        .expect("vertex loop");
+    let (vertex, pcurves) = vertex_loop.singular_vertex().expect("vertex boundary");
+    assert!(vertex.as_str().ends_with("#40"), "{vertex:?}");
+    assert!(pcurves.is_empty());
+    assert!(model.vertices.iter().any(|kept| &kept.id == vertex));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == NxLossCode::TopologyVertexLoopUnresolved.kind()));
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("validate the neutral model");
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn an_unresolved_vertex_loop_is_omitted_and_its_face_is_kept() {
+    let mut stream = topology_partition_stream();
+    let graph = Graph::parse(&stream);
+    let face = graph.get(NodeKind::Face, 4).expect("first face");
+    put_ref(&mut stream, face.pos() + 18, 30);
+    let mut second_face = record(14, 39);
+    put_ref(&mut second_face, 2, 30);
+    put_ref(&mut second_face, 8, 1);
+    put_f64(&mut second_face, 10, 0.000_2);
+    put_ref(&mut second_face, 18, 1);
+    put_ref(&mut second_face, 20, 4);
+    put_ref(&mut second_face, 22, 31);
+    put_ref(&mut second_face, 24, 3);
+    put_ref(&mut second_face, 26, 6);
+    second_face[28] = b'+';
+    stream.extend(second_face);
+    push_vertex_loop(&mut stream, 31, 32, 30, 99);
+    let graph = Graph::parse(&stream);
+    assert!(graph.face_loops(30).is_ok());
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .expect("decode");
+    let model = &result.ir().geometry;
+    assert_eq!(model.faces.len(), 2);
+    let face = model
+        .faces
+        .iter()
+        .find(|face| face.id.as_str() == "nx:s0:face#30")
+        .expect("FACE 30 is kept");
+    assert!(face.loops.is_empty(), "{:?}", face.loops);
+    assert!(model
+        .loops
+        .iter()
+        .all(|loop_| loop_.singular_vertex().is_none()));
+    assert!(model
+        .shells
+        .iter()
+        .any(|shell| shell.id.as_str() == "nx:s0:shell#3"));
+    assert!(model
+        .bodies
+        .iter()
+        .any(|body| body.id.as_str() == "nx:s0:body#2"));
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == NxLossCode::TopologyVertexLoopUnresolved.kind()
+            && loss.message.contains("LOOP 31 of FACE 30")
+            && loss.message.contains("VERTEX 99")
+    }));
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("validate the neutral model");
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn a_face_keeps_its_ring_loop_when_its_vertex_loop_is_unresolved() {
+    let stream = vertex_loop_topology_partition_stream(99);
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .expect("decode");
+    let model = &result.ir().geometry;
+    assert_eq!(model.faces.len(), 1);
+    let loops = model.faces[0]
+        .loops
+        .iter()
+        .map(cadmpeg_ir::ids::LoopId::as_str)
+        .collect::<Vec<_>>();
+    assert!(loops.len() == 1 && loops[0].ends_with("#5"), "{loops:?}");
+    assert!(model
+        .bodies
+        .iter()
+        .any(|body| body.id.as_str() == "nx:s0:body#2"));
+    let losses = &result.report().losses;
+    assert!(losses.iter().any(|loss| {
+        loss.code == NxLossCode::TopologyVertexLoopUnresolved.kind()
+            && loss.message.contains("LOOP 21 of FACE 4")
+    }));
+    assert!(!losses
+        .iter()
+        .any(|loss| loss.code == NxLossCode::TopologyShellWithheld.kind()));
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("validate the neutral model");
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn one_face_shell_whose_face_has_no_surface_withholds_its_shell_and_body() {
+    let mut stream = topology_partition_stream();
+    let face = Graph::parse(&stream)
+        .get(NodeKind::Face, 4)
+        .expect("face")
+        .pos();
+    put_ref(&mut stream, face + 26, 1);
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .expect("decode");
+    let model = &result.ir().geometry;
+    assert!(model.faces.is_empty());
+    assert!(model.loops.is_empty());
+    assert!(!model
+        .shells
+        .iter()
+        .any(|shell| shell.id.as_str() == "nx:s0:shell#3"));
+    assert!(!model
+        .bodies
+        .iter()
+        .any(|body| body.id.as_str() == "nx:s0:body#2"));
+    assert!(!model
+        .regions
+        .iter()
+        .any(|region| region.id.as_str() == "nx:s0:region#12"));
+    let losses = &result.report().losses;
+    assert!(losses.iter().any(|loss| {
+        loss.code == NxLossCode::TopologyShellWithheld.kind() && loss.message.contains("SHELL 3")
+    }));
+    assert!(losses.iter().any(|loss| {
+        loss.code == NxLossCode::TopologyShellWithheld.kind() && loss.message.contains("BODY 2")
+    }));
 }

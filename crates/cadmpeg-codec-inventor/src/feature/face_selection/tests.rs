@@ -1169,11 +1169,11 @@ fn thicken_fixture(ctx: &DecodeContext<'_>) -> (crate::feature::FeatureInventory
     retarget(
         &mut feature,
         "thicken",
-        FeatureOperation::Thicken {
-            faces: FaceSelection::Native(properties[0].id()),
-            thickness: cadmpeg_ir::scalar::PositiveLength::new(1.0),
-            side: None,
-        },
+        FeatureOperation::thicken(
+            FaceSelection::Native(properties[0].id()),
+            cadmpeg_ir::scalar::PositiveLength::new(1.0),
+            None,
+        ),
     );
     let mut inventory = crate::feature::FeatureInventory {
         features: vec![source],

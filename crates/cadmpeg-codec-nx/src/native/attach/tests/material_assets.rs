@@ -16,6 +16,7 @@ fn material_asset_attachment_preserves_tiff() {
     let scan = crate::decode::Scan {
         container,
         streams: Vec::new(),
+        untyped: std::cell::RefCell::default(),
     };
 
     let ir = crate::test_support::with_decode_context(|ctx| {
@@ -47,6 +48,7 @@ fn material_asset_attachment_retains_the_tiff_copy() {
     let scan = crate::decode::Scan {
         container,
         streams: Vec::new(),
+        untyped: std::cell::RefCell::default(),
     };
     let copy = cadmpeg_core::decode::u64_from_index(texture.len());
     for (limit, admitted) in [(copy, true), (copy - 1, false)] {
