@@ -160,6 +160,8 @@ fn compact_owned_thread_forms_preserve_wire_identity_and_reference_shape() {
         wire["designation_offset"] = serde_json::json!(46);
         let construction: DesignThreadConstruction = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(construction.form, form);
+        assert_eq!(construction.class(), Some("6H"));
+        assert_eq!(construction.external(), None);
         assert_eq!(serde_json::to_value(&construction).unwrap(), wire);
         assert!(form.designation_offset_holds(46, 0));
         assert!(!form.designation_offset_holds(42, 0));
