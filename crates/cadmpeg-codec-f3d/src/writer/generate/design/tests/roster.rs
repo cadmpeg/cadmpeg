@@ -775,6 +775,27 @@ fn the_snapshot_is_the_solved_part_of_the_history_stream() {
     assert!(snapshot.len() < history.len());
 }
 
+/// The user parameters of a design whose timeline items own no parameter
+/// store family discriminator `0`.
+#[test]
+fn user_parameters_without_an_owned_parameter_store_discriminator_zero() {
+    let (report, _, bytes) = write_bytes(&scoped_cube());
+    let design = segment(&bytes, "FusionDesignSegmentType1");
+    let records = design.records_of(super::super::types::PARAMETER.guid);
+    assert!(!records.is_empty());
+    for (index, _) in records {
+        assert_eq!(u32_at(design.record(index), 22), 0, "record {index}");
+    }
+    assert!(
+        loss(&report, "export/record.residual-unavailable")
+            .iter()
+            .any(|message| message.contains("user parameter")
+                && message.contains("family discriminator 0")),
+        "{:#?}",
+        report.losses
+    );
+}
+
 #[test]
 fn a_design_with_no_written_parameter_is_written_as_its_roster() {
     let mut ir = scoped_cube();

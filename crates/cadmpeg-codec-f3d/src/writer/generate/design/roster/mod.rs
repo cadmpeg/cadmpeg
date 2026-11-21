@@ -24,6 +24,7 @@ use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::report::loss::LossNote;
 
 use super::frames::DesignRecords;
+use crate::records::parameters::DesignParameterDiscriminator;
 use crate::records::references::DesignClassTag;
 use crate::writer::generate::presentation::TypeRow;
 use extrude::ExtrudeRecords;
@@ -274,6 +275,24 @@ impl Context<'_> {
         Ok(())
     }
 
+    /// The family discriminator of the user parameters: the value of the
+    /// parameters the timeline items own when an item owns one, else `0`, so
+    /// that the parameter records of the segment store one value (DR-911).
+    pub(super) fn user_discriminator(&self) -> DesignParameterDiscriminator {
+        let owns_parameters = self.roster.extrude.is_some()
+            || self
+                .roster
+                .sketches
+                .items
+                .iter()
+                .any(|sketch| sketch.parameters().next().is_some());
+        if owns_parameters {
+            owned::DISCRIMINATOR
+        } else {
+            DesignParameterDiscriminator::Code0
+        }
+    }
+
     /// The parameter records whose tails name the parameter collection, in
     /// ascending record index: the user parameters and the parameters the
     /// timeline items own.
@@ -423,6 +442,17 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
         Some(records) => notes.extend(extrude::losses(ctx, records)),
     }
     notes.extend(sketches::dimensions::losses(ctx));
+    notes.extend(record_residual_unavailable(
+        "F3D",
+        &format!(
+            "writes these user parameters with family discriminator {}, the value of the parameters the timeline items own or 0 without one, where f3d-open-items.md DR-911 states no rule",
+            ctx.user_discriminator().code()
+        ),
+        ctx.roster
+            .parameters
+            .iter()
+            .map(|record| format!("record {record} (user parameter)")),
+    ));
     notes.extend(record_residual_unavailable(
         "F3D",
         FIXED_CLOCK,

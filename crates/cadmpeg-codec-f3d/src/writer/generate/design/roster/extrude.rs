@@ -660,7 +660,8 @@ pub(super) fn losses(
             records.scope
         ),
         format!(
-            "records {along} and {taper} (Extrude parameters: family discriminator {DISCRIMINATOR}, DR-911; the ten-byte expression trailer with every flag 0; the parameter tail naming the parameter collection)"
+            "records {along} and {taper} (Extrude parameters: family discriminator {}, DR-911; the ten-byte expression trailer with every flag 0; the parameter tail naming the parameter collection)",
+            DISCRIMINATOR.code()
         ),
         format!(
             "records {} and {} (persistent selection identities: local identities {FIRST_SELECTION_IDENTITY} and {})",

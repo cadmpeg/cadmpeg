@@ -436,6 +436,7 @@ impl BaseFeaturePlan<'_> {
             &ctx.class(types::PARAMETER.guid)?,
             &ctx.roster.parameters,
             indices.collection,
+            ctx.user_discriminator(),
             out,
         )
     }

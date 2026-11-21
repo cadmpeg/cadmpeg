@@ -12,10 +12,11 @@ use super::super::parameters::OwnedParameter;
 use super::super::types;
 use super::sketches::OWNER_COLLECTION;
 use super::{Context, PARAMETER_COLLECTION};
+use crate::records::parameters::DesignParameterDiscriminator;
 
 /// The family discriminator of an owned parameter (f3d-open-items.md
 /// DR-911, DR-917).
-pub(super) const DISCRIMINATOR: u64 = 6;
+pub(super) const DISCRIMINATOR: DesignParameterDiscriminator = DesignParameterDiscriminator::Code6;
 
 /// The expression trailer of a parameter of the written type version 8: the
 /// text flag, four zero bytes and five flag bytes, all `0` (f3d.md §3.1).
@@ -70,7 +71,7 @@ pub(super) fn write(
         .reference(OWNER_COLLECTION);
     out.record(&ctx.class(types::PARAMETER.guid)?, parameter)
         .zeros(11)
-        .u64(DISCRIMINATOR)
+        .u64(DISCRIMINATOR.code())
         .byte(0)
         .u32(value.ordinal)
         .reference(owner)

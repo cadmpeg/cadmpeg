@@ -4,6 +4,8 @@
 //! "Side-face walk"), decoded back and read from the archive's Design
 //! segment.
 
+use std::collections::BTreeSet;
+
 use cadmpeg_ir::design::container::Container;
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::FeatureOperation;
@@ -469,6 +471,42 @@ fn every_parameter_record_closes_with_the_trailer_of_its_type_version() {
             "{expected:?} in {written:?}"
         );
     }
+}
+
+/// The user parameters store the family discriminator of the Extrude's
+/// owned parameters, so the segment's parameter records store one value, and
+/// the residual note names the choice (DR-911).
+#[test]
+fn the_parameter_records_of_an_extrude_design_store_one_discriminator() {
+    let (report, decoded, bytes) = write_bytes(&sketch_and_extrude(blind(), false));
+    let design = segment(&bytes, "FusionDesignSegmentType1");
+    let mut kinds = BTreeSet::new();
+    for (index, _) in design.records_of(super::super::types::PARAMETER.guid) {
+        let record = design.record(index);
+        assert_eq!(u32_at(record, 22), 6, "record {index}");
+        let (_, comment_end) = utf16_at(record, 27);
+        let expression_at = comment_end + 4 + if record[comment_end + 4] == 0 { 1 } else { 11 };
+        let (_, end) = utf16_at(record, expression_at);
+        kinds.insert(utf16_at(record, end + 10).0);
+    }
+    assert!(kinds.contains("User Parameter"), "{kinds:?}");
+    assert!(kinds.contains("AlongDistance"), "{kinds:?}");
+    assert!(decoded
+        .model
+        .parameters
+        .iter()
+        .any(|parameter| parameter.name == "Width" && parameter.owner.is_none()));
+    let notes = loss(&report, "export/record.residual-unavailable")
+        .into_iter()
+        .filter(|message| message.contains("user parameter"))
+        .collect::<Vec<_>>();
+    let [note] = notes.as_slice() else {
+        panic!("one user-parameter note: {:#?}", report.losses);
+    };
+    assert!(
+        note.contains("family discriminator 6") && note.contains("DR-911"),
+        "{note}"
+    );
 }
 
 #[test]

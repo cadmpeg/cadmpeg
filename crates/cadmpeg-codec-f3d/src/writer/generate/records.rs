@@ -411,24 +411,6 @@ pub(super) fn encode_document_parameters(
     let mut parameter_indices = std::collections::BTreeSet::new();
     let mut parameter_ordinals = std::collections::BTreeSet::new();
     for parameter in parameters {
-        let expected_discriminator =
-            crate::design::decode::parameters::design_parameter_discriminator(
-                parameter.source_kind_str(),
-            );
-        if parameter
-            .family_discriminator()
-            .map(|value| value.value.code())
-            != Some(expected_discriminator)
-        {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D Design parameter {} has discriminator {:?}, expected {expected_discriminator} for {}",
-                parameter.id,
-                parameter
-                    .family_discriminator()
-                    .map(|value| value.value.code()),
-                parameter.source_kind()
-            )));
-        }
         let crate::records::parameters::DesignParameterSource::User {
             family_discriminator: Some(family_discriminator),
             ..
