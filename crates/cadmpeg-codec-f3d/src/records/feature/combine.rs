@@ -555,6 +555,11 @@ pub(crate) struct DesignCombineOperation {
     pub(crate) target_body_node: Option<DesignCombineBodyNode>,
     /// Boolean tool body selectors in source order.
     pub(crate) tools: DesignCombineTools,
+    /// Browser-node records of the bodies that the operation creates.
+    pub(crate) created_body_nodes: Vec<u32>,
+    /// Browser-node records of the tool bodies that the operation consumes
+    /// in its own component.
+    pub(crate) consumed_body_nodes: Vec<u32>,
 }
 
 #[cfg(test)]
@@ -576,6 +581,8 @@ impl Clone for DesignCombineOperation {
             target_record_index: self.target_record_index,
             target_body_node: self.target_body_node,
             tools: self.tools.clone(),
+            created_body_nodes: self.created_body_nodes.clone(),
+            consumed_body_nodes: self.consumed_body_nodes.clone(),
         }
     }
 }
@@ -599,6 +606,10 @@ struct DesignCombineOperationRef<'a> {
     destination: DesignCombineDestination,
     target: DesignCombineBodySelection,
     tools: DesignCombineToolsRef<'a>,
+    #[serde(skip_serializing_if = "<[u32]>::is_empty")]
+    created_body_nodes: &'a [u32],
+    #[serde(skip_serializing_if = "<[u32]>::is_empty")]
+    consumed_body_nodes: &'a [u32],
 }
 
 impl Serialize for DesignCombineOperation {
@@ -616,6 +627,8 @@ impl Serialize for DesignCombineOperation {
                 body_node: self.target_body_node,
             },
             tools: DesignCombineToolsRef(&self.tools),
+            created_body_nodes: &self.created_body_nodes,
+            consumed_body_nodes: &self.consumed_body_nodes,
         }
         .serialize(serializer)
     }
@@ -654,6 +667,10 @@ struct DesignCombineOperationWire {
     target: DesignCombineBodySelection,
     /// Boolean tool body selectors in source order.
     tools: Vec<DesignCombineBodySelection>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    created_body_nodes: Vec<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    consumed_body_nodes: Vec<u32>,
 }
 
 fn deserialize_combine_operation_kind<'de, D: Deserializer<'de>>(
@@ -686,6 +703,8 @@ impl TryFrom<DesignCombineOperationWire> for DesignCombineOperation {
                 first,
                 additional: tools.collect(),
             },
+            created_body_nodes: wire.created_body_nodes,
+            consumed_body_nodes: wire.consumed_body_nodes,
         })
     }
 }
@@ -708,6 +727,8 @@ impl From<DesignCombineOperation> for DesignCombineOperationWire {
             tools: std::iter::once(operation.tools.first)
                 .chain(operation.tools.additional)
                 .collect(),
+            created_body_nodes: operation.created_body_nodes,
+            consumed_body_nodes: operation.consumed_body_nodes,
         }
     }
 }
@@ -748,6 +769,24 @@ mod tests {
             );
             assert_eq!(value.clone().destination, value.destination);
         }
+    }
+
+    #[test]
+    fn combine_body_node_lists_round_trip_and_omit_empty_lists() {
+        let mut value = operation(false);
+        let wire = serde_json::to_value(&value).unwrap();
+        assert!(wire.get("created_body_nodes").is_none());
+        assert!(wire.get("consumed_body_nodes").is_none());
+        value.created_body_nodes = vec![541, 546];
+        value.consumed_body_nodes = vec![510];
+        let wire = serde_json::to_value(&value).unwrap();
+        assert_eq!(wire["created_body_nodes"], serde_json::json!([541, 546]));
+        assert_eq!(wire["consumed_body_nodes"], serde_json::json!([510]));
+        assert_eq!(
+            serde_json::from_value::<DesignCombineOperation>(wire).unwrap(),
+            value
+        );
+        assert_eq!(value.clone(), value);
     }
 
     fn external_identity(version: bool) -> DesignCombineExternalBodyIdentity {

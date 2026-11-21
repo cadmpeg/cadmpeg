@@ -87,6 +87,8 @@ fn combine_scope(tools: &[(u32, u32)]) -> DesignParameterScope {
                 first: rows.next().unwrap(),
                 additional: rows.collect(),
             },
+            created_body_nodes: Vec::new(),
+            consumed_body_nodes: Vec::new(),
         });
     }
     scope

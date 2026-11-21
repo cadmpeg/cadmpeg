@@ -253,6 +253,8 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             },
 
             destination: Default::default(),
+            created_body_nodes: Vec::new(),
+            consumed_body_nodes: Vec::new(),
         });
     }
     let mut combine_recipe = recipe.clone();

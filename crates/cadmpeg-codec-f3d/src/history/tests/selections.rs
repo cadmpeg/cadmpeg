@@ -823,6 +823,8 @@ fn combine_external_scope() -> crate::records::feature::scope::DesignParameterSc
             },
 
             destination: Default::default(),
+            created_body_nodes: Vec::new(),
+            consumed_body_nodes: Vec::new(),
         });
     }
     scope
@@ -1765,6 +1767,8 @@ mod operand_list_combine {
             },
 
             destination: Default::default(),
+            created_body_nodes: Vec::new(),
+            consumed_body_nodes: Vec::new(),
         }
     }
 
@@ -1784,12 +1788,25 @@ mod operand_list_combine {
         (BodySelection, BodySelection),
         Vec<cadmpeg_ir::report::loss::LossNote>,
     ) {
+        let (selections, losses, _) = bind_with_outcome(operation, history, scopes);
+        (selections, losses)
+    }
+
+    fn bind_with_outcome(
+        operation: DesignCombineOperation,
+        history: &crate::history_records::AsmHistory,
+        scopes: &[DesignParameterScope],
+    ) -> (
+        (BodySelection, BodySelection),
+        Vec<cadmpeg_ir::report::loss::LossNote>,
+        Option<bool>,
+    ) {
         let combine_state = i64::try_from(history.states().len()).unwrap() - 1;
         let combine = scope(400, combine_state);
         let mut target = BodySelection::Native(format!("{STREAM}:design-record#11"));
         let mut tools = BodySelection::Native(format!("{STREAM}:design-record#12"));
-        let mut losses = Vec::new();
-        super::super::super::bind_operand_list_combine_bodies(
+        let mut refusals = Vec::new();
+        let shared_body = super::super::super::bind_operand_list_combine_bodies(
             (&mut target, &mut tools),
             &combine,
             &operation,
@@ -1798,9 +1815,10 @@ mod operand_list_combine {
                 combine_state - 1,
             ),
             (std::slice::from_ref(history), scopes),
-            &mut losses,
+            &mut refusals,
         );
-        ((target, tools), losses)
+        let losses = refusals.into_iter().map(|(_, loss)| loss).collect();
+        ((target, tools), losses, shared_body)
     }
 
     fn input_body_slots(selection: &BodySelection) -> Vec<i64> {
@@ -1871,10 +1889,11 @@ mod operand_list_combine {
             (node(200), vec![node(300), node(999)], 2),
             (node(200), vec![node(300), node(300)], 2),
         ] {
-            let (selections, losses) =
-                bind_with_losses(operation(target, &tools), &history, &creators());
+            let (selections, losses, shared_body) =
+                bind_with_outcome(operation(target, &tools), &history, &creators());
             assert_target_only(&selections, target_slot);
             assert_eq!(operand_refusals(&losses), 1);
+            assert_ne!(shared_body, Some(true));
         }
         for target in [None, node(999)] {
             let ((target, tools), losses) = bind_with_losses(
@@ -1892,10 +1911,11 @@ mod operand_list_combine {
     fn a_tool_that_names_the_target_body_leaves_both_selections_native() {
         let history = history(&[&[], &[1], &[1, 2], &[1, 2, 3], &[2]]);
         for tools in [vec![node(200), node(100)], vec![node(300), node(200)]] {
-            let (selections, losses) =
-                bind_with_losses(operation(node(200), &tools), &history, &creators());
+            let (selections, losses, shared_body) =
+                bind_with_outcome(operation(node(200), &tools), &history, &creators());
             assert_native(&selections);
             assert_eq!(operand_refusals(&losses), 1);
+            assert_eq!(shared_body, Some(true));
         }
     }
 

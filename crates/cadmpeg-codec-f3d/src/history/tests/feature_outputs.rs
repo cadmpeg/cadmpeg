@@ -1627,6 +1627,8 @@ fn only_the_operand_list_form_keeps_a_stored_join_with_kept_tools() {
                 },
 
                 destination: Default::default(),
+                created_body_nodes: Vec::new(),
+                consumed_body_nodes: Vec::new(),
             });
         }
         let mut feature = Feature {
