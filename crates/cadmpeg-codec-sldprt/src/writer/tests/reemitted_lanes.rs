@@ -146,10 +146,10 @@ fn a_config_objects_lane_is_written_to_its_own_member() {
     assert_eq!(lanes(&written).1, expected);
 }
 
-/// VER-SWSWL probe (uncommitted): the same part written with no fidelity,
-/// so no lane has a provenance annotation.
+/// The same part written with no decode sidecar, so no lane has a provenance
+/// annotation: each lane goes to the member its family names.
 #[test]
-fn ver_probe_a_config_objects_lane_without_provenance_keeps_its_own_member() {
+fn a_config_objects_lane_without_provenance_is_written_to_its_own_member() {
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
 

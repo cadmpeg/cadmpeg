@@ -1705,10 +1705,21 @@ fn fit_feature_input_renames(
     });
 }
 
-/// The member a feature-input lane is written to: the stream it was decoded
-/// from, with the configuration index the write gave the lane. A lane the
-/// writer generated takes the `ResolvedFeatures` member of its configuration.
+/// The member a feature-input lane is written to. A lane with provenance goes
+/// to the stream it was decoded from, with the configuration index the write
+/// gave the lane. A lane with no provenance (a write with no decode sidecar)
+/// goes to the member its family names: a config-objects lane is the whole
+/// `Contents/Config-N` member, any other lane of a configuration is its
+/// `Config-N-ResolvedFeatures` member. The family name also serves a lane
+/// whose source stream names no configuration but whose document gives it one.
 fn lane_section(lane: &crate::records::FeatureInputLane, annotations: &Annotations) -> String {
+    let family_section = |configuration: &str| {
+        if crate::resolved_features::assembly::is_supplemental_config_lane(lane) {
+            format!("Contents/Config-{configuration}")
+        } else {
+            format!("Contents/Config-{configuration}-ResolvedFeatures")
+        }
+    };
     let source = annotations
         .provenance
         .get(&lane.id)
@@ -1717,9 +1728,9 @@ fn lane_section(lane: &crate::records::FeatureInputLane, annotations: &Annotatio
         (Some(stream), None) => stream.to_owned(),
         (Some(stream), Some(configuration)) => {
             crate::resolved_features::names::renumbered_section(stream, configuration)
-                .unwrap_or_else(|| format!("Contents/Config-{configuration}-ResolvedFeatures"))
+                .unwrap_or_else(|| family_section(configuration))
         }
-        (None, Some(configuration)) => format!("Contents/Config-{configuration}-ResolvedFeatures"),
+        (None, Some(configuration)) => family_section(configuration),
         (None, None) => "Contents/ResolvedFeatures".into(),
     }
 }
