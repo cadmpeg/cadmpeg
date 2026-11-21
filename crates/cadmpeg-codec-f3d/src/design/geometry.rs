@@ -87,6 +87,9 @@ pub(crate) struct ProfileGeometryWork {
     spatial_transition_assumed_selections: Cell<usize>,
     hole_boundary_inferred_selections: Cell<usize>,
     region_hole_inferred_selections: Cell<usize>,
+    unresolved_profile_groups: Cell<usize>,
+    composed_profile_groups: Cell<usize>,
+    body_circle_rings_assumed_selections: Cell<usize>,
     sampled_regions: RefCell<Vec<RegionSampleEntry>>,
     arrangement_reuse: RefCell<Option<ArrangementReuse>>,
 }
@@ -163,9 +166,24 @@ impl ProfileGeometryWork {
             spatial_transition_assumed_selections: Cell::new(0),
             hole_boundary_inferred_selections: Cell::new(0),
             region_hole_inferred_selections: Cell::new(0),
+            unresolved_profile_groups: Cell::new(0),
+            composed_profile_groups: Cell::new(0),
+            body_circle_rings_assumed_selections: Cell::new(0),
             sampled_regions: RefCell::new(Vec::new()),
             arrangement_reuse: RefCell::new(None),
         }
+    }
+
+    /// A same-sketch extrude profile group did not resolve to one selection.
+    pub(crate) fn note_unresolved_profile_group(&self) {
+        self.unresolved_profile_groups
+            .set(self.unresolved_profile_groups.get() + 1);
+    }
+
+    /// A same-sketch extrude profile group composed its operand regions as their union.
+    pub(crate) fn note_composed_profile_group(&self) {
+        self.composed_profile_groups
+            .set(self.composed_profile_groups.get() + 1);
     }
 
     /// Run `run` with one shared build of the arrangement of `sketch` and
@@ -306,6 +324,11 @@ impl ProfileGeometryWork {
     pub(crate) fn record_region_hole_profile_inferred(&self) {
         self.region_hole_inferred_selections
             .set(self.region_hole_inferred_selections.get() + 1);
+    }
+
+    pub(crate) fn record_body_circle_rings_assumed(&self) {
+        self.body_circle_rings_assumed_selections
+            .set(self.body_circle_rings_assumed_selections.get() + 1);
     }
 
     pub(crate) fn inferred_counts(&self) -> (usize, usize) {
@@ -568,6 +591,24 @@ impl ProfileGeometryWork {
         if region_hole_inferred != 0 {
             losses.push(F3dLossCode::FeatureProfileRegionHoleInferred.note(format!(
                 "{region_hole_inferred} extrude profile selection(s) assume that an inserted region's holes belong to the selected profile."
+            )));
+        }
+        let unresolved_groups = self.unresolved_profile_groups.get();
+        if unresolved_groups != 0 {
+            losses.push(F3dLossCode::FeatureExtrudeProfileGroupNative.note(format!(
+                "{unresolved_groups} extrude profile group(s) remain native because their sketch-profile regions did not resolve to one selection."
+            )));
+        }
+        let composed_groups = self.composed_profile_groups.get();
+        if composed_groups != 0 {
+            losses.push(F3dLossCode::FeatureExtrudeProfileGroupUnionAssumed.note(format!(
+                "{composed_groups} extrude profile group(s) compose multiple same-sketch region operands as the union of their regions (DR-165)."
+            )));
+        }
+        let body_circle_rings_assumed = self.body_circle_rings_assumed_selections.get();
+        if body_circle_rings_assumed != 0 {
+            losses.push(F3dLossCode::FeatureProfileBodyCircleRingsAssumed.note(format!(
+                "{body_circle_rings_assumed} extrude profile selection(s) assume the smallest concentric sketch-circle ring set covering a cap bounded by a preceding body cylinder."
             )));
         }
         losses

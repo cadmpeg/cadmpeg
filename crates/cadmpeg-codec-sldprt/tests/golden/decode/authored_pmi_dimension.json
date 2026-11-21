@@ -637,6 +637,18 @@
         "code": {
           "kind": "namespaced",
           "value": {
+            "code": "design.feature-unresolved",
+            "kind": "record_not_typed",
+            "namespace": "sldprt"
+          }
+        },
+        "message": "1 sketch and 0 extrude features state their family without operands: sldprt:model:feature#348:0 (the sketch feature names no planar sketch)",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
             "code": "history.rollback-unread",
             "kind": "feature_history_retained",
             "namespace": "sldprt"

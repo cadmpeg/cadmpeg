@@ -23,6 +23,7 @@ pub fn project(
     let mut text = Vec::new();
     match write_serde_json(
         CanonicalAdmission::limited(ctx, operation),
+        None,
         &mut text,
         value,
     ) {
