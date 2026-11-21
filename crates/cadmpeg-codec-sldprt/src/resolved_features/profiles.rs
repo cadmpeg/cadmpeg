@@ -2409,7 +2409,7 @@ pub(crate) fn project_marker_backed_sketches(
                                 &record_lists,
                                 offset,
                                 &read.geometry,
-                                read.construction,
+                                Some(read.construction),
                             )
                             .0;
                             listed_elsewhere.push((marker.id().to_owned(), read));
