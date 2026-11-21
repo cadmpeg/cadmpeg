@@ -46,6 +46,7 @@ struct Plan {
     curve_range: ParameterInterval,
     plane_pcurve: Option<(usize, PcurveGeometry, ParameterInterval, usize)>,
     plane_fit_tolerance: Option<FitTolerance>,
+    plane_projection_gap: Option<f64>,
     vertex_misses: [(usize, f64); 2],
 }
 
@@ -624,6 +625,7 @@ pub(in crate::families) fn attach(
             let mut curve_range = interval;
             let mut plane_pcurve = None;
             let mut plane_fit_tolerance = None;
+            let mut plane_projection_gap = None;
             for ((other, other_range), other_occurrence) in [reps.target, reps.source]
                 .into_iter()
                 .zip(ranges)
@@ -814,10 +816,22 @@ pub(in crate::families) fn attach(
                 };
                 if compatible {
                     if ir.geometry.coedges[plane_coedges[0]].pcurves.is_empty() {
-                        plane_pcurve = pcurve.map(|pcurve| {
-                            (plane_coedges[0], pcurve, source_range, other.byte_offset())
-                        });
-                        if let class25::Class25Accuracy::Fitted { fit_tolerance, .. } = map.accuracy
+                        plane_pcurve = pcurve
+                            .map(|pcurve| {
+                                (plane_coedges[0], pcurve, source_range, other.byte_offset())
+                            })
+                            .or_else(|| {
+                                let (projected, bound) = super::weighted_plane::project_curve(
+                                    &curve_cache,
+                                    face_plane,
+                                    refusal,
+                                )?;
+                                plane_projection_gap = Some(bound.get());
+                                plane_fit_tolerance = Some(bound);
+                                Some((plane_coedges[0], projected, curve_range, line.byte_offset()))
+                            });
+                        if let (None, class25::Class25Accuracy::Fitted { fit_tolerance, .. }) =
+                            (plane_projection_gap, &map.accuracy)
                         {
                             plane_fit_tolerance = FitTolerance::try_new(fit_tolerance.get()).ok();
                         }
@@ -882,6 +896,7 @@ pub(in crate::families) fn attach(
                 curve_range,
                 plane_pcurve,
                 plane_fit_tolerance,
+                plane_projection_gap,
                 vertex_misses,
             });
         }
@@ -939,15 +954,25 @@ pub(in crate::families) fn attach(
                 "weighted_surface_curve",
                 Some(true),
                 None,
+                None,
             )
         });
         let plane_pcurves = plan.plane_pcurve.into_iter().map(|pcurve| {
             (
                 pcurve,
-                "consolidated_b20",
-                "weighted_plane_curve",
+                if plan.plane_projection_gap.is_some() {
+                    "consolidated_b18"
+                } else {
+                    "consolidated_b20"
+                },
+                if plan.plane_projection_gap.is_some() {
+                    "projected_plane_curve"
+                } else {
+                    "weighted_plane_curve"
+                },
                 None,
                 plan.plane_fit_tolerance,
+                plan.plane_projection_gap,
             )
         });
         for (
@@ -956,6 +981,7 @@ pub(in crate::families) fn attach(
             role,
             isoparametric,
             fit_tolerance,
+            projection_gap,
         ) in face_pcurves.chain(plane_pcurves)
         {
             let id = crate::resource::compose_index_id(
@@ -971,7 +997,9 @@ pub(in crate::families) fn attach(
                 role,
                 cadmpeg_ir::Exactness::Derived,
             )?;
-            if let Some(tolerance) = fit_tolerance {
+            if let Some(gap) = projection_gap {
+                refusal.push_plane_pcurve_projected(source_pos, gap);
+            } else if let Some(tolerance) = fit_tolerance {
                 refusal.push_parameter_map_pcurve_accuracy(source_pos, tolerance.get());
             }
             admission.charge()?;

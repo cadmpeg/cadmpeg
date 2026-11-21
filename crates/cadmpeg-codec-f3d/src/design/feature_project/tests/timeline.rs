@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
+
 use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::feature_project::project_parameter_design_with_edge_identities;
-use crate::design::feature_project::{ScopeHistoryBinding, ScopeHistoryGraph};
+use crate::design::feature_project::scope_order::ScopeHistoryBinding;
+use crate::design::feature_project::scope_order::ScopeHistoryGraph;
 use crate::design::test_support::parameter_record;
 use crate::records::entity_header::DesignFeatureTimeline;
 use crate::records::feature::assembly::DesignAssemblyAlignment;
@@ -110,7 +112,8 @@ fn history_state_predecessors_are_component_qualified() {
     let predecessor = graph
         .predecessor(&second, |_| true)
         .expect("component-qualified state chain");
-    let crate::design::feature_project::ScopeHistoryPredecessor::Scope(predecessor) = predecessor
+    let crate::design::feature_project::scope_order::ScopeHistoryPredecessor::Scope(predecessor) =
+        predecessor
     else {
         panic!("component-local predecessor");
     };
@@ -217,7 +220,7 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
         authored.context_record_index,
     )
     .unwrap();
-    let ordinals = crate::design::feature_project::authored_scope_ordinals(
+    let ordinals = crate::design::feature_project::scope_order::authored_scope_ordinals(
         &scopes,
         &[unrelated, authored.clone()],
     )
@@ -296,6 +299,7 @@ fn a_reciprocal_thread_projects_after_its_hole() {
             panic!("Thread scope");
         };
         *construction = Some(DesignThreadConstruction {
+            angle: crate::records::feature::thread::DesignThreadAngle::SIXTY,
             form: DesignThreadForm::Compact(Some(Located {
                 value: NonZeroU32::new(owner).unwrap(),
                 offset: 0,
@@ -368,12 +372,18 @@ fn a_reciprocal_thread_projects_after_its_hole() {
         assert_eq!(result.features.len(), 3);
     });
 
-    let direct =
-        super::super::authored_scope_ordinals(&scopes, &[timeline(&[100, 120, 110])]).unwrap();
+    let direct = crate::design::feature_project::scope_order::authored_scope_ordinals(
+        &scopes,
+        &[timeline(&[100, 120, 110])],
+    )
+    .unwrap();
     assert_eq!(direct.get(&(stream, 110)), Some(&2));
     scopes.push(thread(150, Some(56), 100));
-    let ambiguous =
-        super::super::authored_scope_ordinals(&scopes, &[timeline(&[100, 120])]).unwrap();
+    let ambiguous = crate::design::feature_project::scope_order::authored_scope_ordinals(
+        &scopes,
+        &[timeline(&[100, 120])],
+    )
+    .unwrap();
     assert_eq!(ambiguous.len(), 2);
     assert_eq!(ambiguous.get(&(stream, 120)), Some(&1));
 }
@@ -699,7 +709,7 @@ fn feature_projection_rejects_multiple_datum_envelope_positions() {
         std::num::NonZeroU64::new(2).unwrap(),
     )
     .unwrap();
-    let result = crate::design::feature_project::authored_scope_ordinals(
+    let result = crate::design::feature_project::scope_order::authored_scope_ordinals(
         &scopes,
         std::slice::from_ref(&timeline),
     );
@@ -878,8 +888,9 @@ fn timeline_less_feature_family_uses_complete_family_ordinals() {
     );
     second.feature_ordinal = std::num::NonZeroU32::new(2).expect("nonzero ordinal");
     let scopes = vec![second.clone(), first.clone()];
-    let ordinals = crate::design::feature_project::authored_scope_ordinals(&scopes, &[])
-        .expect("complete family ordinals carry exact order");
+    let ordinals =
+        crate::design::feature_project::scope_order::authored_scope_ordinals(&scopes, &[])
+            .expect("complete family ordinals carry exact order");
     assert_eq!(ordinals[&(stream, first.record_index)], 0);
     assert_eq!(ordinals[&(stream, second.record_index)], 1);
 
@@ -892,8 +903,9 @@ fn timeline_less_feature_family_uses_complete_family_ordinals() {
         })
         .unwrap();
     let mixed_scopes = vec![first, mixed];
-    let error = crate::design::feature_project::authored_scope_ordinals(&mixed_scopes, &[])
-        .expect_err("mixed families have no timeline-independent total order");
+    let error =
+        crate::design::feature_project::scope_order::authored_scope_ordinals(&mixed_scopes, &[])
+            .expect_err("mixed families have no timeline-independent total order");
     assert!(error
         .to_string()
         .contains("no complete authored timeline order"));
@@ -915,12 +927,15 @@ fn authored_scope_validation_orders_independent_streams_separately() {
     second.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
     let scopes = vec![first, second];
 
-    let ordinals = crate::design::feature_project::authored_scope_ordinals_per_stream(&scopes, &[])
-        .expect("independent stream-local orders");
+    let ordinals = crate::design::feature_project::scope_order::authored_scope_ordinals_per_stream(
+        &scopes,
+        &[],
+    )
+    .expect("independent stream-local orders");
     assert_eq!(ordinals.len(), 2);
     assert!(ordinals.values().all(|ordinal| *ordinal == 0));
     assert!(matches!(
-        crate::design::feature_project::authored_scope_ordinals(&scopes, &[]),
+        crate::design::feature_project::scope_order::authored_scope_ordinals(&scopes, &[]),
         Err(cadmpeg_core::CodecError::NotImplemented(_))
     ));
 }
@@ -1190,9 +1205,11 @@ fn owned_base_feature_takes_its_timeline_object_position() {
         scope(288, Some(287)),
         scope(400, Some(399)),
     ];
-    let ordinals =
-        crate::design::feature_project::authored_scope_ordinals(&scopes, &[timeline.clone()])
-            .unwrap();
+    let ordinals = crate::design::feature_project::scope_order::authored_scope_ordinals(
+        &scopes,
+        &[timeline.clone()],
+    )
+    .unwrap();
     assert_eq!(ordinals.get(&(stream, 100)), Some(&0));
     assert_eq!(ordinals.get(&(stream, 288)), Some(&1));
     assert_eq!(ordinals.get(&(stream, 400)), None);
@@ -1210,9 +1227,11 @@ fn owned_base_feature_takes_its_timeline_object_position() {
         owner(crate::records::feature::scope::DesignFeatureKind::CopyPasteBodies),
     ] {
         let scopes = vec![scope(100, None), owner_scope, scope(288, Some(287))];
-        let ordinals =
-            crate::design::feature_project::authored_scope_ordinals(&scopes, &[timeline.clone()])
-                .unwrap();
+        let ordinals = crate::design::feature_project::scope_order::authored_scope_ordinals(
+            &scopes,
+            &[timeline.clone()],
+        )
+        .unwrap();
         assert_eq!(ordinals.get(&(stream, 100)), Some(&0));
         assert_eq!(ordinals.get(&(stream, 287)), None);
         assert_eq!(ordinals.get(&(stream, 288)), Some(&1));

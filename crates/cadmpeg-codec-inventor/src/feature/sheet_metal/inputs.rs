@@ -100,6 +100,8 @@ pub(in crate::feature) fn project(
                 interior: sample.interior,
                 tangent: Some(sample.tangent),
                 faces: DistinctMembers::default(),
+                carrier: None,
+                supports: Vec::new(),
             });
             edges.push(edge);
         }

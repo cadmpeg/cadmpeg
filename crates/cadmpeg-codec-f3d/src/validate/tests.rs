@@ -423,7 +423,7 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     native
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             ir.native.namespace_mut("f3d"),
         )
         .unwrap();
@@ -452,7 +452,7 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
         .set_entities(crate::records::identity::ReferenceRun::located(entities));
     duplicate_type_owner
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             ir.native.namespace_mut("f3d"),
         )
         .unwrap();
@@ -492,7 +492,7 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
         .unwrap();
     native
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             ir.native.namespace_mut("f3d"),
         )
         .unwrap();
@@ -628,6 +628,8 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
                 },
 
                 destination: Default::default(),
+                created_body_nodes: Vec::new(),
+                consumed_body_nodes: Vec::new(),
             });
         }
         scopes.push(scope);
@@ -1801,7 +1803,7 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
     native.design_record_headers.extend([wrapper, following]);
     native
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             ir.native.namespace_mut("f3d"),
         )
         .unwrap();
@@ -1825,7 +1827,7 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
     });
     native
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             ir.native.namespace_mut("f3d"),
         )
         .unwrap();

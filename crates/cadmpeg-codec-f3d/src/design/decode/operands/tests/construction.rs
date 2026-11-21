@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
+
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::operands::construction_operand_group_is_retained;
 use crate::design::decode::operands::ConstructionOperandGroupParse;
 use crate::design::decode::operands::RecordFrame;
+use crate::design::feature_project::direct_face::project_split;
 use crate::design::feature_project::project_parameter_design_with_edge_identities;
-use crate::design::feature_project::project_split;
 use crate::records::decal::DesignRecordHeader;
 use crate::records::dimensions::DesignRecipeReference;
 use crate::records::entity_header::DesignFeatureTimeline;
@@ -108,6 +109,7 @@ fn legacy_extrude_group_accepts_its_independent_empty_tail_record() {
     bytes.extend_from_slice(&[0; 2]);
     bytes.extend_from_slice(&1u32.to_le_bytes());
     push_marked_reference(&mut bytes, 131);
+    let role_offset = bytes.len();
     bytes.extend_from_slice(&DesignOperandRole::BODIES_A.raw().to_le_bytes());
     bytes.extend_from_slice(&[0; 10]);
     bytes.extend_from_slice(&1u32.to_le_bytes());
@@ -120,30 +122,61 @@ fn legacy_extrude_group_accepts_its_independent_empty_tail_record() {
     push_marked_reference(&mut bytes, scope.record_index);
     indexed_header(&mut bytes, *b"262", header.record_index);
 
-    let parse = |bytes: &[u8]| {
-        super::super::parse_construction_operand_group_with_offsets(
+    let parse = |bytes: &[u8], scope: &DesignParameterScope| {
+        super::super::parse_construction_operand_group_in_stream(
             bytes,
-            &scope,
+            scope,
             0,
             &header,
             Some(&std::cell::OnceCell::new()),
+            None,
         )
     };
     assert!(matches!(
-        parse(&bytes),
+        parse(&bytes, &scope),
         ConstructionOperandGroupParse::Unclosed
     ));
     indexed_header(&mut bytes, *b"256", 180);
     let marker_payload = bytes.len();
     bytes.extend_from_slice(&[0; 18]);
     indexed_header(&mut bytes, *b"256", 181);
-    let group = parse(&bytes).complete().expect("independent empty marker");
+    let group = parse(&bytes, &scope)
+        .complete()
+        .expect("independent empty marker");
     assert_eq!(group.extrude_role(), Some(DesignExtrudeOperandRole::Bodies));
     assert_eq!(group.members()[0].value, 121);
 
+    let symmetric = crate::design::test_support::legacy_symmetric_extrude_scope(
+        scope.clone(),
+        [header.record_index, 121, 44, 45, 46],
+    );
+    assert!(matches!(
+        parse(&bytes, &symmetric),
+        ConstructionOperandGroupParse::Unclosed
+    ));
+    bytes[role_offset..role_offset + size_of::<u64>()]
+        .copy_from_slice(&DesignOperandRole::PROFILE.raw().to_le_bytes());
+    let group = parse(&bytes, &symmetric)
+        .complete()
+        .expect("independent profile marker");
+    assert_eq!(
+        group.extrude_role(),
+        Some(DesignExtrudeOperandRole::Profile)
+    );
+    assert_eq!(group.members()[0].value, 121);
+
+    let mut unrelated_member = symmetric.clone();
+    unrelated_member
+        .try_edit(|draft| *draft.reference_members.values_mut().nth(1).unwrap() = 122)
+        .unwrap();
+    assert!(matches!(
+        parse(&bytes, &unrelated_member),
+        ConstructionOperandGroupParse::Unclosed
+    ));
+
     bytes[marker_payload] = 1;
     assert!(matches!(
-        parse(&bytes),
+        parse(&bytes, &symmetric),
         ConstructionOperandGroupParse::Unclosed
     ));
 }
@@ -1656,7 +1689,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             DesignOperandRole::BODIES_A,
         );
     assert_eq!(
-        crate::design::feature_project::project_remove_body(
+        crate::design::feature_project::body_ops::project_remove_body(
             &remove_scope,
             std::slice::from_ref(&remove_group),
         ),
@@ -1705,7 +1738,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             DesignOperandRole::ROLE_0X5,
         );
     assert_eq!(
-        crate::design::feature_project::project_surface_stitch(
+        crate::design::feature_project::surface_edit::project_surface_stitch(
             &stitch_scope,
             std::slice::from_ref(&stitch_group),
         ),
@@ -1920,31 +1953,37 @@ fn remove_body_group_with_a_three_byte_discriminant_names_its_bodies() {
         [2184]
     );
     assert_eq!(group.paired_byte_offset, u64_from_index(bytes.len() - 11));
-    assert!(crate::design::feature_project::project_remove_body(
-        &scope,
-        std::slice::from_ref(&group)
-    )
-    .is_some());
+    assert!(
+        crate::design::feature_project::body_ops::project_remove_body(
+            &scope,
+            std::slice::from_ref(&group)
+        )
+        .is_some()
+    );
 }
 
 #[test]
 fn remove_body_group_refuses_empty_groups_wrong_roles_and_truncation() {
     let empty = remove_body_group_bytes(2181, 2180, 0, 0x0000_0004_0000_0000);
     if let Some((scope, group)) = remove_body_group_fixture(&empty, 2181, 2180) {
-        assert!(crate::design::feature_project::project_remove_body(
-            &scope,
-            std::slice::from_ref(&group)
-        )
-        .is_none());
+        assert!(
+            crate::design::feature_project::body_ops::project_remove_body(
+                &scope,
+                std::slice::from_ref(&group)
+            )
+            .is_none()
+        );
     }
 
     let wrong_role = remove_body_group_bytes(2181, 2180, 1, 0x0000_0005_0000_0000);
     let (scope, group) = remove_body_group_fixture(&wrong_role, 2181, 2180).expect("parses");
-    assert!(crate::design::feature_project::project_remove_body(
-        &scope,
-        std::slice::from_ref(&group)
-    )
-    .is_none());
+    assert!(
+        crate::design::feature_project::body_ops::project_remove_body(
+            &scope,
+            std::slice::from_ref(&group)
+        )
+        .is_none()
+    );
 
     let complete = remove_body_group_bytes(2181, 2180, 1, 0x0000_0004_0000_0000);
     let mut truncated = complete[..complete.len() - 12].to_vec();

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The parameter scope every feature record carries: its feature kind, its payload, and the frames and bindings the payload states.
 
-use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::decode::{index_from_u32, u64_from_index};
 
 use super::align::DesignAlignEnvelope;
 use super::assembly::DesignAssemblyAlignment;
@@ -26,7 +26,9 @@ use super::direct_face::{
     DesignOffsetFacesOperation, DesignShellOperation, DesignThickenOperation,
 };
 use super::emboss::DesignEmbossConstruction;
-use super::extrude::{DesignExtrudeOperation, DesignExtrudePrologue};
+use super::extrude::{
+    DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart,
+};
 use super::fixed_parameters::{
     DesignFixedChamferParameters, DesignFixedExtrudeParameters, DesignFixedFilletParameters,
 };
@@ -564,6 +566,16 @@ impl DesignNamedScopeReferences {
         )
     }
 
+    /// Bytes the associated references and a present middle reference add
+    /// before the preceding history-state identity.
+    fn bytes_before_previous_history_state_id(&self) -> Option<usize> {
+        let width = named_scope_tail::MIDDLE_REFERENCE - named_scope_tail::FIRST_REFERENCE;
+        self.associated
+            .len()
+            .checked_mul(width)?
+            .checked_add((width - 1) * usize::from(self.middle.is_some()))
+    }
+
     fn offsets_valid(&self, label_end: u64, paired_at: u64) -> bool {
         (|| {
             if self.associated.is_empty() && self.middle.is_none() && self.closing.is_none() {
@@ -583,7 +595,8 @@ impl DesignNamedScopeReferences {
                 (
                     &self.middle,
                     u64_from_index(
-                        named_scope_tail::CLOSING_REFERENCE - named_scope_tail::OPAQUE_WORD,
+                        named_scope_tail::CLOSING_REFERENCE
+                            - named_scope_tail::PREVIOUS_HISTORY_STATE_ID,
                     ),
                 ),
                 (&self.closing, 1),
@@ -3126,26 +3139,60 @@ impl DesignParameterScope {
         if named_tail.is_some() && draft.label.is_none() {
             return Err(fail("named_tail/label"));
         }
+        // The reference-table stride shows the reference spelling: 11-byte
+        // plain references or 51-byte typed references.
+        // A table that fits neither width falls through to the plain checks.
+        let stride = reference_table_stride(&draft).unwrap_or(11);
+        let typed = stride == crate::bytes::TYPED_LOCAL_REFERENCE_LEN
+            || (draft.reference_members.is_empty()
+                && kind == "As-built"
+                && tail == crate::layout::typed_reference_parameter_scope_tail::LEN);
+        let typed_canvas =
+            typed && kind == "Canvas" && tail == crate::layout::canvas_scope_typed_tail::LEN;
         let mut named_hole_history = None;
+        let mut labeled_previous_history = None;
         if let Some(label) = &draft.label {
             let units = label.value.encode_utf16().count();
+            let label_bytes = units * 2;
             if kind == "Hole" {
                 named_hole_history = crate::design::decode::scopes::parameter_scope::named_reciprocal_hole_previous_history_offset(
                     tail, units,
                 );
             }
-            let history_layout_holds = if let Some(relative) = named_hole_history {
-                draft.previous_history_state_id_offset
-                    == draft
-                        .feature_ordinal_offset
-                        .checked_add(u64_from_index(relative))
+            labeled_previous_history = named_hole_history.or_else(|| if typed {
+                tail.checked_sub(label_bytes)
+                    .and_then(|unlabeled| {
+                        crate::design::decode::scopes::parameter_scope::typed_scope_previous_history_offset(
+                            kind, unlabeled,
+                        )
+                    })
+                    .and_then(|relative| relative.checked_add(label_bytes))
             } else {
-                draft.previous_history_state_id_offset.is_none()
-                    && named_scope_tail::LEN
-                        .checked_add(units * 2)
-                        .and_then(|base| base.checked_add(extra_bytes))
-                        == Some(tail)
-            };
+                let plain_78 = named_scope_tail::LEN
+                    .checked_add(label_bytes)
+                    .and_then(|base| base.checked_add(extra_bytes));
+                let plain_77 = (extra_bytes == 0).then_some(named_scope_tail::LEN - 1 + label_bytes);
+                (plain_78 == Some(tail) || plain_77 == Some(tail))
+                    .then(|| {
+                        named_tail
+                            .map_or(Some(0), DesignNamedScopeReferences::bytes_before_previous_history_state_id)
+                    })
+                    .flatten()
+                    .and_then(|extra| {
+                        named_scope_tail::PREVIOUS_HISTORY_STATE_ID
+                            .checked_add(label_bytes)?
+                            .checked_add(extra)
+                    })
+            });
+            let expected_offset = labeled_previous_history.and_then(|relative| {
+                draft
+                    .feature_ordinal_offset
+                    .checked_add(u64_from_index(relative))
+            });
+            let history_layout_holds = expected_offset.is_some()
+                && (draft.previous_history_state_id_offset == expected_offset
+                    || (named_hole_history.is_none()
+                        && draft.previous_history_state_id_offset.is_none()));
             if units == 0
                 || units > 256
                 || label.value.chars().any(char::is_control)
@@ -3164,16 +3211,6 @@ impl DesignParameterScope {
                 return Err(fail("label"));
             }
         }
-        // The reference-table stride shows the reference spelling: 11-byte
-        // plain references or 51-byte typed references.
-        // A table that fits neither width falls through to the plain checks.
-        let stride = reference_table_stride(&draft).unwrap_or(11);
-        let typed = stride == crate::bytes::TYPED_LOCAL_REFERENCE_LEN
-            || (draft.reference_members.is_empty()
-                && kind == "As-built"
-                && tail == crate::layout::typed_reference_parameter_scope_tail::LEN);
-        let typed_canvas =
-            typed && kind == "Canvas" && tail == crate::layout::canvas_scope_typed_tail::LEN;
         if matches!(draft.payload, DesignScopePayload::SilhouetteSplit(Some(_)))
             && (typed
                 || draft.reference_members.len() != 4
@@ -3184,7 +3221,10 @@ impl DesignParameterScope {
         if typed && (named_tail.is_some() || named_hole_history.is_some()) {
             return Err(fail("named_tail/reference_members"));
         }
-        let tail_valid = if typed_canvas || named_tail.is_some() {
+        let tail_valid = if typed_canvas
+            || named_tail.is_some()
+            || labeled_previous_history.is_some()
+        {
             true
         } else if typed {
             crate::design::decode::scopes::parameter_scope::typed_scope_previous_history_offset(
@@ -3204,10 +3244,10 @@ impl DesignParameterScope {
             Some(offset) => {
                 let relatives = if typed_canvas {
                     Vec::new()
+                } else if let Some(relative) = labeled_previous_history {
+                    vec![relative]
                 } else if typed {
                     crate::design::decode::scopes::parameter_scope::typed_scope_previous_history_offset(kind, tail).into_iter().collect()
-                } else if let Some(relative) = named_hole_history {
-                    vec![relative]
                 } else {
                     [false, true]
                         .into_iter()
@@ -3975,6 +4015,85 @@ impl DesignParameterScope {
 
     pub(crate) fn extrude_prologue(&self) -> Option<DesignExtrudePrologue> {
         self.extrude().and_then(|extrude| extrude.extrude_prologue)
+    }
+
+    pub(crate) fn is_legacy_class_330_symmetric_distance(&self) -> bool {
+        use crate::layout::legacy_class_330_symmetric_extrude_frame as layout;
+
+        let Some(DesignExtrudePrologue::LegacyShifted {
+            operation_prefix_marker_offset: None,
+            operation: DesignExtrudeOperation::NewBody,
+            direction_face_extend_values: [3, 2],
+            side_extent_discriminators: [1, 0],
+            side_extent_discriminator_offsets,
+            extent: Some(DesignExtrudeExtent::SymmetricDistance),
+            direction_reversed: false,
+            solid_operation: true,
+            start: DesignExtrudeStart::ProfilePlane,
+            ..
+        }) = self.extrude_prologue()
+        else {
+            return false;
+        };
+        self.class_tag.as_str() == "330"
+            && self.paired_class_tag.as_str() == "262"
+            && self.frame_length == u64_from_index(layout::LEN)
+            && self.reference_count_offset.checked_sub(self.byte_offset)
+                == Some(u64_from_index(layout::REFERENCE_COUNT))
+            && self.reference_members.len() == index_from_u32(layout::REFERENCE_COUNT_VALUE)
+            && side_extent_discriminator_offsets.map(|offset| offset.checked_sub(self.byte_offset))
+                == [layout::FIRST_SIDE_EXTENT, layout::SECOND_SIDE_EXTENT]
+                    .map(|offset| Some(u64_from_index(offset)))
+    }
+
+    pub(crate) fn assumes_symmetric_distance_each_side(&self, indexed_along: bool) -> bool {
+        !indexed_along
+            && self
+                .fixed_extrude_parameters()
+                .is_some_and(|fixed| fixed.along_distance.is_some())
+    }
+
+    pub(crate) fn is_legacy_class_330_blind_cut(&self) -> bool {
+        use crate::layout::legacy_class_330_blind_cut_extrude_frame as layout;
+
+        self.class_tag.as_str() == "330"
+            && self.paired_class_tag.as_str() == "262"
+            && self.frame_length == u64_from_index(layout::LEN)
+            && self.reference_count_offset.checked_sub(self.byte_offset)
+                == Some(u64_from_index(layout::REFERENCE_COUNT))
+            && self.reference_members.len() == index_from_u32(layout::REFERENCE_COUNT_VALUE)
+            && self.extrude_prologue().is_some_and(|prologue| {
+                DesignExtrudePrologue::legacy_class_330_blind_cut(
+                    self.byte_offset,
+                    prologue.direction_reversed(),
+                ) == Some(prologue)
+            })
+    }
+
+    pub(crate) fn legacy_class_330_body_recipe_close(
+        &self,
+        group_record: u32,
+        operand_record: u32,
+    ) -> Option<u32> {
+        if !self.is_legacy_class_330_blind_cut() {
+            return None;
+        }
+        let mut members = self.reference_members.values().copied();
+        if members.next()? != group_record || members.next()? != operand_record {
+            return None;
+        }
+        let closing = members.next()?;
+        (operand_record.checked_add(3) == Some(closing)).then_some(closing)
+    }
+
+    pub(crate) fn legacy_class_330_profile_member_ordinal(&self) -> Option<u32> {
+        if self.is_legacy_class_330_symmetric_distance() {
+            Some(1)
+        } else if self.is_legacy_class_330_blind_cut() {
+            Some(3)
+        } else {
+            None
+        }
     }
 
     #[cfg(test)]

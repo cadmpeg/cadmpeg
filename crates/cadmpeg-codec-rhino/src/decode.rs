@@ -553,17 +553,6 @@ impl<'a> DecodeContext<'a> {
             .collect()
     }
 
-    /// The root definition the document states.
-    fn root_definition(&self) -> Option<cadmpeg_ir::ids::ProductDefinitionId> {
-        self.session
-            .document()
-            .model
-            .product_definitions
-            .iter()
-            .find(|definition| definition.is_root())
-            .map(|definition| definition.id.clone())
-    }
-
     /// Appends a later geometry-phase link to an object record.
     fn append_link(
         &mut self,
@@ -2668,7 +2657,13 @@ impl<'a> DecodeContext<'a> {
         for source in views.opaque_records {
             self.retain_opaque_record(&source)?;
         }
-        self.session.document_mut()?.finalize();
+        let document = self.session.document_mut()?;
+        document.state_root_definition(
+            ctx,
+            crate::product::root_definition_id(),
+            cadmpeg_ir::products::ExternalDocument::default(),
+        )?;
+        document.finalize();
         let mut losses: Vec<LossNote> = Vec::new();
         let outcomes = self.class_outcomes()?;
         let decoded = outcomes
@@ -3912,7 +3907,7 @@ fn append_record_links(ir: &mut CadIr, unknown: &UnknownId, links: &[String]) {
     record.links.sort();
     record.links.dedup();
     ir.set_native_unknowns(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         "rhino",
         &unknowns,
     )
@@ -5153,13 +5148,14 @@ fn finish_brep_fallback(mut staged: BrepDraft, cause: impl std::fmt::Display) ->
 /// Projects one embedded Brep into a self-contained semantic topology value.
 pub(crate) fn embedded_brep_json(
     expand: crate::mesh::MeshExpand<'_>,
-    data: &[u8],
     range: std::ops::Range<usize>,
     archive: ArchiveVersion,
     writer_version: Option<i64>,
     scale: MillimeterScale,
+    mesh_budget: &mut crate::mesh::MeshBudget,
     refusal: &mut Option<cadmpeg_core::CodecError>,
 ) -> Option<String> {
+    let data = expand.data();
     let parsed = match crate::brep::parse(expand.ctx(), data, range, archive, writer_version, &[]) {
         Ok(value) => value,
         Err(crate::curves::GeometryError::Codec(error)) => {
@@ -5186,7 +5182,6 @@ pub(crate) fn embedded_brep_json(
         &cadmpeg_ir::identity_namespace!("rhino", "history", "brep"),
         cadmpeg_ir::identity_key!("embedded"),
     );
-    let mut mesh_budget = crate::mesh::MeshBudget::new();
     let staged = match stage_brep(BrepTransferInput {
         expand,
         data,
@@ -5197,7 +5192,7 @@ pub(crate) fn embedded_brep_json(
         association: &association,
         unknown: &unknown,
         scale,
-        mesh_budget: &mut mesh_budget,
+        mesh_budget,
     }) {
         Ok(value) => value,
         Err(crate::curves::GeometryError::Codec(error)) => {
@@ -6435,15 +6430,18 @@ pub(crate) fn decode(
         )
     });
     let mut history_warnings = Diagnostics::new();
+    let mut mesh_budget = context.mesh_budget.clone();
     let untyped = context.validate_candidate_fallible(|candidate, _annotations| {
         crate::history::project(
             expand.ctx(),
             &scan.history,
             geometry_context,
+            &mut mesh_budget,
             candidate,
             &mut history_warnings,
         )
     });
+    context.mesh_budget = mesh_budget;
     context.report.phase_warnings.append(&mut history_warnings);
     let history_projected = untyped.is_ok();
     match untyped {
@@ -6481,9 +6479,16 @@ pub(crate) fn decode(
             format_args!("history projection rejected atomically by IR validation: {error}"),
         ),
     }
-    let design = history_projected.then(|| (context.object_bodies(), context.root_definition()));
+    let objects = history_projected.then(|| context.object_bodies());
     let mut decoded = context.commit()?;
-    if let Some((objects, root)) = design {
+    if let Some(objects) = objects {
+        let root = decoded
+            .ir
+            .model
+            .product_definitions
+            .iter()
+            .find(|definition| definition.is_root())
+            .map(|definition| definition.id.clone());
         crate::history::v11::project(expand.ctx(), &scan.history, &objects, root, &mut decoded.ir)?;
     }
     Ok(decoded)

@@ -1331,6 +1331,7 @@ mod flange_widths;
 mod local_admission;
 
 mod configurations;
+mod edge_carriers;
 mod finite_vectors;
 mod split_face;
 mod unit_scaling;

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::design::feature_project::reverse_normal::project_reverse_normal;
+use crate::design::feature_project::scope_order::authored_scope_ordinals;
 use crate::loss::F3dLossCode;
 use crate::records::entity_header::{BaseTypeGuid, SegmentType, SegmentTypeData};
 use crate::records::feature::body_ops::DesignReverseNormalOperation;
@@ -15,6 +16,7 @@ use crate::records::topology::construction::{
     DesignConstructionOperandRole,
 };
 use crate::records::topology::extrude_selection::DesignOperandRole;
+use crate::test_support::reverse_normal::{linked, timeline};
 use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
@@ -44,6 +46,7 @@ fn scope(body_group: Option<u32>) -> DesignParameterScope {
     if let DesignScopePayloadMut::ReverseNormal(slot) = scope.payload_mut() {
         *slot = body_group.map(|value| DesignReverseNormalOperation {
             body_group: Located { value, offset: 26 },
+            link: None,
         });
     }
     scope
@@ -183,4 +186,88 @@ fn body_group_outside_the_prefix_and_reference_table_stays_native() {
         assert_eq!(definition, None);
         assert!(losses.is_empty());
     }
+}
+
+/// A Reverse Normal scope at `record_index` whose prefix stores `link`.
+#[test]
+fn linked_scopes_take_the_timeline_positions_after_their_timeline_item() {
+    const LINK: &str = "180f14e0-154e-434b-acff-8bfbd101803c";
+    const OTHER_LINK: &str = "2a6b1c7d-0e3f-4a5b-9c8d-7e6f5a4b3c2d";
+    let scopes = [
+        linked(100, Some(LINK)),
+        linked(200, None),
+        linked(250, Some(LINK)),
+        linked(300, Some(LINK)),
+        linked(400, Some(OTHER_LINK)),
+    ];
+    let timelines = [timeline(&[100, 200])];
+    let authored = authored_scope_ordinals(&scopes, &timelines).unwrap();
+    let mut ordinals = authored
+        .iter()
+        .map(|((_, record_index), ordinal)| (*record_index, *ordinal))
+        .collect::<Vec<_>>();
+    ordinals.sort_unstable();
+    assert_eq!(ordinals, [(100, 0), (200, 3), (250, 1), (300, 2)]);
+    let ordered = crate::design::feature_project::reverse_normal::record_ordered_linked_scopes(
+        &scopes, &timelines, &authored,
+    );
+    assert_eq!(
+        ordered
+            .iter()
+            .map(|scope| (scope.scope_id.as_str(), scope.link.as_str()))
+            .collect::<Vec<_>>(),
+        [(scopes[2].id.as_str(), LINK), (scopes[3].id.as_str(), LINK),]
+    );
+}
+
+#[test]
+fn a_link_that_two_timeline_items_carry_leaves_its_followers_unplaced() {
+    const LINK: &str = "180f14e0-154e-434b-acff-8bfbd101803c";
+    const OTHER_LINK: &str = "2a6b1c7d-0e3f-4a5b-9c8d-7e6f5a4b3c2d";
+    let scopes = [
+        linked(100, Some(LINK)),
+        linked(200, Some(LINK)),
+        linked(250, Some(LINK)),
+        linked(300, Some(LINK)),
+        linked(400, Some(OTHER_LINK)),
+    ];
+    let authored = authored_scope_ordinals(&scopes, &[timeline(&[100, 200])]).unwrap();
+    let mut ordinals = authored
+        .iter()
+        .map(|((_, record_index), ordinal)| (*record_index, *ordinal))
+        .collect::<Vec<_>>();
+    ordinals.sort_unstable();
+    assert_eq!(ordinals, [(100, 0), (200, 1)]);
+    let unplaced =
+        crate::design::feature_project::reverse_normal::unplaced_linked_scopes(&scopes, &authored);
+    assert_eq!(
+        unplaced
+            .iter()
+            .map(|scope| (scope.scope_id.as_str(), scope.link.as_str(), scope.shared))
+            .collect::<Vec<_>>(),
+        [
+            (scopes[2].id.as_str(), LINK, true),
+            (scopes[3].id.as_str(), LINK, true),
+            (scopes[4].id.as_str(), OTHER_LINK, false),
+        ]
+    );
+}
+
+#[test]
+fn placed_linked_scopes_without_a_timeline_item_for_their_link_are_not_record_ordered() {
+    const LINK: &str = "180f14e0-154e-434b-acff-8bfbd101803c";
+    let scopes = [linked(100, Some(LINK)), linked(200, Some(LINK))];
+    let ordinals: std::collections::HashMap<(&str, u32), u64> = scopes
+        .iter()
+        .zip(0..)
+        .map(|(scope, ordinal)| ((STREAM, scope.record_index), ordinal))
+        .collect();
+    assert!(
+        crate::design::feature_project::reverse_normal::record_ordered_linked_scopes(
+            &scopes,
+            &[],
+            &ordinals
+        )
+        .is_empty()
+    );
 }

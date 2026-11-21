@@ -2,7 +2,7 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
-use crate::design::decode::dimension_frames::companion_owned_interval;
+use crate::design::decode::dimension_frames::CompanionBounds;
 use crate::design::decode::parameters::bind_parameter_companion_payloads;
 use crate::design::decode::scopes::path_feature::exact_path_feature_construction;
 use crate::design::test_support::parameter_record;
@@ -150,7 +150,7 @@ pub(super) fn fixed_kind_path_operations(
             group
         };
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_sweep(&sweep_scope, &[profile.clone(), path.clone()], &[], &[], &[], &[], decode_ctx)).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::sweep_loft::project_fixed_sweep(&sweep_scope, &[profile.clone(), path.clone()], &[], &[], &[], &[], decode_ctx)).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
             path_extent: Some(cadmpeg_ir::features::SweepPathExtent {
                 along_fraction: fraction_0,
@@ -182,7 +182,7 @@ pub(super) fn fixed_kind_path_operations(
             .unwrap();
     }
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_sweep(&sweep_scope, &[profile.clone(), path.clone(), rail], &[], &[], &[], &[], decode_ctx)).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::sweep_loft::project_fixed_sweep(&sweep_scope, &[profile.clone(), path.clone(), rail], &[], &[], &[], &[], decode_ctx)).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
             path: Some(cadmpeg_ir::features::PathRef::Native(path)),
             path_extent: Some(cadmpeg_ir::features::SweepPathExtent {
@@ -220,13 +220,13 @@ pub(super) fn fixed_kind_path_operations(
             .unwrap();
     }
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_sweep(&sweep_scope, &[profile.clone(), path.clone()], &[], &[], &[], &[], decode_ctx)).unwrap(), Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::sweep_loft::project_fixed_sweep(&sweep_scope, &[profile.clone(), path.clone()], &[], &[], &[], &[], decode_ctx)).unwrap(), Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
             shape,
             ..
         })) if matches!((&shape.mode(),), (cadmpeg_ir::features::SweepMode::Solid { op: cadmpeg_ir::features::SolidSweepOperation::NewBody },))));
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::feature_project::project_fixed_sweep(
+            crate::design::feature_project::sweep_loft::project_fixed_sweep(
                 &sweep_scope,
                 &[profile.clone(), path.clone(), body.clone()],
                 &[],
@@ -339,7 +339,7 @@ pub(super) fn fixed_kind_path_operations(
         )
         .unwrap();
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_sweep(&sweep_scope, &[selected_profile, profile_carrier, path.clone(), guide_surface], &[], &[], &[entity_selection], &[], decode_ctx)).unwrap(), Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::sweep_loft::project_fixed_sweep(&sweep_scope, &[selected_profile, profile_carrier, path.clone(), guide_surface], &[], &[], &[entity_selection], &[], decode_ctx)).unwrap(), Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
             shape,
             orientation: Some(cadmpeg_ir::features::SweepOrientation::GuideSurface {
                 faces: cadmpeg_ir::features::FaceSelection::Native(faces),
@@ -372,7 +372,7 @@ pub(super) fn fixed_kind_path_operations(
             .unwrap();
     }
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_sweep(&sweep_scope, &[body, after_body(&profile), after_body(&path)], &[], &[], &[], &[], decode_ctx)).unwrap(), Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::sweep_loft::project_fixed_sweep(&sweep_scope, &[body, after_body(&profile), after_body(&path)], &[], &[], &[], &[], decode_ctx)).unwrap(), Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
             shape,
             ..
         })) if matches!((&shape.mode(),), (cadmpeg_ir::features::SweepMode::Solid {
@@ -406,14 +406,8 @@ pub(super) fn fixed_kind_path_operations(
         })
         .unwrap();
     assert_eq!(
-        companion_owned_interval(
-            &companion,
-            std::iter::empty(),
-            &[],
-            &[scope.clone()],
-            &[],
-            100
-        ),
+        CompanionBounds::new(std::iter::empty(), &[], &[scope.clone()], &[])
+            .interval(&companion, 100),
         Some((58, 58))
     );
     scope
@@ -428,14 +422,8 @@ pub(super) fn fixed_kind_path_operations(
         })
         .unwrap();
     assert_eq!(
-        companion_owned_interval(
-            &companion,
-            std::iter::empty(),
-            &[],
-            &[scope.clone()],
-            &[],
-            100
-        ),
+        CompanionBounds::new(std::iter::empty(), &[], &[scope.clone()], &[])
+            .interval(&companion, 100),
         Some((58, 80))
     );
     scope
@@ -456,14 +444,8 @@ pub(super) fn fixed_kind_path_operations(
         byte_offset: 70,
     };
     assert_eq!(
-        companion_owned_interval(
-            &companion,
-            std::iter::empty(),
-            &[],
-            &[scope.clone()],
-            &[foreign_header],
-            100
-        ),
+        CompanionBounds::new(std::iter::empty(), &[], &[scope.clone()], &[foreign_header])
+            .interval(&companion, 100),
         Some((58, 70))
     );
 
@@ -476,7 +458,7 @@ pub(super) fn fixed_kind_path_operations(
     .expect("located parameter");
     parameter.id = "f3d:native:design-parameter#65".into();
     assert_eq!(
-        companion_owned_interval(&companion, std::iter::once(&parameter), &[], &[], &[], 100),
+        CompanionBounds::new(std::iter::once(&parameter), &[], &[], &[]).interval(&companion, 100),
         Some((58, 65))
     );
     let recipe = ConstructionRecipe {

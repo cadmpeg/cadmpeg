@@ -5,14 +5,14 @@ use super::{
 };
 use crate::history_records::{
     AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalCurveAxis,
-    AsmHistoricalCylinder, AsmHistoricalEdgeSample, AsmHistoricalEntityDelta,
-    AsmHistoricalOptionalCarrierBinding, AsmHistoricalPlane, AsmHistoricalRelation,
-    AsmHistoricalRowsDelta, AsmHistoricalSurfaceRadius, AsmHistoricalTopology,
-    AsmHistoricalTopologyDelta, AsmHistoricalTransition,
+    AsmHistoricalCylinder, AsmHistoricalEntityDelta, AsmHistoricalOptionalCarrierBinding,
+    AsmHistoricalPlane, AsmHistoricalRelation, AsmHistoricalRowsDelta, AsmHistoricalSurfaceRadius,
+    AsmHistoricalTopology, AsmHistoricalTopologyDelta, AsmHistoricalTransition,
 };
 use crate::loss::F3dLossCode;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::topology::construction::DesignConstructionOperandGroup;
+use crate::test_support::history::edge_sample;
 use cadmpeg_ir::features::edge_treatments::{FilletGroup, RadiusSpec};
 use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -89,12 +89,11 @@ fn line(topology: &mut AsmHistoricalTopology, edge: i64, direction: Vector3) {
         origin: Point3::new(0.0, 0.0, 0.0),
         direction,
     });
-    topology.edge_samples.push(AsmHistoricalEdgeSample {
-        bounds: None,
+    topology.edge_samples.push(edge_sample(
         edge,
-        interior: Point3::new(0.0, 0.0, 0.0),
-        tangent: Some(direction),
-    });
+        Point3::new(0.0, 0.0, 0.0),
+        Some(direction),
+    ));
 }
 
 /// Faces 10 and 11 meet at edge 17 along z; face 12 caps both at edge 18
@@ -228,12 +227,10 @@ fn rib_fillet() -> AsmHistoricalTopology {
         radius: 1.0,
     });
     for (edge, position) in [(30, 1.0), (31, 1.5)] {
-        topology.edge_samples.push(AsmHistoricalEdgeSample {
-            bounds: None,
-            edge,
-            interior: Point3::new(position, centre.y, 0.0),
-            tangent: Some(x()),
-        });
+        let interior = Point3::new(position, centre.y, 0.0);
+        topology
+            .edge_samples
+            .push(edge_sample(edge, interior, Some(x())));
     }
     topology
 }
@@ -1903,9 +1900,9 @@ fn bind_feature(native_ref: Option<&str>) -> EdgeSelection {
         )),
         native_ref: native_ref.map(str::to_owned),
     };
-    super::bind_fillet_blend_edges(
+    super::bind_treatment_edges(
         std::slice::from_mut(&mut feature),
-        super::FilletBlendInputs {
+        super::TreatmentBlendInputs {
             scopes: &[scope(42)],
             groups: &[group(42, &[7])],
             histories: &mut [history()],
@@ -1924,7 +1921,7 @@ fn bind_feature(native_ref: Option<&str>) -> EdgeSelection {
 /// binding from `histories`, and the bindings.
 fn bind_unbound(
     histories: &mut [crate::history_records::AsmHistory],
-) -> (EdgeSelection, super::FilletBlendBindings) {
+) -> (EdgeSelection, super::TreatmentBlendBindings) {
     bind_unbound_fillet(fillet(native(), three_mm()), histories)
 }
 
@@ -1933,7 +1930,7 @@ fn bind_unbound(
 fn bind_unbound_fillet(
     definition: FeatureDefinition,
     histories: &mut [crate::history_records::AsmHistory],
-) -> (EdgeSelection, super::FilletBlendBindings) {
+) -> (EdgeSelection, super::TreatmentBlendBindings) {
     let mut feature = cadmpeg_ir::features::Feature {
         product_definition: None,
         id: FeatureId::mint("f3d:test:feature#42").expect("identity grammar"),
@@ -1948,9 +1945,9 @@ fn bind_unbound_fillet(
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(SCOPE_ID.to_owned()),
     };
-    let bindings = super::bind_fillet_blend_edges(
+    let bindings = super::bind_treatment_edges(
         std::slice::from_mut(&mut feature),
-        super::FilletBlendInputs {
+        super::TreatmentBlendInputs {
             scopes: &[scope(42)],
             groups: &[group(42, &[7])],
             histories,
@@ -1995,6 +1992,6 @@ fn a_fillet_binds_from_the_transition_of_its_scope() {
     assert_eq!(slots(&bind_feature(Some(SCOPE_ID))), ["17"]);
     assert_eq!(bind_feature(None), native());
 }
-
 mod covering;
 mod fragment_precedence;
+mod rerecorded_carrier;

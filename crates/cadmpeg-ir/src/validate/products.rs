@@ -205,6 +205,7 @@ pub(super) fn check_products(
             );
         }
     }
+    check_root_definition(ir, findings);
     if let Some(definition) = placement_cycle(ctx, ir)? {
         record_finding(
             findings,
@@ -276,6 +277,60 @@ pub(super) fn check_products(
     Ok(())
 }
 
+/// Part 10: exactly one definition is `File` with `source: None`, the root
+/// definition, and no occurrence places it (§8.1). The root is what the
+/// decode's root file holds at its top, so only a decoded document, one with
+/// a `source`, that holds the model class must state it; a fragment's root
+/// can lie outside it. The counts are not in the decoder admission sets,
+/// which judge candidate parts of a document.
+fn check_root_definition(ir: &CadIr, findings: &mut Vec<Finding>) {
+    let roots = ir
+        .model
+        .product_definitions
+        .iter()
+        .filter(|definition| definition.is_root())
+        .collect::<Vec<_>>();
+    match roots.split_first() {
+        None if ir.source.is_some()
+            && !ir.fragment
+            && ir.scope().holds(cadmpeg_core::decode::ArenaClass::Model) =>
+        {
+            record_finding(
+                findings,
+                Check::Counts,
+                crate::report::Severity::Error,
+                None,
+                format_args!("document states no root definition"),
+            );
+        }
+        None => {}
+        Some((first, extras)) => {
+            for extra in extras {
+                super::record_related_finding(
+                    findings,
+                    Check::Counts,
+                    crate::report::Severity::Error,
+                    extra.id.as_str(),
+                    &[first.id.as_str()],
+                    format_args!("document states more than one root definition"),
+                );
+            }
+        }
+    }
+    for occurrence in &ir.model.occurrences {
+        if let Some(root) = roots.iter().find(|root| root.id == occurrence.prototype) {
+            super::record_related_finding(
+                findings,
+                Check::ReferentialIntegrity,
+                crate::report::Severity::Error,
+                root.id.as_str(),
+                &[occurrence.id.as_str()],
+                format_args!("an occurrence places the root definition"),
+            );
+        }
+    }
+}
+
 /// A definition that places itself through its occurrences, if any.
 ///
 /// Definitions whose occurrences place only definitions already cleared are
@@ -339,6 +394,7 @@ fn placement_cycle<'ir>(
 mod tests {
     mod admission;
     mod history_owners;
+    mod root;
     use super::check_products;
     use crate::document::CadIr;
     use crate::ids::OccurrenceId;
@@ -381,7 +437,7 @@ mod tests {
             ir.model.assembly_joints.push(joint);
             let mut findings = Vec::new();
             check_products(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &ir,
                 &mut findings,
             )
@@ -426,7 +482,7 @@ mod tests {
 
         let mut findings = Vec::new();
         check_products(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &ir,
             &mut findings,
         )
@@ -458,7 +514,7 @@ mod tests {
                 PairedJointKind::Gears {
                     distance: None,
                     distance2: None,
-                    ratio: crate::scalar::PositiveReal::new(2.0),
+                    ratio: crate::scalar::NonZeroReal::new(-2.0),
                     coupled_joints: coupled,
                 },
                 [
@@ -482,7 +538,7 @@ mod tests {
         let findings = |ir: &CadIr| {
             let mut findings = Vec::new();
             check_products(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 ir,
                 &mut findings,
             )
@@ -534,7 +590,7 @@ mod tests {
         ir.model.assembly_joints.push(joint);
         let mut findings = Vec::new();
         check_products(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &ir,
             &mut findings,
         )

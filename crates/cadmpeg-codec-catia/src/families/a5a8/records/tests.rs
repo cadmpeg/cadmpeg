@@ -28,6 +28,8 @@ use crate::test_support::test_a5a8::{
 use crate::test_support::test_b5::a8_inline_surface_stream_with_native_vertex_chain;
 
 mod spline_headers;
+mod surface_suffix;
+mod weight_program;
 
 #[test]
 fn surface_tail_scans_continuation_without_materializing_a_lane() {
@@ -1132,6 +1134,7 @@ fn a5_weight_program_reads_independent_palindromic_rows() {
     assert_eq!(
         crate::families::a5a8::records::a5_weights(&bytes, &mut at, 4, 4, bytes.len()).map(
             |weights| weights
+                .values
                 .into_iter()
                 .map(cadmpeg_ir::scalar::NonZeroReal::get)
                 .collect::<Vec<_>>()
@@ -1155,6 +1158,7 @@ fn a5_weight_program_reads_zero_prefixed_complete_grid() {
     assert_eq!(
         crate::families::a5a8::records::a5_weights(&bytes, &mut at, 4, 4, bytes.len()).map(
             |weights| weights
+                .values
                 .into_iter()
                 .map(cadmpeg_ir::scalar::NonZeroReal::get)
                 .collect::<Vec<_>>()
@@ -1582,4 +1586,21 @@ fn a8_surface_header_reads_the_frame_object_id() {
     )
     .expect("complete surface header");
     assert_eq!(header.object_id, object_id);
+}
+
+#[test]
+fn owned_surface_tail_rejects_descending_u_until_chart_transfer() {
+    use crate::layout::surface_terminal_span_tail as layout;
+
+    let mut tail = a5_surface_tail();
+    tail.truncate(layout::SUFFIX);
+    tail.extend([0x01, 0, 0x09, 0x01, 0x05, 0x07, 0x07]);
+    tail[layout::CONTROLS + 1] = 0x0d;
+    let u_start = layout::PARAMETERS;
+    tail[u_start..u_start + 8].copy_from_slice(&3.0_f64.to_le_bytes());
+    tail[u_start + 8..u_start + 16].copy_from_slice(&1.0_f64.to_le_bytes());
+    assert_eq!(super::parse_surface_tail(&tail, 0, tail.len(), false), None);
+    assert_eq!(super::parse_surface_tail(&tail, 0, tail.len(), true), None);
+    tail[layout::CONTROLS + 1] = 0x05;
+    assert_eq!(super::parse_surface_tail(&tail, 0, tail.len(), true), None);
 }

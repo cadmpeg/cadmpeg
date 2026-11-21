@@ -72,7 +72,7 @@ fn historical_vertex_selection_requires_input_state_membership() {
     let mut references = Vec::new();
     ir.model.features[0]
         .visit_references(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut |reference| {
                 references.push(reference.to_owned());
                 Ok(())
@@ -1272,6 +1272,8 @@ fn input_edge_geometry_names_its_own_state_members_once() {
         start: FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)),
         end: FinitePoint3::new(Point3::new(0.0, 0.0, 10.0)),
         faces: DistinctMembers::try_from(vec![HistoricalFaceId::mint(face).unwrap()]).unwrap(),
+        carrier: None,
+        supports: Vec::new(),
     };
     let mut ir = CadIr::empty();
     ir.model

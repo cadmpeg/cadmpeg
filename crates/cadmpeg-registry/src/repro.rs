@@ -162,7 +162,7 @@ pub fn shrink(
         if stopped() {
             break;
         }
-        let Ok(value) = serde_json::to_value(&best.document) else {
+        let Ok(value) = cadmpeg_ir::hash::finite_json::to_json_value(&best.document) else {
             break;
         };
         let all = rows(&value);

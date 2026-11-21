@@ -124,8 +124,9 @@ fn bounded_face_nodes_resolve_the_complete_referenced_boundary() {
     assert!(operand.candidate_faces.is_empty());
 }
 
-#[test]
-fn bounded_face_nodes_resolve_a_complete_loop_of_a_face_with_an_inner_loop() {
+/// Face 100 gains an inner loop whose one closed edge 20, at vertex 5, it
+/// shares with face 104.
+fn topology_with_inner_loop() -> AsmHistoricalTopology {
     let mut topology = topology();
     topology.faces.push(104);
     topology.edges.push(20);
@@ -154,6 +155,12 @@ fn bounded_face_nodes_resolve_a_complete_loop_of_a_face_with_an_inner_loop() {
             radial_next,
         });
     }
+    topology
+}
+
+#[test]
+fn bounded_face_nodes_resolve_a_complete_loop_of_a_face_with_an_inner_loop() {
+    let topology = topology_with_inner_loop();
     let index = FaceRecipeIndex::new(&topology);
     let mut operand = operand();
     assert_eq!(index.resolve(&operand), None);
@@ -161,6 +168,94 @@ fn bounded_face_nodes_resolve_a_complete_loop_of_a_face_with_an_inner_loop() {
     operand.recipe_nodes.truncate(2);
     operand.recipe_program[2] = 2;
     assert_eq!(index.resolve_loop(&operand), None);
+}
+
+/// Add operand 4 for face 104 and a node for the closed edge between faces
+/// 100 and 104. The node has one endpoint clause with the fan `fan`.
+fn add_closed_edge_node(operand: &mut DesignFaceOperand, fan: [i32; 2]) {
+    let mut reference = operand.recipe_references[3].clone();
+    reference.selector_offset = 4;
+    reference.token_offset = 4;
+    reference.design_reference = 4;
+    reference.design_reference_offset = 4;
+    reference.candidate_faces = vec![crate::ids::brep_face_id(104)];
+    operand.recipe_references.push(reference);
+    let fields = vec![0, -1, 4, -1, 1, -1, 2, fan[0], -1, fan[1], -1, 0, 0, -1];
+    let structure = crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::operands::face_recipe_structure(ctx, &fields)
+            .unwrap()
+            .unwrap()
+    });
+    assert_eq!(structure.sides.len(), 1);
+    let mut program = vec![-1, -1, 2];
+    program.extend(fields);
+    operand.recipe_program[2] = 4;
+    operand.recipe_program.extend(&program);
+    operand.recipe_nodes.push(DesignFaceRecipeNode {
+        byte_offset: 0,
+        end_byte_offset: 12,
+        program,
+        recipe_structure: Some(structure),
+    });
+}
+
+#[test]
+fn a_one_clause_node_binds_a_closed_edge_by_the_fan_at_its_one_vertex() {
+    let index = FaceRecipeIndex::new(&topology_with_inner_loop());
+    let mut operand = operand();
+    add_closed_edge_node(&mut operand, [4, 0]);
+    assert_eq!(operand.recipe_program[2], 4);
+    assert_eq!(
+        operand
+            .recipe_nodes
+            .iter()
+            .map(|node| node.recipe_structure.as_ref().unwrap().prelude[1])
+            .collect::<Vec<_>>(),
+        [2, 2, 2, 1]
+    );
+    assert_eq!(index.resolve(&operand), Some(100));
+    let mut operand = self::operand();
+    add_closed_edge_node(&mut operand, [4, 1]);
+    assert_eq!(index.resolve(&operand), None);
+}
+
+#[test]
+fn a_one_clause_closed_edge_leaves_the_loop_recipe_unresolved() {
+    let index = FaceRecipeIndex::new(&topology_with_inner_loop());
+    let mut operand = operand();
+    add_closed_edge_node(&mut operand, [4, 0]);
+    let node = operand.recipe_nodes.pop().unwrap();
+    operand.recipe_program = vec![0, -1, 1];
+    operand.recipe_program.extend_from_slice(&node.program);
+    operand.recipe_nodes = vec![node];
+    let structure = operand.recipe_nodes[0].recipe_structure.as_ref().unwrap();
+    assert_eq!(structure.prelude[1], 1);
+    assert!(structure.has_valid_boundary_edge_ordinals(&operand.recipe_references));
+    assert!(operand.resolved_face_slots.is_empty());
+    assert_eq!(operand.group_record_index(), Some(20));
+    let mut lanes: Vec<_> = (100..=104).map(|face| BTreeSet::from([face])).collect();
+    assert!(index.node_matches(structure, 20, &lanes));
+    assert_eq!(index.resolve_loop(&operand), None);
+
+    let mut topology = topology_with_inner_loop();
+    topology.faces.retain(|face| *face != 104);
+    let other = topology.face_loops.pop().unwrap();
+    topology.face_loops[0].member_refs.extend(other.member_refs);
+    operand.recipe_references[4].candidate_faces = vec![crate::ids::brep_face_id(100)];
+    lanes[4] = lanes[0].clone();
+    let index = FaceRecipeIndex::new(&topology);
+    assert_eq!(index.edge_faces[&20], [100, 100]);
+    assert!(index.node_matches(structure, 20, &lanes));
+    assert_eq!(index.resolve_loop(&operand), None);
+}
+
+#[test]
+fn a_one_clause_node_does_not_bind_an_open_edge() {
+    let index = FaceRecipeIndex::new(&topology());
+    let mut operand = operand();
+    let structure = operand.recipe_nodes[0].recipe_structure.as_mut().unwrap();
+    structure.sides.truncate(1);
+    assert_eq!(index.resolve(&operand), None);
 }
 
 #[test]
@@ -450,4 +545,57 @@ fn a_one_clause_node_leaves_the_bounded_face_member_unresolved() {
     structure.prelude[1] = 1;
     structure.sides.truncate(1);
     assert_eq!(FaceRecipeIndex::new(&topology).resolve(&operand), None);
+}
+
+#[test]
+fn counted_shell_program_binds_aliased_neighbor_faces() {
+    let index = FaceRecipeIndex::new(&topology());
+    let mut operand = operand();
+    let neighbors = vec![crate::ids::brep_face_id(101), crate::ids::brep_face_id(102)];
+    operand.recipe_references[1].candidate_faces = neighbors.clone();
+    operand.recipe_references[2].candidate_faces = neighbors;
+    assert_eq!(index.resolve_loop(&operand), None);
+    assert_eq!(
+        index
+            .resolve_loop_program(
+                &operand,
+                &cadmpeg_core::decode::WorkBudget::new(super::MAX_FACE_RECIPE_MATCH_WORK),
+            )
+            .unwrap(),
+        Some(100)
+    );
+}
+
+#[test]
+fn counted_shell_program_reports_work_exhaustion() {
+    let index = FaceRecipeIndex::new(&topology());
+    assert!(index
+        .resolve_loop_program(&operand(), &cadmpeg_core::decode::WorkBudget::new(0))
+        .is_err());
+}
+
+#[test]
+fn complete_assignment_reassigns_an_earlier_node() {
+    assert!(super::complete_assignment(
+        &[vec![10, 11], vec![10]],
+        &cadmpeg_core::decode::WorkBudget::new(100),
+    )
+    .unwrap());
+}
+
+#[test]
+fn complete_assignment_rejects_a_shared_single_edge() {
+    assert!(!super::complete_assignment(
+        &[vec![10], vec![10]],
+        &cadmpeg_core::decode::WorkBudget::new(100),
+    )
+    .unwrap());
+}
+
+#[test]
+fn complete_assignment_reports_work_exhaustion() {
+    assert!(
+        super::complete_assignment(&[vec![10]], &cadmpeg_core::decode::WorkBudget::new(0),)
+            .is_err()
+    );
 }

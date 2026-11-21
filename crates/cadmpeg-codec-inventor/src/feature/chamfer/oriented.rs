@@ -180,6 +180,8 @@ pub(crate) fn project<'a>(
                 faces: vec![joined.face]
                     .try_into()
                     .map_err(CodecError::malformed)?,
+                carrier: None,
+                supports: Vec::new(),
             }],
             native_ref: Some(source.id()),
         });

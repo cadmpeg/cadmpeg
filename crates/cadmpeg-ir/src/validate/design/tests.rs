@@ -455,6 +455,57 @@ fn a_principal_entity_a_datum_restates_is_picked_through_the_datum() {
     );
 }
 
+/// The planes in a Fusion scope `part` that places component `bracket`,
+/// with plane `b` a feature of `bracket` picking the timeline's origin.
+fn bracket_plane_on_the_timeline_origin() -> CadIr {
+    use crate::products::{Occurrence, ProductDefinition, Storage};
+    let mut features = planes();
+    features[1] = feature(
+        "b",
+        plane_datum(construction(vec![input(
+            "coincident",
+            Some(named(
+                input_anchor(),
+                vec![json!({"target": {"kind": "principal", "value": {
+                    "entity": "xy_plane",
+                    "container": key("container", "timeline")
+                }}})],
+            )),
+            None,
+        )])),
+    );
+    features[1].component = Some(id("product_definition", "bracket"));
+    let mut ir = timeline(features);
+    let occurrence = Occurrence::new(
+        id("occurrence", "bracket"),
+        id("product_definition", "bracket"),
+        None,
+    );
+    let mut part = ProductDefinition::new(id("product_definition", "part"), Storage::Embedded);
+    part.occurrences.push(occurrence.id.clone());
+    ir.model.product_definitions = vec![
+        ProductDefinition::new(id("product_definition", "bracket"), Storage::Embedded),
+        part,
+    ];
+    ir.model.occurrences.push(occurrence);
+    ir
+}
+
+#[test]
+fn a_principal_container_is_of_the_scope_that_spans_the_picks_definition() {
+    assert_clean(&bracket_plane_on_the_timeline_origin());
+
+    let mut ir = bracket_plane_on_the_timeline_origin();
+    ir.model.product_definitions[1].occurrences.clear();
+    ir.model.occurrences.clear();
+    assert_finding(
+        &ir,
+        Check::Design,
+        Severity::Error,
+        "not an ordered container of the scope that spans its definition",
+    );
+}
+
 #[test]
 fn a_coordinates_reference_picks_a_frame_first() {
     let mut features = planes();
@@ -794,7 +845,7 @@ fn the_walk_at_the_construction_ceiling_runs_on_a_small_stack() {
 
 #[test]
 fn the_walk_reaches_a_selection_inside_an_operation() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let feature = feature(
         "a",
         json!({"kind": "extract", "value": {

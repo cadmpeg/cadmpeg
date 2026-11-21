@@ -509,7 +509,7 @@ pub(crate) mod b5_loop_numeric_terminal {
 /// Spec §6.6. Record length 141 B.
 ///
 /// ```text
-/// Tail-relative offsets. The generic 133-byte and 142-byte surface tails share the prefix through offset 71.
+/// Fixed terminal-span production in section 6.6, with one-byte identifiers and a six-byte suffix. The surface_owned_tail slot layout in section 6.1 describes sheet-owned tails: compact identifier widths shift the following fields, and descriptor widths determine the suffix length.
 /// ```
 pub(crate) mod surface_terminal_span_tail {
     /// Record length in bytes. Spec §6.6.
@@ -884,6 +884,48 @@ pub(crate) mod container_property_record {
     pub(crate) const VALUE_BYTES: usize = 10;
 }
 
+/// Byte offsets for the `surface_weight_row_prefix` record.
+///
+/// Spec §6.1. Record length 3 B.
+pub(crate) mod surface_weight_row_prefix {
+    /// Record length in bytes. Spec §6.1.
+    pub(crate) const LEN: usize = 3;
+    /// Offset of `command` (`u8`). Spec §6.1.
+    pub(crate) const COMMAND: usize = 0;
+    /// Offset of `mirror` (`u16`, little-endian). Spec §6.1.
+    pub(crate) const MIRROR: usize = 1;
+}
+
+/// Byte offsets for the `surface_weight_repeat_row_prefix` record.
+///
+/// Spec §6.1. Record length 5 B.
+pub(crate) mod surface_weight_repeat_row_prefix {
+    /// Record length in bytes. Spec §6.1.
+    pub(crate) const LEN: usize = 5;
+    /// Stated value of `command` (`u8`). Spec §6.1.
+    pub(crate) const COMMAND_VALUE: u8 = 5;
+    /// Offset of `leading_repeats` (`u16`, little-endian). Spec §6.1.
+    pub(crate) const LEADING_REPEATS: usize = 3;
+}
+
+/// Byte offsets for the `surface_weight_symmetric_03_prefix` record.
+///
+/// Spec §6.1. Record length 3 B.
+pub(crate) mod surface_weight_symmetric_03_prefix {
+    /// Stated value of `command` (`u8`). Spec §6.1.
+    pub(crate) const COMMAND_VALUE: u8 = 1;
+    /// Stated value of `control` (`u16`). Spec §6.1.
+    pub(crate) const CONTROL_VALUE: u16 = 0x0003;
+}
+
+/// Byte offsets for the `surface_weight_symmetric_07_prefix` record.
+///
+/// Spec §6.1. Record length 3 B.
+pub(crate) mod surface_weight_symmetric_07_prefix {
+    /// Stated value of `control` (`u16`). Spec §6.1.
+    pub(crate) const CONTROL_VALUE: u16 = 0x0007;
+}
+
 /// Byte offsets for the `consolidated_vertex_wide_roster` record.
 ///
 /// Spec §6.4. Record length 5 B.
@@ -900,4 +942,20 @@ pub(crate) mod consolidated_vertex_wide_roster {
     pub(crate) const TERMINAL: usize = 4;
     /// Stated value of `terminal` (`u8`). Spec §6.4.
     pub(crate) const TERMINAL_VALUE: u8 = 0;
+}
+
+/// Byte offsets for the `sheet_plane_implicit_v_payload` record.
+///
+/// Spec §6.3. Record length 74 B.
+pub(crate) mod sheet_plane_implicit_v_payload {
+    /// Record length in bytes. Spec §6.3.
+    pub(crate) const LEN: usize = 74;
+}
+
+/// Byte offsets for the `sheet_plane_explicit_v_a0_payload` record.
+///
+/// Spec §6.3. Record length 82 B.
+pub(crate) mod sheet_plane_explicit_v_a0_payload {
+    /// Record length in bytes. Spec §6.3.
+    pub(crate) const LEN: usize = 82;
 }
