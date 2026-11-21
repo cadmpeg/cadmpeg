@@ -3048,6 +3048,19 @@ pub(crate) fn brep_body(
     length_scale: f64,
     schema_32001: bool,
 ) -> Result<Vec<u8>, CodecError> {
+    brep_body_from(ir, length_scale, schema_32001, FIRST_NODE_INDEX)
+}
+
+/// The first node index of a stream (`parasolid.md` §1).
+const FIRST_NODE_INDEX: u16 = 2;
+
+/// The partition body with its attributes allocated from `first`.
+pub(crate) fn brep_body_from(
+    ir: &CadIr,
+    length_scale: f64,
+    schema_32001: bool,
+    first: u16,
+) -> Result<Vec<u8>, CodecError> {
     if let Some(body) = ir
         .geometry
         .bodies
@@ -3059,7 +3072,7 @@ pub(crate) fn brep_body(
             body.kind, body.id
         )));
     }
-    let mut next = 2u16;
+    let mut next = first;
     let derived_sphere_seam_curves = ir
         .geometry
         .curves

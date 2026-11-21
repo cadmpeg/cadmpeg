@@ -25,5 +25,6 @@ mod targets;
 mod thicken_reference;
 mod transformed_surface;
 mod vertex_records;
+mod wide_pointers;
 
 mod datum_axes;
