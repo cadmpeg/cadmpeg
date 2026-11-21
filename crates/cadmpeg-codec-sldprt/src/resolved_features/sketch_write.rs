@@ -112,6 +112,7 @@ pub(super) fn sketch_brep(
     let profiles = sketch.profiles.clone();
     let mut face_loops = Vec::new();
     let mut vertex_by_position = HashMap::<(u64, u64), VertexId>::new();
+    let mut vertex_count = 0usize;
     for (profile_index, profile) in profiles.iter().enumerate() {
         let endpoints = profile
             .iter()
@@ -157,24 +158,29 @@ pub(super) fn sketch_brep(
                 ))
             })?;
             let generated = generated_sketch_curve(&entity.geometry, sketch, v_axis)?;
+            // A closed curve's seam vertex is its own: a vertex shared with
+            // another curve states that the two curves meet there.
+            let closed = same_sketch_point(generated.start, generated.end);
             let start_vertex = sketch_vertex(
                 &mut ir,
-                &mut vertex_by_position,
+                (!closed).then_some(&mut vertex_by_position),
+                &mut vertex_count,
                 &prefix,
                 generated.start,
-                origin,
-                u_axis,
-                v_axis,
+                (origin, u_axis, v_axis),
             )?;
-            let end_vertex = sketch_vertex(
-                &mut ir,
-                &mut vertex_by_position,
-                &prefix,
-                generated.end,
-                origin,
-                u_axis,
-                v_axis,
-            )?;
+            let end_vertex = if closed {
+                start_vertex.clone()
+            } else {
+                sketch_vertex(
+                    &mut ir,
+                    Some(&mut vertex_by_position),
+                    &mut vertex_count,
+                    &prefix,
+                    generated.end,
+                    (origin, u_axis, v_axis),
+                )?
+            };
             let start_3d = lift_point(generated.start, origin, u_axis, v_axis);
             let end_3d = lift_point(generated.end, origin, u_axis, v_axis);
             let delta = Vector3::new(
@@ -553,25 +559,31 @@ fn generated_sketch_curve(
     }
 }
 
+/// The vertex at `position`: the one of `shared` there, else a new one, which
+/// joins `shared` when it is given.
 fn sketch_vertex(
     ir: &mut cadmpeg_ir::CadIr,
-    vertices: &mut HashMap<(u64, u64), VertexId>,
+    shared: Option<&mut HashMap<(u64, u64), VertexId>>,
+    count: &mut usize,
     prefix: &cadmpeg_ir::ids::IdentityKey,
     position: Point2,
-    origin: Point3,
-    u_axis: Vector3,
-    v_axis: Vector3,
+    (origin, u_axis, v_axis): (Point3, Vector3, Vector3),
 ) -> Result<VertexId, cadmpeg_core::CodecError> {
-    if let Some((_, id)) = vertices.iter().find(|((u, v), _)| {
-        same_sketch_point(
-            Point2::new(f64::from_bits(*u), f64::from_bits(*v)),
-            position,
-        )
+    if let Some((_, id)) = shared.as_ref().and_then(|vertices| {
+        vertices.iter().find(|((u, v), _)| {
+            same_sketch_point(
+                Point2::new(f64::from_bits(*u), f64::from_bits(*v)),
+                position,
+            )
+        })
     }) {
         return Ok(id.clone());
     }
     let key = (position.u.to_bits(), position.v.to_bits());
-    let ordinal = vertices.len();
+    let ordinal = *count;
+    *count = ordinal.checked_add(1).ok_or_else(|| {
+        cadmpeg_core::CodecError::malformed("source-less SLDPRT sketch vertex count overflows")
+    })?;
     let point_id = PointId::compose(
         &sketch_namespace(),
         prefix
@@ -599,7 +611,9 @@ fn sketch_vertex(
         tolerance: None,
         native_ref: None,
     });
-    vertices.insert(key, vertex_id.clone());
+    if let Some(vertices) = shared {
+        vertices.insert(key, vertex_id.clone());
+    }
     Ok(vertex_id)
 }
 

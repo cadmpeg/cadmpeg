@@ -492,3 +492,83 @@ fn every_shell_of_a_region_is_written_in_its_shell_chain() {
     assert_eq!(decoded.geometry.shells.len(), 2);
     assert_eq!(decoded.geometry.regions[0].shells.len(), 2);
 }
+
+#[test]
+fn two_coincident_circles_are_written_without_a_shared_seam_vertex() {
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+    use cadmpeg_ir::math::{Point2, Vector3};
+    use cadmpeg_ir::sketches::{
+        Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
+        SketchGeometryDefinition, SketchId,
+    };
+    let mut ir = cube();
+    let sketch = SketchId::mint("other:model:sketch#circles").unwrap();
+    let circles = (0..2)
+        .map(|index| {
+            SketchEntityId::mint(format!("other:model:sketch-entity#circle-{index}")).unwrap()
+        })
+        .collect::<Vec<_>>();
+    for circle in &circles {
+        ir.model.sketch_entities.push(SketchEntity::new(
+            circle.clone(),
+            sketch.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+                center: Point2::new(0.0, 0.0),
+                radius: cadmpeg_ir::scalar::Length::new(5.0).unwrap(),
+            })
+            .unwrap(),
+        ));
+    }
+    ir.model.sketches.push(Sketch {
+        id: sketch.clone(),
+        name: Some("Circles".into()),
+        configuration: None,
+        visible: None,
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(
+            circles
+                .iter()
+                .map(|entity| {
+                    vec![SketchEntityUse {
+                        entity: entity.clone(),
+                        reversed: false,
+                    }]
+                })
+                .collect::<Vec<_>>(),
+        )
+        .unwrap(),
+        native_ref: None,
+    });
+    ir.model.features.push(Feature {
+        product_definition: None,
+        id: FeatureId::mint("other:model:feature#circles").unwrap(),
+        ordinal: 0,
+        name: Some("Circles".into()),
+        suppressed: Some(false),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
+            }),
+        ),
+        native_ref: Some("other:native#circles".into()),
+    });
+    let decoded = crate::test_support::ir::encode_decode(&ir);
+    assert_eq!(decoded.model.sketches.len(), 1);
+    let report = cadmpeg_ir::validate::validate_neutral(&decoded, Vec::new()).unwrap();
+    let incompatible = report
+        .findings
+        .iter()
+        .filter(|finding| finding.message.contains("locus is incompatible"))
+        .collect::<Vec<_>>();
+    assert!(incompatible.is_empty(), "{incompatible:#?}");
+}
