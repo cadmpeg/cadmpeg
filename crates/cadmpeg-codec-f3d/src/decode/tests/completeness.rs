@@ -6,12 +6,11 @@ use cadmpeg_ir::features::surfaces::UntrimLoops;
 
 #[test]
 fn separate_completeness_requires_shell_geometry_and_keep_body() {
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
     use cadmpeg_ir::features::mesh::{
         MeshModification, MeshSelection, MeshSeparation, MeshSeparationGroups, MeshSeparationMethod,
     };
-    use cadmpeg_ir::features::{
-        Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
-    };
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     for (method, keep_body, native, incomplete) in [
         (None, Some(false), false, true),
         (Some(MeshSeparationMethod::Shells), None, false, true),
@@ -56,7 +55,8 @@ fn separate_completeness_requires_shell_geometry_and_keep_body() {
             let wrapped = FeatureDefinition::PostProcess {
                 operation: definition.operation().clone(),
                 refine: true,
-                fuzzy_tolerance: cadmpeg_ir::features::FuzzyTolerance::Automatic,
+                fuzzy_tolerance:
+                    cadmpeg_ir::features::operation_settings::FuzzyTolerance::Automatic,
             };
             assert_eq!(feature_definition_is_incomplete(&wrapped), incomplete);
             let mut ir = cadmpeg_ir::CadIr::empty();
@@ -93,7 +93,8 @@ fn separate_completeness_requires_shell_geometry_and_keep_body() {
 
 #[test]
 fn surface_untrim_completeness_tracks_faces_loops_and_extension_independently() {
-    use cadmpeg_ir::features::{EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::{EdgeSelection, FaceSelection};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let faces = FaceSelection::Faces(vec![
         cadmpeg_ir::ids::FaceId::mint("synthetic:test:face#1").unwrap()
     ]);
@@ -185,9 +186,8 @@ fn form_completeness_requires_complete_membership_with_a_committed_cage() {
 
 #[test]
 fn position_completeness_requires_affine_pose_and_resolved_occurrence() {
-    use cadmpeg_ir::features::{
-        CapturedComponentPosition, CapturedPositionTransform, FeatureDefinition, FeatureOperation,
-    };
+    use cadmpeg_ir::features::tree::{CapturedComponentPosition, CapturedPositionTransform};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let mut position = CapturedComponentPosition::new(
         cadmpeg_ir::ids::NativeId::mint("synthetic:test:selector#pose").unwrap(),
         cadmpeg_ir::transform::Transform::identity(),
@@ -239,7 +239,7 @@ fn direct_datum_planes_are_complete_but_unresolved_frames_are_not() {
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let direct = FeatureDefinition::Operation(FeatureOperation::DatumPlane {
-        frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+        frame: cadmpeg_ir::features::geometry::FeatureDatumPlaneFrame::new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -258,16 +258,15 @@ fn direct_datum_planes_are_complete_but_unresolved_frames_are_not() {
 fn trim_surface_completeness_accepts_an_explicit_cell_selection() {
     let complete = cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::TrimSurface {
-            faces: cadmpeg_ir::features::FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId::mint(
-                "f3d:test:face#target",
-            )
-            .expect("identity grammar")]),
-            tool: cadmpeg_ir::features::PathRef::Curves(vec![cadmpeg_ir::ids::CurveId::mint(
-                "f3d:test:curve#tool",
-            )
-            .expect("identity grammar")]),
-            keep: cadmpeg_ir::features::TrimRegion::Cells(
-                cadmpeg_ir::features::TrimCellSelection::new(vec![1, 4], 5).unwrap(),
+            faces: cadmpeg_ir::features::selections::FaceSelection::Faces(vec![
+                cadmpeg_ir::ids::FaceId::mint("f3d:test:face#target").expect("identity grammar"),
+            ]),
+            tool: cadmpeg_ir::features::profiles::PathRef::Curves(vec![
+                cadmpeg_ir::ids::CurveId::mint("f3d:test:curve#tool").expect("identity grammar"),
+            ]),
+            keep: cadmpeg_ir::features::surface_inputs::TrimRegion::Cells(
+                cadmpeg_ir::features::surface_inputs::TrimCellSelection::new(vec![1, 4], 5)
+                    .unwrap(),
             ),
         },
     );
@@ -281,14 +280,15 @@ fn datum_axes_require_a_finite_nonzero_direction() {
 
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::datum_axis(
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
-            cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
+            cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                .unwrap(),
         ))
     ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::datum_axis(
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
-            cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
+            cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
                 f64::EPSILON / 2.0,
                 0.0,
                 0.0
@@ -305,7 +305,7 @@ fn coordinate_systems_require_a_finite_right_handed_frame() {
 
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem {
-            frame: cadmpeg_ir::features::FeatureCoordinateFrame::new(
+            frame: cadmpeg_ir::features::geometry::FeatureCoordinateFrame::new(
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(1.0, 0.0, 0.0),
                 Vector3::new(0.0, 1.0, 0.0),
@@ -318,7 +318,8 @@ fn coordinate_systems_require_a_finite_right_handed_frame() {
 
 #[test]
 fn zero_body_base_features_are_complete_but_empty_insertions_are_not() {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::BaseFeature {
@@ -335,14 +336,17 @@ fn zero_body_base_features_are_complete_but_empty_insertions_are_not() {
     ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::InsertBodies {
-            bodies: cadmpeg_ir::features::InsertedBodies::Native("native:insert-bodies".into()),
+            bodies: cadmpeg_ir::features::selections::InsertedBodies::Native(
+                "native:insert-bodies".into()
+            ),
         })
     ));
 }
 
 #[test]
 fn replace_face_requires_resolved_target_and_replacement_faces() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::ids::FaceId;
 
     let resolved = |name: &str| {
@@ -381,14 +385,14 @@ fn replace_face_requires_resolved_target_and_replacement_faces() {
 
 #[test]
 fn remove_body_requires_resolved_bodies_and_a_retention_mode() {
-    use cadmpeg_ir::features::{
-        BodyRetentionMode, BodySelection, FeatureDefinition, FeatureOperation,
-    };
+    use cadmpeg_ir::features::operation_settings::BodyRetentionMode;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::ids::BodyId;
 
     let complete = FeatureDefinition::Operation(FeatureOperation::DeleteBody {
         bodies: BodySelection::Bodies(
-            cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![BodyId::mint(
                 "test:model:body#1",
             )
             .expect("identity grammar")])
@@ -407,7 +411,7 @@ fn remove_body_requires_resolved_bodies_and_a_retention_mode() {
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::DeleteBody {
             bodies: BodySelection::Bodies(
-                cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
+                cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![BodyId::mint(
                     "test:model:body#1"
                 )
                 .expect("identity grammar")],)
@@ -420,13 +424,14 @@ fn remove_body_requires_resolved_bodies_and_a_retention_mode() {
 
 #[test]
 fn reverse_shape_requires_resolved_bodies() {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::ids::BodyId;
 
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::ReverseShape {
             source: BodySelection::Bodies(
-                cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
+                cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![BodyId::mint(
                     "test:model:body#1"
                 )
                 .expect("identity grammar")])
@@ -464,10 +469,12 @@ fn product_feature_definitions_require_neutral_reference_ids() {
 
 #[test]
 fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
-    use cadmpeg_ir::features::{
-        AxisAngle, BodySelection, BooleanOp, FaceMotion, FaceSelection, FeatureDefinition,
-        FeatureOperation, ScaleCenter, ScaleFactors, ThickenSide,
+    use cadmpeg_ir::features::direct_edit::{
+        AxisAngle, FaceMotion, ScaleCenter, ScaleFactors, ThickenSide,
     };
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::selections::{BodySelection, FaceSelection};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::scalar::Length;
@@ -476,15 +483,17 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
         .try_into()
         .expect("valid identity")]);
     let bodies = BodySelection::Bodies(
-        cadmpeg_ir::features::DistinctMembers::try_from(vec![
-            BodyId::mint("test:model:body#1").expect("identity grammar")
-        ])
+        cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![BodyId::mint(
+            "test:model:body#1",
+        )
+        .expect("identity grammar")])
         .expect("distinct bodies"),
     );
 
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::Sphere {
-            center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
+            center: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+                .unwrap(),
             radius: cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
             op: BooleanOp::NewBody,
         })
@@ -492,7 +501,8 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
 
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::Torus {
-            center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
+            center: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+                .unwrap(),
             axis: cadmpeg_ir::units::UnitVector3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
             major_radius: cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap(),
             minor_radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
@@ -583,12 +593,16 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::MoveBody {
             bodies: bodies.clone(),
-            translation: cadmpeg_ir::features::FiniteVector3::new(Vector3::new(1.0, 2.0, 3.0))
-                .unwrap(),
+            translation: cadmpeg_ir::features::geometry::FiniteVector3::new(Vector3::new(
+                1.0, 2.0, 3.0
+            ))
+            .unwrap(),
             rotation: Some(AxisAngle {
-                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                    .unwrap(),
-                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                    0.0, 0.0, 0.0
+                ))
+                .unwrap(),
+                direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
                     0.0, 0.0, 1.0
                 ))
                 .unwrap(),
@@ -601,7 +615,7 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::Scale {
             bodies: BodySelection::Bodies(
-                cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
+                cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![BodyId::mint(
                     "test:model:body#scale"
                 )
                 .expect("identity grammar")],)
@@ -616,7 +630,7 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::Scale {
             bodies: BodySelection::Bodies(
-                cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
+                cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![BodyId::mint(
                     "test:model:body#scale"
                 )
                 .expect("identity grammar")],)
@@ -632,7 +646,8 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
 
 #[test]
 fn knit_surfaces_require_resolved_faces_and_operation_settings() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::scalar::NonNegativeLength;
 
     let complete = |faces, merge_entities, create_solid, gap_tolerance| {
@@ -694,9 +709,8 @@ fn knit_surfaces_require_resolved_faces_and_operation_settings() {
 #[test]
 fn thread_is_complete_only_with_every_field_and_a_proven_modeled_state() {
     use cadmpeg_core::text::NonBlankString;
-    use cadmpeg_ir::features::{
-        CosmeticThreadExtent, FaceSelection, FeatureDefinition, FeatureOperation,
-    };
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{CosmeticThreadExtent, FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::scalar::PositiveLength;
 
     let resolved = || {
@@ -746,7 +760,9 @@ fn thread_is_complete_only_with_every_field_and_a_proven_modeled_state() {
 
 #[test]
 fn a_shell_on_both_sides_needs_no_outward_direction() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation, ShellMode};
+    use cadmpeg_ir::features::operation_settings::ShellMode;
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let shell = |outward, mode| {
         FeatureDefinition::Operation(FeatureOperation::Shell {
             bodies: None,
@@ -776,10 +792,10 @@ fn a_shell_on_both_sides_needs_no_outward_direction() {
 
 #[test]
 fn a_native_neutral_plane_is_complete_with_a_parallel_plane_frame() {
-    use cadmpeg_ir::features::{
-        DraftAnchor, DraftPull, FaceSelection, FeatureDefinition, FeatureDirection3,
-        FeatureOperation, FeatureSupportPlaneFrame,
-    };
+    use cadmpeg_ir::features::direct_edit::{DraftAnchor, DraftPull};
+    use cadmpeg_ir::features::geometry::{FeatureDirection3, FeatureSupportPlaneFrame};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let draft_with = |frame_normal: Option<Vector3>, datum: Option<&str>| {
@@ -824,10 +840,11 @@ fn a_native_neutral_plane_is_complete_with_a_parallel_plane_frame() {
 
 #[test]
 fn mesh_combination_local_operands_remain_incomplete_in_both_reports() {
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::operation_settings::{BooleanKind, CombineDestination};
+    use cadmpeg_ir::features::selections::{BodySelection, NativeSelections, SelectionReference};
     use cadmpeg_ir::features::{
-        BodySelection, BooleanKind, CombineDestination, CombineOperands, Feature,
-        FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation, NativeSelections,
-        SelectionReference,
+        CombineOperands, Feature, FeatureDefinition, FeatureId, FeatureOperation,
     };
     let local = |name: &str| BodySelection::Local {
         bodies: NativeSelections::try_from(vec![name.to_owned()]).unwrap(),

@@ -2,7 +2,7 @@
 //! A typed-reference region group whose first region is the union of its
 //! further regions.
 
-use cadmpeg_ir::features::{SketchProfileBoundaryUse, SketchProfileRegion};
+use cadmpeg_ir::features::profiles::{SketchProfileBoundaryUse, SketchProfileRegion};
 
 /// Remove and return the region that a group's first stored region added
 /// when the regions its further stored regions added are the atomic regions

@@ -154,8 +154,8 @@ pub(super) fn spatial(
         let start = coordinate(start)?;
         let end = coordinate(end)?;
         let geometry = SpatialSketchGeometry::try_line_from_parts(
-            cadmpeg_ir::features::FinitePoint3::new(start)?,
-            cadmpeg_ir::features::FinitePoint3::new(end)?,
+            cadmpeg_ir::features::geometry::FinitePoint3::new(start)?,
+            cadmpeg_ir::features::geometry::FinitePoint3::new(end)?,
         )
         .ok()?;
         if curves.len() == MAX_SWEEP_PATH_CURVES {
@@ -212,7 +212,8 @@ fn point3_at(payload: &[u8], offset: usize) -> Option<Point3> {
         View::f64_le_at(payload, offset + 8)? * 1000.0,
         View::f64_le_at(payload, offset + 16)? * 1000.0,
     );
-    cadmpeg_ir::features::FinitePoint3::new(point).map(cadmpeg_ir::features::FinitePoint3::get)
+    cadmpeg_ir::features::geometry::FinitePoint3::new(point)
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get)
 }
 
 fn coincident(left: Point3, right: Point3) -> bool {

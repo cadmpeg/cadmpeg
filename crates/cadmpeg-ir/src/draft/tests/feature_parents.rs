@@ -6,9 +6,8 @@ use crate::draft::DraftError;
 use crate::draft::ModelDraft;
 
 use crate::document::Model;
-use crate::features::{
-    Feature, FeatureDefinition, FeatureOperation, FeatureTreeNodeRole, TreeChildren,
-};
+use crate::features::tree::{FeatureTreeNodeRole, TreeChildren};
+use crate::features::{Feature, FeatureDefinition, FeatureOperation};
 
 pub(super) fn parent_draft() -> ModelDraft {
     let mut draft = ModelDraft::new();
@@ -20,12 +19,12 @@ pub(super) fn parent_draft() -> ModelDraft {
                 ordinal,
                 name: None,
                 suppressed: None,
-                dependencies: crate::features::DistinctMembers::default(),
+                dependencies: crate::features::selections::DistinctMembers::default(),
                 source_properties: std::collections::BTreeMap::default(),
                 source_tag: None,
                 source_text: None,
                 source_content: crate::features::FeatureContent::default(),
-                evaluation: crate::features::FeatureEvaluation::from_definition(
+                evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
                 ),
                 native_ref: None,

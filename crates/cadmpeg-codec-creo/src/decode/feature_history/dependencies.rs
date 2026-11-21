@@ -11,9 +11,10 @@ use crate::decode::sketch_transfer::recipe::{
 use crate::feature::rows::agreed_feature_affected_ids;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::selections::{EdgeSelection, FaceSelection};
 use cadmpeg_ir::features::{
-    EdgeSelection, FaceSelection, FeatureDefinition as IrFeatureDefinition,
-    FeatureId as IrFeatureId, FeatureOperation as IrFeatureOperation,
+    FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
+    FeatureOperation as IrFeatureOperation,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -426,7 +427,7 @@ pub(in super::super) fn reconcile_feature_links(
         else {
             continue;
         };
-        let outputs = cadmpeg_ir::features::DistinctMembers::try_from(
+        let outputs = cadmpeg_ir::features::selections::DistinctMembers::try_from(
             output_index.output_bodies(ctx, feature_id)?,
         )
         .map_err(cadmpeg_core::CodecError::from)?;
@@ -491,7 +492,7 @@ pub(in super::super) fn reconcile_feature_links(
             generated_ids.push(id);
         }
         feature.dependencies =
-            cadmpeg_ir::features::DistinctMembers::try_from(reconciled_dependencies(
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(reconciled_dependencies(
                 &feature.id,
                 &feature.dependencies,
                 native_dependencies.into_iter().chain(generated_ids),

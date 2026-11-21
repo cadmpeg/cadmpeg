@@ -194,10 +194,10 @@ fn truncated_selector_cannot_supply_a_persistent_name() {
 }
 
 fn feature_with_generated_group(ctx: &DecodeContext<'_>) -> Vec<cadmpeg_ir::features::Feature> {
-    use cadmpeg_ir::features::{
-        edge_treatments::{FilletGroup, RadiusSpec},
-        FeatureDefinition, FeatureEvaluation, FeatureOperation, NonEmptyMembers,
-    };
+    use cadmpeg_ir::features::edge_treatments::{FilletGroup, RadiusSpec};
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::selections::NonEmptyMembers;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let identity = crate::record_identity::RecordIdentity {
         segment_token: cadmpeg_ir::ids::IdentityKey::try_new("test")
             .expect("valid edge selection fixture"),
@@ -264,7 +264,7 @@ fn adding_named_edges_keeps_existing_result_members_and_source_reference() {
         decode::{DecodeArena, DecodePolicy},
         text::NonBlankString,
     };
-    use cadmpeg_ir::features::{FeatureResultMembers, FeatureResultTopology};
+    use cadmpeg_ir::features::evaluation::{FeatureResultMembers, FeatureResultTopology};
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("valid edge selection fixture");
@@ -319,10 +319,12 @@ fn base_flange_result_carries_the_selected_generated_edge() {
         decode::{DecodeArena, DecodePolicy},
         text::NonBlankString,
     };
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureEvaluation, FeatureOperation, FeatureResultMembers,
-        FeatureResultTopology, PlanarProfileRef, SheetMetalThicknessSide,
+    use cadmpeg_ir::features::evaluation::{
+        FeatureEvaluation, FeatureResultMembers, FeatureResultTopology,
     };
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
+    use cadmpeg_ir::features::sheet_metal_forms::SheetMetalThicknessSide;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");

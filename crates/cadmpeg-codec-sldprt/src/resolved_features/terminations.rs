@@ -971,7 +971,8 @@ pub(crate) fn project_sweep_reference_paths(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
-    use cadmpeg_ir::features::{FeatureId, PathRef};
+    use cadmpeg_ir::features::profiles::PathRef;
+    use cadmpeg_ir::features::FeatureId;
     let history_features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -1269,7 +1270,8 @@ pub(crate) fn project_compact_combine_paths(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::{BodySelection, CombineOperands, GeneratedBodyRef};
+    use cadmpeg_ir::features::selections::{BodySelection, GeneratedBodyRef};
+    use cadmpeg_ir::features::CombineOperands;
     struct Projection {
         target: BodySelection,
         tools: BodySelection,

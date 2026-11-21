@@ -326,8 +326,12 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
             VertexId::mint("test:model:entity#nx:test:closed-vertex").expect("identity grammar");
         ir.geometry.points.push(Point::new(
             point.clone(),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(3.0_f64.sqrt(), 0.0, 1.0))
-                .expect("a finite position is a point"),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                3.0_f64.sqrt(),
+                0.0,
+                1.0,
+            ))
+            .expect("a finite position is a point"),
             None,
         ));
         ir.geometry.vertices.push(Vertex {
@@ -909,7 +913,7 @@ fn planar_offset_cache_fit_is_certified_over_the_control_net() {
                 if index == 2 {
                     pole.z += 0.000_5;
                 }
-                cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                cadmpeg_ir::features::geometry::FinitePoint3::new(pole).ok_or_else(|| {
                     cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                         "control_points contains a non-finite point".into(),
                     )
@@ -1005,13 +1009,13 @@ fn pcurve_edge_admission_fails_closed_when_the_geometry_slice_is_empty() {
         ir.geometry.points.extend([
             Point::new(
                 start_point.clone(),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                     .expect("a finite position is a point"),
                 None,
             ),
             Point::new(
                 end_point.clone(),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
                     .expect("a finite position is a point"),
                 None,
             ),
@@ -1278,7 +1282,7 @@ fn curved_offset_cache_fit_rejects_an_uncertified_fold() {
                 if let Some(source) = index.checked_sub(6).and_then(|v| replacement.get(v)) {
                     pole = source.get();
                 }
-                cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                cadmpeg_ir::features::geometry::FinitePoint3::new(pole).ok_or_else(|| {
                     cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                         "control_points contains a non-finite point".into(),
                     )
@@ -1309,7 +1313,7 @@ fn curved_offset_cache_fit_accepts_a_regular_turning_control_net() {
                 if (6..9).contains(&index) {
                     pole.x = 0.0;
                 }
-                cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                cadmpeg_ir::features::geometry::FinitePoint3::new(pole).ok_or_else(|| {
                     cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                         "control_points contains a non-finite point".into(),
                     )
@@ -1453,7 +1457,7 @@ fn rational_offset_cache_bounds_are_translation_invariant() {
                 point.x += 1.0e12;
                 point.y -= 2.0e12;
                 point.z += 3.0e12;
-                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                cadmpeg_ir::features::geometry::FinitePoint3::new(point).ok_or_else(|| {
                     cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                         "control_points contains a non-finite point".into(),
                     )
@@ -1661,13 +1665,13 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
         ir.geometry.points.extend([
             Point::new(
                 start_point.clone(),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 1.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 1.0))
                     .expect("a finite position is a point"),
                 None,
             ),
             Point::new(
                 end_point.clone(),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.005, 1.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 0.005, 1.0))
                     .expect("a finite position is a point"),
                 None,
             ),
@@ -1857,7 +1861,7 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
                 if index == 1 {
                     pole.z = 1.0;
                 }
-                cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                cadmpeg_ir::features::geometry::FinitePoint3::new(pole).ok_or_else(|| {
                     cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                         "control_points contains a non-finite point".into(),
                     )

@@ -2924,6 +2924,8 @@ pub(crate) mod sketch_record_head {
     pub(crate) const ATTRIBUTE_MINUS_ONE: usize = 13;
     /// Offset of `role` (`u16`, little-endian). Spec §Sketch objects.
     pub(crate) const ROLE: usize = 27;
+    /// Offset of `locus` (`bytes[4]`). Spec §Sketch objects.
+    pub(crate) const LOCUS: usize = 23;
     /// Offset of `minus_one` (`f32`, little-endian). Spec §Sketch objects.
     pub(crate) const MINUS_ONE: usize = 31;
     /// Offset of `object_pointer` (`u16`, little-endian). Spec §Sketch objects.

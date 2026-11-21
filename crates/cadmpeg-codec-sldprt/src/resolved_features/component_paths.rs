@@ -1,5 +1,5 @@
 //! Component path resolution and selection value encoding.
-use cadmpeg_ir::features::PlanarProfileRef;
+use cadmpeg_ir::features::profiles::PlanarProfileRef;
 
 use super::feature_sources::{FeatureSources, SourcedFeature};
 use super::operations::feature_inline_operation_fields;
@@ -371,7 +371,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
         else {
             continue;
         };
-        if !matches!(neutral_profile, cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Unresolved(owner)) if owner == extrusion)
+        if !matches!(neutral_profile, cadmpeg_ir::features::profiles::ProfileRef::Planar(cadmpeg_ir::features::profiles::PlanarProfileRef::Unresolved(owner)) if owner == extrusion)
         {
             continue;
         }
@@ -382,8 +382,8 @@ pub(crate) fn project_adjacent_extrusion_profiles(
                 if let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) =
                     definition
                 {
-                    *profile = cadmpeg_ir::features::ProfileRef::Planar(
-                        cadmpeg_ir::features::PlanarProfileRef::Feature(reference),
+                    *profile = cadmpeg_ir::features::profiles::ProfileRef::Planar(
+                        cadmpeg_ir::features::profiles::PlanarProfileRef::Feature(reference),
                     );
                 }
             });
@@ -528,8 +528,8 @@ pub(crate) fn project_dissected_sketches(
             feature
                 .evaluation
                 .set_definition(FeatureDefinition::Operation(FeatureOperation::TreeNode {
-                    role: cadmpeg_ir::features::FeatureTreeNodeRole::DissectedProfile,
-                    children: cadmpeg_ir::features::TreeChildren::default(),
+                    role: cadmpeg_ir::features::tree::FeatureTreeNodeRole::DissectedProfile,
+                    children: cadmpeg_ir::features::tree::TreeChildren::default(),
                 }));
             continue;
         }
@@ -546,8 +546,8 @@ pub(crate) fn project_dissected_sketches(
             *profile = sketch.clone().into();
             Some((child, owner))
         };
-        let replace = |profile: &mut cadmpeg_ir::features::ProfileRef| {
-            let cadmpeg_ir::features::ProfileRef::Planar(planar) = profile else {
+        let replace = |profile: &mut cadmpeg_ir::features::profiles::ProfileRef| {
+            let cadmpeg_ir::features::profiles::ProfileRef::Planar(planar) = profile else {
                 return None;
             };
             replace_planar(planar)
@@ -572,7 +572,9 @@ pub(crate) fn project_dissected_sketches(
                 }
                 FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. }) => {
                     for section in sections {
-                        if let cadmpeg_ir::features::LoftSection::Profile(profile) = section {
+                        if let cadmpeg_ir::features::profiles::LoftSection::Profile(profile) =
+                            section
+                        {
                             if let Some(replacement) = replace(profile) {
                                 replaced.push(replacement);
                             }

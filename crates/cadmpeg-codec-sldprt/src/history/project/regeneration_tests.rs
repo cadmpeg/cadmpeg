@@ -8,24 +8,24 @@ use crate::history::project::project_feature_model;
 use crate::history::project::project_features;
 use crate::history::tests::feature;
 use crate::records::FeatureHistory;
-use cadmpeg_ir::features::BooleanOp;
-use cadmpeg_ir::features::ExtrudeExtent;
-use cadmpeg_ir::features::ExtrudeSide;
+use cadmpeg_ir::features::extents::ExtrudeExtent;
+use cadmpeg_ir::features::extents::ExtrudeSide;
+use cadmpeg_ir::features::extents::LinearTermination;
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::ProfileRef;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::features::FeatureOperation;
-use cadmpeg_ir::features::LinearTermination;
-use cadmpeg_ir::features::ProfileRef;
 use std::collections::BTreeMap;
 
 #[test]
 fn profile_consumers_require_a_regeneration_profile() {
     let mut definition = FeatureDefinition::Operation(FeatureOperation::Extrude {
-        profile: ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Native(
+        profile: ProfileRef::Planar(cadmpeg_ir::features::profiles::PlanarProfileRef::Native(
             "sketch-native".into(),
         )),
-        direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
-        start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
+        direction: cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {},
+        start: cadmpeg_ir::features::extents::ExtrudeStart::ProfilePlane {},
         extent: ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Unresolved {},
@@ -51,7 +51,9 @@ fn profile_consumers_require_a_regeneration_profile() {
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::Extrude {
-            profile: ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Native(_)),
+            profile: ProfileRef::Planar(cadmpeg_ir::features::profiles::PlanarProfileRef::Native(
+                _
+            )),
             ..
         })
     ));
@@ -65,7 +67,7 @@ fn profile_consumers_require_a_regeneration_profile() {
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::Extrude {
-            profile: ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Sketch(ref bound)),
+            profile: ProfileRef::Planar(cadmpeg_ir::features::profiles::PlanarProfileRef::Sketch(ref bound)),
             ..
         }) if bound == &sketch
     ));
@@ -102,7 +104,7 @@ fn exact_native_profile_source_projects_a_feature_dependency() {
     assert!(matches!(
         projected[1].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
-            profile: ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Feature(feature)),
+            profile: ProfileRef::Planar(cadmpeg_ir::features::profiles::PlanarProfileRef::Feature(feature)),
             ..
         }) if feature == &sketch_id
     ));
@@ -167,9 +169,9 @@ fn sweep_then_sketch_owners(owners: usize) -> Vec<cadmpeg_ir::features::Feature>
     let mut features = project_features(&[history]).unwrap();
     features[0].evaluation.edit(|definition, _| {
         *definition = FeatureDefinition::Operation(FeatureOperation::Sweep {
-            shape: cadmpeg_ir::features::SweepShape::sheet_sections(
-                cadmpeg_ir::features::SweepMode::Surface {},
-                cadmpeg_ir::features::SweepSection::Profile(section_sketch().into()),
+            shape: cadmpeg_ir::features::sweeps::SweepShape::sheet_sections(
+                cadmpeg_ir::features::sweeps::SweepMode::Surface {},
+                cadmpeg_ir::features::sweeps::SweepSection::Profile(section_sketch().into()),
                 Vec::new(),
             ),
             path: None,

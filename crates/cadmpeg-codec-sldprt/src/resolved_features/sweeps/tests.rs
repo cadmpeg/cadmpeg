@@ -3,9 +3,10 @@ use crate::records::{
     FeatureInputClass, FeatureInputName, FeatureSource, ObjectId, SketchInputEntity,
     SketchInputKind,
 };
-use cadmpeg_ir::features::{
-    DistinctMembers, FeatureContent, FeatureEvaluation, FeatureId, PlanarProfileRef,
-};
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::profiles::PlanarProfileRef;
+use cadmpeg_ir::features::selections::DistinctMembers;
+use cadmpeg_ir::features::{FeatureContent, FeatureId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{SketchId, SketchPlacement, SketchProfiles, SpatialSketchId};
 use std::collections::BTreeMap;
@@ -281,9 +282,9 @@ fn input(spatial: bool, circular: bool) -> Input {
         }
     };
     let mode = if circular {
-        cadmpeg_ir::features::SweepMode::Unresolved {}
+        cadmpeg_ir::features::sweeps::SweepMode::Unresolved {}
     } else {
-        cadmpeg_ir::features::SweepMode::Solid {
+        cadmpeg_ir::features::sweeps::SweepMode::Solid {
             op: SolidSweepOperation::Join,
         }
     };

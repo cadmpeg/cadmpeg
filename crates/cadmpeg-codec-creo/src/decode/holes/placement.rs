@@ -4,7 +4,7 @@
 use crate::axis::Axis;
 use crate::vecmath::normalize;
 use crate::vecmath::unit_length;
-use cadmpeg_ir::features::LinearTermination;
+use cadmpeg_ir::features::extents::LinearTermination;
 use cadmpeg_ir::geometry::analytic::CylinderSurface;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};

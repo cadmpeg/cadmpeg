@@ -918,13 +918,13 @@ pub(in super::super) fn transfer_sketches(
                 ordinal: cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
                 name: None,
                 suppressed: Some(false),
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                 source_properties: BTreeMap::new(),
                 source_tag: Some("section".to_owned()),
                 source_text: None,
                 source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-                evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                     IrFeatureDefinition::Operation(IrFeatureOperation::Sketch {
                         sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
                             sketch_id.clone(),

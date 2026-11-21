@@ -237,7 +237,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     {
         slot.operation = Some(crate::records::feature::combine::DesignCombineOperation {
             form: crate::records::feature::combine::DesignCombineForm::Standard,
-            operation: cadmpeg_ir::features::BooleanKind::Join,
+            operation: cadmpeg_ir::features::operation_settings::BooleanKind::Join,
             operation_offset: 0,
             keep_tools: false,
             keep_tools_offset: 0,

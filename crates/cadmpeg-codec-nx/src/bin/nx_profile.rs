@@ -1052,23 +1052,25 @@ mod tests {
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
                 FeatureDefinition::Operation(FeatureOperation::Block {
                     dimensions: Some([
                         cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("valid block fixture"),
                         cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("valid block fixture"),
                         cadmpeg_ir::scalar::PositiveLength::new(3.0).expect("valid block fixture"),
                     ]),
-                    placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::identity()),
-                    op: cadmpeg_ir::features::BooleanOp::NewBody,
+                    placement: Some(
+                        cadmpeg_ir::features::geometry::FeatureRigidPlacement::identity(),
+                    ),
+                    op: cadmpeg_ir::features::operation_settings::BooleanOp::NewBody,
                 }),
-                cadmpeg_ir::features::DistinctMembers::try_from(vec![body])
+                cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![body])
                     .expect("distinct output fixture"),
             ),
             native_ref: None,
@@ -1091,19 +1093,19 @@ mod tests {
             ordinal: 17,
             name: Some("BLOCK".to_string()),
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
                 FeatureDefinition::Operation(FeatureOperation::Block {
                     dimensions: None,
                     placement: None,
-                    op: cadmpeg_ir::features::BooleanOp::Unresolved,
+                    op: cadmpeg_ir::features::operation_settings::BooleanOp::Unresolved,
                 }),
-                cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
+                cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![BodyId::mint(
                     "test:model:entity#body".to_string(),
                 )
                 .expect("identity grammar")])
@@ -1168,7 +1170,8 @@ mod tests {
 
     #[test]
     fn unresolved_body_neutral_state_does_not_block_rederivation() {
-        use cadmpeg_ir::features::{Feature, FeatureId, FeatureTreeNodeRole};
+        use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
+        use cadmpeg_ir::features::{Feature, FeatureId};
 
         let mut ir = CadIr::empty();
         ir.model.features.push(Feature {
@@ -1177,16 +1180,16 @@ mod tests {
             ordinal: 0,
             name: None,
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::TreeNode {
                     role: FeatureTreeNodeRole::History,
-                    children: cadmpeg_ir::features::TreeChildren::default(),
+                    children: cadmpeg_ir::features::tree::TreeChildren::default(),
                 }),
             ),
             native_ref: None,

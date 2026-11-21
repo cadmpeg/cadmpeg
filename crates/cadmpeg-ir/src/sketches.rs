@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Neutral planar sketches, solved entities, and geometric constraints.
 
+use crate::features::geometry::{FinitePoint3, FiniteVector3};
+use crate::features::ParameterId;
 use crate::math::portable::Portable;
 use crate::math::{Point2, Point3, Vector3};
+use crate::scalar::{Angle, FiniteReal, Length, PositiveAngle, PositiveLength, PositiveReal};
 use crate::transform::Transform;
-use crate::{
-    features::{FinitePoint3, FiniteVector3, ParameterId},
-    scalar::{Angle, FiniteReal, Length, PositiveAngle, PositiveLength, PositiveReal},
-    units::{FinitePoint2, UnitVector2, UnitVector3},
-};
+use crate::units::{FinitePoint2, UnitVector2, UnitVector3};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]

@@ -7,10 +7,11 @@ use super::component_paths::component_feature_precedes;
 use super::scalars::FeatureObjectNames;
 use crate::loss::SldprtLossCode;
 use crate::records::{FeatureHistory, FeatureInputLane};
-use cadmpeg_ir::features::{
-    Feature, FeatureDefinition, FeatureOperation, GeneratedSweepSection, PathRef,
-    SketchFeatureBinding, SolidSweepOperation, SweepCircularRegion, SweepSection, SweepShape,
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::sweeps::{
+    GeneratedSweepSection, SolidSweepOperation, SweepCircularRegion, SweepSection, SweepShape,
 };
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation, SketchFeatureBinding};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::PositiveLength;
 use cadmpeg_ir::sketches::{

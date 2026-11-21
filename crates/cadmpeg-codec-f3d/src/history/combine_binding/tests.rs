@@ -3,7 +3,8 @@
 use super::{merge_operand_list_bindings, tool_replacement_loss, unbound_refusals};
 use crate::history::CombineOperandSide;
 use crate::loss::F3dLossCode;
-use cadmpeg_ir::features::{BodySelection, DistinctMembers, FeatureId};
+use cadmpeg_ir::features::selections::{BodySelection, DistinctMembers};
+use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::ids::BodyId;
 
 fn bodies(name: &str) -> BodySelection {

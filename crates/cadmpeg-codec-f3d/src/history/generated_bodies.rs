@@ -8,30 +8,18 @@ use crate::loss::F3dLossCode;
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::{HashMap, HashSet};
 
-/// Re-express body selections of ASM body slots as bodies of the features
-/// that generate them.
-///
-/// A body pattern seed and a body move resolved in their input states, a body
-/// deletion whose operands resolved through their recipe identity, and a
-/// Reverse Normal resolved in its input state name ASM body slots. When every selected slot
-/// is absent from the model bodies, the one feature whose history transition
-/// inserts that slot generates the body, and the selection names it there.
-/// A body move and a Reverse Normal read their slots in the bound history.
-/// A body-pattern seed that resolves to model bodies also reads its bound
-/// history. The generating feature becomes a dependency of
-/// the selecting feature. Returns the result states of the producers of
-/// generated bodies, each listing every body slot that the producer's
-/// transition inserts.
+/// Bind body selections to model bodies and to the features that generate them.
+/// Return the result states of features that supply generated selections.
 pub(crate) fn bind_generated_body_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     inputs: &FeatureBodySelectionInputs<'_>,
     scope_histories: &HashMap<String, String>,
     primary_brep: Option<&str>,
     losses: &mut Vec<LossNote>,
-) -> Vec<cadmpeg_ir::features::FeatureResultTopology> {
-    use cadmpeg_ir::features::{
-        patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation, GeneratedBodyRef,
-    };
+) -> Vec<cadmpeg_ir::features::evaluation::FeatureResultTopology> {
+    use cadmpeg_ir::features::patterns::PatternSeed;
+    use cadmpeg_ir::features::selections::{BodySelection, GeneratedBodyRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let live = inputs
         .bodies
@@ -48,36 +36,37 @@ pub(crate) fn bind_generated_body_selections(
             ))
         })
         .collect::<HashMap<_, _>>();
-    let producer = |slot: i64, history: Option<&AsmHistory>| -> Option<Producer> {
-        let in_history =
-            |candidate: &AsmHistory| history.is_none_or(|history| std::ptr::eq(candidate, history));
-        let mut inserting = inputs
-            .histories
-            .iter()
-            .filter(|candidate| in_history(candidate))
-            .flat_map(AsmHistory::states)
-            .filter(|state| inserts_body(state, slot));
-        let state = inserting.next()?;
-        if inserting.next().is_some() {
-            return None;
-        }
-        let mut scopes = inputs.scopes.iter().filter(|scope| {
-            scope.history_state_id() == Some(state.state_id)
-                && (history.is_none()
-                    || scope_history(scope, scope_histories, inputs.histories)
-                        .is_some_and(in_history))
-        });
-        let scope = scopes.next()?;
-        if scopes.next().is_some() {
-            return None;
-        }
-        let inserted = state.transition.as_ref()?.topology.bodies.inserted.clone();
-        Some((
-            feature_by_scope.get(&scope.id)?.0.clone(),
-            state.state_id,
-            inserted,
-        ))
-    };
+    let producer =
+        |history: Option<&AsmHistory>, stream: Option<&str>, slot: i64| -> Option<Producer> {
+            let states: Box<dyn Iterator<Item = &crate::history_records::AsmDeltaState>> =
+                match history {
+                    Some(history) => Box::new(history.states().iter()),
+                    None => Box::new(inputs.histories.iter().flat_map(AsmHistory::states)),
+                };
+            let mut inserting = states.filter(|state| inserts_body(state, slot));
+            let state = inserting.next()?;
+            if inserting.next().is_some() {
+                return None;
+            }
+            let mut scopes = inputs.scopes.iter().filter(|scope| {
+                crate::ids::native_stream(&scope.id) == stream
+                    && scope.history_state_id() == Some(state.state_id)
+                    && history.is_none_or(|history| {
+                        scope_history(scope, scope_histories, inputs.histories)
+                            .is_some_and(|candidate| std::ptr::eq(candidate, history))
+                    })
+            });
+            let scope = scopes.next()?;
+            if scopes.next().is_some() {
+                return None;
+            }
+            let inserted = state.transition.as_ref()?.topology.bodies.inserted.clone();
+            Some((
+                feature_by_scope.get(&scope.id)?.0.clone(),
+                state.state_id,
+                inserted,
+            ))
+        };
     let reverse_context = ReverseContext {
         inputs,
         scope_histories,
@@ -218,24 +207,47 @@ pub(crate) fn bind_generated_body_selections(
             if slots.iter().any(|slot| live.contains(slot)) {
                 continue;
             }
-            let history = if matches!(
+            let Some(scope) = scope else {
+                continue;
+            };
+            let history = scope_history(scope, scope_histories, inputs.histories);
+            let stream = crate::ids::native_stream(&scope.id);
+            let strict = matches!(
                 feature.evaluation.definition(),
                 FeatureDefinition::Operation(FeatureOperation::MoveBody { .. })
-            ) {
-                let Some(history) =
-                    scope.and_then(|scope| scope_history(scope, scope_histories, inputs.histories))
-                else {
-                    continue;
-                };
-                Some(history)
-            } else {
-                None
-            };
-            let Some(producers) = slots
+            );
+            if strict && history.is_none() {
+                continue;
+            }
+            let mut fell_back = !strict && history.is_none();
+            let mut producers = slots
                 .iter()
-                .map(|slot| producer(*slot, history))
-                .collect::<Option<Vec<_>>>()
-            else {
+                .map(|slot| producer(history, stream, *slot))
+                .collect::<Option<Vec<_>>>();
+            if !strict && producers.is_none() && history.is_some() {
+                fell_back = true;
+                producers = slots
+                    .iter()
+                    .map(|slot| producer(None, stream, *slot))
+                    .collect::<Option<Vec<_>>>();
+            }
+            if fell_back {
+                losses.push(F3dLossCode::FeatureGeneratedBodyHistoryUnresolved.note(format!(
+                    "Feature {} selects body slots {slots:?} of {native} with {}: {}.",
+                    feature.id,
+                    if history.is_some() {
+                        "no producer in its bound ASM history"
+                    } else {
+                        "no resolved ASM history"
+                    },
+                    if producers.is_some() {
+                        "the one state of any history that inserts each slot is taken as its producer"
+                    } else {
+                        "the selection keeps its slots"
+                    }
+                )));
+            }
+            let Some(producers) = producers else {
                 continue;
             };
             producers
@@ -289,19 +301,21 @@ pub(crate) fn bind_generated_body_selections(
                 .iter()
                 .map(|slot| cadmpeg_core::text::NonBlankString::new(slot.to_string()))
                 .collect::<Option<Vec<_>>>()?;
-            let members = cadmpeg_ir::features::FeatureResultMembers::new(
+            let members = cadmpeg_ir::features::evaluation::FeatureResultMembers::new(
                 bodies,
                 Vec::new(),
                 Vec::new(),
                 Vec::new(),
             )
             .ok()?;
-            Some(cadmpeg_ir::features::FeatureResultTopology::new(
-                crate::ids::history_result_state_id(&producer, state_id),
-                producer,
-                members,
-                None,
-            ))
+            Some(
+                cadmpeg_ir::features::evaluation::FeatureResultTopology::new(
+                    crate::ids::history_result_state_id(&producer, state_id),
+                    producer,
+                    members,
+                    None,
+                ),
+            )
         })
         .collect()
 }
@@ -319,8 +333,10 @@ struct CombineSide {
     single_native: bool,
 }
 
-fn combine_side(selection: &cadmpeg_ir::features::BodySelection) -> Option<CombineSide> {
-    use cadmpeg_ir::features::BodySelection;
+fn combine_side(
+    selection: &cadmpeg_ir::features::selections::BodySelection,
+) -> Option<CombineSide> {
+    use cadmpeg_ir::features::selections::BodySelection;
     match selection {
         BodySelection::Historical { bodies, native, .. } => Some(CombineSide {
             slots: bodies
@@ -351,7 +367,7 @@ fn combine_side(selection: &cadmpeg_ir::features::BodySelection) -> Option<Combi
 /// them, the producers of generated bodies, and the features that become
 /// dependencies.
 type CombineSideBinding = (
-    cadmpeg_ir::features::BodySelection,
+    cadmpeg_ir::features::selections::BodySelection,
     Vec<Producer>,
     Vec<cadmpeg_ir::features::FeatureId>,
 );
@@ -445,7 +461,7 @@ fn combine_side_binding(
     scope: Option<&crate::records::feature::scope::DesignParameterScope>,
     side: &CombineSide,
 ) -> Result<CombineSideBinding, String> {
-    use cadmpeg_ir::features::{BodyMembers, BodySelection, GeneratedBodyRef};
+    use cadmpeg_ir::features::selections::{BodyMembers, BodySelection, GeneratedBodyRef};
     let inputs = context.inputs;
     let scope = scope.ok_or("the Combine has no scope")?;
     let history = scope_state_history(scope, context.scope_histories, inputs.histories)
@@ -603,7 +619,7 @@ struct ReverseContext<'a> {
 /// The model bodies of a selection of body slots, with the earlier features
 /// whose transitions insert those slots.
 struct ModelBodies {
-    bodies: cadmpeg_ir::features::DistinctMembers<cadmpeg_ir::ids::BodyId>,
+    bodies: cadmpeg_ir::features::selections::DistinctMembers<cadmpeg_ir::ids::BodyId>,
     dependencies: Vec<cadmpeg_ir::features::FeatureId>,
 }
 
@@ -890,12 +906,12 @@ pub(super) fn group_operand_body_slots(
 /// selects a model body whose entity number is outside the body slots that
 /// the group's operands resolve through their recipe identity.
 pub(super) fn keep_recipe_body_slots(
-    selection: &mut cadmpeg_ir::features::BodySelection,
-    native: cadmpeg_ir::features::BodySelection,
+    selection: &mut cadmpeg_ir::features::selections::BodySelection,
+    native: cadmpeg_ir::features::selections::BodySelection,
     scope: &crate::records::feature::scope::DesignParameterScope,
     inputs: &FeatureBodySelectionInputs<'_>,
 ) {
-    use cadmpeg_ir::features::BodySelection;
+    use cadmpeg_ir::features::selections::BodySelection;
     let (BodySelection::Native(group_id), BodySelection::Resolved { bodies, .. }) =
         (&native, &*selection)
     else {

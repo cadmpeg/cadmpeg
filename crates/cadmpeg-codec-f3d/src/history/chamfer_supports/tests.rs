@@ -4,10 +4,9 @@
 use std::sync::Arc;
 
 use cadmpeg_ir::features::edge_treatments::{ChamferGroup, ChamferSpec};
-use cadmpeg_ir::features::{
-    DistinctMembers, EdgeSelection, Feature, FeatureDefinition, FeatureEvaluation, FeatureId,
-    FeatureOperation, HistoricalEdgeGeometry, NonEmptyMembers,
-};
+use cadmpeg_ir::features::evaluation::{FeatureEvaluation, HistoricalEdgeGeometry};
+use cadmpeg_ir::features::selections::{DistinctMembers, EdgeSelection, NonEmptyMembers};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::ids::{HistoricalEdgeId, IdentityKey};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{InteriorAngle, PositiveLength};
@@ -382,7 +381,8 @@ fn attach_filters_out_equal_distance_and_non_two_distances_chamfers() {
         let feature = chamfer_feature(spec, &prefix, edge_id.clone());
         let mut geometry = vec![HistoricalEdgeGeometry {
             edge: edge_id.clone(),
-            interior: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 5.0, 0.0)).unwrap(),
+            interior: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 5.0, 0.0))
+                .unwrap(),
             tangent: None,
             start: None,
             end: None,

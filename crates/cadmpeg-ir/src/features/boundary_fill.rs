@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{BodySelection, SelectionReference};
+use crate::features::selections::{BodySelection, SelectionReference};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::Serialize;

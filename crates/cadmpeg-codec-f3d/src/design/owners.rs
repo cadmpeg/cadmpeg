@@ -4,9 +4,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{
-    BodySelection, DistinctMembers, FeatureDefinition, FeatureOperation, SketchFeatureBinding,
-};
+use cadmpeg_ir::features::selections::{BodySelection, DistinctMembers};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SketchFeatureBinding};
 use cadmpeg_ir::CadIr;
 use cadmpeg_ir::{
     document::Model, ids::ProductDefinitionId, report::loss::LossNote, sketches::SketchId,
