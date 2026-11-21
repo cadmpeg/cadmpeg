@@ -2153,11 +2153,27 @@ pub(crate) fn bind_feature_body_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     inputs: &FeatureBodySelectionInputs<'_>,
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    let (mut losses, refusals) = bind_feature_body_selections_with_refusals(features, inputs);
+    losses.extend(native_combine_operand_refusal_notes(features, refusals));
+    losses
+}
+
+/// Bind the body selections of `features`, and return the browser-node
+/// refusals of `Combine` operands that stay native, for a later binding pass
+/// to settle.
+pub(crate) fn bind_feature_body_selections_with_refusals(
+    features: &mut [cadmpeg_ir::features::Feature],
+    inputs: &FeatureBodySelectionInputs<'_>,
+) -> (
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+    Vec<CombineOperandRefusal>,
+) {
     use cadmpeg_ir::features::boundary_fill::BoundaryFillCell;
     use cadmpeg_ir::features::selections::BodySelection;
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut losses = Vec::new();
+    let mut operand_refusals = Vec::new();
     let scopes = inputs.scopes;
     let groups = inputs.groups;
     let body_recipe_operands = inputs.body_recipe_operands;
@@ -2326,7 +2342,6 @@ pub(crate) fn bind_feature_body_selections(
                             _ => None,
                         }
                     };
-                    let mut binding_losses = Vec::new();
                     let refusal =
                         combine_selection::refine(operands, feature_id, |target, tools| {
                             combine_binding::bind_combine_operands(
@@ -2336,10 +2351,10 @@ pub(crate) fn bind_feature_body_selections(
                                 pattern_bodies,
                                 inputs,
                                 &mut body_candidates,
-                                &mut binding_losses,
+                                &mut operand_refusals,
+                                &mut losses,
                             );
                         });
-                    losses.extend(binding_losses);
                     if let Some(loss) = refusal {
                         losses.push(loss);
                     }
@@ -2542,7 +2557,7 @@ pub(crate) fn bind_feature_body_selections(
         });
     }
 
-    losses
+    (losses, operand_refusals)
 }
 
 fn pattern_combine_tool_slots(
@@ -2712,6 +2727,60 @@ pub(super) enum CombineOperandSide {
     Tools,
 }
 
+/// A browser-node slot refusal of one `Combine` operand. A refusal becomes a
+/// loss note only when its operand stays native after every binding pass.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CombineOperandRefusal {
+    pub(super) feature: cadmpeg_ir::features::FeatureId,
+    pub(super) side: CombineOperandSide,
+    /// The operand word of the note: `target`, `tool` or `tools`.
+    pub(super) operand: &'static str,
+    /// The native record of the refused selection.
+    pub(super) record: String,
+    pub(super) reason: &'static str,
+}
+
+impl CombineOperandRefusal {
+    fn note(&self) -> cadmpeg_ir::report::loss::LossNote {
+        crate::loss::F3dLossCode::FeatureCombineOperandBodyUnbound.note(format!(
+            "feature {} does not bind Combine {} {} through its browser node: {}",
+            self.feature, self.operand, self.record, self.reason
+        ))
+    }
+}
+
+/// The loss notes of the refusals whose operand stays native in `features`.
+pub(crate) fn native_combine_operand_refusal_notes(
+    features: &[cadmpeg_ir::features::Feature],
+    refusals: Vec<CombineOperandRefusal>,
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    let native = |selection: &BodySelection| {
+        matches!(
+            selection,
+            BodySelection::Native(_) | BodySelection::NativeSet(_)
+        )
+    };
+    refusals
+        .into_iter()
+        .filter(|refusal| {
+            features
+                .iter()
+                .find(|feature| feature.id == refusal.feature)
+                .is_none_or(|feature| match feature.evaluation.definition() {
+                    FeatureDefinition::Operation(FeatureOperation::Combine {
+                        operands, ..
+                    }) => native(match refusal.side {
+                        CombineOperandSide::Target => operands.target(),
+                        CombineOperandSide::Tools => operands.tools(),
+                    }),
+                    _ => true,
+                })
+        })
+        .map(|refusal| refusal.note())
+        .collect()
+}
+
 /// Bind an operand-list `Combine` through the browser node of each operand.
 ///
 /// The target binds when its node names a body of the preceding history
@@ -2731,7 +2800,7 @@ fn bind_operand_list_combine_bodies(
         &[AsmHistory],
         &[crate::records::feature::scope::DesignParameterScope],
     ),
-    refusals: &mut Vec<(CombineOperandSide, cadmpeg_ir::report::loss::LossNote)>,
+    refusals: &mut Vec<CombineOperandRefusal>,
 ) -> Option<bool> {
     use crate::records::feature::combine::DesignCombineBodyNode;
     use cadmpeg_ir::features::selections::{BodyMembers, BodySelection};
@@ -2770,18 +2839,19 @@ fn bind_operand_list_combine_bodies(
             Err("its body is absent from the preceding history state")
         }
     };
-    let mut refuse = |operand: &str, record_index: u32, reason: &str| {
+    let mut refuse = |operand: &'static str, record_index: u32, reason: &'static str| {
         let side = if operand == "target" {
             CombineOperandSide::Target
         } else {
             CombineOperandSide::Tools
         };
-        refusals.push((
+        refusals.push(CombineOperandRefusal {
+            feature: feature_id.clone(),
             side,
-            crate::loss::F3dLossCode::FeatureCombineOperandBodyUnbound.note(format!(
-                "feature {feature_id} does not bind Combine {operand} {stream}:design-record#{record_index} through its browser node: {reason}"
-            )),
-        ));
+            operand,
+            record: format!("{stream}:design-record#{record_index}"),
+            reason,
+        });
     };
     let target_slot = match body_slot(operation.target_body_node) {
         Ok(slot) => Some(slot),

@@ -1818,7 +1818,7 @@ mod operand_list_combine {
             (std::slice::from_ref(history), scopes),
             &mut refusals,
         );
-        let losses = refusals.into_iter().map(|(_, loss)| loss).collect();
+        let losses = refusals.iter().map(|refusal| refusal.note()).collect();
         ((target, tools), losses, shared_body)
     }
 

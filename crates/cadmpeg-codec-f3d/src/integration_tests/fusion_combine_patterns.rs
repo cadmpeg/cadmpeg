@@ -62,7 +62,8 @@ fn pattern_copies_bind_as_bodies_that_the_pattern_generates() {
     assert!(
         !codes
             .iter()
-            .any(|code| code == "feature.combine-tool-body-unbound"),
+            .any(|code| code == "feature.combine-tool-body-unbound"
+                || code == "feature.combine-operand-body-unbound"),
         "{codes:?}"
     );
 }
@@ -88,6 +89,7 @@ fn a_repeated_seed_tool_selects_the_seed_body_once() {
         !codes
             .iter()
             .any(|code| code == "feature.combine-tool-body-unbound"
+                || code == "feature.combine-operand-body-unbound"
                 || code == "feature.combine-operand-list-refused"),
         "{codes:?}"
     );

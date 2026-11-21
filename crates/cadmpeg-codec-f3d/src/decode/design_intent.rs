@@ -941,14 +941,20 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         shells: geometry.shells,
         faces: geometry.faces,
     };
-    losses.extend(crate::history::bind_feature_body_selections(
-        &mut model.features,
-        &body_selection_inputs,
-    ));
+    let (selection_losses, operand_refusals) =
+        crate::history::bind_feature_body_selections_with_refusals(
+            &mut model.features,
+            &body_selection_inputs,
+        );
+    losses.extend(selection_losses);
     losses.extend(crate::history::combine_history_tools::bind(
         &mut model.features,
         &design.design_parameter_scopes,
         &prereqs.design_body_bindings,
+    ));
+    losses.extend(crate::history::native_combine_operand_refusal_notes(
+        &model.features,
+        operand_refusals,
     ));
     model
         .feature_result_topologies
