@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! CADIR entity construction.
 
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{LineCurve, PlaneSurface};
 use cadmpeg_ir::geometry::{
     derive_reference_direction, Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
