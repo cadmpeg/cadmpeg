@@ -192,6 +192,131 @@ fn a_twice_placed_body_keeps_its_name_in_its_prototype() {
     );
 }
 
+/// Two shared definitions both named `Plate`, each of one body named
+/// `Plate`: the second prototype prim is uniquified to `Plate_1`, so its
+/// body keeps its own `Plate` prim inside it.
+#[test]
+fn a_body_keeps_its_name_in_a_uniquified_prototype() {
+    let mesh = "    def Mesh \"Plate\"\n    {\n        int[] faceVertexCounts = [3]\n        int[] faceVertexIndices = [0, 1, 2]\n        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]\n        uniform token subdivisionScheme = \"none\"\n    }\n";
+    let placement = |name: &str, class: &str| {
+        format!("    def \"{name}\" (\n        instanceable = true\n        references = </{class}>\n    )\n    {{\n    }}\n")
+    };
+    let source = decode(&format!(
+        "#usda 1.0\nclass \"Bracket\"\n{{\n{mesh}}}\nclass \"Clamp\"\n{{\n{mesh}}}\ndef Xform \"Asm\"\n{{\n{}{}{}{}}}\n",
+        placement("A", "Bracket"),
+        placement("B", "Bracket"),
+        placement("C", "Clamp"),
+        placement("D", "Clamp"),
+    ));
+    let mut ir = source.ir().clone();
+    let model = &mut ir.model;
+    let plates: Vec<_> = model
+        .product_definitions
+        .iter()
+        .filter(|definition| definition.source_name.as_deref() == Some("Plate"))
+        .cloned()
+        .collect();
+    assert_eq!(plates.len(), 2, "two Plate definitions");
+    let plate_ids: Vec<_> = plates.iter().map(|plate| plate.id.clone()).collect();
+    let owners: Vec<_> = model
+        .occurrences
+        .iter()
+        .filter(|occurrence| plate_ids.contains(&occurrence.prototype))
+        .map(|occurrence| (occurrence.id.clone(), occurrence.prototype.clone()))
+        .collect();
+    for definition in &mut model.product_definitions {
+        if !matches!(definition.source_name.as_deref(), Some("Bracket" | "Clamp")) {
+            continue;
+        }
+        let Some((_, prototype)) = owners
+            .iter()
+            .find(|(occurrence, _)| definition.occurrences.contains(occurrence))
+        else {
+            continue;
+        };
+        let plate = plates
+            .iter()
+            .find(|plate| &plate.id == prototype)
+            .expect("the placed Plate");
+        definition.occurrences.clear();
+        definition.bodies.clone_from(&plate.bodies);
+        definition.source_name = Some("Plate".to_owned());
+    }
+    model
+        .product_definitions
+        .retain(|definition| !plate_ids.contains(&definition.id));
+    model
+        .occurrences
+        .retain(|occurrence| !plate_ids.contains(&occurrence.prototype));
+    let (text, _) = encode(&ir);
+    let prototypes = text
+        .split("class \"Prototypes\"")
+        .nth(1)
+        .expect("a Prototypes prim");
+    let second = prototypes
+        .split("def Xform \"Plate_1\"")
+        .nth(1)
+        .expect("a Plate_1 prototype prim");
+    let second = second.split("\n        }").next().unwrap_or_default();
+    assert!(second.contains("def Mesh \"Plate\""), "{text}");
+}
+
+#[test]
+fn a_once_placed_body_keeps_its_name_under_its_occurrence() {
+    let mut ir = twice_placed_body();
+    let placements: Vec<_> = ir
+        .model
+        .occurrences
+        .iter()
+        .filter(|occurrence| occurrence.name.as_deref() == Some("B"))
+        .map(|occurrence| occurrence.id.clone())
+        .collect();
+    ir.model
+        .occurrences
+        .retain(|occurrence| !placements.contains(&occurrence.id));
+    for definition in &mut ir.model.product_definitions {
+        definition
+            .occurrences
+            .retain(|occurrence| !placements.contains(occurrence));
+    }
+    let (text, _) = encode(&ir);
+    let placement = text.split("def Xform \"A\"").nth(1).expect("the A prim");
+    assert!(placement.contains("def Mesh \"Plate\""), "{text}");
+    assert_eq!(text.matches("def Mesh").count(), 1, "{text}");
+}
+
+/// The count of face bindings that the export reports as not written.
+fn unwritten_face_bindings(report: &cadmpeg_ir::report::export::ExportReport) -> Option<String> {
+    report
+        .losses
+        .iter()
+        .find(|loss| loss.message.contains("appearance bindings to faces"))
+        .map(|loss| loss.message.clone())
+}
+
+#[test]
+fn a_written_face_binding_is_no_loss() {
+    let r#box = decode(&fixture("brep_array_box.usda"));
+    let (text, report) = encode(r#box.ir());
+    assert_eq!(unwritten_face_bindings(&report), None, "{text}");
+}
+
+/// With no `BrepArray` and a mesh from the document, no prim carries the
+/// six face bindings of the box.
+#[test]
+fn a_face_binding_with_no_prim_is_a_loss() {
+    let r#box = decode(&fixture("brep_array_box.usda"));
+    let (_, report) = encode_with(
+        r#box.ir(),
+        SceneOptions {
+            exact_brep: false,
+            ..SceneOptions::DEFAULT
+        },
+    );
+    let message = unwritten_face_bindings(&report).expect("a face-binding loss");
+    assert!(message.starts_with("6 "), "{message}");
+}
+
 #[test]
 fn without_materialx_a_material_has_its_preview_surface_only() {
     let materials = decode(&fixture("materials.usda"));

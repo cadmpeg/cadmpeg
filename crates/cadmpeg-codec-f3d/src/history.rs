@@ -41,6 +41,7 @@ mod generated_bodies;
 pub(crate) mod history_bodies;
 mod hole_support;
 pub(crate) mod linked_states;
+pub(crate) mod loft_solid;
 mod loop_index;
 mod move_face;
 mod output_blob;
@@ -4323,7 +4324,10 @@ pub(crate) fn project_feature_input_topologies(
         let Some(previous_state_id) = selection::feature_selected_input_state_id(feature)
             .or_else(|| scope.previous_history_state_id())
             .or_else(|| {
-                crate::design::feature_project::work_point_recipe_state_id(scope, edge_operands)
+                crate::design::feature_project::work_points::work_point_recipe_state_id(
+                    scope,
+                    edge_operands,
+                )
             })
             .or_else(|| crate::design::feature_project::work_plane_recipe_state_id(scope))
             .or_else(|| {
@@ -4555,7 +4559,9 @@ pub(crate) fn bind_vertex_recipe_history(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut topology_queries = TopologyQueryCache::default();
     let source_ordinals =
-        crate::design::feature_project::authored_scope_ordinals_per_stream(scopes, timelines)?;
+        crate::design::feature_project::scope_order::authored_scope_ordinals_per_stream(
+            scopes, timelines,
+        )?;
     let mut input_states = HashMap::new();
     for scope in scopes.iter().filter(|scope| {
         matches!(
@@ -5289,26 +5295,36 @@ pub(crate) fn bind_scope_histories(
         let Some(construction) = scope.base_feature_construction() else {
             continue;
         };
-        let mut referenced_histories = construction.body_reference_records().filter_map(|suffix| {
-            let mut bindings = body_bindings.iter().filter(|binding| {
-                crate::ids::same_native_occurrence(binding.id(), &scope.id)
-                    && binding.entity_suffix == u64::from(suffix)
-            });
-            let binding = bindings.next()?;
-            if bindings.next().is_some() {
-                return None;
-            }
-            let mut matching = candidates.iter().filter(|history| {
-                historical_brep_source(&history.id)
-                    .is_some_and(|source| binding.blob_name().strip_prefix("BREP.") == Some(source))
-            });
-            let history = matching.next()?;
-            matching.next().is_none().then_some(history.id.as_str())
-        });
-        let Some(history_id) = referenced_histories.next() else {
+        let Some(referenced_histories) = construction
+            .body_entity_suffixes()
+            .map(|suffix| {
+                let mut bindings = body_bindings.iter().filter(|binding| {
+                    crate::ids::same_native_occurrence(binding.id(), &scope.id)
+                        && binding.entity_suffix == suffix
+                });
+                let binding = bindings.next()?;
+                if bindings.next().is_some() {
+                    return None;
+                }
+                let mut matching = candidates.iter().filter(|history| {
+                    historical_brep_source(&history.id).is_some_and(|source| {
+                        binding.blob_name().strip_prefix("BREP.") == Some(source)
+                    })
+                });
+                let history = matching.next()?;
+                matching.next().is_none().then_some(history.id.as_str())
+            })
+            .collect::<Option<Vec<&str>>>()
+        else {
             continue;
         };
-        if referenced_histories.all(|candidate| candidate == history_id) {
+        let Some(&history_id) = referenced_histories.first() else {
+            continue;
+        };
+        if referenced_histories
+            .iter()
+            .all(|&candidate| candidate == history_id)
+        {
             insert_scope_history_binding(&mut resolved, &scope.id, history_id);
         }
     }

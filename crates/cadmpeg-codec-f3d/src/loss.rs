@@ -96,6 +96,10 @@ pub(crate) enum F3dLossCode {
     SceneOverrideUnbound,
     /// A direct operation-table pose is applied uniformly to its definition.
     OperationPoseApplied,
+    /// A version-four operation table is applied with its path-ordinal value read as leaving the pose unchanged.
+    OperationPosePathOrdinalAssumed,
+    /// A version-two or version-three operation table is applied with the pose semantics of version one.
+    OperationPoseVersionAssumed,
     /// A scope namespace has no unique neutral product definition.
     ScopeOwnerUnresolved,
     /// A history output body belongs to another product definition.
@@ -731,6 +735,7 @@ pub(crate) enum F3dLossCode {
     FeatureSketchProfileFlagsAssumed,
     /// Extrude profile selections skipped the sketch arrangement search at a local cap.
     FeatureProfileArrangementCapped,
+    FeatureProfileCrossingRunsCapped,
     /// Extrude profile selections skipped a certified profile test at a local cap.
     FeatureProfileDensificationCapped,
     /// Extrude profile selections skipped a self-crossing loop split at a local cap.
@@ -742,6 +747,9 @@ pub(crate) enum F3dLossCode {
     /// Extrude profile selections joined stored loops to faces through the assumed reading of their first entry operand.
     FeatureProfileLoopFlagsAssumed,
     FeatureProfileCoincidentDirectionAssumed,
+    FeatureProfileCoincidentBoundaryAssumed,
+    FeatureProfileCrossingRunsAssumed,
+    FeatureProfilePartialEntryAssumed,
     /// Extrude profile selections took regions from the faces a cut changed, at one point per region.
     FeatureProfileCutRegionsAssumed,
     /// A stored Cut transition certifies regions with stale curve identities.
@@ -840,6 +848,9 @@ pub(crate) enum F3dLossCode {
     /// A linked Reverse Normal scope takes its timeline position by record
     /// order among the other linked scopes of its timeline item.
     FeatureReverseNormalLinkOrderAssumed,
+    /// A Combine operand resolved in its input state names no model body and
+    /// no generating feature, so it keeps its input-state bodies.
+    FeatureCombineBodyProducerUnresolved,
     FeatureSilhouetteSplitPrefixUnparsed,
     FeatureSilhouetteSplitModeUnresolved,
     FeatureSilhouetteSplitDirectionUnresolved,
@@ -968,6 +979,8 @@ pub(crate) enum F3dLossCode {
     FeatureLoftGroupsUnassigned,
     /// A `Loft` projects the one role-`0x7` group of its rail list as a centerline.
     FeatureLoftCenterlineAssumed,
+    /// A new-body `Loft` takes its solid setting from the kinds of its output bodies.
+    FeatureLoftSolidInferred,
     /// A `SurfaceExtend` scope projects with an unresolved extension method.
     FeatureSurfaceExtendMethodUnresolved,
     FeatureSplitToolExtensionAssumed,
@@ -1049,8 +1062,8 @@ pub(crate) enum F3dLossCode {
     /// Mesh attribute channels have no settled stored-element layout.
     MeshAttributeNotTransferred,
     MeshGuidBytesUninterpreted,
-    /// A packed-direction split component flag is read as payload-neutral.
-    MeshComponentFlagAssumed,
+    /// A packed-direction split component flag has no settled meaning.
+    MeshComponentFlagUninterpreted,
     MeshOperationRecordsNative,
     MeshFaceGroupsAssumed,
     MeshBodyWordsNative,
@@ -1232,6 +1245,9 @@ pub(crate) enum F3dLossCode {
     WriterFaceOmitted,
     /// Geometry was not written as the source states it.
     WriterGeometryOmitted,
+    /// An open edge whose source states no range was written over one arc of
+    /// a curve that passes one of its vertices twice.
+    WriterEdgeRangeAssumed,
     /// An appearance was not written.
     WriterAppearanceOmitted,
     /// The retained source could not carry an edit; the file was regenerated.
@@ -1344,6 +1360,8 @@ impl F3dLossCode {
         Self::SceneOverrideAmbiguous,
         Self::SceneOverrideUnbound,
         Self::OperationPoseApplied,
+        Self::OperationPosePathOrdinalAssumed,
+        Self::OperationPoseVersionAssumed,
         Self::ScopeOwnerUnresolved,
         Self::ScopeOutputOwnerMismatch,
         Self::ScopeOutputOwnerUnresolved,
@@ -1733,10 +1751,14 @@ impl F3dLossCode {
         Self::FeatureExtrudeProfileFaceCurved,
         Self::FeatureSketchProfileFlagsAssumed,
         Self::FeatureProfileArrangementCapped,
+        Self::FeatureProfileCrossingRunsCapped,
         Self::FeatureProfileDensificationCapped,
         Self::FeatureProfileCrossingLoopCapped,
         Self::FeatureProfileCrossingLoopAssumed,
         Self::FeatureProfileCoincidentDirectionAssumed,
+        Self::FeatureProfileCoincidentBoundaryAssumed,
+        Self::FeatureProfileCrossingRunsAssumed,
+        Self::FeatureProfilePartialEntryAssumed,
         Self::FeatureProfileLoopFlagsAssumed,
         Self::FeatureProfileCutRegionsAssumed,
         Self::FeatureProfileRegionIdentitiesStale,
@@ -1795,6 +1817,7 @@ impl F3dLossCode {
         Self::FeatureReverseNormalLinkUnplaced,
         Self::FeatureReverseNormalLinkShared,
         Self::FeatureReverseNormalLinkOrderAssumed,
+        Self::FeatureCombineBodyProducerUnresolved,
         Self::FeatureSilhouetteSplitPrefixUnparsed,
         Self::FeatureSilhouetteSplitModeUnresolved,
         Self::FeatureSilhouetteSplitDirectionUnresolved,
@@ -1888,6 +1911,7 @@ impl F3dLossCode {
         Self::FeatureLoftListsUnresolved,
         Self::FeatureLoftGroupsUnassigned,
         Self::FeatureLoftCenterlineAssumed,
+        Self::FeatureLoftSolidInferred,
         Self::FeatureSurfaceExtendMethodUnresolved,
         Self::FeatureSplitToolExtensionAssumed,
         Self::FeatureSplitToolExtensionUnresolved,
@@ -1943,7 +1967,7 @@ impl F3dLossCode {
         Self::MeshContainerMissing,
         Self::MeshAttributeNotTransferred,
         Self::MeshGuidBytesUninterpreted,
-        Self::MeshComponentFlagAssumed,
+        Self::MeshComponentFlagUninterpreted,
         Self::MeshOperationRecordsNative,
         Self::MeshFaceGroupsAssumed,
         Self::MeshBodyWordsNative,
@@ -2027,6 +2051,7 @@ impl F3dLossCode {
         Self::WriterBodyOmitted,
         Self::WriterFaceOmitted,
         Self::WriterGeometryOmitted,
+        Self::WriterEdgeRangeAssumed,
         Self::WriterAppearanceOmitted,
         Self::WriterPatchDeclined,
         Self::WriterAppearanceGuidAllocated,
@@ -2154,6 +2179,10 @@ impl F3dLossCode {
             Self::ScopeOutputOwnerUnresolved => "scope.output-owner-unresolved",
             Self::ScopeSketchOwnerMismatch => "scope.sketch-owner-mismatch",
             Self::OperationPoseApplied => "assembly.operation-table-pose",
+            Self::OperationPosePathOrdinalAssumed => {
+                "assembly.operation-table-path-ordinal-assumed"
+            }
+            Self::OperationPoseVersionAssumed => "assembly.operation-table-version-assumed",
             Self::OperationPoseDisagrees => "assembly.operation-table-pose-disagrees",
             Self::OperationPoseNative => "assembly.operation-table-pose-native",
             Self::DimensionCompanionUntyped => "dimension.companion-untyped",
@@ -2722,6 +2751,7 @@ impl F3dLossCode {
             Self::FeatureExtrudeProfileFaceCurved => "feature.extrude-profile-face-curved",
             Self::FeatureProfileSelectionNative => "feature.profile-selection-native",
             Self::FeatureProfileArrangementCapped => "feature.profile-arrangement-capped",
+            Self::FeatureProfileCrossingRunsCapped => "feature.profile-crossing-runs-capped",
             Self::FeatureProfileDensificationCapped => "feature.profile-densification-capped",
             Self::FeatureProfileCrossingLoopCapped => "feature.profile-crossing-loop-capped",
             Self::FeatureProfileCrossingLoopAssumed => "feature.profile-crossing-loop-assumed",
@@ -2729,6 +2759,11 @@ impl F3dLossCode {
             Self::FeatureProfileCoincidentDirectionAssumed => {
                 "feature.profile-coincident-direction-assumed"
             }
+            Self::FeatureProfileCoincidentBoundaryAssumed => {
+                "feature.profile-coincident-boundary-assumed"
+            }
+            Self::FeatureProfileCrossingRunsAssumed => "feature.profile-crossing-runs-assumed",
+            Self::FeatureProfilePartialEntryAssumed => "feature.profile-partial-entry-assumed",
             Self::FeatureProfileRegionIdentitiesStale => "feature.profile-region-identities-stale",
             Self::FeatureProfileTextGlyphsAssumed => "feature.profile-text-glyphs-assumed",
             Self::FeatureProfileTextGlyphsNative => "feature.profile-text-glyphs-native",
@@ -2831,6 +2866,9 @@ impl F3dLossCode {
             Self::FeatureReverseNormalLinkShared => "feature.reverse-normal-link-shared",
             Self::FeatureReverseNormalLinkOrderAssumed => {
                 "feature.reverse-normal-link-order-assumed"
+            }
+            Self::FeatureCombineBodyProducerUnresolved => {
+                "feature.combine-body-producer-unresolved"
             }
             Self::FeatureSilhouetteSplitPrefixUnparsed => {
                 "feature.silhouette-split-prefix-unparsed"
@@ -2985,6 +3023,7 @@ impl F3dLossCode {
             Self::FeatureLoftListsUnresolved => "feature.loft-lists-unresolved",
             Self::FeatureLoftGroupsUnassigned => "feature.loft-groups-unassigned",
             Self::FeatureLoftCenterlineAssumed => "feature.loft-centerline-assumed",
+            Self::FeatureLoftSolidInferred => "feature.loft-solid-inferred",
             Self::FeatureSplitBodyFaceToolGroupAssumed => {
                 "feature.split-body-face-tool-group-assumed"
             }
@@ -3066,7 +3105,7 @@ impl F3dLossCode {
             Self::MeshContainerMissing => "mesh.container-missing",
             Self::MeshAttributeNotTransferred => "mesh.attribute-not-transferred",
             Self::MeshGuidBytesUninterpreted => "mesh.guid-bytes-uninterpreted",
-            Self::MeshComponentFlagAssumed => "mesh.component-flag-assumed",
+            Self::MeshComponentFlagUninterpreted => "mesh.component-flag-uninterpreted",
             Self::MeshOperationRecordsNative => "mesh.operation-records-native",
             Self::MeshFaceGroupsAssumed => "mesh.face-groups-assumed",
             Self::MeshBodyWordsNative => "mesh.body-words-native",
@@ -3160,6 +3199,7 @@ impl F3dLossCode {
             Self::WriterBodyOmitted => "writer.body-omitted",
             Self::WriterFaceOmitted => "writer.face-omitted",
             Self::WriterGeometryOmitted => "writer.geometry-omitted",
+            Self::WriterEdgeRangeAssumed => "writer.edge-range-assumed",
             Self::WriterAppearanceOmitted => "writer.appearance-omitted",
             Self::WriterPatchDeclined => "writer.patch-declined",
             Self::WriterIntegerAsReal => "writer.integer-as-real",
@@ -3266,6 +3306,7 @@ impl F3dLossCode {
             Self::WriterBodyOmitted => Severity::Error,
             Self::WriterFaceOmitted => Severity::Error,
             Self::WriterGeometryOmitted => Severity::Warning,
+            Self::WriterEdgeRangeAssumed => Severity::Warning,
             Self::WriterAppearanceOmitted => Severity::Warning,
             Self::WriterPatchDeclined => Severity::Warning,
             Self::WriterIntegerAsReal => Severity::Info,
@@ -3274,6 +3315,8 @@ impl F3dLossCode {
             Self::ScopeOwnerUnresolved
             | Self::ScopeOutputOwnerUnresolved
             | Self::OperationPoseApplied
+            | Self::OperationPosePathOrdinalAssumed
+            | Self::OperationPoseVersionAssumed
             | Self::OperationPoseNative
             | Self::BodylessDesignCarrier
             | Self::EmptyDesign
@@ -3291,6 +3334,7 @@ impl F3dLossCode {
             | Self::NurbsCurveCarrier
             | Self::MeshSurfaceSentinel
             | Self::MeshGuidBytesUninterpreted
+            | Self::MeshComponentFlagUninterpreted
             | Self::MeshBodyBytesUninterpreted
             | Self::MeshWrapperBytesUninterpreted
             | Self::MeshOwnerBytesUninterpreted
@@ -3691,10 +3735,14 @@ impl F3dLossCode {
             | Self::FeatureExtrudeProfileFaceCurved
             | Self::FeatureSketchProfileFlagsAssumed
             | Self::FeatureProfileArrangementCapped
+            | Self::FeatureProfileCrossingRunsCapped
             | Self::FeatureProfileDensificationCapped
             | Self::FeatureProfileCrossingLoopCapped
             | Self::FeatureProfileCrossingLoopAssumed
             | Self::FeatureProfileCoincidentDirectionAssumed
+            | Self::FeatureProfileCoincidentBoundaryAssumed
+            | Self::FeatureProfileCrossingRunsAssumed
+            | Self::FeatureProfilePartialEntryAssumed
             | Self::FeatureProfileLoopFlagsAssumed
             | Self::FeatureProfileRegionIdentitiesStale
             | Self::FeatureProfileTextGlyphsAssumed
@@ -3753,6 +3801,7 @@ impl F3dLossCode {
             | Self::FeatureReverseNormalLinkUnplaced
             | Self::FeatureReverseNormalLinkShared
             | Self::FeatureReverseNormalLinkOrderAssumed
+            | Self::FeatureCombineBodyProducerUnresolved
             | Self::FeatureSilhouetteSplitPrefixUnparsed
             | Self::FeatureSilhouetteSplitModeUnresolved
             | Self::FeatureSilhouetteSplitDirectionUnresolved
@@ -3846,6 +3895,7 @@ impl F3dLossCode {
             | Self::FeatureLoftListsUnresolved
             | Self::FeatureLoftGroupsUnassigned
             | Self::FeatureLoftCenterlineAssumed
+            | Self::FeatureLoftSolidInferred
             | Self::FeatureSurfaceExtendMethodUnresolved
             | Self::FeatureSplitToolExtensionAssumed
             | Self::FeatureSplitToolExtensionUnresolved
@@ -3899,7 +3949,6 @@ impl F3dLossCode {
             | Self::MeshContainerUnjoined
             | Self::MeshContainerMissing
             | Self::MeshAttributeNotTransferred
-            | Self::MeshComponentFlagAssumed
             | Self::MeshOperationRecordsNative
             | Self::MeshFaceGroupsAssumed
             | Self::MeshBodyWordsNative
@@ -4041,6 +4090,7 @@ impl F3dLossCode {
             Self::WriterBodyOmitted => LossTaxonomy::TopologyNotTransferred,
             Self::WriterFaceOmitted => LossTaxonomy::TopologyNotTransferred,
             Self::WriterGeometryOmitted => LossTaxonomy::GeometryNotTransferred,
+            Self::WriterEdgeRangeAssumed => LossTaxonomy::TopologyGaugeSubstituted,
             Self::WriterAppearanceOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::WriterPatchDeclined => LossTaxonomy::PreservedSourceUnavailable,
             Self::WriterIntegerAsReal => LossTaxonomy::ParametricRecordOmitted,
@@ -4076,6 +4126,8 @@ impl F3dLossCode {
             | Self::CoilShortControlsAssumed
             | Self::CoilTargetUnresolved
             | Self::OperationPoseApplied
+            | Self::OperationPosePathOrdinalAssumed
+            | Self::OperationPoseVersionAssumed
             | Self::OperationPoseDisagrees
             | Self::OperationPoseNative
             | Self::ConfigurationMemberUnassigned
@@ -4105,7 +4157,7 @@ impl F3dLossCode {
             | Self::XrefOwnedPoseDisagrees
             | Self::XrefOwnedPoseNative
             | Self::MeshGuidBytesUninterpreted
-            | Self::MeshComponentFlagAssumed
+            | Self::MeshComponentFlagUninterpreted
             | Self::MeshOperationRecordsNative
             | Self::MeshFaceGroupsAssumed
             | Self::MeshBodyWordsNative
@@ -4406,10 +4458,14 @@ impl F3dLossCode {
             | Self::FeatureExtrudeProfileFaceCurved
             | Self::FeatureSketchProfileFlagsAssumed
             | Self::FeatureProfileArrangementCapped
+            | Self::FeatureProfileCrossingRunsCapped
             | Self::FeatureProfileDensificationCapped
             | Self::FeatureProfileCrossingLoopCapped
             | Self::FeatureProfileCrossingLoopAssumed
             | Self::FeatureProfileCoincidentDirectionAssumed
+            | Self::FeatureProfileCoincidentBoundaryAssumed
+            | Self::FeatureProfileCrossingRunsAssumed
+            | Self::FeatureProfilePartialEntryAssumed
             | Self::FeatureProfileLoopFlagsAssumed
             | Self::FeatureProfileRegionIdentitiesStale
             | Self::FeatureProfileTextGlyphsAssumed
@@ -4468,6 +4524,7 @@ impl F3dLossCode {
             | Self::FeatureReverseNormalLinkUnplaced
             | Self::FeatureReverseNormalLinkShared
             | Self::FeatureReverseNormalLinkOrderAssumed
+            | Self::FeatureCombineBodyProducerUnresolved
             | Self::FeatureSilhouetteSplitPrefixUnparsed
             | Self::FeatureSilhouetteSplitModeUnresolved
             | Self::FeatureSilhouetteSplitDirectionUnresolved
@@ -4561,6 +4618,7 @@ impl F3dLossCode {
             | Self::FeatureLoftListsUnresolved
             | Self::FeatureLoftGroupsUnassigned
             | Self::FeatureLoftCenterlineAssumed
+            | Self::FeatureLoftSolidInferred
             | Self::FeatureSurfaceExtendMethodUnresolved
             | Self::FeatureSplitToolExtensionAssumed
             | Self::FeatureSplitToolExtensionUnresolved
@@ -4734,10 +4792,12 @@ impl F3dLossCode {
     ///
     /// Defaults to the taxonomy floor. `DesignIntentUndecoded` pins Warning
     /// above its tolerable `DecodeDiagnostic` taxonomy: strict mode refuses a
-    /// document whose design intent was dropped.
+    /// document whose design intent was dropped. `WriterEdgeRangeAssumed`
+    /// pins Warning above `TopologyGaugeSubstituted`: strict mode refuses an
+    /// edge written over an arc the source does not state.
     const fn strict_floor(self) -> Option<Severity> {
         match self {
-            Self::DesignIntentUndecoded => Some(Severity::Warning),
+            Self::DesignIntentUndecoded | Self::WriterEdgeRangeAssumed => Some(Severity::Warning),
             other => other.shared_taxonomy().strict_floor(),
         }
     }
@@ -4844,6 +4904,8 @@ mod tests {
                 "scene.override-ambiguous",
                 "scene.override-unbound",
                 "assembly.operation-table-pose",
+                "assembly.operation-table-path-ordinal-assumed",
+                "assembly.operation-table-version-assumed",
                 "scope.owner-unresolved",
                 "scope.output-owner-mismatch",
                 "scope.output-owner-unresolved",
@@ -5233,10 +5295,14 @@ mod tests {
                 "feature.extrude-profile-face-curved",
                 "feature.sketch-profile-flags-assumed",
                 "feature.profile-arrangement-capped",
+                "feature.profile-crossing-runs-capped",
                 "feature.profile-densification-capped",
                 "feature.profile-crossing-loop-capped",
                 "feature.profile-crossing-loop-assumed",
                 "feature.profile-coincident-direction-assumed",
+                "feature.profile-coincident-boundary-assumed",
+                "feature.profile-crossing-runs-assumed",
+                "feature.profile-partial-entry-assumed",
                 "feature.profile-loop-flags-assumed",
                 "feature.profile-cut-regions-assumed",
                 "feature.profile-region-identities-stale",
@@ -5295,6 +5361,7 @@ mod tests {
                 "feature.reverse-normal-link-unplaced",
                 "feature.reverse-normal-link-shared",
                 "feature.reverse-normal-link-order-assumed",
+                "feature.combine-body-producer-unresolved",
                 "feature.silhouette-split-prefix-unparsed",
                 "feature.silhouette-split-mode-unresolved",
                 "feature.silhouette-split-direction-unresolved",
@@ -5388,6 +5455,7 @@ mod tests {
                 "feature.loft-lists-unresolved",
                 "feature.loft-groups-unassigned",
                 "feature.loft-centerline-assumed",
+                "feature.loft-solid-inferred",
                 "feature.surface-extend-method-unresolved",
                 "feature.split-tool-extension-assumed",
                 "feature.split-tool-extension-unresolved",
@@ -5443,7 +5511,7 @@ mod tests {
                 "mesh.container-missing",
                 "mesh.attribute-not-transferred",
                 "mesh.guid-bytes-uninterpreted",
-                "mesh.component-flag-assumed",
+                "mesh.component-flag-uninterpreted",
                 "mesh.operation-records-native",
                 "mesh.face-groups-assumed",
                 "mesh.body-words-native",
@@ -5527,6 +5595,7 @@ mod tests {
                 "writer.body-omitted",
                 "writer.face-omitted",
                 "writer.geometry-omitted",
+                "writer.edge-range-assumed",
                 "writer.appearance-omitted",
                 "writer.patch-declined",
                 "writer.appearance-guid-allocated",

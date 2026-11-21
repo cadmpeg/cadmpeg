@@ -62,17 +62,17 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** A suppressed final item establishes its own execution state. Its authored position and the terminal ASM state identities remain distinct from the saved rollback position. Joint activation remains under DR-249.
 
-### DR-520. Version-four operation-table pose selection
+### DR-520. Operation tables with an empty path, a two-reference path, or version two or three
 
-**Question.** How does a version-four operation table select an occurrence, its final pose, and the saved operation state?
+**Question.** How does an operation table with an empty occurrence path select an occurrence, its final pose, and the saved operation state? In which frame does a version-four table with a two-reference path pose its inner occurrence, and what do the path-ordinal values select? Which pose does the final entry of a version-two or version-three direct table give?
 
-**Known.** `f3d.md` §1.4 "**Direct operation-table poses.**" defines versions zero and one. One local corpus file registers three version-four records of the same type. Two records reference the root component and a common operation type; one also references an Assemble operation. The version-one prefix reading gives an empty occurrence path. Two independent public controls carry version-three tables with empty paths and version-two root-placement envelopes. The decoder retains these tables with `assembly.operation-table-pose-native`.
+**Known.** `f3d.md` §1.4 "**Direct operation-table poses.**" defines the direct table, whose path has one reference, for versions zero through four, and the pose of its final entry for versions zero, one, and four. Version-two and version-three direct tables have the version-one grammar. The decoder applies their final entry as the occurrence pose of a version-one table and reports `assembly.operation-table-version-assumed`. A version-four table can store path count `0`, then byte `03`, a u32 count of `0` or `1`, and that many u32 values before its references. A table with count `0` has entry cursor `FF FF FF FF` and an empty entry run. A table with count `1` has one entry; its matrix equals the matrix of one local occurrence-placement record of the same Design stream, and the values `1` and `2` occur in a design with two component occurrences. Every reference of such a table names the root component or an operation record. Version-two and version-three tables with an empty path store the component reference directly after the path count. A version-four table with a two-reference path stores the outer occurrence-placement reference first and three u32 values after byte `02`. The decoder reads the path-ordinal value of a one-reference path, applies the table to the occurrence that the path names, and reports `assembly.operation-table-path-ordinal-assumed`. It retains every empty-path table and every two-reference table with `assembly.operation-table-pose-native`.
 
-**Need.** The complete version-three and version-four table grammars, a typed join from the table to the affected occurrence, and a saved-state selector. Compare two independent designs with an insertion followed by one position change, then vary suppression and the timeline position separately. Verify the coordinate frame against the containing occurrence and the selected component body.
+**Need.** The record that the u32 values after byte `02` or `03` index, and the meaning of the references between the `03` field and the entry cursor. Compare designs with one, two, and nested local occurrences, each saved before and after one position change. Vary suppression and the timeline position separately for the saved-state selector. A design with a version-two or version-three direct table, saved before and after one position change of the occurrence that the path names.
 
-**Conflict.** In one local corpus file, a version-four table references the Assemble scope that precedes the final timeline item. The occurrence envelope carries a separate matrix. Their occurrence identity and pose precedence require a typed join. The admitted direct-path rule requires one occurrence-placement reference.
+**Conflict.** In one local corpus file, a version-four table references the Assemble scope that precedes the final timeline item. The occurrence envelope carries a separate matrix. Their occurrence identity and pose precedence require a typed join.
 
-**Note.** DR-113 covers pose precedence and saved-state selection across other path forms. This item covers the version-four wire grammar and its occurrence join. DR-523 covers the rollback marker. The complete table remains native.
+**Note.** DR-113 covers pose precedence and saved-state selection across other path forms. DR-523 covers the rollback marker.
 
 ### DR-463. Analytic sketch-curve tail flag frames
 
@@ -565,9 +565,9 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Question.** Which sketch curves does a typed profile loop list when the selected region has a curve that ends inside it, or two coincident curves along one boundary interval?
 
-**Known.** `f3d.md` "When the loops of a typed or compact profile group join the Sketch exactly" gives the transition reading. It requires every stored curve to bound a selected atomic region. A loop that lists a line ending inside a circle, or a line coincident with part of another listed line, names a curve that bounds no selected region in that reading. The selection stays native with `feature.profile-selection-native`.
+**Known.** `f3d.md` "When the loops of a typed or compact profile group join the Sketch exactly" gives the transition reading. Each stored entry has a decoded piece on a selected atomic boundary, or a line or circle with a shared boundary interval under `feature.profile-coincident-boundary-assumed`. A loop that lists a line ending inside a circle can name a curve that contributes no boundary interval. The selection stays native with `feature.profile-selection-native`. Two coincident lines listed as separate entries resolve under the transition reading: the alias line takes its certified boundary interval and charges `feature.profile-coincident-boundary-assumed`, and an entry with several pieces, or a piece with no identity use in the selected boundary, also charges `feature.profile-partial-entry-assumed`. A Cut whose stored transition inserts, deletes, and updates no face has no changed plane and no certificate, so its selection stays native.
 
-**Need.** Controlled Extrudes of one region with a line that ends inside it, and of two regions separated by two coincident lines, with the stored loops and the resulting end caps, to state when a listed curve contributes no boundary interval.
+**Need.** Controlled Extrudes of one region with a line that ends inside it, with the stored loops and the resulting end caps, to state when a listed curve contributes no boundary interval.
 
 **Conflict.** None.
 
@@ -2249,7 +2249,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Question.** Which Loft setting selects a non-null marked reference at standard `Loft` scope offset 33?
 
-**Known.** `f3d.md` §3.1 "The compact fixed-prefix `Loft` scope has ten zero bytes" gives the reference syntax, and §3.1 "A `Loft` has at least two sections" makes the group that the target names a rail. In each scope with a non-null reference, the scope has one role-`0x0000000500000000` rail group and the target equals the record index of that group. Scopes with rail groups or a centerline group also store a null reference. The decoder keeps the target in the Loft construction, records `feature.loft-reference-unresolved`, and projects the Loft with closed false, solid true, ruled false, and linearize false.
+**Known.** `f3d.md` §3.1 "The compact fixed-prefix `Loft` scope has ten zero bytes" gives the reference syntax, and §3.1 "A `Loft` has at least two sections" makes the group that the target names a rail. In each scope with a non-null reference, the scope has one role-`0x0000000500000000` rail group and the target equals the record index of that group. Scopes with rail groups or a centerline group also store a null reference. The decoder keeps the target in the Loft construction, records `feature.loft-reference-unresolved`, and projects the Loft with closed false, ruled false, and linearize false.
 
 **Need.** Saves of one railed `Loft` that change one rail or guide setting at a time, each recording byte 33 and the target, and a save whose target is not a record of the scope's reference table.
 
@@ -2261,7 +2261,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Question.** Which Loft settings do the three flag bytes at offsets 21 through 23 of the three-flag compact `Loft` prefix and at offsets 25 through 27 of the three-flag standard `Loft` prefix select?
 
-**Known.** `f3d.md` §3.1 "The compact fixed-prefix `Loft` scope has ten zero bytes" gives the flag positions. The three-flag compact form stores `01 01` and a byte `0` or `1`. The decoder records `feature.loft-settings-assumed` with the three flag bytes for each scope in either form and projects the Loft with closed false, solid true, ruled false, and linearize false.
+**Known.** `f3d.md` §3.1 "The compact fixed-prefix `Loft` scope has ten zero bytes" gives the flag positions. The three-flag compact form stores `01 01` and a byte `0` or `1`. The decoder records `feature.loft-settings-assumed` with the three flag bytes for each scope in either form and projects the Loft with closed false, ruled false, and linearize false.
 
 **Need.** Saves of one three-flag `Loft` that change closed, solid, ruled, and linearize one at a time, each recording the three flag bytes.
 
@@ -2272,9 +2272,9 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 ### DR-331. Fields of the Loft scope body
 
-**Question.** Which Loft settings do the head words, the three references, the selector, and the six bytes between the rail list and the third reference of the `Loft` scope body select, and what does the section record `N` of a section-list entry store?
+**Question.** Which Loft settings do the head words, the three references, the selector, and the six bytes between the rail list and the third reference of the `Loft` scope body select, what does the section record `N` of a section-list entry store, and which stored field makes a `Loft` a surface Loft?
 
-**Known.** `f3d.md` §3.1 "The `Loft` scope body starts after the result-operation u32" gives the field order. The first head word is `-1` or `1`. A nonzero selector precedes a non-null second reference, which names a parameter owned by the scope. The decoder reads the rail list and the section list, takes construction-operand group `N+1` as the section group of section-list entry `N`, keeps the other fields in the scope bytes, and projects the Loft with closed false, solid true, ruled false, and linearize false.
+**Known.** `f3d.md` §3.1 "The `Loft` scope body starts after the result-operation u32" gives the field order. The first head word is `-1` or `1`. A nonzero selector precedes a non-null second reference, which names a parameter owned by the scope. The decoder reads the rail list and the section list, takes construction-operand group `N+1` as the section group of section-list entry `N`, keeps the other fields in the scope bytes, and projects the Loft with closed false, ruled false, and linearize false. The four standard-prefix flag bytes at offsets 25 through 28 can all be `01` in a new-body Loft whose output body is a sheet body. The decoder decodes the output bodies of each projected Loft at the Loft scope's history state. When a body does not decode there, the decoder reads the output bodies of the final model. It projects a new-body Loft whose output bodies are all sheet bodies with solid false and every other Loft with solid true, and records `feature.loft-solid-inferred` with the body source for each projected Loft.
 
 **Need.** Saves of one `Loft` that change one end condition, one guide setting, and closed, solid, ruled, and linearize one at a time, each recording the scope body.
 
@@ -3712,11 +3712,11 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 ### DR-706. Cut Extrude with atomic regions that have no sample point
 
-**Question.** How are the atomic regions of a Cut `Extrude` found when the arrangement has a region that holds no sample point of the grid?
+**Question.** How are the atomic regions of a Cut `Extrude` found when the arrangement has a region with no point more than one model tolerance from its boundary?
 
-**Known.** A public Cut `Extrude` has a Sketch of 54 profiles and a counted selection of eight rings of three curves. The arrangement has 72 faces. Sampling the atomic regions finds no interior point for at least one region, so no removed-region candidate forms. The rings come in pairs of the same three curves in opposite order.
+**Known.** A public Cut `Extrude` has a Sketch of 54 profiles and a counted selection of eight rings of three curves. The arrangement has 72 faces. The sampler rule of the cap certificate (`f3d.md`) reads a narrow region through a grid point or a row midpoint. A region narrower than two tolerances has no sample, and no removed-region candidate forms for it. The rings come in pairs of the same three curves in opposite order.
 
-**Need.** An interior point rule for narrow regions, or a certificate that does not sample.
+**Need.** A certificate that does not sample regions narrower than two tolerances.
 
 **Note.** The selection stays native with `feature.profile-selection-native`.
 
@@ -3892,16 +3892,17 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Need.** Controlled saves that vary the auxiliary references and settings while keeping the selected cells and tools fixed.
 
-### DR-820. Region member lists across a crossing curve that leaves the arrangement
+### DR-740. Unbound Extrude profile members
 
-**Question.** Does a node where a curve crosses a profile curve split that profile curve into two fragments of a counted member list when the crossing curve leaves the arrangement?
+**Question.** Which carrier binds an Extrude construction member to its Sketch boundary when its indexed references have no paired loop identity record?
 
-**Known.** `f3d.md` §3.1 "The member list of a counted region names a neutral profile" makes every point where two curves meet a node, and a walk counts a curve once for each fragment. A line that ends on a rectangle side splits that side into two fragments, and the member list names the side twice. One local corpus file stores a planar Extrude whose counted member list names five curves once each. In the arrangement, a non-construction line crosses one of these curves inside the selected face; both parts of the crossing line leave the arrangement. The walk of the face holds the crossed curve as two fragments, so the list matches no walk. The final B-rep of the Extrude matches the face that the five curves bound.
+**Known.** `f3d.md` "A typed-reference profile selection is a construction-operand group member" gives the loop carrier. In one public design, group 3229 lists unbound members 3232, 3236, 3240, and 3244. In another, group 204 lists unbound member 214.
 
-**Need.** Further designs where a curve crosses, not ends on, a selected profile curve and leaves the arrangement, with the stored member multiplicity of the crossed curve.
+**Need.** The relation from the asset-qualified member to a Sketch boundary, with the selected region proved against its Extrude end caps.
 
-**Note.** The profile stays native and the decoder reports `feature.profile-selection-native`.
+**Conflict.** None.
 
+**Note.** These selections retain their native construction groups and `feature.profile-selection-native` losses.
 ### DR-819. Opaque word in a typed one-sided distance Extrude
 
 **Question.** What does a nonzero opaque distance word encode in the direct typed-reference scope?
@@ -3921,6 +3922,18 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 **Need.** Paired saves with different property targets or entry widths, and the corresponding final body geometry.
 
 **Note.** The decoder retains positional pairing with `feature.owned-body-pairing-assumed` for the typed body runs.
+
+### DR-820. Region member lists across a crossing curve that leaves the arrangement
+
+**Question.** Which stored relation selects one member per fragment or one member per curve run at an interior crossing whose other curve leaves the arrangement?
+
+**Known.** The counted list in the planar Extrude names five curves once each. A non-construction line crosses one listed curve inside the selected face. Both arms of the crossing line leave the cycle graph. The final B-rep agrees with the face bounded by the five named curves. The decoder retains exact fragment matches and reads a unique boundary run across a pruned transverse interior crossing with `feature.profile-crossing-runs-assumed`. `f3d.md` §3.1 "The member list of a counted region names a neutral profile" makes every point where two curves meet a node, and a walk counts a curve once for each fragment. A line that ends on a rectangle side splits that side into two fragments, and the member list names the side twice. One local corpus file stores a planar Extrude whose counted member list names five curves once each. In the arrangement, a non-construction line crosses one of these curves inside the selected face; both parts of the crossing line leave the arrangement. The walk of the face holds the crossed curve as two fragments, so the list matches no walk. The final B-rep of the Extrude matches the face that the five curves bound.
+
+**Need.** Paired saves with the same profile and a changed crossing-curve endpoint, tangent, or cycle connection, with the corresponding counted member lists.
+
+**Conflict.** None.
+
+**Note.** Endpoint splits retain their fragment multiplicities.
 
 ### DR-890. Tail marker of the two-opaque-byte planar curve tail
 
@@ -3952,11 +3965,11 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Question.** What does the `Z: true` key in the descriptor of a packed-direction split component encode?
 
-**Known.** The flagged components inflate to their declared byte counts, the two components have equal lengths divisible by four, and every value read as f32 is finite and lies in [-1, 1]. Unflagged packed-direction components store the same layout.
+**Known.** A flagged component stores f32 values in the `{T: 3}` layout. A flagged corner-normal stream decoded with that layout matches the triangle face normals with mean dot product 0.997; the mirror component order gives -0.997.
 
-**Need.** Paired containers of one mesh saved with and without the flag, or decoded corner normals of a flagged stream compared with the triangle normals.
+**Need.** Paired containers of one mesh saved with and without the flag.
 
-**Note.** The decoder reads the flagged payload with the `{T: 3}` layout, retains the flag on the native split-stream record, and reports `mesh.component-flag-assumed`.
+**Note.** The decoder retains the flag on the native split-stream record and reports `mesh.component-flag-uninterpreted`.
 
 ### DR-889. Extrude selection members in sketch text
 

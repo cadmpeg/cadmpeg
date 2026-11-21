@@ -141,6 +141,9 @@ pub(super) struct Reduction<'a> {
     /// The faces omitted from each opened body, charged at [`Self::finish`]
     /// for the bodies still written.
     opened: BTreeMap<String, Vec<String>>,
+    /// The open edges written over one arc of a curve that passes a vertex
+    /// twice, charged at [`Self::finish`] for the edges still written.
+    assumed_arcs: Vec<(EdgeId, LossNote)>,
 }
 
 impl<'a> Reduction<'a> {
@@ -152,6 +155,7 @@ impl<'a> Reduction<'a> {
             neutral_dropped: false,
             sketch_failure: None,
             opened: BTreeMap::new(),
+            assumed_arcs: Vec::new(),
         }
     }
 
@@ -209,6 +213,19 @@ impl<'a> Reduction<'a> {
                 faces.join(", ")
             )));
         }
+        let written = self
+            .ir
+            .geometry
+            .edges
+            .iter()
+            .map(|edge| &edge.id)
+            .collect::<HashSet<_>>();
+        self.losses.extend(
+            std::mem::take(&mut self.assumed_arcs)
+                .into_iter()
+                .filter(|(edge, _)| written.contains(edge))
+                .map(|(_, note)| note),
+        );
         let geometry = &self.ir.geometry;
         if geometry.faces.is_empty()
             && !geometry.shells.iter().any(|shell| {
@@ -605,6 +622,13 @@ impl<'a> Reduction<'a> {
     /// against. A vertex farther from its carrier than its own allowance
     /// (f3d.md §2: the edge's, its own and the cache-fit tolerances) is raised
     /// to that distance, with `geometry.vertex-tolerance-widened` naming it.
+    /// On a curve other than a line, conic or point, each end also inverts
+    /// from the other end's seed. Where a self-crossing curve passes a vertex
+    /// on two arcs, the edge takes the shortest range the writer can state
+    /// between a witness of each end that passes no other witness of its
+    /// vertices, and `writer.edge-range-assumed` names the edge if it is
+    /// still written at [`Self::finish`]. The two ends of a closed curve's
+    /// domain are one place.
     /// An edge that runs against its line is written with its ends exchanged.
     /// A line or conic carrier that a vertex lies beyond the edge's allowance
     /// from is ranged between the vertices' feet on it, with a loss naming the
@@ -642,10 +666,11 @@ impl<'a> Reduction<'a> {
             .map(|curve| (curve.id.as_str(), curve))
             .collect::<HashMap<_, _>>();
         let mut tolerant = HashMap::<&VertexId, f64>::new();
-        let (stated, exchanged, feet, invalid) = loop {
+        let (stated, exchanged, feet, arcs, invalid) = loop {
             let mut stated = Vec::new();
             let mut exchanged = HashSet::new();
             let mut feet = Vec::new();
+            let mut arcs = Vec::new();
             let mut invalid = Vec::new();
             let mut raised_any = false;
             for &edge_index in &open {
@@ -675,42 +700,63 @@ impl<'a> Reduction<'a> {
                 // unranged edge at: on a curve shorter than the allowance, or
                 // closed, the end would otherwise invert to the start's parameter.
                 let domain = cadmpeg_ir::eval::bounded_curve_domain(carrier);
+                let invert = |point: Point3, seed: f64, tolerance: f64| {
+                    cadmpeg_ir::eval::model_curve_parameter_near_point_in_index_with_tolerance(
+                        &ctx, &index, curve, point, seed, tolerance,
+                    )
+                    .map(|parameter| parameter.map(cadmpeg_ir::scalar::FiniteReal::get))
+                };
                 let parameters = |tolerance| -> Result<Option<[f64; 2]>, CodecError> {
-                    let invert = |point, seed| {
-                        cadmpeg_ir::eval::model_curve_parameter_near_point_in_index_with_tolerance(
-                            &ctx, &index, curve, point, seed, tolerance,
-                        )
-                        .map(|parameter| parameter.map(cadmpeg_ir::scalar::FiniteReal::get))
-                    };
-                    let Some(first) = invert(start, domain.map_or(0.0, |[low, _]| low))? else {
+                    let Some(first) = invert(start, domain.map_or(0.0, |[low, _]| low), tolerance)?
+                    else {
                         return Ok(None);
                     };
-                    Ok(invert(end, domain.map_or(first, |[_, high]| high))?
-                        .map(|last| [first, last]))
+                    Ok(
+                        invert(end, domain.map_or(first, |[_, high]| high), tolerance)?
+                            .map(|last| [first, last]),
+                    )
                 };
-                let gap = |point: Point3, parameter| match cadmpeg_ir::eval::model_curve_point_by_id(
-                    EvaluationAdmission::Decode(&ctx),
-                    &index,
-                    curve,
-                    parameter,
-                ) {
-                    Ok(foot) => Ok(Some(foot.get().distance(point))),
-                    Err(EvaluationFailure::ResourceLimit(limit)) => {
-                        Err(CodecError::ResourceLimit(limit))
+                let point_at = |parameter| -> Result<Option<Point3>, CodecError> {
+                    match cadmpeg_ir::eval::model_curve_point_by_id(
+                        EvaluationAdmission::Decode(&ctx),
+                        &index,
+                        curve,
+                        parameter,
+                    ) {
+                        Ok(foot) => Ok(Some(foot.get())),
+                        Err(EvaluationFailure::ResourceLimit(limit)) => {
+                            Err(CodecError::ResourceLimit(limit))
+                        }
+                        Err(
+                            EvaluationFailure::NoValue
+                            | EvaluationFailure::NonFinite(_)
+                            | EvaluationFailure::WorkExhausted,
+                        ) => Ok(None),
                     }
-                    Err(
-                        EvaluationFailure::NoValue
-                        | EvaluationFailure::NonFinite(_)
-                        | EvaluationFailure::WorkExhausted,
-                    ) => Ok(None),
+                };
+                let gap = |point: Point3, parameter| -> Result<Option<f64>, CodecError> {
+                    Ok(point_at(parameter)?.map(|foot| foot.distance(point)))
                 };
                 let solved = carrier.geometry.solved();
                 let line = matches!(solved, Some(SolvedCurveGeometry::Line(_)));
+                let aperiodic_nurbs =
+                    matches!(solved, Some(SolvedCurveGeometry::Nurbs(nurbs)) if !nurbs.periodic());
                 let conic = matches!(
                     solved,
                     Some(SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_))
                 );
-                let (within, [first, last]) = match parameters(allowance)? {
+                let freeform = !matches!(
+                    solved,
+                    Some(
+                        SolvedCurveGeometry::Line(_)
+                            | SolvedCurveGeometry::Circle(_)
+                            | SolvedCurveGeometry::Ellipse(_)
+                            | SolvedCurveGeometry::Parabola(_)
+                            | SolvedCurveGeometry::Hyperbola(_)
+                            | SolvedCurveGeometry::Degenerate(_)
+                    )
+                );
+                let (within, [mut first, mut last]) = match parameters(allowance)? {
                     Some(range) => (true, range),
                     None if line || conic => match parameters(f64::MAX)? {
                         Some(range) => (false, range),
@@ -718,6 +764,92 @@ impl<'a> Reduction<'a> {
                     },
                     None => continue,
                 };
+                let mut assumed = None;
+                if freeform {
+                    // A freeform curve can pass a point on two arcs, and the
+                    // seed picks the witness: each end inverts from the other
+                    // end's seed as well. On a closed curve, periodic or not,
+                    // the witnesses split the loop into two arcs, and the
+                    // closure's two witnesses bound a short one across it.
+                    let bounds = match solved {
+                        Some(SolvedCurveGeometry::Nurbs(nurbs)) if nurbs.periodic() => {
+                            cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs)
+                                .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
+                        }
+                        _ => domain,
+                    };
+                    let other_place = |point: Point3,
+                                       seed: f64,
+                                       witness: f64|
+                     -> Result<Option<f64>, CodecError> {
+                        let near =
+                            |parameter| -> Result<bool, CodecError> {
+                                Ok(gap(point, parameter)?
+                                    .is_some_and(|distance| distance <= allowance))
+                            };
+                        let Some(other) = invert(point, seed, allowance)? else {
+                            return Ok(None);
+                        };
+                        let middle = 0.5 * witness + 0.5 * other;
+                        if near(middle)? {
+                            return Ok(None);
+                        }
+                        let Some([low, high]) = bounds else {
+                            return Ok(Some(other));
+                        };
+                        let Some(closure) = point_at(low)? else {
+                            return Ok(Some(other));
+                        };
+                        if !gap(closure, high)?.is_some_and(|distance| distance <= allowance) {
+                            return Ok(Some(other));
+                        }
+                        let half = 0.5 * (high - low);
+                        let opposite = if middle + half <= high {
+                            middle + half
+                        } else {
+                            middle - half
+                        };
+                        Ok((!near(opposite)?).then_some(other))
+                    };
+                    let starts = [
+                        Some(first),
+                        other_place(start, domain.map_or(last, |[_, high]| high), first)?,
+                    ];
+                    let finishes = [
+                        Some(last),
+                        other_place(end, domain.map_or(0.0, |[low, _]| low), last)?,
+                    ];
+                    if starts[1].is_some() || finishes[1].is_some() {
+                        let reversible = aperiodic_nurbs && !self.names_edge_uses(edge);
+                        let witnesses = starts.iter().chain(&finishes).flatten();
+                        let Some(arc) = starts
+                            .iter()
+                            .flatten()
+                            .flat_map(|&from| finishes.iter().flatten().map(move |&to| [from, to]))
+                            .filter(|&[from, to]| {
+                                let (low, high) = (from.min(to), from.max(to));
+                                low < high
+                                    && (from < to || reversible)
+                                    && !witnesses
+                                        .clone()
+                                        .any(|&witness| low < witness && witness < high)
+                            })
+                            .min_by(|a, b| (a[1] - a[0]).abs().total_cmp(&(b[1] - b[0]).abs()))
+                        else {
+                            continue;
+                        };
+                        [first, last] = arc;
+                        assumed = Some((
+                            edge.id.clone(),
+                            F3dLossCode::WriterEdgeRangeAssumed.note(format!(
+                                "edge {}: its curve passes a vertex of the edge on two arcs; the \
+                                 edge runs from {first:.6} to {last:.6} on it, the shortest arc \
+                                 the writer can state that passes neither vertex between its ends",
+                                edge.id
+                            )),
+                        ));
+                    }
+                }
                 let reach = [
                     (&ends.start, start, start_tolerance, first),
                     (&ends.end, end, end_tolerance, last),
@@ -726,7 +858,7 @@ impl<'a> Reduction<'a> {
                 if last <= first && conic {
                     range[1] += std::f64::consts::TAU;
                 }
-                let exchange = line && last < first;
+                let exchange = (line || aperiodic_nurbs) && last < first;
                 if exchange {
                     if self.names_edge_uses(edge) {
                         continue;
@@ -774,10 +906,11 @@ impl<'a> Reduction<'a> {
                 if exchange {
                     exchanged.insert(edge.id.clone());
                 }
+                arcs.extend(assumed);
                 stated.push((edge_index, carrier));
             }
             if !raised_any {
-                break (stated, exchanged, feet, invalid);
+                break (stated, exchanged, feet, arcs, invalid);
             }
         };
         drop(index);
@@ -820,6 +953,7 @@ impl<'a> Reduction<'a> {
         }
         self.losses.extend(widened);
         self.losses.extend(feet);
+        self.assumed_arcs.extend(arcs);
         if !invalid.is_empty() {
             self.losses.push(record_invalid(
                 EntityKind::Edge,
