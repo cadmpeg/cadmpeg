@@ -341,28 +341,26 @@ impl<'a> Approximator<'a> {
             )
             .map(crate::features::FinitePoint3::get)
         };
-        let grid = sample(
-            [range, [0.0, 1.0]],
-            [SEED_PATCHES, 1],
+        let Grid {
+            rows,
+            knots: [knots, _],
+        } = sample(
+            [
+                Axis::new(range, &[], SEED_PATCHES)?,
+                Axis::new([0.0, 1.0], &[], 1)?,
+            ],
             true,
             tolerance,
             &mut self.samples,
             self.poles,
             &mut evaluate,
         )?;
-        let points: Vec<_> = grid
-            .rows
+        let points: Vec<_> = rows
             .into_iter()
             .filter_map(|row| row.first().copied())
             .collect();
         let count = points.len();
-        let fitted = NurbsCurve::new(
-            3,
-            knots(range, grid.patches[0]),
-            NurbsPoles3::Polynomial { points },
-            false,
-        )
-        .ok()?;
+        let fitted = NurbsCurve::new(3, knots, NurbsPoles3::Polynomial { points }, false).ok()?;
         self.poles = self.poles.checked_sub(count)?;
         self.free_form_curves += usize::from(free_form);
         Some(SolvedCurveGeometry::Nurbs(fitted))
@@ -1002,11 +1000,11 @@ fn chart_ending_on_edge_vertices(
         return Some(chart.clone());
     };
     let vertices = ir
-        .model
+        .geometry
         .edges
         .iter()
         .filter(|edge| edge.curve() == Some(curve))
-        .flat_map(|edge| [&edge.start, &edge.end])
+        .flat_map(crate::topology::Edge::vertices)
         .filter_map(|vertex| {
             let vertex = index.vertices(vertex.as_str(), StandardIndex)?;
             Some(
@@ -1057,7 +1055,7 @@ fn blend_has_free_form_support(
 }
 
 fn has_closed_rail(ir: &CadIr, index: &ModelIndex<'_>, surface: &SurfaceId) -> bool {
-    ir.model
+    ir.geometry
         .faces
         .iter()
         .filter(|face| &face.surface == surface)
@@ -1066,7 +1064,7 @@ fn has_closed_rail(ir: &CadIr, index: &ModelIndex<'_>, surface: &SurfaceId) -> b
         .flat_map(crate::topology::Loop::coedges)
         .filter_map(|coedge| index.coedges(coedge.as_str(), StandardIndex))
         .filter_map(|coedge| index.edges(coedge.edge.as_str(), StandardIndex))
-        .any(|edge| edge.start == edge.end)
+        .any(|edge| edge.ends.as_ref().is_none_or(|ends| ends.start == ends.end))
 }
 
 /// The domain of a blend from sample points along the edges of its faces.
@@ -1086,7 +1084,7 @@ fn spine_blend_face_domain(
     let mut points = Vec::new();
     let mut whole_spine = false;
     for face in ir
-        .model
+        .geometry
         .faces
         .iter()
         .filter(|face| &face.surface == surface)
@@ -1096,8 +1094,8 @@ fn spine_blend_face_domain(
             for coedge_id in loop_.coedges() {
                 let coedge = index.coedges(coedge_id.as_str(), StandardIndex)?;
                 let edge = index.edges(coedge.edge.as_str(), StandardIndex)?;
-                whole_spine |= edge.start == edge.end;
-                for vertex in [&edge.start, &edge.end] {
+                whole_spine |= edge.ends.as_ref().is_none_or(|ends| ends.start == ends.end);
+                for vertex in edge.vertices() {
                     let vertex = index.vertices(vertex.as_str(), StandardIndex)?;
                     points.push(
                         index

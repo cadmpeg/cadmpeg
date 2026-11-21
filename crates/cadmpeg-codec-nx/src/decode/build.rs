@@ -640,6 +640,7 @@ pub(super) fn try_decode_geometry(
                     cache: None,
                 },
                 source_object: None,
+                native_ref: None,
             });
             let procedural_index = ir.geometry.procedural_surfaces.len();
             let attached = procedural_admission.add_surface(
@@ -1138,6 +1139,7 @@ pub(super) fn try_decode_geometry(
                         cache: None,
                     },
                     source_object: None,
+                    native_ref: None,
                 });
                 let _attached = procedural_admission.add_surface(
                     &mut ir.geometry,

@@ -348,10 +348,11 @@ fn decode_keeps_a_closed_edge_whose_partner_fin_has_no_links() {
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
 
-    let edge = result.ir().model.edges.first().expect("closed edge");
-    assert_eq!(edge.start, edge.end);
-    assert_eq!(result.ir().model.loops.len(), 1);
-    assert_eq!(result.ir().model.coedges.len(), 1);
+    let edge = result.ir().geometry.edges.first().expect("closed edge");
+    assert!(edge.start().is_some());
+    assert_eq!(edge.start(), edge.end());
+    assert_eq!(result.ir().geometry.loops.len(), 1);
+    assert_eq!(result.ir().geometry.coedges.len(), 1);
 }
 
 #[test]

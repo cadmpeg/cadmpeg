@@ -23,15 +23,15 @@ fn chart_snapping_moves_only_an_end_pole_within_the_fit_tolerance() {
     let position = |id: &crate::ids::VertexId| {
         let vertex = ir.geometry.vertices.iter().find(|v| &v.id == id).unwrap();
         let point = ir
-            .model
+            .geometry
             .points
             .iter()
             .find(|p| p.id == vertex.point)
             .unwrap();
         point.position().get()
     };
-    let start = position(&edge.start);
-    let end = position(&edge.end);
+    let start = position(edge.start().unwrap());
+    let end = position(edge.end().unwrap());
     let middle = Point3::new(
         f64::midpoint(start.x, end.x),
         f64::midpoint(start.y, end.y),
@@ -83,6 +83,7 @@ fn a_cornered_curve_on_a_spline_surface_is_fitted_with_a_pole_on_the_corner() {
         id: surface.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(spline)),
         source_object: None,
+        native_ref: None,
     });
     let corner = (0.4, 0.5);
     let uv = [
@@ -152,6 +153,7 @@ fn a_cornered_curve_on_a_spline_surface_is_fitted_with_a_pole_on_the_corner() {
         },
         parameter_range: None,
         source_object: None,
+        native_ref: None,
     });
 
     let mut approximator = Approximator::new(&ir);
@@ -211,6 +213,7 @@ fn a_constant_parameter_curve_across_a_spline_surface_becomes_the_exact_isocurve
         id: surface.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(spline)),
         source_object: None,
+        native_ref: None,
     });
     let nurbs = PcurveNurbs::new(
         1,
@@ -258,6 +261,7 @@ fn a_constant_parameter_curve_across_a_spline_surface_becomes_the_exact_isocurve
         },
         parameter_range: None,
         source_object: None,
+        native_ref: None,
     });
 
     let mut approximator = Approximator::new(&ir);
@@ -304,6 +308,7 @@ fn a_constant_parameter_curve_across_a_linear_sweep_becomes_the_moved_directrix(
         )),
         parameter_range: None,
         source_object: None,
+        native_ref: None,
     });
     let surface = SurfaceId::mint("test:approximation:surface#sweep").unwrap();
     let sweep = ProceduralSurfaceId::mint("test:approximation:construction#sweep").unwrap();
@@ -314,6 +319,7 @@ fn a_constant_parameter_curve_across_a_linear_sweep_becomes_the_moved_directrix(
             cache: None,
         },
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
         sweep,
@@ -370,6 +376,7 @@ fn a_constant_parameter_curve_across_a_linear_sweep_becomes_the_moved_directrix(
         },
         parameter_range: None,
         source_object: None,
+        native_ref: None,
     });
 
     let mut approximator = Approximator::new(&ir);
@@ -460,6 +467,7 @@ fn a_kinked_curve_on_a_plane_becomes_the_exact_spline_through_the_plane() {
         },
         parameter_range: None,
         source_object: None,
+        native_ref: None,
     });
 
     let mut approximator = Approximator::new(&ir);

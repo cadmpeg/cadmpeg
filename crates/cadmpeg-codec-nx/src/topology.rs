@@ -144,15 +144,6 @@ pub(crate) struct LoopFields {
     next_loop: Option<XmtTarget>,
 }
 
-/// References of a FIN that forms a one-vertex loop at a surface singularity.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct VertexFinFields {
-    /// Owning loop.
-    pub(crate) loop_xmt: Option<XmtTarget>,
-    /// Vertex at the singularity.
-    pub(crate) vertex: Option<XmtTarget>,
-}
-
 /// Sequentially decoded FIN references and sense.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct FinFields {

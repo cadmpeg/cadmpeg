@@ -495,7 +495,7 @@ fn decode_lifts_pcurve_only_fin_carrier_on_a_swept_surface() {
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert!(result.ir().model.edges[0].curve().is_some());
+    assert!(result.ir().geometry.edges[0].curve().is_some());
 }
 
 #[test]

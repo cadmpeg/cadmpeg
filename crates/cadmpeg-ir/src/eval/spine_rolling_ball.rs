@@ -1216,6 +1216,7 @@ mod tests {
             ),
             parameter_range: None,
             source_object: None,
+            native_ref: None,
         });
         let index = crate::index::ModelIndex::new_model_only(&ir);
         let parameter = |x: f64| {
