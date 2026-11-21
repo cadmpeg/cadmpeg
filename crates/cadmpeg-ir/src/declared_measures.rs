@@ -17,7 +17,7 @@ use crate::ids::{BodyId, DeclaredMeasureId, ProductDefinitionId};
 use crate::scalar::{FiniteReal, NonNegativeReal};
 
 /// The bodies that a declared measure describes.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum DeclaredTarget {
@@ -43,7 +43,7 @@ pub enum DeclaredTarget {
 }
 
 /// One stated quantity.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum DeclaredQuantity {

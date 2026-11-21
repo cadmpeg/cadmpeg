@@ -1052,7 +1052,8 @@ pub(crate) fn consolidated_compact_edge_endpoints_from_records(
                 }
                 AllocationReferenceEncoding::Selector2
                 | AllocationReferenceEncoding::TaggedU8
-                | AllocationReferenceEncoding::TaggedU16 => return None,
+                | AllocationReferenceEncoding::TaggedU16
+                | AllocationReferenceEncoding::TaggedU24 => return None,
             };
             let target_record = self.records.get(target)?;
             if target_record.family() != ConsolidatedFamily::B {
@@ -1627,9 +1628,13 @@ fn resolve_side_support(
     }
     for sphere in carriers.spheres {
         let geometry = b2_sphere_geometry(sphere);
+        let radius = sphere.radius.get();
         if pcurve_endpoints_match(pcurve, points, |[u, v]| {
             match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(
-                ctx, &geometry, u, v,
+                ctx,
+                &geometry,
+                u / radius,
+                v / radius,
             ))? {
                 Ok(point) => Ok(Some(point.get())),
                 Err(failure) => failure.non_finite(),
@@ -1799,12 +1804,13 @@ fn support_points(
             };
             (pcurve.sites.iter().map(|site| {
                 let [u, v] = site.point.get();
+                let radius = carrier.radius.get();
                 match cadmpeg_ir::eval::decode::outer_refusal(
                     cadmpeg_ir::eval::decode::surface_point(
                         ctx,
                         &b2_sphere_geometry(carrier),
-                        u,
-                        v,
+                        u / radius,
+                        v / radius,
                     ),
                 )? {
                     Ok(point) => Ok(Some(point.get())),
@@ -1906,12 +1912,13 @@ fn support_points_at(
                 .iter()
                 .map(|site| {
                     let [u, v] = site.point.get();
+                    let radius = carrier.radius.get();
                     match cadmpeg_ir::eval::decode::outer_refusal(
                         cadmpeg_ir::eval::decode::surface_point(
                             ctx,
                             &b2_sphere_geometry(carrier),
-                            u,
-                            v,
+                            u / radius,
+                            v / radius,
                         ),
                     )? {
                         Ok(point) => Ok(Some(point.get())),
