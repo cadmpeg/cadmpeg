@@ -629,9 +629,13 @@ fn end_cap(
 }
 
 /// The points and circular edges that bound the solid, in model space: the
-/// vertices, the circles and ellipses (each by its largest radius) and the
-/// control points of NURBS edges. An edge without vertices whose curve has
-/// none of these forms leaves the extent unknown.
+/// vertices, and each closed edge without vertices by its circle, its
+/// ellipse (by its largest radius) or its NURBS control points; a closed
+/// edge of another form leaves the extent unknown. An open edge counts by
+/// its vertices only: the edge has no parameter range or sense against its
+/// curve, and an arc's full circle reaches past the solid. A reversal the
+/// solid holds still shows, since its end cap has vertices or closed edges
+/// at its depth.
 #[derive(Default)]
 struct Solid {
     points: Vec<Point3>,
@@ -787,6 +791,7 @@ fn evidence(ir: &CadIr, work: &WorkBudget, with_solid: bool) -> Option<Witness> 
                         None => solid.unknown = true,
                     }
                 }
+                continue;
             }
             match edge
                 .curve()
@@ -817,8 +822,7 @@ fn evidence(ir: &CadIr, work: &WorkBudget, with_solid: bool) -> Option<Witness> 
                         }
                     }
                 }
-                _ if edge.ends.is_none() => solid.unknown = true,
-                _ => {}
+                _ => solid.unknown = true,
             }
         }
         let Some(SolvedSurfaceGeometry::Plane(plane)) =
