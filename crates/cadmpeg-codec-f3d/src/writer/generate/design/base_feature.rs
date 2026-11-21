@@ -1350,7 +1350,7 @@ fn residual_losses(indices: &Indices, bodies: &[BodyRecords]) -> Vec<LossNote> {
     .into_iter()
     .chain(record_residual_unavailable(
         "F3D",
-        "writes fixed-clock (2026-01-01 UTC) authoring timestamps in the record-timestamp tables: the document records no authoring clock",
+        roster::FIXED_CLOCK,
         stamp_records,
     ))
     .collect()

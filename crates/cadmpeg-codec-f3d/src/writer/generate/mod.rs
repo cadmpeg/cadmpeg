@@ -358,7 +358,7 @@ fn roster_losses(target: &CadIr, native: &crate::native::F3dNative) -> Vec<LossN
     losses.extend(reduce::named_loss(
         crate::loss::F3dLossCode::WriterAppearanceOmitted,
         "appearance",
-        "a Base Feature design stores the one Protein package its asset manager names",
+        "the written design stores the one Protein package its asset manager names",
         target
             .model
             .appearances
@@ -386,7 +386,7 @@ fn roster_losses(target: &CadIr, native: &crate::native::F3dNative) -> Vec<LossN
     ];
     losses.extend(cadmpeg_ir::codec::write::native_records_omitted(
         "F3D",
-        "writes the Design stream as a Base Feature roster, whose record indices these native records would reuse",
+        "writes its own Design records, whose record indices these native records would reuse",
         kinds
             .into_iter()
             .filter(|(_, count)| *count > 0)
