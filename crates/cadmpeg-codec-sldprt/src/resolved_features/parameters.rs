@@ -350,10 +350,10 @@ fn native_scalar_matches_discrete_parameter(
     value: f64,
 ) -> bool {
     match crate::history::parameters::parse_native_parameter_literal(feature, name, expression) {
-        Some(cadmpeg_ir::features::ParameterValue::Integer(expected)) => {
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Integer(expected)) => {
             crate::history::parameters::eval::exact_integer_f64(expected) == Some(value)
         }
-        Some(cadmpeg_ir::features::ParameterValue::Boolean(expected)) => {
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Boolean(expected)) => {
             value == if expected { 1.0 } else { 0.0 }
         }
         _ => true,
@@ -365,7 +365,7 @@ pub(crate) fn sync_changed_feature_scalars(
     lanes: &mut [FeatureInputLane],
     changed: &HashSet<(String, cadmpeg_core::text::NonBlankString)>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::ParameterValue;
+    use cadmpeg_ir::features::parameters::ParameterValue;
 
     for lane in lanes {
         let names_by_id = lane

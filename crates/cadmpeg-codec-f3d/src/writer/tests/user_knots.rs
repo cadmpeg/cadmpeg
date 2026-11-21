@@ -21,7 +21,7 @@ fn retained_f3d_round_trips_user_knot_edits_and_extension_removal() {
         .cage
         .edit_vertices(|vertices| {
             vertices[0].set_point(
-                cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
                     17.0, 0.0, 0.0,
                 ))
                 .expect("finite control point"),

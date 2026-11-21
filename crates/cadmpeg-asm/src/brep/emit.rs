@@ -490,7 +490,7 @@ fn emit_carrier_surface(
                     native_ref: None,
                 });
                 ProceduralSurfaceDefinition::Revolution(
-                    cadmpeg_ir::features::FinitePoint3::new(axis_origin)
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(axis_origin)
                     .ok_or(cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
                         "revolution axis_origin and axis_direction must be finite, with unit axis_direction",
                     ))
@@ -4422,7 +4422,7 @@ pub(super) fn emit_points(
         if r.head() == "point" && kept_points.contains(&i) {
             let c = collect_carrier(r);
             if let Some(p) = c.positions.first() {
-                let position = cadmpeg_ir::features::FinitePoint3::new(scale_point(*p))
+                let position = cadmpeg_ir::features::geometry::FinitePoint3::new(scale_point(*p))
                     .ok_or(Point::NON_FINITE_POSITION)
                     .map_err(cadmpeg_core::CodecError::malformed)?;
                 out.points

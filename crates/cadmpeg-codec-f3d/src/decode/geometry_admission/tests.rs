@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::admit;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve, Curve, CurveGeometry, LegacyCache, ProceduralCurve,
     ProceduralCurveDefinition, SolvedCurveGeometry,

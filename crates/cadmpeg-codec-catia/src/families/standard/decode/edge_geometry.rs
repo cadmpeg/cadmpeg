@@ -927,7 +927,7 @@ pub(super) fn standard_native_support_witness(
             cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
                 cadmpeg_ir::eval::decode::surface_point(ctx, surface, uv.u, uv.v),
             )?)?
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         )
     };
     let Some(first) = lift(&native.carriers[0], &native.pcurves[0])? else {

@@ -6,9 +6,9 @@ use crate::records::feature::assembly_features::{
 };
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::features::{
-    Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation, InsertedComponents,
-};
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::selections::InsertedComponents;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 use std::collections::{BTreeMap, BTreeSet};
 
 const COMPONENT: &str = "11111111-2222-4333-8444-555555555555";
@@ -510,7 +510,7 @@ fn derived_feature(scope: &DesignParameterScope) -> Feature {
         ordinal: 1,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::default(),
         source_tag: Some("DerivedInstance".into()),
         source_text: None,

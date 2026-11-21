@@ -2,7 +2,7 @@
 //! Homogeneous sums and quotient derivatives with an extended exponent range.
 use super::admission::EvaluationRefusal;
 use super::decode;
-use crate::features::FinitePoint3;
+use crate::features::geometry::FinitePoint3;
 use crate::math::sum::{ExactSignedSum, LaneProductSums, LaneSum, ScaledValue};
 use crate::scalar::FiniteReal;
 

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Historical selection membership and Hole namespace admission.
 use super::FaceInputs;
-use cadmpeg_ir::features::{DistinctMembers, FaceSelection, FeatureId, FeatureInputTopology};
+use cadmpeg_ir::features::evaluation::FeatureInputTopology;
+use cadmpeg_ir::features::selections::{DistinctMembers, FaceSelection};
+use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::ids::FaceId;
 
 fn input(feature: &FeatureId, slot: i64) -> FeatureInputTopology {
@@ -40,7 +42,8 @@ fn resolved(face: &str) -> FaceSelection {
 
 #[test]
 fn resolved_face_operations_require_current_or_emitted_historical_membership() {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureEvaluation, FeatureOperation};
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
     let id = FeatureId::mint("f3d:model:feature#face-edit").unwrap();
     let topology = input(&id, 2);
     for topologies in [vec![], vec![topology.clone()]] {
@@ -189,11 +192,13 @@ fn hole_keeps_a_surviving_current_face_and_refuses_an_unemitted_history() {
 
 #[test]
 fn feature_admission_keeps_extrude_face_operands_native_without_an_input_topology() {
-    use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, Feature,
-        FeatureDefinition, FeatureEvaluation, FeatureOperation, LinearTermination,
-        PlanarProfileRef, ProfileRef,
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::extents::{
+        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
     };
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
     let id = FeatureId::mint("f3d:model:feature#extrude").unwrap();
     let topology = input(&id, 2);
     let mut features = [Feature {
@@ -282,7 +287,8 @@ fn feature_admission_keeps_extrude_face_operands_native_without_an_input_topolog
 
 #[test]
 fn feature_gate_changes_hole_namespace() {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureEvaluation, FeatureOperation};
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
     let id = FeatureId::mint("f3d:model:feature#hole").unwrap();
     let topology = input(&id, 2);
     let original = Feature {

@@ -168,7 +168,7 @@ fn decode_types_class_914_as_unresolved_chamfer() {
             ref groups,
             ..
         }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::ChamferGroup {
-            edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
+            edges: cadmpeg_ir::features::selections::EdgeSelection::Unresolved,
             spec: cadmpeg_ir::features::edge_treatments::ChamferSpec::Unresolved { form: None },
         }])
     ));
@@ -277,7 +277,7 @@ fn decode_uses_reference_name_family_when_operation_name_is_generic() {
             feature.evaluation.definition(),
             cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::Extrude {
-                    op: cadmpeg_ir::features::BooleanOp::NewBody,
+                    op: cadmpeg_ir::features::operation_settings::BooleanOp::NewBody,
                     solid: Some(false),
                     ..
                 }
@@ -378,7 +378,7 @@ fn decode_types_class_946_as_unresolved_surface_merge() {
         feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::KnitSurface {
-                faces: cadmpeg_ir::features::FaceSelection::Unresolved,
+                faces: cadmpeg_ir::features::selections::FaceSelection::Unresolved,
                 merge_entities: Some(true),
                 create_solid: Some(false),
                 gap_tolerance: None,
@@ -457,9 +457,9 @@ fn decode_types_row_only_class_927_as_unresolved_draft() {
         feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Draft {
-                faces: cadmpeg_ir::features::FaceSelection::Unresolved,
-                anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
-                    plane: cadmpeg_ir::features::FaceSelection::Unresolved,
+                faces: cadmpeg_ir::features::selections::FaceSelection::Unresolved,
+                anchor: cadmpeg_ir::features::direct_edit::DraftAnchor::NeutralPlane {
+                    plane: cadmpeg_ir::features::selections::FaceSelection::Unresolved,
                     pull: None,
                 },
                 angle: None,
@@ -534,9 +534,9 @@ fn decode_types_named_draft_with_unresolved_operands() {
             feature.evaluation.definition(),
             cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::Draft {
-                    faces: cadmpeg_ir::features::FaceSelection::Unresolved,
-                    anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
-                        plane: cadmpeg_ir::features::FaceSelection::Unresolved,
+                    faces: cadmpeg_ir::features::selections::FaceSelection::Unresolved,
+                    anchor: cadmpeg_ir::features::direct_edit::DraftAnchor::NeutralPlane {
+                        plane: cadmpeg_ir::features::selections::FaceSelection::Unresolved,
                         pull: None,
                     },
                     angle: None,
@@ -632,9 +632,9 @@ fn decode_types_timestamped_round_with_unresolved_operands() {
         *feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Fillet {
-                groups: cadmpeg_ir::features::NonEmptyMembers::one(
+                groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(
                     cadmpeg_ir::features::edge_treatments::FilletGroup {
-                        edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
+                        edges: cadmpeg_ir::features::selections::EdgeSelection::Unresolved,
                         radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Unresolved {
                             form: None
                         },
@@ -769,17 +769,17 @@ fn decode_types_named_sweeps_without_recipe_or_operands() {
         feature("creo:model:feature#4").evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Extrude {
-                profile: cadmpeg_ir::features::ProfileRef::Planar(
-                    cadmpeg_ir::features::PlanarProfileRef::Unresolved(_)
+                profile: cadmpeg_ir::features::profiles::ProfileRef::Planar(
+                    cadmpeg_ir::features::profiles::PlanarProfileRef::Unresolved(_)
                 ),
-                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
-                extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                    side: cadmpeg_ir::features::ExtrudeSide {
-                        termination: cadmpeg_ir::features::LinearTermination::Unresolved {},
+                direction: cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {},
+                extent: cadmpeg_ir::features::extents::ExtrudeExtent::OneSided {
+                    side: cadmpeg_ir::features::extents::ExtrudeSide {
+                        termination: cadmpeg_ir::features::extents::LinearTermination::Unresolved {},
                         ..
                     }
                 },
-                op: cadmpeg_ir::features::BooleanOp::Unresolved,
+                op: cadmpeg_ir::features::operation_settings::BooleanOp::Unresolved,
                 ..
             }
         )
@@ -788,7 +788,7 @@ fn decode_types_named_sweeps_without_recipe_or_operands() {
         feature("creo:model:feature#5").evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Revolve {
             ref construction,
-            op: cadmpeg_ir::features::BooleanOp::Unresolved,
+            op: cadmpeg_ir::features::operation_settings::BooleanOp::Unresolved,
         }) if construction.profile().is_none()
             && construction.axis().is_none()
             && construction.extent().is_none()
@@ -904,7 +904,7 @@ fn decode_types_class_913_without_an_edge_array() {
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             ref groups,
         }) if matches!(groups.as_slice(), [group]
-            if matches!(group.edges, cadmpeg_ir::features::EdgeSelection::Unresolved)
+            if matches!(group.edges, cadmpeg_ir::features::selections::EdgeSelection::Unresolved)
                 && group.radius.is_unresolved())
     ));
     assert_eq!(
@@ -988,7 +988,7 @@ fn decode_types_named_german_round_without_a_schema_row() {
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             ref groups,
         }) if matches!(groups.as_slice(), [group]
-            if matches!(group.edges, cadmpeg_ir::features::EdgeSelection::Unresolved)
+            if matches!(group.edges, cadmpeg_ir::features::selections::EdgeSelection::Unresolved)
                 && group.radius.is_unresolved())
     ));
     assert_eq!(
@@ -1012,7 +1012,7 @@ fn decode_types_named_annotation_feature_as_a_tree_node() {
         result.ir().model.features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::TreeNode {
-                role: cadmpeg_ir::features::FeatureTreeNodeRole::Annotations,
+                role: cadmpeg_ir::features::tree::FeatureTreeNodeRole::Annotations,
                 ..
             }
         )
@@ -1037,7 +1037,7 @@ fn decode_types_localized_cross_section_nodes() {
         feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::TreeNode {
-                role: cadmpeg_ir::features::FeatureTreeNodeRole::CrossSections,
+                role: cadmpeg_ir::features::tree::FeatureTreeNodeRole::CrossSections,
                 ..
             }
         )
@@ -1062,7 +1062,7 @@ fn decode_types_body_and_surface_tree_nodes() {
         result.ir().model.features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::TreeNode {
-                role: cadmpeg_ir::features::FeatureTreeNodeRole::SolidBodies,
+                role: cadmpeg_ir::features::tree::FeatureTreeNodeRole::SolidBodies,
                 ..
             }
         )
@@ -1071,7 +1071,7 @@ fn decode_types_body_and_surface_tree_nodes() {
         result.ir().model.features[1].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::TreeNode {
-                role: cadmpeg_ir::features::FeatureTreeNodeRole::SolidBodies,
+                role: cadmpeg_ir::features::tree::FeatureTreeNodeRole::SolidBodies,
                 ..
             }
         )
@@ -1080,7 +1080,7 @@ fn decode_types_body_and_surface_tree_nodes() {
         result.ir().model.features[2].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::TreeNode {
-                role: cadmpeg_ir::features::FeatureTreeNodeRole::SurfaceBodies,
+                role: cadmpeg_ir::features::tree::FeatureTreeNodeRole::SurfaceBodies,
                 ..
             }
         )
@@ -1117,9 +1117,9 @@ fn decode_types_round_with_labeled_edge_selection() {
         *feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Fillet {
-                groups: cadmpeg_ir::features::NonEmptyMembers::one(
+                groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(
                     cadmpeg_ir::features::edge_treatments::FilletGroup {
-                        edges: cadmpeg_ir::features::EdgeSelection::Native(
+                        edges: cadmpeg_ir::features::selections::EdgeSelection::Native(
                             "creo:allfeatur:edgs_affected#4:44,45".to_string()
                         ),
                         radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Unresolved {
@@ -1182,7 +1182,7 @@ fn revolution_decode(choices: &[u8], angle: Option<&[u8]>) -> cadmpeg_ir::codec:
 
 fn revolve_extent(
     result: &cadmpeg_ir::codec::DecodeResult,
-) -> Option<cadmpeg_ir::features::RevolveExtent> {
+) -> Option<cadmpeg_ir::features::revolve::RevolveExtent> {
     let feature = result
         .ir()
         .model
@@ -1206,8 +1206,8 @@ fn to_angle_revolution_with_a_360_degree_dimension_decodes_a_full_turn() {
     let result = revolution_decode(TO_ANGLE_CHOICES, Some(FULL_TURN_DEGREES));
     assert!(matches!(
         revolve_extent(&result),
-        Some(cadmpeg_ir::features::RevolveExtent::OneSided {
-            termination: cadmpeg_ir::features::AngularTermination::Angle { angle }
+        Some(cadmpeg_ir::features::revolve::RevolveExtent::OneSided {
+            termination: cadmpeg_ir::features::extents::AngularTermination::Angle { angle }
         }) if angle == cadmpeg_ir::scalar::PositiveAngle::FULL_TURN
     ));
     let records =

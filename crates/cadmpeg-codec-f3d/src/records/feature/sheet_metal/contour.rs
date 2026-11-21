@@ -2,10 +2,8 @@ use crate::layout::{
     sheet_metal_contour_expanded_prefix as expanded, sheet_metal_contour_short_prefix as short,
 };
 use crate::records::identity::Located;
-use cadmpeg_ir::{
-    features::FeatureDirection3,
-    scalar::{FiniteReal, PositiveReal},
-};
+use cadmpeg_ir::features::geometry::FeatureDirection3;
+use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
