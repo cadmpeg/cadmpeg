@@ -157,6 +157,31 @@ class Parsing(unittest.TestCase):
         self.assertEqual(values, {bot.Dependency("cadmpeg/cadmpeg", 20), bot.Dependency("other/repo", 21), bot.Dependency("team/project", 22), bot.Dependency("team/project", 23)})
         self.assertEqual(bot.dependencies("Depends on https://evil.test/a/b/issues/3; Depends on #0", "a/b"), set())
 
+    def test_tracking_label_detection(self):
+        for labels, expected in [([], False), ([{"name": "tracking"}], True),
+                                 ([{"name": "Tracking"}, {"name": "claimed"}], True),
+                                 ([{"name": "tracking-work"}], False)]:
+            with self.subTest(labels=labels):
+                self.assertEqual(bot.is_tracking({"labels": labels, "body": None}), expected)
+
+    def test_tracking_checklist_detection_with_issue_numbers_and_urls(self):
+        for body in ("- [ ] #2\n- [x] #3", "  - [X] First: #2\n\t- [ ] Second: #3",
+                     "- [ ] #2\n- [ ] [Next](https://github.com/cadmpeg/cadmpeg/issues/3)",
+                     "- [ ] #2\n- [ ] https://github.com/cadmpeg/cadmpeg/issues/3#issuecomment-42",
+                     "- [ ] #2\n- [ ] https://github.com/cadmpeg/cadmpeg/issues/3/",
+                     "- [x] https://github.com/cadmpeg/cadmpeg/issues/2\n- [x] https://github.com/other/repo/issues/3"):
+            with self.subTest(body=body):
+                self.assertTrue(bot.is_tracking({"body": body, "labels": []}))
+
+    def test_tracking_needs_two_issue_linked_task_items_in_prose(self):
+        for body in (None, "#2 and #3", "- [ ] #2 and #3", "- [ ] #2\n- [x] Write docs",
+                     "- [ ] #2\n- [ ] https://github.com/cadmpeg/cadmpeg/pull/3",
+                     "- [ ] #0\n- [ ] #3", "- [ ] #2abc\n- [ ] #3",
+                     "```\n- [ ] #2\n- [ ] #3\n```", "> - [ ] #2\n> - [ ] #3",
+                     "- [ ] `#2`\n- [ ] #3", "- [ ] #2\n`- [ ] #3`"):
+            with self.subTest(body=body):
+                self.assertFalse(bot.is_tracking({"body": body}))
+
     def test_marker_round_trip(self):
         for claim in (bot.Claim("some-user", START), bot.Claim("alice", START + timedelta(microseconds=123), 10)):
             self.assertEqual(bot.read_claim_marker("text\n" + bot.claim_marker(claim)), claim)
@@ -231,6 +256,78 @@ class Actions(unittest.TestCase):
         self.assertIn("5 quiet days", self.messages()[0])
         self.assertIn("/unclaim", self.messages()[0])
         self.assertEqual(bot.read_claim_marker(self.messages()[0]), bot.Claim("alice", self.now))
+
+    def test_claim_on_tracking_issue_points_to_sub_issues(self):
+        for by_label in (True, False):
+            with self.subTest(by_label=by_label):
+                self.setUp()
+                if by_label:
+                    self.api.issues[1]["labels"] = [{"name": "tracking"}]
+                else:
+                    self.api.issues[1]["body"] = "- [ ] #2\n- [x] #3"
+                before = copy.deepcopy(self.api.issues[1])
+                self.run_comment()
+                self.assertEqual(self.api.issues[1], before)
+                self.assertEqual(len(self.messages()), 1)
+                self.assertIn("tracking issue", self.messages()[0])
+                self.assertIn("sub-issues", self.messages()[0])
+                self.assertIn("/claim there", self.messages()[0])
+                self.assertIsNone(bot.read_claim_marker(self.messages()[0]))
+                self.assertFalse(any(method == "LIST" for method, _, _ in self.api.calls))
+
+    def test_part_of_tracking_issue_claims_nothing_and_posts_no_conflicts(self):
+        for by_label in (True, False):
+            for phrase in ("Part of", "Fixes", "Closes", "Resolves"):
+                with self.subTest(by_label=by_label, phrase=phrase):
+                    self.setUp()
+                    if by_label:
+                        self.api.issues[1]["labels"] = [{"name": "tracking"}]
+                    else:
+                        self.api.issues[1]["body"] = "- [ ] #2\n- [x] #3"
+                    self.api.add_pull(pull(body=f"{phrase} #1"))
+                    before = copy.deepcopy(self.api.issues[1])
+                    bot.ClaimBot(self.api, self.now).on_pull_request(self.pr_event())
+                    self.assertEqual(self.api.issues[1], before)
+                    self.assertFalse(self.messages())
+                    self.assertFalse(self.messages(10))
+                    self.assertEqual(self.api.calls, [("GET", "/issues/1", None)])
+
+    def test_tracking_issue_with_existing_holder_produces_no_pr_conflicts(self):
+        self.claimed("bob")
+        self.api.issues[1]["labels"].append({"name": "tracking"})
+        self.api.add_pull(pull(body="Part of #1"))
+        self.api.add_pull(pull(20, "carol", body="Part of #1"))
+        before = copy.deepcopy((self.api.issues, self.api.rows))
+        for number in (10, 20):
+            bot.ClaimBot(self.api, self.now).on_pull_request(self.pr_event(number))
+        self.assertEqual((self.api.issues, self.api.rows), before)
+        self.assertFalse(self.messages(10))
+        self.assertFalse(self.messages(20))
+
+    def test_part_of_normal_issue_still_claims_for_pr_author(self):
+        self.api.add_pull(pull(body="Part of #1"))
+        bot.ClaimBot(self.api, self.now).on_pull_request(self.pr_event())
+        self.assertEqual(self.api.issues[1]["assignees"], [{"login": "alice"}])
+        self.assertTrue(self.held())
+        self.assertEqual(bot.read_claim_marker(self.messages()[-1]).pr, 10)
+
+    def test_fixes_sub_issue_and_part_of_tracker_claims_only_sub_issue(self):
+        for by_label in (True, False):
+            with self.subTest(by_label=by_label):
+                self.setUp()
+                self.api.issues[2] = issue(2)
+                if by_label:
+                    self.api.issues[2]["labels"] = [{"name": "tracking"}]
+                else:
+                    self.api.issues[2]["body"] = "- [ ] #1\n- [x] #3"
+                tracker = copy.deepcopy(self.api.issues[2])
+                self.api.add_pull(pull(body="Fixes #1\nPart of #2"))
+                bot.ClaimBot(self.api, self.now).on_pull_request(self.pr_event())
+                self.assertEqual(self.api.issues[1]["assignees"], [{"login": "alice"}])
+                self.assertTrue(self.held())
+                self.assertEqual(self.api.issues[2], tracker)
+                self.assertFalse(self.messages(2))
+                self.assertFalse(self.messages(10))
 
     def test_assignment_refusal_keeps_marker_claim_label_and_reply(self):
         self.api.refuse_assignment = True
@@ -506,22 +603,72 @@ class Actions(unittest.TestCase):
                 self.sweep(START + timedelta(days=5))
                 self.assertEqual(self.held(), kept)
 
-    def test_sync_tracks_new_claimant_commits_and_run_retry_once(self):
+    def test_pr_events_write_no_bookkeeping_comments(self):
         self.claimed(pr=10)
         self.api.add_pull(pull())
-        self.api.rows["/pulls/10/commits"] = [commit("old")]
-        with patch.dict(os.environ, {"GITHUB_RUN_ID": "1"}):
-            bot.ClaimBot(self.api, START).on_pull_request(self.pr_event())
-        self.api.rows["/pulls/10/commits"].append(commit("new", "maintainer", "robot", self.now))
-        with patch.dict(os.environ, {"GITHUB_RUN_ID": "2"}):
-            bot.ClaimBot(self.api, self.now).on_pull_request(self.pr_event(action="synchronize", actor="maintainer"))
-            bot.ClaimBot(self.api, self.now + timedelta(hours=1)).on_pull_request(self.pr_event(action="synchronize", actor="maintainer"))
-        self.assertEqual(sum("cadmpeg-claim-delivery: run=2" in text for text in self.messages(10)), 1)
-        self.assertFalse(any("user=alice" in text and "kind=push" in text for text in self.messages(10)))
-        self.api.rows["/pulls/10/commits"].append(commit("own", "alice", "robot", self.now))
-        with patch.dict(os.environ, {"GITHUB_RUN_ID": "3"}):
-            bot.ClaimBot(self.api, self.now).on_pull_request(self.pr_event(action="synchronize", actor="maintainer"))
-        self.assertTrue(any("user=alice" in text and "kind=push" in text for text in self.messages(10)))
+        self.api.rows["/pulls/10/commits"] = [commit()]
+        for action in ("opened", "edited", "reopened", "synchronize"):
+            with self.subTest(action=action):
+                bot.ClaimBot(self.api, self.now).on_pull_request(self.pr_event(action=action))
+        self.assertFalse(self.messages(10))
+        self.assertEqual(len(self.messages()), 1)
+        self.assertFalse(any(method == "POST" and path == "/issues/10/comments"
+                             for method, path, _ in self.api.calls))
+
+    def test_force_push_events_count_only_claimant_and_use_api_time(self):
+        self.claimed(pr=10)
+        self.api.add_pull(pull())
+        for endpoint in ("timeline", "events"):
+            for actor, kept in (("alice", True), ("maintainer", False), (bot.BOT, False)):
+                with self.subTest(endpoint=endpoint, actor=actor):
+                    self.api.rows[f"/issues/10/{endpoint}"] = [{
+                        "event": "head_ref_force_pushed", "actor": {"login": actor},
+                        "created_at": bot.iso(START + timedelta(days=4))}]
+                    activity, _, _ = bot.ClaimBot(self.api, self.now).pull_activity(self.api.pulls[10], "alice")
+                    self.assertEqual(activity, START + timedelta(days=4) if kept else START)
+            self.api.rows[f"/issues/10/{endpoint}"] = []
+
+    def test_commit_author_and_committer_dates_are_read_without_markers(self):
+        self.api.add_pull(pull())
+        for role in ("author", "committer"):
+            with self.subTest(role=role):
+                entry = commit()
+                entry["commit"] = {role: {"date": bot.iso(START + timedelta(days=4))}}
+                self.api.rows["/pulls/10/commits"] = [entry]
+                activity, _, _ = bot.ClaimBot(self.api, self.now).pull_activity(self.api.pulls[10], "alice")
+                self.assertEqual(activity, START + timedelta(days=4))
+
+    def test_timeline_review_and_claimant_reply_change_review_hold(self):
+        self.api.add_pull(pull(draft=False))
+        self.api.rows["/issues/10/timeline"] = [{
+            "event": "reviewed", "user": {"login": "maintainer"}, "state": "changes_requested",
+            "submitted_at": bot.iso(START + timedelta(days=1))}]
+        activity, waiting, returned = bot.ClaimBot(self.api, self.now).pull_activity(self.api.pulls[10], "alice")
+        self.assertEqual(activity, START)
+        self.assertFalse(waiting)
+        self.assertEqual(returned, START + timedelta(days=1))
+        self.api.rows["/issues/10/timeline"].append({
+            "event": "commented", "user": {"login": "alice"},
+            "created_at": bot.iso(START + timedelta(days=2))})
+        activity, waiting, _ = bot.ClaimBot(self.api, self.now).pull_activity(self.api.pulls[10], "alice")
+        self.assertEqual(activity, START + timedelta(days=2))
+        self.assertTrue(waiting)
+        self.api.rows["/issues/10/timeline"].append({
+            "event": "commented", "actor": {"login": "maintainer"},
+            "created_at": bot.iso(START + timedelta(days=3))})
+        _, waiting, returned = bot.ClaimBot(self.api, self.now).pull_activity(self.api.pulls[10], "alice")
+        self.assertFalse(waiting)
+        self.assertEqual(returned, START + timedelta(days=3))
+
+    def test_ready_for_review_event_restores_review_hold(self):
+        self.api.add_pull(pull(draft=False))
+        self.api.rows["/pulls/10/reviews"] = [review(START + timedelta(days=1))]
+        self.api.rows["/issues/10/events"] = [{
+            "event": "ready_for_review", "actor": {"login": "alice"},
+            "created_at": bot.iso(START + timedelta(days=2))}]
+        activity, waiting, _ = bot.ClaimBot(self.api, self.now).pull_activity(self.api.pulls[10], "alice")
+        self.assertEqual(activity, START + timedelta(days=2))
+        self.assertTrue(waiting)
 
     def test_pr_claims_free_issue_for_author(self):
         self.api.add_pull(pull())
@@ -643,9 +790,25 @@ class Actions(unittest.TestCase):
         self.claimed(pr=10)
         self.api.add_pull(pull())
         update = START + timedelta(days=4)
-        bot.ClaimBot(self.api, update).on_pull_request(self.pr_event(action="edited"))
+        self.api.pulls[10]["updated_at"] = bot.iso(update)
+        self.api.rows["/issues/10/events"] = [{
+            "event": "edited", "actor": {"login": "alice"}, "created_at": bot.iso(update)}]
         self.sweep(START + timedelta(days=5))
         self.assertTrue(self.held())
+
+    def test_pr_updated_at_requires_claimant_actor_evidence(self):
+        for actor, kept in ((None, False), ("maintainer", False), ("alice", True)):
+            with self.subTest(actor=actor):
+                self.setUp()
+                self.claimed(pr=10)
+                self.api.add_pull(pull())
+                update = START + timedelta(days=4)
+                self.api.pulls[10]["updated_at"] = bot.iso(update)
+                if actor:
+                    self.api.rows["/issues/10/events"] = [{
+                        "event": "renamed", "actor": {"login": actor}, "created_at": bot.iso(update)}]
+                self.sweep(START + timedelta(days=5))
+                self.assertEqual(self.held(), kept)
 
     def test_deleted_marker_comment_keeps_unassigned_claim_for_manual_resolution(self):
         self.claimed(assigned=False)
@@ -690,6 +853,112 @@ class Actions(unittest.TestCase):
 
 
 class Transport(unittest.TestCase):
+    def test_pr_errors_warn_and_exit_zero(self):
+        for failure in (bot.APIError("HTTP 401"), bot.APIError("HTTP 403"), bot.APIError("HTTP 500"),
+                        ValueError("unexpected\ninput")):
+            with self.subTest(failure=failure), TemporaryDirectory() as folder:
+                event = Path(folder) / "event.json"
+                event.write_text(json.dumps({"pull_request": pull()}))
+                api = FakeAPI()
+                api.failures[("GET", "/issues/1")] = failure
+                with patch.dict(os.environ, {"GITHUB_EVENT_PATH": str(event), "GITHUB_REPOSITORY": api.repository,
+                                           "GITHUB_TOKEN": "secret", "GITHUB_EVENT_NAME": "pull_request_target"}), \
+                        patch.object(bot, "GitHub", return_value=api), patch.object(bot.sys, "argv", ["issue_claim.py"]), \
+                        patch("sys.stderr", new_callable=io.StringIO) as output:
+                    self.assertEqual(bot.main(), 0)
+                self.assertIn("::warning::", output.getvalue())
+                self.assertNotIn("secret", output.getvalue())
+                self.assertNotIn("unexpected\ninput", output.getvalue())
+
+    def test_malformed_pr_event_warns_and_exit_zero(self):
+        with TemporaryDirectory() as folder:
+            event = Path(folder) / "event.json"
+            event.write_text("{")
+            with patch.dict(os.environ, {"GITHUB_EVENT_PATH": str(event), "GITHUB_EVENT_NAME": "pull_request_target"}), \
+                    patch.object(bot.sys, "argv", ["issue_claim.py"]), patch("sys.stderr", new_callable=io.StringIO) as output:
+                self.assertEqual(bot.main(), 0)
+            self.assertIn("::warning::", output.getvalue())
+
+    def test_incomplete_pr_read_warns_and_preserves_claim(self):
+        api = FakeAPI()
+        api.add_pull(pull())
+        api.failures[("LIST", "/issues/1/timeline")] = None
+        with patch("sys.stderr", new_callable=io.StringIO) as output:
+            bot.ClaimBot(api, START).on_pull_request({"pull_request": pull()})
+        self.assertIn("::warning::", output.getvalue())
+        self.assertFalse(api.issues[1]["assignees"])
+
+    def test_issue_command_errors_remain_fatal(self):
+        for failure in (bot.APIError("HTTP 401"), bot.APIError("HTTP 403"), RuntimeError("unexpected")):
+            with self.subTest(failure=failure), TemporaryDirectory() as folder:
+                event = Path(folder) / "event.json"
+                event.write_text(json.dumps({"issue": {"number": 1}, "comment": comment(body="/claim")}))
+                api = FakeAPI()
+                api.failures[("GET", "/issues/1")] = failure
+                with patch.dict(os.environ, {"GITHUB_EVENT_PATH": str(event), "GITHUB_REPOSITORY": api.repository,
+                                           "GITHUB_TOKEN": "secret", "GITHUB_EVENT_NAME": "issue_comment"}), \
+                        patch.object(bot, "GitHub", return_value=api), patch.object(bot.sys, "argv", ["issue_claim.py"]), \
+                        patch("sys.stderr", new_callable=io.StringIO) as output:
+                    self.assertEqual(bot.main(), 1)
+                self.assertNotIn("::warning::", output.getvalue())
+
+    def test_dry_run_event_reads_and_prints_claim_writes(self):
+        api = FakeAPI()
+        normal = FakeAPI()
+        event_data = {"issue": {"number": 1}, "comment": comment(body="/claim")}
+        with TemporaryDirectory() as folder:
+            event = Path(folder) / "event.json"
+            event.write_text(json.dumps(event_data))
+            with patch.dict(os.environ, {"GITHUB_REPOSITORY": api.repository, "GITHUB_TOKEN": "secret"}, clear=True), \
+                    patch.object(bot, "GitHub", return_value=api), \
+                    patch.object(bot.sys, "argv", ["issue_claim.py", "--dry-run", "--event", str(event)]), \
+                    patch("sys.stdout", new_callable=io.StringIO) as output:
+                self.assertEqual(bot.main(), 0)
+        writes = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertTrue(all(entry["dry_run"] for entry in writes))
+        self.assertEqual({entry["path"] for entry in writes}, {
+            "/issues/1/assignees", "/labels", "/issues/1/labels", "/issues/1/comments",
+            "/issues/comments/100/reactions"})
+        reply = next(entry["data"]["body"] for entry in writes if entry["path"] == "/issues/1/comments")
+        self.assertEqual(bot.read_claim_marker(reply).user, "alice")
+        self.assertFalse(api.issues[1]["assignees"])
+        self.assertFalse(api.issues[1]["labels"])
+        self.assertFalse(api.rows)
+        self.assertFalse(api.label)
+        self.assertFalse(api.reactions)
+        bot.ClaimBot(normal, START).on_comment(event_data)
+        reads = lambda calls: [entry for entry in calls if entry[0] in ("GET", "LIST")]
+        self.assertEqual(api.calls, reads(normal.calls))
+
+    def test_dry_run_sweep_reads_activity_and_prints_release_writes(self):
+        api = FakeAPI()
+        api.issues[1] = issue(assignees=["alice"])
+        api.rows["/issues/1/comments"] = [bot_comment(bot.claim_marker(bot.Claim("alice", START, 10)))]
+        api.add_pull(pull())
+        before = copy.deepcopy((api.issues, api.rows))
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": api.repository, "GITHUB_TOKEN": "secret"}, clear=True), \
+                patch.object(bot, "GitHub", return_value=api), \
+                patch.object(bot.sys, "argv", ["issue_claim.py", "--dry-run", "--sweep"]), \
+                patch("sys.stdout", new_callable=io.StringIO) as output:
+            self.assertEqual(bot.main(), 0)
+        writes = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual({(entry["method"], entry["path"]) for entry in writes}, {
+            ("DELETE", "/issues/1/assignees"), ("DELETE", "/issues/1/labels/claimed"), ("POST", "/issues/1/comments")})
+        self.assertEqual((api.issues, api.rows), before)
+        self.assertTrue(all(method in ("GET", "LIST") for method, _, _ in api.calls))
+        self.assertTrue({"/issues/10/timeline", "/issues/10/events", "/pulls/10/commits",
+                         "/issues/10/comments", "/pulls/10/comments", "/pulls/10/reviews"}.issubset(
+                             {path for method, path, _ in api.calls if method == "LIST"}))
+
+    def test_dry_run_keeps_read_failures_and_external_dependencies(self):
+        api = FakeAPI()
+        api.external[("other/repo", "/issues/20")] = {"state": "open"}
+        dry = bot.DryRun(api)
+        self.assertEqual(dry.request("GET", "/issues/20", repository="other/repo", expected=(404,)), {"state": "open"})
+        api.failures[("GET", "/issues/1")] = bot.APIError("HTTP 403")
+        with self.assertRaises(bot.APIError):
+            dry.request("GET", "/issues/1")
+
     def test_pagination_and_incomplete_list(self):
         api = bot.GitHub("cadmpeg/cadmpeg", "secret")
         with patch.object(api, "request", side_effect=[[{}] * 100, [{}]]) as request:

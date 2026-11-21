@@ -85,7 +85,7 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
           sparse-checkout: scripts
-      - name: Record activity and claim issues
+      - name: Claim linked issues
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 scripts/issue_claim.py

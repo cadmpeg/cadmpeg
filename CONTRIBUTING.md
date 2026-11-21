@@ -34,16 +34,6 @@ By contributing, you license code under **Apache-2.0** and documentation/spec co
 
 ## Ways to contribute
 
-### Claiming an issue
-
-0. Claim, then open a draft PR within 24 hours, even a rough one. Comment `/claim` on the issue before you start. The bot records your claim, adds the `claimed` label, and assigns you when GitHub permits it. A PR with `Fixes #N`, `Closes #N`, `Resolves #N`, or `Part of #N` in its title or body also claims each available issue for its author. The lowest-numbered open PR has priority.
-
-The bot posts one reminder after 12 hours and releases a claim after 24 hours without a linked PR. Once your linked PR exists, the claim lapses after 5 days without your commits, PR edits, or comments on the issue or PR. It posts one warning per quiet period at day 4. An hourly sweep checks open issues labelled `claimed`.
-
-Your ready, open PR keeps the claim active while your push or reply follows the latest maintainer review or comment. An open dependency named with `Depends on` or `Stacked on` also keeps it active. Dependencies accept `#N`, `owner/repo#N`, and GitHub issue or PR URLs. A maintainer review or comment returns the work to you and starts the idle clock. A PR closed without merging starts a new 24-hour draft period; a reopened PR counts again. Maintainer claims stay active.
-
-Comment `/unclaim` to release early. A maintainer can also release a claim. The repository owner releases their own claims. On lapse, the PR stays open. Anyone may continue from it: fork it, or push to it if maintainers allow. Keep the original author as co-author with a `Co-authored-by: Name <email>` trailer in the continuation.
-
 ### Contribute a codec (turn a spec into a decoder)
 
 A codec takes native bytes and produces the cadmpeg IR.

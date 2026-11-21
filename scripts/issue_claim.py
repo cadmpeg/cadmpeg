@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import re
@@ -21,12 +22,12 @@ MAX_LINKED_ISSUES = 50
 BOT = "github-actions[bot]"
 LOGIN = r"[A-Za-z0-9][A-Za-z0-9-]{0,38}(?:\[bot\])?"
 CLAIM = re.compile(rf"<!-- cadmpeg-claim: user=({LOGIN}) at=(\S+?)(?: pr=([1-9]\d*))? -->")
-ACTIVITY = re.compile(rf"<!-- cadmpeg-claim-activity: user=({LOGIN}) at=(\S+) kind=(push|update) -->")
 RELEASE = re.compile(r"<!-- cadmpeg-claim-release: at=(\S+) -->")
 LINK = re.compile(r"\b(?:fixes|closes|resolves|part\s+of)\s+#([1-9]\d*)(?![\w/-])", re.I)
 REFERENCE = r"(?:https://github\.com/[\w.-]+/[\w.-]+/(?:issues|pull)/[1-9]\d*|[\w.-]+/[\w.-]+#[1-9]\d*|#[1-9]\d*)(?![\w/#-])"
 DEPENDENCY = re.compile(rf"\b(?:depends\s+on|stacked\s+on)\s+({REFERENCE})", re.I)
-SNAPSHOT = re.compile(r"<!-- cadmpeg-claim-commits: shas=([a-zA-Z0-9,]*) -->")
+TASK_ITEM = re.compile(r"^[ \t]*-[ \t]+\[[ xX]\][ \t]+(.+)$", re.M)
+ISSUE_REFERENCE = re.compile(r"https://github\.com/[\w.-]+/[\w.-]+/issues/[1-9]\d*/?(?![\w/-])|(?<![\w/#])#[1-9]\d*(?![\w/-])", re.I)
 
 
 def parse_command(body: str | None) -> str | None:
@@ -57,6 +58,13 @@ def linked_issues(text: str | None) -> set[int]:
         if len(result) == MAX_LINKED_ISSUES:
             break
     return result
+
+
+def is_tracking(issue: dict) -> bool:
+    if any(label.get("name", "").lower() == "tracking" for label in issue.get("labels", [])):
+        return True
+    items = TASK_ITEM.finditer(prose(issue.get("body")))
+    return sum(bool(ISSUE_REFERENCE.search(item[1])) for item in items) >= 2
 
 
 @dataclass(frozen=True)
@@ -116,12 +124,6 @@ def read_claim_marker(body: str | None) -> Claim | None:
     match = CLAIM.search(body or "")
     at = timestamp(match[2]) if match else None
     return Claim(match[1], at, int(match[3]) if match[3] else None) if match and at else None
-
-
-def activity_marker(user: str, at: datetime, kind: str) -> str:
-    if not re.fullmatch(LOGIN, user) or kind not in ("push", "update"):
-        raise ValueError("invalid activity marker")
-    return f"<!-- cadmpeg-claim-activity: user={user} at={iso(at)} kind={kind} -->"
 
 
 def own_comment(comment: dict) -> bool:
@@ -193,6 +195,11 @@ def log(message: str) -> None:
     print(f"issue-claim: {message}", file=sys.stderr)
 
 
+def warning(message: str) -> None:
+    escaped = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    print(f"::warning::{escaped}", file=sys.stderr)
+
+
 class APIError(RuntimeError):
     pass
 
@@ -247,6 +254,26 @@ class GitHub:
             if len(batch) < 100:
                 return result
             page += 1
+
+
+class DryRun:
+    def __init__(self, api):
+        self.api = api
+        self.repository = api.repository
+        self.repo_url = api.repo_url
+
+    def items(self, path: str, **params):
+        return self.api.items(path, **params)
+
+    def request(self, method: str, path: str, data: dict | None = None,
+                expected: tuple[int, ...] = (), repository: str | None = None):
+        if method == "GET":
+            return self.api.request(method, path, data, expected=expected, repository=repository)
+        print(json.dumps({"dry_run": True, "method": method, "repository": repository or self.repository,
+                          "path": path, "data": data}, sort_keys=True))
+        if method == "POST" and path.endswith("/assignees"):
+            return {"assignees": [{"login": name} for name in (data or {}).get("assignees", [])]}
+        return {}
 
 
 class ClaimBot:
@@ -369,6 +396,7 @@ class ClaimBot:
         comments = self.rows(f"/issues/{number}/comments") + self.rows(f"/pulls/{number}/comments")
         reviews = self.rows(f"/pulls/{number}/reviews")
         commits = self.rows(f"/pulls/{number}/commits")
+        events = self.rows(f"/issues/{number}/timeline") + self.rows(f"/issues/{number}/events")
         actions = []
         responses = []
         returned = []
@@ -382,12 +410,6 @@ class ClaimBot:
                 responses.append(at)
             elif at and login(entry) and not is_bot(entry.get("user") or {}) and self.maintainer(login(entry)):
                 returned.append(at)
-            if own_comment(entry):
-                for match in ACTIVITY.finditer(entry.get("body") or ""):
-                    if match[1].lower() == claimant.lower() and (at := timestamp(match[2])):
-                        actions.append(at)
-                        if match[3] == "push":
-                            responses.append(at)
         for entry in reviews:
             at = timestamp(entry.get("submitted_at"))
             if at and entry.get("state") not in ("PENDING", "DISMISSED"):
@@ -398,9 +420,29 @@ class ClaimBot:
                     returned.append(at)
         for commit in commits:
             if any((commit.get(role) or {}).get("login", "").lower() == claimant.lower() for role in ("author", "committer")):
-                if at := timestamp(((commit.get("commit") or {}).get("committer") or {}).get("date")):
+                for role in ("author", "committer"):
+                    if at := timestamp(((commit.get("commit") or {}).get(role) or {}).get("date")):
+                        actions.append(at)
+                        responses.append(at)
+        for entry in events:
+            actor = entry.get("actor") or entry.get("user") or {}
+            kind = entry.get("event")
+            at = (timestamp(entry.get("submitted_at")) or comment_time(entry))
+            if not at:
+                continue
+            if actor.get("login", "").lower() == claimant.lower():
+                if kind in ("head_ref_force_pushed", "ready_for_review", "reviewed", "commented", "edited"):
+                    if kind == "reviewed" and entry.get("state", "").upper() in ("PENDING", "DISMISSED"):
+                        continue
                     actions.append(at)
-                    responses.append(at)
+                    if kind != "edited":
+                        responses.append(at)
+                if at == timestamp(pull.get("updated_at")):
+                    actions.append(at)
+            elif not is_bot(actor) and actor.get("login"):
+                if ((kind == "reviewed" and entry.get("state", "").upper() not in ("PENDING", "DISMISSED"))
+                        or (kind == "commented" and self.maintainer(actor["login"]))):
+                    returned.append(at)
         last_return = max(returned, default=None)
         last_response = max(responses, default=None)
         waiting = (pull.get("state") == "open" and not pull.get("draft", False)
@@ -471,6 +513,9 @@ class ClaimBot:
         issue = self.issue(event["issue"]["number"])
         if issue is None:
             return
+        if command == "/claim" and is_tracking(issue):
+            self.post(issue["number"], "This is a tracking issue. Please choose one of its sub-issues and comment /claim there.")
+            return
         try:
             claim = self.load(issue)
             user = login(entry)
@@ -516,28 +561,6 @@ class ClaimBot:
         if not any(own_comment(entry) and marker in (entry.get("body") or "") for entry in self.rows(f"/issues/{pr}/comments")):
             self.post(pr, message + "\n\n" + marker)
 
-    def record_activity(self, event: dict, number: int) -> None:
-        entries = self.rows(f"/issues/{number}/comments")
-        delivery = f"<!-- cadmpeg-claim-delivery: run={os.environ.get('GITHUB_RUN_ID', iso(self.now))} -->"
-        if any(own_comment(entry) and delivery in (entry.get("body") or "") for entry in entries):
-            return
-        commits = self.rows(f"/pulls/{number}/commits")
-        previous = None
-        for entry in entries:
-            if own_comment(entry) and (match := SNAPSHOT.search(entry.get("body") or "")):
-                previous = set(match[1].split(","))
-        markers = []
-        if event.get("action") == "synchronize":
-            added = [commit for commit in commits if commit.get("sha") not in previous] if previous is not None else commits[-1:]
-            users = {commit[role]["login"] for commit in added for role in ("author", "committer")
-                     if (commit.get(role) or {}).get("login") and not is_bot(commit[role])}
-            markers.extend(activity_marker(user, self.now, "push") for user in sorted(users))
-        else:
-            actor = login({"user": event.get("sender") or event["pull_request"]["user"]})
-            markers.append(activity_marker(actor, self.now, "update"))
-        shas = ",".join(commit["sha"] for commit in commits if re.fullmatch(r"[a-zA-Z0-9]+", commit.get("sha", "")))
-        self.post(number, "Claim activity recorded.\n\n" + "\n".join(markers + [delivery, f"<!-- cadmpeg-claim-commits: shas={shas} -->"]))
-
     def on_pull_request(self, event: dict) -> None:
         pull = event["pull_request"]
         if (is_bot(pull.get("user") or {}) or is_bot(event.get("sender") or {})
@@ -547,13 +570,9 @@ class ClaimBot:
         if not targets:
             return
         number = pull["number"]
-        try:
-            self.record_activity(event, number)
-        except Incomplete as error:
-            log(f"skip PR #{number} activity: incomplete {error}")
         for target in sorted(targets):
             issue = self.issue(target)
-            if issue is None:
+            if issue is None or is_tracking(issue):
                 continue
             try:
                 claim = self.load(issue)
@@ -575,7 +594,7 @@ class ClaimBot:
                 else:
                     self.record(issue, user, winner["number"])
             except Incomplete as error:
-                log(f"skip issue #{target}: incomplete {error}")
+                warning(f"skip issue #{target}: incomplete {error}")
 
     def sweep_issue(self, issue: dict) -> None:
         claim = self.load(issue)
@@ -615,18 +634,35 @@ class ClaimBot:
 
 
 def main() -> int:
-    event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8"))
-    if sys.argv[1:] == ["--command-output"]:
-        command = parse_command((event.get("comment") or {}).get("body")) or ""
-        if is_bot((event.get("comment") or {}).get("user") or {}):
-            command = ""
-        with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
-            output.write(f"command={command}\n")
-        return 0
-    api = GitHub(os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_TOKEN"], os.environ.get("GITHUB_API_URL", "https://api.github.com"))
-    bot = ClaimBot(api, datetime.now(timezone.utc))
+    name = os.environ.get("GITHUB_EVENT_NAME", "")
     try:
-        name = os.environ["GITHUB_EVENT_NAME"]
+        parser = argparse.ArgumentParser(description=__doc__)
+        source = parser.add_mutually_exclusive_group()
+        source.add_argument("--event", type=Path, help="read a GitHub event JSON file")
+        source.add_argument("--sweep", action="store_true", help="sweep open claimed issues")
+        parser.add_argument("--dry-run", action="store_true", help="read GitHub and print intended writes")
+        parser.add_argument("--command-output", action="store_true", help="write the parsed command to GITHUB_OUTPUT")
+        args = parser.parse_args()
+        event = {} if args.sweep else json.loads(
+            (args.event or Path(os.environ["GITHUB_EVENT_PATH"])).read_text(encoding="utf-8"))
+        if args.sweep:
+            name = "workflow_dispatch"
+        elif args.event:
+            if "pull_request" in event:
+                name = "pull_request_target"
+            elif "comment" in event:
+                name = "issue_comment"
+            elif "issue" in event:
+                name = "issues"
+        if args.command_output:
+            command = parse_command((event.get("comment") or {}).get("body")) or ""
+            if is_bot((event.get("comment") or {}).get("user") or {}):
+                command = ""
+            with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
+                output.write(f"command={command}\n")
+            return 0
+        api = GitHub(os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_TOKEN"], os.environ.get("GITHUB_API_URL", "https://api.github.com"))
+        bot = ClaimBot(DryRun(api) if args.dry_run else api, datetime.now(timezone.utc))
         if name == "issue_comment":
             bot.on_comment(event)
         elif name == "pull_request_target":
@@ -635,8 +671,11 @@ def main() -> int:
             bot.on_closed_issue(event)
         elif name in ("schedule", "workflow_dispatch"):
             bot.sweep()
-    except APIError as error:
-        log(str(error))
+    except Exception as error:
+        if name == "pull_request_target":
+            warning(f"PR claim processing stopped: {type(error).__name__}: {error}")
+            return 0
+        log(f"{type(error).__name__}: {error}")
         return 1
     return 0
 
