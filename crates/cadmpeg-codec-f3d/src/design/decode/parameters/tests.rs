@@ -1465,11 +1465,10 @@ fn parameter_companion_binding_owns_its_recipe() {
 }
 
 #[test]
-fn parameter_source_rejects_missing_or_unexpected_owner() {
-    let unowned_feature = parameter_record(None, "1", "Distance", None, "d1", 1.0);
-    assert!(parse_design_parameter_record(&unowned_feature).is_none());
-    let owned_user = parameter_record(Some(2), "1", "User Parameter", None, "d1", 1.0);
-    assert!(parse_design_parameter_record(&owned_user).is_none());
+fn parameter_source_rejects_an_owner_on_a_document_parameter() {
+    let mut owned_document = parameter_record(Some(2), "1", "Distance", None, "d1", 1.0);
+    owned_document[46 + 4 + 2 + 8] = 1;
+    assert!(parse_design_parameter_record(&owned_document).is_none());
     let compact_user = compact_owned_parameter_record(2, 0, "1", "User Parameter", None, "d1", 1.0);
     assert!(parse_design_parameter_record(&compact_user).is_none());
     let legacy_user = class_287_parameter_record("User Parameter", "d1");
@@ -1827,8 +1826,12 @@ fn document_parameter_admits_the_ten_byte_expression_trailer() {
     assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 1, 0, 1])).is_some());
     assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 2, 0, 1])).is_none());
     assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 1, 0, 0, 0, 0, 1])).is_none());
-    // The last flag byte marks a document parameter.
-    assert!(parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 0, 1, 0])).is_none());
+    // The last flag byte selects a document parameter; without it the
+    // parameter is owned, here with the null owner.
+    let owned = parse_design_parameter_record(&frame(&[0, 0, 0, 0, 0, 0, 0, 1, 0]))
+        .expect("null-owner parameter without the document flag");
+    assert_ne!(owned.kind(), DesignParameterKind::User);
+    assert_eq!(owned.owner_record_index(), None);
 }
 
 /// A document parameter with discriminator 4 can store the expression trailer
@@ -1901,6 +1904,10 @@ fn wide_owned_parameter_accepts_eleven_zero_bytes_after_expression() {
     assert_eq!(parameter.source_kind(), "ScaleFactor");
     assert_eq!(parameter.owner_record_index(), Some(1));
     scale[26..30].copy_from_slice(&4u32.to_le_bytes());
+    let parameter = parse_design_parameter_record(&scale).expect("discriminator-4 wide parameter");
+    assert_eq!(parameter.source_kind(), "ScaleFactor");
+    assert_eq!(parameter.owner_record_index(), Some(1));
+    scale[26..30].copy_from_slice(&3u32.to_le_bytes());
     assert!(parse_design_parameter_record(&scale).is_none());
 }
 
@@ -1948,7 +1955,9 @@ fn discriminated_expression_trailer_carries_flag_bytes() {
         [0, 0, 0, 0, 1]
     ))
     .is_none());
-    assert!(parse_design_parameter_record(&with_trailer(None, "User Parameter", [0; 5])).is_none());
+    let unflagged = parse_design_parameter_record(&with_trailer(None, "User Parameter", [0; 5]))
+        .expect("null-owner parameter without the document flag");
+    assert_ne!(unflagged.kind(), DesignParameterKind::User);
     let user =
         parse_design_parameter_record(&with_trailer(None, "User Parameter", [0, 0, 0, 1, 1]))
             .expect("document parameter with trailer flags");

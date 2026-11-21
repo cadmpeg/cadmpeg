@@ -290,6 +290,7 @@ impl<'ir> FaceInput<'_, 'ir> {
             }),
         };
         let row_work = self.work == Work::Row;
+        let box_work = self.work == Work::Box;
         let carrier_row = match &carrier {
             Ok(carrier) if row_work => carrier.measures(Sources {
                 fidelity: self.fidelity,
@@ -305,7 +306,7 @@ impl<'ir> FaceInput<'_, 'ir> {
         };
 
         let chart: Outcome<Chart<'ir>> = match &carrier {
-            Ok(carrier) => settle(carrier.chart().copied())?,
+            Ok(carrier) => settle(carrier.chart().map(|chart| chart.collapsing_within(tau)))?,
             Err(missing) => Err(missing.clone()),
         };
         let boundary: Outcome<Boundary<'ir>> = match (&chart, &self.placement) {
@@ -467,7 +468,7 @@ impl<'ir> FaceInput<'_, 'ir> {
         };
 
         let (bbox, aabbs) = match (&chart, &region) {
-            _ if !row_work => (Readings::single(not_computed(id)), [None, None]),
+            _ if !row_work && !box_work => (Readings::single(not_computed(id)), [None, None]),
             (Ok(chart @ (Chart::Sphere(_) | Chart::Torus(_))), Ok(region)) => self.closed_box(
                 face,
                 &coedges,
@@ -487,6 +488,7 @@ impl<'ir> FaceInput<'_, 'ir> {
                     PlainBox {
                         chart,
                         region,
+                        hull_without_region: box_work,
                         tau_b,
                         hull,
                     },
@@ -632,7 +634,7 @@ impl<'ir> FaceInput<'_, 'ir> {
                     reach,
                     active: match self.work {
                         Work::Row => MEASURE_COMPONENTS,
-                        Work::Orientation => ORIENTATION_COMPONENTS,
+                        Work::Orientation | Work::Box => ORIENTATION_COMPONENTS,
                     },
                 };
                 Some(settle(
@@ -778,6 +780,7 @@ impl<'ir> FaceInput<'_, 'ir> {
         let PlainBox {
             chart,
             region,
+            hull_without_region,
             tau_b,
             hull,
         } = basis;
@@ -803,7 +806,7 @@ impl<'ir> FaceInput<'_, 'ir> {
                     method: Method::CriticalPoints,
                 },
             ),
-            (Ok(Chart::Nurbs(_)), Ok(_)) => match hull {
+            (Ok(Chart::Nurbs(_)), region) if region.is_ok() || hull_without_region => match hull {
                 Some(Ok(hull)) => {
                     let (boundary_box, _) = self.boundary_box(
                         face,
@@ -1172,6 +1175,9 @@ fn face_flux(
 struct PlainBox<'a, 'ir> {
     chart: &'a Outcome<Chart<'ir>>,
     region: &'a Outcome<Region>,
+    /// Whether a NURBS face whose region does not classify has its
+    /// control-hull box, which contains the whole carrier.
+    hull_without_region: bool,
     tau_b: f64,
     hull: Option<Result<Aabb, UnavailableReason>>,
 }

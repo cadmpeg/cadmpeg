@@ -13,7 +13,9 @@ mod fixed_fillet_retention;
 mod hole_locations;
 mod recipe_structures;
 mod recipes;
+mod registered_split_face_bounds;
 mod selection;
+mod split_groups;
 mod typed_profile;
 mod work_point;
 
@@ -24,3 +26,4 @@ mod loft_point_groups;
 mod construction_paths;
 
 mod multiple_profiles;
+mod text_selections;

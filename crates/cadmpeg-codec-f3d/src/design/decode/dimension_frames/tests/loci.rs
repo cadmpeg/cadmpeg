@@ -187,6 +187,25 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
             parameter: ref actual_parameter,
         }) if actual_entity == entity.id() && actual_parameter == &parameter
     ));
+    for (source_kind, admitted) in [
+        ("Angular Dimension-3", true),
+        ("Angular Dimension", true),
+        ("Linear Dimension-2", false),
+    ] {
+        assert_eq!(
+            null_locus_dimension_definition(
+                &axis_pair,
+                &entity,
+                source_kind,
+                std::f64::consts::FRAC_PI_4,
+                parameter.clone(),
+                TEST_LINEAR_TOLERANCE
+            )
+            .is_some(),
+            admitted,
+            "{source_kind}"
+        );
+    }
     assert!(null_locus_dimension_definition(
         &axis_pair,
         &entity,

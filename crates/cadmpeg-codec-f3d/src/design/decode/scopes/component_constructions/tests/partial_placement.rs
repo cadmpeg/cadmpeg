@@ -12,7 +12,7 @@ fn fixture(frame: usize, localized: bool) -> (Vec<u8>, DesignParameterScope) {
         "Component Insert"
     };
     let stored = frame + 2 * (name.encode_utf16().count() - 16);
-    let delta = usize::from(matches!(frame, 276 | 404)) * 4;
+    let delta = usize::from(matches!(frame, 275 | 276 | 404)) * 4;
     let explicit = frame >= 400;
     let mut bytes = vec![0; stored + 11];
     for at in [0, stored] {
@@ -91,7 +91,7 @@ fn fixture(frame: usize, localized: bool) -> (Vec<u8>, DesignParameterScope) {
 
 #[test]
 fn scope_placements_decode_without_relation_or_carrier_records() {
-    for frame in [272, 276, 400, 404] {
+    for frame in [271, 272, 275, 276, 400, 404] {
         for localized in [false, true] {
             let (bytes, mut scope) = fixture(frame, localized);
             let value = unresolved_component_insert_placement(&bytes, &scope).unwrap();
@@ -135,9 +135,9 @@ fn scope_placements_decode_without_relation_or_carrier_records() {
 
 #[test]
 fn partial_placements_reject_wrong_markers_references_guids_and_truncation() {
-    for frame in [272, 276, 400, 404] {
+    for frame in [271, 272, 275, 276, 400, 404] {
         let (bytes, scope) = fixture(frame, false);
-        let delta = usize::from(matches!(frame, 276 | 404)) * 4;
+        let delta = usize::from(matches!(frame, 275 | 276 | 404)) * 4;
         for at in [
             11,
             33 + delta,

@@ -8,11 +8,16 @@ use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::names::{CodecId, NativeName, NativeNameValue};
 use cadmpeg_ir::document::Model;
-use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
-use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
+use cadmpeg_ir::drawings::{
+    Drawing, DrawingId, DrawingKind, HiddenLineMethod, ProjectionAngle, ScaleFrom,
+};
+use cadmpeg_ir::scalar::{Angle, FiniteReal, PositiveLength, PositiveReal};
 use cadmpeg_ir::units::{FiniteVector, NonzeroVector};
 use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
 
+use crate::annotation::{
+    bool_property, enumeration_entry, enumeration_property, optional_scalar_property,
+};
 use crate::native::{
     sole_named_property, DrawingRecord, ObjectRecord, PropertyRecord, TechDrawKind, ValueRecord,
 };
@@ -204,7 +209,13 @@ pub(crate) fn transfer_neutral(
                 })
             })
             .transpose()?;
-        let rotation_degrees = parameter("Rotation")?;
+        let rotation = parameter("Rotation")?
+            .map(|degrees| {
+                Angle::new(degrees.get().to_radians())
+                    .ok_or_else(|| CodecError::malformed("drawing rotation must be finite"))
+            })
+            .transpose()?;
+        let projection = view_projection(ctx, &owned, record.kind.as_str())?;
         let direction = if record.parameters.contains_key("Direction") {
             let value = vector_property(ctx, &owned, "Direction")?
                 .ok_or_else(|| CodecError::malformed("drawing direction is absent"))?;
@@ -259,7 +270,11 @@ pub(crate) fn transfer_neutral(
             position,
             scale,
             direction,
-            rotation_degrees,
+            rotation,
+            scale_from: projection.scale_from,
+            projection: projection.projection,
+            perspective: projection.perspective,
+            hidden_line: projection.hidden_line,
             parameters: cadmpeg_core::text::named_entries(&record.object, parameters)?,
             assets,
             ..Drawing::new(
@@ -278,11 +293,74 @@ pub(crate) fn transfer_neutral(
                 u32::try_from(order).map_err(|_| {
                     CodecError::malformed(format_args!("FreeCAD ordinal {order} exceeds u32"))
                 })?,
-                record.id.clone(),
+                Some(record.id.clone()),
             )
         });
     }
     Ok(())
+}
+
+/// How a view or a page projects the model: `TechDraw` 1.1.4 `DrawView`,
+/// `DrawPage`, `DrawProjGroup`, and `DrawViewPart` properties.
+struct ViewProjection {
+    scale_from: Option<ScaleFrom>,
+    projection: Option<ProjectionAngle>,
+    perspective: Option<PositiveLength>,
+    hidden_line: Option<HiddenLineMethod>,
+}
+
+fn view_projection(
+    ctx: &DecodeContext<'_>,
+    owned: &[&PropertyRecord],
+    runtime_type: &str,
+) -> Result<ViewProjection, CodecError> {
+    let scale_type = enumeration_property(ctx, owned, "ScaleType")?;
+    let scale_from = match enumeration_entry(scale_type.as_ref(), &["Page", "Automatic", "Custom"])
+    {
+        Some("Page") => Some(ScaleFrom::Sheet),
+        Some("Automatic") => Some(ScaleFrom::Fit),
+        Some("Custom") => Some(ScaleFrom::Own),
+        _ => None,
+    };
+    let projection_type = enumeration_property(ctx, owned, "ProjectionType")?;
+    let built_in: &[&str] = if is_page_type(runtime_type) {
+        &["First angle", "Third angle"]
+    } else {
+        &["Default", "First angle", "Third angle"]
+    };
+    let projection = match enumeration_entry(projection_type.as_ref(), built_in) {
+        Some("First angle") => Some(ProjectionAngle::First),
+        Some("Third angle") => Some(ProjectionAngle::Third),
+        _ => None,
+    };
+    let perspective = if bool_property(ctx, owned, "Perspective")? == Some(true) {
+        optional_scalar_property(
+            ctx,
+            owned,
+            "Focus",
+            &[
+                "App::PropertyDistance",
+                "App::PropertyLength",
+                "App::PropertyFloat",
+            ],
+        )?
+        .and_then(PositiveLength::new)
+    } else {
+        None
+    };
+    let hidden_line = bool_property(ctx, owned, "CoarseView")?.map(|coarse| {
+        if coarse {
+            HiddenLineMethod::Polygonal
+        } else {
+            HiddenLineMethod::Exact
+        }
+    });
+    Ok(ViewProjection {
+        scale_from,
+        projection,
+        perspective,
+        hidden_line,
+    })
 }
 
 fn is_registered_drawing_type(runtime_type: &str) -> bool {
@@ -520,16 +598,16 @@ fn drawing_parameters(
         "X",
         "Y",
         "Scale",
-        "ScaleType",
         "Direction",
         "Rotation",
         "Caption",
         "FormatSpec",
         "MeasureType",
-        "ProjectionType",
         "LockPosition",
     ];
     const VALIDATED_ONLY_NAMES: &[&str] = &[
+        "ScaleType",
+        "ProjectionType",
         "XDirection",
         "FormatSpecOverTolerance",
         "FormatSpecUnderTolerance",

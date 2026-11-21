@@ -1170,10 +1170,10 @@ A joint prim relates two bodies through `rel physics:body0` and `rel physics:bod
 | `PhysicsSphericalJoint` | the origins coincide; the angles between the axes `physics:axis` stay within `physics:coneAngle0Limit` and `physics:coneAngle1Limit` (degrees, `-1` for no limit) |
 | `PhysicsDistanceJoint` | the distance between the origins is in `[physics:minDistance, physics:maxDistance]` (`-1` for no limit) |
 | `PhysicsJoint` | the limits of its `PhysicsLimitAPI` instances |
-| `PhysxPhysicsGearJoint` | couples the revolute joints `physics:hinge0` and `physics:hinge1`: \|ω₁\| = `physics:gearRatio` · \|ω₀\|, with ω₀ and ω₁ the angular velocities of their joints. For gears with `N0` and `N1` teeth the ratio is `N0 / N1` |
-| `PhysxPhysicsRackAndPinionJoint` | couples the revolute joint `physics:hinge` to the prismatic joint `physics:prismatic`: \|ω\| = `physics:ratio` · \|v\|, with ω the angular velocity of the revolute joint in degrees per second and v the linear velocity of the prismatic joint |
+| `PhysxPhysicsGearJoint` | couples the revolute joints `physics:hinge0` and `physics:hinge1`: ω₁ = −`physics:gearRatio` · ω₀, with ω₀ and ω₁ the angular velocities of their joints about their axes. A positive ratio turns the gears opposite ways. For external gears with `N0` and `N1` teeth the ratio is `N0 / N1` |
+| `PhysxPhysicsRackAndPinionJoint` | couples the revolute joint `physics:hinge` to the prismatic joint `physics:prismatic`: ω = `physics:ratio` · v, with ω the angular velocity of the revolute joint about its axis in degrees per second and v the linear velocity of the prismatic joint along its axis |
 
-The signs of the coupled velocities follow the joint frames. Each relationship of a coupling joint targets exactly one joint of its type. `physics:axis` is `X` (unauthored value), `Y`, or `Z`. `physics:lowerLimit` and `physics:upperLimit` (float, unauthored values `-inf` and `inf`) bound the motion: degrees for a revolute joint and lengths for a prismatic joint.
+The frames of a coupling joint do not change the coupling. Each relationship of a coupling joint targets exactly one joint of its type. `physics:axis` is `X` (unauthored value), `Y`, or `Z`. `physics:lowerLimit` and `physics:upperLimit` (float, unauthored values `-inf` and `inf`) bound the motion: degrees for a revolute joint and lengths for a prismatic joint.
 
 | Attribute | Type | Unauthored value | Meaning |
 | --- | --- | --- | --- |
@@ -1312,7 +1312,7 @@ A surface of `BrepSurfaceNurbAPI` has `uOrder`, `vOrder`, `uVertexCount`, and `v
 
 ### 17.4 Geometry subsets
 
-A `GeomSubset` child of a `BrepArray` prim with `elementType = "face"` selects faces by their position in the face arrays; one with `elementType = "brep"` selects B-reps by their position. A subset that applies `MaterialBindingAPI` binds its material to the elements it selects.
+A `GeomSubset` child of a `BrepArray` prim with `elementType = "face"` selects faces by their position in the face arrays; one with `elementType = "brep"` selects B-reps by their position. A subset that applies `MaterialBindingAPI` belongs to the family `materialBind` and binds its material to the elements it selects.
 
 ### 17.5 Fallback prims
 

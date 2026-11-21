@@ -219,7 +219,7 @@ pub(super) fn parse_bool(value: &str) -> Option<bool> {
     }
 }
 
-pub(super) fn parse_parameter_literal(expression: &str) -> Option<ParameterValue> {
+pub(crate) fn parse_parameter_literal(expression: &str) -> Option<ParameterValue> {
     if dimension_display(expression).is_some() {
         return parse_dimension_display_length(expression).map(ParameterValue::Length);
     }
@@ -247,7 +247,7 @@ pub(super) fn parse_parameter_literal(expression: &str) -> Option<ParameterValue
         .map(ParameterValue::Real)
 }
 
-pub(super) fn dimension_display(expression: &str) -> Option<DimensionDisplay> {
+pub(crate) fn dimension_display(expression: &str) -> Option<DimensionDisplay> {
     let expression = strip_dimension_count(expression.trim());
     if strip_diameter_modifier(expression).is_some()
         || (expression.starts_with(['⌀', 'Ø']) && parse_length_mm(expression).is_some())

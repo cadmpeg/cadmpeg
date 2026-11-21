@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Transfer of complete CATIA product-manufacturing dimensions.
+//! Transfer source-closed CATIA product-manufacturing annotations.
+
+pub(crate) mod geometric_tolerance;
+mod source;
 
 use std::collections::HashSet;
 
+use cadmpeg_ir::design::dimension::Dimension;
+use cadmpeg_ir::design::parameter::{Deviations, Tolerance};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::PmiId;
 use cadmpeg_ir::pmi::{
-    DimensionKind, DimensionTolerance, PmiAnnotation, PmiDefinition, PmiQuantity, PmiValue,
+    PmiAnnotation, PmiDefinition, PmiDimension, PmiDimensionKind, PmiQuantity, PmiValue,
 };
 
 use crate::native::entity_record::CatiaEntityRecord;
@@ -51,13 +56,9 @@ pub(crate) fn transfer_dimensions(
             continue;
         }
         ctx.charge_entities(1, "admit CATIA PMI dimension")?;
-        ir.model.pmi.push(PmiAnnotation {
-            id,
-            name: None,
-            visible: None,
-            targets: Vec::new(),
-            definition,
-        });
+        ir.model
+            .pmi
+            .push(PmiAnnotation::new(id, Vec::new(), definition));
         transferred += 1;
     }
     Ok(transferred)
@@ -105,25 +106,21 @@ fn range_only_dimension_definition(
         return None;
     }
     let dimension = match definition.name.as_deref()? {
-        "DiameterThread" => DimensionKind::Diameter,
-        "FeatureRSUR" => DimensionKind::Size,
+        "DiameterThread" => PmiDimensionKind::Diameter,
+        "FeatureRSUR" => PmiDimensionKind::Size,
         _ => return None,
     };
     let nominal = finite_length(range.nominal.as_ref()?.bits)?;
     let [lower, upper] = range.interval.slots.as_ref()?;
     let lower_deviation = finite_length(lower.bits())?;
     let upper_deviation = finite_length(upper.bits())?;
-    Some(PmiDefinition::Dimension(
-        cadmpeg_ir::pmi::PmiDimension::new(
-            dimension,
-            Some(nominal),
-            Some(DimensionTolerance::PlusMinus {
-                lower: lower_deviation,
-                upper: upper_deviation,
-            }),
-        )
-        .ok()?,
-    ))
+    let mut dimension = PmiDimension::new(dimension);
+    dimension.nominal = Some(Dimension::Literal(nominal));
+    dimension.tolerance = Some(Tolerance::Deviations(Deviations {
+        lower: lower_deviation.value,
+        upper: upper_deviation.value,
+    }));
+    Some(PmiDefinition::Dimension(dimension))
 }
 
 fn finite_length(bits: u64) -> Option<PmiValue> {
@@ -145,10 +142,10 @@ mod tests {
         CatiaRangeNominal, CatiaRangeNominalFraming,
     };
     use crate::test_support::with_service_context;
+    use cadmpeg_ir::design::parameter::Tolerance;
     use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::pmi::DimensionKind;
-    use cadmpeg_ir::pmi::DimensionTolerance;
     use cadmpeg_ir::pmi::PmiDefinition;
+    use cadmpeg_ir::pmi::PmiDimensionKind as DimensionKind;
     use std::collections::HashSet;
 
     fn schema_value(value: &str) -> CatiaEntitySchemaValue {
@@ -310,19 +307,15 @@ mod tests {
             .iter()
             .map(|annotation| match &annotation.definition {
                 PmiDefinition::Dimension(relation) => {
-                    let nominal = relation.nominal().expect("dimension nominal");
-                    let Some(DimensionTolerance::PlusMinus {
-                        lower: lower_deviation,
-                        upper: upper_deviation,
-                    }) = relation.tolerance()
-                    else {
+                    let nominal = relation.literal_nominal().expect("dimension nominal");
+                    let Some(Tolerance::Deviations(deviations)) = &relation.tolerance else {
                         panic!("dimension tolerance");
                     };
                     (
-                        relation.kind(),
+                        &relation.dimension,
                         nominal.value.get(),
-                        lower_deviation.value.get(),
-                        upper_deviation.value.get(),
+                        deviations.lower.get(),
+                        deviations.upper.get(),
                     )
                 }
                 _ => panic!("dimension annotation"),
@@ -461,8 +454,8 @@ mod tests {
             &annotation.definition,
             PmiDefinition::Dimension(dimension)
                 if matches!(
-                    dimension.tolerance(),
-                    Some(DimensionTolerance::PlusMinus { lower, .. }) if lower.value.get() == 0.0
+                    &dimension.tolerance,
+                    Some(Tolerance::Deviations(deviations)) if deviations.lower.get() == 0.0
                 )
         ));
     }

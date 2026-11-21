@@ -25,6 +25,7 @@ use crate::layout::current_extrude_operation_fields as extrude_fields;
 use crate::layout::current_extrude_shape_target_extent_prefix as extrude_target;
 use crate::layout::early_distance_extrude_absent_prefix as early_absent;
 use crate::layout::early_distance_extrude_present_prefix as early_present;
+use crate::layout::legacy_class_330_blind_cut_extrude_frame as class_330_cut;
 use crate::layout::legacy_class_338_two_sided_distance_extrude_frame as class_338_legacy;
 use crate::layout::legacy_class_415_symmetric_extrude_prefix as class_415;
 use crate::layout::legacy_reference_extrude_profile_normal as legacy_reference_normal;
@@ -40,6 +41,8 @@ use crate::layout::shifted_typed_reference_extrude_prologue as shifted_typed;
 use crate::layout::typed_reference_extrude_anchor_prefix as typed_reference_anchor;
 use crate::layout::typed_reference_extrude_prologue as typed_prologue;
 use crate::records::feature::extrude::DesignExtrudeExtent;
+use crate::records::feature::extrude::DesignExtrudeOpaqueDistanceWord;
+use crate::records::feature::extrude::DesignExtrudeOperation;
 use crate::records::feature::extrude::DesignExtrudePrologue;
 use crate::records::feature::extrude::DesignExtrudePrologueReference;
 use crate::records::feature::extrude::DesignExtrudeReferenceType;
@@ -48,6 +51,7 @@ use crate::records::feature::extrude::DesignExtrudeTargetOrdinal;
 use crate::records::feature::extrude::{DesignExtrudeDistanceTail, DesignExtrudeMeasurement};
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::View;
+use std::num::NonZeroU32;
 
 fn flag_byte_at(bytes: &[u8], offset: usize) -> Option<bool> {
     match bytes.get(offset)? {
@@ -64,6 +68,81 @@ fn extrude_start_at(bytes: &[u8], offset: usize) -> Option<DesignExtrudeStart> {
         2 => Some(DesignExtrudeStart::FromFace),
         _ => None,
     }
+}
+
+fn exact_class_330_blind_cut(
+    frame: &[u8],
+    start: usize,
+    references: &[u32],
+) -> Option<DesignExtrudePrologue> {
+    const PROFILE_NORMAL_UNIT_EPS: f64 = 1.0e-12;
+
+    let [_, _, _, _, distance, taper, auxiliary] = references else {
+        return None;
+    };
+    if references
+        .iter()
+        .enumerate()
+        .any(|(index, reference)| *reference == 0 || references[..index].contains(reference))
+    {
+        return None;
+    }
+    let operation = offset_23_extrude_prologue::OPERATION;
+    let field = |offset| operation + offset;
+    let normal_at = field(extrude_fields::PROFILE_NORMAL);
+    if frame.get(offset_23_extrude_prologue::ZERO_RUN_12..operation)? != [0; 12]
+        || extrude_operation_at(frame, operation)? != DesignExtrudeOperation::Cut
+        || View::u32_le_at(frame, field(extrude_fields::DIRECTION))? != 1
+        || View::u32_le_at(frame, field(extrude_fields::FACE_EXTEND))? != 2
+        || !flag_byte_at(frame, field(extrude_fields::GEOMETRY_KIND))?
+        || extrude_start_at(frame, field(extrude_fields::START_SUPPORT))?
+            != DesignExtrudeStart::ProfilePlane
+        || frame.get(field(extrude_fields::ZERO_RUN_3)..normal_at)? != [0; 3]
+    {
+        return None;
+    }
+    let normal = f64s_at::<3>(frame, normal_at)?;
+    let squared_length = normal
+        .iter()
+        .map(|component| component * component)
+        .sum::<f64>();
+    if !squared_length.is_finite() || (squared_length - 1.0).abs() > PROFILE_NORMAL_UNIT_EPS {
+        return None;
+    }
+    let mut cursor = field(extrude_fields::LEN);
+    for reference in [
+        None,
+        None,
+        Some(*distance),
+        Some(*auxiliary),
+        None,
+        Some(*taper),
+        None,
+    ] {
+        if let Some(reference) = reference {
+            if marked_record_reference(frame, cursor)? != reference {
+                return None;
+            }
+            cursor += 11;
+        } else {
+            if frame.get(cursor) != Some(&0) {
+                return None;
+            }
+            cursor += 1;
+        }
+    }
+    if cursor != class_330_cut::FIRST_SIDE_EXTENT
+        || View::u32_le_at(frame, class_330_cut::FIRST_SIDE_EXTENT)? != 1
+        || View::u32_le_at(frame, class_330_cut::SECOND_SIDE_EXTENT)? != 0
+        || View::u32_le_at(frame, class_330_cut::REFERENCE_COUNT)?
+            != class_330_cut::REFERENCE_COUNT_VALUE
+    {
+        return None;
+    }
+    DesignExtrudePrologue::legacy_class_330_blind_cut(
+        u64_from_index(start),
+        flag_byte_at(frame, field(extrude_fields::DIRECTION_REVERSED))?,
+    )
 }
 
 pub(super) fn exact_extrude_prologue(
@@ -131,6 +210,17 @@ pub(super) fn exact_extrude_prologue(
             reference_count_at,
             reference_members,
         );
+    }
+    if class_tag == "330"
+        && paired_class_tag == "262"
+        && paired_at.checked_sub(start) == Some(class_330_cut::LEN)
+        && reference_count_at.checked_sub(start) == Some(class_330_cut::REFERENCE_COUNT)
+    {
+        if let Some(prologue) =
+            exact_class_330_blind_cut(bytes.get(start..paired_at)?, start, reference_members)
+        {
+            return Some(prologue);
+        }
     }
     let current = exact_shifted_reference_aware_extrude_prologue(
         bytes,
@@ -228,10 +318,10 @@ pub(super) fn exact_extrude_prologue(
     .or_else(|| exact_slotted_extrude_prologue(bytes, start, reference_count_at, reference_members))
 }
 
-pub(crate) fn extrude_seventh_slot_record_index(
+pub(crate) fn extrude_marked_reference_slots(
     bytes: &[u8],
     prologue: DesignExtrudePrologue,
-) -> Option<u32> {
+) -> Option<[Option<u32>; 7]> {
     let (operation_offset, first_side_extent_offset) = match prologue {
         DesignExtrudePrologue::ReferenceAware {
             operation_offset,
@@ -256,25 +346,18 @@ pub(crate) fn extrude_seventh_slot_record_index(
     let mut cursor = operation_offset
         .checked_add(extrude_fields::PROFILE_NORMAL)?
         .checked_add(24)?;
-    let mut seventh = None;
-    for ordinal in 0..7 {
+    let mut slots = [None; 7];
+    for slot in &mut slots {
         match bytes.get(cursor)? {
             0 => cursor = cursor.checked_add(1)?,
             1 => {
-                let record_index = marked_record_reference(bytes, cursor)?;
-                if ordinal == 6 {
-                    seventh = Some(record_index);
-                }
+                *slot = Some(marked_record_reference(bytes, cursor)?);
                 cursor = cursor.checked_add(11)?;
             }
             _ => return None,
         }
     }
-    if cursor == first_side_extent_offset {
-        seventh
-    } else {
-        None
-    }
+    (cursor == first_side_extent_offset).then_some(slots)
 }
 
 pub(crate) fn is_class_296_one_sided_to_face_layout(
@@ -1508,8 +1591,8 @@ fn exact_current_extrude_prologue_with(
     } else {
         None
     };
-    let distance_tail = if first_side_extent == 2 {
-        None
+    let (distance_tail, opaque_distance_word) = if first_side_extent == 2 {
+        (None, None)
     } else {
         let target_option_offset =
             first_side_extent_offset.checked_add(extrude_extent_pair::TARGET_OPTION)?;
@@ -1527,9 +1610,25 @@ fn exact_current_extrude_prologue_with(
             })
             .flatten();
         match (target_option, tail) {
-            (0, tail) => tail,
-            (1, Some(tail)) => Some(tail),
-            (1, None) if mixed_to_face_control.is_some() => None,
+            (0, tail) => (tail, None),
+            (1, Some(tail)) => (Some(tail), None),
+            (1, None) if mixed_to_face_control.is_some() => (None, None),
+            (word, None)
+                if typed
+                    && operation_offset == start.checked_add(typed_prologue::OPERATION)?
+                    && direction_face_extend_values == [1, 2]
+                    && side_extent_discriminators == [1, 0]
+                    && solid_operation
+                    && start_support == DesignExtrudeStart::ProfilePlane =>
+            {
+                (
+                    None,
+                    Some(DesignExtrudeOpaqueDistanceWord {
+                        value: NonZeroU32::new(word)?,
+                        byte_offset: u64_from_index(target_option_offset),
+                    }),
+                )
+            }
             _ => return None,
         }
     };
@@ -1598,6 +1697,7 @@ fn exact_current_extrude_prologue_with(
         ],
         first_side_target_ordinal,
         distance_tail,
+        opaque_distance_word,
         extent,
         direction_face_extend_offsets: [
             u64_from_index(direction_offset),

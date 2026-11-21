@@ -10,7 +10,7 @@ use serde::Serialize;
 use serde_json::{Map, Value as Json};
 
 use super::{malformed, EditError};
-use crate::design::refs::{Member, Position};
+use crate::design::refs::Position;
 
 /// A state a record reads geometry from.
 #[derive(Debug, Clone, PartialEq)]
@@ -119,7 +119,7 @@ pub(super) fn record_reads<T: Serialize>(
     record: &T,
     is_container: &dyn Fn(&str) -> bool,
 ) -> Result<Reads, EditError> {
-    let json = serde_json::to_value(record).map_err(malformed)?;
+    let json = crate::hash::finite_json::to_json_value(record).map_err(malformed)?;
     Ok(reads(&json, is_container))
 }
 
@@ -129,28 +129,31 @@ pub(super) fn rewrite<T: Serialize + DeserializeOwned>(
     record: &mut T,
     edit: impl FnOnce(&mut Json) -> Result<bool, EditError>,
 ) -> Result<bool, EditError> {
-    let mut json = serde_json::to_value(&*record).map_err(malformed)?;
+    let mut json = crate::hash::finite_json::to_json_value(&*record).map_err(malformed)?;
     if !edit(&mut json)? {
         return Ok(false);
     }
-    *record = serde_json::from_value(json).map_err(malformed)?;
+    // Reading text shares the document reader's monomorphized deserializers.
+    *record = serde_json::from_str(&json.to_string()).map_err(malformed)?;
     Ok(true)
 }
 
-/// Replaces every `After(removed)` position with `to`, and reports whether
-/// it replaced one.
-pub(super) fn retarget(
-    value: &mut Json,
-    removed: &Member,
-    to: &Position,
-) -> Result<bool, EditError> {
-    let from = serde_json::to_value(Position::After(removed.clone())).map_err(malformed)?;
-    let to = serde_json::to_value(to).map_err(malformed)?;
+/// The wire forms of positions.
+pub(super) fn positions(positions: &[Position]) -> Result<Vec<Json>, EditError> {
+    positions
+        .iter()
+        .map(|position| crate::hash::finite_json::to_json_value(position).map_err(malformed))
+        .collect()
+}
+
+/// Replaces every position of `from` with `to`, and reports whether it
+/// replaced one.
+pub(super) fn retarget(value: &mut Json, from: &[Json], to: &Json) -> bool {
     let mut changed = false;
     let mut stack = vec![value];
     while let Some(node) = stack.pop() {
-        if *node == from {
-            node.clone_from(&to);
+        if from.contains(node) {
+            node.clone_from(to);
             changed = true;
             continue;
         }
@@ -160,24 +163,232 @@ pub(super) fn retarget(
             Json::Null | Json::Bool(_) | Json::Number(_) | Json::String(_) => {}
         }
     }
-    Ok(changed)
+    changed
 }
 
-/// Whether a wire value names `After(member)` anywhere.
-pub(super) fn names_after(value: &Json, member: &Member) -> Result<bool, EditError> {
-    let from = serde_json::to_value(Position::After(member.clone())).map_err(malformed)?;
+/// Re-anchors every selection pinned to a position of `from` to `Current`
+/// (§5.8), and reports whether it re-anchored one.
+pub(super) fn re_anchor(value: &mut Json, from: &[Json]) -> bool {
+    let mut changed = false;
     let mut stack = vec![value];
     while let Some(node) = stack.pop() {
-        if *node == from {
-            return Ok(true);
+        if let Json::Object(object) = node {
+            let pinned = object.len() == 2
+                && kind(object) == Some("pinned")
+                && object.get("value").is_some_and(|at| from.contains(at));
+            if pinned {
+                *node = serde_json::json!({ "kind": "current" });
+                changed = true;
+                continue;
+            }
         }
         match node {
-            Json::Array(items) => stack.extend(items),
-            Json::Object(object) => stack.extend(object.values()),
+            Json::Array(items) => stack.extend(items.iter_mut()),
+            Json::Object(object) => stack.extend(object.values_mut()),
             Json::Null | Json::Bool(_) | Json::Number(_) | Json::String(_) => {}
         }
     }
-    Ok(false)
+    changed
+}
+
+/// Every string a wire value holds, map keys included.
+fn strings(value: &Json) -> Vec<&str> {
+    let mut found = Vec::new();
+    let mut stack = vec![value];
+    while let Some(node) = stack.pop() {
+        match node {
+            Json::String(text) => found.push(text.as_str()),
+            Json::Array(items) => stack.extend(items),
+            Json::Object(object) => {
+                for (key, item) in object {
+                    found.push(key.as_str());
+                    stack.push(item);
+                }
+            }
+            Json::Null | Json::Bool(_) | Json::Number(_) => {}
+        }
+    }
+    found
+}
+
+/// Removes the `resolved` cache of every pick that lists a record of
+/// `gone` (§5.8), and reports whether it removed one.
+pub(super) fn clear_resolved(value: &mut Json, gone: &BTreeSet<String>) -> bool {
+    let mut changed = false;
+    let mut stack = vec![value];
+    while let Some(node) = stack.pop() {
+        match node {
+            Json::Array(items) => stack.extend(items.iter_mut()),
+            Json::Object(object) => {
+                let stale = object.contains_key("target")
+                    && object.get("resolved").is_some_and(|resolved| {
+                        resolved.is_array() && strings(resolved).iter().any(|id| gone.contains(*id))
+                    });
+                if stale {
+                    object.remove("resolved");
+                    changed = true;
+                }
+                stack.extend(object.values_mut());
+            }
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::String(_) => {}
+        }
+    }
+    changed
+}
+
+/// Removes the `resolved` of every `Transformation` one of whose steps names
+/// a parameter of `bound` (§6.5), and reports whether it removed one.
+pub(super) fn clear_transformations(value: &mut Json, bound: &BTreeSet<String>) -> bool {
+    let mut changed = false;
+    let mut stack = vec![value];
+    while let Some(node) = stack.pop() {
+        match node {
+            Json::Array(items) => stack.extend(items.iter_mut()),
+            Json::Object(object) => {
+                let transformation = object.get("steps").is_some_and(Json::is_array)
+                    && object.contains_key("resolved")
+                    && object.keys().all(|key| key == "steps" || key == "resolved");
+                if transformation
+                    && object
+                        .get("steps")
+                        .is_some_and(|steps| strings(steps).iter().any(|id| bound.contains(*id)))
+                {
+                    object.remove("resolved");
+                    changed = true;
+                }
+                stack.extend(object.values_mut());
+            }
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::String(_) => {}
+        }
+    }
+    changed
+}
+
+/// One target of a model-class record (§8): the ids of the entities it
+/// names, and the state it names them in, `None` for the current geometry.
+#[derive(Debug)]
+pub(super) struct Target {
+    pub(super) ids: Vec<String>,
+    pub(super) state: Option<Json>,
+}
+
+impl Target {
+    /// Whether the target lies in the deleted extent, whose records are
+    /// `lost`, or in a deleted evaluation, whose `StateRef`s are `states`.
+    pub(super) fn deleted(&self, lost: &BTreeSet<String>, states: &[Json]) -> bool {
+        match &self.state {
+            Some(state) => states.contains(state),
+            None => !self.ids.is_empty() && self.ids.iter().all(|id| lost.contains(id)),
+        }
+    }
+}
+
+/// The entity ids a wire value holds: its strings of the id grammar
+/// `<format>:<scope>:<kind>#<key>` (§2.2), not its tags and field names.
+fn entity_ids(value: &Json) -> Vec<String> {
+    strings(value)
+        .into_iter()
+        .filter(|text| {
+            text.split_once('#')
+                .is_some_and(|(space, key)| !key.is_empty() && space.matches(':').count() == 2)
+        })
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The instance target an object spells (`entity`, with `path` and `state`
+/// where stated), or the declared target of a declared measure (`Bodies`, or
+/// `State`).
+pub(super) fn target(object: &Map<String, Json>) -> Option<Target> {
+    let instance = object.contains_key("entity")
+        && object
+            .keys()
+            .all(|key| matches!(key.as_str(), "entity" | "path" | "state"));
+    if instance {
+        return Some(Target {
+            ids: entity_ids(object.get("entity")?),
+            state: object.get("state").cloned(),
+        });
+    }
+    match kind(object)? {
+        "bodies" if object.len() == 2 => Some(Target {
+            ids: entity_ids(object.get("bodies")?),
+            state: None,
+        }),
+        "state"
+            if object.contains_key("of")
+                && object
+                    .keys()
+                    .all(|key| matches!(key.as_str(), "kind" | "configuration" | "of")) =>
+        {
+            let mut state = object.clone();
+            state.remove("kind");
+            Some(Target {
+                ids: Vec::new(),
+                state: Some(Json::Object(state)),
+            })
+        }
+        _ => None,
+    }
+}
+
+/// Every target a model-class record states.
+pub(super) fn targets(record: &Json) -> Vec<Target> {
+    let mut found = Vec::new();
+    let mut stack = vec![record];
+    while let Some(node) = stack.pop() {
+        match node {
+            Json::Array(items) => stack.extend(items),
+            Json::Object(object) => match target(object) {
+                Some(target) => found.push(target),
+                None => stack.extend(object.values()),
+            },
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::String(_) => {}
+        }
+    }
+    found
+}
+
+/// Whether a kept record's wire form names a record of `gone` by id, or a
+/// record of `lost`, the deleted part of the current geometry, outside a
+/// target into another state. A pick by an `Entity` name stays where its
+/// name mentions a deleted record (D51), and a witness holds no reference,
+/// so neither is read.
+pub(super) fn names_deleted(
+    value: &Json,
+    gone: &BTreeSet<String>,
+    lost: &BTreeSet<String>,
+) -> bool {
+    let mut stack = vec![(value, false)];
+    while let Some((node, elsewhere)) = stack.pop() {
+        match node {
+            Json::String(text) => {
+                if gone.contains(text) || (!elsewhere && lost.contains(text)) {
+                    return true;
+                }
+            }
+            Json::Array(items) => stack.extend(items.iter().map(|item| (item, elsewhere))),
+            Json::Object(object) => {
+                let elsewhere =
+                    elsewhere || object.get("state").is_some_and(|state| !state.is_null());
+                for (key, item) in object {
+                    if gone.contains(key) || (!elsewhere && lost.contains(key)) {
+                        return true;
+                    }
+                    let named = key == "target"
+                        && item
+                            .as_object()
+                            .is_some_and(|target| kind(target) == Some("entity"));
+                    if named || key == "witness" {
+                        continue;
+                    }
+                    stack.push((item, elsewhere));
+                }
+            }
+            Json::Null | Json::Bool(_) | Json::Number(_) => {}
+        }
+    }
+    false
 }
 
 /// Removes `cached` from every measure of every neutral expression for which

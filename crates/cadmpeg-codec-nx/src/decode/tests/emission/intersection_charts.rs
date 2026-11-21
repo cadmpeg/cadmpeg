@@ -1194,7 +1194,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
             )
             .expect("charted tolerant intersection evaluates");
             let inverted = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &cadmpeg_ir::index::ModelIndex::build(&ir),
                 owner,
                 evaluated.get(),

@@ -216,6 +216,7 @@ mod tests {
             tangent: Some(crate::units::UnitVector3::X_AXIS),
             faces: DistinctMembers::default(),
             carrier: None,
+            supports: Vec::new(),
         };
         let state = |id, input_of| FeatureInputTopology {
             id,

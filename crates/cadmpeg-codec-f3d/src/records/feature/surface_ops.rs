@@ -189,6 +189,14 @@ pub(crate) enum DesignSurfaceOffsetSupport {
         /// Ordered construction-group records named by the scope.
         group_record_indices: Vec<u32>,
     },
+    BodyCarrier {
+        boundary_record_index: u32,
+        boundary_reference_record_index: u32,
+        boundary_reference_offset: u64,
+        body_record_index: u32,
+        tolerance: cadmpeg_ir::scalar::PositiveReal,
+        tolerance_offset: u64,
+    },
 }
 
 /// Fixed construction records named by a `SurfaceOffset` scope.

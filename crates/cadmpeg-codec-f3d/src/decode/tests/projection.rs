@@ -81,7 +81,7 @@ fn active_face_substitutions_have_a_distinct_loss_note() {
 
     report_design_projection_gaps(
         &mut report,
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &native,
     )
@@ -138,7 +138,7 @@ fn sketch_geometry_flag_is_retained_with_a_loss_note() {
 
     report_design_projection_gaps(
         &mut report,
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &native,
     )
@@ -178,7 +178,7 @@ fn history_past_its_binding_bound_reports_a_loss() {
 
     report_design_projection_gaps(
         &mut report,
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &native,
     )
@@ -244,7 +244,7 @@ fn recipe_side_search_past_its_work_cap_reports_a_loss() {
 
     report_design_projection_gaps(
         &mut report,
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &native,
     )
@@ -303,7 +303,7 @@ fn capped_rectangular_pattern_instance_search_reports_a_loss() {
 
     report_design_projection_gaps(
         &mut report,
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &native,
     )
@@ -359,6 +359,7 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
     }];
     let projection = MeshProjection {
         count: 2,
+        unjoined: 0,
         tessellations_by_scope: std::collections::HashMap::from([(
             ("f3d:Design/BulkStream.dat".into(), 10),
             vec![
@@ -366,6 +367,7 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
                 "test:model:tessellation#a-body".into(),
             ],
         )]),
+        scopeless_tessellations: Vec::new(),
     };
 
     let archive = crate::test_support::zip_test::synthetic_f3d(false);
@@ -1370,12 +1372,14 @@ fn split_body_requires_resolved_target_and_tool_selections() {
     };
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            extend_tool: None,
             targets: resolved_target.clone(),
             tool: cadmpeg_ir::features::SplitBodyTool::Faces(resolved_tool),
         })
     ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            extend_tool: None,
             targets: resolved_target.clone(),
             tool: cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Native(
                 "native:tool".into()
@@ -1384,6 +1388,7 @@ fn split_body_requires_resolved_target_and_tool_selections() {
     ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            extend_tool: None,
             targets: BodySelection::Native("native:target".into()),
             tool: cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Resolved {
                 faces: vec![FaceId::mint("test:model:face#tool").expect("identity grammar")],
@@ -1487,7 +1492,7 @@ fn refused_edge_flange_payload_reports_its_retained_scope_loss() {
     };
     report_design_projection_gaps(
         &mut report,
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &native,
     )
@@ -1515,7 +1520,7 @@ fn emboss_native_and_refused_prefixes_have_exact_scope_losses() {
         cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer::full(true));
     report_design_projection_gaps(
         &mut report,
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &native,
     )
@@ -1558,7 +1563,7 @@ fn emboss_native_and_refused_prefixes_have_exact_scope_losses() {
         cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer::full(true));
     report_design_projection_gaps(
         &mut report,
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &native,
     )
@@ -1645,7 +1650,7 @@ fn move_transform_refusal_reports_exact_loss_for_transform_or_selection() {
         };
         report_design_projection_gaps(
             &mut report,
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &ir,
             &native,
         )
@@ -1698,7 +1703,7 @@ fn typed_profile_ambiguous_selection_retains_profile_loss() {
     };
     report_design_projection_gaps(
         &mut report,
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &F3dNative::default(),
     )
@@ -1782,7 +1787,7 @@ fn stored_body_scope_keeps_opaque_payload_loss_after_history_projection() {
     };
     report_design_projection_gaps(
         &mut report,
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &native,
     )
@@ -1837,7 +1842,7 @@ fn counted_partial_profile_selection_reports_one_loss() {
     };
     report_design_projection_gaps(
         &mut report,
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &F3dNative::default(),
     )
@@ -1874,7 +1879,7 @@ fn refused_assemble_payloads_report_the_retained_scope_loss() {
     };
     report_design_projection_gaps(
         &mut report,
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &native,
     )
@@ -1899,4 +1904,94 @@ fn native_mesh_face_group_sources_remain_incomplete() {
             &FeatureDefinition::Operation(operation)
         ));
     }
+}
+
+#[test]
+fn scopeless_member_mesh_tessellations_belong_to_the_member_file_root() {
+    const MESH: &str = "test:model:tessellation#scopeless-body";
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let mut model = cadmpeg_ir::document::Model::default();
+    super::super::list_member_scopeless_tessellations(&ctx, &mut model, &[MESH.to_owned()])
+        .unwrap();
+    let [root] = model.product_definitions.as_slice() else {
+        panic!("one root definition");
+    };
+    assert_eq!(root.id, crate::tree::file_root_id());
+    assert_eq!(
+        root.tessellations
+            .iter()
+            .map(cadmpeg_ir::tessellation::TessellationId::as_str)
+            .collect::<Vec<_>>(),
+        [MESH]
+    );
+    assert!(root.bodies.is_empty());
+
+    super::super::list_member_scopeless_tessellations(&ctx, &mut model, &[]).unwrap();
+    assert_eq!(model.product_definitions.len(), 1);
+    assert_eq!(model.product_definitions[0].tessellations.len(), 1);
+}
+
+#[test]
+fn a_linked_reverse_normal_scope_without_a_timeline_position_charges_a_loss() {
+    use crate::test_support::reverse_normal::{linked, timeline};
+    const LINK: &str = "180f14e0-154e-434b-acff-8bfbd101803c";
+    const OTHER_LINK: &str = "2a6b1c7d-0e3f-4a5b-9c8d-7e6f5a4b3c2d";
+    const ORDERED_LINK: &str = "3c7d2e8f-1a4b-4c6d-8e9f-0a1b2c3d4e5f";
+    let ir = cadmpeg_ir::document::CadIr::empty();
+    let mut native = F3dNative::default();
+    native.design_parameter_scopes = vec![
+        linked(100, Some(LINK)),
+        linked(200, Some(LINK)),
+        linked(250, Some(LINK)),
+        linked(400, Some(OTHER_LINK)),
+        linked(500, Some(ORDERED_LINK)),
+        linked(550, Some(ORDERED_LINK)),
+        linked(600, Some(ORDERED_LINK)),
+    ];
+    native.design_feature_timelines = vec![timeline(&[100, 200, 500])];
+    let mut report = cadmpeg_ir::codec::DecodeBody {
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+        coverage: cadmpeg_ir::report::decode::Coverage::default(),
+        losses: Vec::new(),
+        notes: Vec::new(),
+        transfer_ledger: Default::default(),
+    };
+
+    report_design_projection_gaps(
+        &mut report,
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &ir,
+        &native,
+    )
+    .unwrap();
+
+    let messages = |code: F3dLossCode| {
+        report
+            .losses
+            .iter()
+            .filter(|loss| loss.code == code.kind())
+            .map(|loss| loss.message.clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        messages(F3dLossCode::FeatureReverseNormalLinkShared),
+        [format!(
+            "Reverse Normal scope {} with link {LINK} takes no timeline position: several timeline items carry that link.",
+            native.design_parameter_scopes[2].id
+        )]
+    );
+    assert_eq!(
+        messages(F3dLossCode::FeatureReverseNormalLinkUnplaced),
+        [format!(
+            "Reverse Normal scope {} with link {OTHER_LINK} takes no timeline position: no timeline item carries that link.",
+            native.design_parameter_scopes[3].id
+        )]
+    );
+    assert_eq!(
+        messages(F3dLossCode::FeatureReverseNormalLinkOrderAssumed),
+        [5, 6].map(|at| format!(
+            "Reverse Normal scope {} with link {ORDERED_LINK} takes its timeline position by record order among the linked scopes of its timeline item.",
+            native.design_parameter_scopes[at].id
+        ))
+    );
 }

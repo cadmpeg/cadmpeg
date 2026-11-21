@@ -37,6 +37,251 @@ fn invalid_parameter_scope_preserves_finding() {
     })
 }
 
+#[test]
+fn assembly_datum_envelope_accepts_a_registered_joint_origin_carrier() {
+    use crate::native::F3dNative;
+    use crate::records::entity_header::{BaseTypeGuid, SegmentType, SegmentTypeData};
+    use crate::records::feature::assembly::{DesignAssemblyAlignment, DesignAssemblyAlignmentForm};
+    use crate::records::feature::scope::{DesignJointOriginReference, DesignScopePayload};
+    use crate::records::feature::work_geometry::joint_origin::DesignJointOriginCarrierEvidence;
+    use crate::records::parameters::{DesignParameterOwner, DesignParameterOwnerWire};
+    use crate::records::sketch_placement::SketchPlacementMatrix;
+
+    fn carrier_evidence(scope: &mut DesignParameterScope) -> &mut DesignJointOriginCarrierEvidence {
+        scope
+            .joint_origin_frame_mut()
+            .unwrap()
+            .carrier
+            .as_mut()
+            .unwrap()
+    }
+
+    let stream = "f3d:Design/BulkStream.dat";
+    let mut assembly = DesignParameterScope::empty(
+        &format!("{stream}:design-parameter-scope#3"),
+        DesignFeatureKind::Assemble,
+        3,
+    );
+    let owners: Vec<_> = (0..8)
+        .map(|ordinal| {
+            let record_index = 50 + ordinal * 3;
+            let byte_offset = 2048 + 104 * u64::from(ordinal);
+            DesignParameterOwner::try_from(DesignParameterOwnerWire {
+                id: format!("{stream}:design-parameter-owner#{record_index}"),
+                byte_offset,
+                frame_length: 104,
+                class_tag: "457".to_owned().try_into().unwrap(),
+                record_index,
+                scope_record_index: assembly.record_index,
+                local_ordinal: ordinal,
+                evaluated_value: 0.0,
+                evaluated_value_offset: byte_offset + 40,
+                parameter_record_index: record_index + 1,
+                owned_ordinal: ordinal,
+                variant: Some(0),
+                companion_record_index: record_index + 2,
+            })
+            .unwrap()
+        })
+        .collect();
+    let mut origin = DesignParameterScope::empty(
+        &format!("{stream}:design-parameter-scope#91"),
+        DesignFeatureKind::JointOrigin,
+        91,
+    );
+    let origin_offset = 1024;
+    let carrier_index = origin.record_index + 1;
+    let construction = 90;
+    assembly
+        .try_edit(|draft| {
+            draft.class_tag = "276".to_owned().try_into().unwrap();
+            draft.paired_class_tag = "258".to_owned().try_into().unwrap();
+            draft.frame_length = 604;
+            draft.paired_byte_offset = 604;
+            draft.reference_count_offset = 360;
+            draft.reference_members = ReferenceRun::unlocated(
+                std::iter::once(construction)
+                    .chain(owners.iter().map(DesignParameterOwner::record_index))
+                    .collect(),
+            );
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+            draft.payload = DesignScopePayload::Assemble(Some(
+                DesignAssemblyAlignment::try_new(
+                    0.0,
+                    [0.0; 3],
+                    owners[4..]
+                        .iter()
+                        .map(|owner| Located {
+                            value: owner.record_index(),
+                            offset: owner.evaluated_value_offset(),
+                        })
+                        .collect(),
+                    Some(DesignAssemblyAlignmentForm::DatumEnvelope {
+                        joint_origin_scope_record_index: origin.record_index,
+                    }),
+                )
+                .unwrap(),
+            ));
+        })
+        .unwrap();
+    origin
+        .try_edit(|draft| {
+            draft.byte_offset = origin_offset;
+            draft.frame_length = 315;
+            draft.paired_byte_offset = origin_offset + draft.frame_length;
+            draft.reference_count_offset = origin_offset + 132;
+            draft.reference_members = ReferenceRun::unlocated(vec![carrier_index, construction]);
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    origin.with_joint_origin_transform(SketchPlacementMatrix::IDENTITY);
+    let carrier_start = origin.paired_byte_offset() + 30;
+
+    let type_row = |byte_offset, guid: &str, version, index| {
+        SegmentType::try_new(
+            format!("f3d:Design/MetaStream.dat:design-type#{byte_offset}"),
+            SegmentTypeData {
+                byte_offset,
+                type_guid: guid.to_owned().try_into().unwrap(),
+                type_guid_offset: byte_offset + 4,
+                base_type_guid: BaseTypeGuid::Absent,
+                version,
+                version_offset: byte_offset + 44,
+                module: "Fusion".into(),
+                entities: ReferenceRun::unlocated(vec![index]),
+            },
+        )
+        .unwrap()
+    };
+    let headers = [
+        (
+            assembly.record_index,
+            assembly.byte_offset(),
+            assembly.class_tag.clone(),
+        ),
+        (
+            origin.record_index,
+            origin.byte_offset(),
+            origin.class_tag.clone(),
+        ),
+        (construction, 1800, "301".to_owned().try_into().unwrap()),
+    ]
+    .into_iter()
+    .chain(owners.iter().map(|owner| {
+        (
+            owner.record_index(),
+            owner.byte_offset(),
+            owner.class_tag().clone(),
+        )
+    }))
+    .map(
+        |(record_index, byte_offset, class_tag)| DesignRecordHeader {
+            id: format!("{stream}:design-record-header#{record_index}"),
+            record_index,
+            byte_offset,
+            class_tag,
+        },
+    )
+    .collect();
+    let assembly_id = assembly.id.clone();
+    let mut native = F3dNative {
+        design_types: vec![
+            type_row(
+                0,
+                "02E8AA49-08B8-439C-A8C7-221BE20143D8",
+                2,
+                u64::from(origin.record_index),
+            ),
+            type_row(
+                100,
+                "7B6C3C2D-4096-4E6D-B225-699E8C2D9355",
+                6,
+                u64::from(carrier_index),
+            ),
+        ],
+        design_parameter_scopes: vec![assembly, origin],
+        design_parameter_owners: owners,
+        design_record_headers: headers,
+        ..Default::default()
+    };
+    native.design_record_headers.push(DesignRecordHeader {
+        id: format!("{stream}:design-record-header#{carrier_index}"),
+        record_index: carrier_index,
+        byte_offset: carrier_start,
+        class_tag: "153".to_owned().try_into().unwrap(),
+    });
+    let set_frame = |native: &mut F3dNative, transform_offset, reference_offset| {
+        let frame = native.design_parameter_scopes[1]
+            .joint_origin_frame_mut()
+            .unwrap();
+        frame.joint_origin_transform_offset = transform_offset;
+        frame.reference = Some(DesignJointOriginReference {
+            joint_origin_reference: construction,
+            joint_origin_reference_offset: reference_offset,
+        });
+    };
+    crate::test_support::with_decode_context(|decode| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let findings = |native: &F3dNative| {
+            let ctx = super::super::Ctx::new(&ir, native, decode);
+            let mut findings = Vec::new();
+            super::super::validate_parameter_scopes(&ctx, &mut findings).unwrap();
+            findings
+        };
+        set_frame(&mut native, 36, 25);
+        assert!(findings(&native).is_empty());
+        set_frame(&mut native, carrier_start + 60, carrier_start + 46);
+        let mut prefix = vec![0; 34];
+        crate::test_support::push_marked_reference(&mut prefix, construction);
+        prefix.extend_from_slice(&[0; 4]);
+        let mut scope_backlink = Vec::new();
+        crate::test_support::push_marked_reference(&mut scope_backlink, 91);
+        native.design_parameter_scopes[1]
+            .joint_origin_frame_mut()
+            .unwrap()
+            .carrier = Some(DesignJointOriginCarrierEvidence {
+            frame_length: 369,
+            prefix: prefix.into(),
+            scope_backlink: scope_backlink.as_slice().try_into().unwrap(),
+        });
+        let encoded = serde_json::to_value(&native.design_parameter_scopes[1]).unwrap();
+        native.design_parameter_scopes[1] = serde_json::from_value(encoded).unwrap();
+        let valid = findings(&native);
+        assert!(valid.is_empty(), "{valid:?}");
+
+        let assert_invalid = |native: &F3dNative| {
+            let invalid = findings(native);
+            assert!(invalid.iter().any(|finding| {
+                finding.check == cadmpeg_ir::report::check::Check::NativeLinks
+                    && finding.entity.as_deref() == Some(assembly_id.as_str())
+            }));
+        };
+        for prefix_index in [0, 34, 35, 47] {
+            let mut invalid = native.clone();
+            carrier_evidence(&mut invalid.design_parameter_scopes[1]).prefix[prefix_index] ^= 1;
+            assert_invalid(&invalid);
+        }
+        let mut invalid = native.clone();
+        carrier_evidence(&mut invalid.design_parameter_scopes[1]).scope_backlink[1] ^= 1;
+        assert_invalid(&invalid);
+        let mut invalid = native.clone();
+        carrier_evidence(&mut invalid.design_parameter_scopes[1]).frame_length += 1;
+        assert_invalid(&invalid);
+        let mut invalid = native.clone();
+        set_frame(&mut invalid, 36, 25);
+        assert_invalid(&invalid);
+        let mut invalid = native.clone();
+        invalid
+            .design_record_headers
+            .retain(|header| header.record_index != construction);
+        assert_invalid(&invalid);
+        native.design_record_headers.last_mut().unwrap().byte_offset += 1;
+        assert_invalid(&native);
+    });
+}
+
 /// A role-`0x10` construction group with record index `record_index`, owned
 /// by `OffsetFaces` scope record 17.
 fn offset_faces_group(
@@ -277,88 +522,6 @@ fn operand_list_combine_requires_its_own_offsets() {
     assert_eq!(findings(25, 44, true), 1);
     assert_eq!(findings(21, 80, true), 1);
     assert_eq!(findings(21, 79, false), 1);
-}
-
-#[test]
-fn placement_ordered_owner_count_and_references_match_the_frame() {
-    use crate::records::feature::{
-        assembly::{DesignAssemblyAlignment, DesignAssemblyOwnerRun},
-        scope::{DesignFeatureKind, DesignParameterScope},
-    };
-    use crate::records::identity::{Located, ReferenceRun};
-    let owners = [(0, 50), (1, 51), (2, 52), (3, 53), (4, 54), (5, 55)];
-    let mut scope = DesignParameterScope::empty(
-        "f3d:Design/BulkStream.dat:design-parameter-scope#10",
-        DesignFeatureKind::AsBuilt,
-        10,
-    );
-    scope
-        .try_edit(|draft| {
-            draft.frame_length = 422;
-            draft.paired_byte_offset = draft.byte_offset + 422;
-            draft.reference_members =
-                ReferenceRun::unlocated(vec![80, 50, 51, 52, 53, 81, 82, 83, 84, 54, 55]);
-            draft.layout_fixture_references();
-            draft.layout_fixture_tail();
-        })
-        .unwrap();
-    let mut alignment = DesignAssemblyAlignment::try_new(
-        0.0,
-        [0.0; 3],
-        (50..54).map(|value| Located { value, offset: 0 }).collect(),
-        None,
-    )
-    .unwrap();
-    alignment.additional_owner_run = Some(DesignAssemblyOwnerRun {
-        count: Located {
-            value: 2,
-            offset: scope.byte_offset() + 43,
-        },
-        references: vec![
-            Located {
-                value: 54,
-                offset: scope.byte_offset() + 47,
-            },
-            Located {
-                value: 55,
-                offset: scope.byte_offset() + 58,
-            },
-        ],
-    });
-    let holds = |alignment: &DesignAssemblyAlignment| {
-        super::super::placement_ordered_references_hold(&scope, alignment, &owners)
-    };
-    assert!(holds(&alignment));
-    let mut absent = alignment.clone();
-    absent.additional_owner_run = None;
-    assert!(!holds(&absent));
-    for value in [0, 1, 3] {
-        let mut changed = alignment.clone();
-        changed.additional_owner_run.as_mut().unwrap().count.value = value;
-        assert!(!holds(&changed));
-    }
-    let mut changed = alignment.clone();
-    changed.additional_owner_run.as_mut().unwrap().references[1].value = 54;
-    assert!(!holds(&changed));
-    let mut changed = alignment.clone();
-    changed.additional_owner_run.as_mut().unwrap().references[0].offset += 1;
-    assert!(!holds(&changed));
-    let mut changed = alignment.clone();
-    changed.additional_owner_run.as_mut().unwrap().count.offset += 1;
-    assert!(!holds(&changed));
-    let mut changed = alignment.clone();
-    changed
-        .additional_owner_run
-        .as_mut()
-        .unwrap()
-        .references
-        .pop();
-    assert!(!holds(&changed));
-    assert!(!super::super::placement_ordered_references_hold(
-        &scope,
-        &alignment,
-        &owners[..5]
-    ));
 }
 
 #[test]

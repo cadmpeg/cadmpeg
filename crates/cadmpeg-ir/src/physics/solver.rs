@@ -2,9 +2,9 @@
 //! Settings that one physics solver states for a model record.
 //!
 //! A record holds the properties of one solver schema, such as a `PhysX` API
-//! schema, on one target. A real value carries the dimension that converts
-//! it between unit systems: it is stored in millimetres, kilograms, and
-//! radians raised to the dimension's exponents.
+//! schema, on one target. A real value carries the quantity that converts
+//! it between unit systems: it is stored in millimetres, kilograms, radians,
+//! and seconds raised to the quantity's exponents.
 
 use std::collections::BTreeMap;
 
@@ -12,6 +12,7 @@ use std::collections::BTreeMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::design::units::Quantity;
 use crate::ids::{
     ArticulationId, BodyId, ColliderId, OccurrenceId, PhysicalMaterialId, PhysicsSceneId,
     ProductDefinitionId, SolverSettingsId,
@@ -21,7 +22,7 @@ use crate::references::InstanceTarget;
 use crate::scalar::FiniteReal;
 
 /// The model record that solver settings apply to.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SolverTarget {
@@ -67,56 +68,8 @@ pub enum SolverTarget {
     },
 }
 
-/// The exponents of length, mass, and angle in the unit of a real value.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-pub struct Dimension {
-    /// Exponent of length; the value is in millimetres to this power.
-    pub length: i8,
-    /// Exponent of mass; the value is in kilograms to this power.
-    pub mass: i8,
-    /// Exponent of angle; the value is in radians to this power.
-    pub angle: i8,
-}
-
-impl Dimension {
-    /// A dimensionless value.
-    pub const NONE: Self = Self {
-        length: 0,
-        mass: 0,
-        angle: 0,
-    };
-
-    /// The dimension with these exponents.
-    #[must_use]
-    pub const fn new(length: i8, mass: i8, angle: i8) -> Self {
-        Self {
-            length,
-            mass,
-            angle,
-        }
-    }
-
-    /// Whether every exponent is zero.
-    #[must_use]
-    pub fn is_none(&self) -> bool {
-        *self == Self::NONE
-    }
-
-    /// The factor that converts a value of this dimension from a unit
-    /// system of `millimetres`, `kilograms`, and `radians` per unit to
-    /// millimetres, kilograms, and radians.
-    #[must_use]
-    pub fn factor(&self, millimetres: f64, kilograms: f64, radians: f64) -> f64 {
-        millimetres.powi(i32::from(self.length))
-            * kilograms.powi(i32::from(self.mass))
-            * radians.powi(i32::from(self.angle))
-    }
-}
-
 /// One solver property value.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SolverValue {
@@ -130,24 +83,24 @@ pub enum SolverValue {
         /// The value.
         value: i64,
     },
-    /// A real value in the units its dimension states.
+    /// A real value in the canonical unit of its quantity.
     Real {
         /// The value.
         value: FiniteReal,
-        /// The unit of the value.
-        dimension: Dimension,
+        /// The quantity of the value.
+        dimension: Quantity,
     },
     /// An infinite real value: no bound.
     Unbounded {
         /// Whether the value is negative infinity.
         negative: bool,
     },
-    /// Real values in the units their dimension states.
+    /// Real values in the canonical unit of their quantity.
     Reals {
         /// The values.
         values: Vec<FiniteReal>,
-        /// The unit of every value.
-        dimension: Dimension,
+        /// The quantity of every value.
+        dimension: Quantity,
     },
     /// A token from the schema's vocabulary.
     Token {

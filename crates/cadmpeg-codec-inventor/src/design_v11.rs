@@ -19,8 +19,10 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::CadIr;
 
 mod datums;
+mod operations;
 mod parameters;
 mod sheet_metal;
+mod sketches;
 
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
@@ -56,8 +58,16 @@ pub(crate) fn project(
         .collect();
     project_history(ctx, ir, &flags)?;
     parameters::project(ctx, ir, parameters, units)?;
+    sketches::project(ctx, ir)?;
     datums::project(ctx, ir)?;
-    sheet_metal::project(ctx, ir, features, parameters, losses)
+    sheet_metal::project(ctx, ir, features, parameters, losses)?;
+    operations::project(ctx, ir, losses)
+}
+
+pub(crate) fn validate_operations(
+    ir: &CadIr,
+) -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
+    operations::validate(ir)
 }
 
 fn project_history(

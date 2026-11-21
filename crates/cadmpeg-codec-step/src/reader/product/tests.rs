@@ -1586,3 +1586,19 @@ END-ISO-10303-21;"
         assert_eq!(decoded.ir().geometry.faces.len(), 1);
     }
 }
+
+#[test]
+fn an_assembly_shape_with_no_body_of_its_own_is_not_reported() {
+    let bytes = include_bytes!("../../../tests/fixtures/ap242_assembly.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode AP242 assembly");
+    let reported = |owner: &str| {
+        result.report().losses.iter().any(|loss| {
+            loss.message
+                == format!("{owner} has a shape representation with no committed topology body")
+        })
+    };
+    assert!(!reported("PRODUCT_DEFINITION #6"));
+    assert!(reported("PRODUCT_DEFINITION #10"));
+}

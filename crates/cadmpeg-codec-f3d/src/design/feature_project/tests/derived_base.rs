@@ -41,6 +41,7 @@ fn derived(
             offset: 0,
         },
         repeat_offset: 0,
+        result_body: None,
     });
     scope
 }
@@ -143,6 +144,7 @@ fn a_derived_base_group_yields_to_a_claimed_owner_or_a_positioned_member() {
                 owner_record: 50,
                 owner_reference_offset: 0,
                 copy_sources: Vec::new(),
+                owner_timeline_name: None,
             },
         );
     }

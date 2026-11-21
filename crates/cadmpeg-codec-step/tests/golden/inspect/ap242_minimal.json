@@ -76,7 +76,13 @@
           "namespace": "step"
         }
       },
+      "count": 1,
       "message": "preserved 1 EXAMPLE_RECORD instance(s) as named opaque STEP records",
+      "provenance": {
+        "format": "step",
+        "offset": 267,
+        "tag": "EXAMPLE_RECORD"
+      },
       "severity": "warning"
     },
     {
@@ -88,7 +94,13 @@
           "namespace": "step"
         }
       },
+      "count": 1,
       "message": "preserved 1 OPAQUE_TARGET instance(s) as named opaque STEP records",
+      "provenance": {
+        "format": "step",
+        "offset": 337,
+        "tag": "OPAQUE_TARGET"
+      },
       "severity": "warning"
     }
   ],

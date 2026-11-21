@@ -26,7 +26,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 
-use cadmpeg_core::decode::{DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit};
+use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 use cadmpeg_ir::report::check::{Check, Finding};
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::topology::LoopBoundary;
@@ -38,7 +38,7 @@ use crate::canonical::placement::Placement;
 use crate::context::{Eval, Work};
 use crate::edges::{measure_edge, EdgeGeometry};
 use crate::face::{FaceInput, FaceResult, Verdict};
-use crate::failure::{settle, Outcome};
+use crate::failure::Outcome;
 use crate::reason::CaveatCode;
 use crate::report::{ListedOrder, NormalReading, WitnessKind};
 use crate::traversal::{traverse_counted, TraversalError};
@@ -71,20 +71,7 @@ impl<'ir> Measurer<'ir> {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<Finding>, ResourceLimit> {
-        let geometry = &self.input.ir.geometry;
-        let items = geometry.faces.len() + geometry.edges.len();
-        let Some(allowance) = self.options.work.findings_allowance(items) else {
-            return Err(ResourceLimit {
-                scope: cadmpeg_core::decode::LimitScope::for_dimension(ResourceDimension::Entities),
-                dimension: ResourceDimension::Entities,
-                reason: ResourceFailure::BudgetExceeded,
-                limit: 0,
-                used: cadmpeg_core::decode::u64_from_index(items),
-                additional: 0,
-                operation: "measurement findings allowance",
-            });
-        };
-        self.findings_under(ctx, &PassAllowance::findings(allowance))
+        self.findings_under(ctx, &self.pass("measurement findings allowance")?)
     }
 
     /// The findings under `pass`. A face or edge whose slice refused a
@@ -99,17 +86,7 @@ impl<'ir> Measurer<'ir> {
         let (mut findings, mut unchecked) = self.ring_findings(pass);
         let mut starved: BTreeSet<&'ir str> = BTreeSet::new();
 
-        let placements: HashMap<&'ir str, Outcome<Placement>> = geometry
-            .bodies
-            .iter()
-            .map(|body| {
-                let placement = match body.transform {
-                    Some(transform) => settle(Placement::of(transform)),
-                    None => Ok(Ok(Placement::identity())),
-                };
-                placement.map(|placement| (body.id.as_str(), placement))
-            })
-            .collect::<Result<_, ResourceLimit>>()?;
+        let placements = self.body_placements()?;
         let placement_of = |body: Option<&str>| -> Outcome<Placement> {
             body.and_then(|body| placements.get(body))
                 .cloned()
@@ -467,7 +444,7 @@ mod tests {
             geometry_transferred: true,
         };
         Measurer::new(input, MeasureOptions::default())
-            .findings_under(&ctx, &PassAllowance::findings(allowance))
+            .findings_under(&ctx, &PassAllowance::new(allowance))
             .expect("findings")
     }
 

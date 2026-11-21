@@ -4,10 +4,10 @@ use std::collections::HashMap;
 
 use crate::bytes::reference_fields::ReadField;
 use crate::design::decode::scopes::point_data::POINT_DATA_TYPE_GUID;
-use crate::design::decode::scopes::point_direction::POINT_DIRECTION_TYPE_GUID;
 use crate::loss::F3dLossCode;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::feature::work_axes::{DesignWorkAxisConstruction, DesignWorkAxisSource};
+use crate::records::feature::work_geometry::POINT_DIRECTION_TYPE_GUID;
 use crate::test_support::indexed_header;
 use cadmpeg_ir::features::FeatureOperation;
 
@@ -19,6 +19,7 @@ const RECIPE_GUID: &str = "5662F619-2281-4AD9-93DC-1FCFDA1062E7";
 enum Input {
     Plain(u32),
     Typed(u32),
+    CrossSegment(u32),
 }
 
 struct Carrier {
@@ -76,6 +77,12 @@ impl Carrier {
                     bytes.extend_from_slice(&u64::from(*target).to_le_bytes());
                     bytes.extend_from_slice(&36u32.to_le_bytes());
                     bytes.extend_from_slice(RECIPE_GUID.as_bytes());
+                }
+                Input::CrossSegment(target) => {
+                    bytes.extend_from_slice(&u64::from(*target).to_le_bytes());
+                    bytes.extend_from_slice(&[0, 1]);
+                    bytes.extend_from_slice(&7u32.to_le_bytes());
+                    continue;
                 }
             }
             bytes.extend_from_slice(&[0, 0]);
@@ -388,6 +395,45 @@ fn two_point_rule_reads_the_point_data_endpoints() {
             ..
         })
     ));
+}
+
+#[test]
+fn qualified_axis_input_keeps_the_solved_axis_without_binding_a_local_alias() {
+    for reference_type in [12, 18] {
+        let mut bytes = Vec::new();
+        Carrier {
+            inputs: vec![Input::Plain(FIRST_INPUT), Input::CrossSegment(SECOND_INPUT)],
+            ..Carrier::new([2.0, 1.0, -4.0, 0.0, -0.4, 0.0, 0.0, 0.0], reference_type)
+        }
+        .write(&mut bytes);
+        write_point_data(&mut bytes, FIRST_INPUT, [2.0, 1.0, -4.0]);
+        write_point_data(&mut bytes, SECOND_INPUT, [2.0, 0.6, -4.0]);
+        let mut types = carrier_types(1);
+        types.insert(u64::from(FIRST_INPUT), (POINT_DATA_TYPE_GUID, 1));
+        types.insert(u64::from(SECOND_INPUT), (POINT_DATA_TYPE_GUID, 1));
+        let read = read(&bytes, &types);
+        let axis = read.axis().expect("solved axis with qualified input");
+        let direction = axis.direction().unwrap().get();
+        for (actual, expected) in [direction.x, direction.y, direction.z]
+            .into_iter()
+            .zip([0.0, -1.0, 0.0])
+        {
+            assert!((actual - expected).abs() < 1.0e-12);
+        }
+        let [local, qualified] = axis.inputs() else {
+            panic!("two input occurrences");
+        };
+        assert!(local.reference.is_some() && local.role.is_none());
+        assert!(qualified.reference.is_none() && qualified.role.is_none());
+        let Some(DesignWorkAxisSource::PointDirection { inputs, .. }) =
+            &read.evidence.candidates[0].source
+        else {
+            panic!("point and direction carrier");
+        };
+        let qualified = &inputs.references[1];
+        assert_eq!(qualified.target, ReadField::Value(u64::from(SECOND_INPUT)));
+        assert_eq!(qualified.segment, ReadField::Value(7));
+    }
 }
 
 #[test]

@@ -75,6 +75,7 @@ fn scope_with(
                     side_extent_discriminator_offsets: [177, 190],
                     first_side_target_ordinal: None,
                     distance_tail: None,
+                    opaque_distance_word: None,
                     extent,
                     direction_face_extend_offsets: [132, 136],
                     direction_reversed: false,
@@ -289,7 +290,7 @@ fn notes(
     };
     report_design_projection_gaps(
         &mut report,
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         native,
     )
@@ -386,6 +387,37 @@ fn distance_and_through_all_reports_its_auxiliary_selection() {
 }
 
 #[test]
+fn one_sided_distance_reports_its_auxiliary_selection() {
+    let code = F3dLossCode::FeatureExtrudeAuxiliarySelectionNative;
+    let mut native = native_with(scope(
+        DesignExtrudeExtent::OneSidedDistance,
+        DesignExtrudeStart::ProfilePlane,
+    ));
+    native.design_construction_operand_groups.push(group(
+        13,
+        DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5),
+    ));
+    assert_eq!(
+        notes(
+            &native,
+            definition(SCOPE_ID, profile_plane(), one_sided()),
+            code
+        ),
+        [format!(
+            "Extrude {FEATURE_ID} retains an auxiliary selection in its native scope (DR-328)."
+        )]
+    );
+
+    native.design_construction_operand_groups.clear();
+    assert!(notes(
+        &native,
+        definition(SCOPE_ID, profile_plane(), one_sided()),
+        code
+    )
+    .is_empty());
+}
+
+#[test]
 fn target_options_zero_and_two_report_the_assumed_terminations() {
     let code = F3dLossCode::FeatureExtrudeTargetOptionAssumed;
     let expected = [format!(
@@ -477,6 +509,35 @@ fn selected_face_start_read_as_offset_plane_reports_the_absent_start_group() {
 }
 
 #[test]
+fn group_free_extrude_start_reports_the_unresolved_face() {
+    let code = F3dLossCode::FeatureExtrudeStartFaceUnresolved;
+    let native_code = F3dLossCode::FeatureFaceSelectionNative;
+    let native = native_with(scope(
+        DesignExtrudeExtent::OneSidedDistance,
+        DesignExtrudeStart::FromFace,
+    ));
+    let start = |face| serde_json::json!({"kind": "from_face", "face": face, "offset": -5.0});
+    let unresolved = definition(
+        SCOPE_ID,
+        start(serde_json::json!({"kind": "unresolved"})),
+        one_sided(),
+    );
+    assert_eq!(notes(&native, unresolved.clone(), code).len(), 1);
+    assert!(notes(&native, unresolved, native_code).is_empty());
+
+    let native_face = definition(
+        SCOPE_ID,
+        start(serde_json::json!({
+            "kind": "native",
+            "value": format!("{STREAM}:operand-group#13")
+        })),
+        one_sided(),
+    );
+    assert!(notes(&native, native_face.clone(), code).is_empty());
+    assert_eq!(notes(&native, native_face, native_code).len(), 1);
+}
+
+#[test]
 fn symmetric_distance_without_a_measurement_word_reports_its_reading() {
     let code = F3dLossCode::FeatureExtrudeSymmetricDistanceAssumed;
     let symmetric = || {
@@ -513,11 +574,35 @@ fn symmetric_distance_without_a_measurement_word_reports_its_reading() {
         }),
     );
     assert_eq!(
-        notes(&native_with(fixed), symmetric(), code),
+        notes(&native_with(fixed.clone()), symmetric(), code),
         [format!(
             "Extrude {FEATURE_ID} assumes the symmetric distance applies to each side (DR-78)."
         )]
     );
+
+    for scope in [
+        scope(
+            DesignExtrudeExtent::SymmetricDistance,
+            DesignExtrudeStart::ProfilePlane,
+        ),
+        fixed,
+    ] {
+        let legacy = crate::design::test_support::legacy_symmetric_extrude_scope(
+            scope,
+            [101, 100, 11, 12, 13],
+        );
+        let mut native = native_with(legacy);
+        native
+            .design_parameters
+            .push(parameter(40, "AlongDistance", 0.2));
+        native.design_parameter_owners.push(owner(40));
+        assert_eq!(
+            notes(&native, symmetric(), code),
+            [format!(
+                "Extrude {FEATURE_ID} assumes the symmetric distance applies to the whole travel (DR-78)."
+            )]
+        );
+    }
 
     let mut two_lanes = scope(
         DesignExtrudeExtent::SymmetricDistance,

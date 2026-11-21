@@ -17,11 +17,21 @@ use cadmpeg_ir::ids::FaceId;
 use serde::Deserialize;
 use serde::Serialize;
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub(crate) struct RegisteredFaceRecipeFrame {
+    pub(crate) record_index: u32,
+    pub(crate) primary_offset: u64,
+    pub(crate) secondary_offset: u64,
+    pub(crate) end_offset: u64,
+    pub(crate) next_primary_index: Option<u64>,
+}
+
 /// Face-selection operand owned by a parameter scope.
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(try_from = "DesignFaceOperandWire")]
 pub(crate) struct DesignFaceOperand {
     frame: crate::records::frame_chain::RecordFrameChain,
+    registered_recipe_frame: Option<RegisteredFaceRecipeFrame>,
     /// Globally unique deterministic identifier for this native operand.
     pub(crate) id: String,
     /// Owning parameter-scope record.
@@ -92,6 +102,7 @@ impl Clone for DesignFaceOperand {
         FACE_OPERAND_CLONE_COUNT.with(|count| count.set(count.get() + 1));
         Self {
             frame: self.frame,
+            registered_recipe_frame: self.registered_recipe_frame,
             id: self.id.clone(),
             scope_record_index: self.scope_record_index,
             scope_reference_ordinal: self.scope_reference_ordinal,
@@ -166,6 +177,8 @@ impl Serialize for DesignFaceOperand {
             resolved_active_face: Option<&'a FaceId>,
             next_record_index: u32,
             next_byte_offset: u64,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            registered_recipe_frame: Option<RegisteredFaceRecipeFrame>,
         }
         BorrowedWire {
             id: &self.id,
@@ -199,6 +212,7 @@ impl Serialize for DesignFaceOperand {
             resolved_active_face: self.resolved_active_face.as_ref(),
             next_record_index: self.next_record_index,
             next_byte_offset: self.next_byte_offset,
+            registered_recipe_frame: self.registered_recipe_frame,
         }
         .serialize(serializer)
     }
@@ -227,6 +241,7 @@ impl DesignFaceOperand {
         )?;
         let value = Self {
             frame,
+            registered_recipe_frame: None,
             id: draft.id,
             scope_record_index: draft.scope_record_index,
             scope_reference_ordinal: draft.scope_reference_ordinal,
@@ -260,6 +275,32 @@ impl DesignFaceOperand {
             return Err("recipe_prefix_offset disagrees with frame layout".into());
         }
         Ok(value)
+    }
+    pub(crate) fn with_registered_recipe_frame(
+        mut self,
+        proof: Option<RegisteredFaceRecipeFrame>,
+    ) -> Result<Self, String> {
+        if let Some(frame) = proof {
+            if frame.record_index != self.recipe_record_index()
+                || frame.primary_offset != self.recipe_record_byte_offset
+                || frame.record_index != self.next_record_index
+                || frame.secondary_offset != self.next_byte_offset
+                || frame.next_primary_index == Some(u64::from(frame.record_index))
+                || frame
+                    .secondary_offset
+                    .checked_add(cadmpeg_core::decode::u64_from_index(
+                        crate::layout::indexed_design_record_header::LEN,
+                    ))
+                    .is_none_or(|end| end > frame.end_offset)
+            {
+                return Err("registered recipe frame disagrees with operand".into());
+            }
+        }
+        self.registered_recipe_frame = proof;
+        Ok(self)
+    }
+    pub(crate) fn registered_recipe_frame(&self) -> Option<RegisteredFaceRecipeFrame> {
+        self.registered_recipe_frame
     }
     #[cfg(test)]
     pub(crate) fn into_draft(self) -> DesignFaceOperandDraft {
@@ -482,6 +523,12 @@ struct DesignFaceOperandWire {
     next_record_index: u32,
     /// Byte offset of the indexed record following the operand frame.
     next_byte_offset: u64,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_registered_recipe_frame"
+    )]
+    registered_recipe_frame: Option<RegisteredFaceRecipeFrame>,
 }
 
 impl TryFrom<DesignFaceOperandWire> for DesignFaceOperand {
@@ -507,6 +554,7 @@ impl TryFrom<DesignFaceOperandWire> for DesignFaceOperand {
                 )
             }
         };
+        let proof = wire.registered_recipe_frame;
         Self::try_new(DesignFaceOperandDraft {
             id: wire.id,
             scope_record_index: wire.scope_record_index,
@@ -537,13 +585,15 @@ impl TryFrom<DesignFaceOperandWire> for DesignFaceOperand {
             resolved_active_face: wire.resolved_active_face,
             next_record_index: wire.next_record_index,
             next_byte_offset: wire.next_byte_offset,
-        })
+        })?
+        .with_registered_recipe_frame(proof)
     }
 }
 
 #[cfg(test)]
 impl From<DesignFaceOperand> for DesignFaceOperandWire {
     fn from(operand: DesignFaceOperand) -> Self {
+        let registered_recipe_frame = operand.registered_recipe_frame;
         let operand = operand.into_draft();
         let recipe_node_offsets = operand
             .recipe_nodes
@@ -582,6 +632,7 @@ impl From<DesignFaceOperand> for DesignFaceOperandWire {
             resolved_active_face: operand.resolved_active_face,
             next_record_index: operand.next_record_index,
             next_byte_offset: operand.next_byte_offset,
+            registered_recipe_frame,
         }
     }
 }
@@ -857,15 +908,26 @@ impl DesignFaceRecipeNode {
 }
 
 impl DesignFaceRecipeStructure {
+    /// Whether the node has two endpoint clauses and valid operand ordinals.
     pub(crate) fn has_valid_operand_ordinals(&self, references: &[DesignRecipeReference]) -> bool {
+        self.sides.len() == 2 && self.has_valid_boundary_edge_ordinals(references)
+    }
+
+    /// Whether the node has one or two endpoint clauses, as its second
+    /// prelude value states, and every ordinal names a prefix operand. A
+    /// one-clause node names a closed boundary edge.
+    pub(crate) fn has_valid_boundary_edge_ordinals(
+        &self,
+        references: &[DesignRecipeReference],
+    ) -> bool {
         let Some(ordinals) = prefix_operand_ordinals(references) else {
             return false;
         };
         let operand_count = ordinals.iter().max().map_or(0, |ordinal| ordinal + 1);
         let in_range =
             |value: i32| usize::try_from(value).is_ok_and(|ordinal| ordinal < operand_count);
-        self.prelude[1] == 2
-            && self.sides.len() == 2
+        matches!(self.prelude[1], 1 | 2)
+            && usize::try_from(self.prelude[1]).is_ok_and(|count| count == self.sides.len())
             && in_range(self.root)
             && in_range(self.prelude[0])
             && self.sides.iter().all(|side| {
@@ -901,6 +963,12 @@ fn deserialize_face_recipe_postlude<'de, D: serde::Deserializer<'de>>(
         )),
     }
 }
+
+cadmpeg_core::named_optional_field!(
+    deserialize_registered_recipe_frame,
+    RegisteredFaceRecipeFrame,
+    "registered_recipe_frame"
+);
 
 cadmpeg_core::named_optional_field!(deserialize_group_record_index, u32, "group_record_index");
 

@@ -2,7 +2,7 @@
 //! Identity rewrite implementations for feature records.
 
 use super::boundary_fill::BoundaryFillCell;
-use super::surfaces::{SilhouetteSplitMode, UntrimLoops};
+use super::surfaces::{SilhouetteSplitMode, SplitFaceMethod, UntrimLoops};
 use super::{
     AngularTermination, AxisAngle, BinderConstruction, BinderSource, BinderTarget, BodyMember,
     BodyMembers, BodySelection, CapturedComponentPosition, CapturedPositionTransform,
@@ -305,8 +305,8 @@ Thicken { faces, thickness, side, result, tangent_chain },
     CutWithSurface { targets, tools, reverse },
     TrimBodies { operands, keep },
     TrimBodiesAtPlane { targets, plane, keep },
-    SplitBody { targets, tool },
-    SplitFace { targets, tool },
+    SplitBody { targets, tool, extend_tool },
+    SplitFace { targets, tool, method },
     SilhouetteSplit { target, direction, mode },
     DeleteBody { bodies, mode },
     DeleteFace { faces, heal },
@@ -556,9 +556,18 @@ rewrite_enum!(SplitBodyTool, []; {
 });
 
 rewrite_enum!(SplitFaceTool, []; {
+    Faces(field0),
+    Native(field0),
     Path(field0),
     Plane { plane },
     Planes { planes },
+});
+
+rewrite_enum!(SplitFaceMethod, []; {
+    Unresolved {},
+    SurfaceIntersection { extend },
+    ClosestPoint {},
+    AlongVector { direction, native_carrier, native_inputs, native_input_count, native_inputs_complete },
 });
 
 rewrite_enum!(UntrimLoops, []; {

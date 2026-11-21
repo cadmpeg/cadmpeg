@@ -2,6 +2,7 @@
 //! One boundary piece: a parameter interval with its image in the carrier's
 //! parameter plane and in model space.
 
+use std::cell::OnceCell;
 use std::rc::Rc;
 
 use cadmpeg_ir::features::FiniteVector3;
@@ -27,6 +28,14 @@ const MAX_SINGULAR_APPROACH_STEPS: usize = 64;
 /// Bisection steps of the search for the parameter where a piece enters the
 /// allowance of a singular point of the carrier.
 const MAX_SINGULAR_ENTRY_STEPS: usize = 64;
+
+/// False-position steps of the search for the parameter where a piece's
+/// parameter image crosses a knot value.
+const MAX_KNOT_CROSSING_STEPS: usize = 64;
+
+/// The step, relative to the piece's parameter span, at which the search
+/// for a knot crossing stops.
+const KNOT_CROSSING_RESOLUTION: f64 = 1.0e-9;
 
 /// Passes through singular points of the carrier at which one inverted
 /// curve interval splits into pieces.
@@ -97,6 +106,8 @@ pub(crate) struct Piece<'ir> {
     /// Per end, the parameter where the piece enters the allowance of a
     /// singular point and the lifted `u` it keeps from there to that end.
     held: [Option<(f64, f64)>; 2],
+    /// The parameters where the piece crosses an interior `v` knot.
+    knot_crossings: OnceCell<Vec<f64>>,
 }
 
 impl<'ir> Piece<'ir> {
@@ -119,6 +130,7 @@ impl<'ir> Piece<'ir> {
             periods: [None, None],
             alpha: 0.0,
             held: [None, None],
+            knot_crossings: OnceCell::new(),
         }
     }
 
@@ -144,6 +156,7 @@ impl<'ir> Piece<'ir> {
             periods: chart.periods(),
             alpha: use_.alpha,
             held: [None, None],
+            knot_crossings: OnceCell::new(),
         }
     }
 
@@ -315,6 +328,7 @@ impl<'ir> Piece<'ir> {
             periods,
             alpha,
             held,
+            knot_crossings: OnceCell::new(),
         })))
     }
 
@@ -486,6 +500,84 @@ impl<'ir> Piece<'ir> {
             Source::Pcurve { span, .. } => span.breaks(),
             Source::Segment { .. } => Vec::new(),
         }
+    }
+
+    /// The parameters where the piece's `v` crosses an interior `v` knot of
+    /// a NURBS chart, computed once per piece.
+    pub(crate) fn v_knot_crossings(
+        &self,
+        eval: &Eval<'_, '_>,
+        chart: &Chart<'_>,
+    ) -> Measure<Vec<f64>> {
+        if let Some(crossings) = self.knot_crossings.get() {
+            return Ok(crossings.clone());
+        }
+        let Chart::Nurbs(nurbs) = chart else {
+            return Ok(Vec::new());
+        };
+        let [v0, v1] = nurbs.domain[1];
+        let mut knots = nurbs.v_breaks();
+        knots.retain(|knot| v0 < *knot && *knot < v1);
+        knots.dedup();
+        let crossings = self.crossings(eval, chart, 1, &knots)?;
+        Ok(self.knot_crossings.get_or_init(|| crossings).clone())
+    }
+
+    /// The parameters where the piece's `axis` coordinate crosses one of
+    /// `values`, by Illinois false-position steps between consecutive
+    /// reference samples, breaks and ends whose coordinates bracket the
+    /// value.
+    fn crossings(
+        &self,
+        eval: &Eval<'_, '_>,
+        chart: &Chart<'_>,
+        axis: usize,
+        values: &[f64],
+    ) -> Measure<Vec<f64>> {
+        let (low, high) = (self.t0.min(self.t1), self.t0.max(self.t1));
+        let resolution = KNOT_CROSSING_RESOLUTION * (high - low);
+        let mut scan: Vec<f64> = [self.t0, self.t1]
+            .into_iter()
+            .chain(self.reference.iter().map(|(t, _)| *t))
+            .chain(self.breaks())
+            .filter(|t| (low..=high).contains(t))
+            .collect();
+        scan.sort_by(f64::total_cmp);
+        scan.dedup();
+        let mut samples = Vec::with_capacity(scan.len());
+        for t in scan {
+            samples.push((t, self.uv(eval, chart, t)?[axis]));
+        }
+        let mut crossings = Vec::new();
+        for pair in samples.windows(2) {
+            let [(ta, a), (tb, b)] = [pair[0], pair[1]];
+            for &value in values {
+                if !((a < value && value < b) || (b < value && value < a)) {
+                    continue;
+                }
+                let (mut t_old, mut f_old) = (ta, a - value);
+                let (mut t_new, mut f_new) = (tb, b - value);
+                for _ in 0..MAX_KNOT_CROSSING_STEPS {
+                    let t = t_new - f_new * (t_new - t_old) / (f_new - f_old);
+                    if !(t.is_finite() && (ta.min(tb)..=ta.max(tb)).contains(&t)) {
+                        break;
+                    }
+                    let f = self.uv(eval, chart, t)?[axis] - value;
+                    let moved = (t - t_new).abs();
+                    if f * f_new < 0.0 {
+                        (t_old, f_old) = (t_new, f_new);
+                    } else {
+                        f_old *= 0.5;
+                    }
+                    (t_new, f_new) = (t, f);
+                    if f == 0.0 || moved <= resolution {
+                        break;
+                    }
+                }
+                crossings.push(t_new);
+            }
+        }
+        Ok(crossings)
     }
 
     /// Whether the piece is a synthesized segment.
@@ -786,7 +878,7 @@ fn singular_jump(
     samples: &[(f64, [f64; 2], bool)],
     alpha: f64,
 ) -> Measure<Option<Bracket>> {
-    let singular: Vec<Point3> = chart.singular_points(alpha).collect();
+    let singular: Vec<Point3> = chart.singular_points().collect();
     if singular.is_empty() {
         return Ok(None);
     }
@@ -847,7 +939,7 @@ fn crossing(
             ));
         }
     }
-    let singular: Vec<Point3> = chart.singular_points(alpha).collect();
+    let singular: Vec<Point3> = chart.singular_points().collect();
     let distance = |t: f64| singular_distance(eval, curve, &singular, t);
     let (t, distance) = golden_minimum(eval, &distance, [ta, tb])?;
     let inside = t0.min(t1) < t && t < t0.max(t1);

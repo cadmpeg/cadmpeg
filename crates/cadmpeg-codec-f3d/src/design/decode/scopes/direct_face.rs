@@ -13,6 +13,7 @@ use crate::bytes::{take_reference, Reference};
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
+use crate::ids::native_stream;
 use crate::layout::indexed_design_record_header as indexed_header;
 use crate::layout::modify_marker_one_prologue as modify_one;
 use crate::layout::modify_marker_zero_prologue as modify_zero;
@@ -36,6 +37,11 @@ use crate::layout::move_transform_v3_frame_276 as move_v3_frame_276;
 use crate::layout::move_transform_v3_frame_286 as move_v3_frame_286;
 use crate::layout::move_transform_v3_frame_296 as move_v3_frame_296;
 use crate::layout::rigid_transform_leading_prefix as leading_move;
+use crate::layout::scale_axis_owner_prefix as scale_axis;
+use crate::layout::scale_counted_group_head as scale_counted;
+use crate::layout::scale_counted_group_suffix as scale_counted_suffix;
+use crate::layout::scale_legacy_operation_prefix as scale_legacy;
+use crate::layout::scale_legacy_uniform_head as scale_legacy_head;
 use crate::layout::scale_legacy_uniform_tail as scale_tail;
 use crate::layout::scale_matrix_marker_one_prologue as scale_matrix_one;
 use crate::layout::scale_matrix_marker_zero_prologue as scale_matrix_zero;
@@ -47,8 +53,11 @@ use crate::records::feature::direct_face::DesignModifyOperation;
 use crate::records::feature::direct_face::DesignMoveOperation;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
+use crate::records::identity::Located;
+use crate::records::parameters::{DesignParameter, DesignParameterOwner};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::scalar::PositiveReal;
 use std::collections::HashMap;
 
 const RIGID_TRANSFORM_TYPE_GUID: &str = "84E6245F-1CDC-4FB8-8048-163A85FAD3F0";
@@ -212,11 +221,13 @@ fn marked_move_transform(
     }
     cursor = cursor.checked_add(4)?;
     let (group, _) = take_reference(bytes, &mut cursor)?.into_local()?;
-    if u32::try_from(group).ok()? != *scope.reference_members().values().next()?
-        || !scope
-            .reference_members()
-            .values()
-            .any(|index| *index == transform_record_index)
+    let group_record_index = u32::try_from(group).ok()?;
+    let mut members = scope.reference_members().values();
+    let first = *members.clone().next()?;
+    if group_record_index == transform_record_index
+        || !(first == group_record_index || first == transform_record_index)
+        || !members.clone().any(|index| *index == group_record_index)
+        || !members.any(|index| *index == transform_record_index)
     {
         return None;
     }
@@ -1155,32 +1166,196 @@ fn matrix_scale(
     ))
 }
 
+fn scale_guid_closes_prefix(bytes: &[u8], guid_at: usize, table_at: u64) -> Option<()> {
+    let (guid, end) = crate::bytes::lp_utf16_bounded_view(bytes, guid_at, 36..=36)?;
+    let separator =
+        scale_legacy_head::REFERENCE_COUNT - scale_legacy_head::ZERO_BEFORE_REFERENCE_TABLE;
+    (guid.eq_str("00000000-0000-0000-0000-000000000000")
+        && end.checked_add(separator)? == usize::try_from(table_at).ok()?
+        && View::u24_le_at(bytes, end)? == 0)
+        .then_some(())
+}
+
+fn counted_group_scale(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    stream_types: &HashMap<u64, (&str, u32)>,
+) -> Option<DesignScaleOperation> {
+    scope.label.as_ref()?;
+    let start = usize::try_from(scope.byte_offset()).ok()?;
+    let count = View::u32_le_at(bytes, start + scale_counted::GROUP_COUNT)?;
+    let (factor_owner, first, second, center) = match count {
+        1 => {
+            let [&owner, &first, _, &center] = scope.reference_members().values_array()?;
+            (owner, first, None, center)
+        }
+        2 => {
+            let [&owner, &first, &second, _, &center] = scope.reference_members().values_array()?;
+            if first == second {
+                return None;
+            }
+            (owner, first, Some(second), center)
+        }
+        _ => return None,
+    };
+    let mut at = start + scale_counted::LEN;
+    for group in std::iter::once(first).chain(second) {
+        if marked_record_reference(bytes, at)? != group {
+            return None;
+        }
+        at += scale_legacy::FACTOR_REFERENCE - scale_legacy::CENTER_REFERENCE;
+    }
+    if bytes.get(start + 16..start + scale_legacy::FACTOR)? != [0; 5]
+        || marked_record_reference(bytes, start + scale_legacy::CENTER_REFERENCE)? != center
+        || marked_record_reference(bytes, start + scale_legacy::FACTOR_REFERENCE)? != factor_owner
+        || *bytes.get(start + scale_counted::MARKER)? != scale_counted::MARKER_VALUE
+        || View::u32_le_at(bytes, at + scale_counted_suffix::ONE)?
+            != scale_counted_suffix::ONE_VALUE
+        || View::u32_le_at(bytes, at + scale_counted_suffix::ZERO)?
+            != scale_counted_suffix::ZERO_VALUE
+    {
+        return None;
+    }
+    scale_guid_closes_prefix(
+        bytes,
+        at + scale_counted_suffix::LEN,
+        scope.reference_count_offset(),
+    )?;
+    let factor_at = start + scale_legacy::FACTOR;
+    let factor = PositiveReal::new(View::f64_le_at(bytes, factor_at)?)?;
+    let point = exact_point_data_construction(bytes, records, [&center], stream_types)?;
+    Some(DesignScaleOperation {
+        body_group_record_index: first,
+        further_body_group_record_indices: second.into_iter().collect(),
+        center_record_index: center,
+        center_position: Some(Located {
+            value: point.position,
+            offset: point.position_offset,
+        }),
+        factors: DesignScaleFactors::Uniform {
+            factor,
+            offset: u64_from_index(factor_at),
+        },
+        matrix_offset: None,
+    })
+}
+
+pub(super) fn exact_axis_owner_scale(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    stream_types: &HashMap<u64, (&str, u32)>,
+    parameters: &[DesignParameter],
+    parameter_owners: &[DesignParameterOwner],
+) -> Option<DesignScaleOperation> {
+    if scope.kind() != scope::DesignFeatureKind::Scale || scope.label.is_none() {
+        return None;
+    }
+    let [&x, &y, &z, &group, _, _, &center] = scope.reference_members().values_array()?;
+    let start = usize::try_from(scope.byte_offset()).ok()?;
+    if bytes.get(start + scale_axis::ZERO_RUN_18..start + scale_axis::CENTER_REFERENCE)? != [0; 18]
+        || marked_record_reference(bytes, start + scale_axis::CENTER_REFERENCE)? != center
+        || *bytes.get(start + scale_axis::ZERO_BYTE)? != scale_axis::ZERO_BYTE_VALUE
+        || View::u32_le_at(bytes, start + scale_axis::ONE)? != scale_axis::ONE_VALUE
+        || View::u16_le_at(bytes, start + scale_axis::ZERO_WORD)? != scale_axis::ZERO_WORD_VALUE
+        || marked_record_reference(bytes, start + scale_axis::X_OWNER)? != x
+        || marked_record_reference(bytes, start + scale_axis::Y_OWNER)? != y
+        || marked_record_reference(bytes, start + scale_axis::Z_OWNER)? != z
+        || View::u32_le_at(bytes, start + scale_axis::GROUP_COUNT)? != scale_axis::GROUP_COUNT_VALUE
+        || marked_record_reference(bytes, start + scale_axis::GROUP_REFERENCE)? != group
+    {
+        return None;
+    }
+    scale_guid_closes_prefix(
+        bytes,
+        start + scale_axis::LEN,
+        scope.reference_count_offset(),
+    )?;
+    let point = exact_point_data_construction(bytes, records, [&center], stream_types)?;
+    let stream = native_stream(&scope.id)?;
+    let factor = |owner_index, ordinal, kind| {
+        let mut owners = parameter_owners.iter().filter(|owner| {
+            native_stream(owner.id()) == Some(stream) && owner.record_index() == owner_index
+        });
+        let owner = owners.next()?;
+        if owners.next().is_some()
+            || owner.scope_record_index() != scope.record_index
+            || owner.local_ordinal() != ordinal
+            || owner.text_value().is_some()
+        {
+            return None;
+        }
+        let mut matches = parameters.iter().filter(|parameter| {
+            native_stream(&parameter.id) == Some(stream)
+                && parameter.record_index == owner.parameter_record_index()
+        });
+        let parameter = matches.next()?;
+        if matches.next().is_some()
+            || parameter.owner_record_index() != Some(owner_index)
+            || parameter.source_kind_str() != kind
+            || parameter.evaluated_value() != owner.evaluated_value()
+        {
+            return None;
+        }
+        Some((
+            PositiveReal::new(owner.evaluated_value().get())?,
+            owner.evaluated_value_offset(),
+        ))
+    };
+    let (x, x_at) = factor(x, 0, "ScaleX")?;
+    let (y, y_at) = factor(y, 1, "ScaleY")?;
+    let (z, z_at) = factor(z, 2, "ScaleZ")?;
+    Some(DesignScaleOperation {
+        body_group_record_index: group,
+        further_body_group_record_indices: Vec::new(),
+        center_record_index: center,
+        center_position: Some(Located {
+            value: point.position,
+            offset: point.position_offset,
+        }),
+        factors: DesignScaleFactors::PerAxis {
+            factors: [x, y, z],
+            offsets: [x_at, y_at, z_at],
+        },
+        matrix_offset: None,
+    })
+}
+
 pub(super) fn exact_scale_operation(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<Option<DesignScaleOperation>, cadmpeg_core::CodecError> {
+) -> Option<DesignScaleOperation> {
+    if scope.kind() != scope::DesignFeatureKind::Scale {
+        return None;
+    }
     let reference_count = scope.reference_members().len();
+    let payload_length = parameter_scope_payload_length(scope);
+    let named = scope.label.is_some();
     let payload_form = matches!(
-        (parameter_scope_payload_length(scope), reference_count),
-        (Some(297 | 299), 5) | (Some(308), 6)
-    );
+        (payload_length, reference_count),
+        (Some(297..=299), 5) | (Some(308), 6)
+    ) || (named && (payload_length, reference_count) == (Some(310), 6));
     let english_frame_form = matches!(
         (scope.frame_length(), reference_count),
         (307 | 309, 5) | (318, 6)
     );
-    let mut read_by_english_frame = false;
-    let operation = (|| -> Option<Result<DesignScaleOperation, cadmpeg_core::CodecError>> {
-        if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Scale) {
-            return None;
-        }
+    let modern_form = matches!(payload_length, Some(302 | 303)) && reference_count == 5;
+    let read_by_english_frame = !modern_form && !payload_form && english_frame_form;
+    let operation = (|| {
         let start = usize::try_from(scope.byte_offset()).ok()?;
         let (body_group_record_index, center_record_index, uniform_factor_offset, center) =
-            if parameter_scope_payload_length(scope) == Some(303)
-                && scope.reference_members().len() == 5
-            {
+            if modern_form {
+                if payload_length == Some(302) {
+                    scale_guid_closes_prefix(
+                        bytes,
+                        start + crate::layout::scale_modern_operation_prefix::LEN,
+                        scope.reference_count_offset(),
+                    )?;
+                }
                 let [factor_record_index, body_group_record_index, _, _, center_record_index] =
                     scope.reference_members().values_array()?;
                 if View::u32_le_at(bytes, start + 20)? != 1
@@ -1208,10 +1383,7 @@ pub(super) fn exact_scale_operation(
                     start + 25,
                     center,
                 )
-            } else if scope.kind() == scope::DesignFeatureKind::Scale
-                && (payload_form || english_frame_form)
-            {
-                read_by_english_frame = !payload_form;
+            } else if payload_form || english_frame_form {
                 if read_by_english_frame && scope.frame_length() == 309 {
                     let (guid, _) = crate::bytes::lp_utf16_bounded_view(
                         bytes,
@@ -1229,24 +1401,21 @@ pub(super) fn exact_scale_operation(
                         return None;
                     }
                 }
-                if parameter_scope_payload_length(scope) == Some(299) {
-                    let (guid, _) = crate::bytes::lp_utf16_bounded_view(
+                if matches!(payload_length, Some(298 | 299 | 310)) {
+                    scale_guid_closes_prefix(
                         bytes,
-                        start.checked_add(75)?,
-                        36..=36,
+                        start + scale_legacy_head::NULL_GUID_CODE_UNIT_COUNT,
+                        scope.reference_count_offset(),
                     )?;
-                    if !guid.eq_str("00000000-0000-0000-0000-000000000000")
-                        || View::u24_le_at(bytes, start.checked_add(151)?)? != 0
-                        || scope.reference_count_offset() != scope.byte_offset().checked_add(154)?
-                        || scope.kind_offset() != scope.byte_offset().checked_add(221)?
-                        || scope.feature_ordinal_offset()
-                            != scope
-                                .paired_byte_offset()
-                                .checked_sub(u64::try_from(scale_tail::LEN).ok()?)?
-                        || scope.previous_history_state_id_offset()
-                            != scope.feature_ordinal_offset().checked_add(
-                                u64::try_from(scale_tail::PREVIOUS_HISTORY_STATE_ID).ok()?,
-                            )
+                    if scope.reference_count_offset()
+                        != scope
+                            .byte_offset()
+                            .checked_add(u64_from_index(scale_legacy_head::REFERENCE_COUNT))?
+                        || (!named
+                            && scope.previous_history_state_id_offset()
+                                != scope.feature_ordinal_offset().checked_add(u64_from_index(
+                                    scale_tail::PREVIOUS_HISTORY_STATE_ID,
+                                )))
                     {
                         return None;
                     }
@@ -1266,6 +1435,14 @@ pub(super) fn exact_scale_operation(
                 {
                     return None;
                 }
+                if payload_length == Some(310) && named {
+                    let [_, _, first, second, _, _] = scope.reference_members().values_array()?;
+                    if group_member_indices(bytes, records, *body_group_record_index)?
+                        != [*first, *second]
+                    {
+                        return None;
+                    }
+                }
                 let point = exact_point_data_construction(
                     bytes,
                     records,
@@ -1283,7 +1460,7 @@ pub(super) fn exact_scale_operation(
             };
         let uniform_factor =
             cadmpeg_ir::scalar::PositiveReal::new(View::f64_le_at(bytes, uniform_factor_offset)?)?;
-        Some(Ok(DesignScaleOperation {
+        Some(DesignScaleOperation {
             body_group_record_index,
             further_body_group_record_indices: Vec::new(),
             center_record_index,
@@ -1294,12 +1471,22 @@ pub(super) fn exact_scale_operation(
                 offset: u64_from_index(uniform_factor_offset),
             },
             matrix_offset: None,
-        }))
-    })()
-    .transpose()?;
-    let operation = match operation {
-        Some(operation) => Some(operation),
-        None => long_modern_scale(bytes, records, scope, stream_types).or_else(|| {
+        })
+    })();
+    if operation.is_some() && read_by_english_frame {
+        losses.push(
+            crate::loss::F3dLossCode::FeatureScaleFrameLengthFormAssumed.note(format!(
+                "{} reads the legacy Scale form of its {}-byte frame; its {}-byte payload matches no form.",
+                scope.id,
+                scope.frame_length(),
+                payload_length.unwrap_or_default()
+            )),
+        );
+    }
+    operation
+        .or_else(|| long_modern_scale(bytes, records, scope, stream_types))
+        .or_else(|| counted_group_scale(bytes, records, scope, stream_types))
+        .or_else(|| {
             let (operation, word) = matrix_scale(bytes, records, scope, stream_types)?;
             if word != 0 {
                 losses.push(crate::loss::F3dLossCode::FeatureScaleMatrixWordAssumed.note(
@@ -1310,19 +1497,7 @@ pub(super) fn exact_scale_operation(
                 ));
             }
             Some(operation)
-        }),
-    };
-    if operation.is_some() && read_by_english_frame {
-        losses.push(
-            crate::loss::F3dLossCode::FeatureScaleFrameLengthFormAssumed.note(format!(
-                "{} reads the legacy Scale form of its {}-byte frame; its {}-byte payload matches no form.",
-                scope.id,
-                scope.frame_length(),
-                parameter_scope_payload_length(scope).unwrap_or_default()
-            )),
-        );
-    }
-    Ok(operation)
+        })
 }
 
 #[cfg(test)]

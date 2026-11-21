@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `DeleteFace` and `SurfaceDeleteFace` scope projection.
 
-use super::{face_scope_frame, unique_feature_match};
+use super::unique_feature_match;
 use crate::design::face_resolve::{resolved_face_group, resolved_historical_face_group};
 use crate::ids::native_stream;
 use crate::records::feature::scope::DesignParameterScope;
@@ -10,6 +10,29 @@ use crate::records::topology::{
     face::DesignFaceOperand,
 };
 use cadmpeg_core::CodecError;
+
+pub(super) fn face_scope_frame(scope: &DesignParameterScope) -> Option<(u64, u64)> {
+    let count_offset = scope
+        .reference_count_offset()
+        .checked_sub(scope.byte_offset())?;
+    let reference_bytes = u64::try_from(scope.reference_members().len())
+        .ok()?
+        .checked_mul(11)?;
+    let kind_offset = scope
+        .reference_count_offset()
+        .checked_add(12)?
+        .checked_add(reference_bytes)?;
+    if scope.kind_offset() != kind_offset {
+        return None;
+    }
+    let kind_bytes = u64::try_from(scope.source_kind_name().encode_utf16().count())
+        .ok()?
+        .checked_mul(2)?;
+    let tail_length = scope
+        .paired_byte_offset()
+        .checked_sub(kind_offset.checked_add(kind_bytes)?)?;
+    Some((count_offset, tail_length))
+}
 
 /// The frame of a `DeleteFace` scope whose references are typed: 51 bytes per
 /// reference-table entry, with the count at offset 163 or 167 and the typed

@@ -1,6 +1,5 @@
 use super::{registered_version, scope_member_matches, Reader, WorkAxisRegistrations};
 use crate::bytes::reference_fields::ReadField;
-use crate::design::decode::scopes::point_direction::POINT_DIRECTION_TYPE_GUID;
 use crate::design::decode::scopes::shared_frames::exact_indexed_header_at;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::layout::work_axis_direct_carrier_class_297 as direct_297;
@@ -14,6 +13,7 @@ use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::work_axes::{
     AxisEndpoint, AxisEndpointReading, DesignWorkAxisCandidate, DesignWorkAxisSource,
 };
+use crate::records::feature::work_geometry::POINT_DIRECTION_TYPE_GUID;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::unknown::part::GivenUpPart;

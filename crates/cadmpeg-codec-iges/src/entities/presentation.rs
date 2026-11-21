@@ -161,6 +161,7 @@ fn appearance(
             base_color: Some(color),
             properties: BTreeMap::new(),
             textures: Vec::new(),
+            native_ref: None,
         });
     }
     Ok(())
@@ -621,6 +622,7 @@ pub(super) fn project(
             object_type: Some("Body".to_string()),
             visible: None,
             channels: BTreeMap::new(),
+            native_ref: None,
         });
     }
     for body in &mut ir.geometry.bodies {
@@ -699,6 +701,7 @@ pub(super) fn project(
             object_type: Some("Face".to_string()),
             visible: None,
             channels: BTreeMap::new(),
+            native_ref: None,
         });
     }
 

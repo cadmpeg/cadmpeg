@@ -69,7 +69,7 @@ pub(super) fn exact_surface_extend_operation(
         boundary_record_index: operation.boundary_record_index,
         boundary_reference_record_index: operation.boundary_reference_record_index,
         boundary_reference_offset: operation.boundary_reference_offset,
-        edge_record_indices: operation.edge_record_indices,
+        edge_record_indices: operation.member_record_indices,
         tolerance: operation.tolerance,
         tolerance_offset: operation.tolerance_offset,
     })
@@ -332,40 +332,69 @@ pub(super) fn exact_surface_offset_operation(
     let Some(stream) = native_stream(&scope.id) else {
         return Ok(None);
     };
-    let operation = exact_surface_boundary_operation(
+    let Some(ExactSurfaceBoundaryOperation {
+        distance,
+        distance_offset,
+        distance_record_index,
+        boundary_record_index,
+        boundary_reference_record_index,
+        boundary_reference_offset,
+        member_record_indices,
+        tolerance,
+        tolerance_offset,
+    }) = exact_surface_boundary_operation(
         bytes,
         records,
         scope,
         DesignFeatureFamily::SurfaceOffset,
         DesignOperandRole::PROFILE,
     )
-    .filter(|operation| {
-        operation.edge_record_indices.iter().all(|member| {
-            member_recipe_kind(records, recipes, stream, *member)
-                == Some(ConstructionRecipeKind::Edge)
-        })
-    });
-    if let Some(operation) = &operation {
-        surface_boundary_flag_loss(
-            bytes,
-            records,
-            scope,
-            operation.boundary_reference_record_index,
-            losses,
-        );
-    }
-    Ok(operation.map(|operation| DesignSurfaceOffsetOperation {
-        distance: operation.distance,
-        distance_offset: operation.distance_offset,
-        distance_record_index: operation.distance_record_index,
-        support: DesignSurfaceOffsetSupport::BoundaryCarrier {
-            boundary_record_index: operation.boundary_record_index,
-            boundary_reference_record_index: operation.boundary_reference_record_index,
-            boundary_reference_offset: operation.boundary_reference_offset,
-            edge_record_indices: operation.edge_record_indices,
-            tolerance: operation.tolerance,
-            tolerance_offset: operation.tolerance_offset,
-        },
+    else {
+        return Ok(None);
+    };
+    let recipe_kind = |member| member_recipe_kind(records, recipes, stream, member);
+    let support = match member_record_indices.as_slice() {
+        [body_record_index]
+            if distance.get() == 0.0
+                && recipe_kind(*body_record_index) == Some(ConstructionRecipeKind::Body) =>
+        {
+            DesignSurfaceOffsetSupport::BodyCarrier {
+                boundary_record_index,
+                boundary_reference_record_index,
+                boundary_reference_offset,
+                body_record_index: *body_record_index,
+                tolerance,
+                tolerance_offset,
+            }
+        }
+        members
+            if members
+                .iter()
+                .all(|member| recipe_kind(*member) == Some(ConstructionRecipeKind::Edge)) =>
+        {
+            DesignSurfaceOffsetSupport::BoundaryCarrier {
+                boundary_record_index,
+                boundary_reference_record_index,
+                boundary_reference_offset,
+                edge_record_indices: member_record_indices,
+                tolerance,
+                tolerance_offset,
+            }
+        }
+        _ => return Ok(None),
+    };
+    surface_boundary_flag_loss(
+        bytes,
+        records,
+        scope,
+        boundary_reference_record_index,
+        losses,
+    );
+    Ok(Some(DesignSurfaceOffsetOperation {
+        distance,
+        distance_offset,
+        distance_record_index,
+        support,
     }))
 }
 
@@ -559,7 +588,7 @@ struct ExactSurfaceBoundaryOperation {
     boundary_record_index: u32,
     boundary_reference_record_index: u32,
     boundary_reference_offset: u64,
-    edge_record_indices: Vec<u32>,
+    member_record_indices: Vec<u32>,
     tolerance: cadmpeg_ir::scalar::PositiveReal,
     tolerance_offset: u64,
 }
@@ -635,8 +664,8 @@ fn exact_surface_boundary_operation(
     let mut references = scope.reference_members().values().copied();
     let distance_record_index = references.next()?;
     let boundary_record_index = references.next()?;
-    let edge_record_indices: Vec<u32> = references.collect();
-    if edge_record_indices.is_empty() {
+    let member_record_indices: Vec<u32> = references.collect();
+    if member_record_indices.is_empty() {
         return None;
     }
     let mut owners = records
@@ -664,7 +693,7 @@ fn exact_surface_boundary_operation(
                 start,
                 end,
                 boundary_record_index,
-                &edge_record_indices,
+                &member_record_indices,
                 role,
                 scope.record_index,
             )
@@ -681,7 +710,7 @@ fn exact_surface_boundary_operation(
         boundary_record_index,
         boundary_reference_record_index,
         boundary_reference_offset,
-        edge_record_indices,
+        member_record_indices,
         tolerance,
         tolerance_offset,
     })
@@ -692,13 +721,13 @@ fn exact_surface_boundary_group(
     start: usize,
     end: usize,
     record_index: u32,
-    edge_record_indices: &[u32],
+    member_record_indices: &[u32],
     role: DesignOperandRole,
     scope_record_index: u32,
 ) -> Option<(u32, u64, cadmpeg_ir::scalar::PositiveReal, u64)> {
     let tail = start
         .checked_add(25)?
-        .checked_add(edge_record_indices.len().checked_mul(11)?)?;
+        .checked_add(member_record_indices.len().checked_mul(11)?)?;
     let layout = SURFACE_BOUNDARY_TAILS
         .iter()
         .find(|layout| tail.checked_add(layout.len) == Some(end))?;
@@ -709,8 +738,9 @@ fn exact_surface_boundary_group(
         && class_tag.len() == 3
         && class_tag.bytes().all(|byte| byte.is_ascii_digit())
         && bytes.get(start + 11..start + 21)? == [0; 10]
-        && View::u32_le_at(bytes, start + 21)? == u32::try_from(edge_record_indices.len()).ok()?
-        && edge_record_indices
+        && View::u32_le_at(bytes, start + 21)?
+            == u32::try_from(member_record_indices.len()).ok()?
+        && member_record_indices
             .iter()
             .enumerate()
             .all(|(position, record_index)| {

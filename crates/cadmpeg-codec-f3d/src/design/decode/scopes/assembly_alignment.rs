@@ -9,6 +9,7 @@ use super::legacy_operand_paths::exact_legacy_class_388_operand_paths;
 use super::legacy_operand_paths::exact_legacy_class_388_scope;
 use super::legacy_operand_paths::CLASS_383_OWNER_REFERENCE_ORDINALS;
 use super::legacy_operand_paths::CLASS_388_OWNER_REFERENCE_ORDINALS;
+use crate::design::assembly::{compact_placement_as_built_prefix_shift, AS_BUILT_SCOPE_TYPE_GUID};
 use crate::design::decode::assembly::exact_legacy_as_built_421_alignment;
 use crate::design::decode::assembly::exact_legacy_as_built_421_solved_frame;
 use crate::design::decode::sketch::IndexedRecordOffsets;
@@ -78,24 +79,26 @@ fn placement_ordered_owner_run(
     lanes: &[&DesignParameterOwner],
     owners: &[crate::records::identity::Located<u32>],
 ) -> bool {
-    let Some(count) =
-        crate::design::assembly::as_built_additional_owner_count(scope.frame_length())
-    else {
+    let Some(count) = crate::design::assembly::as_built_additional_owner_count(scope) else {
         return false;
     };
     let Ok(start) = usize::try_from(scope.byte_offset()) else {
         return false;
     };
-    let stored = View::u32_le_at(bytes, start + as_built::ADDITIONAL_OWNER_COUNT);
+    let compact_shift = compact_placement_as_built_prefix_shift(scope);
+    let shift = compact_shift.unwrap_or_default();
+    let stored = View::u32_le_at(bytes, start + as_built::ADDITIONAL_OWNER_COUNT + shift);
     let additional_owners = lanes.get(4..).unwrap_or_default();
     let table = scope.reference_members();
-    let unextended_positions_hold = count != 0
+    let compact = compact_shift.is_some();
+    let unextended_positions_hold = compact
+        || count != 0
         || table
             .values_in(5..9)
             .is_some_and(|values| values.eq(owners.iter().map(|owner| &owner.value)));
     unextended_positions_hold
         && stored.and_then(|stored| usize::try_from(stored).ok()) == Some(count)
-        && table.len() == 9 + count
+        && (compact || table.len() == 9 + count)
         && additional_owners.len() == count
         && additional_owners
             .iter()
@@ -103,7 +106,7 @@ fn placement_ordered_owner_run(
             .all(|(ordinal, owner)| {
                 super::shared_frames::marked_record_reference(
                     bytes,
-                    start + as_built::ADDITIONAL_OWNER_REFERENCES + 11 * ordinal,
+                    start + as_built::ADDITIONAL_OWNER_REFERENCES + shift + 11 * ordinal,
                 ) == Some(owner.record_index())
                     && table.values().any(|value| *value == owner.record_index())
             })
@@ -183,6 +186,41 @@ fn legacy_assembly_alignment(
         left_key.cmp(&right_key)
     });
     (|| -> Option<Result<DesignAssemblyAlignment, CodecError>> {
+        if let Some(shift) = compact_placement_as_built_prefix_shift(scope) {
+            use crate::layout::assembly_as_built_scope_378 as frame;
+            use crate::layout::assembly_as_built_scope_381_403_prefix as shifted;
+            use crate::layout::assembly_operand_path_locator_reference_run as locators;
+            let start = usize::try_from(scope.byte_offset()).ok()?;
+            let joint = scope.record_index.checked_sub(1)?;
+            let joint_reference = start.checked_add(frame::LOCATOR_COUNT + locators::LEN + shift)?;
+            if shift != 0 {
+                let mut property = View::over_retained(bytes);
+                property.seek(start.checked_add(shifted::PROPERTY_PRESENCE)?)?;
+                if property.u8()? != shifted::PROPERTY_PRESENCE_VALUE
+                    || property.u32_le()? != shifted::PROPERTY_COUNT_VALUE
+                {
+                    return None;
+                }
+            }
+            if !stream_types
+                .get(&u64::from(scope.record_index))
+                .is_some_and(|(guid, version)| {
+                    *version == 1 && guid.eq_ignore_ascii_case(AS_BUILT_SCOPE_TYPE_GUID)
+                })
+                || !stream_types
+                    .get(&u64::from(joint))
+                    .is_some_and(|(guid, version)| {
+                        matches!(*version, 4 | 5)
+                            && guid.eq_ignore_ascii_case(
+                                crate::design::decode::joint_motion::JOINT_TYPE_GUID,
+                            )
+                    })
+                || super::shared_frames::marked_record_reference(bytes, joint_reference)
+                    != Some(joint)
+            {
+                return None;
+            }
+        }
         if lanes
             .iter()
             .enumerate()
@@ -323,7 +361,8 @@ fn legacy_assembly_alignment(
                 {
                     return None;
                 }
-            } else if !crate::design::assembly::rigid_as_built_scope(scope)
+            } else if !placement_ordered
+                && !crate::design::assembly::rigid_as_built_scope(scope)
                 && crate::design::assembly::variable_reference_assembly_generation(
                 scope.class_tag.as_str(),
                 scope.paired_class_tag.as_str(),
@@ -488,10 +527,11 @@ fn legacy_assembly_alignment(
             });
         let additional_owner_run = if crate::design::assembly::placement_ordered_as_built_scope(scope) {
             let start = usize::try_from(scope.byte_offset()).ok()?;
-            let count_at = start + as_built::ADDITIONAL_OWNER_COUNT;
+            let shift = compact_placement_as_built_prefix_shift(scope).unwrap_or_default();
+            let count_at = start + as_built::ADDITIONAL_OWNER_COUNT + shift;
             let count = View::u32_le_at(bytes, count_at)?;
             let references = lanes.iter().skip(4).enumerate().map(|(ordinal, _)| {
-                let at = start + as_built::ADDITIONAL_OWNER_REFERENCES + 11 * ordinal;
+                let at = start + as_built::ADDITIONAL_OWNER_REFERENCES + shift + 11 * ordinal;
                 Some(crate::records::identity::Located {
                     value: super::shared_frames::marked_record_reference(bytes, at)?,
                     offset: cadmpeg_core::decode::u64_from_index(at),

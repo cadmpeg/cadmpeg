@@ -232,9 +232,7 @@ fn placements_that_agree_state_no_override() {
         .all(|occurrence| occurrence.overrides.is_empty()));
 }
 
-#[test]
-fn a_reference_to_one_instance_names_its_occurrence() {
-    let mut ir = shared_bracket();
+fn reference_bolt(ir: &mut CadIr, selected: &str) {
     let connector = |operand| cadmpeg_ir::products::JointConnector {
         operand,
         frame: Transform::identity(),
@@ -253,18 +251,21 @@ fn a_reference_to_one_instance_names_its_occurrence() {
             [
                 connector(cadmpeg_ir::products::JointOperand::root("root", Vec::new())),
                 connector(cadmpeg_ir::products::JointOperand::occurrence(
-                    occurrence_id("f3d:model:occurrence#b:bolt"),
+                    occurrence_id(selected),
                     "bolt",
                     Vec::new(),
                 )),
             ],
             None,
         ));
+}
+
+#[test]
+fn a_reference_to_one_instance_names_its_occurrence() {
+    let mut ir = shared_bracket();
+    reference_bolt(&mut ir, "f3d:model:occurrence#b:bolt");
     let losses = own_once(&mut ir, &BTreeMap::new());
-    assert_eq!(
-        losses,
-        [crate::loss::F3dLossCode::InstanceReferenceShared.kind()]
-    );
+    assert!(losses.is_empty(), "{losses:?}");
     assert_eq!(
         ir.model.assembly_joints[0]
             .connectors()
@@ -273,10 +274,308 @@ fn a_reference_to_one_instance_names_its_occurrence() {
             .operand
             .container,
         cadmpeg_ir::products::OperandContainer::Occurrence {
-            occurrence: occurrence_id("f3d:model:occurrence#bolt"),
-            occurrence_path: Vec::new(),
+            occurrence: occurrence_id("f3d:model:occurrence#b"),
+            occurrence_path: vec!["bolt".to_owned()],
         }
     );
+}
+
+fn state_native_occurrence_key(ir: &mut CadIr, native_id: &str, key: &str) {
+    use crate::records::feature::assembly_features::{
+        DesignComponentOccurrence, DesignComponentOccurrenceDraft,
+        DesignComponentOccurrencePlacement,
+    };
+    let carrier = DesignComponentOccurrence::try_new(DesignComponentOccurrenceDraft {
+        id: native_id.to_owned(),
+        class_tag: "290".to_owned().try_into().unwrap(),
+        record_index: 1,
+        byte_offset: 0,
+        component_record_index: 1,
+        component_guid: key.to_owned().try_into().unwrap(),
+        occurrence_guid: key.to_owned().try_into().unwrap(),
+        placement: DesignComponentOccurrencePlacement::Base,
+        owner_entity: 1,
+    })
+    .unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    ir.native
+        .namespace_mut("f3d")
+        .set_arena(&ctx, "design_component_occurrences", &[carrier])
+        .unwrap();
+}
+
+#[test]
+fn shared_references_use_unique_native_keys_and_preserve_existing_paths() {
+    use crate::records::feature::assembly_features::{
+        DesignComponentOccurrence, DesignComponentOccurrenceDraft,
+        DesignComponentOccurrencePlacement,
+    };
+    const KEY: &str = "ABCDEF00-0000-4000-8000-000000000001";
+    const CARRIER: &str = "f3d:design:record#1";
+    const SCOPE: &str = "f3d:design:parameter-scope#2";
+    let mut ir = shared_bracket();
+    for row in ir
+        .model
+        .occurrences
+        .iter_mut()
+        .filter(|row| row.id.as_str().ends_with(":bolt"))
+    {
+        row.native_ref = Some(CARRIER.to_owned());
+    }
+    let carrier = DesignComponentOccurrence::try_new(DesignComponentOccurrenceDraft {
+        id: CARRIER.to_owned(),
+        class_tag: "290".to_owned().try_into().unwrap(),
+        record_index: 1,
+        byte_offset: 0,
+        component_record_index: 1,
+        component_guid: KEY.to_owned().try_into().unwrap(),
+        occurrence_guid: KEY.to_owned().try_into().unwrap(),
+        placement: DesignComponentOccurrencePlacement::Base,
+        owner_entity: 1,
+    })
+    .unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    ir.native
+        .namespace_mut("f3d")
+        .set_arena(&ctx, "design_component_occurrences", &[carrier])
+        .unwrap();
+    let mut scoped = ir.clone();
+    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
+        SCOPE,
+        crate::records::feature::scope::DesignFeatureKind::ComponentInsert,
+        2,
+    );
+    if let crate::records::feature::scope::DesignScopePayloadMut::ComponentInsert(slot) =
+        scope.payload_mut()
+    {
+        slot.construction = Some(
+            crate::records::feature::assembly_features::DesignComponentInsertConstruction {
+                relation_record_index: 3,
+                carrier_record_index: 1,
+                occurrence_identity: Some(1),
+                neutron_role: KEY.to_owned(),
+                neutron_role_offset: 0,
+                occurrence_key: Some(crate::records::identity::Located {
+                    value: KEY.to_owned().try_into().unwrap(),
+                    offset: 0,
+                }),
+                placement: None,
+            },
+        );
+    }
+    scoped
+        .native
+        .namespace_mut("f3d")
+        .set_arena(&ctx, "design_parameter_scopes", &[scope])
+        .unwrap();
+    for row in scoped
+        .model
+        .occurrences
+        .iter_mut()
+        .filter(|row| row.id.as_str().ends_with(":bolt"))
+    {
+        row.native_ref = Some(SCOPE.to_owned());
+    }
+    let mut canonical_key_only = ir.clone();
+    canonical_key_only
+        .model
+        .occurrences
+        .iter_mut()
+        .find(|row| row.id.as_str() == "f3d:model:occurrence#b:bolt")
+        .unwrap()
+        .native_ref = Some("f3d:design:record#missing".to_owned());
+    let mut ambiguous = ir.clone();
+    for parent in ["a", "b"] {
+        let id = format!("f3d:model:occurrence#{parent}:nut");
+        let mut nut = occurrence(&id, BOLT, 1.0);
+        nut.native_ref = Some(CARRIER.to_owned());
+        ambiguous.model.occurrences.push(nut);
+        ambiguous
+            .model
+            .product_definitions
+            .iter_mut()
+            .find(|row| row.id.as_str() == BRACKET)
+            .unwrap()
+            .occurrences
+            .push(occurrence_id(&id));
+    }
+    for (mut ir, unique) in [
+        (ir, true),
+        (scoped, true),
+        (canonical_key_only, true),
+        (ambiguous, false),
+    ] {
+        reference_bolt(&mut ir, "f3d:model:occurrence#b:bolt");
+        let operand = &mut ir.model.assembly_joints[0]
+            .connectors_mut()
+            .nth(1)
+            .unwrap()
+            .operand;
+        operand.container = cadmpeg_ir::products::OperandContainer::Occurrence {
+            occurrence: occurrence_id("f3d:model:occurrence#b:bolt"),
+            occurrence_path: vec!["inside".to_owned()],
+        };
+        let losses = own_once(&mut ir, &BTreeMap::new());
+        let expected_losses = if unique {
+            Vec::new()
+        } else {
+            vec![crate::loss::F3dLossCode::InstanceReferenceShared.kind()]
+        };
+        assert_eq!(losses, expected_losses);
+        assert_eq!(
+            ir.model.assembly_joints[0]
+                .connectors()
+                .nth(1)
+                .unwrap()
+                .operand
+                .container,
+            cadmpeg_ir::products::OperandContainer::Occurrence {
+                occurrence: occurrence_id(if unique {
+                    "f3d:model:occurrence#b"
+                } else {
+                    "f3d:model:occurrence#bolt"
+                }),
+                occurrence_path: if unique {
+                    vec![KEY.to_owned(), "inside".to_owned()]
+                } else {
+                    vec!["inside".to_owned()]
+                },
+            }
+        );
+    }
+}
+
+#[test]
+fn a_shared_reference_without_its_native_key_keeps_the_loss() {
+    let mut ir = shared_bracket();
+    for row in ir
+        .model
+        .occurrences
+        .iter_mut()
+        .filter(|row| row.id.as_str().ends_with(":bolt"))
+    {
+        row.native_ref = Some("f3d:design:record#missing".to_owned());
+    }
+    reference_bolt(&mut ir, "f3d:model:occurrence#b:bolt");
+    assert_eq!(
+        own_once(&mut ir, &BTreeMap::new()),
+        [crate::loss::F3dLossCode::InstanceReferenceShared.kind()]
+    );
+}
+
+fn selected_world_pose(ir: &CadIr) -> Transform {
+    let cadmpeg_ir::products::OperandContainer::Occurrence {
+        occurrence,
+        occurrence_path,
+    } = &ir.model.assembly_joints[0]
+        .connectors()
+        .nth(1)
+        .unwrap()
+        .operand
+        .container
+    else {
+        panic!("occurrence operand")
+    };
+    let expanded;
+    let (definitions, occurrences) = if occurrence_path.is_empty() {
+        (&ir.model.product_definitions, &ir.model.occurrences)
+    } else {
+        expanded = super::expand(
+            &cadmpeg_core::decode::ResourceLimits::default(),
+            &ir.model.product_definitions,
+            &ir.model.occurrences,
+            &BTreeMap::new(),
+        )
+        .unwrap();
+        (&expanded.definitions, &expanded.occurrences)
+    };
+    let mut selected = occurrence.as_str().to_owned();
+    for key in occurrence_path {
+        selected.push(':');
+        selected.push_str(key);
+    }
+    let parents = super::parent_ids(definitions, occurrences);
+    let mut pose = Transform::identity();
+    let mut at = occurrence_id(&selected);
+    loop {
+        let row = occurrences.iter().find(|row| row.id == at).unwrap();
+        pose = row
+            .transform
+            .unwrap_or_else(Transform::identity)
+            .compose(pose)
+            .unwrap();
+        match parents.get(&at) {
+            Some(parent) => at = parent.clone(),
+            None => break,
+        }
+    }
+    pose
+}
+
+#[test]
+fn a_shared_reference_keeps_the_instance_world_pose() {
+    let mut ir = shared_bracket();
+    reference_bolt(&mut ir, "f3d:model:occurrence#b:bolt");
+    let original = selected_world_pose(&ir);
+    assert_eq!(original, translated(27.0));
+    own_once(&mut ir, &BTreeMap::new());
+    assert_eq!(selected_world_pose(&ir), original);
+    let report = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new()).unwrap();
+    assert!(
+        !report
+            .findings
+            .iter()
+            .any(|finding| finding.check == cadmpeg_ir::report::check::Check::ReferentialIntegrity),
+        "{:?}",
+        report.findings
+    );
+}
+
+#[test]
+fn a_two_level_reference_keeps_the_outer_insertion_and_native_keys() {
+    const WASHER: &str = "f3d:model:component#washer";
+    let mut ir = shared_bracket();
+    ir.model.product_definitions.push(component(WASHER, &[]));
+    ir.model
+        .product_definitions
+        .iter_mut()
+        .find(|row| row.id.as_str() == BOLT)
+        .unwrap()
+        .occurrences = [
+        "f3d:model:occurrence#a:bolt:washer",
+        "f3d:model:occurrence#b:bolt:washer",
+    ]
+    .into_iter()
+    .map(occurrence_id)
+    .collect();
+    ir.model.occurrences.extend([
+        occurrence("f3d:model:occurrence#a:bolt:washer", WASHER, 1.0),
+        occurrence("f3d:model:occurrence#b:bolt:washer", WASHER, 2.0),
+    ]);
+    reference_bolt(&mut ir, "f3d:model:occurrence#b:bolt:washer");
+    let original = selected_world_pose(&ir);
+    assert_eq!(original, translated(29.0));
+    let losses = own_once(&mut ir, &BTreeMap::new());
+    assert!(losses.is_empty(), "{losses:?}");
+    assert_eq!(
+        ir.model.assembly_joints[0]
+            .connectors()
+            .nth(1)
+            .unwrap()
+            .operand
+            .container,
+        cadmpeg_ir::products::OperandContainer::Occurrence {
+            occurrence: occurrence_id("f3d:model:occurrence#b"),
+            occurrence_path: vec!["bolt".to_owned(), "washer".to_owned()],
+        }
+    );
+    assert_eq!(selected_world_pose(&ir), original);
 }
 
 #[test]
@@ -284,7 +583,13 @@ fn expanding_restates_the_decoder_instances() {
     let original = shared_bracket();
     let mut ir = original.clone();
     own_once(&mut ir, &BTreeMap::new());
-    let expanded = super::expand(&ir.model.product_definitions, &ir.model.occurrences).unwrap();
+    let expanded = super::expand(
+        &cadmpeg_core::decode::ResourceLimits::default(),
+        &ir.model.product_definitions,
+        &ir.model.occurrences,
+        &std::collections::BTreeMap::new(),
+    )
+    .unwrap();
     let instances = expanded
         .occurrences
         .iter()
@@ -311,9 +616,7 @@ fn expanding_restates_the_decoder_instances() {
         "f3d:model:occurrence#bolt"
     );
     assert_eq!(
-        super::parent_ids(&expanded.definitions, &expanded.occurrences)
-            [&occurrence_id("f3d:model:occurrence#b:bolt")]
-            .as_str(),
+        expanded.parents[&occurrence_id("f3d:model:occurrence#b:bolt")].as_str(),
         "f3d:model:occurrence#b"
     );
 }
@@ -383,6 +686,32 @@ fn an_archive_member_placed_twice_is_its_root_component_once() {
             "f3d:xref/s2".to_owned(),
         ),
     ]);
+    let mut referenced = ir.clone();
+    let native_id = "f3d:design:record#1";
+    let native_key = "01234567-89ab-cdef-0123-456789abcdef";
+    for row in referenced
+        .model
+        .occurrences
+        .iter_mut()
+        .filter(|row| row.id.as_str().ends_with("#g"))
+    {
+        row.native_ref = Some(native_id.to_owned());
+    }
+    state_native_occurrence_key(&mut referenced, native_id, native_key);
+    reference_bolt(&mut referenced, "f3d:xref/s2/model:occurrence#g");
+    assert!(own_once(&mut referenced, &scopes).is_empty());
+    assert_eq!(
+        referenced.model.assembly_joints[0]
+            .connectors()
+            .nth(1)
+            .unwrap()
+            .operand
+            .container,
+        cadmpeg_ir::products::OperandContainer::Occurrence {
+            occurrence: occurrence_id("f3d:model:occurrence#xref-0-1"),
+            occurrence_path: vec![native_key.to_owned()],
+        }
+    );
     own_once(&mut ir, &scopes);
     let member_root = definition(&ir, MEMBER_ROOT);
     assert!(

@@ -22,7 +22,7 @@ fn require_local_fields(fields: &[NativeBytes<[u8; 6]>]) -> Result<(), String> {
     {
         Ok(())
     } else {
-        Err("15-byte Base Feature elements require ordinary same-segment references".into())
+        Err("Base Feature reference fields require clear same-segment flags".into())
     }
 }
 
@@ -170,9 +170,13 @@ pub(crate) enum DesignBaseFeatureConstruction {
         /// Byte offset of the object's reference to this scope.
         owner_reference_offset: u64,
         /// Source body of each pasted copy, parallel to `bodies`, when the
-        /// owner is a paste object that keeps its sources and each source
-        /// GUID names one browser node; otherwise empty.
+        /// owner is a paste object that keeps its sources, each source GUID
+        /// names one browser node, and each copy GUID names one distinct
+        /// parameter-body record; otherwise empty.
         copy_sources: Vec<DesignPasteSource>,
+        /// Kind and family-local ordinal that the owning paste object stores,
+        /// which name its timeline item.
+        owner_timeline_name: Option<DesignTimelineName>,
     },
     /// Counted body, repeated body-suffix, metadata, and result runs without a
     /// passive-reference run.
@@ -195,6 +199,22 @@ pub(crate) enum DesignBaseFeatureConstruction {
         null_reference_flag_offset: Option<u64>,
     },
 }
+
+/// Kind and family-local ordinal of a timeline object, with their offsets.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DesignTimelineName {
+    /// Stored kind spelling.
+    pub(crate) kind: crate::records::identity::Located<String>,
+    /// Family-local ordinal after the kind.
+    pub(crate) ordinal: crate::records::identity::Located<u32>,
+}
+
+cadmpeg_core::named_optional_field!(
+    deserialize_owner_timeline_name,
+    DesignTimelineName,
+    "owner_timeline_name"
+);
 
 /// Source body of one pasted copy, joined through its browser-node GUID.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -287,12 +307,14 @@ impl Clone for DesignBaseFeatureConstruction {
                 owner_record,
                 owner_reference_offset,
                 copy_sources,
+                owner_timeline_name,
             } => Self::TimelineOwnedBodies {
                 parameter_bodies: parameter_bodies.clone(),
                 bodies: bodies.clone(),
                 owner_record: *owner_record,
                 owner_reference_offset: *owner_reference_offset,
                 copy_sources: copy_sources.clone(),
+                owner_timeline_name: owner_timeline_name.clone(),
             },
             Self::SuffixResultBodies {
                 bodies,
@@ -431,6 +453,8 @@ impl Serialize for DesignBaseFeatureConstruction {
                 copy_source_entity_suffixes: SliceColumn<'a, DesignPasteSource, u64>,
                 #[serde(skip_serializing_if = "SliceColumn::is_empty")]
                 copy_source_node_guid_offsets: SliceColumn<'a, DesignPasteSource, u64>,
+                #[serde(skip_serializing_if = "Option::is_none")]
+                owner_timeline_name: Option<&'a DesignTimelineName>,
             },
             SuffixResultBodies {
                 body_entity_suffixes: SliceColumn<'a, DesignBaseFeatureEntry<u64>, u64>,
@@ -598,6 +622,7 @@ impl Serialize for DesignBaseFeatureConstruction {
                 owner_record,
                 owner_reference_offset,
                 copy_sources,
+                owner_timeline_name,
             } => BorrowedWire::TimelineOwnedBodies {
                 parameter_body_records: SliceColumn::new(parameter_bodies, |row| row.value),
                 parameter_body_record_offsets: SliceColumn::new(parameter_bodies, |row| row.offset),
@@ -613,6 +638,7 @@ impl Serialize for DesignBaseFeatureConstruction {
                 copy_source_node_guid_offsets: SliceColumn::new(copy_sources, |row| {
                     row.node_guid_offset
                 }),
+                owner_timeline_name: owner_timeline_name.as_ref(),
             },
             Self::SuffixResultBodies {
                 bodies,
@@ -852,6 +878,13 @@ enum DesignBaseFeatureConstructionWire {
         /// `copy_source_entity_suffixes`.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         copy_source_node_guid_offsets: Vec<u64>,
+        /// Kind and ordinal that the owning paste object stores.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_owner_timeline_name"
+        )]
+        owner_timeline_name: Option<DesignTimelineName>,
     },
     /// Counted body, repeated body-suffix, metadata, and result runs without a
     /// passive-reference run.
@@ -893,7 +926,7 @@ cadmpeg_core::named_optional_field!(
     "null_reference_flag_offset"
 );
 
-/// Join one column-wise run of 15-byte Base Feature references.
+/// Join one column-wise run of local Base Feature references.
 fn entry_rows(
     values: Vec<u64>,
     offsets: Vec<u64>,
@@ -1195,6 +1228,7 @@ impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstructio
                 owner_reference_offset,
                 copy_source_entity_suffixes,
                 copy_source_node_guid_offsets,
+                owner_timeline_name,
             } => {
                 if parameter_body_records.len() != body_entity_suffixes.len() {
                     return Err(
@@ -1232,6 +1266,7 @@ impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstructio
                     owner_record,
                     owner_reference_offset,
                     copy_sources,
+                    owner_timeline_name,
                 }
             }
             DesignBaseFeatureConstructionWire::SuffixResultBodies {
@@ -1479,6 +1514,7 @@ impl From<DesignBaseFeatureConstruction> for DesignBaseFeatureConstructionWire {
                 owner_record,
                 owner_reference_offset,
                 copy_sources,
+                owner_timeline_name,
             } => Self::TimelineOwnedBodies {
                 parameter_body_records: parameter_bodies.iter().map(|row| row.value).collect(),
                 parameter_body_record_offsets: parameter_bodies
@@ -1502,6 +1538,7 @@ impl From<DesignBaseFeatureConstruction> for DesignBaseFeatureConstructionWire {
                     .iter()
                     .map(|row| row.node_guid_offset)
                     .collect(),
+                owner_timeline_name,
             },
             DesignBaseFeatureConstruction::SuffixResultBodies {
                 bodies,
@@ -1533,6 +1570,17 @@ impl DesignBaseFeatureConstruction {
     pub(crate) fn timeline_owner(&self) -> Option<u32> {
         match self {
             Self::TimelineOwnedBodies { owner_record, .. } => Some(*owner_record),
+            _ => None,
+        }
+    }
+
+    /// Kind and ordinal that the owning paste object stores.
+    pub(crate) fn owner_timeline_name(&self) -> Option<&DesignTimelineName> {
+        match self {
+            Self::TimelineOwnedBodies {
+                owner_timeline_name,
+                ..
+            } => owner_timeline_name.as_ref(),
             _ => None,
         }
     }
@@ -1594,6 +1642,7 @@ impl DesignBaseFeatureConstruction {
     }
 
     /// Return passive body-reference records for forms that carry them.
+    #[cfg(test)]
     pub(crate) fn body_reference_records(&self) -> impl Iterator<Item = u32> + '_ {
         let (results, legacy, single) = match self {
             Self::ResultBodies { bodies, .. } => (Some(bodies), &[][..], None),

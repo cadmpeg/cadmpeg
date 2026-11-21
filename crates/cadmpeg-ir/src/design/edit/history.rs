@@ -41,13 +41,11 @@ pub(super) struct History {
 }
 
 impl History {
-    /// Indexes the containers of `design`.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`EditError::MalformedHistory`] where a member is in two
-    /// containers or a container is its own ancestor.
-    pub(super) fn new(design: &Design) -> Result<Self, EditError> {
+    /// Indexes the containers of `design`. Part 10 makes the containers a
+    /// tree in which each member has one place, which the editor's document
+    /// keeps; on any other design a member takes its first place, and a walk
+    /// up a cycle of containers stops.
+    pub(super) fn new(design: &Design) -> Self {
         let mut history = Self::default();
         let mut places: BTreeMap<Member, Step> = BTreeMap::new();
         let mut nested: BTreeMap<String, Step> = BTreeMap::new();
@@ -62,13 +60,11 @@ impl History {
                     index,
                 };
                 if let Member::Container(inner) = member {
-                    nested.insert(inner.as_str().to_owned(), step.clone());
+                    nested
+                        .entry(inner.as_str().to_owned())
+                        .or_insert_with(|| step.clone());
                 }
-                if places.insert(member.clone(), step).is_some() {
-                    return Err(EditError::MalformedHistory(format!(
-                        "{member:?} is a member of two containers"
-                    )));
-                }
+                places.entry(member.clone()).or_insert(step);
             }
             history.members.insert(id, (ordered, members));
         }
@@ -84,10 +80,7 @@ impl History {
             let mut next = places.get(member);
             while let Some(step) = next {
                 if path.len() > design.containers.len() {
-                    return Err(EditError::MalformedHistory(format!(
-                        "container {} is its own ancestor",
-                        step.container
-                    )));
+                    break;
                 }
                 path.push(step.clone());
                 next = nested.get(&step.container);
@@ -95,7 +88,27 @@ impl History {
             path.reverse();
             history.paths.insert(member.clone(), path);
         }
-        Ok(history)
+        history
+    }
+
+    /// The member and every member under it: where it is a container, its
+    /// members and theirs.
+    pub(super) fn members_under(&self, member: &Member) -> Vec<Member> {
+        let mut found = Vec::new();
+        let mut seen = BTreeSet::new();
+        let mut stack = vec![member.clone()];
+        while let Some(next) = stack.pop() {
+            if !seen.insert(next.clone()) {
+                continue;
+            }
+            if let Member::Container(container) = &next {
+                if let Some((_, members)) = self.members.get(container.as_str()) {
+                    stack.extend(members.iter().rev().cloned());
+                }
+            }
+            found.push(next);
+        }
+        found
     }
 
     /// The member's steps from its root container, where it is placed.

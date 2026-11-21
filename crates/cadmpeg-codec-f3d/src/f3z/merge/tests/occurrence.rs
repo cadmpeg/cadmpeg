@@ -101,7 +101,7 @@ fn member_definition_preserves_the_body_transform_inside_each_placement() {
     ])
     .expect("affine transform");
 
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
     ir.geometry.bodies[0].transform = Some(inner);
     crate::f3z::merge::define_member(&ctx, &mut ir, "member", "member.f3d").unwrap();
@@ -233,7 +233,7 @@ fn a_member_definition_owns_the_top_level_of_its_file() {
     use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
     use cadmpeg_ir::products::{Occurrence, Storage};
 
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut member = cadmpeg_ir::examples::unit_cube().unwrap();
     let top = OccurrenceId::mint("f3d:model:occurrence#xref-0-0").unwrap();
     let external = ProductDefinitionId::mint("f3d:xref:document#part.f3d").unwrap();
@@ -282,7 +282,7 @@ fn a_member_definition_owns_the_top_level_of_its_file() {
 
 #[test]
 fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut merged = Topology::default();
     let component = Topology {
         bodies: vec![Body {
@@ -328,7 +328,7 @@ fn occurrence_merge_rewrites_only_member_native_record_text() {
     use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
     use cadmpeg_ir::NativeRecord;
 
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let id = "f3d:Design1/BulkStream.dat:design-construction-operand-group#7";
     let mut native = Native::default();
     native.namespace_mut("f3d").arenas_mut().insert(
@@ -368,7 +368,7 @@ fn occurrence_merge_scopes_unmaterialized_partial_pattern_references() {
     };
     use cadmpeg_ir::features::PathRef;
 
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let source = "f3d:Design1/BulkStream.dat:design-record#91";
     let mut row = feature("f3d:model:feature#pattern", 0);
     row.name = Some(source.into());
@@ -416,7 +416,7 @@ fn occurrence_merge_scopes_unmaterialized_partial_pattern_references() {
 #[test]
 fn occurrence_merge_preserves_a_body_name_that_spells_its_identity() {
     use cadmpeg_ir::document::EntityRewrite;
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let source_id = "f3d:model:body#source";
     let body = Body {
         id: BodyId::mint(source_id).unwrap(),
@@ -466,14 +466,14 @@ fn occurrence_merge_remaps_and_retains_native_records() {
     component
         .namespace_mut("f3d")
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "design_sketch_placements",
             &[placement],
         )
         .expect("store component native");
     let mut root = Native::default();
     extend_native(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &mut root,
         component,
         "role/occurrence-0",
@@ -504,14 +504,14 @@ fn occurrence_configuration_survives_document_and_typed_native_admission() {
     component
         .namespace_mut("f3d")
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "design_configurations",
             &[configuration],
         )
         .unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
     extend_native(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &mut ir.native,
         component,
         "component-0",
@@ -571,7 +571,7 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
     component
         .namespace_mut("f3d")
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "design_configurations",
             &[configuration],
         )
@@ -579,7 +579,7 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
     component
         .namespace_mut("f3d")
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "body_visibilities",
             &[visibility],
         )
@@ -587,7 +587,7 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
 
     let mut root = Native::default();
     extend_native(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &mut root,
         component,
         "role/occurrence-0",
@@ -686,7 +686,7 @@ fn occurrence_key_separates_same_role_references_with_reset_ordinals() {
 fn merged_documents_keep_parameter_names_and_document_local_expression_dependencies() {
     use crate::f3z::merge::scope_document_parameters;
 
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let (mut parent, mut native) = parameter_document(&ctx, 1.0);
     let (mut component, component_native) = parameter_document(&ctx, 2.0);
     let mut owned = component.parameters[1].clone();
@@ -776,7 +776,10 @@ fn document_parameter_scope_is_charged_against_the_entity_budget() {
     let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .unwrap()
         .0;
-    let (mut model, _) = parameter_document(&cadmpeg_test_support::service_decode_context(), 1.0);
+    let (mut model, _) = parameter_document(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        1.0,
+    );
     let features = model.features.len();
 
     let error = scope_document_parameters(&ctx, &mut model).unwrap_err();
@@ -925,7 +928,7 @@ fn imported_definition_bodies_keep_their_definition_frame() {
         .unwrap(),
     );
     ir.geometry.bodies.push(free_body.clone());
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let definition =
         crate::f3z::merge::define_member(&ctx, &mut ir, "member", "member.f3d").unwrap();
     assert_eq!(ir.geometry.bodies[0].transform, original);
@@ -1068,7 +1071,7 @@ fn repeated_member_constraints_keep_shared_definitions_and_instance_local_operan
         joints: vec![joint],
         table: crate::xref::XrefTable::default(),
     };
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let first_parent = OccurrenceId::mint("f3d:model:occurrence#first").unwrap();
     let second_parent = OccurrenceId::mint("f3d:model:occurrence#second").unwrap();
     let first = member.instantiate(&ctx, "first", &first_parent).unwrap();
@@ -1408,7 +1411,7 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
 
 #[test]
 fn product_history_owner_rescopes_feature_and_parameter_links() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut document = cadmpeg_ir::CadIr::empty();
     document.model = parameter_document(&ctx, 1.0).0;
     let owner = crate::f3z::merge::define_member(&ctx, &mut document, "synthetic", "synthetic.f3d")
@@ -1731,6 +1734,7 @@ fn complete_joint_descent_consumes_occurrence_keys_in_each_insertion() {
             &mut joint,
             &children,
             &instances,
+            super::super::JointRebind::All,
             &mut losses
         ));
         let operand = &joint.connectors().next().unwrap().operand;
@@ -1758,6 +1762,7 @@ fn complete_joint_descent_consumes_occurrence_keys_in_each_insertion() {
             &mut external,
             &children,
             &instances,
+            super::super::JointRebind::All,
             &mut losses
         ));
         assert_eq!(
@@ -1769,11 +1774,17 @@ fn complete_joint_descent_consumes_occurrence_keys_in_each_insertion() {
             occurrence: id("absent"),
             occurrence_path: Vec::new(),
         };
+        absent.connectors_mut().nth(1).unwrap().operand = JointOperand::external(
+            cadmpeg_ir::products::ExternalDocument::document_id(FIRST),
+            SECOND,
+            Vec::new(),
+        );
         let mut losses = Vec::new();
         assert!(!super::super::retain_complete_joint(
             &mut absent,
             &children,
             &instances,
+            super::super::JointRebind::All,
             &mut losses
         ));
         assert_eq!(
@@ -1794,6 +1805,7 @@ fn complete_joint_descent_consumes_occurrence_keys_in_each_insertion() {
                 &mut invalid,
                 &missing,
                 &instances,
+                super::super::JointRebind::All,
                 &mut losses
             ));
             assert_eq!(losses.len(), 1);
@@ -1806,7 +1818,7 @@ fn complete_joint_descent_consumes_occurrence_keys_in_each_insertion() {
 }
 
 #[test]
-fn standalone_external_joint_binds_without_changing_source_operands() {
+fn qualified_external_joint_binds_without_changing_source_operands() {
     use cadmpeg_ir::products::{ExternalDocument, JointOperand};
     let (mut model, _) = standalone_joint_model(Vec::new());
     for (ordinal, connector) in model.assembly_joints[0].connectors_mut().enumerate() {
@@ -1819,29 +1831,35 @@ fn standalone_external_joint_binds_without_changing_source_operands() {
     let decoded = model.assembly_joints.clone();
     let complete = std::collections::BTreeSet::from(["f3d:scope#standalone".to_owned()]);
     let children = std::collections::BTreeMap::new();
-    let mut losses = Vec::new();
-    super::super::rebind_joints(
-        &mut super::super::JointRows {
-            occurrences: &model.occurrences,
-            joints: &mut model.assembly_joints,
-            features: &mut model.features,
-        },
-        &children,
-        &children,
-        &complete,
+    for mode in [
         super::super::JointRebind::CompleteScopes,
-        &mut losses,
-    );
-    assert_eq!(model.assembly_joints, decoded);
-    assert_eq!(losses.len(), 1);
-    assert_eq!(
-        losses[0].code,
-        crate::loss::F3dLossCode::AssemblyJointSourceBindingAssumed.kind()
-    );
-    assert_eq!(
-        model.features[0].evaluation.definition(),
-        &FeatureDefinition::Operation(FeatureOperation::AssemblyJoint {
-            joint: decoded[0].id.clone(),
-        })
-    );
+        super::super::JointRebind::All,
+    ] {
+        let mut model = model.clone();
+        let mut losses = Vec::new();
+        super::super::rebind_joints(
+            &mut super::super::JointRows {
+                occurrences: &model.occurrences,
+                joints: &mut model.assembly_joints,
+                features: &mut model.features,
+            },
+            &children,
+            &children,
+            &complete,
+            mode,
+            &mut losses,
+        );
+        assert_eq!(model.assembly_joints, decoded);
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::AssemblyJointSourceBindingAssumed.kind()
+        );
+        assert_eq!(
+            model.features[0].evaluation.definition(),
+            &FeatureDefinition::Operation(FeatureOperation::AssemblyJoint {
+                joint: decoded[0].id.clone(),
+            })
+        );
+    }
 }

@@ -79,10 +79,14 @@ fn two_sided_revolve_construction(
             bytes.get(start + two_sided_revolve::PROJECT_AXIS),
             Some(0 | 1)
         )
-        || bytes.get(start + two_sided_revolve::SOLID) != Some(&1)
     {
         return None;
     }
+    let solid = match bytes.get(start + two_sided_revolve::SOLID)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
     let opposite_record_index = marked_record_reference(
         bytes,
         start + two_sided_revolve::OPPOSITE_ANGLE_REFERENCE_MARKER,
@@ -113,7 +117,7 @@ fn two_sided_revolve_construction(
                 angle_record_index: opposite_record_index,
                 angle_offset: opposite.evaluated_value_offset(),
             }),
-            solid: None,
+            solid: Some(solid),
             reversed: false,
         },
     ))
@@ -135,35 +139,59 @@ pub(super) fn tail_second_reference(bytes: &[u8], scope: &DesignParameterScope) 
     let tail = scope
         .paired_byte_offset()
         .checked_sub(SECOND_REFERENCE_TAIL)?;
-    if scope.previous_history_state_id_offset() != tail.checked_add(SECOND_REFERENCE_PREVIOUS_STATE)
+    if scope.feature_ordinal_offset() != tail
+        || scope.previous_history_state_id_offset()
+            != tail.checked_add(SECOND_REFERENCE_PREVIOUS_STATE)
     {
         return None;
     }
     let marker = usize::try_from(tail)
         .ok()?
         .checked_add(super::parameter_scope::FIXED_TAIL_SECOND_REFERENCE)?;
-    if bytes.get(marker) != Some(&1) {
-        return None;
-    }
-    View::u64_le_at(bytes, marker.checked_add(1)?)
-}
-
-/// The loss of a 361-byte referenced-angle `Revolve` frame, whose second tail
-/// reference the decoder reads without a meaning (DR-657).
-pub(super) fn referenced_revolve_reference_loss(
-    bytes: &[u8],
-    scope: &DesignParameterScope,
-) -> Option<cadmpeg_ir::report::loss::LossNote> {
-    if design_feature_family(&scope.kind())? != DesignFeatureFamily::Revolve
-        || parameter_scope_payload_length(scope)? != 361
+    if bytes.get(marker) != Some(&1)
+        || bytes.get(marker.checked_add(9)?..marker.checked_add(11)?) != Some(&[0; 2])
     {
         return None;
     }
+    let target = View::u64_le_at(bytes, marker.checked_add(1)?)?;
+    (!scope
+        .reference_members()
+        .values()
+        .any(|&member| u64::from(member) == target))
+    .then_some(target)
+}
+
+pub(super) fn referenced_revolve_reference_loss(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    construction: &path_features::DesignRevolveConstruction,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    if design_feature_family(&scope.kind())? != DesignFeatureFamily::Revolve {
+        return None;
+    }
+    let length = parameter_scope_payload_length(scope)?;
+    construction.solid?;
+    let operation = construction
+        .operation_offset
+        .checked_sub(scope.byte_offset())?;
+    let base_length = match (length, usize::try_from(operation).ok()?) {
+        (361, referenced_revolve::OPERATION) => 351,
+        (379, unmarked_revolve::OPERATION) => 369,
+        _ => return None,
+    };
     let target = tail_second_reference(bytes, scope)?;
     Some(crate::loss::F3dLossCode::FeatureRevolveLayoutAssumed.note(format!(
-        "Revolve scope {} stores a second tail reference with target {target} in its 361-byte referenced-angle frame; the decoder reads the other fields at the 351-byte offsets (DR-657).",
+        "Revolve scope {} stores a second tail reference with target {target} in its {length}-byte referenced-angle frame; the decoder reads the other fields at the {base_length}-byte offsets (DR-657).",
         scope.id
     )))
+}
+
+/// Whether a referenced-angle `Revolve` frame of `length` token-independent
+/// bytes and `count` ordered references has the Boolean-operation layout: the
+/// 373-byte eight-reference frame, or the 384-byte nine-reference frame that
+/// stores one more marked reference in its ordered table.
+fn referenced_boolean_revolve_frame(length: u64, count: usize) -> bool {
+    matches!((length, count), (373, 8) | (384, 9))
 }
 
 /// A referenced-angle `Revolve` scope whose angle owner can store a negative angle.
@@ -180,17 +208,23 @@ fn referenced_angle_revolve_construction(
         parameter_scope_payload_length(scope)?,
         scope.reference_members().len(),
     ) {
-        (length @ (351 | 361 | 373), count @ (6 | 8))
+        (length, count)
             if (matches!(
                 (
                     length,
                     count,
                     View::u32_le_at(bytes, start + referenced_revolve::OPERATION)
                 ),
-                (351, 6, Some(4)) | (373, 8, Some(1..=3))
-            ) || (length, count) == (361, 6)
-                && View::u32_le_at(bytes, start + referenced_revolve::OPERATION) == Some(4)
-                && tail_second_reference(bytes, scope).is_some())
+                (351, 6, Some(4))
+            ) || referenced_boolean_revolve_frame(length, count)
+                && matches!(
+                    View::u32_le_at(bytes, start + referenced_revolve::OPERATION),
+                    Some(1..=3)
+                )
+                || (length, count) == (361, 6)
+                    && View::u32_le_at(bytes, start + referenced_revolve::OPERATION)
+                        == Some(4)
+                    && tail_second_reference(bytes, scope).is_some())
                 && bytes.get(start + referenced_revolve::MARKER) == Some(&1)
                 && View::u32_le_at(bytes, start + referenced_revolve::ZERO_VALUE) == Some(0)
                 && View::u32_le_at(bytes, start + referenced_revolve::EXTENT_KIND) == Some(2)
@@ -207,10 +241,11 @@ fn referenced_angle_revolve_construction(
                 referenced_revolve::ANGLE_REFERENCE_MARKER,
             )
         }
-        (369, 8)
-            if bytes
-                .get(start + unmarked_revolve::ZERO_RUN..start + unmarked_revolve::OPERATION)?
-                == [0; 10]
+        (length @ (369 | 379), 8)
+            if (length == 369 || tail_second_reference(bytes, scope).is_some())
+                && bytes.get(
+                    start + unmarked_revolve::ZERO_RUN..start + unmarked_revolve::OPERATION,
+                )? == [0; 10]
                 && View::u32_le_at(bytes, start + unmarked_revolve::EXTENT_KIND)
                     == Some(unmarked_revolve::EXTENT_KIND_VALUE)
                 && bytes.get(start + unmarked_revolve::DIRECTION_KIND)
@@ -412,7 +447,8 @@ pub(super) fn marker_one_revolve_assumed_length(
         design_feature_family(&scope.kind()),
         Some(DesignFeatureFamily::Revolve)
     ) && marker_one_revolve_prologue(bytes, scope, start)
-        && !matches!(length, 345 | 355 | 367 | 351 | 373)
+        && !matches!(length, 345 | 355 | 367 | 351)
+        && !referenced_boolean_revolve_frame(length, scope.reference_members().len())
     {
         Some(length)
     } else {
@@ -542,7 +578,10 @@ pub(super) fn exact_path_feature_construction(
     match design_feature_family(&scope.kind())? {
         DesignFeatureFamily::Revolve
             if marker_one_revolve_prologue(bytes, scope, start)
-                && !matches!(parameter_scope_payload_length(scope), Some(351 | 373)) =>
+                && !matches!(parameter_scope_payload_length(scope), Some(351))
+                && !parameter_scope_payload_length(scope).is_some_and(|length| {
+                    referenced_boolean_revolve_frame(length, scope.reference_members().len())
+                }) =>
         {
             let angle = unique_revolve_angle_owner(scope, parameter_owners, None, 0)?;
             Some(DesignPathFeatureConstruction::Revolve(

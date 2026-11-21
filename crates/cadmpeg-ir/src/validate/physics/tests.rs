@@ -24,7 +24,7 @@ fn a_collider_names_an_existing_body_and_material() {
     ir.model.colliders.push(Collider {
         id: ColliderId::mint("test:model:collider#0").unwrap(),
         target: PhysicsTarget::Body { body }.into(),
-        shape: ColliderShape::ConvexHull {},
+        shape: ColliderShape::ConvexHull,
         enabled: true,
         material: None,
         native_ref: None,

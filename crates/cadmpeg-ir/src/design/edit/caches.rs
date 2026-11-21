@@ -8,16 +8,18 @@
 //! recomputes the cache of every dependent neutral expression that has no
 //! uncached measure, and clears every dependent cache it cannot recompute: a
 //! parameter's value, the `Cell` and `Unchecked` deviations of a fit, a
-//! measure's cached value, and an override's value. An override with no
-//! expression whose value it clears states nothing, so it is removed.
+//! measure's cached value, an override's value, and the `resolved` of a
+//! transformation whose steps bind a dependent parameter. An override with
+//! no expression whose value it clears states nothing, so it is removed.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::eval::{
-    cache_value, check_types, evaluate, kind_type, kind_value, EvalError, Type, Value,
+    cache_value, check_types, evaluate, kind_type, kind_value, EvalError, ExpressionSite, Type,
+    Value,
 };
 use super::history::{currents, Context, Currents, Dependents, Graph, History, Node};
-use super::wire::{clear_measures, reads, rewrite};
+use super::wire::{clear_measures, clear_transformations, reads, rewrite};
 use super::{EditError, Literal, ParameterDrivers};
 use crate::design::configuration::{ArrangementRef, Overrides, ParameterOverride};
 use crate::design::dimension::{ParameterRef, RefTarget};
@@ -111,7 +113,9 @@ fn attempt(
 
 /// Whether a new expression refuses its kind outright: its tree does not
 /// type-check, or its root or the value it evaluates to is not of the kind;
-/// as opposed to lacking a value it reads.
+/// as opposed to lacking a value it reads. An integer-kind value that is not
+/// whole is not refused: that rule is a Warning, and the value has no cache
+/// (§4, §5.13).
 fn kind_refusal(
     parameter: &ParameterId,
     expression: &Expression,
@@ -126,7 +130,7 @@ fn kind_refusal(
         parameter: parameter.clone(),
         reason,
     };
-    check_types(node, type_of)
+    check_types(node, ExpressionSite::Parameter, type_of)
         .and_then(|found| kind_type(kind, found))
         .map_err(refusal)?;
     let result = evaluate(
@@ -137,6 +141,7 @@ fn kind_refusal(
         },
     );
     match result {
+        Ok(_) if *kind == ValueKind::Integer => Ok(()),
         Ok(value) => kind_value(kind, value).map(|_| ()).map_err(refusal),
         Err(EvalError::Type(reason)) => Err(refusal(reason)),
         Err(EvalError::Unbound(_) | EvalError::Domain(_)) => Ok(()),
@@ -221,19 +226,9 @@ impl CadIr {
         }
     }
 
-    /// Sets a parameter's value to a literal: its definition becomes a
-    /// one-literal expression. Then every evaluation and current state that
-    /// depends on the parameter is marked `Stale`, and every dependent cache
-    /// is recomputed or cleared (§4).
-    ///
-    /// # Errors
-    ///
-    /// Returns [`EditError::DrivenParameter`] for a parameter that is
-    /// `Driven`, `Assigned`, or whose expression has references, with what
-    /// drives it; [`EditError::KindMismatch`] for a literal that is not a value
-    /// of the parameter's kind; and [`EditError::UnknownParameter`] for a
-    /// parameter the design does not hold.
-    pub fn set_dimension(
+    /// [`Editor::set_dimension`](super::Editor::set_dimension) on the
+    /// document itself.
+    pub(super) fn set_dimension(
         &mut self,
         parameter: &ParameterId,
         value: Literal,
@@ -255,27 +250,27 @@ impl CadIr {
                 drivers,
             });
         }
-        let node = literal_node(value).map_err(|reason| EditError::KindMismatch {
+        let refusal = |reason: String| EditError::KindMismatch {
             parameter: parameter.clone(),
             reason,
-        })?;
+        };
+        if record.kind == ValueKind::Integer {
+            if let Literal::Number { value, unit } = &value {
+                if !unit.0.is_empty() {
+                    return Err(refusal("an integer takes a number with no unit".into()));
+                }
+                if value.get().fract() != 0.0 {
+                    return Err(refusal(format!("{} is not a whole number", value.get())));
+                }
+            }
+        }
+        let node = literal_node(value).map_err(refusal)?;
         self.set_parameter_expression(parameter, Expression::Neutral(Neutral(node)))
     }
 
-    /// Replaces a parameter's definition with an expression. Then every
-    /// evaluation and current state that depends on the parameter is marked
-    /// `Stale`, and every dependent cache is recomputed or cleared (§4). A
-    /// refused expression leaves the document unchanged.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`EditError::KindMismatch`] for a neutral expression that does
-    /// not type-check by §5.13 (every `if` branch included, `min` and `max`
-    /// with at least two arguments), whose root or whose value does not have
-    /// the parameter's kind, or that holds the law parameter or a bend
-    /// variable; and [`EditError::UnknownParameter`] for a parameter, or a
-    /// referenced parameter, that the design does not hold.
-    pub fn set_parameter_expression(
+    /// [`Editor::set_parameter_expression`](super::Editor::set_parameter_expression)
+    /// on the document itself.
+    pub(super) fn set_parameter_expression(
         &mut self,
         parameter: &ParameterId,
         expression: Expression,
@@ -309,15 +304,9 @@ impl CadIr {
         self.after_edit([Node::Parameter(parameter.clone())])
     }
 
-    /// Replaces a feature's definition. Then every evaluation and current
-    /// state that depends on the feature is marked `Stale`, and every
-    /// dependent cache is recomputed or cleared (§4).
-    ///
-    /// # Errors
-    ///
-    /// Returns [`EditError::UnknownFeature`] for a feature the design does
-    /// not hold.
-    pub fn set_feature_definition(
+    /// [`Editor::set_feature_definition`](super::Editor::set_feature_definition)
+    /// on the document itself.
+    pub(super) fn set_feature_definition(
         &mut self,
         feature: &FeatureId,
         definition: FeatureDefinition,
@@ -337,13 +326,14 @@ impl CadIr {
         &mut self,
         seeds: impl IntoIterator<Item = Node>,
     ) -> Result<(), EditError> {
-        let history = History::new(&self.design)?;
+        let history = History::new(&self.design);
         let graph = Graph::new(&self.design, &history)?;
         let currents = currents(&self.design);
         let dependents = graph.dependents(&history, &currents, seeds);
         self.mark_states_stale(&history, &dependents.features);
         self.mark_sketches_stale(&dependents.features);
-        self.refresh_caches(&history, &currents, &dependents)
+        self.refresh_caches(&history, &currents, &dependents)?;
+        self.refresh_process(&history, &currents, &dependents)
     }
 
     /// Marks `Stale` every evaluation and current state that depends on any
@@ -389,6 +379,7 @@ impl CadIr {
         dependents: &Dependents,
     ) -> Result<(), EditError> {
         self.clear_stale_measures(history, currents, &dependents.features)?;
+        self.clear_stale_transformations(&dependents.parameters)?;
         let targets = &dependents.parameters;
         self.recompute_values(targets);
         for parameter in &mut self.design.parameters {
@@ -484,6 +475,44 @@ impl CadIr {
             rewrite(&mut feature.definition, |json| {
                 Ok(check.clear(json, &context))
             })?;
+        }
+        Ok(())
+    }
+
+    /// Clears the `resolved` of every `Transformation` one of whose steps
+    /// binds a parameter of `parameters` (§4, §6.5), in the features and in
+    /// the definitions the configurations and arrangements override.
+    fn clear_stale_transformations(
+        &mut self,
+        parameters: &BTreeSet<ParameterId>,
+    ) -> Result<(), EditError> {
+        if parameters.is_empty() {
+            return Ok(());
+        }
+        let bound: BTreeSet<String> = parameters
+            .iter()
+            .map(|parameter| parameter.as_str().to_owned())
+            .collect();
+        for feature in &mut self.design.features {
+            rewrite(&mut feature.definition, |json| {
+                Ok(clear_transformations(json, &bound))
+            })?;
+        }
+        let overrides = self
+            .design
+            .configurations
+            .iter_mut()
+            .map(|configuration| &mut configuration.overrides)
+            .chain(
+                self.design
+                    .arrangements
+                    .iter_mut()
+                    .map(|arrangement| &mut arrangement.overrides),
+            );
+        for overrides in overrides {
+            for state in overrides.features.values_mut() {
+                rewrite(state, |json| Ok(clear_transformations(json, &bound)))?;
+            }
         }
         Ok(())
     }

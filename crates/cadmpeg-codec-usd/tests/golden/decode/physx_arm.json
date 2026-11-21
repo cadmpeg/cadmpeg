@@ -613,7 +613,8 @@
               "dimension": {
                 "angle": 0,
                 "length": 0,
-                "mass": 0
+                "mass": 0,
+                "time": 0
               },
               "kind": "real",
               "value": 0.10000000149011612
@@ -622,7 +623,8 @@
               "dimension": {
                 "angle": 1,
                 "length": 0,
-                "mass": 0
+                "mass": 0,
+                "time": -1
               },
               "kind": "real",
               "value": 6.283185307179586
@@ -635,7 +637,8 @@
               "dimension": {
                 "angle": 0,
                 "length": 2,
-                "mass": 0
+                "mass": 0,
+                "time": -2
               },
               "kind": "real",
               "value": 50.0
@@ -658,7 +661,8 @@
               "dimension": {
                 "angle": 0,
                 "length": 1,
-                "mass": 0
+                "mass": 0,
+                "time": 0
               },
               "kind": "real",
               "value": 2.0000000298023224
@@ -703,7 +707,8 @@
               "dimension": {
                 "angle": 0,
                 "length": 0,
-                "mass": 1
+                "mass": 1,
+                "time": 0
               },
               "kind": "real",
               "value": 0.5
@@ -712,7 +717,8 @@
               "dimension": {
                 "angle": 0,
                 "length": 1,
-                "mass": 0
+                "mass": 0,
+                "time": -1
               },
               "kind": "real",
               "value": 100.0
@@ -735,7 +741,8 @@
               "dimension": {
                 "angle": -1,
                 "length": 1,
-                "mass": 0
+                "mass": 0,
+                "time": 0
               },
               "kind": "real",
               "value": 11.459155646484371
@@ -744,7 +751,8 @@
               "dimension": {
                 "angle": 0,
                 "length": 1,
-                "mass": 0
+                "mass": 0,
+                "time": 0
               },
               "kind": "real",
               "value": 10.0
@@ -800,7 +808,8 @@
               "dimension": {
                 "angle": 0,
                 "length": 1,
-                "mass": 0
+                "mass": 0,
+                "time": -1
               },
               "kind": "real",
               "value": 200.0
@@ -831,7 +840,8 @@
               "dimension": {
                 "angle": 1,
                 "length": 0,
-                "mass": 0
+                "mass": 0,
+                "time": 0
               },
               "kind": "real",
               "value": 0.5235987755982988
@@ -854,7 +864,8 @@
               "dimension": {
                 "angle": 0,
                 "length": 2,
-                "mass": 1
+                "mass": 1,
+                "time": 0
               },
               "kind": "real",
               "value": 0.9999999776482582
@@ -863,7 +874,8 @@
               "dimension": {
                 "angle": 0,
                 "length": 0,
-                "mass": 0
+                "mass": 0,
+                "time": 0
               },
               "kind": "real",
               "value": 0.05000000074505806
@@ -872,7 +884,8 @@
               "dimension": {
                 "angle": 1,
                 "length": 0,
-                "mass": 0
+                "mass": 0,
+                "time": -1
               },
               "kind": "real",
               "value": 3.141592653589793
@@ -895,7 +908,8 @@
               "dimension": {
                 "angle": -1,
                 "length": 2,
-                "mass": 1
+                "mass": 1,
+                "time": -1
               },
               "kind": "real",
               "value": 11459.155902616465
@@ -904,7 +918,8 @@
               "dimension": {
                 "angle": -1,
                 "length": 2,
-                "mass": 1
+                "mass": 1,
+                "time": -2
               },
               "kind": "real",
               "value": 572957.7951308233

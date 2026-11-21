@@ -3,7 +3,7 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
-use super::shared_frames::marked_record_reference;
+use super::shared_frames::{marked_record_reference, rigid_transform_at};
 use crate::bytes::f64s_at;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::layout::joint_origin_legacy_class_337_266_frame as joint_origin_class_337_266;
@@ -20,7 +20,14 @@ use crate::layout::work_plane_legacy_class_337_325_matrix_frame as work_plane_cl
 use crate::layout::work_plane_legacy_class_400_matrix_frame as work_plane_legacy;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
+use crate::records::feature::work_geometry::joint_origin::{
+    DesignJointOriginCarrierEvidence, DirectJointOriginCarrier,
+};
 use cadmpeg_core::decode::View;
+use std::collections::HashMap;
+
+#[cfg(test)]
+mod tests;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct ScopePlacementFrame {
@@ -255,6 +262,51 @@ pub(super) fn exact_work_plane_frame(
         }
     }
     candidate
+}
+
+pub(super) fn direct_joint_origin_frame(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    types: &HashMap<u64, (&str, u32)>,
+) -> Option<(ScopePlacementFrame, DesignJointOriginCarrierEvidence)> {
+    use crate::layout::joint_origin_direct_carrier_369 as common;
+
+    let (carrier, start) = DirectJointOriginCarrier::for_scope(scope)?
+        .into_iter()
+        .filter(|carrier| carrier.has_registered_types(scope, types))
+        .find_map(|carrier| {
+            let start = usize::try_from(carrier.start).ok()?;
+            let end = start.checked_add(carrier.length)?;
+            records
+                .frames(carrier.record_index)
+                .any(|pair| pair == (start, end))
+                .then_some((carrier, start))
+        })?;
+    let mut view = View::over_retained(bytes);
+    view.seek(start)?;
+    let frame = view.take(carrier.length)?;
+    let prefix = &frame[common::ZERO_PREFIX..carrier.matrix];
+    let scope_backlink = frame[carrier.scope_backlink..].try_into().ok()?;
+    let reference = carrier.construction_index(prefix, scope_backlink, scope.record_index)?;
+    if records.offsets(reference).is_empty() {
+        return None;
+    }
+    Some((
+        ScopePlacementFrame {
+            transform: rigid_transform_at(frame, carrier.matrix)?,
+            transform_offset: u64_from_index(start + carrier.matrix),
+            reference: Some((
+                reference,
+                u64_from_index(start + carrier.construction_reference + 1),
+            )),
+        },
+        DesignJointOriginCarrierEvidence {
+            frame_length: u64_from_index(carrier.length),
+            prefix: prefix.to_vec().into(),
+            scope_backlink: (*scope_backlink).into(),
+        },
+    ))
 }
 
 pub(super) fn exact_joint_origin_frame(

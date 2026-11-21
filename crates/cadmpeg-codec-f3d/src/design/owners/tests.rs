@@ -571,3 +571,32 @@ fn unadmitted_output_membership_retains_every_output_and_releases_the_owner() {
         F3dLossCode::ScopeOutputOwnerUnresolved.kind()
     );
 }
+
+#[test]
+fn a_captured_base_feature_keeps_its_component_when_its_consumer_moves() {
+    let native = native();
+    let mut model = model(&native);
+    let source = model.product_definitions[0].id.clone();
+    let target = model.product_definitions[1].id.clone();
+    model.features[0].product_definition = Some(source.clone());
+    model.features[1].product_definition = Some(target.clone());
+    let generator = model.features[0].id.clone();
+    model.features[1].dependencies.insert(generator);
+    let prefix = crate::ids::feature_input_prefix(&model.features[0].id, 92);
+    model.features[0]
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(
+            FeatureOperation::BaseFeature {
+                bodies: BodySelection::Historical {
+                    state: crate::ids::history_input_state_id(&prefix),
+                    bodies: vec![crate::ids::history_input_body_id(&prefix, 1)]
+                        .try_into()
+                        .unwrap(),
+                    native: "f3d:test:scope#derived".to_owned().try_into().unwrap(),
+                },
+            },
+        ));
+    let consumer = model.features[1].id.clone();
+    follow_consumed_inputs(&mut model, vec![(consumer, target)], &BTreeMap::new()).unwrap();
+    assert_eq!(model.features[0].product_definition, Some(source));
+}

@@ -3,8 +3,10 @@
 
 mod assembly_bodies;
 mod closed_faces;
+mod context_uncertainties;
 mod csg_solids;
 mod declared_measures;
+mod header_attributes;
 mod partial_geometry;
 mod plant_units;
 mod pmi_scope;

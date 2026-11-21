@@ -31,6 +31,7 @@ fn geometry(carrier: Option<HistoricalEdgeCarrier>) -> HistoricalEdgeGeometry {
         end: None,
         faces: crate::features::DistinctMembers::default(),
         carrier,
+        supports: Vec::new(),
     }
 }
 

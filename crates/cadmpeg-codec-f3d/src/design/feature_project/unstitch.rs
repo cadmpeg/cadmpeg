@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{face_scope_frame, unique_feature_match};
+use super::delete_face::face_scope_frame;
+use super::unique_feature_match;
 use crate::design::face_resolve::resolved_historical_face_group;
 use crate::ids::native_stream;
 use crate::loss::F3dLossCode;

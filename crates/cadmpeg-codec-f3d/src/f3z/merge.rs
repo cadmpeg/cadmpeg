@@ -597,7 +597,6 @@ fn omit_unbound_member_joints(
     unplaced_members: &std::collections::BTreeSet<cadmpeg_ir::ids::OccurrenceId>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::products::OperandContainer;
     if unplaced_members.is_empty() {
         return;
@@ -644,7 +643,17 @@ fn omit_unbound_member_joints(
         }
         !unresolved
     });
-    for feature in &mut model.features {
+    omit_unbound_motion_links(&mut model.assembly_joints, &mut omitted, losses);
+    restore_native_joint_features(&mut model.features, &omitted);
+}
+
+fn restore_native_joint_features(
+    features: &mut [cadmpeg_ir::features::Feature],
+    omitted: &std::collections::BTreeSet<cadmpeg_ir::products::JointId>,
+) {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+
+    for feature in features {
         if matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::AssemblyJoint { joint }) if omitted.contains(joint))
         {
             feature
@@ -945,24 +954,7 @@ fn rebind_joints(
             .as_ref()
             .is_some_and(|id| complete_scopes.contains(id))
         {
-            if mode == JointRebind::CompleteScopes {
-                let mut descended = joint.clone();
-                let mut nested = joint.clone();
-                if complete_joint_descent(&mut descended, complete_children, &instances) {
-                    *joint = descended;
-                } else if nest_residual_descent(&mut nested, complete_children, &instances) {
-                    losses.push(F3dLossCode::AssemblyOperandNestedPathRetained.note(format!(
-                        "joint {}: the occurrence path continues inside an unmerged inserted document; the remaining keys stay a nested occurrence path",
-                        joint.id
-                    )));
-                    *joint = nested;
-                } else {
-                    losses.push(F3dLossCode::AssemblyJointSourceBindingAssumed.note(format!(
-                        "joint {}: the timeline feature uses the decoded joint with unresolved source operand identities; their document and occurrence bindings are assumed",
-                        joint.id
-                    )));
-                }
-            } else if !retain_complete_joint(joint, complete_children, &instances, losses) {
+            if !retain_complete_joint(joint, complete_children, &instances, mode, losses) {
                 refused.insert(joint_id.clone());
             }
             continue;
@@ -1013,7 +1005,36 @@ fn rebind_joints(
         }
     }
     model.joints.retain(|joint| !refused.contains(&joint.id));
+    omit_unbound_motion_links(model.joints, &mut refused, losses);
+    restore_native_joint_features(model.features, &refused);
     bind_retained_joint_features(model.features, model.joints, complete_scopes);
+}
+
+fn omit_unbound_motion_links(
+    joints: &mut Vec<cadmpeg_ir::products::AssemblyJoint>,
+    omitted: &mut std::collections::BTreeSet<cadmpeg_ir::products::JointId>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    use cadmpeg_ir::products::{JointOperands, PairedJointKind};
+
+    if omitted.is_empty() {
+        return;
+    }
+    joints.retain(|joint| {
+        if matches!(
+            joint.operands(),
+            JointOperands::Pair { kind: PairedJointKind::Gears { coupled_joints, .. }, .. }
+                if coupled_joints.iter().any(|target| omitted.contains(target))
+        ) {
+            omitted.insert(joint.id.clone());
+            losses.push(F3dLossCode::AssemblyJointUnprojected.note(format!(
+                "MotionLink joint {} stays native because a coupled joint was omitted",
+                joint.id
+            )));
+            return false;
+        }
+        true
+    });
 }
 
 fn bind_retained_joint_features(
@@ -1043,15 +1064,55 @@ fn retain_complete_joint(
     joint: &mut cadmpeg_ir::products::AssemblyJoint,
     children: &JointChildren<'_>,
     instances: &std::collections::BTreeSet<&cadmpeg_ir::ids::OccurrenceId>,
+    mode: JointRebind,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> bool {
-    if complete_joint_descent(joint, children, instances) {
+    let mut descended = joint.clone();
+    if complete_joint_descent(&mut descended, children, instances) {
+        *joint = descended;
+        return true;
+    }
+    if mode == JointRebind::CompleteScopes {
+        let mut nested = joint.clone();
+        if nest_residual_descent(&mut nested, children, instances) {
+            losses.push(F3dLossCode::AssemblyOperandNestedPathRetained.note(format!(
+                "joint {}: the occurrence path continues inside an unmerged inserted document; the remaining keys stay a nested occurrence path",
+                joint.id
+            )));
+            *joint = nested;
+            return true;
+        }
+    }
+    if mode == JointRebind::CompleteScopes || has_qualified_external_operands(joint, instances) {
+        losses.push(F3dLossCode::AssemblyJointSourceBindingAssumed.note(format!(
+            "joint {}: the timeline feature uses the decoded joint with unresolved source operand identities; their document and occurrence bindings are assumed",
+            joint.id
+        )));
         return true;
     }
     losses.push(F3dLossCode::AssemblyOperandDescentUnresolved.note(format!(
         "joint {}: the complete occurrence path has no unique merged insertion instance; the joint stays native", joint.id
     )));
     false
+}
+
+fn has_qualified_external_operands(
+    joint: &cadmpeg_ir::products::AssemblyJoint,
+    instances: &std::collections::BTreeSet<&cadmpeg_ir::ids::OccurrenceId>,
+) -> bool {
+    use cadmpeg_ir::products::OperandContainer;
+    let mut external = false;
+    joint
+        .connectors()
+        .all(|connector| match &connector.operand.container {
+            OperandContainer::Root {} => true,
+            OperandContainer::Occurrence { occurrence, .. } => instances.contains(occurrence),
+            OperandContainer::External { external_document } => {
+                external = true;
+                external_document.document_id.is_some()
+            }
+        })
+        && external
 }
 
 /// Descend each occurrence operand through keyed children to an occurrence
@@ -1902,6 +1963,16 @@ fn define_member(
             .product_definitions
             .retain(|definition| !definition.id.as_str().ends_with(STORED_FRAME_GROUP_SUFFIX));
     }
+    let (top_level, tessellations) = ir
+        .model
+        .product_definitions
+        .iter()
+        .position(|row| row.id == crate::tree::file_root_id())
+        .map(|position| {
+            let root = ir.model.product_definitions.remove(position);
+            (root.occurrences, root.tessellations)
+        })
+        .unwrap_or_default();
     let owned = ir
         .model
         .product_definitions
@@ -1928,15 +1999,6 @@ fn define_member(
         .filter(|sketch| !owned_sketches.contains(&sketch.id))
         .map(|sketch| sketch.id.clone())
         .collect();
-    // The member file's own root definition is the member definition: it is
-    // stored in its own file of the archive, and holds the member's top level.
-    let top_level = ir
-        .model
-        .product_definitions
-        .iter()
-        .position(|row| row.id == crate::tree::file_root_id())
-        .map(|position| ir.model.product_definitions.remove(position).occurrences)
-        .unwrap_or_default();
     let storage = match ir.source.clone() {
         Some(source) => Storage::File {
             document: ExternalDocument::path(document.to_owned()),
@@ -1955,6 +2017,7 @@ fn define_member(
         definition.sketches.extend(sketches);
         definition.label = (!label.trim().is_empty()).then(|| label.to_owned());
         definition.occurrences.extend(top_level);
+        definition.tessellations.extend(tessellations);
         definition.storage = storage;
         return Ok(id);
     }
@@ -1964,6 +2027,7 @@ fn define_member(
     definition.bodies = bodies;
     definition.sketches = sketches;
     definition.occurrences = top_level;
+    definition.tessellations = tessellations;
     ir.model.product_definitions.push(definition);
     Ok(id)
 }
@@ -2504,7 +2568,7 @@ mod tests {
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
         ir.model.product_definitions.clear();
         ir.geometry.bodies[0].transform = Some(transform);
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         define_member(&ctx, &mut ir, "member", "member.f3d").unwrap();
         assert_eq!(ir.geometry.bodies[0].transform, Some(transform));
         assert_eq!(
@@ -2544,11 +2608,73 @@ mod tests {
                 general_tolerance: None,
                 active: None,
             });
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let id = define_member(&ctx, &mut ir, "member", "member.f3d").unwrap();
         assert_eq!(ir.model.product_definitions.len(), 1);
         assert_eq!(ir.model.product_definitions[0].id, id);
         assert_eq!(ir.model.product_definitions[0].bodies, [body]);
+    }
+
+    #[test]
+    fn member_definition_takes_the_scopeless_meshes_of_the_member_root() {
+        let mesh =
+            cadmpeg_ir::tessellation::TessellationId::mint("f3d:test:mesh-body#scopeless").unwrap();
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        crate::tree::file_root(&mut ir.model)
+            .tessellations
+            .push(mesh.clone());
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+        let id = define_member(&ctx, &mut ir, "member", "member.f3d").unwrap();
+        let [definition] = ir.model.product_definitions.as_slice() else {
+            panic!("one member definition");
+        };
+        assert_eq!(definition.id, id);
+        assert_eq!(definition.tessellations, [mesh]);
+    }
+
+    #[test]
+    fn scoped_member_mesh_keeps_the_stated_root_as_owner() {
+        let scoped =
+            cadmpeg_ir::tessellation::TessellationId::mint("f3d:test:mesh-body#scoped").unwrap();
+        let scopeless =
+            cadmpeg_ir::tessellation::TessellationId::mint("f3d:test:mesh-body#scopeless").unwrap();
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        ir.model.tessellations.push(
+            cadmpeg_ir::tessellation::Tessellation::new(
+                scoped.clone(),
+                cadmpeg_ir::tessellation::TessellationMesh::List {
+                    vertices: vec![
+                        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                        cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
+                        cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
+                    ],
+                    triangles: vec![[0, 1, 2]],
+                },
+                Vec::new(),
+            )
+            .unwrap(),
+        );
+        crate::tree::file_root(&mut ir.model)
+            .tessellations
+            .push(scopeless.clone());
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+        let member = define_member(&ctx, &mut ir, "member", "member.f3d").unwrap();
+        ir.state_root_definition(
+            &ctx,
+            crate::tree::file_root_id(),
+            cadmpeg_ir::products::ExternalDocument::default(),
+        )
+        .unwrap();
+        let owners = |mesh: &cadmpeg_ir::tessellation::TessellationId| {
+            ir.model
+                .product_definitions
+                .iter()
+                .filter(|definition| definition.tessellations.contains(mesh))
+                .map(|definition| definition.id.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(owners(&scopeless), [member]);
+        assert_eq!(owners(&scoped), [crate::tree::file_root_id()]);
     }
 
     #[test]

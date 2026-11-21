@@ -247,8 +247,11 @@ pub(super) fn decode(
             &history_index,
             &primary_frames,
         )?;
-    let design_joint_motions =
-        crate::design::decode::joint_motion::decode_joint_motions(scan, &design_parameter_scopes)?;
+    let design_joint_motions = crate::design::decode::joint_motion::decode_joint_motions(
+        scan,
+        &design_parameter_scopes,
+        &design_types,
+    )?;
     let mut design_feature_timeline_losses = Vec::new();
     let design_feature_timelines = match crate::design::decode::meta::decode_feature_timelines(
         scan,

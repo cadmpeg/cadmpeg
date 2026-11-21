@@ -44,6 +44,7 @@ fn scope(
             offset: 160,
         },
         repeat_offset: paired - 12,
+        result_body: None,
     });
     scope
 }

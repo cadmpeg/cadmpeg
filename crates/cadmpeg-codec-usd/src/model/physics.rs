@@ -17,18 +17,15 @@ use cadmpeg_ir::products::{
     AssemblyJoint, DriveAxis, DriveMode, FrameAxis, JointConnector, JointDrive, JointId,
     JointLimits, JointOperand, PairedJointKind,
 };
-use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
+use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, NonZeroReal, PositiveReal};
 use cadmpeg_ir::transform::Transform;
 
 use cadmpeg_ir::physics::solver::SolverTarget;
 
-use crate::schema::physics::{Drive, JointData, JointType};
+use crate::schema::physics::{Drive, JointData, JointType, Limit};
 use crate::schema::physx::Holder;
 use crate::schema::xform::{compose, quaternion, Affine};
 use crate::stage::Prim;
-
-/// Millimetres per metre.
-const MILLIMETRES_PER_METRE: f64 = 1000.0;
 
 /// A joint prim collected for the pass after the traversal.
 pub(super) struct PendingJoint {
@@ -63,10 +60,6 @@ fn frame_axis(letter: char) -> FrameAxis {
 }
 
 impl super::Builder<'_, '_, '_, '_> {
-    fn meters_per_unit(&self) -> f64 {
-        self.scale / MILLIMETRES_PER_METRE
-    }
-
     /// The joint frame of one side, in millimetres, turned to `alignment`.
     fn joint_frame(&self, data: &JointData, side: usize, alignment: &Affine) -> Option<Transform> {
         let mut rotation = quaternion(data.rotations[side])?;
@@ -155,7 +148,7 @@ impl super::Builder<'_, '_, '_, '_> {
         if schemas.contains("PhysicsMassAPI") {
             let data = crate::schema::physics::mass(prim, &mut self.issues);
             let kilograms = self.kilograms_per_unit;
-            let density = |value: f64| value * kilograms / self.meters_per_unit().powi(3);
+            let density = |value: f64| value * kilograms / self.scale.powi(3);
             let inertia = data.diagonal_inertia.and_then(|moments| {
                 let factor = kilograms * self.scale * self.scale;
                 let moments = [0, 1, 2]
@@ -239,12 +232,12 @@ impl super::Builder<'_, '_, '_, '_> {
         };
         let data = crate::schema::physics::collision(prim, &mut self.issues);
         let shape = match data.approximation.as_deref() {
-            None | Some("none") => ColliderShape::Exact {},
-            Some("convexHull") => ColliderShape::ConvexHull {},
-            Some("convexDecomposition") => ColliderShape::ConvexDecomposition {},
-            Some("boundingCube") => ColliderShape::BoundingBox {},
-            Some("boundingSphere") => ColliderShape::BoundingSphere {},
-            Some("meshSimplification") => ColliderShape::Simplified {},
+            None | Some("none") => ColliderShape::Exact,
+            Some("convexHull") => ColliderShape::ConvexHull,
+            Some("convexDecomposition") => ColliderShape::ConvexDecomposition,
+            Some("boundingCube") => ColliderShape::BoundingBox,
+            Some("boundingSphere") => ColliderShape::BoundingSphere,
+            Some("meshSimplification") => ColliderShape::Simplified,
             Some(other) => ColliderShape::Native {
                 name: other.to_owned(),
             },
@@ -337,7 +330,7 @@ impl super::Builder<'_, '_, '_, '_> {
             let data = crate::schema::physics::material(material, &mut self.issues);
             let density = data
                 .density
-                .map(|value| value * self.kilograms_per_unit / self.meters_per_unit().powi(3));
+                .map(|value| value * self.kilograms_per_unit / self.scale.powi(3));
             self.ir.model.physical_materials.push(PhysicalMaterial {
                 id: id.clone(),
                 name: Some(material.name.clone()),
@@ -380,22 +373,19 @@ impl super::Builder<'_, '_, '_, '_> {
             }
             _ => return None,
         };
-        let mpu = self.meters_per_unit();
+        let millimetres = self.scale;
         let kilograms = self.kilograms_per_unit;
         let degrees = 180.0 / std::f64::consts::PI;
         // Angular drives state torques per degree; linear drives forces per
-        // scene length.
+        // scene length. Coefficients are in kilograms, millimetres, seconds,
+        // and radians.
         let (position, response, limit) = match axis {
             DriveAxis::Rotation { .. } => (
                 1.0 / degrees,
-                kilograms * mpu * mpu * MILLIMETRES_PER_METRE * degrees,
-                kilograms * mpu * mpu * MILLIMETRES_PER_METRE,
+                kilograms * millimetres * millimetres * degrees,
+                kilograms * millimetres * millimetres,
             ),
-            DriveAxis::Translation { .. } => (
-                self.scale,
-                kilograms / MILLIMETRES_PER_METRE,
-                kilograms * mpu,
-            ),
+            DriveAxis::Translation { .. } => (self.scale, kilograms, kilograms * millimetres),
         };
         Some(JointDrive {
             axis,
@@ -483,6 +473,9 @@ impl super::Builder<'_, '_, '_, '_> {
                 JointLimits::new(lower.map(factor), upper.map(factor))
             };
             let scale = self.scale;
+            let generic = (data.kind == JointType::Generic)
+                .then(|| generic_kind(&data.limits, scale))
+                .flatten();
             let id = crate::ids::joint(&path);
             let mut joint = match data.kind {
                 JointType::Fixed if connectors.iter().any(|(operand, _)| operand.is_none()) => {
@@ -524,7 +517,7 @@ impl super::Builder<'_, '_, '_, '_> {
                                 PairedJointKind::Gears {
                                     distance: None,
                                     distance2: None,
-                                    ratio: data.ratio.and_then(PositiveReal::new),
+                                    ratio: data.ratio.and_then(|ratio| NonZeroReal::new(-ratio)),
                                     coupled_joints,
                                 }
                             } else {
@@ -532,21 +525,23 @@ impl super::Builder<'_, '_, '_, '_> {
                                     distance: None,
                                     distance2: None,
                                     ratio: data.ratio.and_then(|ratio| {
-                                        PositiveReal::new(ratio.to_radians() / scale)
+                                        NonZeroReal::new(ratio.to_radians() / scale)
                                     }),
                                     coupled_joints,
                                 }
                             }
                         }
-                        JointType::Generic => PairedJointKind::Native {
-                            name: "PhysicsJoint".to_owned(),
-                            angle: None,
-                            translation_offset: None,
-                            distance: None,
-                            distance2: None,
-                            angular_limits: None,
-                            linear_limits: None,
-                        },
+                        JointType::Generic => {
+                            generic.clone().unwrap_or_else(|| PairedJointKind::Native {
+                                name: "PhysicsJoint".to_owned(),
+                                angle: None,
+                                translation_offset: None,
+                                distance: None,
+                                distance2: None,
+                                angular_limits: None,
+                                linear_limits: None,
+                            })
+                        }
                     };
                     let mut iter = connectors.into_iter();
                     let (Some(first), Some(second)) = (iter.next(), iter.next()) else {
@@ -570,7 +565,17 @@ impl super::Builder<'_, '_, '_, '_> {
             if data.kind == JointType::Distance && data.min_distance.is_some() {
                 dropped.push("physics:minDistance".to_owned());
             }
-            if data.kind == JointType::Generic {
+            if generic.is_some() {
+                // The kind states the locked axes, and its limits the free ones.
+                dropped.retain(|name| {
+                    !["transX", "transY", "transZ", "rotX", "rotY", "rotZ"]
+                        .into_iter()
+                        .any(|dof| {
+                            name == &format!("limit:{dof}:physics:low")
+                                || name == &format!("limit:{dof}:physics:high")
+                        })
+                });
+            } else if data.kind == JointType::Generic {
                 dropped.push("the degrees of freedom of a generic joint".to_owned());
             }
             for property in dropped {
@@ -592,4 +597,52 @@ impl super::Builder<'_, '_, '_, '_> {
         }
         Ok(())
     }
+}
+
+/// The neutral kind of a generic joint whose `PhysicsLimitAPI` instances lock
+/// `transX`, `transY`, `rotX` and `rotY`: a cylindrical joint along its Z
+/// axis, or a revolute or slider joint when `transZ` or `rotZ` is locked too,
+/// with the limits of the free degrees of freedom. `None` for another
+/// generic joint.
+fn generic_kind(limits: &[Limit], scale: f64) -> Option<PairedJointKind> {
+    let limit = |instance: &str| limits.iter().find(|limit| limit.instance == instance);
+    let locked = |instance: &str| limit(instance).is_some_and(Limit::locks);
+    if !["transX", "transY", "rotX", "rotY"].into_iter().all(locked) || limit("distance").is_some()
+    {
+        return None;
+    }
+    let range = |instance: &str, factor: f64| {
+        limit(instance).and_then(|limit| {
+            JointLimits::new(
+                limit
+                    .low
+                    .filter(|value| value.is_finite())
+                    .map(|low| low * factor),
+                limit
+                    .high
+                    .filter(|value| value.is_finite())
+                    .map(|high| high * factor),
+            )
+        })
+    };
+    let angular = range("rotZ", std::f64::consts::PI / 180.0);
+    let linear = range("transZ", scale);
+    Some(match (locked("rotZ"), locked("transZ")) {
+        (false, false) => PairedJointKind::Cylindrical {
+            angle: None,
+            distance: None,
+            angular_limits: angular,
+            linear_limits: linear,
+        },
+        (false, true) => PairedJointKind::Revolute {
+            angle: None,
+            angular_limits: angular,
+        },
+        (true, false) => PairedJointKind::Slider {
+            distance: None,
+            translation_offset: None,
+            linear_limits: linear,
+        },
+        (true, true) => return None,
+    })
 }

@@ -1,24 +1,33 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Body selections of bodies that the final model leaves out.
+//! Body selections that name the bodies of earlier features.
 
+use super::stored_bodies::ActiveBodies;
 use super::{historical_body_slot, stable_ref, FeatureBodySelectionInputs};
 use crate::history_records::AsmHistory;
+use crate::loss::F3dLossCode;
+use cadmpeg_ir::report::loss::LossNote;
 use std::collections::{HashMap, HashSet};
 
-/// Re-express body selections of bodies that the final model leaves out as
-/// bodies that an earlier feature generates.
+/// Re-express body selections of ASM body slots as bodies of the features
+/// that generate them.
 ///
-/// A body pattern seed resolved in its input state, and a body deletion whose
-/// operands resolved through their recipe identity, name ASM body slots. When
-/// every selected slot is absent from the model bodies, the one feature whose
-/// history transition inserts that slot generates the body, and the selection
-/// names it there.
-/// The producer becomes a dependency of the selecting feature. Returns the
-/// result states of the producers, each listing every body slot that the
-/// producer's transition inserts.
+/// A body pattern seed and a body move resolved in their input states, a body
+/// deletion whose operands resolved through their recipe identity, and a
+/// Reverse Normal resolved in its input state name ASM body slots. When every selected slot
+/// is absent from the model bodies, the one feature whose history transition
+/// inserts that slot generates the body, and the selection names it there.
+/// A body move reads its slots in its bound history. A Reverse Normal reads
+/// its slots in its bound history: see [`reverse_normal_binding`]. The
+/// generating feature becomes a dependency of
+/// the selecting feature. Returns the result states of the producers of
+/// generated bodies, each listing every body slot that the producer's
+/// transition inserts.
 pub(crate) fn bind_generated_body_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     inputs: &FeatureBodySelectionInputs<'_>,
+    scope_histories: &HashMap<String, String>,
+    primary_brep: Option<&str>,
+    losses: &mut Vec<LossNote>,
 ) -> Vec<cadmpeg_ir::features::FeatureResultTopology> {
     use cadmpeg_ir::features::{
         patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation, GeneratedBodyRef,
@@ -29,42 +38,54 @@ pub(crate) fn bind_generated_body_selections(
         .iter()
         .filter_map(|body| stable_ref(body.id.as_str()))
         .collect::<HashSet<_>>();
+    let active = ActiveBodies::new(inputs.bodies, primary_brep);
     let feature_by_scope = features
         .iter()
-        .filter_map(|feature| Some((feature.native_ref.clone()?, feature.id.clone())))
+        .filter_map(|feature| {
+            Some((
+                feature.native_ref.clone()?,
+                (feature.id.clone(), feature.ordinal),
+            ))
+        })
         .collect::<HashMap<_, _>>();
-    let producer = |slot: i64| -> Option<(cadmpeg_ir::features::FeatureId, i64, Vec<i64>)> {
+    let producer = |slot: i64, history: Option<&AsmHistory>| -> Option<Producer> {
+        let in_history =
+            |candidate: &AsmHistory| history.is_none_or(|history| std::ptr::eq(candidate, history));
         let mut inserting = inputs
             .histories
             .iter()
+            .filter(|candidate| in_history(candidate))
             .flat_map(AsmHistory::states)
-            .filter(|state| {
-                state
-                    .transition
-                    .as_ref()
-                    .is_some_and(|transition| transition.topology.bodies.inserted.contains(&slot))
-            });
+            .filter(|state| inserts_body(state, slot));
         let state = inserting.next()?;
         if inserting.next().is_some() {
             return None;
         }
-        let mut scopes = inputs
-            .scopes
-            .iter()
-            .filter(|scope| scope.history_state_id() == Some(state.state_id));
+        let mut scopes = inputs.scopes.iter().filter(|scope| {
+            scope.history_state_id() == Some(state.state_id)
+                && (history.is_none()
+                    || scope_history(scope, scope_histories, inputs.histories)
+                        .is_some_and(in_history))
+        });
         let scope = scopes.next()?;
         if scopes.next().is_some() {
             return None;
         }
         let inserted = state.transition.as_ref()?.topology.bodies.inserted.clone();
         Some((
-            feature_by_scope.get(&scope.id)?.clone(),
+            feature_by_scope.get(&scope.id)?.0.clone(),
             state.state_id,
             inserted,
         ))
     };
+    let reverse_context = ReverseContext {
+        inputs,
+        scope_histories,
+        active: &active,
+        feature_by_scope: &feature_by_scope,
+    };
 
-    let mut results: Vec<(cadmpeg_ir::features::FeatureId, i64, Vec<i64>)> = Vec::new();
+    let mut results: Vec<Producer> = Vec::new();
     for feature in features.iter_mut() {
         let scope = feature
             .native_ref
@@ -83,38 +104,116 @@ pub(crate) fn bind_generated_body_selections(
                     .collect::<Option<Vec<_>>>()
                     .map(|slots| (slots, native.as_str().to_owned()))
             }
+            FeatureDefinition::Operation(FeatureOperation::MoveBody {
+                bodies: BodySelection::Historical { bodies, native, .. },
+                ..
+            }) => bodies
+                .iter()
+                .map(|body| historical_body_slot(body.as_str()))
+                .collect::<Option<Vec<_>>>()
+                .map(|slots| (slots, native.as_str().to_owned())),
             FeatureDefinition::Operation(FeatureOperation::DeleteBody {
                 bodies: BodySelection::Native(group_id),
                 ..
             }) => scope
                 .and_then(|scope| group_operand_body_slots(inputs, group_id, scope))
                 .map(|slots| (slots, group_id.clone())),
+            FeatureDefinition::Operation(FeatureOperation::ReverseShape {
+                source: BodySelection::Historical { bodies, native, .. },
+            }) => bodies
+                .iter()
+                .map(|body| historical_body_slot(body.as_str()))
+                .collect::<Option<Vec<_>>>()
+                .map(|slots| (slots, native.as_str().to_owned())),
             _ => continue,
         };
+        let reverse = matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::ReverseShape { .. })
+        );
         let Some((slots, native)) = selected else {
+            if reverse {
+                losses.push(F3dLossCode::FeatureReverseNormalBodyProducerUnresolved.note(format!(
+                    "Reverse Normal {} keeps its input-state bodies: a body names no ASM body slot.",
+                    feature.id
+                )));
+            }
             continue;
         };
-        if slots.is_empty() || slots.iter().any(|slot| live.contains(slot)) {
+        if slots.is_empty() {
             continue;
         }
-        let Some(producers) = slots
-            .iter()
-            .map(|slot| producer(*slot))
-            .collect::<Option<Vec<_>>>()
-        else {
-            continue;
+        let producers = if reverse {
+            match reverse_normal_binding(&reverse_context, feature, scope, &slots) {
+                Ok(ReverseBinding::Model {
+                    bodies,
+                    dependencies,
+                }) => {
+                    feature.evaluation.edit(|definition, _| {
+                        if let FeatureDefinition::Operation(FeatureOperation::ReverseShape {
+                            source,
+                        }) = definition
+                        {
+                            *source = BodySelection::Resolved { bodies, native };
+                        }
+                    });
+                    for dependency in dependencies {
+                        feature.dependencies.insert(dependency);
+                    }
+                    continue;
+                }
+                Ok(ReverseBinding::Generated(producers)) => producers,
+                Err(reason) => {
+                    losses.push(F3dLossCode::FeatureReverseNormalBodyProducerUnresolved.note(
+                        format!(
+                            "Reverse Normal {} keeps body slots {slots:?} of {native} in its input state: {reason}.",
+                            feature.id
+                        ),
+                    ));
+                    continue;
+                }
+            }
+        } else {
+            if slots.iter().any(|slot| live.contains(slot)) {
+                continue;
+            }
+            let history = if matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::MoveBody { .. })
+            ) {
+                let Some(history) =
+                    scope.and_then(|scope| scope_history(scope, scope_histories, inputs.histories))
+                else {
+                    continue;
+                };
+                Some(history)
+            } else {
+                None
+            };
+            let Some(producers) = slots
+                .iter()
+                .map(|slot| producer(*slot, history))
+                .collect::<Option<Vec<_>>>()
+            else {
+                continue;
+            };
+            producers
         };
-        let Some(refs) = producers
+        let generated = producers
             .iter()
             .zip(&slots)
             .map(|((producer, _, _), slot)| {
                 GeneratedBodyRef::new(producer.clone(), slot.to_string()).ok()
             })
             .collect::<Option<Vec<_>>>()
-        else {
-            continue;
-        };
-        let Ok(generated) = BodySelection::generated(refs, native) else {
+            .and_then(|refs| BodySelection::generated(refs, native.clone()).ok());
+        let Some(generated) = generated else {
+            if reverse {
+                losses.push(F3dLossCode::FeatureReverseNormalBodyProducerUnresolved.note(format!(
+                    "Reverse Normal {} keeps body slots {slots:?} of {native} in its input state: the generated bodies form no body set.",
+                    feature.id
+                )));
+            }
             continue;
         };
         feature.evaluation.edit(|definition, _| match definition {
@@ -123,7 +222,11 @@ pub(crate) fn bind_generated_body_selections(
                     *selection = generated;
                 }
             }
-            FeatureDefinition::Operation(FeatureOperation::DeleteBody { bodies, .. }) => {
+            FeatureDefinition::Operation(
+                FeatureOperation::DeleteBody { bodies, .. }
+                | FeatureOperation::MoveBody { bodies, .. }
+                | FeatureOperation::ReverseShape { source: bodies },
+            ) => {
                 *bodies = generated;
             }
             _ => {}
@@ -160,6 +263,146 @@ pub(crate) fn bind_generated_body_selections(
             ))
         })
         .collect()
+}
+
+/// A generating feature, the identity of the history state whose transition
+/// inserts the body, and every body slot that transition inserts.
+type Producer = (cadmpeg_ir::features::FeatureId, i64, Vec<i64>);
+
+struct ReverseContext<'a> {
+    inputs: &'a FeatureBodySelectionInputs<'a>,
+    scope_histories: &'a HashMap<String, String>,
+    active: &'a ActiveBodies<'a>,
+    feature_by_scope: &'a HashMap<String, (cadmpeg_ir::features::FeatureId, u64)>,
+}
+
+enum ReverseBinding {
+    /// Every slot is a result body of the bound history's BREP source.
+    Model {
+        bodies: cadmpeg_ir::features::DistinctMembers<cadmpeg_ir::ids::BodyId>,
+        dependencies: Vec<cadmpeg_ir::features::FeatureId>,
+    },
+    /// No slot is a result body of that source; each has a generating feature.
+    Generated(Vec<Producer>),
+}
+
+/// The binding of a Reverse Normal input-state selection of `slots`, read in
+/// the feature's bound history and the model bodies of that history's BREP
+/// source. A body slot's generating feature precedes the Reverse Normal.
+fn reverse_normal_binding(
+    context: &ReverseContext<'_>,
+    feature: &cadmpeg_ir::features::Feature,
+    scope: Option<&crate::records::feature::scope::DesignParameterScope>,
+    slots: &[i64],
+) -> Result<ReverseBinding, String> {
+    let inputs = context.inputs;
+    let history = scope
+        .and_then(|scope| scope_state_history(scope, context.scope_histories, inputs.histories))
+        .ok_or("no one bound history holds its input and result states")?;
+    let source = super::historical_brep_source(&history.id)
+        .ok_or_else(|| format!("its bound history {} names no BREP source", history.id))?;
+    let producer = |slot: i64| -> Option<Producer> {
+        let mut inserting = history
+            .states()
+            .iter()
+            .filter(|state| inserts_body(state, slot));
+        let state = inserting.next()?;
+        if inserting.next().is_some() {
+            return None;
+        }
+        let mut scopes = inputs.scopes.iter().filter(|scope| {
+            scope.history_state_id() == Some(state.state_id)
+                && scope_history(scope, context.scope_histories, inputs.histories)
+                    .is_some_and(|scope_history| std::ptr::eq(scope_history, history))
+        });
+        let scope = scopes.next()?;
+        if scopes.next().is_some() {
+            return None;
+        }
+        let (producer, ordinal) = context.feature_by_scope.get(&scope.id)?;
+        if *ordinal >= feature.ordinal {
+            return None;
+        }
+        let inserted = state.transition.as_ref()?.topology.bodies.inserted.clone();
+        Some((producer.clone(), state.state_id, inserted))
+    };
+    let live = slots
+        .iter()
+        .filter(|slot| context.active.contains_in_source(**slot, Some(source)))
+        .count();
+    if live == slots.len() {
+        let bodies = context
+            .active
+            .resolve(slots, Some(source))
+            .ok_or_else(|| format!("a slot names no unique result body of BREP source {source}"))?;
+        let dependencies = slots
+            .iter()
+            .filter_map(|slot| producer(*slot))
+            .map(|(producer, _, _)| producer)
+            .collect();
+        return Ok(ReverseBinding::Model {
+            bodies,
+            dependencies,
+        });
+    }
+    if live != 0 {
+        return Err(format!(
+            "BREP source {source} keeps some of the slots and omits the others"
+        ));
+    }
+    slots
+        .iter()
+        .map(|slot| producer(*slot))
+        .collect::<Option<Vec<_>>>()
+        .map(ReverseBinding::Generated)
+        .ok_or_else(|| {
+            format!(
+                "a slot has no unique inserting state of {} with one earlier scope",
+                history.id
+            )
+        })
+}
+
+fn inserts_body(state: &crate::history_records::AsmDeltaState, slot: i64) -> bool {
+    state
+        .transition
+        .as_ref()
+        .is_some_and(|transition| transition.topology.bodies.inserted.contains(&slot))
+}
+
+/// The one ASM history that holds the result and input states of `scope`: its
+/// bound history, else the unique history with that state pair.
+fn scope_state_history<'h>(
+    scope: &crate::records::feature::scope::DesignParameterScope,
+    scope_histories: &HashMap<String, String>,
+    histories: &'h [AsmHistory],
+) -> Option<&'h AsmHistory> {
+    let state_id = scope.history_state_id()?;
+    let previous = super::effective_scope_previous_history_state_id(scope, histories)?;
+    if scope_histories.contains_key(&scope.id) {
+        super::bound_history_state_pair(&scope.id, state_id, previous, scope_histories, histories)
+    } else {
+        super::unique_history_state_pair(histories, state_id, previous)
+    }
+    .map(|(history, _, _)| history)
+}
+
+/// The ASM history of `scope`: its bound history, else the unique history
+/// with its state pair, else the unique history with its result state.
+fn scope_history<'h>(
+    scope: &crate::records::feature::scope::DesignParameterScope,
+    scope_histories: &HashMap<String, String>,
+    histories: &'h [AsmHistory],
+) -> Option<&'h AsmHistory> {
+    if scope_histories.contains_key(&scope.id) {
+        return super::bound_scope_history(&scope.id, scope_histories, histories);
+    }
+    let state_id = scope.history_state_id()?;
+    match super::effective_scope_previous_history_state_id(scope, histories) {
+        Some(previous) => super::unique_history_state_pair(histories, state_id, previous)
+            .map(|(history, _, _)| history),
+        None => super::unique_history_state(histories, state_id).map(|(history, _)| history),
+    }
 }
 
 /// The body slots that the body recipe operands of construction-operand group

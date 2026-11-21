@@ -36,7 +36,7 @@ use crate::design::scope::{DesignScope, OccurrenceDesign};
 use crate::design::spreadsheet::Spreadsheet;
 use crate::design::units::{Quantity, ValueKind};
 use crate::document::{Design, Topology};
-use crate::pmi::LimitsAndFits;
+use crate::pmi::{FitStandard, FitZone, LimitsAndFits};
 use crate::products::NestedOverride;
 use crate::scalar::Fraction;
 use crate::spreadsheets::{CellAddress, SpreadsheetCell, SpreadsheetDimension, SpreadsheetRange};
@@ -717,12 +717,12 @@ pub(super) fn limit_sides() -> Vec<LimitSide> {
     vec![LimitSide::Minimum, LimitSide::Maximum]
 }
 
-fn fit(zone: &str) -> LimitsAndFits {
+fn fit(zone: FitZone) -> LimitsAndFits {
     LimitsAndFits {
         form_variance: "H".to_owned(),
-        zone_variance: zone.to_owned(),
+        zone,
         grade: "7".to_owned(),
-        source: "ISO 286".to_owned(),
+        source: Some(FitStandard::Iso286),
     }
 }
 
@@ -730,12 +730,12 @@ pub(super) fn tolerances() -> Vec<Tolerance> {
     vec![
         Tolerance::Deviations(deviations()),
         Tolerance::Fit {
-            fit: fit("hole"),
-            mate: Some(fit("shaft")),
+            fit: fit(FitZone::Hole),
+            mate: Some(fit(FitZone::Shaft)),
             deviations: Some(FitDeviations::Cell(deviations())),
         },
         Tolerance::Fit {
-            fit: fit("hole"),
+            fit: fit(FitZone::Hole),
             mate: None,
             deviations: None,
         },

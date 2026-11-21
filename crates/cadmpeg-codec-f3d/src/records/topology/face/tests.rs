@@ -209,6 +209,28 @@ fn face_operand_borrowed_wire_matches_owned_wire_bytes() {
 }
 
 #[test]
+fn registered_recipe_frame_borrowed_and_owned_wire_match() {
+    let mut wire = serde_json::to_value(face_operand_for_borrowed(false)).unwrap();
+    wire["next_record_index"] = 5.into();
+    wire["registered_recipe_frame"] = serde_json::json!({
+        "record_index": 5,
+        "primary_offset": 30,
+        "secondary_offset": 200,
+        "end_offset": 211,
+        "next_primary_index": 6
+    });
+    let operand: super::DesignFaceOperand = serde_json::from_value(wire).unwrap();
+    let owned = super::DesignFaceOperandWire::from(operand.clone());
+    assert_eq!(
+        serde_json::to_vec(&operand).unwrap(),
+        serde_json::to_vec(&owned).unwrap()
+    );
+    let mut null = serde_json::to_value(&operand).unwrap();
+    null["registered_recipe_frame"] = serde_json::Value::Null;
+    assert!(serde_json::from_value::<super::DesignFaceOperand>(null).is_err());
+}
+
+#[test]
 fn face_operand_native_retained_limit_refuses_before_clone() {
     let operand = face_operand_for_borrowed(true);
     crate::test_support::native_test::assert_borrowed_native_retained_limit(
@@ -299,6 +321,22 @@ fn face_recipe_ordinals_keep_zero_and_group_design_references() {
     invalid.prelude[1] = 3;
     assert!(!invalid.has_valid_operand_ordinals(&references));
     assert!(!structure.has_valid_operand_ordinals(&[]));
+}
+
+#[test]
+fn a_face_recipe_node_with_one_endpoint_clause_has_valid_boundary_edge_ordinals() {
+    let references = [recipe_reference(100, 108), recipe_reference(125, 133)];
+    let mut structure = recipe_structure(1);
+    structure.prelude[1] = 1;
+    structure.sides.truncate(1);
+    structure.sides[0].scalars.truncate(1);
+    assert!(structure.has_valid_boundary_edge_ordinals(&references));
+    assert!(!structure.has_valid_operand_ordinals(&references));
+    structure.prelude[1] = 2;
+    assert!(!structure.has_valid_boundary_edge_ordinals(&references));
+    structure.prelude[1] = 0;
+    structure.sides.clear();
+    assert!(!structure.has_valid_boundary_edge_ordinals(&references));
 }
 
 fn recipe_reference(

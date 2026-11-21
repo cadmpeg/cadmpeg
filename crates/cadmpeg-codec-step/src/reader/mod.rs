@@ -33,6 +33,7 @@ pub(crate) mod dependencies;
 mod drawing;
 pub(crate) mod geometry;
 mod groups;
+mod header;
 mod index;
 mod ownership;
 mod plant_dimensions;
@@ -148,6 +149,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         if let DecodeMode::Decode(packaging) = mode {
             packaging.add_source_attributes(&mut attributes);
         }
+        let header_attribute_losses = header::add_source_attributes(exchange, &mut attributes);
         // The `schema` attribute above stays: it is the joined identifier list,
         // and retiring the ad-hoc attribute keys is a later phase.
         let primary = StepDialect::classify(exchange);
@@ -172,6 +174,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         }
         body.losses.extend(dialect_loss);
         body.losses.extend(schema_edition_loss);
+        body.losses.extend(header_attribute_losses);
         for diagnostic in diagnostics {
             let (code, tag) = match diagnostic.kind {
                 crate::parse::ParseDiagnosticKind::RecordOmitted => {
@@ -446,6 +449,15 @@ fn decode_exchange_mode(
         &mut session.ir,
         session.ctx,
     )?;
+    // After `csg::decode`, so the bodies derived from CSG solids are in
+    // `body_by_root` and take their context's uncertainty too.
+    topology::tolerances::carry_context_uncertainties(
+        exchange,
+        &mut session.ir,
+        &geometry.value.uncertainties,
+        &topology.value,
+        &mut geometry.losses,
+    );
     session.charge_pending_ir_entities("step_product_decode")?;
     let mut product = product::decode(
         exchange,
@@ -454,6 +466,7 @@ fn decode_exchange_mode(
         &mut session.ir,
         session.ctx,
         &mut session.admitted_ir_entities,
+        product::MAX_OCCURRENCES,
     )?;
     session.charge_pending_ir_entities("step_csg_design")?;
     let mut design_losses = csg::attach_design(
@@ -558,7 +571,7 @@ fn decode_exchange_mode(
         DecodeMode::Decode(_) => BTreeSet::new(),
         DecodeMode::Inspect => inspect_opaque_offsets(exchange, &session.typed_records),
     };
-    let mut counts = BTreeMap::<String, usize>::new();
+    let mut counts = BTreeMap::<String, OpaqueKind>::new();
     let mut opaque_ids = BTreeMap::new();
     let mut source_targets = BTreeMap::new();
     let mut opaque_sources = Vec::new();
@@ -713,9 +726,10 @@ fn decode_exchange_mode(
                 &input[signature.clone()],
                 "step_signature_record",
             )?;
-            let signature_kind = String::from("SIGNATURE");
-
-            *counts.entry(signature_kind).or_default() += 1;
+            counts
+                .entry(String::from("SIGNATURE"))
+                .or_default()
+                .add(signature.start);
             opaque.push(UnknownRecord::retained(
                 ids::signature(index),
                 u64_from_index(signature.start),
@@ -757,12 +771,20 @@ fn decode_exchange_mode(
     );
 
     session.body.notes.push(accounting_note);
-    for (name, count) in counts {
-        let message = format!("preserved {count} {name} instance(s) as named opaque STEP records");
-        session
-            .body
-            .losses
-            .push(StepLossCode::OpaqueRecordPreserved.note(message));
+    for (name, kind) in counts {
+        let message = format!(
+            "preserved {} {name} instance(s) as named opaque STEP records",
+            kind.count
+        );
+        let provenance =
+            cadmpeg_ir::SourceProvenance::root(crate::dialect::FORMAT, u64_from_index(kind.first))
+                .with_tag(name);
+        session.body.losses.push(
+            StepLossCode::OpaqueRecordPreserved
+                .note(message)
+                .with_provenance(provenance)
+                .with_count(u64_from_index(kind.count)),
+        );
     }
     session.charge_pending_ir_entities("step_admit_ir_entities")?;
     Ok(session.into_result(source_fidelity, opaque_offsets))
@@ -1250,14 +1272,33 @@ fn collect_source_references(
     Ok(())
 }
 
-fn count_unknown_kind(counts: &mut BTreeMap<String, usize>, record: &parse::RawRecord) {
+/// The instances of one opaque entity type: how many, and the byte offset of
+/// the first.
+#[derive(Default)]
+struct OpaqueKind {
+    count: usize,
+    first: usize,
+}
+
+impl OpaqueKind {
+    fn add(&mut self, offset: usize) {
+        self.first = if self.count == 0 {
+            offset
+        } else {
+            self.first.min(offset)
+        };
+        self.count += 1;
+    }
+}
+
+fn count_unknown_kind(counts: &mut BTreeMap<String, OpaqueKind>, record: &parse::RawRecord) {
     let kind = record
         .partials
         .iter()
         .map(|partial| partial.name.as_str())
         .collect::<Vec<_>>()
         .join("+");
-    *counts.entry(kind).or_default() += 1;
+    counts.entry(kind).or_default().add(record.span.start);
 }
 
 fn opaque_record_id(id: u64, record: &RawRecord) -> Result<UnknownId, CodecError> {

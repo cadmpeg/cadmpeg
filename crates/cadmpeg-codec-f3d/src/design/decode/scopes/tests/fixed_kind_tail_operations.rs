@@ -258,8 +258,7 @@ pub(super) fn fixed_kind_tail_operations(
             &scale_scope,
             &HashMap::new(),
             &mut Vec::new()
-        )
-        .unwrap(),
+        ),
         Some(DesignScaleOperation {
             body_group_record_index: 102,
             center_record_index: 105,
@@ -795,6 +794,7 @@ pub(super) fn fixed_kind_tail_operations(
                 side_extent_discriminator_offsets: [77, 90],
                 first_side_target_ordinal: None,
                 distance_tail: None,
+                opaque_distance_word: None,
                 extent: DesignExtrudeExtent::OneSidedDistance,
                 direction_face_extend_offsets: [32, 36],
                 direction_reversed: false,
@@ -1312,6 +1312,62 @@ pub(super) fn fixed_kind_tail_operations(
         None
     );
 
+    bytes[recipe_name_at..recipe_name_at + b"body_recipe_data".len()]
+        .copy_from_slice(b"body_recipe_data");
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    assert_eq!(
+        tested_surface_offset_operation(&bytes, &records, &grouped_scope),
+        None
+    );
+
+    bytes[extend_distance_at + 40..extend_distance_at + 48].fill(0);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let body_offset = tested_surface_offset_operation(&bytes, &records, &grouped_scope)
+        .expect("zero-distance body offset");
+    assert!(
+        matches!(body_offset.support, DesignSurfaceOffsetSupport::BodyCarrier {
+        boundary_record_index, body_record_index, ..
+    } if boundary_record_index == grouped_record_index && body_record_index == grouped_member_record_index)
+    );
+    if let crate::records::feature::scope::DesignScopePayloadMut::SurfaceOffset(slot) =
+        grouped_scope.payload_mut()
+    {
+        *slot = Some(body_offset);
+    }
+    let projected = crate::test_support::with_decode_context(|ctx| {
+        let scopes = std::slice::from_ref(&grouped_scope);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                scopes,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
+    let [feature] = projected.features.as_slice() else {
+        panic!("expected one offset feature")
+    };
+    let FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
+        faces: FaceSelection::Native(native),
+        distance: Some(distance),
+    }) = feature.evaluation.definition()
+    else {
+        panic!("expected an offset surface with native support and a distance");
+    };
+    assert_eq!(
+        native,
+        &format!("f3d:native/BulkStream.dat:design-record#{grouped_record_index}")
+    );
+    assert!(distance.get().abs() < f64::EPSILON);
+    for (ordinal, reference) in grouped_scope.reference_members().values().enumerate() {
+        assert!(feature.source_properties.iter().any(|(key, value)| {
+            key.as_str() == format!("reference:{ordinal}") && value == &reference.to_string()
+        }));
+    }
+
     let embedded_default_at = bytes.len();
     for (record_index, ordinal) in [(273u32, 0u8), (274, 1)] {
         let mut scalar = vec![0; 104];
@@ -1576,6 +1632,7 @@ pub(super) fn fixed_kind_tail_operations(
         side_extent_discriminator_offsets: [77, 90],
         first_side_target_ordinal: None,
         distance_tail: None,
+        opaque_distance_word: None,
         extent: DesignExtrudeExtent::OneSidedToFace,
         direction_face_extend_offsets: [32, 36],
         direction_reversed: false,

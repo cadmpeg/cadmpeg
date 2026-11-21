@@ -12,6 +12,53 @@ use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::test_support::zip_test::with_scan;
 
 #[test]
+fn compact_owned_parameter_keeps_offset_with_opaque_trailer_flag() {
+    let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let fixture = |owner, kind, flag| {
+        let expression = "2 mm";
+        let mut bytes = super::compact_owned_parameter_record(
+            owner,
+            2,
+            expression,
+            kind,
+            Some("mm"),
+            "d2",
+            0.2,
+        );
+        let trailer = 41 + 4 + 2 * expression.encode_utf16().count();
+        bytes[trailer] = flag;
+        bytes
+    };
+    let mut bulk = fixture(31, "Side1Offset", 1);
+    bulk.extend_from_slice(&fixture(34, "Side1Offset", 2));
+    bulk.extend_from_slice(&fixture(37, "TangencyWeight", 1));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(stream, stored).unwrap();
+    zip.write_all(&bulk).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    let decoded = with_scan(&archive, decode_parameters).unwrap();
+
+    let [offset] = decoded.parameters.as_slice() else {
+        panic!("one well-formed offset");
+    };
+    assert_eq!(offset.owner_record_index(), Some(31));
+    assert_eq!(offset.source_kind(), "Side1Offset");
+    assert_eq!(offset.expression(), "2 mm");
+    assert!(!offset.flags().driven);
+    let [unparsed] = decoded.unparsed.as_slice() else {
+        panic!("expected one stream with unparsed compact parameter frames");
+    };
+    assert_eq!(unparsed.stream, stream);
+    assert_eq!(unparsed.count, 2);
+    let [flagged] = decoded.trailer_flags.as_slice() else {
+        panic!("one compact trailer flag report");
+    };
+    assert_eq!(flagged.count, 1);
+}
+
+#[test]
 fn decode_reports_typed_parameter_frames_that_match_no_grammar() {
     let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let mut bulk = typed_parameter_record(537, Some(536), "AlongDistance");
@@ -172,4 +219,34 @@ fn decode_reports_a_compact_null_owner_frame_whose_tail_names_another_type() {
         panic!("expected one stream with an unparsed parameter frame");
     };
     assert_eq!(unparsed.count, 1);
+}
+
+#[test]
+fn decode_reports_discriminated_trailers_that_set_an_uninterpreted_flag() {
+    let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let fixture = |record_index: u32, trailer: &[u8]| {
+        let mut frame = parameter_record(Some(0x5d), "1", "TangencyWeight", None, "d4", 1.0);
+        frame[7..11].copy_from_slice(&record_index.to_le_bytes());
+        let expression_end = 46 + 4 + 2;
+        frame.splice(expression_end..expression_end + 9, trailer.iter().copied());
+        frame
+    };
+    let mut bulk = fixture(71, &[0, 0, 0, 0, 0, 1, 0, 0, 0, 0]);
+    bulk.extend_from_slice(&fixture(72, &[0; 10]));
+    bulk.extend_from_slice(&fixture(73, &[0, 0, 0, 0, 1, 0, 0, 0, 0]));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(stream, stored).unwrap();
+    zip.write_all(&bulk).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    let decoded = with_scan(&archive, decode_parameters).unwrap();
+
+    assert_eq!(decoded.parameters.len(), 3);
+    assert!(decoded.unparsed.is_empty());
+    let [flagged] = decoded.trailer_flags.as_slice() else {
+        panic!("one trailer flag report");
+    };
+    assert_eq!(flagged.stream, stream);
+    assert_eq!(flagged.count, 2);
 }

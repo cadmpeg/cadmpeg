@@ -347,7 +347,7 @@ fn decode_user_defined_entities_as_named_opaque_records() {
             .expect("decode user-defined entity witness"),
     );
 
-    assert_eq!(result.ir().entity_count(), 0);
+    assert_eq!(result.ir().entity_count(), 1);
     let unknowns = result.ir().native_unknowns("step").unwrap();
     assert_eq!(unknowns.len(), 2);
 
@@ -1058,3 +1058,32 @@ fn byte_coverage_classifies_whitespace_as_structural() {
 }
 
 mod retention;
+
+/// An opaque entity type is reported once, with the type as its provenance
+/// tag, the offset of its first instance, and its instance count.
+#[test]
+fn an_opaque_entity_type_reports_its_type_offset_and_count() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=UNKNOWN_ITEM(1);#2=UNKNOWN_ITEM(2);#3=UNKNOWN_ITEM(3);ENDSEC;END-ISO-10303-21;";
+    let first = source
+        .windows(b"#1=".len())
+        .position(|window| window == b"#1=")
+        .expect("the first instance");
+    let decoded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(source.as_slice()),
+            &DecodeOptions::default(),
+        )
+        .expect("opaque records decode");
+    let notes = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == StepLossCode::OpaqueRecordPreserved.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(notes.len(), 1);
+    let note = notes[0];
+    assert_eq!(note.count, Some(3));
+    let provenance = note.provenance.as_ref().expect("provenance");
+    assert_eq!(provenance.tag.as_deref(), Some("UNKNOWN_ITEM"));
+    assert_eq!(provenance.offset, u64::try_from(first).expect("offset"));
+}

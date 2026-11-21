@@ -118,16 +118,21 @@ pub(super) fn exact_component_insert_construction(
                         View::u64_le_at(bytes, start + 29)?,
                     )
                 }
-                (272, _) => (
-                    crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
-                    None,
-                    exact_identity_insert_scope(bytes, start, relation_record_index, false)?,
-                ),
-                (276, _) => (
-                    crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
-                    None,
-                    exact_identity_insert_scope(bytes, start, relation_record_index, true)?,
-                ),
+                (271 | 272 | 275 | 276, _) => {
+                    if matches!(frame_length, 271 | 275) {
+                        carrier_form = InsertCarrierForm::LegacyTypedPlacement;
+                    }
+                    (
+                        crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
+                        None,
+                        exact_identity_insert_scope(
+                            bytes,
+                            start,
+                            relation_record_index,
+                            matches!(frame_length, 275 | 276),
+                        )?,
+                    )
+                }
                 (261, "263") if scope.class_tag.as_str() == "296" => (
                     crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
                     None,
@@ -304,7 +309,10 @@ pub(super) fn exact_component_insert_construction(
                 occurrence_key = Some(carrier.occurrence_key);
             }
             (carrier_record_index, placements)
-        } else if scope.class_tag.as_str() == "426" && scope.paired_class_tag.as_str() == "258" {
+        } else if carrier_form == InsertCarrierForm::Standard
+            && scope.class_tag.as_str() == "426"
+            && scope.paired_class_tag.as_str() == "258"
+        {
             let (carrier_record_index, role, role_offset) =
                 exact_component_insert_class_426_relation(
                     bytes,
@@ -336,7 +344,10 @@ pub(super) fn exact_component_insert_construction(
             let carrier_record_index = View::u32_le_at(bytes, relation_at + 22)?;
             let carrier_at =
                 unique_indexed_record_before(records, carrier_record_index, relation_at)?;
-            if scope.class_tag.as_str() == "283" && scope.paired_class_tag.as_str() == "262" {
+            if !matches!(frame_length, 271 | 275)
+                && scope.class_tag.as_str() == "283"
+                && scope.paired_class_tag.as_str() == "262"
+            {
                 let (role, role_offset) = exact_component_insert_carrier_334(
                     bytes,
                     carrier_at,
@@ -346,6 +357,19 @@ pub(super) fn exact_component_insert_construction(
                 (
                     carrier_record_index,
                     [(role, role_offset, None)].into_iter().collect::<Vec<_>>(),
+                )
+            } else if carrier_form == InsertCarrierForm::LegacyTypedPlacement {
+                let (role, role_offset, carrier_transform_offset) =
+                    crate::xref::legacy_typed_component_insert_carrier(
+                        bytes,
+                        carrier_at,
+                        relation_at,
+                        carrier_record_index,
+                        transform.into(),
+                    )?;
+                (
+                    carrier_record_index,
+                    vec![(role, role_offset, carrier_transform_offset)],
                 )
             } else if scope.class_tag.as_str() == "296" && scope.paired_class_tag.as_str() == "263"
             {
@@ -385,19 +409,6 @@ pub(super) fn exact_component_insert_construction(
                 (
                     carrier_record_index,
                     [(role, role_offset, None)].into_iter().collect::<Vec<_>>(),
-                )
-            } else if carrier_form == InsertCarrierForm::LegacyTypedPlacement {
-                let (role, role_offset, carrier_transform_offset) =
-                    crate::xref::legacy_typed_component_insert_carrier(
-                        bytes,
-                        carrier_at,
-                        relation_at,
-                        carrier_record_index,
-                        transform.into(),
-                    )?;
-                (
-                    carrier_record_index,
-                    vec![(role, role_offset, carrier_transform_offset)],
                 )
             } else if scope.class_tag.as_str() == "414" && scope.paired_class_tag.as_str() == "264"
             {
@@ -907,11 +918,11 @@ pub(super) fn unresolved_component_insert_placement(
                 }),
             )
         }
-        272 => (
+        271 | 272 => (
             exact_identity_insert_scope(bytes, start, relation, false)?,
             None,
         ),
-        276 => (
+        275 | 276 => (
             exact_identity_insert_scope(bytes, start, relation, true)?,
             None,
         ),
