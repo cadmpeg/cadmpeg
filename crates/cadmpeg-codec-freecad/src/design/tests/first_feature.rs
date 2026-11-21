@@ -4,7 +4,8 @@
 use crate::loss::FreecadLossCode;
 use crate::test_support::test_archive::{archive_entries, assert_valid_document};
 use crate::FcstdCodec;
-use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::fmt::Write;
 use std::io::Cursor;

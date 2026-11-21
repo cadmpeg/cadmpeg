@@ -6,7 +6,7 @@
 //! coedge a [`pcurve::Pcurve`]). One carrier may therefore support several topological
 //! entities.
 
-use crate::features::{FinitePoint3, FiniteVector3};
+use crate::features::geometry::{FinitePoint3, FiniteVector3};
 use crate::ids::{CurveId, PcurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
 use crate::math::{
     sum::{fast_dot, ExactSignedSum},
@@ -632,8 +632,8 @@ pub fn derive_reference_direction(axis: Vector3) -> Vector3 {
     let norm = axis.norm();
     let axis = if norm.is_finite() && norm != 0.0 {
         Vector3::new(axis.x / norm, axis.y / norm, axis.z / norm)
-    } else if let Some(unit) = crate::features::FiniteVector3::new(axis)
-        .and_then(crate::features::FiniteVector3::unit_nonzero)
+    } else if let Some(unit) = crate::features::geometry::FiniteVector3::new(axis)
+        .and_then(crate::features::geometry::FiniteVector3::unit_nonzero)
     {
         unit
     } else {
@@ -1536,7 +1536,7 @@ pub enum ProceduralGeometryError {
     Cache(#[from] CacheContractError),
     /// A member list violates its member contract.
     #[error(transparent)]
-    Members(#[from] crate::features::BodySelectionError),
+    Members(#[from] crate::features::selections::BodySelectionError),
 }
 
 /// A construction whose layout states no solved-cache fit tolerance.

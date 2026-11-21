@@ -10,14 +10,17 @@ use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::surface::{Patch, PatchBounds};
 use cadmpeg_ir::design::options::SheetOutput;
 use cadmpeg_ir::design::selection::PickTarget;
-use cadmpeg_ir::features::{self as old, FeatureOperation as LegacyOperation};
+use cadmpeg_ir::features::FeatureOperation as LegacyOperation;
 
 use super::{selections, Stated};
 
 pub(super) fn operation(value: &LegacyOperation, stated: &Stated<'_>) -> Option<FeatureOperation> {
     match value {
         LegacyOperation::FilledSurface {
-            boundary: old::SurfaceBoundary::Path(old::PathRef::Sketch(sketch)),
+            boundary:
+                cadmpeg_ir::features::surface_inputs::SurfaceBoundary::Path(
+                    cadmpeg_ir::features::profiles::PathRef::Sketch(sketch),
+                ),
             interior_constraints,
             reverse_normal: None,
             ..

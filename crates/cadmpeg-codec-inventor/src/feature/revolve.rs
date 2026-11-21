@@ -3,10 +3,10 @@
 
 use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{
-    AngularTermination, BooleanOp, PlanarProfileRef, RevolutionAxis, RevolveConstruction,
-    RevolveExtent, SketchProfileRegion,
-};
+use cadmpeg_ir::features::extents::AngularTermination;
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, SketchProfileRegion};
+use cadmpeg_ir::features::revolve::{RevolutionAxis, RevolveConstruction, RevolveExtent};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::native::bytes::NativeBytes;
 use cadmpeg_ir::scalar::Angle;
@@ -307,13 +307,13 @@ pub(crate) fn operands<'a>(
         cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(span[0], span[1], span[2]))
             .ok_or(NativeReason::Axis)?;
     let axis = RevolutionAxis {
-        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+        origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
             origin[0] * 10.0,
             origin[1] * 10.0,
             origin[2] * 10.0,
         ))
         .ok_or(NativeReason::Axis)?,
-        direction: cadmpeg_ir::features::FeatureDirection3::from(direction_vector),
+        direction: cadmpeg_ir::features::geometry::FeatureDirection3::from(direction_vector),
         reference: None,
     };
     let extent_type = if source.save_version_major >= EXTENT_TYPE_12_FIRST_MAJOR {

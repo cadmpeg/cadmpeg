@@ -10,7 +10,7 @@ use super::eval::{
     ParameterExpressionParser,
 };
 use super::{bare_text_parameter_literal, formatted_text_dimension_literal};
-use cadmpeg_ir::features::{DimensionDisplay, ParameterValue};
+use cadmpeg_ir::features::parameters::{DimensionDisplay, ParameterValue};
 
 /// A finite test value as the formatter's checked input.
 fn real(value: f64) -> cadmpeg_ir::scalar::FiniteReal {

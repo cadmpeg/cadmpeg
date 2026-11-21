@@ -271,9 +271,10 @@ fn derives_ellipse_from_orthonormal_frame_and_non_antipodal_endpoints() {
         entity_id: 7,
         type_id: ConicType::Ellipse,
         flip: 1,
-        start: cadmpeg_ir::features::FinitePoint3::new([-3.0, 2.0, 4.0].into())
+        start: cadmpeg_ir::features::geometry::FinitePoint3::new([-3.0, 2.0, 4.0].into())
             .expect("finite start"),
-        end: cadmpeg_ir::features::FinitePoint3::new([2.0, 4.0, 4.0].into()).expect("finite end"),
+        end: cadmpeg_ir::features::geometry::FinitePoint3::new([2.0, 4.0, 4.0].into())
+            .expect("finite end"),
         parameter_start: None,
         parameter_end: None,
         coefficient_1: cadmpeg_ir::scalar::FiniteReal::new(-5.0).expect("finite coefficient"),
@@ -289,8 +290,10 @@ fn derives_ellipse_from_orthonormal_frame_and_non_antipodal_endpoints() {
         super::ellipse_carriers(std::slice::from_ref(&conic)),
         [ReferenceEllipse::try_new(
             7,
-            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(2.0, 2.0, 4.0,))
-                .expect("finite center"),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                2.0, 2.0, 4.0,
+            ))
+            .expect("finite center"),
             cadmpeg_ir::units::UnitVector3::Z_AXIS,
             cadmpeg_ir::units::UnitVector3::X_AXIS.reversed(),
             [
@@ -313,9 +316,9 @@ fn derives_ellipse_from_orthonormal_frame_and_non_antipodal_endpoints() {
         local_system: cadmpeg_ir::units::FiniteVector::new([
             1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
         ]),
-        start: cadmpeg_ir::features::FinitePoint3::new([diagonal, diagonal, 0.0].into())
+        start: cadmpeg_ir::features::geometry::FinitePoint3::new([diagonal, diagonal, 0.0].into())
             .expect("finite start"),
-        end: cadmpeg_ir::features::FinitePoint3::new([-diagonal, -diagonal, 0.0].into())
+        end: cadmpeg_ir::features::geometry::FinitePoint3::new([-diagonal, -diagonal, 0.0].into())
             .expect("finite end"),
         ..conic
     };

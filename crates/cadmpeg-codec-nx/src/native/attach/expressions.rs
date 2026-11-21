@@ -6,7 +6,7 @@ use super::{
     Exactness, Feature, FeatureDefinition, FeatureId, FeatureOperation, FeatureSourceContent,
     FeatureTreeNodeRole, IdScope, Length, ParameterId, StreamHandle, TreeChildren,
 };
-use cadmpeg_ir::features::{DesignParameter, ParameterValue};
+use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
 
 pub(in crate::native) fn attach_expression_parameters(
     ctx: &DecodeContext<'_>,
@@ -137,7 +137,7 @@ pub(in crate::native) fn attach_expression_parameters(
             source_text: None,
             source_content,
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::TreeNode {
                     role: FeatureTreeNodeRole::Equations,
                     children: TreeChildren::default(),
@@ -279,8 +279,10 @@ pub(in crate::native) fn attach_expression_parameters(
                 expression: expression.expression.clone(),
                 display: None,
                 value,
-                dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies)
-                    .map_err(cadmpeg_core::CodecError::from)?,
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(
+                    dependencies,
+                )
+                .map_err(cadmpeg_core::CodecError::from)?,
                 properties,
                 pmi: None,
                 native_ref: Some(expression.id.clone()),

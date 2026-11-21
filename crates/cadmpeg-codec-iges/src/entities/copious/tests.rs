@@ -161,7 +161,7 @@ fn decode_projects_copious_linear_paths_with_segment_parameters() {
             1.5
         )
         .ok()
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0))
     );
     assert_eq!(

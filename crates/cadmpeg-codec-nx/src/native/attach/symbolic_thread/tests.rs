@@ -2,7 +2,9 @@
 use super::{definitions, nominal_diameter};
 use crate::native::features::holes::FeatureSymbolicThread;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation, FinitePoint3};
+use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId, VertexId,

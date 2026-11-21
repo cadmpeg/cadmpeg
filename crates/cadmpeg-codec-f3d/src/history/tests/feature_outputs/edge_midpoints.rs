@@ -6,9 +6,8 @@ fn midpoint_fillet(
     scope: &crate::records::feature::scope::DesignParameterScope,
 ) -> cadmpeg_ir::features::Feature {
     use cadmpeg_ir::features::edge_treatments::{FilletGroup, RadiusSpec};
-    use cadmpeg_ir::features::{
-        EdgeSelection, FeatureDefinition, FeatureOperation, NonEmptyMembers,
-    };
+    use cadmpeg_ir::features::selections::{EdgeSelection, NonEmptyMembers};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let mut feature = base_feature();
     feature.id = crate::ids::neutral_feature_id(scope);
     feature.native_ref = Some(scope.id.clone());
@@ -40,6 +39,7 @@ fn midpoint_history(id: &str, x: f64) -> crate::history_records::AsmHistory {
             edge: 10,
             interior: cadmpeg_ir::math::Point3::new(x, 0.0, 0.0),
             tangent: None,
+            carrier: None,
         }],
         ..Default::default()
     };
@@ -362,6 +362,7 @@ fn edge_midpoints_preserve_explicit_edge_selections_without_deleted_edge_fallbac
             edge: 99,
             interior: cadmpeg_ir::math::Point3::new(5.0, 0.0, 0.0),
             tangent: None,
+            carrier: None,
         }];
     });
     let mut feature = midpoint_fillet(&scope);

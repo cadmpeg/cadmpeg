@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::bytes::find_iter;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::FitTolerance;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::PositiveReal;
