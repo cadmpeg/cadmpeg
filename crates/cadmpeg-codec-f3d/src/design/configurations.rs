@@ -121,7 +121,7 @@ pub(crate) struct ConfigurationTargets<'a> {
     pub(crate) parameters: &'a [crate::records::parameters::DesignParameter],
     pub(crate) owners: &'a [crate::records::parameters::DesignParameterOwner],
     pub(crate) scopes: &'a [crate::records::feature::scope::DesignParameterScope],
-    pub(crate) neutral_parameters: &'a [cadmpeg_ir::features::DesignParameter],
+    pub(crate) neutral_parameters: &'a [cadmpeg_ir::features::parameters::DesignParameter],
     pub(crate) neutral_features: &'a [cadmpeg_ir::features::Feature],
 }
 
@@ -192,8 +192,8 @@ impl ConfigurationTargets<'_> {
         &self,
         id: &cadmpeg_ir::features::ParameterId,
         evaluated: FiniteReal,
-    ) -> Option<cadmpeg_ir::features::ParameterValue> {
-        use cadmpeg_ir::features::ParameterValue;
+    ) -> Option<cadmpeg_ir::features::parameters::ParameterValue> {
+        use cadmpeg_ir::features::parameters::ParameterValue;
         use cadmpeg_ir::scalar::{Angle, Length};
 
         let parameter = self
@@ -220,7 +220,7 @@ impl ConfigurationTargets<'_> {
 pub(crate) fn project_configurations(
     native: &[DesignConfiguration],
     targets: &ConfigurationTargets<'_>,
-) -> Result<Vec<cadmpeg_ir::features::DesignConfiguration>, CodecError> {
+) -> Result<Vec<cadmpeg_ir::features::parameters::DesignConfiguration>, CodecError> {
     let mut populated = native.iter().flat_map(|document| {
         document
             .tables()
@@ -277,10 +277,10 @@ fn project_row(
     ordinal: u32,
     active: bool,
     targets: &ConfigurationTargets<'_>,
-) -> Result<cadmpeg_ir::features::DesignConfiguration, CodecError> {
-    use cadmpeg_ir::features::{ConfigurationEvaluation, ConfigurationFeatureState};
+) -> Result<cadmpeg_ir::features::parameters::DesignConfiguration, CodecError> {
+    use cadmpeg_ir::features::parameters::{ConfigurationEvaluation, ConfigurationFeatureState};
 
-    let mut configuration = cadmpeg_ir::features::DesignConfiguration {
+    let mut configuration = cadmpeg_ir::features::parameters::DesignConfiguration {
         id: crate::ids::neutral_configuration_id(document.entry_name(), &row.id),
         ordinal,
         active,
@@ -309,7 +309,8 @@ fn project_row(
                     Some(feature) => {
                         let evaluation = if *computed {
                             ConfigurationEvaluation::Active {
-                                outputs: cadmpeg_ir::features::DistinctMembers::default(),
+                                outputs: cadmpeg_ir::features::selections::DistinctMembers::default(
+                                ),
                             }
                         } else {
                             ConfigurationEvaluation::Suppressed {}
@@ -376,7 +377,7 @@ fn project_row(
 /// gained a row, so that row records the assumption in a property.
 pub(crate) fn reconcile_active_configurations(
     features: &mut [cadmpeg_ir::features::Feature],
-    configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
+    configurations: &mut [cadmpeg_ir::features::parameters::DesignConfiguration],
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
@@ -421,7 +422,7 @@ pub(crate) fn reconcile_active_configurations(
 /// Suppressed states of the active configuration inferred from the current
 /// feature state while a suppression column of that row names no feature.
 pub(crate) fn inferred_configuration_suppression_count(
-    projected: &[cadmpeg_ir::features::DesignConfiguration],
+    projected: &[cadmpeg_ir::features::parameters::DesignConfiguration],
 ) -> usize {
     projected
         .iter()
@@ -431,7 +432,7 @@ pub(crate) fn inferred_configuration_suppression_count(
 }
 
 pub(crate) fn unresolved_configuration_parameter_override_count(
-    projected: &[cadmpeg_ir::features::DesignConfiguration],
+    projected: &[cadmpeg_ir::features::parameters::DesignConfiguration],
 ) -> usize {
     projected
         .iter()
@@ -441,7 +442,7 @@ pub(crate) fn unresolved_configuration_parameter_override_count(
 }
 
 pub(crate) fn unresolved_configuration_suppressed_feature_count(
-    projected: &[cadmpeg_ir::features::DesignConfiguration],
+    projected: &[cadmpeg_ir::features::parameters::DesignConfiguration],
 ) -> usize {
     projected
         .iter()
@@ -452,7 +453,7 @@ pub(crate) fn unresolved_configuration_suppressed_feature_count(
 
 pub(crate) fn unresolved_configuration_rule_count(
     native: &[DesignConfiguration],
-    projected: &[cadmpeg_ir::features::DesignConfiguration],
+    projected: &[cadmpeg_ir::features::parameters::DesignConfiguration],
 ) -> usize {
     native
         .iter()

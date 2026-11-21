@@ -43,7 +43,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 fn revolution_unit_axis(
     feature_id: u32,
-    direction: cadmpeg_ir::features::FeatureDirection3,
+    direction: cadmpeg_ir::features::geometry::FeatureDirection3,
 ) -> Result<cadmpeg_ir::units::UnitVector3, cadmpeg_core::CodecError> {
     let Some(axis) = cadmpeg_ir::units::UnitVector3::new(direction.get()) else {
         return Err(cadmpeg_core::CodecError::malformed(format!(

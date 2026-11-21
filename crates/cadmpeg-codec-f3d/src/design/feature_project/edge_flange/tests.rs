@@ -279,9 +279,7 @@ fn reference_edge_legacy_fallback_retains_different_and_missing_widths() {
         assert!(height.offset.is_none());
         assert!(matches!(
             height.target,
-            Some(cadmpeg_ir::features::SheetMetalFlangeHeightTarget::Native(
-                _
-            ))
+            Some(cadmpeg_ir::features::sheet_metal_forms::SheetMetalFlangeHeightTarget::Native(_))
         ));
         assert!(losses
             .iter()

@@ -6,11 +6,11 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_core::decode::{unique_index, DecodeContext};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::evaluation::{FeatureResultMembers, FeatureResultTopology};
+use cadmpeg_ir::features::geometry::{FeatureDirection3, FinitePoint3};
 use cadmpeg_ir::features::patterns::{PatternKind, PatternSeed, PatternTransform};
-use cadmpeg_ir::features::{
-    BodySelection, Feature, FeatureDefinition, FeatureDirection3, FeatureId, FeatureOperation,
-    FeatureResultMembers, FeatureResultTopology, FinitePoint3,
-};
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::ids::FeatureResultTopologyId;
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -484,7 +484,9 @@ impl<'a> MirrorIndex<'a> {
         ))?;
         // History drops this reference where the supplying work plane becomes
         // a dependency of the Mirror (`without_supplied_plane_reference`).
-        let plane_reference = Some(cadmpeg_ir::features::FaceSelection::Native(plane.id()));
+        let plane_reference = Some(cadmpeg_ir::features::selections::FaceSelection::Native(
+            plane.id(),
+        ));
         let collection = self.property(token, slot(if bodies_mode { 10 } else { 9 })?)?;
         let PmDcFeaturePropertyKind::References {
             family: PmDcFeatureReferenceFamily::ObjectCollection,
@@ -635,7 +637,9 @@ impl<'a> MirrorIndex<'a> {
                 let mut feature = native_feature(ctx, &source.identity, Some(label), source.id())?;
                 feature.source_tag = Some("mirror".into());
                 feature.evaluation =
-                    cadmpeg_ir::features::FeatureEvaluation::from_definition(resolved.definition);
+                    cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+                        resolved.definition,
+                    );
                 ctx.charge_entities(1, "project Inventor mirror result topology")?;
                 let result = FeatureResultTopology::new(
                     FeatureResultTopologyId::compose(

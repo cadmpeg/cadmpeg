@@ -42,9 +42,10 @@ fn regeneration_edge_commit_installs_feature_parent() {
 }
 
 fn feature_for_output_refresh() -> cadmpeg_ir::features::Feature {
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::selections::DistinctMembers;
     use cadmpeg_ir::features::{
-        DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
-        FeatureOperation,
+        Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
     };
 
     Feature {
@@ -82,8 +83,9 @@ fn existing_feature_dependency_merge_preserves_first_order_and_uniqueness() {
         .expect("first dependency identity");
     let second = cadmpeg_ir::features::FeatureId::mint("creo:model:feature#40")
         .expect("second dependency identity");
-    let mut target = cadmpeg_ir::features::DistinctMembers::try_from(vec![first.clone()])
-        .expect("one member is distinct");
+    let mut target =
+        cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![first.clone()])
+            .expect("one member is distinct");
     target.extend([first.clone(), second.clone()]);
     assert_eq!(target.as_slice(), &[first, second]);
 }

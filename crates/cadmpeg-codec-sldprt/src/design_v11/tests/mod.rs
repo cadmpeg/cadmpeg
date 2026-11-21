@@ -378,7 +378,7 @@ fn a_bare_display_is_no_cache() {
         .unwrap();
     assert!(matches!(
         v10.value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(length)) if length.get() == 25.0
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Length(length)) if length.get() == 25.0
     ));
     let d1 = parameter_named(&ir, "D1");
     assert_eq!(d1.kind, ValueKind::Quantity(Quantity::LENGTH));
@@ -396,7 +396,7 @@ fn parameters_with_readings(
     readings: &[(
         &str,
         &str,
-        cadmpeg_ir::features::ParameterValue,
+        cadmpeg_ir::features::parameters::ParameterValue,
         Option<&str>,
     )],
     classes: &[(&str, crate::records::ArchiveParameterClass)],
@@ -463,7 +463,7 @@ fn a_dimension_caches_the_stored_value_not_its_display() {
     use crate::records::ArchiveParameterClass;
     use cadmpeg_ir::design::parameter::{DimensionDisplay, ParameterValue};
     use cadmpeg_ir::design::units::{Quantity, ValueKind};
-    use cadmpeg_ir::features::ParameterValue as V10;
+    use cadmpeg_ir::features::parameters::ParameterValue as V10;
     use cadmpeg_ir::scalar::Length;
 
     let length = |millimetres: f64| V10::Length(Length::new(millimetres).unwrap());
@@ -569,7 +569,7 @@ fn a_dimension_caches_the_stored_value_not_its_display() {
 fn an_unread_kind_keeps_the_number_its_bound_scalar_stores() {
     use cadmpeg_ir::design::parameter::ParameterValue;
     use cadmpeg_ir::design::units::{UnitSymbol, ValueKind};
-    use cadmpeg_ir::features::ParameterValue as V10;
+    use cadmpeg_ir::features::parameters::ParameterValue as V10;
 
     let (_, parameters, notes) = parameters_with_readings(
         br#"<Keywords Name="Bracket">
@@ -640,7 +640,7 @@ fn a_length_display_is_a_literal_in_the_part_length_unit() {
     use crate::records::ArchiveParameterClass;
     use cadmpeg_ir::design::parameter::{DimensionDisplay, ParameterValue};
     use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
-    use cadmpeg_ir::features::ParameterValue as V10;
+    use cadmpeg_ir::features::parameters::ParameterValue as V10;
     use cadmpeg_ir::scalar::Length;
 
     let length = |millimetres: f64| V10::Length(Length::new(millimetres).unwrap());

@@ -6,8 +6,9 @@ use crate::records::feature::scope::DesignScopePayload;
 use crate::records::feature::silhouette_split::{DesignSilhouetteDirection, DesignSilhouetteSplit};
 use crate::records::identity::ReferenceRun;
 use crate::records::topology::extrude_selection::DesignOperandRole;
+use cadmpeg_ir::features::selections::BodySelection;
 use cadmpeg_ir::features::surfaces::SilhouetteSplitMode;
-use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::scalar::FiniteReal;
 
 const EPS_DIRECTION: f64 = 1.0e-12;

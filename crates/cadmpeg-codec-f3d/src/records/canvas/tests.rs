@@ -379,7 +379,7 @@ fn canvas_geometry_payload_decodes_opacity_and_plane_frame() {
 #[test]
 fn canvas_placement_preserves_ordered_corners_in_model_space() {
     use crate::records::canvas::DesignCanvasBounds;
-    use cadmpeg_ir::features::FeatureUnitPlaneFrame;
+    use cadmpeg_ir::features::geometry::FeatureUnitPlaneFrame;
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     const EPS_CORNER: f64 = 1.0e-10;
     let plane = FeatureUnitPlaneFrame::new(

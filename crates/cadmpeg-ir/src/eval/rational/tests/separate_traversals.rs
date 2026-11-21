@@ -6,7 +6,7 @@
 use super::super::{Homogeneous, SumTerms};
 use crate::eval::admission::EvaluationRefusal;
 use crate::eval::decode;
-use crate::features::FinitePoint3;
+use crate::features::geometry::FinitePoint3;
 use crate::math::sum::{product_sum, ProductSum};
 
 pub(super) fn sum(

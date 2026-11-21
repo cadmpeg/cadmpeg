@@ -8,7 +8,7 @@ use crate::brep::feature_source::FeatureSourceId;
 use crate::brep::PersistentFaceIdentity;
 use crate::container::{ContainerScan, Section};
 use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
@@ -577,10 +577,10 @@ fn scene_classes(payload: &[u8]) -> Vec<(u32, String)> {
         if !matches!(
             crate::classification::native_object_class(&class.name).tree_node(),
             Some(
-                cadmpeg_ir::features::FeatureTreeNodeRole::AmbientLight
-                    | cadmpeg_ir::features::FeatureTreeNodeRole::DirectionalLight
-                    | cadmpeg_ir::features::FeatureTreeNodeRole::PointLight
-                    | cadmpeg_ir::features::FeatureTreeNodeRole::SpotLight
+                cadmpeg_ir::features::tree::FeatureTreeNodeRole::AmbientLight
+                    | cadmpeg_ir::features::tree::FeatureTreeNodeRole::DirectionalLight
+                    | cadmpeg_ir::features::tree::FeatureTreeNodeRole::PointLight
+                    | cadmpeg_ir::features::tree::FeatureTreeNodeRole::SpotLight
             )
         ) {
             continue;

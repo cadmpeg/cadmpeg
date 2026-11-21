@@ -206,9 +206,11 @@ fn nonpositional_conditions_options_and_scalar_patterns_stay_native() {
 }
 
 fn positional_definition() -> FeatureDefinition {
-    use cadmpeg_ir::features::{
-        BooleanOp, LoftGuidance, LoftSection, PlanarProfileRef, ProfileRef, SketchProfileRegion,
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::profiles::{
+        LoftSection, PlanarProfileRef, ProfileRef, SketchProfileRegion,
     };
+    use cadmpeg_ir::features::LoftGuidance;
     let profile = PlanarProfileRef::sketch_regions(
         cadmpeg_ir::sketches::SketchId::mint("test:model:sketch#section").expect("sketch"),
         vec![SketchProfileRegion::loops(0, Vec::new()).expect("region")],

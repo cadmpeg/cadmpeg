@@ -278,7 +278,9 @@ fn notes(
         source_tag: Some("Extrude".into()),
         source_text: None,
         source_content: Default::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            definition,
+        ),
         native_ref: Some(SCOPE_ID.into()),
     });
     let mut report = cadmpeg_ir::codec::DecodeBody {

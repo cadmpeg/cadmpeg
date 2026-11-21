@@ -17,9 +17,9 @@ use crate::records::topology::entity_selection::{
 };
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use crate::records::topology::fillet::HistoricalBinding;
-use cadmpeg_ir::features::{
-    DraftAnchor, DraftSecondSide, FaceSelection, FeatureDefinition, FeatureOperation,
-};
+use cadmpeg_ir::features::direct_edit::{DraftAnchor, DraftSecondSide};
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 const STREAM: &str = "f3d:test/Design/BulkStream.dat";

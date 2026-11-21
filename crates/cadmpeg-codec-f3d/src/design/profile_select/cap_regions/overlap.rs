@@ -2,7 +2,9 @@
 
 use super::{boundary_use_samples, clearance, point_in_polygon, scanline_midpoints, CURVE_SAMPLES};
 use cadmpeg_core::{decode::DecodeContext, CodecError};
-use cadmpeg_ir::{features::SketchProfileRegion, math::Point2, sketches::SketchEntity};
+use cadmpeg_ir::features::profiles::SketchProfileRegion;
+use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::sketches::SketchEntity;
 
 pub(in crate::design::profile_select) fn regions_are_disjoint(
     regions: &[SketchProfileRegion],

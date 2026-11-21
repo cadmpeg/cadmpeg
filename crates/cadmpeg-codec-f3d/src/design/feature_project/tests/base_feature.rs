@@ -155,7 +155,7 @@ fn a_suffix_result_body_frame_resolves_its_body_through_the_body_map() {
     assert!(matches!(
         projection.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::BaseFeature {
-            bodies: cadmpeg_ir::features::BodySelection::Resolved { bodies, .. },
+            bodies: cadmpeg_ir::features::selections::BodySelection::Resolved { bodies, .. },
         }) if bodies.as_slice() == [binding.body.clone().unwrap()]
     ));
 }

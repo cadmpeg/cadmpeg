@@ -8,9 +8,8 @@ use crate::records::{
     FeatureInputRelationInstance, SketchInputEntity, SketchInputKind,
 };
 use crate::resolved_features::LEGACY_EXTENDED_SKETCH_MARKER;
-use cadmpeg_ir::features::{
-    DesignParameter, DimensionDisplay, FeatureId, ParameterId, ParameterValue,
-};
+use cadmpeg_ir::features::parameters::{DesignParameter, DimensionDisplay, ParameterValue};
+use cadmpeg_ir::features::{FeatureId, ParameterId};
 use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::units::FiniteVector;
 use std::collections::BTreeMap;
@@ -142,7 +141,7 @@ fn marker_circle_inputs_match_the_parameter_and_lane_scans() {
                 value: Some(ParameterValue::Length(
                     Length::new(f64::from(next(5)) - 1.0).unwrap(),
                 )),
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                 properties: BTreeMap::new(),
                 pmi: None,
                 native_ref: None,

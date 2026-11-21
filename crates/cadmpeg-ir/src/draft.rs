@@ -13,9 +13,9 @@ use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
 use crate::document::{CadIr, Model, Topology};
 use crate::drawings::Drawing;
-use crate::features::{
-    DesignConfiguration, DesignParameter, Feature, FeatureInputTopology, FeatureResultTopology,
-};
+use crate::features::evaluation::{FeatureInputTopology, FeatureResultTopology};
+use crate::features::parameters::{DesignConfiguration, DesignParameter};
+use crate::features::Feature;
 use crate::geometry::{pcurve::Pcurve, Curve, ProceduralCurve, ProceduralSurface, Surface};
 use crate::presentation::{PresentationDocument, ViewPresentation};
 use crate::products::{AssemblyJoint, Occurrence, ProductDefinition};
@@ -1261,7 +1261,7 @@ mod tests {
     fn point(id: &str) -> Point {
         Point::new(
             PointId::mint(id).expect("valid identity"),
-            crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+            crate::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         )
@@ -1366,12 +1366,12 @@ mod tests {
                 ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
                 name: None,
                 suppressed: None,
-                dependencies: crate::features::DistinctMembers::default(),
+                dependencies: crate::features::selections::DistinctMembers::default(),
                 source_properties: std::collections::BTreeMap::default(),
                 source_tag: None,
                 source_text: None,
                 source_content: crate::features::FeatureContent::default(),
-                evaluation: crate::features::FeatureEvaluation::from_definition(
+                evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
                 ),
                 native_ref: None,
@@ -1414,12 +1414,12 @@ mod tests {
                     ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
                     name: None,
                     suppressed: None,
-                    dependencies: crate::features::DistinctMembers::default(),
+                    dependencies: crate::features::selections::DistinctMembers::default(),
                     source_properties: std::collections::BTreeMap::default(),
                     source_tag: None,
                     source_text: None,
                     source_content: crate::features::FeatureContent::default(),
-                    evaluation: crate::features::FeatureEvaluation::from_definition(
+                    evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
                         FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
                     ),
                     native_ref: None,
