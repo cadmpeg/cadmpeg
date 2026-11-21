@@ -318,11 +318,23 @@ pub(crate) fn write_semantic_with_records(
                 members.push(&mut sections, &mut unwritten, section, payload);
             }
         } else {
+            let (payload, omitted) = tessellation_payload(ir, length_scale)?;
+            if !omitted.is_empty() {
+                losses.push(
+                    crate::loss::SldprtLossCode::WriterTessellationMetadataOmitted.note(format!(
+                        "{} tessellation(s) state auxiliary channels other than the three the \
+                         SLDPRT display-list table carries after the strip, position and normal \
+                         channels; they are written with the table's default channels: {}",
+                        omitted.len(),
+                        omitted.join(", ")
+                    )),
+                );
+            }
             members.push(
                 &mut sections,
                 &mut unwritten,
                 "Contents/DisplayLists".into(),
-                tessellation_payload(ir, length_scale)?,
+                payload,
             );
         }
     }
@@ -2635,7 +2647,12 @@ fn xml_text(out: &mut String, value: &str) {
     }
 }
 
-fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecError> {
+/// The display-list member, and the meshes whose auxiliary channels it does
+/// not hold.
+fn tessellation_payload(
+    ir: &CadIr,
+    length_scale: f64,
+) -> Result<(Vec<u8>, Vec<String>), CodecError> {
     type AuxiliaryWriter = fn(&mut Vec<u8>, &[u32]) -> Result<(), CodecError>;
     let meshes = ir
         .model
@@ -2643,6 +2660,7 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
         .iter()
         .map(sequential_tessellation)
         .collect::<Result<Vec<_>, _>>()?;
+    let mut omitted = Vec::new();
     let mut out = b"uoTempBodyTessData_c".to_vec();
     out.extend_from_slice(&[0; 8]);
     out.extend_from_slice(b"uoTempFaceTessData_c");
@@ -2684,9 +2702,9 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
         descriptor(&mut out, 12, 100, 2, mesh.vertex_normals().len(), &normals)?;
         // `has_core_tessellation_channels` matches at least three channels, so
         // the remainder after the core three is the complete auxiliary run.
-        // The display-list table carries exactly three auxiliary channels; the
-        // consistency check below refuses any other number rather than
-        // truncating the run the mesh states.
+        // The display-list table carries exactly three auxiliary channels; a
+        // run of another shape is left out whole and the table's defaults are
+        // written.
         let auxiliary_start = usize::from(has_core_tessellation_channels(mesh.channels())) * 3;
         let auxiliary = &mesh.channels()[auxiliary_start..];
         let strip_lengths = mesh
@@ -2695,15 +2713,14 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
             .map(|run| usize::try_from(*run))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| CodecError::Malformed("tessellation strip length overflow".into()))?;
-        if !auxiliary.is_empty()
-            && !crate::tessellation::auxiliary_channels_are_consistent(&strip_lengths, auxiliary)
+        let auxiliary = if auxiliary.is_empty()
+            || crate::tessellation::auxiliary_channels_are_consistent(&strip_lengths, auxiliary)
         {
-            return Err(CodecError::InvalidInput(
-                "tessellation channels: the SLDPRT display-list table carries exactly three \
-                 auxiliary channels after the strip, position and normal channels"
-                    .into(),
-            ));
-        }
+            auxiliary
+        } else {
+            omitted.push(mesh.id.as_str().to_owned());
+            &[]
+        };
         for channel in auxiliary {
             descriptor(
                 &mut out,
@@ -2744,7 +2761,7 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
             append(&mut out, &list_c)?;
         }
     }
-    Ok(out)
+    Ok((out, omitted))
 }
 
 fn has_core_tessellation_channels(
