@@ -34,19 +34,43 @@ fn role_expression<'a>(feature: &'a Value, role: &str) -> &'a str {
         .expect("native parameter expression")
 }
 
-/// The Fusion readback states one input body per produced mesh body, and the
-/// surface deviation `0.005 mm`, normal deviation `15`, and aspect ratio
-/// `21.5` of each feature.
+const ROLES: [&str; 4] = [
+    "surface-deviation",
+    "normal-deviation",
+    "maximum-edge-length",
+    "aspect-ratio",
+];
+
+/// The Fusion readback states one input body per produced mesh body, the
+/// refinement selector, and the model parameter of each owner role, in
+/// `ROLES` order.
 #[test]
 fn a_tessellate_scope_counts_one_operand_per_source_body() {
-    for (bytes, bodies) in [
+    let default = ["0.005 mm", "15", "34.641 mm", "21.5"];
+    for (bytes, bodies, refinement, expressions) in [
         (
             &include_bytes!("../../../../corpus/f3d/tessellate_one_body.f3d")[..],
             1usize,
+            "1",
+            default,
         ),
         (
             &include_bytes!("../../../../corpus/f3d/tessellate_two_bodies.f3d")[..],
             2,
+            "1",
+            default,
+        ),
+        (
+            &include_bytes!("../../../../corpus/f3d/tessellate_convert.f3d")[..],
+            1,
+            "1",
+            default,
+        ),
+        (
+            &include_bytes!("../../../../corpus/f3d/tessellate_reduce.f3d")[..],
+            1,
+            "3",
+            ["0.05 mm", "15", "2 mm", "21.5"],
         ),
     ] {
         let feature = tessellate_feature(bytes);
@@ -55,6 +79,7 @@ fn a_tessellate_scope_counts_one_operand_per_source_body() {
             properties["mesh-tessellate-operand-count"],
             bodies.to_string()
         );
+        assert_eq!(properties["mesh-tessellate-refinement"], refinement);
         let produced = (0..bodies)
             .map(|ordinal| {
                 properties[format!("mesh-tessellate-body:{ordinal}")]
@@ -67,11 +92,45 @@ fn a_tessellate_scope_counts_one_operand_per_source_body() {
         assert!(properties
             .get(format!("mesh-tessellate-body:{bodies}"))
             .is_none());
-        assert_eq!(role_expression(&feature, "surface-deviation"), "0.005 mm");
-        assert_eq!(role_expression(&feature, "normal-deviation"), "15");
-        assert_eq!(role_expression(&feature, "aspect-ratio"), "21.5");
-        assert!(properties
-            .get("mesh-tessellate-parameter:maximum-edge-length")
-            .is_some());
+        for (role, expression) in ROLES.into_iter().zip(expressions) {
+            assert_eq!(role_expression(&feature, role), expression, "{role}");
+        }
+    }
+}
+
+fn features_by_tag(bytes: &[u8], tag: &str) -> Vec<Value> {
+    let result = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode the corpus file");
+    let ir = serde_json::to_value(result.ir()).expect("serialize the IR");
+    ir["model"]["features"]
+        .as_array()
+        .expect("feature list")
+        .iter()
+        .filter(|feature| feature["source_tag"] == tag)
+        .cloned()
+        .collect()
+}
+
+/// The later Mesh Reduce and Convert Mesh take the mesh body that the
+/// Tessellate produces as their source.
+#[test]
+fn a_later_mesh_operation_takes_the_produced_body() {
+    for (bytes, tag, key) in [
+        (
+            &include_bytes!("../../../../corpus/f3d/tessellate_reduce.f3d")[..],
+            "MeshReduce",
+            "mesh-body-reference:0",
+        ),
+        (
+            &include_bytes!("../../../../corpus/f3d/tessellate_convert.f3d")[..],
+            "Convert Mesh",
+            "mesh-conversion-body:0:0",
+        ),
+    ] {
+        let produced = tessellate_feature(bytes)["source_properties"]["mesh-tessellate-body:0"].clone();
+        let later = features_by_tag(bytes, tag);
+        assert_eq!(later.len(), 1, "{tag}");
+        assert_eq!(later[0]["source_properties"][key], produced, "{tag}");
     }
 }

@@ -191,6 +191,7 @@ fn tessellation_records_owner_roles_operand_group_and_produced_body() {
         ("mesh-tessellate-owner:aspect-ratio", "32"),
         ("mesh-tessellate-owner:surface-deviation", "33"),
         ("mesh-tessellate-operand-count", "1"),
+        ("mesh-tessellate-refinement", "1"),
         ("mesh-tessellate-operand:0", "20"),
         ("mesh-tessellate-group:0", "21"),
         ("mesh-tessellate-body:0", "22"),

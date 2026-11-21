@@ -5924,7 +5924,7 @@ section = "3.1"
 anchor = "A `MeshTessellate` scope has type GUID"
 size = 69
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/tessellate.rs"
-note = "The counted operand references and the six tail bytes follow the count."
+note = "The counted operand references, byte 01, the refinement selector, and four zero bytes follow the count."
 
 [[record.gap]]
 offset = 0

@@ -26,6 +26,7 @@ pub(crate) struct MeshTessellateScope {
     pub(crate) owners: [Option<u32>; 4],
     pub(crate) operand_count: Option<u32>,
     pub(crate) operands: Vec<Option<u32>>,
+    pub(crate) refinement: Option<u8>,
     pub(crate) tail_error: Option<MeshOperationFraming>,
     pub(crate) deviations: Vec<(&'static str, u32)>,
 }
@@ -112,6 +113,7 @@ pub(crate) fn read_scope(
         owners: [None; 4],
         operand_count: None,
         operands: Vec::new(),
+        refinement: None,
         tail_error: None,
         deviations: Vec::new(),
     };
@@ -140,17 +142,23 @@ pub(crate) fn read_scope(
                 Err(error) => return Ok(Err(error)),
             }
         }
-        Ok(expect_tail(
-            &mut cursor,
-            [
-                "tessellate-tail-byte:0",
-                "tessellate-tail-byte:1",
+        let tail = (|| {
+            cursor.expect_u8("tessellate-tail-byte:0", TAIL[0])?;
+            parsed.refinement = Some(cursor.u8("tessellate refinement selector")?);
+            for (field, expected) in [
                 "tessellate-tail-byte:2",
                 "tessellate-tail-byte:3",
                 "tessellate-tail-byte:4",
                 "tessellate-tail-byte:5",
-            ],
-        ))
+            ]
+            .into_iter()
+            .zip(&TAIL[2..])
+            {
+                cursor.expect_u8(field, *expected)?;
+            }
+            Ok(())
+        })();
+        Ok(tail)
     })()?;
     parsed.tail_error = read.err();
     parsed.deviations = cursor.deviations;
