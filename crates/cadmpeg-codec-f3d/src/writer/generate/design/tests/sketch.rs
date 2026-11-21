@@ -668,6 +668,40 @@ fn the_sketch_note_names_the_point_and_curve_identities() {
 }
 
 #[test]
+fn the_fixed_clock_note_names_every_record_timestamp_table() {
+    let (ir, _) = scoped_sketches();
+    let (report, _, bytes) = write_bytes(&ir);
+    let design = segment(&bytes, "FusionDesignSegmentType1");
+    let tables = design
+        .primary
+        .iter()
+        .map(|(index, _)| *index)
+        .filter(|index| {
+            design
+                .type_of(*index)
+                .0
+                .eq_ignore_ascii_case(super::super::types::RECORD_TIMESTAMPS.guid)
+        })
+        .collect::<Vec<_>>();
+    // The component, Base Feature scope and result tables, and three for
+    // each of the four sketches.
+    assert_eq!(tables.len(), 3 + 3 * 4);
+    let notes = loss(&report, "export/record.residual-unavailable")
+        .into_iter()
+        .filter(|message| message.contains("fixed-clock"))
+        .collect::<Vec<_>>();
+    let [note] = notes.as_slice() else {
+        panic!("one fixed-clock note: {:#?}", report.losses);
+    };
+    for table in tables {
+        assert!(
+            note.contains(&format!("record {table} (")),
+            "{table}: {note}"
+        );
+    }
+}
+
+#[test]
 fn the_id_table_lists_sketches_then_the_base_feature() {
     let (ir, _) = scoped_sketches();
     let (_, decoded, bytes) = write_bytes(&ir);

@@ -339,11 +339,11 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
     notes.extend(record_residual_unavailable(
         "F3D",
         "writes fixed-clock (2026-01-01 UTC) authoring timestamps in the record-timestamp tables: the document records no authoring clock",
-        [
-            "record 206 (component record-timestamp table)".to_owned(),
-            "record 210 (Base Feature scope record-timestamp table)".to_owned(),
-            "record 214 (Base Feature result record-timestamp table)".to_owned(),
-        ],
+        ctx.roster
+            .rows()
+            .iter()
+            .filter(|(_, row)| row.guid == super::types::RECORD_TIMESTAMPS.guid)
+            .map(|(record, _)| format!("record {record} (record-timestamp table)")),
     ));
     if let Some(fallback) = ctx.values.unit_system_fallback {
         let label = match fallback {
