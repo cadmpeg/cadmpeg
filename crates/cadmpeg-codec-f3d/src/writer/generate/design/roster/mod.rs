@@ -526,12 +526,12 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
         "stores the box of each body's vertex points as its axis-aligned bounding box in the Scene records, the HOME camera and the scene radius; a curved face can extend past its vertices",
         ctx.bodies.iter().map(|body| body.id.to_string()),
     ));
+    let item = if ctx.roster.extrude.is_some() {
+        "Extrude"
+    } else {
+        "Base Feature"
+    };
     if !ctx.roster.sketches.is_empty() {
-        let item = if ctx.roster.extrude.is_some() {
-            "Extrude"
-        } else {
-            "Base Feature"
-        };
         notes.extend(record_residual_unavailable(
             "F3D",
             &format!(
@@ -561,7 +561,7 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
         let mut entries = vec![
             "plane entities (display corners (0.075, 0.075) and (2.175, 2.175), empty text, flag byte 0)".to_owned(),
             format!(
-                "WorkPlane scope tails, placements and placement paths (evaluation epoch {}, where f3d.md §3.1 states 252, and duration {}, as the Base Feature item tail)",
+                "WorkPlane scope tails, placements and placement paths (evaluation epoch {}, where f3d.md §3.1 states 252, and duration {}, as the {item} item tail)",
                 super::base_feature::EPOCH,
                 super::base_feature::DURATION
             ),
@@ -580,8 +580,7 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
         notes.extend(record_residual_unavailable(
             "F3D",
             &format!(
-                "writes the WorkPlane items of the timeline whose geometry item is the {} with these values where f3d-open-items.md DR-1004 leaves their meaning open and DR-901 leaves the rule of items before a timeline's geometry item open",
-                if ctx.roster.extrude.is_some() { "Extrude" } else { "Base Feature" }
+                "writes the WorkPlane items of the timeline whose geometry item is the {item} with these values where f3d-open-items.md DR-1004 leaves their meaning open and DR-901 leaves the rule of items before a timeline's geometry item open"
             ),
             entries,
         ));

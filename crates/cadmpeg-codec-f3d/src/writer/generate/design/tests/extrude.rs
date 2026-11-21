@@ -368,6 +368,56 @@ fn an_extrude_design_names_no_base_feature_in_its_notes() {
 }
 
 #[test]
+fn an_extrude_design_with_workplane_items_names_no_base_feature_in_its_notes() {
+    let mut ir = sketch_and_extrude(blind(), false);
+    let mut top = Source::new(
+        "top",
+        unread(),
+        frame([0.0, 0.0, 20.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+    );
+    top.entity(
+        "line",
+        PlanarCurve::Line {
+            start: point2(1.0, 1.0),
+            end: point2(3.0, 2.0),
+        },
+        &[],
+    );
+    let top = top.add_to(&mut ir);
+    let Some(Container::Ordered { members, .. }) = ir.design.containers.first_mut() else {
+        panic!("the timeline");
+    };
+    // After the Extrude, before the datum plane that holds the current state.
+    members.insert(2, Member::Feature(top));
+    let (report, decoded) = write(&ir);
+    assert!(kinds(&decoded).contains(&"extrude"), "{:#?}", report.losses);
+    let messages = report
+        .losses
+        .iter()
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    // The WorkPlane note, whose header and item-tail entry named a Base
+    // Feature in an Extrude design.
+    let notes = messages
+        .iter()
+        .filter(|message| message.contains("writes the WorkPlane items"))
+        .collect::<Vec<_>>();
+    let [note] = notes.as_slice() else {
+        panic!("one WorkPlane note: {messages:#?}");
+    };
+    for named in [
+        "whose geometry item is the Extrude",
+        "WorkPlane scope tails, placements and placement paths (evaluation epoch",
+        "as the Extrude item tail)",
+    ] {
+        assert!(note.contains(named), "{named}: {note}");
+    }
+    for message in messages {
+        assert!(!message.contains("Base Feature"), "{message}");
+    }
+}
+
+#[test]
 fn the_distance_is_an_owned_parameter_of_the_extrude() {
     let (_, decoded) = write(&sketch_and_extrude(blind(), false));
     let extrude = decoded_extrude(&decoded).id.clone();
