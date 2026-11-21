@@ -40,6 +40,9 @@ const SEVERAL_REGIONS: &str = "its profile has several regions";
 const LOOP_IN_HOLE: &str = "its profile has a loop inside a hole";
 const ARC_IN_LOOP: &str = "a loop of its profile has an arc";
 const HOLE_NOT_CIRCLE: &str = "a hole of its profile is not one circle";
+const HOLES_MEET: &str = "holes of its profile meet";
+const LOOPS_MEET: &str = "loops of its profile meet";
+const NO_POINT: &str = "its profile names a point its sketch lacks";
 
 /// A closed loop of the profile in sketch coordinates.
 enum Outline {
@@ -63,16 +66,69 @@ impl Outline {
                 .all(|corner| distance(*center, *corner) < *radius),
             (Self::Polygon(corners), Self::Circle { center, radius }) => {
                 encloses(corners, *center)
-                    && corners
-                        .iter()
-                        .zip(corners.iter().cycle().skip(1))
-                        .all(|(a, b)| segment_distance(*center, *a, *b) > *radius)
+                    && edges(corners).all(|(a, b)| segment_distance(*center, a, b) > *radius)
             }
             (Self::Polygon(corners), Self::Polygon(inner)) => {
                 inner.iter().all(|corner| encloses(corners, *corner))
             }
         }
     }
+
+    /// Whether the boundaries of this outline and `other` cross or touch,
+    /// within `tolerance`.
+    fn meets(&self, other: &Self, tolerance: f64) -> bool {
+        match (self, other) {
+            (
+                Self::Circle {
+                    center: a,
+                    radius: ra,
+                },
+                Self::Circle {
+                    center: b,
+                    radius: rb,
+                },
+            ) => {
+                let apart = distance(*a, *b);
+                apart <= ra + rb + tolerance && apart >= (ra - rb).abs() - tolerance
+            }
+            (Self::Circle { center, radius }, Self::Polygon(corners))
+            | (Self::Polygon(corners), Self::Circle { center, radius }) => {
+                edges(corners).any(|(a, b)| {
+                    segment_distance(*center, a, b) <= radius + tolerance
+                        && distance(*center, a).max(distance(*center, b)) >= radius - tolerance
+                })
+            }
+            (Self::Polygon(corners), Self::Polygon(others)) => edges(corners).any(|(a, b)| {
+                edges(others).any(|(c, d)| {
+                    crosses(a, b, c, d)
+                        || [
+                            segment_distance(a, c, d),
+                            segment_distance(b, c, d),
+                            segment_distance(c, a, b),
+                            segment_distance(d, a, b),
+                        ]
+                        .into_iter()
+                        .any(|gap| gap <= tolerance)
+                })
+            }),
+        }
+    }
+}
+
+/// The edges of the closed polygon `corners`.
+fn edges(corners: &[[f64; 2]]) -> impl Iterator<Item = ([f64; 2], [f64; 2])> + '_ {
+    corners
+        .iter()
+        .copied()
+        .zip(corners.iter().copied().cycle().skip(1))
+}
+
+/// Whether the segments `a`-`b` and `c`-`d` cross at a point inside both.
+fn crosses(a: [f64; 2], b: [f64; 2], c: [f64; 2], d: [f64; 2]) -> bool {
+    let side = |p: [f64; 2], q: [f64; 2], r: [f64; 2]| {
+        (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+    };
+    side(a, b, c) * side(a, b, d) < 0.0 && side(c, d, a) * side(c, d, b) < 0.0
 }
 
 fn distance(a: [f64; 2], b: [f64; 2]) -> f64 {
@@ -93,9 +149,7 @@ fn segment_distance(at: [f64; 2], a: [f64; 2], b: [f64; 2]) -> f64 {
 
 /// Whether `at` is inside the polygon `corners` (even-odd rule).
 fn encloses(corners: &[[f64; 2]], at: [f64; 2]) -> bool {
-    corners
-        .iter()
-        .zip(corners.iter().cycle().skip(1))
+    edges(corners)
         .filter(|(a, b)| {
             (a[1] > at[1]) != (b[1] > at[1])
                 && at[0] < a[0] + (at[1] - a[1]) * (b[0] - a[0]) / (b[1] - a[1])
@@ -106,15 +160,16 @@ fn encloses(corners: &[[f64; 2]], at: [f64; 2]) -> bool {
 }
 
 /// The loops of the one region that `sketch`'s non-construction curves
-/// bound, with endpoints joined within `tolerance` cm. The exterior loop
-/// comes first, in ring order from the curve of side token `3`; one circle
-/// is one entry. Each hole is one circle, run against its direction, and
-/// the holes follow in the order of their curves.
+/// bound, with endpoints joined within `tolerance` cm. No two loops cross
+/// or touch within `tolerance`. The exterior loop comes first, in ring
+/// order from the curve of side token `3`; one circle is one entry. Each
+/// hole is one circle, run against its direction, and the holes follow in
+/// the order of their curves, the order circles enter `loops`.
 pub(in crate::writer::generate::design) fn profile(
     sketch: &PlannedSketch<'_>,
     tolerance: f64,
 ) -> Result<Vec<ProfileLoop>, &'static str> {
-    let point = |index: usize| sketch.points.get(index).copied().ok_or(NOT_CLOSED);
+    let point = |index: usize| sketch.points.get(index).copied().ok_or(NO_POINT);
     let mut loops = Vec::new();
     let mut lines = Vec::new();
     for (curve, planned) in sketch
@@ -153,6 +208,17 @@ pub(in crate::writer::generate::design) fn profile(
                 .count()
         })
         .collect::<Vec<_>>();
+    for (at, (_, outline)) in loops.iter().enumerate() {
+        for (other, (_, beside)) in loops.iter().enumerate().skip(at + 1) {
+            if outline.meets(beside, tolerance) {
+                return Err(if depths[at] == 1 && depths[other] == 1 {
+                    HOLES_MEET
+                } else {
+                    LOOPS_MEET
+                });
+            }
+        }
+    }
     let mut exterior = None;
     let mut holes = Vec::new();
     for ((entries, outline), depth) in loops.into_iter().zip(depths) {
@@ -164,7 +230,7 @@ pub(in crate::writer::generate::design) fn profile(
         }
     }
     let exterior = exterior.ok_or(SEVERAL_REGIONS)?;
-    let mut holes = holes
+    let holes = holes
         .into_iter()
         .map(|(entries, outline)| match (entries.as_slice(), outline) {
             ([circle], Outline::Circle { .. }) => Ok(LoopEntry {
@@ -174,7 +240,6 @@ pub(in crate::writer::generate::design) fn profile(
             _ => Err(HOLE_NOT_CIRCLE),
         })
         .collect::<Result<Vec<_>, _>>()?;
-    holes.sort_unstable_by_key(|hole| hole.curve);
     Ok(std::iter::once(ProfileLoop {
         exterior: true,
         entries: exterior,
@@ -252,9 +317,7 @@ fn line_ring(
     corners: &[[f64; 2]],
 ) -> Result<Vec<LoopEntry>, &'static str> {
     // Twice the signed area: positive for a counterclockwise ring.
-    let area = corners
-        .iter()
-        .zip(corners.iter().cycle().skip(1))
+    let area = edges(corners)
         .map(|(a, b)| a[0] * b[1] - b[0] * a[1])
         .sum::<f64>();
     if area == 0.0 {
