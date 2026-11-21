@@ -421,3 +421,36 @@ fn a_selection_written_by_a_source_token_is_named_as_naming_no_written_record() 
         note.message
     );
 }
+
+#[test]
+fn a_profile_selection_read_back_as_its_whole_sketch_is_named() {
+    use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
+
+    let mut ir = cube_with_foreign_history();
+    let sketch = ir.model.sketches[0].id.clone();
+    let boss = ir
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.id.as_str() == BOSS)
+        .unwrap();
+    boss.evaluation.edit(|definition, _| {
+        let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) = definition
+        else {
+            panic!("extrude");
+        };
+        *profile = ProfileRef::Planar(PlanarProfileRef::SketchProfiles {
+            sketch,
+            profiles: cadmpeg_ir::features::SelectionMembers::try_from(vec![0]).unwrap(),
+        });
+    });
+    let losses = plan_losses(&ir);
+    let note = loss(&losses, "writer.feature-fields-omitted").expect("named profile");
+    assert!(
+        note.message.contains(&format!(
+            "{BOSS} (profile: sketch_profiles read as a reference to a whole record)"
+        )),
+        "{}",
+        note.message
+    );
+}

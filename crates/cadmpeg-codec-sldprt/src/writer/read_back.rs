@@ -173,12 +173,19 @@ impl Comparison {
                     return;
                 }
                 if source_kind != read_kind {
-                    self.differences.push(format!(
-                        "{}: {} read as {}",
-                        label(path),
-                        source_kind.unwrap_or("a record"),
-                        read_kind.unwrap_or("a record")
-                    ));
+                    let source_kind = source_kind.unwrap_or("a record");
+                    self.differences.push(if read.values().any(identity) {
+                        format!(
+                            "{}: {source_kind} read as a reference to a whole record",
+                            label(path)
+                        )
+                    } else {
+                        format!(
+                            "{}: {source_kind} read as {}",
+                            label(path),
+                            read_kind.unwrap_or("a record")
+                        )
+                    });
                     return;
                 }
                 for (key, value) in source {
