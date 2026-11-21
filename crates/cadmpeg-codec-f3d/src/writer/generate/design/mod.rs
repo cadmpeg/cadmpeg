@@ -331,6 +331,8 @@ impl NeutralDesign<'_> {
             &self.sketches.items,
             extrude,
         )?;
+        let timeline_value =
+            roster::ContextValue::of(self.parameters.names(), &self.sketches.items, extrude);
         let ctx = roster::Context {
             table: roster::type_table(&roster, bodies.iter().any(|body| body.sheet))?,
             roster,
@@ -338,6 +340,7 @@ impl NeutralDesign<'_> {
             bodies,
             sketches: &self.sketches.items,
             extrude,
+            timeline_value,
         };
         let mut records = DesignRecords::default();
         BaseFeaturePlan::roster_records(&ctx, &self.parameters, &mut records)?;

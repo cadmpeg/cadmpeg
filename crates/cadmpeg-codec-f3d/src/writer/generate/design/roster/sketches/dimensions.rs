@@ -278,10 +278,6 @@ pub(in crate::writer::generate::design::roster) fn losses(ctx: &Context<'_>) -> 
                 "dimension parameters {} (family discriminator {DISCRIMINATOR}, the expression trailer of ten zero bytes, the owner's parameter number the source ordinal)",
                 parameters.join(" ")
             ),
-            format!(
-                "record 198 (timeline context: context value {}, the largest source ordinal of an owned parameter; f3d.md states the value for a design whose every parameter is named d<n>)",
-                ctx.context_value()
-            ),
         ],
     )
     .into_iter()

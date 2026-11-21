@@ -241,6 +241,72 @@ pub(super) struct Context<'a> {
     pub(super) sketches: &'a [super::sketch::PlannedSketch<'a>],
     /// The `Extrude` written in place of the `Base Feature`.
     pub(super) extrude: Option<&'a super::extrude::ExtrudePlan<'a>>,
+    pub(super) timeline_value: ContextValue,
+}
+
+/// The timeline context value.
+pub(super) enum ContextValue {
+    /// The value f3d.md §3.1 states for the design ("Records the timeline
+    /// context names", "Design records of Sketch items").
+    Stated(u64),
+    /// The largest source ordinal of an owned parameter, for a design
+    /// outside the f3d.md rules, with what puts it outside them.
+    Chosen { value: u64, outside: String },
+}
+
+impl ContextValue {
+    /// The value of a design whose parameters are named `names` and whose
+    /// timeline holds `sketches` and `extrude`, or a `Base Feature` without
+    /// `extrude`.
+    pub(super) fn of<'n>(
+        names: impl IntoIterator<Item = &'n str>,
+        sketches: &[super::sketch::PlannedSketch<'_>],
+        extrude: Option<&super::extrude::ExtrudePlan<'_>>,
+    ) -> Self {
+        let dimensions = sketches
+            .iter()
+            .flat_map(|sketch| &sketch.dimensions)
+            .map(|dimension| dimension.parameter.ordinal);
+        let Some(extrude) = extrude else {
+            if sketches.is_empty() {
+                return Self::Stated(0);
+            }
+            return Self::Chosen {
+                value: dimensions.max().map_or(0, u64::from),
+                outside: "the timeline holds Sketch items and a Base Feature".to_owned(),
+            };
+        };
+        let mut largest = 0;
+        let mut renamed = Vec::new();
+        for name in names {
+            match owned_number(name) {
+                Some(number) => largest = largest.max(number),
+                None => renamed.push(name),
+            }
+        }
+        if renamed.is_empty() {
+            return Self::Stated(largest);
+        }
+        Self::Chosen {
+            value: dimensions
+                .chain([extrude.along.ordinal, extrude.taper.ordinal])
+                .max()
+                .map_or(0, u64::from),
+            outside: format!("parameters not named d<n>: {}", renamed.join(" ")),
+        }
+    }
+
+    pub(super) fn value(&self) -> u64 {
+        match self {
+            Self::Stated(value) | Self::Chosen { value, .. } => *value,
+        }
+    }
+}
+
+/// `n` of a parameter name `d<n>`.
+fn owned_number(name: &str) -> Option<u64> {
+    let number = name.strip_prefix('d')?.parse::<u64>().ok()?;
+    (format!("d{number}") == name).then_some(number)
 }
 
 impl Context<'_> {
@@ -287,21 +353,6 @@ impl Context<'_> {
         }
         parameters.sort_unstable();
         parameters
-    }
-
-    /// The largest source ordinal of the parameters the timeline items own,
-    /// `0` without one: the timeline context value.
-    pub(super) fn context_value(&self) -> u64 {
-        let dimensions = self
-            .sketches
-            .iter()
-            .flat_map(|sketch| &sketch.dimensions)
-            .map(|dimension| dimension.parameter.ordinal);
-        let extrude = self
-            .extrude
-            .into_iter()
-            .flat_map(|plan| [plan.along.ordinal, plan.taper.ordinal]);
-        dimensions.chain(extrude).max().map_or(0, u64::from)
     }
 
     /// The timeline item whose scope the browser node of a result body
@@ -420,6 +471,13 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
         Some(records) => notes.extend(extrude::losses(ctx, records)),
     }
     notes.extend(sketches::dimensions::losses(ctx));
+    if let ContextValue::Chosen { value, outside } = &ctx.timeline_value {
+        notes.extend(record_residual_unavailable(
+            "F3D",
+            "writes the timeline context value where f3d.md §3.1 states it for a Base Feature design and for a timeline of Sketch items, or Sketch and Extrude items, whose every parameter is named d<n>, and f3d-open-items.md DR-882 leaves the value of other designs open",
+            [format!("record {CONTEXT} (timeline context: context value {value}, the largest source ordinal of an owned parameter; {outside})")],
+        ));
+    }
     notes.extend(record_residual_unavailable(
         "F3D",
         "fits the HOME camera, the AssetSettings view blocks and the scene radius to the body boxes by a rule f3d-open-items.md DR-896 leaves open",
