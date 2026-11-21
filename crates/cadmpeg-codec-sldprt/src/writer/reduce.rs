@@ -7,13 +7,14 @@ use std::collections::HashMap;
 
 use cadmpeg_core::decode::ResourceLimit;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{edit_dropped, output_empty, record_invalid};
+use cadmpeg_ir::codec::write::{edit_dropped, output_empty, record_invalid, rule_invalid};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::decode::curve_point_solved;
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
+use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::check::ValidationReport;
 use cadmpeg_ir::report::loss::LossNote;
@@ -32,7 +33,8 @@ const LINEAR_RESOLUTION_MM: f64 = 1.0e-5;
 const DOMAIN_END_ROUNDOFF_RELATIVE: f64 = 1.0e-9;
 
 /// The writer bounds every edge by its vertices. A range the decode derives
-/// from those vertices is stated by them; any other range is not written.
+/// from those vertices is stated by them; any other range is not written. A
+/// line edge decodes with no range, so its range is not written either.
 pub(super) fn edge_ranges_omitted(
     ir: &CadIr,
     annotations: &Annotations,
@@ -73,10 +75,11 @@ pub(super) fn edge_ranges_omitted(
             continue;
         };
         let stated = match curves.get(curve.as_str()) {
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_))) | None => false,
             Some(CurveGeometry::Solved(geometry)) => {
                 range_stated_by_vertices(edge, geometry, &vertices)?
             }
-            _ => false,
+            Some(_) => false,
         };
         if !stated {
             omitted.push(edge.id.as_str());
@@ -84,8 +87,8 @@ pub(super) fn edge_ranges_omitted(
     }
     Ok((!omitted.is_empty()).then(|| {
         SldprtLossCode::WriterEdgeRangesOmitted.note(format!(
-            "{} edge(s) carry a parameter range their vertices do not fix on the curve; each is \
-             written bounded by its vertices, without its range: {}",
+            "{} edge(s) carry a parameter range the written edge does not state; each is written \
+             bounded by its vertices, without its range: {}",
             omitted.len(),
             omitted.join(", ")
         ))
@@ -153,8 +156,12 @@ fn range_stated_by_vertices(
 }
 
 /// Remove the content the `SolidWorks` form has no field for from the document
-/// the writer writes, and name each record.
-pub(super) fn unwritable_content(ir: &mut CadIr) -> Result<Vec<LossNote>, CodecError> {
+/// the writer writes, and name each record. `retained` states that retained
+/// source records feed the write.
+pub(super) fn unwritable_content(
+    ir: &mut CadIr,
+    retained: bool,
+) -> Result<Vec<LossNote>, CodecError> {
     let mut losses = Vec::new();
     let mut named = Vec::new();
     for face in &mut ir.geometry.faces {
@@ -218,24 +225,33 @@ pub(super) fn unwritable_content(ir: &mut CadIr) -> Result<Vec<LossNote>, CodecE
             .map(|subd| subd.id.as_str().to_owned())
             .collect::<Vec<_>>(),
     ));
-    losses.extend(pmi(ir)?);
+    losses.extend(pmi(ir, retained)?);
     losses.extend(active_configuration(ir));
     Ok(losses)
 }
 
-/// PMI with no SWIFT baseline comes from another format: the writer has no
-/// PMI encoder, and the arena coverage (`Omitted` off the patched path)
-/// charges it. PMI that differs from its baseline is an edit the retained
-/// SWIFT records do not hold.
-fn pmi(ir: &mut CadIr) -> Result<Option<LossNote>, CodecError> {
+/// The writer has no PMI encoder: only the retained SWIFT block writes PMI,
+/// and it holds the PMI its baseline digests. PMI with no retained block or no
+/// baseline is not written; PMI that differs from its baseline is an edit the
+/// retained SWIFT records do not hold.
+fn pmi(ir: &mut CadIr, retained: bool) -> Result<Option<LossNote>, CodecError> {
     let baseline = ir
         .source
         .as_ref()
         .and_then(|source| source.attributes.get(super::PMI_LOCAL_DIGEST_ATTRIBUTE))
-        .cloned();
+        .cloned()
+        .filter(|_| retained);
     let Some(baseline) = baseline else {
-        ir.model.pmi.clear();
-        return Ok(None);
+        let ids = std::mem::take(&mut ir.model.pmi)
+            .iter()
+            .map(|pmi| pmi.id.as_str().to_owned())
+            .collect::<Vec<_>>();
+        return Ok(note(
+            SldprtLossCode::WriterPmiOmitted,
+            "PMI annotation(s) are not written: the SLDPRT writer has no PMI encoder, and the \
+             retained SWIFT block holds none of them",
+            &ids,
+        ));
     };
     if baseline == super::pmi_local_sha256(ir)? {
         return Ok(None);
@@ -297,10 +313,9 @@ fn note(code: SldprtLossCode, reason: &str, ids: &[String]) -> Option<LossNote> 
     (!ids.is_empty()).then(|| code.note(format!("{} {reason}: {}", ids.len(), ids.join(", "))))
 }
 
-/// A document with no face writes partitions that hold no body.
-pub(super) fn empty_brep(ir: &CadIr) -> Vec<LossNote> {
-    let mut losses = Vec::new();
-    losses.extend(note(
+/// A generated partition of a document with no face holds no body.
+pub(super) fn faceless_bodies(ir: &CadIr) -> Option<LossNote> {
+    note(
         SldprtLossCode::WriterBodiesOmitted,
         "body or bodies hold no face, and the SLDPRT partition is written with no body",
         &ir.geometry
@@ -308,30 +323,33 @@ pub(super) fn empty_brep(ir: &CadIr) -> Vec<LossNote> {
             .iter()
             .map(|body| body.id.as_str().to_owned())
             .collect::<Vec<_>>(),
-    ));
-    if ir.model.tessellations.is_empty() {
-        losses.push(output_empty(
-            "the SLDPRT partition holds no body: the document holds no face and no tessellation",
-        ));
-    }
-    losses
+    )
+}
+
+/// The written document holds no face and no tessellation.
+pub(super) fn empty_output(ir: &CadIr) -> Option<LossNote> {
+    (ir.geometry.faces.is_empty() && ir.model.tessellations.is_empty())
+        .then(|| output_empty("the written SLDPRT document holds no face and no tessellation"))
 }
 
 /// Each Error the written document's validation finds is written from the
-/// canonical side (§3.4, Refusals). A finding whose record is in no arena
-/// listed here is reported by the caller's own validation of the document.
+/// canonical side (§3.4, Refusals): one note per kind of the records the
+/// findings name, and one for the findings that name no record of a model
+/// arena.
 pub(super) fn invalid_records(ir: &CadIr, validation: &ValidationReport) -> Vec<LossNote> {
-    let kinds = record_kinds(ir);
+    let index = ModelIndex::new_model_only(ir);
     let mut grouped = Vec::<(EntityKind, Vec<String>)>::new();
+    let mut rules = Vec::new();
     for finding in &validation.findings {
         if finding.severity < Severity::Error {
             continue;
         }
-        let Some((id, kind)) = finding
-            .entity
-            .as_deref()
-            .and_then(|id| Some((id, *kinds.get(id)?)))
-        else {
+        let entity = finding.entity.as_deref();
+        let Some((id, kind)) = entity.and_then(|id| Some((id, index.neutral_kind(id)?))) else {
+            rules.push(match entity {
+                Some(id) => format!("{} ({id}: {})", finding.check, finding.message),
+                None => format!("{} ({})", finding.check, finding.message),
+            });
             continue;
         };
         let entry = format!("{id} ({})", finding.message);
@@ -340,7 +358,7 @@ pub(super) fn invalid_records(ir: &CadIr, validation: &ValidationReport) -> Vec<
             None => grouped.push((kind, vec![entry])),
         }
     }
-    grouped
+    let mut losses = grouped
         .into_iter()
         .map(|(kind, entries)| {
             record_invalid(
@@ -353,163 +371,42 @@ pub(super) fn invalid_records(ir: &CadIr, validation: &ValidationReport) -> Vec<
                 ),
             )
         })
-        .collect()
-}
-
-fn record_kinds(ir: &CadIr) -> HashMap<&str, EntityKind> {
-    let geometry = &ir.geometry;
-    let model = &ir.model;
-    let mut kinds = HashMap::new();
-    kinds.extend(
-        geometry
-            .bodies
-            .iter()
-            .map(|row| (row.id.as_str(), EntityKind::Body)),
-    );
-    kinds.extend(
-        geometry
-            .regions
-            .iter()
-            .map(|row| (row.id.as_str(), EntityKind::Region)),
-    );
-    kinds.extend(
-        geometry
-            .shells
-            .iter()
-            .map(|row| (row.id.as_str(), EntityKind::Shell)),
-    );
-    kinds.extend(
-        geometry
-            .faces
-            .iter()
-            .map(|row| (row.id.as_str(), EntityKind::Face)),
-    );
-    kinds.extend(
-        geometry
-            .loops
-            .iter()
-            .map(|row| (row.id.as_str(), EntityKind::Loop)),
-    );
-    kinds.extend(
-        geometry
-            .coedges
-            .iter()
-            .map(|row| (row.id.as_str(), EntityKind::Coedge)),
-    );
-    kinds.extend(
-        geometry
-            .edges
-            .iter()
-            .map(|row| (row.id.as_str(), EntityKind::Edge)),
-    );
-    kinds.extend(
-        geometry
-            .vertices
-            .iter()
-            .map(|row| (row.id.as_str(), EntityKind::Vertex)),
-    );
-    kinds.extend(
-        geometry
-            .points
-            .iter()
-            .map(|row| (row.id.as_str(), EntityKind::Point)),
-    );
-    kinds.extend(
-        geometry
-            .surfaces
-            .iter()
-            .map(|row| (row.id.as_str(), EntityKind::Surface)),
-    );
-    kinds.extend(
-        geometry
-            .curves
-            .iter()
-            .map(|row| (row.id.as_str(), EntityKind::Curve)),
-    );
-    kinds.extend(
-        geometry
-            .pcurves
-            .iter()
-            .map(|row| (row.id.as_str(), EntityKind::Pcurve)),
-    );
-    kinds.extend(
-        model
-            .features
-            .iter()
-            .map(|row| (row.id.as_str(), EntityKind::Feature)),
-    );
-    kinds.extend(
-        model
-            .configurations
-            .iter()
-            .map(|row| (row.id.as_str(), EntityKind::Configuration)),
-    );
-    kinds.extend(
-        model
-            .parameters
-            .iter()
-            .map(|row| (row.id.as_str(), EntityKind::Parameter)),
-    );
-    kinds.extend(
-        model
-            .sketches
-            .iter()
-            .map(|row| (row.id.as_str(), EntityKind::Sketch)),
-    );
-    kinds.extend(
-        model
-            .sketch_constraints
-            .iter()
-            .map(|row| (row.id.as_str(), EntityKind::SketchConstraint)),
-    );
-    kinds.extend(
-        model
-            .appearances
-            .iter()
-            .map(|row| (row.id.as_str(), EntityKind::Appearance)),
-    );
-    kinds.extend(
-        model
-            .appearance_bindings
-            .iter()
-            .map(|row| (row.id.as_str(), EntityKind::AppearanceBinding)),
-    );
-    kinds.extend(
-        model
-            .tessellations
-            .iter()
-            .map(|row| (row.id.as_str(), EntityKind::Tessellation)),
-    );
-    kinds
+        .collect::<Vec<_>>();
+    if !rules.is_empty() {
+        losses.push(rule_invalid(format!(
+            "{} finding(s) of the written document's validation name no record of a model \
+             arena; the document is written from the canonical side: {}",
+            rules.len(),
+            rules.join("; ")
+        )));
+    }
+    losses
 }
 
 /// A body whose topology names a record the document does not hold cannot be
-/// encoded, and is not written either. The compact analytic records hold circular cones with an acute positive
-/// half-angle, spheres of positive radius and tori with major > minor > 0. A
-/// carrier the writer cannot generate (`Unknown`) is written only from a
-/// retained partition; `opaque_unwritable` states that the write has none. A body
-/// with a face or edge on such a carrier is not written.
+/// encoded, and is not written either. `generated` states that the writer
+/// generates the partition, which holds only the compact analytic records:
+/// circular cones with an acute positive half-angle, spheres of positive
+/// radius and tori with major > minor > 0, and no `Unknown` carrier. A body
+/// with a face or edge on another carrier is then not written. A retained or
+/// patched partition holds each carrier as the source stores it.
 pub(super) fn unwritable_carriers(
     ir: &mut CadIr,
-    opaque_unwritable: bool,
+    generated: bool,
 ) -> Result<Vec<LossNote>, CodecError> {
     let surfaces = ir
         .geometry
         .surfaces
         .iter()
-        .filter_map(|surface| {
-            Some((
-                surface.id.as_str(),
-                unwritable_surface(&surface.geometry, opaque_unwritable)?,
-            ))
-        })
+        .filter(|_| generated)
+        .filter_map(|surface| Some((surface.id.as_str(), unwritable_surface(&surface.geometry)?)))
         .collect::<HashMap<_, _>>();
     let curves = ir
         .geometry
         .curves
         .iter()
         .filter(|curve| {
-            opaque_unwritable
+            generated
                 && matches!(
                     curve.geometry,
                     CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
@@ -724,7 +621,7 @@ fn dangling_references(geometry: &cadmpeg_ir::document::Topology) -> Vec<(&str, 
     dangling
 }
 
-fn unwritable_surface(geometry: &SurfaceGeometry, opaque_unwritable: bool) -> Option<String> {
+fn unwritable_surface(geometry: &SurfaceGeometry) -> Option<String> {
     match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone)) => {
             let ratio = cone.ratio().get();
@@ -747,7 +644,7 @@ fn unwritable_surface(geometry: &SurfaceGeometry, opaque_unwritable: bool) -> Op
             let minor = torus.minor_radius().get();
             (!(major > minor && minor > 0.0)).then(|| format!("torus radii ({major}, {minor})"))
         }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) if opaque_unwritable => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => {
             Some("a surface the writer has no record for".to_owned())
         }
         _ => None,

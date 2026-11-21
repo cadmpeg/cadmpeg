@@ -328,6 +328,8 @@ pub(crate) enum SldprtLossCode {
     WriterSketchConstraintsOmitted,
     /// Export bounds the named edges by their vertices, without their range.
     WriterEdgeRangesOmitted,
+    /// Export omits the named PMI annotations.
+    WriterPmiOmitted,
     SourceDialectDisplaced,
     /// A source record states a property whose key holds no non-whitespace
     /// character, so the property cannot be keyed and is not transferred.
@@ -508,6 +510,7 @@ impl SldprtLossCode {
         Self::WriterFeaturesOmitted,
         Self::WriterSketchConstraintsOmitted,
         Self::WriterEdgeRangesOmitted,
+        Self::WriterPmiOmitted,
         Self::SourceDialectDisplaced,
         Self::SourcePropertyKeyBlank,
         Self::AssemblyStructureNotTransferred,
@@ -665,6 +668,7 @@ impl SldprtLossCode {
             Self::WriterFeaturesOmitted => "writer.features-omitted",
             Self::WriterSketchConstraintsOmitted => "writer.sketch-constraints-omitted",
             Self::WriterEdgeRangesOmitted => "writer.edge-ranges-omitted",
+            Self::WriterPmiOmitted => "writer.pmi-omitted",
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::SourcePropertyKeyBlank => "source.property-key-blank",
             Self::MetadataPartRootUnsupported => "metadata.part-root-unsupported",
@@ -720,6 +724,7 @@ impl SldprtLossCode {
             Self::WriterFeaturesOmitted => Severity::Warning,
             Self::WriterSketchConstraintsOmitted => Severity::Warning,
             Self::WriterEdgeRangesOmitted => Severity::Warning,
+            Self::WriterPmiOmitted => Severity::Warning,
             Self::WriterUnboundAppearancesOmitted => Severity::Warning,
             Self::WriterMaterialsOmitted => Severity::Warning,
             Self::WriterAttributesOmitted => Severity::Warning,
@@ -874,6 +879,7 @@ impl SldprtLossCode {
             Self::WriterFeaturesOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterSketchConstraintsOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterEdgeRangesOmitted => LossTaxonomy::GeometryNotTransferred,
+            Self::WriterPmiOmitted => LossTaxonomy::PmiOmitted,
             Self::WriterUnboundAppearancesOmitted => LossTaxonomy::AppearanceReduced,
             Self::WriterMaterialsOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
@@ -1317,6 +1323,7 @@ mod tests {
                 "writer.features-omitted",
                 "writer.sketch-constraints-omitted",
                 "writer.edge-ranges-omitted",
+                "writer.pmi-omitted",
                 "target.source-dialect-displaced",
                 "source.property-key-blank",
                 "assembly.structure-not-transferred",

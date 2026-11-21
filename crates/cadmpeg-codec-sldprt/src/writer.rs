@@ -101,7 +101,8 @@ pub(crate) fn write_semantic_with_records(
     let mut normalized = ir.clone();
     normalized.model.configurations = configurations_without_synthesized_snapshot(&normalized);
     sort_arenas(&mut normalized);
-    let mut content_losses = reduce::unwritable_content(&mut normalized)?;
+    let mut content_losses =
+        reduce::unwritable_content(&mut normalized, !retained_records.is_empty())?;
     content_losses.extend(reduce::unwritable_carriers(&mut normalized, false)?);
     crate::writer_transform::bake(&mut normalized)?;
     sort_arenas(&mut normalized);
@@ -142,6 +143,23 @@ pub(crate) fn write_semantic_with_records(
     }
     let retained_partition =
         retained_partition(&normalized, source_scan.as_ref(), native.as_ref())?;
+    // The IR stores canonical millimetres; Parasolid stores metres.
+    let length_scale = 0.001;
+    let patched_partition = if retained_partition.is_none() {
+        crate::writer_patch::patch_partition(
+            &normalized,
+            annotations,
+            retained_records,
+            length_scale,
+        )?
+    } else {
+        None
+    };
+    let retain_native_brep = retained_partition.is_some() || patched_partition.is_some();
+    if !retain_native_brep {
+        losses.extend(reduce::unwritable_carriers(&mut normalized, true)?);
+    }
+    losses.extend(history_drop::foreign_native_operations(&mut normalized));
     let reducible = history_drop::HistoryDrop::applies(&normalized);
     let mut dropped_history = history_drop::HistoryDrop::default();
     let feature_input_renames = loop {
@@ -173,41 +191,27 @@ pub(crate) fn write_semantic_with_records(
     let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new())?;
     losses.extend(reduce::invalid_records(ir, &validation));
     losses.extend(reduce::edge_ranges_omitted(ir, annotations).map_err(CodecError::ResourceLimit)?);
+    losses.extend(reduce::empty_output(ir));
     let brep_empty = ir.geometry.faces.is_empty();
-    if brep_empty && !retained_records.is_empty() {
-        return Err(CodecError::NotImplemented(
-            "semantic SLDPRT writing requires a B-rep".into(),
-        ));
-    }
-    if brep_empty {
-        losses.extend(reduce::empty_brep(ir));
-    }
-    // The IR stores canonical millimetres; Parasolid stores metres.
-    let length_scale = 0.001;
-    let patched_partition = if retained_partition.is_none() {
-        crate::writer_patch::patch_partition(ir, annotations, retained_records, length_scale)?
-    } else {
-        None
-    };
-    let coverage = semantic_coverage(!retained_records.is_empty(), retained_partition.is_some());
-    let retain_native_brep = retained_partition.is_some() || patched_partition.is_some();
-    let without_opaque;
-    let ir = if !retain_native_brep && requires_native_partition(ir) {
-        let mut reduced = ir.clone();
-        losses.extend(reduce::unwritable_carriers(&mut reduced, true)?);
-        without_opaque = reduced;
-        &without_opaque
-    } else {
-        ir
-    };
+    let coverage = semantic_coverage(retained_partition.is_some());
+    let mut bodiless_partitions = Vec::new();
     let partition_sections = if let Some(retained) = retained_partition {
         vec![retained]
     } else if let Some(patched) = patched_partition {
         vec![patched]
     } else if brep_empty {
-        empty_partitions(ir)?
+        losses.extend(reduce::faceless_bodies(ir));
+        if source_scan
+            .as_ref()
+            .is_some_and(|scan| crate::container::select_active_parasolid_site(scan).is_none())
+        {
+            // The source holds no partition either.
+            Vec::new()
+        } else {
+            empty_partitions(ir, &mut bodiless_partitions)?
+        }
     } else if !ir.model.configurations.is_empty() {
-        configuration_partitions(ir, length_scale)?
+        configuration_partitions(ir, length_scale, &mut bodiless_partitions)?
     } else {
         let schema_32001 = ir
             .geometry
@@ -225,6 +229,12 @@ pub(crate) fn write_semantic_with_records(
             parasolid_stream(&body, schema)?,
         )]
     };
+    losses.extend(cadmpeg_ir::codec::write::record_residual_unavailable(
+        "SLDPRT",
+        "writes each of these partitions, which hold no body, as a partition and a deltas \
+         stream of the schema header alone; sldprt.md states no form for a partition with no body",
+        bodiless_partitions,
+    ));
     let mut generated_partition_sections = partition_sections
         .iter()
         .map(|(section, _)| section.clone())
@@ -419,6 +429,11 @@ pub(crate) fn write_semantic_with_records(
     for (section, payload) in opaque.blocks {
         members.push(&mut sections, &mut unwritten, section, payload);
     }
+    for (section, payload) in
+        source_image_pmi_members(ir, native.as_ref(), source_scan.as_ref(), &sections)?
+    {
+        members.push(&mut sections, &mut unwritten, section, payload);
+    }
     let written_declaration = document_envelope.and_then(|envelope| envelope.sw_version);
     let written_dialect =
         crate::dialect::SldprtDialect::from_declaration(written_declaration.as_deref()).id();
@@ -477,13 +492,13 @@ pub(crate) fn write_semantic_with_records(
 /// What the semantic writer does with each model arena.
 /// `subds` are `Dropped`: `WriterSubdOmitted` names every subdivision surface.
 ///
-/// `patched` states that retained source records fed the write; `retained_brep`
-/// states that the retained Parasolid partition was replayed because
-/// `brep_local_sha256` still matches. Only that partition carries pcurves and
-/// procedural constructions: the generated and patched partitions do not
-/// encode them. Retained semantic PMI is carried only by the retained
-/// `PMISemanticDataDB` block, which exists only on the patched path; PMI that
-/// differs from its baseline is charged `export:edit.dropped`. Design
+/// `retained_brep` states that the retained Parasolid partition was replayed
+/// because `brep_local_sha256` still matches. Only that partition carries
+/// pcurves and procedural constructions: the generated and patched partitions
+/// do not encode them. `pmi` is `Reported`: the retained `PMISemanticDataDB`
+/// block carries the PMI its baseline digests, `WriterPmiOmitted` names PMI
+/// with no such block or baseline, and `export:edit.dropped` names PMI that
+/// differs from its baseline. Design
 /// records reach the output through the native history lanes, synchronized
 /// from the neutral arenas declared `Written`; the other document arenas are
 /// not read.
@@ -495,7 +510,7 @@ pub(crate) fn write_semantic_with_records(
 /// `WriterSphereSeamCurvesOmitted` accounts for withheld degenerate sphere-seam curves.
 /// `tessellations` stays `Written`: every mesh is written, and
 /// `WriterTessellationMetadataOmitted` charges only fields of written meshes.
-fn semantic_coverage(patched: bool, retained_brep: bool) -> ArenaDispositions {
+fn semantic_coverage(retained_brep: bool) -> ArenaDispositions {
     use ArenaDisposition::{Dropped, Ignored, Omitted, Reported, Written};
     let brep_carried = if retained_brep { Written } else { Omitted };
     ArenaDispositions {
@@ -540,7 +555,7 @@ fn semantic_coverage(patched: bool, retained_brep: bool) -> ArenaDispositions {
         appearances: Reported,
         appearance_bindings: Reported,
         attributes: Reported,
-        pmi: if patched { Written } else { Omitted },
+        pmi: Reported,
         presentation_layers: Omitted,
         physical_materials: Omitted,
         mass_properties: Omitted,
@@ -782,6 +797,7 @@ pub(crate) fn pmi_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
 fn configuration_partitions(
     ir: &CadIr,
     length_scale: f64,
+    bodiless: &mut Vec<String>,
 ) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
     let configured = ir
         .model
@@ -825,13 +841,7 @@ fn configuration_partitions(
                 ))
             })?;
             if bodies.is_empty() {
-                let mut payload = parasolid_stream(&[], "SCH_SW_33103_11000")?;
-                payload.extend(parasolid_stream_named(
-                    &[],
-                    "SCH_SW_33103_11000",
-                    "deltas body",
-                )?);
-                return Ok((format!("Contents/Config-{index}-Partition"), payload));
+                return bodiless_partition(index, bodiless);
             }
             let subset = body_subset(ir, bodies)?;
             let schema_32001 = subset
@@ -875,7 +885,10 @@ pub(super) fn reserve_configuration_index(
 
 /// One partition per indexed configuration, or `Config-0`, each holding no
 /// body. A file with no partition is not an SLDPRT part its readers detect.
-fn empty_partitions(ir: &CadIr) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
+fn empty_partitions(
+    ir: &CadIr,
+    bodiless: &mut Vec<String>,
+) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
     let mut indices = ir
         .model
         .configurations
@@ -889,16 +902,25 @@ fn empty_partitions(ir: &CadIr) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
     }
     indices
         .into_iter()
-        .map(|index| {
-            let mut payload = parasolid_stream(&[], "SCH_SW_33103_11000")?;
-            payload.extend(parasolid_stream_named(
-                &[],
-                "SCH_SW_33103_11000",
-                "deltas body",
-            )?);
-            Ok((format!("Contents/Config-{index}-Partition"), payload))
-        })
+        .map(|index| bodiless_partition(index, bodiless))
         .collect()
+}
+
+/// The partition of configuration `index` that holds no body, recorded in
+/// `bodiless`.
+fn bodiless_partition(
+    index: u32,
+    bodiless: &mut Vec<String>,
+) -> Result<(String, Vec<u8>), CodecError> {
+    let section = format!("Contents/Config-{index}-Partition");
+    let mut payload = parasolid_stream(&[], "SCH_SW_33103_11000")?;
+    payload.extend(parasolid_stream_named(
+        &[],
+        "SCH_SW_33103_11000",
+        "deltas body",
+    )?);
+    bodiless.push(section.clone());
+    Ok((section, payload))
 }
 
 fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr, CodecError> {
@@ -1122,6 +1144,39 @@ fn opaque_blocks(
         replaced,
         unavailable,
     })
+}
+
+/// The `PMISemanticDataDB` members whose dimensions the document holds and no
+/// written member carries, from the retained source image with the
+/// document's edits patched in. The writer has no PMI encoder.
+fn source_image_pmi_members(
+    ir: &CadIr,
+    native: Option<&SldprtNative>,
+    scan: Option<&crate::container::ContainerScan<'_>>,
+    written: &[(String, Vec<u8>)],
+) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
+    let (Some(native), Some(scan)) = (native, scan) else {
+        return Ok(Vec::new());
+    };
+    let parents = native
+        .pmi_dimensions
+        .iter()
+        .map(|record| record.parent.as_str())
+        .collect::<HashSet<_>>();
+    let mut members = Vec::new();
+    for section in scan.sections() {
+        let id = section.native_id();
+        let Some(name) = section.name() else {
+            continue;
+        };
+        if !parents.contains(id.as_str()) || written.iter().any(|(member, _)| member == name) {
+            continue;
+        }
+        let mut payload = section.payload().to_vec();
+        crate::pmi::patch_payload(ir, id.as_str(), &mut payload)?;
+        members.push((name.to_owned(), payload));
+    }
+    Ok(members)
 }
 
 /// [`opaque_blocks`]'s result.
@@ -4443,7 +4498,7 @@ mod nurbs_write_tests {
     use cadmpeg_ir::math::Point3;
 
     #[test]
-    fn pmi_without_its_baseline_is_dropped_and_an_edit_of_it_is_named() {
+    fn pmi_without_its_baseline_is_dropped_and_named_and_an_edit_of_it_is_named() {
         let mut ir = CadIr::empty();
         ir.model.pmi.push(cadmpeg_ir::PmiAnnotation {
             id: cadmpeg_ir::ids::PmiId::mint("sldprt:model:pmi#A1").expect("identity grammar"),
@@ -4473,7 +4528,7 @@ mod nurbs_write_tests {
                 hash,
             )]),
         ));
-        assert!(super::reduce::unwritable_content(&mut ir)
+        assert!(super::reduce::unwritable_content(&mut ir, true)
             .expect("PMI digest")
             .is_empty());
         assert_eq!(ir.model.pmi.len(), 1);
@@ -4484,16 +4539,25 @@ mod nurbs_write_tests {
             panic!("datum definition");
         };
         *identification = "B".into();
-        let losses = super::reduce::unwritable_content(&mut ir).expect("PMI digest");
+        let losses = super::reduce::unwritable_content(&mut ir, true).expect("PMI digest");
         assert_eq!(losses.len(), 1);
         assert_eq!(losses[0].code.local_code(), "edit.dropped");
         assert!(losses[0].message.contains("sldprt:model:pmi#A1"));
         assert_eq!(ir.model.pmi.len(), 1);
 
+        // Without the retained SWIFT block, no PMI is written.
+        let mut unretained = ir.clone();
+        let losses = super::reduce::unwritable_content(&mut unretained, false).expect("PMI digest");
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.local_code(), "writer.pmi-omitted");
+        assert!(losses[0].message.contains("sldprt:model:pmi#A1"));
+        assert!(unretained.model.pmi.is_empty());
+
         ir.source = None;
-        assert!(super::reduce::unwritable_content(&mut ir)
-            .expect("PMI digest")
-            .is_empty());
+        let losses = super::reduce::unwritable_content(&mut ir, true).expect("PMI digest");
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.local_code(), "writer.pmi-omitted");
+        assert!(losses[0].message.contains("sldprt:model:pmi#A1"));
         assert!(ir.model.pmi.is_empty());
     }
 

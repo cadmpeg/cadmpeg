@@ -5,7 +5,6 @@
 
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::Codec;
-use cadmpeg_ir::topology::ParameterInterval;
 
 use crate::SldprtCodec;
 
@@ -34,46 +33,37 @@ fn loss<'a>(
 }
 
 #[test]
-fn explicit_edge_ranges_its_vertices_fix_are_written_without_a_loss() {
-    let mut ir = foreign_cube();
-    ir.geometry
-        .faces
-        .iter_mut()
-        .for_each(|face| face.name = None);
+fn a_line_edge_range_is_written_bounded_by_its_vertices_and_named() {
+    let ir = written_cube();
     assert!(ir
         .geometry
         .edges
         .iter()
         .all(|edge| edge.param_range().is_some()));
     let losses = plan_losses(&ir);
+    let note = loss(&losses, "writer.edge-ranges-omitted").unwrap();
+    let edges = ir.geometry.edges.len();
     assert!(
-        loss(&losses, "writer.edge-ranges-omitted").is_none(),
-        "{losses:?}"
+        note.message.starts_with(&format!("{edges} edge(s)")),
+        "{}",
+        note.message
     );
+    assert!(ir
+        .geometry
+        .edges
+        .iter()
+        .all(|edge| note.message.contains(edge.id.as_str())));
     let decoded = crate::test_support::ir::encode_decode(&ir);
     assert_eq!(decoded.geometry.edges.len(), ir.geometry.edges.len());
+    assert!(decoded
+        .geometry
+        .edges
+        .iter()
+        .all(|edge| edge.param_range().is_none()));
     assert_eq!(
         crate::test_support::ir::sorted_point_positions(&decoded),
         crate::test_support::ir::sorted_point_positions(&ir)
     );
-}
-
-#[test]
-fn an_edge_range_its_vertices_do_not_fix_is_named() {
-    let mut ir = foreign_cube();
-    ir.geometry
-        .faces
-        .iter_mut()
-        .for_each(|face| face.name = None);
-    let edge = &mut ir.geometry.edges[0];
-    let [start, end] = edge.param_range().unwrap().get();
-    // Past the linear resolution, inside the validator's coincidence allowance.
-    edge.set_param_range(Some(ParameterInterval::new([start, end + 1.0e-3]).unwrap()));
-    let id = edge.id.as_str().to_owned();
-    let losses = plan_losses(&ir);
-    let note = loss(&losses, "writer.edge-ranges-omitted").unwrap();
-    assert!(note.message.contains(&id), "{}", note.message);
-    assert!(note.message.starts_with("1 edge(s)"), "{}", note.message);
 }
 
 fn sketch_feature(id: &str, ordinal: u64) -> cadmpeg_ir::features::Feature {
@@ -261,6 +251,12 @@ fn a_document_with_no_face_writes_an_empty_partition_and_names_it() {
         )
         .unwrap();
     assert!(decoded.ir().geometry.faces.is_empty());
+    let residual = loss(&losses, "record.residual-unavailable").unwrap();
+    assert!(
+        residual.message.contains("Contents/Config-0-Partition"),
+        "{}",
+        residual.message
+    );
 }
 
 #[test]
@@ -322,4 +318,186 @@ fn a_generated_units_member_is_named() {
     let losses = plan_losses(&ir);
     let note = loss(&losses, "writer.units-member-generated").unwrap();
     assert!(note.message.contains("no SolidWorks file is known to hold"));
+}
+
+const AUTHORED_PMI_DIMENSION: &[u8] =
+    include_bytes!("../../../tests/golden/fixtures/authored_pmi_dimension.sldprt");
+
+fn decode(bytes: &[u8]) -> cadmpeg_test_support::EditableDecodeResult {
+    SldprtCodec
+        .decode(
+            &mut std::io::Cursor::new(bytes.to_vec()),
+            &cadmpeg_ir::codec::DecodeOptions::default(),
+        )
+        .unwrap()
+        .into()
+}
+
+#[test]
+fn pmi_added_to_a_native_part_is_named_on_the_patched_path() {
+    let mut decoded = decode(AUTHORED_PMI_DIMENSION);
+    assert!(decoded.ir().model.pmi.is_empty());
+    let id = "sldprt:model:pmi#added";
+    decoded.ir_mut().model.pmi.push(cadmpeg_ir::PmiAnnotation {
+        id: cadmpeg_ir::ids::PmiId::mint(id).unwrap(),
+        name: Some("datum A".into()),
+        visible: None,
+        targets: vec![cadmpeg_ir::PmiTarget::ShapeAspect {
+            source_id: cadmpeg_core::text::NonBlankString::new("F1").unwrap(),
+        }
+        .into()],
+        definition: cadmpeg_ir::PmiDefinition::Datum {
+            identification: "A".into(),
+        },
+        native_ref: None,
+        native_options: cadmpeg_ir::design::options::NativeOptions::new(),
+        source_settings: cadmpeg_ir::design::options::NativeOptions::new(),
+    });
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(
+        matches!(
+            plan.report().write_path(),
+            cadmpeg_ir::report::export::WritePath::Patched { .. }
+        ),
+        "{:?}",
+        plan.report().write_path()
+    );
+    let note = loss(&plan.report().losses, "writer.pmi-omitted").unwrap();
+    assert!(note.message.contains(id), "{}", note.message);
+}
+
+#[test]
+fn a_native_operation_of_another_format_is_dropped_with_its_dependents_and_named() {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureEvaluation, FeatureOperation};
+    let mut ir = written_cube();
+    let mut insert = sketch_feature("other:model:feature#insert", 0);
+    insert.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+        FeatureOperation::Native {
+            kind: "Component Insert".into(),
+            parameters: std::collections::BTreeMap::new(),
+        },
+    ));
+    let mut dependent = sketch_feature("other:model:feature#dependent", 1);
+    dependent.dependencies.insert(insert.id.clone());
+    let kept = sketch_feature("other:model:feature#kept", 2);
+    ir.model.features.extend([insert, dependent, kept]);
+    let losses = plan_losses(&ir);
+    let note = losses
+        .iter()
+        .find(|loss| {
+            loss.code.local_code() == "writer.features-omitted"
+                && loss.message.contains("other:model:feature#insert")
+        })
+        .unwrap_or_else(|| panic!("{losses:#?}"));
+    assert!(
+        note.message.contains("other:model:feature#dependent")
+            && note.message.contains("native operation of another format"),
+        "{}",
+        note.message
+    );
+    assert!(
+        !note.message.contains("other:model:feature#kept"),
+        "{}",
+        note.message
+    );
+}
+
+#[test]
+fn validation_errors_outside_the_geometry_and_history_arenas_and_without_a_record_are_charged() {
+    use cadmpeg_ir::attributes::{AttributeTarget, SourceAttribute};
+    use cadmpeg_ir::report::check::{Check, Finding};
+    use cadmpeg_ir::report::Severity;
+    let mut ir = written_cube();
+    let attribute = "other:model:attribute#a";
+    ir.model.attributes.push(SourceAttribute {
+        id: cadmpeg_ir::ids::AttributeId::mint(attribute).unwrap(),
+        target: AttributeTarget::Document.into(),
+        name: "a".into(),
+        values: Vec::new(),
+        native_ref: None,
+    });
+    let mut validation = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new()).unwrap();
+    validation.findings.clear();
+    for (entity, message) in [
+        (Some(attribute), "attribute finding"),
+        (None, "document finding"),
+        (Some("other:model:face#absent"), "dangling finding"),
+    ] {
+        validation.findings.push(Finding {
+            check: Check::ReferentialIntegrity,
+            severity: Severity::Error,
+            message: message.into(),
+            entity: entity.map(str::to_owned),
+            related: Vec::new(),
+        });
+    }
+    let losses = crate::writer::reduce::invalid_records(&ir, &validation);
+    assert_eq!(losses.len(), 2, "{losses:#?}");
+    assert!(losses
+        .iter()
+        .all(|loss| loss.code.local_code() == "record.invalid"));
+    assert!(
+        losses[0].message.contains(attribute),
+        "{}",
+        losses[0].message
+    );
+    let rules = &losses[1].message;
+    assert!(
+        rules.starts_with("2 finding(s)")
+            && rules.contains("document finding")
+            && rules.contains("other:model:face#absent"),
+        "{rules}"
+    );
+}
+
+#[test]
+fn a_retained_partition_keeps_a_body_on_a_torus_the_compact_records_cannot_hold() {
+    use crate::test_support::parasolid::{plane_carrier, torus_carrier, triangle_body};
+    let plane = plane_carrier(100, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]);
+    let triangle = triangle_body();
+    assert!(triangle.starts_with(&plane));
+    let mut body = torus_carrier(
+        100,
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        1.0,
+        2.0,
+        [1.0, 0.0, 0.0],
+    );
+    body.extend_from_slice(&triangle[plane.len()..]);
+    let decoded = decode(&crate::test_support::container::sldprt_with_body(&body));
+    assert_eq!(decoded.ir().geometry.faces.len(), 1);
+    assert!(matches!(
+        decoded.ir().geometry.surfaces[0].geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+            cadmpeg_ir::geometry::SolvedSurfaceGeometry::Torus(_)
+        )
+    ));
+    let (mut ir, _, fidelity) = decoded.into_parts();
+    ir.source
+        .as_mut()
+        .unwrap()
+        .attributes
+        .remove(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE)
+        .unwrap();
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(&ir, Some(&fidelity)),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(
+        loss(&plan.report().losses, "writer.bodies-omitted").is_none(),
+        "{:#?}",
+        plan.report().losses
+    );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let written = decode(&bytes);
+    assert_eq!(written.ir().geometry.faces.len(), 1);
 }
