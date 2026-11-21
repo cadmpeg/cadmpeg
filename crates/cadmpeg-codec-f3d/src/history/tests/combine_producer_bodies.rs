@@ -259,3 +259,11 @@ fn a_live_target_that_a_later_transition_updates_stays_historical() {
     assert_eq!(generated(operands(&combine).tools()), [(SECOND, "2")]);
     assert_eq!(producer_unresolved(&losses), 1);
 }
+
+#[test]
+fn a_deleted_target_names_the_feature_that_inserted_it() {
+    let (combine, _, losses) = combine_case(&[], vec![1], true);
+    assert_eq!(generated(operands(&combine).target()), [(FIRST, "1")]);
+    assert_eq!(generated(operands(&combine).tools()), [(SECOND, "2")]);
+    assert_eq!(producer_unresolved(&losses), 0);
+}
