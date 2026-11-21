@@ -3633,7 +3633,7 @@ fn check_feature_references(
                         edge_selections.push(edges);
                     }
                     crate::features::surface_inputs::SurfaceBoundary::Path(path) => {
-                        paths.push(path)
+                        paths.push(path);
                     }
                 }
                 face_selections.push(support_faces);
