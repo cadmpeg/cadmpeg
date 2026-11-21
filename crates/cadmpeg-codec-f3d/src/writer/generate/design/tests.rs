@@ -700,6 +700,26 @@ fn a_document_with_no_body_writes_the_timeline_with_no_item() {
 }
 
 #[test]
+fn a_document_with_no_body_charges_the_fixed_clock_of_its_component_table_only() {
+    let mut ir = scoped_cube();
+    ir.geometry = cadmpeg_ir::document::Topology::default();
+    ir.design.scopes[0].current[0].bodies.clear();
+    let (report, _) = write(&ir);
+    let notes = loss(&report, "export/record.residual-unavailable")
+        .into_iter()
+        .filter(|message| message.contains("fixed-clock"))
+        .collect::<Vec<_>>();
+    let [note] = notes.as_slice() else {
+        panic!("one fixed-clock note: {:#?}", report.losses);
+    };
+    assert!(
+        note.contains("(component record-timestamp table)"),
+        "{note}"
+    );
+    assert!(!note.contains("Base Feature"), "{note}");
+}
+
+#[test]
 fn a_container_or_attribute_parameter_is_written_without_its_owner() {
     let mut ir = scoped_cube();
     let timeline = ContainerId::mint("test:design:container#timeline").expect("identity grammar");
