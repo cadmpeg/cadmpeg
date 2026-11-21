@@ -706,7 +706,7 @@ fn semantic_writer_allocates_partition_index_without_remapping_resolved_features
 }
 
 #[test]
-fn semantic_writer_rejects_duplicate_configuration_source_indices() {
+fn semantic_writer_reassigns_a_repeated_configuration_source_index() {
     let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&triangle_body())),
@@ -727,22 +727,22 @@ fn semantic_writer_rejects_duplicate_configuration_source_indices() {
     duplicate.native_ref = None;
     decoded.ir_mut().model.configurations.push(duplicate);
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("repeats configuration source index"),
-        "{error}"
-    );
+    let report = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap()
+        .report()
+        .clone();
+    assert!(report.losses.iter().any(|loss| {
+        loss.code.local_code() == "writer.configuration-identity-assigned"
+            && loss.message.contains("-duplicate source index 0 repeats")
+    }));
 }
 
 #[test]
-fn semantic_writer_rejects_empty_and_duplicate_configuration_names() {
+fn semantic_writer_names_empty_and_repeated_configuration_names() {
     let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&triangle_body())),
@@ -755,13 +755,21 @@ fn semantic_writer_rejects_empty_and_duplicate_configuration_names() {
         .as_mut()
         .expect("resolved configuration name")
         .clear();
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error.to_string().contains("empty name"), "{error}");
+    let assigned = |decoded: &EditableDecodeResult| {
+        SldprtCodec
+            .plan(
+                EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+                TargetRequest::Inherit,
+            )
+            .unwrap()
+            .report()
+            .losses
+            .iter()
+            .find(|loss| loss.code.local_code() == "writer.configuration-identity-assigned")
+            .map(|loss| loss.message.clone())
+            .unwrap()
+    };
+    assert!(assigned(&decoded).contains(r#"name "" written as "Configuration 1""#));
 
     decoded.ir_mut().model.configurations[0].name = Some("Default".to_string());
     let mut duplicate = decoded.ir().model.configurations[0].clone();
@@ -773,16 +781,7 @@ fn semantic_writer_rejects_empty_and_duplicate_configuration_names() {
     duplicate.native_ref = None;
     duplicate.active = false;
     decoded.ir_mut().model.configurations.push(duplicate);
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(
-        error.to_string().contains("repeats configuration name"),
-        "{error}"
-    );
+    assert!(assigned(&decoded).contains(r#"name "Default" written as "Default (2)""#));
 }
 
 #[test]
@@ -1161,23 +1160,21 @@ fn semantic_writer_preserves_sheet_body_classification() {
 }
 
 #[test]
-fn semantic_writer_rejects_invalid_ir_without_panicking() {
-    let decoded = SldprtCodec
-        .decode(
-            &mut Cursor::new(sldprt_with_body(&triangle_body())),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let mut decoded = EditableDecodeResult::from(decoded);
-    decoded.ir_mut().geometry.faces[0].surface =
+fn semantic_writer_omits_a_body_whose_face_names_a_missing_surface() {
+    let mut ir = crate::test_support::ir::source_less_cube();
+    ir.geometry.faces[0].surface =
         cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#missing").expect("identity grammar");
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    let report = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap()
+        .report()
+        .clone();
+    assert!(report.losses.iter().any(|loss| {
+        loss.code.local_code() == "writer.bodies-omitted"
+            && loss
+                .message
+                .contains("missing surface test:model:entity#missing")
+    }));
 }
 
 #[test]
@@ -1248,15 +1245,8 @@ fn semantic_writer_rejects_unsupported_conic_curves() {
 }
 
 #[test]
-fn semantic_writer_rejects_unrepresentable_analytic_surface_parameterizations() {
-    let decoded = EditableDecodeResult::from(
-        SldprtCodec
-            .decode(
-                &mut Cursor::new(sldprt_with_body(&triangle_body())),
-                &DecodeOptions::default(),
-            )
-            .unwrap(),
-    );
+fn semantic_writer_omits_bodies_on_analytic_surfaces_compact_records_cannot_hold() {
+    let cube = crate::test_support::ir::source_less_cube();
     let origin = cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0);
     let axis = cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0);
     let reference = cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0);
@@ -1310,22 +1300,32 @@ fn semantic_writer_rejects_unrepresentable_analytic_surface_parameterizations() 
     ];
 
     for (geometry, expected) in cases {
-        let mut ir = decoded.ir().clone();
+        let mut ir = cube.clone();
         let surface_id = ir.geometry.surfaces[0].id.as_str().to_owned();
         ir.geometry.surfaces[0].geometry = geometry;
 
-        let error = crate::test_support::plan_inherited_write(
-            &ir,
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
-
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::NotImplemented(message)
-                if message.contains(&surface_id) && message.contains(expected)
-        ));
+        let face = ir
+            .geometry
+            .faces
+            .iter()
+            .find(|face| face.surface.as_str() == surface_id)
+            .unwrap()
+            .id
+            .as_str()
+            .to_owned();
+        let report = SldprtCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap()
+            .report()
+            .clone();
+        assert!(
+            report.losses.iter().any(|loss| {
+                loss.code.local_code() == "writer.bodies-omitted"
+                    && loss.message.contains(&format!("face {face} ({expected})"))
+            }),
+            "{:#?}",
+            report.losses
+        );
     }
 }
 

@@ -164,7 +164,7 @@ fn extrusion_parameter_value_edit_without_brep_edit_is_refused() {
 }
 
 #[test]
-fn removing_referenced_extrusion_parameter_is_malformed() {
+fn removing_referenced_extrusion_parameter_is_refused_at_brep_agreement() {
     let source = sldprt_with_body_and_history(&triangle_body());
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -179,7 +179,8 @@ fn removing_referenced_extrusion_parameter_is_malformed() {
     )
     .unwrap_err();
     assert!(
-        matches!(error, cadmpeg_core::CodecError::Malformed(_)),
+        matches!(&error, cadmpeg_core::CodecError::NotImplemented(message)
+            if message.contains("cannot regenerate B-rep after parameter removal")),
         "{error:?}"
     );
     assert!(error.to_string().contains(parameter_id.as_str()), "{error}");

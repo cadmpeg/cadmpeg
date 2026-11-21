@@ -101,24 +101,21 @@ pub(crate) fn write_semantic_with_records(
     let mut normalized = ir.clone();
     normalized.model.configurations = configurations_without_synthesized_snapshot(&normalized);
     sort_arenas(&mut normalized);
-    let content_losses = reduce::unwritable_content(&mut normalized)?;
-    // Export precondition on the normalized input. Keeps full validate_neutral:
-    // writer refusal depends on non-core Checks (e.g. Counts for duplicate
-    // configuration source indices). SLDPRT_EXPORT_PRECONDITION_CHECKS records
-    // the draft/topology floor; narrowing further needs reject-fixture coverage.
-    // The postcondition after bake/prepare (below) also keeps full validate_neutral.
-    let validation = cadmpeg_ir::validate::validate_neutral(&normalized, Vec::new())?;
-    if !validation.is_ok() {
-        let detail = validation
-            .findings
-            .iter()
-            .find(|finding| finding.severity >= cadmpeg_ir::report::Severity::Error)
-            .map_or("IR validation failed", |finding| finding.message.as_str());
-        return Err(CodecError::Malformed(detail.into()));
-    }
+    let mut content_losses = reduce::unwritable_content(&mut normalized)?;
+    content_losses.extend(reduce::unwritable_carriers(&mut normalized, false)?);
     crate::writer_transform::bake(&mut normalized)?;
     sort_arenas(&mut normalized);
-    assign_configuration_indices(&mut normalized.model.configurations)?;
+    let assigned = assign_configuration_indices(&mut normalized.model.configurations)?;
+    if !assigned.is_empty() {
+        content_losses.push(
+            crate::loss::SldprtLossCode::WriterConfigurationIdentityAssigned.note(format!(
+            "{} configuration name(s) or partition index(es) SLDPRT cannot store as stated are \
+             written as the writer assigned them: {}",
+            assigned.len(),
+            assigned.join("; ")
+        )),
+        );
+    }
     let source_arena = DecodeArena::new();
     let source_context = source_image(retained_records)
         .map(|bytes| DecodeContext::from_root_bytes(bytes, &source_arena, &DecodePolicy::desktop()))
@@ -187,22 +184,16 @@ pub(crate) fn write_semantic_with_records(
     losses.extend(dropped_history.finish());
     let ir = &normalized;
     let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new())?;
-    if !validation.is_ok() {
-        let detail = validation
-            .findings
-            .iter()
-            .find(|finding| finding.severity >= cadmpeg_ir::report::Severity::Error)
-            .map_or("transformed IR validation failed", |finding| {
-                finding.message.as_str()
-            });
-        return Err(CodecError::Malformed(detail.into()));
-    }
-    check_semantic_support(ir)?;
+    losses.extend(reduce::invalid_records(ir, &validation));
     losses.extend(reduce::edge_ranges_omitted(ir, annotations).map_err(CodecError::ResourceLimit)?);
-    if ir.geometry.faces.is_empty() {
+    let brep_empty = ir.geometry.faces.is_empty();
+    if brep_empty && !retained_records.is_empty() {
         return Err(CodecError::NotImplemented(
             "semantic SLDPRT writing requires a B-rep".into(),
         ));
+    }
+    if brep_empty {
+        losses.extend(reduce::empty_brep(ir));
     }
     // The IR stores canonical millimetres; Parasolid stores metres.
     let length_scale = 0.001;
@@ -213,15 +204,21 @@ pub(crate) fn write_semantic_with_records(
     };
     let coverage = semantic_coverage(!retained_records.is_empty(), retained_partition.is_some());
     let retain_native_brep = retained_partition.is_some() || patched_partition.is_some();
-    if !retain_native_brep && requires_native_partition(ir) {
-        return Err(CodecError::NotImplemented(
-            "SLDPRT cannot regenerate opaque curve or surface records without a retained native partition".into(),
-        ));
-    }
+    let without_opaque;
+    let ir = if !retain_native_brep && requires_native_partition(ir) {
+        let mut reduced = ir.clone();
+        losses.extend(reduce::unwritable_carriers(&mut reduced, true)?);
+        without_opaque = reduced;
+        &without_opaque
+    } else {
+        ir
+    };
     let partition_sections = if let Some(retained) = retained_partition {
         vec![retained]
     } else if let Some(patched) = patched_partition {
         vec![patched]
+    } else if brep_empty {
+        empty_partitions(ir)?
     } else if !ir.model.configurations.is_empty() {
         configuration_partitions(ir, length_scale)?
     } else {
@@ -547,32 +544,44 @@ fn semantic_coverage(patched: bool, retained_brep: bool) -> ArenaDispositions {
     }
 }
 
+/// Give each configuration the distinct name and partition index SLDPRT
+/// stores, and return an entry for each one the writer assigned.
 fn assign_configuration_indices(
     configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
-) -> Result<(), CodecError> {
+) -> Result<Vec<String>, CodecError> {
+    let mut assigned = Vec::new();
     let mut used = HashSet::new();
     let mut names = HashSet::new();
-    for configuration in configurations.iter() {
-        let Some(name) = configuration.name.as_deref() else {
-            return Err(CodecError::Malformed(
-                "SLDPRT configuration has no resolved name".into(),
-            ));
-        };
-        if name.trim().is_empty() {
-            return Err(CodecError::Malformed(
-                "SLDPRT configuration has an empty name".into(),
-            ));
+    for (position, configuration) in configurations.iter_mut().enumerate() {
+        let stated = configuration
+            .name
+            .clone()
+            .filter(|name| !name.trim().is_empty());
+        let base = stated
+            .clone()
+            .unwrap_or_else(|| format!("Configuration {}", position + 1));
+        let mut name = base.clone();
+        let mut copy = 2_usize;
+        while names.contains(&name) {
+            name = format!("{base} ({copy})");
+            copy += 1;
         }
-        if !names.insert(name) {
-            return Err(CodecError::malformed(format_args!(
-                "SLDPRT repeats configuration name {name:?}"
-            )));
+        if stated.as_deref() != Some(name.as_str()) {
+            assigned.push(format!(
+                "{} name {:?} written as {name:?}",
+                configuration.id.as_str(),
+                configuration.name.as_deref().unwrap_or_default()
+            ));
+            configuration.name = Some(name.clone());
         }
+        names.insert(name);
         if let Some(index) = configuration.source_index {
             if !used.insert(index) {
-                return Err(CodecError::malformed(format_args!(
-                    "duplicate SLDPRT configuration source index {index}"
-                )));
+                assigned.push(format!(
+                    "{} source index {index} repeats another configuration's and is reassigned",
+                    configuration.id.as_str()
+                ));
+                configuration.source_index = None;
             }
         }
     }
@@ -587,7 +596,7 @@ fn assign_configuration_indices(
                 Some(reserve_configuration_index(&mut used, &mut next)?);
         }
     }
-    Ok(())
+    Ok(assigned)
 }
 
 fn generated_solidworks_xml(ir: &CadIr, active: &str) -> Vec<u8> {
@@ -770,57 +779,6 @@ fn section_type_ids(
         .collect()
 }
 
-fn check_semantic_support(ir: &CadIr) -> Result<(), CodecError> {
-    for surface in &ir.geometry.surfaces {
-        match &surface.geometry {
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
-                let ratio = cone_surface.ratio().get();
-                let half_angle = cone_surface.half_angle().get();
-                if ratio != 1.0 {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT surface {} has elliptical cone ratio {}; compact cone carriers encode circular cones only",
-                        surface.id.as_str(), ratio
-                    )));
-                }
-                if !(half_angle > 0.0 && half_angle < std::f64::consts::FRAC_PI_2) {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT surface {} has cone half-angle {}; compact cone carriers require an acute positive half-angle",
-                        surface.id.as_str(), half_angle
-                    )));
-                }
-            }
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
-                if {
-                    let radius = sphere_surface.radius().get();
-                    radius < 0.0
-                } =>
-            {
-                let radius = sphere_surface.radius().get();
-                return Err(CodecError::NotImplemented(format!(
-                    "SLDPRT surface {} has signed sphere radius {}; compact sphere carriers require a positive radius",
-                    surface.id.as_str(), radius
-                )));
-            }
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
-                if {
-                    let major_radius = torus_surface.major_radius().get();
-                    let minor_radius = torus_surface.minor_radius().get();
-                    !(major_radius > minor_radius && minor_radius > 0.0)
-                } =>
-            {
-                let major_radius = torus_surface.major_radius().get();
-                let minor_radius = torus_surface.minor_radius().get();
-                return Err(CodecError::NotImplemented(format!(
-                    "SLDPRT surface {} has torus radii ({}, {}); compact torus carriers require major > minor > 0",
-                    surface.id.as_str(), major_radius, minor_radius
-                )));
-            }
-            _ => {}
-        }
-    }
-    Ok(())
-}
-
 pub(crate) fn pmi_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
     let bytes = serde_json::to_vec(&ir.model.pmi)
         .map_err(|error| CodecError::malformed(format_args!("cannot hash SLDPRT PMI: {error}")))?;
@@ -919,6 +877,31 @@ pub(super) fn reserve_configuration_index(
             )
         })?;
     }
+}
+
+/// One partition per indexed configuration, each holding no body. A part with
+/// no configuration stores no partition.
+fn empty_partitions(ir: &CadIr) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
+    let mut indices = ir
+        .model
+        .configurations
+        .iter()
+        .filter_map(|configuration| configuration.source_index)
+        .collect::<Vec<_>>();
+    indices.sort_unstable();
+    indices.dedup();
+    indices
+        .into_iter()
+        .map(|index| {
+            let mut payload = parasolid_stream(&[], "SCH_SW_33103_11000")?;
+            payload.extend(parasolid_stream_named(
+                &[],
+                "SCH_SW_33103_11000",
+                "deltas body",
+            )?);
+            Ok((format!("Contents/Config-{index}-Partition"), payload))
+        })
+        .collect()
 }
 
 fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr, CodecError> {

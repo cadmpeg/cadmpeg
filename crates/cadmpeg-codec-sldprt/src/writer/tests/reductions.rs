@@ -237,3 +237,59 @@ fn semantic_writer_names_an_edge_range_its_vertices_do_not_fix() {
         report.losses
     );
 }
+
+#[test]
+fn a_document_with_no_face_writes_an_empty_partition_and_names_it() {
+    let mut ir = written_cube();
+    let body = ir.geometry.bodies[0].clone();
+    ir.geometry = cadmpeg_ir::document::Topology::default();
+    ir.geometry.bodies.push(body);
+    let losses = plan_losses(&ir);
+    assert!(loss(&losses, "output.empty").is_some(), "{losses:#?}");
+    let bodies = loss(&losses, "writer.bodies-omitted").unwrap();
+    assert!(bodies.message.contains(ir.geometry.bodies[0].id.as_str()));
+}
+
+#[test]
+fn a_body_on_an_elliptical_cone_is_not_written_and_is_named() {
+    use cadmpeg_ir::geometry::analytic::ConeSurface;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+    let mut ir = written_cube();
+    let surface = &mut ir.geometry.surfaces[0];
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) = &surface.geometry else {
+        panic!("cube faces are planar");
+    };
+    surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(ConeSurface::new(
+        plane.origin(),
+        *plane.frame(),
+        cadmpeg_ir::scalar::NonNegativeLength::new(1.0).unwrap(),
+        cadmpeg_ir::scalar::PositiveReal::new(0.5).unwrap(),
+        cadmpeg_ir::scalar::Angle::new(0.3).unwrap(),
+    )));
+    let losses = plan_losses(&ir);
+    let bodies = loss(&losses, "writer.bodies-omitted").unwrap();
+    assert!(
+        bodies.message.contains(ir.geometry.bodies[0].id.as_str())
+            && bodies.message.contains("elliptical cone ratio 0.5"),
+        "{}",
+        bodies.message
+    );
+}
+
+#[test]
+fn a_validation_error_in_the_written_document_is_record_invalid() {
+    let mut ir = written_cube();
+    // A vertex 1 mm off both its edges' line ends.
+    let point = &mut ir.geometry.points[0];
+    let at = point.position().get();
+    point.set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            at.x + 1.0,
+            at.y,
+            at.z,
+        ))
+        .unwrap(),
+    );
+    let losses = plan_losses(&ir);
+    assert!(loss(&losses, "record.invalid").is_some(), "{losses:#?}");
+}

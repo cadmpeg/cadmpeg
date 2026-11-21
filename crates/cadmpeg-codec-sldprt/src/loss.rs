@@ -305,6 +305,10 @@ pub(crate) enum SldprtLossCode {
     WriterTessellationMetadataOmitted,
     /// Semantic regeneration omits native cache or directory-padding bytes.
     WriterNativeEnvelopeAuxiliaryOmitted,
+    /// Export writes the named configurations with a name or partition index it assigned.
+    WriterConfigurationIdentityAssigned,
+    /// Export omits the named bodies.
+    WriterBodiesOmitted,
     /// Export writes the named faces without their name.
     WriterFaceNamesOmitted,
     /// Export writes the named bodies without their name.
@@ -490,6 +494,8 @@ impl SldprtLossCode {
         Self::WriterMaterialsOmitted,
         Self::WriterTessellationMetadataOmitted,
         Self::WriterNativeEnvelopeAuxiliaryOmitted,
+        Self::WriterConfigurationIdentityAssigned,
+        Self::WriterBodiesOmitted,
         Self::WriterFaceNamesOmitted,
         Self::WriterBodyNamesOmitted,
         Self::WriterAppearanceFieldsOmitted,
@@ -644,6 +650,8 @@ impl SldprtLossCode {
             Self::WriterNativeEnvelopeAuxiliaryOmitted => {
                 "writer.native-envelope-auxiliary-omitted"
             }
+            Self::WriterConfigurationIdentityAssigned => "writer.configuration-identity-assigned",
+            Self::WriterBodiesOmitted => "writer.bodies-omitted",
             Self::WriterFaceNamesOmitted => "writer.face-names-omitted",
             Self::WriterBodyNamesOmitted => "writer.body-names-omitted",
             Self::WriterAppearanceFieldsOmitted => "writer.appearance-fields-omitted",
@@ -696,6 +704,8 @@ impl SldprtLossCode {
         match self {
             Self::WriterTessellationMetadataOmitted => Severity::Warning,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => Severity::Warning,
+            Self::WriterConfigurationIdentityAssigned => Severity::Warning,
+            Self::WriterBodiesOmitted => Severity::Warning,
             Self::WriterFaceNamesOmitted => Severity::Warning,
             Self::WriterBodyNamesOmitted => Severity::Warning,
             Self::WriterAppearanceFieldsOmitted => Severity::Warning,
@@ -847,6 +857,8 @@ impl SldprtLossCode {
         match self {
             Self::WriterTessellationMetadataOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterConfigurationIdentityAssigned => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterBodiesOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::WriterFaceNamesOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterBodyNamesOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterAppearanceFieldsOmitted => LossTaxonomy::AppearanceReduced,
@@ -1287,6 +1299,8 @@ mod tests {
                 "writer.materials-omitted",
                 "writer.tessellation-metadata-omitted",
                 "writer.native-envelope-auxiliary-omitted",
+                "writer.configuration-identity-assigned",
+                "writer.bodies-omitted",
                 "writer.face-names-omitted",
                 "writer.body-names-omitted",
                 "writer.appearance-fields-omitted",

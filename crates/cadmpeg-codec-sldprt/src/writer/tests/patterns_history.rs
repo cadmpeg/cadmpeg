@@ -174,7 +174,9 @@ fn semantic_writer_round_trips_all_pattern_forms() {
     )
     .unwrap_err();
     assert!(
-        error.to_string().contains("pattern omits seed feature"),
+        error
+            .to_string()
+            .contains("dependencies are inconsistent with its operands"),
         "{error}"
     );
 
@@ -722,7 +724,7 @@ fn semantic_writer_round_trips_typed_sweep() {
     assert!(
         error
             .to_string()
-            .contains("profile feature is not a preceding dependency"),
+            .contains("dependencies are inconsistent with its operands"),
         "{error}"
     );
 
