@@ -631,7 +631,7 @@ impl PlannedParameter {
         .and_then(|record| {
             record.with_comment(self.comment.clone().map(|comment| RecordedValue {
                 value: comment,
-                offset: 30,
+                offset: 31,
             }))
         })
         .map_err(|error| {
