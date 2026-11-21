@@ -1738,7 +1738,7 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Note.** Emit `assembly.local-occurrence-identity-ordinal-unresolved` and keep the occurrence out of neutral product structure.
 
-### DR-142. Thread construction options and groove profile
+### DR-142. Thread construction option bytes
 
 **Question.** Which controls state side outside the extended prefix and hand outside the extended standard form? Which table identity and revision, with the thread type, designation, and class, determine the exact groove section, including crest and root truncation and radii? What does the second byte of the Thread construction marker select? In the forms other than the extended standard form, what do the first marker byte and the zero bytes before the trailer `01` select? In a form without the extended prefix, which field separates a cosmetic thread from a modeled thread whose scope has a null current history-state identity?
 
