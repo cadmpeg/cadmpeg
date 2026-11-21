@@ -3653,6 +3653,18 @@ Offsets are relative to the N+3 selection header. The first selected region's lo
 | 32 | 4 | `region_count` | `u32` | little | spec | a nonzero u32 region count |
 | 36 | 4 | `loop_count` | `u32` | little | spec | Each selected region starts with a nonzero u32 loop count. |
 
+## `sketch_profile_text_selection`
+
+Spec §3.1 · layout: byte offsets · size: 29 B
+
+Offsets are relative to the N+3 selection header. The next indexed header starts at offset 29.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | its eleven-byte indexed header |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | ten zero bytes |
+| 21 | 8 | `text_record_index` | `u64` | little | spec | the u64 record index of a Sketch text entity |
+
 ## `sketch_profile_region_member`
 
 Spec §3.1 · layout: byte offsets · size: 40 B
