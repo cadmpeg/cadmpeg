@@ -1082,15 +1082,18 @@ pub(crate) fn design_primary_frame_offsets(
 /// index. An envelope is history-bound when it resolves to one ASM state pair
 /// through the history header links. Binding output is not read, so selection
 /// does not depend on whether history binding ran. Exactly one history-bound
-/// envelope is authoritative. An unresolved group remains an error.
+/// envelope is authoritative. Without one, the primary-indexed envelope is
+/// authoritative; without that, the later envelope is authoritative when the
+/// envelopes are equivalent or differ only in their tail flags. An unresolved
+/// group remains an error.
 pub(crate) fn admit_history_bound_scope_variants(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scopes: &mut Vec<DesignParameterScope>,
     histories: &[crate::history_records::AsmHistory],
     primary_frames: &std::collections::HashSet<(String, u64)>,
-) -> Result<usize, CodecError> {
+) -> Result<SupersededScopeEnvelopes, CodecError> {
     let mut admitted = vec![true; scopes.len()];
-    let mut superseded = 0usize;
+    let mut superseded = SupersededScopeEnvelopes::default();
     let mut groups = HashMap::<(&str, u32), Vec<usize>>::new();
     for (index, scope) in scopes.iter().enumerate() {
         let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
@@ -1129,15 +1132,29 @@ pub(crate) fn admit_history_bound_scope_variants(
                 break;
             }
         }
-        let mut equivalent_payload = history_bound.is_none() && !multiple_history_bounds;
-        if equivalent_payload {
+        let mut comparison = EnvelopeComparison::Different;
+        if history_bound.is_none() && !multiple_history_bounds {
+            comparison = EnvelopeComparison::Equivalent;
             for index in following {
-                if !equivalent_scope_variant_payload(ctx, &scopes[*first], &scopes[*index])? {
-                    equivalent_payload = false;
+                comparison = comparison.max(compare_scope_variant_payloads(
+                    ctx,
+                    &scopes[*first],
+                    &scopes[*index],
+                )?);
+                if comparison == EnvelopeComparison::Different {
                     break;
                 }
             }
         }
+        let later = following.iter().copied().fold(*first, |keep, index| {
+            if scopes[index].byte_offset() >= scopes[keep].byte_offset() {
+                index
+            } else {
+                keep
+            }
+        });
+        let count_overflow =
+            || CodecError::Malformed("Design scope envelope count overflows".into());
         // Without a history binding, the envelope that the stream's primary
         // record index names is the live one when it is unique in the group.
         let mut primary = indices.iter().copied().filter(|index| {
@@ -1150,26 +1167,31 @@ pub(crate) fn admit_history_bound_scope_variants(
             (Some(index), None) => Some(index),
             _ => None,
         };
-        let keep = match (history_bound, multiple_history_bounds, primary_indexed) {
-            (Some(keep), false, _) => keep,
-            (None, false, _) if equivalent_payload => {
-                following.iter().copied().fold(*first, |keep, index| {
-                    if scopes[index].byte_offset() >= scopes[keep].byte_offset() {
-                        index
-                    } else {
-                        keep
-                    }
-                })
-            }
+        let keep = match (
+            history_bound,
+            multiple_history_bounds,
+            primary_indexed,
+            comparison,
+        ) {
+            (Some(keep), false, _, _) => keep,
+            (None, false, _, EnvelopeComparison::Equivalent) => later,
             // Several envelopes resolve to ASM transitions: the one the primary
             // record index names is live; the others are retained revisions.
-            (Some(_), true, Some(keep)) | (None, false, Some(keep)) => {
+            (Some(_), true, Some(keep), _) | (None, false, Some(keep), _) => {
                 // The other envelopes are not equivalent serializations, so
                 // dropping them loses their payload.
-                superseded = superseded.checked_add(following.len()).ok_or_else(|| {
-                    CodecError::Malformed("Design scope envelope count overflows".into())
-                })?;
+                superseded.primary_indexed = superseded
+                    .primary_indexed
+                    .checked_add(following.len())
+                    .ok_or_else(count_overflow)?;
                 keep
+            }
+            (None, false, None, EnvelopeComparison::TailFlags) => {
+                superseded.tail_flags = superseded
+                    .tail_flags
+                    .checked_add(following.len())
+                    .ok_or_else(count_overflow)?;
+                later
             }
             _ => {
                 return Err(CodecError::Malformed(
@@ -1194,26 +1216,72 @@ pub(crate) fn admit_history_bound_scope_variants(
     Ok(superseded)
 }
 
+/// Duplicate scope envelopes that admission did not decode.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SupersededScopeEnvelopes {
+    /// Envelopes that differ from the primary-indexed envelope of their
+    /// record.
+    pub(crate) primary_indexed: usize,
+    /// Earlier envelopes that differ from the later envelope of their record
+    /// only in their suppressed or rolled-back flags.
+    pub(crate) tail_flags: usize,
+}
+
+impl SupersededScopeEnvelopes {
+    pub(crate) fn losses(self) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> {
+        let code = crate::loss::F3dLossCode::FeatureScopeEnvelopeSuperseded;
+        let primary_indexed = (self.primary_indexed != 0).then(|| code.note(format!(
+            "{} duplicate feature scope envelope(s) differ from the primary-indexed envelope of their record and were not decoded.",
+            self.primary_indexed
+        )));
+        let tail_flags = (self.tail_flags != 0).then(|| code.note(format!(
+            "{} duplicate feature scope envelope(s) differ from the later envelope of their record only in their suppressed or rolled-back flags; the later envelope's flags were decoded and theirs were not.",
+            self.tail_flags
+        )));
+        primary_indexed.into_iter().chain(tail_flags)
+    }
+}
+
+/// How two same-index scope envelopes compare, from closest to farthest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum EnvelopeComparison {
+    /// One serialization of the same logical scope.
+    Equivalent,
+    /// The envelopes differ only in their suppressed or rolled-back flags.
+    TailFlags,
+    Different,
+}
+
 /// Compare two same-index scope envelopes after removing source-location,
-/// dynamic-class and evaluation-state fields (history states, tail flags).
-/// Source locations are the `*_offset` and `*_offsets` fields, every integer
-/// `offset`, and the byte positions `prefix_end` and `start_frame_end`. An equivalent envelope is one serialization of the
-/// same logical scope; the later envelope supersedes the earlier one when no
-/// decoded ASM state pair can select a revision.
-fn equivalent_scope_variant_payload(
+/// dynamic-class and history-state fields. Source locations are the
+/// `*_offset` and `*_offsets` fields, every integer `offset`, and the byte
+/// positions `prefix_end` and `start_frame_end`.
+fn compare_scope_variant_payloads(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     left: &DesignParameterScope,
     right: &DesignParameterScope,
-) -> Result<bool, CodecError> {
+) -> Result<EnvelopeComparison, CodecError> {
     let Some(mut left) = scope_variant_json(ctx, left)? else {
-        return Ok(false);
+        return Ok(EnvelopeComparison::Different);
     };
     let Some(mut right) = scope_variant_json(ctx, right)? else {
-        return Ok(false);
+        return Ok(EnvelopeComparison::Different);
     };
     strip_scope_variant_provenance(ctx, &mut left, true)?;
     strip_scope_variant_provenance(ctx, &mut right, true)?;
-    Ok(left == right)
+    if left == right {
+        return Ok(EnvelopeComparison::Equivalent);
+    }
+    for value in [&mut left, &mut right] {
+        if let serde_json::Value::Object(fields) = value {
+            fields.remove("tail_flags");
+        }
+    }
+    Ok(if left == right {
+        EnvelopeComparison::TailFlags
+    } else {
+        EnvelopeComparison::Different
+    })
 }
 
 fn scope_variant_json(
@@ -1279,7 +1347,6 @@ fn strip_scope_variant_provenance(
                             | "frame_length"
                             | "history_state_id"
                             | "previous_history_state_id"
-                            | "tail_flags"
                             | "paired_class_tag"
                     )
                 {

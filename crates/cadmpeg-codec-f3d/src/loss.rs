@@ -579,7 +579,8 @@ pub(crate) enum F3dLossCode {
     EmbossScalarUnitAssumed,
     EmbossPlacementNative,
     /// A non-equivalent duplicate scope envelope was superseded by the
-    /// primary-indexed envelope.
+    /// primary-indexed envelope, or by the later envelope when the two differ
+    /// only in their tail flags.
     FeatureScopeEnvelopeSuperseded,
     /// Decoded Design parameters have no neutral parameter.
     ParameterUnprojected,

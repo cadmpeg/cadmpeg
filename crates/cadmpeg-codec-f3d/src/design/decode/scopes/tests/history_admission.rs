@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::parameter_scope::admit_history_bound_scope_variants;
+use super::super::parameter_scope::{admit_history_bound_scope_variants, SupersededScopeEnvelopes};
 use crate::history_records::AsmHistory;
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
 use crate::records::feature::patterns::DesignPathPatternSettings;
@@ -154,7 +154,7 @@ fn refuses_duplicate_scope_envelopes_without_one_history_binding() {
             admit_history_bound_scope_variants(ctx, &mut selected, &histories, &primary)
         })
         .expect("primary envelope");
-        assert_eq!(superseded, 1);
+        assert_eq!(superseded.primary_indexed, 1);
         assert_eq!(selected.len(), 1);
         assert_eq!(selected[0].byte_offset(), byte_offset);
     }
@@ -428,17 +428,18 @@ fn flagged_thicken_variants(suppressed: [bool; 2]) -> Vec<DesignParameterScope> 
     scopes
 }
 
-/// The tail flags are evaluation state: two envelopes that differ only in
-/// their flags or the flags' location are equivalent, and the later one is
-/// retained with its flags.
+/// Two envelopes whose flags differ only in location are equivalent. Two
+/// envelopes that differ in suppression, with no history binding and no
+/// primary-indexed envelope, keep the later envelope and charge the earlier
+/// one as superseded.
 #[test]
-fn scope_variants_that_differ_only_in_tail_flags_are_equivalent() {
-    for suppressed in [[true, true], [true, false]] {
+fn scope_variants_that_differ_in_suppression_keep_the_later_and_charge_a_loss() {
+    for (suppressed, tail_flags) in [([true, true], 0), ([true, false], 1)] {
         let mut variants = flagged_thicken_variants(suppressed);
-        with_test_ctx(|ctx| {
+        let superseded = with_test_ctx(|ctx| {
             admit_history_bound_scope_variants(ctx, &mut variants, &[], &Default::default())
         })
-        .expect("equivalent envelopes");
+        .expect("the document decodes");
         let [retained] = variants.as_slice() else {
             panic!("one retained envelope")
         };
@@ -447,7 +448,84 @@ fn scope_variants_that_differ_only_in_tail_flags_are_equivalent() {
             retained.tail_flags.map(|flags| flags.suppressed),
             Some(suppressed[1])
         );
+        assert_eq!(
+            superseded,
+            SupersededScopeEnvelopes {
+                primary_indexed: 0,
+                tail_flags,
+            },
+            "flags {suppressed:?}"
+        );
     }
+
+    let mut primary_earlier = flagged_thicken_variants([true, false]);
+    let stream = crate::ids::native_stream(&primary_earlier[0].id)
+        .expect("fixture stream")
+        .to_owned();
+    let primary = std::collections::HashSet::from([(stream, 100)]);
+    let superseded = with_test_ctx(|ctx| {
+        admit_history_bound_scope_variants(ctx, &mut primary_earlier, &[], &primary)
+    })
+    .expect("primary-indexed envelope");
+    let [retained] = primary_earlier.as_slice() else {
+        panic!("one retained envelope")
+    };
+    assert_eq!(retained.byte_offset(), 100);
+    assert_eq!(
+        retained.tail_flags.map(|flags| flags.suppressed),
+        Some(true)
+    );
+    assert_eq!(
+        superseded,
+        SupersededScopeEnvelopes {
+            primary_indexed: 1,
+            tail_flags: 0,
+        }
+    );
+}
+
+/// Envelopes that differ in suppression and in their payload stay unresolved
+/// without a history binding or a primary-indexed envelope.
+#[test]
+fn scope_variants_that_differ_in_suppression_and_payload_are_unresolved() {
+    let mut variants = thicken_variants(-1.0, -2.0);
+    for (scope, suppressed) in variants.iter_mut().zip([true, false]) {
+        scope.tail_flags = Some(crate::records::feature::scope::DesignScopeTailFlags {
+            suppressed,
+            rolled_back: true,
+            suppressed_offset: scope.feature_ordinal_offset() + 1,
+        });
+    }
+    assert!(with_test_ctx(|ctx| admit_history_bound_scope_variants(
+        ctx,
+        &mut variants,
+        &[],
+        &Default::default()
+    ))
+    .is_err());
+}
+
+#[test]
+fn superseded_scope_envelopes_name_their_difference_in_the_loss() {
+    assert_eq!(SupersededScopeEnvelopes::default().losses().count(), 0);
+    let losses = SupersededScopeEnvelopes {
+        primary_indexed: 2,
+        tail_flags: 1,
+    }
+    .losses()
+    .collect::<Vec<_>>();
+    let code = crate::loss::F3dLossCode::FeatureScopeEnvelopeSuperseded.kind();
+    assert!(losses.iter().all(|loss| loss.code == code));
+    assert_eq!(
+        losses
+            .iter()
+            .map(|loss| loss.message.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "2 duplicate feature scope envelope(s) differ from the primary-indexed envelope of their record and were not decoded.",
+            "1 duplicate feature scope envelope(s) differ from the later envelope of their record only in their suppressed or rolled-back flags; the later envelope's flags were decoded and theirs were not.",
+        ]
+    );
 }
 
 #[test]
@@ -572,7 +650,7 @@ fn primary_indexed_scope_variant_is_admitted_without_a_history_binding() {
     let superseded =
         with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut different, &[], &primary))
             .expect("primary-indexed envelope");
-    assert_eq!(superseded, 1);
+    assert_eq!(superseded.primary_indexed, 1);
     assert_eq!(different.len(), 1);
     assert_eq!(different[0].byte_offset(), 100);
 
