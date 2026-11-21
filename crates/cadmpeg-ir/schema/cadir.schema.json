@@ -12045,7 +12045,7 @@
                   "minItems": 2
                 },
                 "ratio": {
-                  "description": "The second member's rotation per rotation of the first, as a\nmagnitude whose sign the frames give.",
+                  "description": "The second member's rotation per rotation of the first, each about\nits own axis: negative when the members turn opposite ways.",
                   "anyOf": [
                     {
                       "$ref": "#/$defs/Dimension4"
@@ -12096,7 +12096,7 @@
                   "minItems": 2
                 },
                 "ratio": {
-                  "description": "The second member's rotation per rotation of the first, as a\nmagnitude whose sign the frames give.",
+                  "description": "The second member's rotation per rotation of the first, each about\nits own axis: negative when the members turn opposite ways.",
                   "anyOf": [
                     {
                       "$ref": "#/$defs/Dimension4"
@@ -12142,7 +12142,7 @@
                   ]
                 },
                 "ratio": {
-                  "description": "The pinion rotation in radians per millimetre of rack travel, as a\nmagnitude whose sign the frames give.",
+                  "description": "The pinion rotation in radians per millimetre of rack travel:\npositive when the rack moves along its axis as the pinion turns\npositively about its own.",
                   "anyOf": [
                     {
                       "$ref": "#/$defs/Dimension4"
@@ -20814,6 +20814,30 @@
       "required": [
         "edge",
         "distance"
+      ]
+    },
+    "EdgeSupport": {
+      "description": "One face beside a historical edge that carries an asymmetric chamfer distance.",
+      "type": "object",
+      "properties": {
+        "face": {
+          "description": "Face of the owning input state.",
+          "$ref": "#/$defs/HistoricalFaceId"
+        },
+        "normal": {
+          "description": "Outward unit normal of the face at the edge midpoint.",
+          "$ref": "#/$defs/UnitVector3"
+        },
+        "with_edge": {
+          "description": "The face's coedge runs with the edge, so the face lies on the left.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "face",
+        "normal",
+        "with_edge"
       ]
     },
     "Emboss": {
@@ -36812,6 +36836,13 @@
             }
           ]
         },
+        "supports": {
+          "description": "Support faces of an unequal two-distance chamfer that selects this edge.\nEmpty for every other edge.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EdgeSupport"
+          }
+        },
         "tangent": {
           "description": "Unit carrier tangent at `interior`, in the carrier's parameter\ndirection.",
           "anyOf": [
@@ -36828,7 +36859,8 @@
       "required": [
         "edge",
         "interior",
-        "faces"
+        "faces",
+        "supports"
       ]
     },
     "HistoricalEdgeId": {
@@ -52805,10 +52837,10 @@
               "const": "rack_pinion"
             },
             "ratio": {
-              "description": "Pinion rotation in radians per millimetre of rack translation, as a\nmagnitude: the sign follows the connector frames.",
+              "description": "Pinion rotation in radians per millimetre of rack translation:\npositive when the rack moves along its slider axis as the pinion\nturns positively about its revolute axis.",
               "anyOf": [
                 {
-                  "$ref": "#/$defs/PositiveReal"
+                  "$ref": "#/$defs/NonZeroReal"
                 },
                 {
                   "type": "null"
@@ -52885,10 +52917,10 @@
               "const": "gears"
             },
             "ratio": {
-              "description": "Rotation of the second connector per rotation of the first, as a\nmagnitude: the sign follows the connector frames. For gears with\n`N0` and `N1` teeth it is `N0 / N1`.",
+              "description": "Rotation of the second gear per rotation of the first, each about its\nown revolute axis: negative when the gears turn opposite ways. For\nexternal gears with `N0` and `N1` teeth it is `-N0 / N1`, and for an\ninternal gear `N0 / N1`.",
               "anyOf": [
                 {
-                  "$ref": "#/$defs/PositiveReal"
+                  "$ref": "#/$defs/NonZeroReal"
                 },
                 {
                   "type": "null"

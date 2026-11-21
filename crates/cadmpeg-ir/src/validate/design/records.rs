@@ -390,5 +390,14 @@ impl<'a> DesignRecords<'a> {
     }
 }
 
+impl CadIr {
+    pub(crate) fn spanned_definitions(
+        &self,
+        scope: &crate::ids::ProductDefinitionId,
+    ) -> BTreeSet<&str> {
+        DesignRecords::new(self).spanned_definitions(scope.as_str())
+    }
+}
+
 #[cfg(test)]
 mod tests;
