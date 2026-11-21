@@ -38,6 +38,7 @@ use cadmpeg_ir::design::refs::Position;
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::products::{ProductDefinition, Storage};
+use cadmpeg_ir::report::decode::DecodeTransfer;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
 
@@ -50,12 +51,18 @@ const TYPES: &str = "design_types";
 
 /// Project the design of a decoded Fusion document into `ir.design`, beside
 /// its v10 records, and push what it leaves unstated to `losses`. The root
-/// definition is already stated.
+/// definition is already stated. A decode whose `transfer` delivers no design
+/// class, as a geometry request that stopped before design intent, states no
+/// design record.
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
+    transfer: DecodeTransfer,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
+    if !transfer.depth().scope().design {
+        return Ok(());
+    }
     let Some(namespace) = ir.native.namespace("f3d") else {
         return Ok(());
     };
