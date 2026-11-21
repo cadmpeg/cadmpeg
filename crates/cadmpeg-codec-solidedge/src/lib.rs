@@ -8,7 +8,9 @@
 mod container;
 mod decode;
 mod dialect;
+mod layout;
 mod loss;
+mod settings;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;

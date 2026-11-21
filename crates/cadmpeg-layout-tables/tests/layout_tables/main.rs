@@ -68,6 +68,7 @@ const EXPECTED_FORMATS: &[&str] = &[
     "protein",
     "rhino",
     "sldprt",
+    "solidedge",
     "step",
     "usd",
 ];

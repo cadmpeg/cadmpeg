@@ -12,6 +12,8 @@ const NAMESPACE: LossNamespace<'static> = match LossNamespace::new("solidedge") 
 pub(crate) enum SolidEdgeLossCode {
     ContainerNoncanonical,
     BodiesPending,
+    UnitsUnread,
+    UnitCodeUnknown,
 }
 
 impl SolidEdgeLossCode {
@@ -22,6 +24,8 @@ impl SolidEdgeLossCode {
                 LossTaxonomy::NoncanonicalSourceSyntax,
             ),
             Self::BodiesPending => ("body.decode-pending", LossTaxonomy::GeometryNotTransferred),
+            Self::UnitsUnread => ("units.unread", LossTaxonomy::MetadataNotTransferred),
+            Self::UnitCodeUnknown => ("units.code-unknown", LossTaxonomy::MetadataNotTransferred),
         };
         LossNote::new(LossKind::namespaced(NAMESPACE, code, taxonomy), message)
     }
