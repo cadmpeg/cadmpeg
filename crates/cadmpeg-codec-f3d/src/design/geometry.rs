@@ -89,6 +89,7 @@ pub(crate) struct ProfileGeometryWork {
     region_hole_inferred_selections: Cell<usize>,
     unresolved_profile_groups: Cell<usize>,
     composed_profile_groups: Cell<usize>,
+    body_circle_rings_assumed_selections: Cell<usize>,
     sampled_regions: RefCell<Vec<RegionSampleEntry>>,
     arrangement_reuse: RefCell<Option<ArrangementReuse>>,
 }
@@ -167,6 +168,7 @@ impl ProfileGeometryWork {
             region_hole_inferred_selections: Cell::new(0),
             unresolved_profile_groups: Cell::new(0),
             composed_profile_groups: Cell::new(0),
+            body_circle_rings_assumed_selections: Cell::new(0),
             sampled_regions: RefCell::new(Vec::new()),
             arrangement_reuse: RefCell::new(None),
         }
@@ -322,6 +324,11 @@ impl ProfileGeometryWork {
     pub(crate) fn record_region_hole_profile_inferred(&self) {
         self.region_hole_inferred_selections
             .set(self.region_hole_inferred_selections.get() + 1);
+    }
+
+    pub(crate) fn record_body_circle_rings_assumed(&self) {
+        self.body_circle_rings_assumed_selections
+            .set(self.body_circle_rings_assumed_selections.get() + 1);
     }
 
     pub(crate) fn inferred_counts(&self) -> (usize, usize) {
@@ -596,6 +603,12 @@ impl ProfileGeometryWork {
         if composed_groups != 0 {
             losses.push(F3dLossCode::FeatureExtrudeProfileGroupUnionAssumed.note(format!(
                 "{composed_groups} extrude profile group(s) compose multiple same-sketch region operands as the union of their regions (DR-165)."
+            )));
+        }
+        let body_circle_rings_assumed = self.body_circle_rings_assumed_selections.get();
+        if body_circle_rings_assumed != 0 {
+            losses.push(F3dLossCode::FeatureProfileBodyCircleRingsAssumed.note(format!(
+                "{body_circle_rings_assumed} extrude profile selection(s) assume the smallest concentric sketch-circle ring set covering a cap bounded by a preceding body cylinder."
             )));
         }
         losses
