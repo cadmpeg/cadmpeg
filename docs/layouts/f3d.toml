@@ -17658,22 +17658,21 @@ name = "secondary_identity"
 offset = 45
 type = "u64"
 source = "spec"
-anchor = "secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes"
-value = 0
+anchor = "the secondary identity of the loop entry, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes"
 
 [[record.field]]
 name = "sense"
 offset = 53
 type = "u32"
 source = "spec"
-anchor = "secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes"
+anchor = "the secondary identity of the loop entry, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes"
 
 [[record.field]]
 name = "first_operand"
 offset = 57
 type = "u32"
 source = "spec"
-anchor = "secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes"
+anchor = "the secondary identity of the loop entry, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes"
 value = 1
 
 [[record.field]]
@@ -17681,7 +17680,7 @@ name = "second_operand"
 offset = 61
 type = "u32"
 source = "spec"
-anchor = "secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes"
+anchor = "the secondary identity of the loop entry, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes"
 value = 1
 
 [[record.field]]
@@ -17689,7 +17688,7 @@ name = "entry_zero_run_8"
 offset = 65
 type = "bytes[8]"
 source = "spec"
-anchor = "secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes"
+anchor = "the secondary identity of the loop entry, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes"
 value = [0, 0, 0, 0, 0, 0, 0, 0]
 
 [[record.field]]
@@ -17713,9 +17712,9 @@ value = 0
 name = "sketch_extrude_loop_curve_record"
 kind = "byte"
 section = "Records of a sketch-and-extrude design"
-anchor = "the curve record of each of their side faces has the layout"
+anchor = "a curve record of a side face of one of their curves whose entry stores operands `1` and `1` has the layout"
 size = 97
-note = "Offsets are relative to the curve record's primary indexed header. The record ends at offset 97. The sense is `1` for an entry of an exterior loop and `0xffffffff` for an entry of a hole loop."
+note = "Offsets are relative to the curve record's primary indexed header. The record ends at offset 97. The secondary identity is the one the loop entry stores. The sense is `1` for an entry of an exterior loop and `0xffffffff` for an entry of a hole loop."
 
 [[record.field]]
 name = "indexed_header"
@@ -17776,8 +17775,7 @@ name = "secondary_identity"
 offset = 45
 type = "u64"
 source = "spec"
-anchor = "secondary identity `0`, the sense, operands `1` and `1`, and eight zero bytes"
-value = 0
+anchor = "the secondary identity of the loop entry, the sense, operands `1` and `1`, and eight zero bytes"
 
 [[record.field]]
 name = "sense"
@@ -17791,7 +17789,7 @@ name = "first_operand"
 offset = 57
 type = "u32"
 source = "spec"
-anchor = "secondary identity `0`, the sense, operands `1` and `1`, and eight zero bytes"
+anchor = "the secondary identity of the loop entry, the sense, operands `1` and `1`, and eight zero bytes"
 value = 1
 
 [[record.field]]
@@ -17799,7 +17797,7 @@ name = "second_operand"
 offset = 61
 type = "u32"
 source = "spec"
-anchor = "secondary identity `0`, the sense, operands `1` and `1`, and eight zero bytes"
+anchor = "the secondary identity of the loop entry, the sense, operands `1` and `1`, and eight zero bytes"
 value = 1
 
 [[record.field]]
@@ -17807,7 +17805,7 @@ name = "entry_zero_run_8"
 offset = 65
 type = "bytes[8]"
 source = "spec"
-anchor = "secondary identity `0`, the sense, operands `1` and `1`, and eight zero bytes"
+anchor = "the secondary identity of the loop entry, the sense, operands `1` and `1`, and eight zero bytes"
 value = [0, 0, 0, 0, 0, 0, 0, 0]
 
 [[record.field]]
