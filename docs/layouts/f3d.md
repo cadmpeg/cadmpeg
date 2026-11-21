@@ -1939,7 +1939,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 69 B
 
-The counted operand references and the six tail bytes follow the count.
+The counted operand references, byte 01, the refinement selector, and four zero bytes follow the count.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/tessellate.rs`

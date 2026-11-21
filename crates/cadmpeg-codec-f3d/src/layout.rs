@@ -1626,7 +1626,7 @@ pub(crate) mod mesh_convert_output_prefix {
 /// Spec §3.1. Record length 69 B.
 ///
 /// ```text
-/// The counted operand references and the six tail bytes follow the count.
+/// The counted operand references, byte 01, the refinement selector, and four zero bytes follow the count.
 /// ```
 pub(crate) mod mesh_tessellate_scope_prefix {
     /// Record length in bytes. Spec §3.1.
