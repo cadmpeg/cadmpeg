@@ -141,6 +141,9 @@ pub(crate) enum F3dLossCode {
     SketchCurveTailConstructionAssumed,
     /// A Chamfer's non-face group is read as its edge group despite its role.
     ChamferEdgeRoleAssumed,
+    /// A fixed Chamfer scalar is applied to the face-role groups beside the
+    /// scope's one edge-role group (DR-891).
+    ChamferFixedFaceGroupAssumed,
     ChamferDefinitionUnresolved,
     ChamferSelectionUnresolved,
     ChamferReferenceFaceAssumed,
@@ -279,6 +282,9 @@ pub(crate) enum F3dLossCode {
     /// A joint operand path continues inside an unmerged inserted document; the
     /// remaining keys stay a nested occurrence path.
     AssemblyOperandNestedPathRetained,
+    /// A projected joint reads an occurrence path with a nonzero identity-pair
+    /// word as though the word were zero.
+    AssemblyOperandPathWordAssumed,
     /// An F3Z drawing root was omitted while its derived 3D model transferred.
     DrawingDocumentOmitted,
     /// ASM history estimated retained size exceeded the session's remaining retained-byte allowance.
@@ -1208,6 +1214,12 @@ pub(crate) enum F3dLossCode {
     WriterAppearanceOmitted,
     /// The retained source could not carry an edit; the file was regenerated.
     WriterPatchDeclined,
+    /// An integer parameter was written as a Fusion user parameter, which
+    /// holds a real.
+    WriterIntegerAsReal,
+    /// A design scope, container, or value of the written timeline was not
+    /// written.
+    WriterDesignRecordOmitted,
     /// An appearance's Protein asset was written under a GUID the writer
     /// allocated, in place of a missing or shared source GUID.
     WriterAppearanceGuidAllocated,
@@ -1336,6 +1348,7 @@ impl F3dLossCode {
         Self::SketchCurveTailMarkerAssumed,
         Self::SketchCurveTailConstructionAssumed,
         Self::ChamferEdgeRoleAssumed,
+        Self::ChamferFixedFaceGroupAssumed,
         Self::ChamferDefinitionUnresolved,
         Self::ChamferSelectionUnresolved,
         Self::ChamferReferenceFaceAssumed,
@@ -1408,6 +1421,7 @@ impl F3dLossCode {
         Self::AssemblyExtendedTailAssumed,
         Self::AssemblyExtendedTypedTailAssumed,
         Self::AssemblyOperandNestedPathRetained,
+        Self::AssemblyOperandPathWordAssumed,
         Self::DrawingDocumentOmitted,
         Self::HistoryBindingBudgetExceeded,
         Self::HistoryBindingWorkExceeded,
@@ -1999,6 +2013,8 @@ impl F3dLossCode {
         Self::BodyDisplayNameAmbiguous,
         Self::WorkPlaneDisplayNameAmbiguous,
         Self::WorkPlaneDisplayNameUndecoded,
+        Self::WriterIntegerAsReal,
+        Self::WriterDesignRecordOmitted,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -2132,6 +2148,7 @@ impl F3dLossCode {
             Self::SketchCurveTailMarkerAssumed => "sketch.curve-tail-marker-assumed",
             Self::SketchCurveTailConstructionAssumed => "sketch.curve-tail-construction-assumed",
             Self::ChamferEdgeRoleAssumed => "feature.chamfer-edge-role-assumed",
+            Self::ChamferFixedFaceGroupAssumed => "feature.chamfer-fixed-face-group-assumed",
             Self::ChamferDefinitionUnresolved => "feature.chamfer-definition-unresolved",
             Self::ChamferSelectionUnresolved => "feature.chamfer-selection-unresolved",
             Self::ChamferReferenceFaceAssumed => "feature.chamfer-reference-face-assumed",
@@ -2225,6 +2242,7 @@ impl F3dLossCode {
             Self::AssemblyExtendedTailAssumed => "assembly.extended-tail-assumed",
             Self::AssemblyExtendedTypedTailAssumed => "assembly.extended-typed-tail-assumed",
             Self::AssemblyOperandNestedPathRetained => "assembly.operand-nested-path-retained",
+            Self::AssemblyOperandPathWordAssumed => "assembly.operand-path-word-assumed",
             Self::DrawingDocumentOmitted => "drawing.document-omitted",
             Self::HistoryBindingBudgetExceeded => "history.binding-budget-exceeded",
             Self::HistoryBindingWorkExceeded => "history.binding-work-exceeded",
@@ -3102,6 +3120,8 @@ impl F3dLossCode {
             Self::WriterGeometryOmitted => "writer.geometry-omitted",
             Self::WriterAppearanceOmitted => "writer.appearance-omitted",
             Self::WriterPatchDeclined => "writer.patch-declined",
+            Self::WriterIntegerAsReal => "writer.integer-as-real",
+            Self::WriterDesignRecordOmitted => "writer.design-record-omitted",
             Self::WriterAppearanceGuidAllocated => "writer.appearance-guid-allocated",
             Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
             Self::KernelCarrierUnparseable => "source.kernel-carrier-unparseable",
@@ -3205,6 +3225,8 @@ impl F3dLossCode {
             Self::WriterGeometryOmitted => Severity::Warning,
             Self::WriterAppearanceOmitted => Severity::Warning,
             Self::WriterPatchDeclined => Severity::Warning,
+            Self::WriterIntegerAsReal => Severity::Info,
+            Self::WriterDesignRecordOmitted => Severity::Warning,
             Self::WriterAppearanceGuidAllocated => Severity::Warning,
             Self::ScopeOwnerUnresolved
             | Self::ScopeOutputOwnerUnresolved
@@ -3272,6 +3294,7 @@ impl F3dLossCode {
             | Self::SketchCurveTailMarkerAssumed
             | Self::SketchCurveTailConstructionAssumed
             | Self::ChamferEdgeRoleAssumed
+            | Self::ChamferFixedFaceGroupAssumed
             | Self::ChamferDefinitionUnresolved
             | Self::ChamferSelectionUnresolved
             | Self::ChamferReferenceFaceAssumed
@@ -3342,6 +3365,7 @@ impl F3dLossCode {
             | Self::AssemblyExtendedTailAssumed
             | Self::AssemblyExtendedTypedTailAssumed
             | Self::AssemblyOperandNestedPathRetained
+            | Self::AssemblyOperandPathWordAssumed
             | Self::AssemblyOperandDescentAmbiguous
             | Self::AssemblyRootPathIdentitiesNative
             | Self::DrawingDocumentOmitted
@@ -3969,6 +3993,8 @@ impl F3dLossCode {
             Self::WriterGeometryOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::WriterAppearanceOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::WriterPatchDeclined => LossTaxonomy::PreservedSourceUnavailable,
+            Self::WriterIntegerAsReal => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterDesignRecordOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterAppearanceGuidAllocated => LossTaxonomy::MetadataNotTransferred,
             Self::DimensionCompanionUntyped
             | Self::BodyReferenceTailUntyped
@@ -3985,6 +4011,7 @@ impl F3dLossCode {
             | Self::SketchCurveTailMarkerAssumed
             | Self::SketchCurveTailConstructionAssumed
             | Self::ChamferEdgeRoleAssumed
+            | Self::ChamferFixedFaceGroupAssumed
             | Self::ChamferDefinitionUnresolved
             | Self::ChamferSelectionUnresolved
             | Self::ChamferReferenceFaceAssumed
@@ -4546,6 +4573,7 @@ impl F3dLossCode {
             | Self::AssemblyExtendedTailAssumed
             | Self::AssemblyExtendedTypedTailAssumed
             | Self::AssemblyOperandNestedPathRetained
+            | Self::AssemblyOperandPathWordAssumed
             | Self::AssemblyOperandDescentAmbiguous
             | Self::AssemblyRootPathIdentitiesNative
             | Self::HistoryOnlyBodyOmitted => LossTaxonomy::FeatureHistoryRetained,
@@ -4786,6 +4814,7 @@ mod tests {
                 "sketch.curve-tail-marker-assumed",
                 "sketch.curve-tail-construction-assumed",
                 "feature.chamfer-edge-role-assumed",
+                "feature.chamfer-fixed-face-group-assumed",
                 "feature.chamfer-definition-unresolved",
                 "feature.chamfer-selection-unresolved",
                 "feature.chamfer-reference-face-assumed",
@@ -4858,6 +4887,7 @@ mod tests {
                 "assembly.extended-tail-assumed",
                 "assembly.extended-typed-tail-assumed",
                 "assembly.operand-nested-path-retained",
+                "assembly.operand-path-word-assumed",
                 "drawing.document-omitted",
                 "history.binding-budget-exceeded",
                 "history.binding-work-exceeded",
@@ -5449,6 +5479,8 @@ mod tests {
                 "design.body-display-name-ambiguous",
                 "work-plane.display-name-ambiguous",
                 "work-plane.display-name-undecoded",
+                "writer.integer-as-real",
+                "writer.design-record-omitted",
             ]
         );
     }

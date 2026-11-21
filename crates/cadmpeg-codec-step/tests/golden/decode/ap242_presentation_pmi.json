@@ -221,6 +221,14 @@
     },
     "source": {
       "attributes": {
+        "file_description.description.0": "AP242 presentation PMI",
+        "file_description.implementation_level": "2;1",
+        "file_name.author.0": "cadmpeg",
+        "file_name.name": "presentation-pmi",
+        "file_name.organization.0": "cadmpeg",
+        "file_name.preprocessor_version": "cadmpeg-step",
+        "file_name.time_stamp": "2026-07-14T00:00:00",
+        "file_schema.schema_identifiers.0": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
         "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
       },
       "identity": {

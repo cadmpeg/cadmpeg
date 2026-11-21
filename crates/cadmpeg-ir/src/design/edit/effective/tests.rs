@@ -349,6 +349,7 @@ fn binding(
         object_type: None,
         visible: None,
         channels: BTreeMap::new(),
+        native_ref: None,
     }
 }
 

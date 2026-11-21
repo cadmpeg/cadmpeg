@@ -26,8 +26,8 @@ pub(crate) mod named_parameter_scope_tail {
     pub(crate) const FIRST_REFERENCE: usize = 19;
     /// Offset of `middle_reference` (`u8`). Spec §3.1.
     pub(crate) const MIDDLE_REFERENCE: usize = 30;
-    /// Offset of `opaque_word` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const OPAQUE_WORD: usize = 31;
+    /// Offset of `previous_history_state_id` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PREVIOUS_HISTORY_STATE_ID: usize = 31;
     /// Offset of `lane_word` (`u32`, little-endian). Spec §3.1.
     pub(crate) const LANE_WORD: usize = 35;
     /// Offset of `lane_scalar` (`f64`, little-endian). Spec §3.1.
@@ -3659,8 +3659,8 @@ pub(crate) mod base_feature_null_reference_count {
     pub(crate) const NULL_REFERENCE: usize = 1;
     /// Offset of `null_reference_flag` (`u8`). Spec §3.1.
     pub(crate) const NULL_REFERENCE_FLAG: usize = 9;
-    /// Offset of `null_reference_zero` (`u8`). Spec §3.1.
-    pub(crate) const NULL_REFERENCE_ZERO: usize = 10;
+    /// Offset of `null_reference_terminal` (`u8`). Spec §3.1.
+    pub(crate) const NULL_REFERENCE_TERMINAL: usize = 10;
     /// Offset of `body_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const BODY_COUNT: usize = 11;
 }
@@ -11408,4 +11408,22 @@ pub(crate) mod motion_link_rotation_relation {
     pub(crate) const FIRST_ANGLE: usize = 107;
     /// Offset of `second_angle` (`f64`, little-endian). Spec §Assembly operands.
     pub(crate) const SECOND_ANGLE: usize = 115;
+}
+
+/// Byte offsets for the `sketch_item_geometry_member_run_head` record.
+///
+/// Spec §Records of a Sketch item. Record length 5 B.
+///
+/// ```text
+/// Offsets are relative to the end of the display name. The `N` member references and the closing reference follow. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
+/// ```
+pub(crate) mod sketch_item_geometry_member_run_head {
+    /// Record length in bytes. Spec §Records of a Sketch item.
+    pub(crate) const LEN: usize = 5;
+    /// Offset of `zero_byte` (`u8`). Spec §Records of a Sketch item.
+    pub(crate) const ZERO_BYTE: usize = 0;
+    /// Stated value of `zero_byte` (`u8`). Spec §Records of a Sketch item.
+    pub(crate) const ZERO_BYTE_VALUE: u8 = 0;
+    /// Offset of `member_count` (`u32`, little-endian). Spec §Records of a Sketch item.
+    pub(crate) const MEMBER_COUNT: usize = 1;
 }

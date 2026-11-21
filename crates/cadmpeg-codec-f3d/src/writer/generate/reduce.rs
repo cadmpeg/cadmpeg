@@ -12,7 +12,8 @@
 //! fallback for that stage:
 //! the native Design records, then every native record (W1), then the bodies
 //! that cannot be written alone, then every body. An empty design is the last
-//! form; only a failure to write that is returned.
+//! form; only a failure to write that is returned. A failure of the design
+//! scope's records takes one fallback: the design scope is not written.
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -86,6 +87,8 @@ pub(super) enum Stage {
     Brep,
     /// The Design, configuration and appearance streams.
     Design,
+    /// The records of the root definition's design scope.
+    NeutralDesign,
     /// The archive itself: nothing in the document can avoid it.
     Archive,
 }
@@ -112,6 +115,13 @@ impl Failure {
         }
     }
 
+    pub(super) fn neutral_design(error: CodecError) -> Self {
+        Self {
+            stage: Stage::NeutralDesign,
+            error,
+        }
+    }
+
     pub(super) fn archive(error: CodecError) -> Self {
         Self {
             stage: Stage::Archive,
@@ -125,6 +135,7 @@ pub(super) struct Reduction<'a> {
     ir: Cow<'a, CadIr>,
     losses: Vec<LossNote>,
     design_dropped: bool,
+    neutral_dropped: bool,
     /// The faces omitted from each opened body, charged at [`Self::finish`]
     /// for the bodies still written.
     opened: BTreeMap<String, Vec<String>>,
@@ -136,6 +147,7 @@ impl<'a> Reduction<'a> {
             ir: Cow::Borrowed(ir),
             losses: Vec::new(),
             design_dropped: false,
+            neutral_dropped: false,
             opened: BTreeMap::new(),
         }
     }
@@ -148,6 +160,20 @@ impl<'a> Reduction<'a> {
     /// `f3d` namespace and no fallback has dropped them.
     pub(super) fn writes_design(&self) -> bool {
         !self.design_dropped && self.ir.native.namespace("f3d").is_some()
+    }
+
+    /// Whether the root definition's design scope is written: no native
+    /// Design record is, the document holds the scope, and no fallback has
+    /// dropped it.
+    pub(super) fn writes_neutral_design(&self) -> bool {
+        !self.writes_design()
+            && !self.neutral_dropped
+            && super::design::root_scope(&self.ir).is_some()
+    }
+
+    /// Whether a fallback dropped the root definition's design scope.
+    pub(super) fn drops_neutral_design(&self) -> bool {
+        self.neutral_dropped
     }
 
     /// The losses, with `export:output.empty` when no geometry is written.
@@ -240,6 +266,7 @@ impl<'a> Reduction<'a> {
         let reason = error.to_string();
         let progressed = match stage {
             Stage::Archive => false,
+            Stage::NeutralDesign => self.drop_neutral_design(&reason),
             Stage::Brep => {
                 self.drop_unwritable_bodies(&reason, Stage::Brep, &writes_alone)?
                     || self.drop_native_design(&reason)
@@ -280,6 +307,8 @@ impl<'a> Reduction<'a> {
     }
 
     /// Neutral records the generator writes only from native Design records.
+    /// A row that a parameter of the written design scope restates is written
+    /// or charged with that parameter.
     fn drop_design_only_arenas(&mut self) {
         let model = &self.ir.model;
         if model.parameters.is_empty()
@@ -288,6 +317,14 @@ impl<'a> Reduction<'a> {
         {
             return;
         }
+        let restated = if self.writes_neutral_design() {
+            super::design::restated_parameters(&self.ir)
+                .into_iter()
+                .map(str::to_owned)
+                .collect()
+        } else {
+            BTreeSet::new()
+        };
         let model = &mut self.ir.to_mut().model;
         let parameters = std::mem::take(&mut model.parameters);
         let configurations = std::mem::take(&mut model.configurations);
@@ -297,7 +334,10 @@ impl<'a> Reduction<'a> {
             F3dLossCode::WriterParameterOmitted,
             "parameter",
             reason,
-            parameters.iter().map(|row| row.id.to_string()),
+            parameters
+                .iter()
+                .map(|row| row.id.to_string())
+                .filter(|id| !restated.contains(id)),
         ));
         self.losses.extend(named_loss(
             F3dLossCode::WriterConfigurationOmitted,
@@ -584,136 +624,151 @@ impl<'a> Reduction<'a> {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(&self.ir);
         let owners = ProceduralOwners::new(&self.ir);
-        let vertices = vertex_positions(geometry);
+        let mut vertices = vertex_positions(geometry);
         let curves = geometry
             .curves
             .iter()
             .map(|curve| (curve.id.as_str(), curve))
             .collect::<HashMap<_, _>>();
-        let mut stated = Vec::new();
-        let mut exchanged = HashSet::new();
         let mut tolerant = HashMap::<&VertexId, f64>::new();
-        let mut feet = Vec::new();
-        let mut invalid = Vec::new();
-        for edge_index in open {
-            let edge = &geometry.edges[edge_index];
-            let (Some(curve), Some(ends)) = (edge.curve(), edge.ends.as_ref()) else {
-                continue;
-            };
-            let (Some(&(start, start_tolerance)), Some(&(end, end_tolerance)), Some(carrier)) = (
-                vertices.get(ends.start.as_str()),
-                vertices.get(ends.end.as_str()),
-                curves.get(curve.as_str()),
-            ) else {
-                continue;
-            };
-            let fit = owners
-                .curve(curve)
-                .last()
-                .and_then(|construction| construction.cache_fit_tolerance())
-                .map(FitTolerance::get);
-            let edge_tolerance = edge.tolerance.map(PositiveReal::get);
-            let allowance = coincidence_allowance(
-                linear,
-                &[edge_tolerance, start_tolerance, end_tolerance, fit],
-            );
-            // On a bounded curve the start inverts from the domain's start
-            // and the end from its end, the ends validation checks an
-            // unranged edge at: on a curve shorter than the allowance, or
-            // closed, the end would otherwise invert to the start's parameter.
-            let domain = cadmpeg_ir::eval::bounded_curve_domain(carrier);
-            let parameters = |tolerance| -> Result<Option<[f64; 2]>, CodecError> {
-                let invert = |point, seed| {
-                    cadmpeg_ir::eval::model_curve_parameter_near_point_in_index_with_tolerance(
-                        &ctx, &index, curve, point, seed, tolerance,
-                    )
-                    .map(|parameter| parameter.map(cadmpeg_ir::scalar::FiniteReal::get))
+        let (stated, exchanged, feet, invalid) = loop {
+            let mut stated = Vec::new();
+            let mut exchanged = HashSet::new();
+            let mut feet = Vec::new();
+            let mut invalid = Vec::new();
+            let mut raised_any = false;
+            for &edge_index in &open {
+                let edge = &geometry.edges[edge_index];
+                let (Some(curve), Some(ends)) = (edge.curve(), edge.ends.as_ref()) else {
+                    continue;
                 };
-                let Some(first) = invert(start, domain.map_or(0.0, |[low, _]| low))? else {
-                    return Ok(None);
+                let (Some(&(start, start_tolerance)), Some(&(end, end_tolerance)), Some(carrier)) = (
+                    vertices.get(ends.start.as_str()),
+                    vertices.get(ends.end.as_str()),
+                    curves.get(curve.as_str()),
+                ) else {
+                    continue;
                 };
-                Ok(invert(end, domain.map_or(first, |[_, high]| high))?.map(|last| [first, last]))
-            };
-            let gap = |point: Point3, parameter| match cadmpeg_ir::eval::model_curve_point_by_id(
-                EvaluationAdmission::Decode(&ctx),
-                &index,
-                curve,
-                parameter,
-            ) {
-                Ok(foot) => Ok(Some(foot.get().distance(point))),
-                Err(EvaluationFailure::ResourceLimit(limit)) => {
-                    Err(CodecError::ResourceLimit(limit))
-                }
-                Err(
-                    EvaluationFailure::NoValue
-                    | EvaluationFailure::NonFinite(_)
-                    | EvaluationFailure::WorkExhausted,
-                ) => Ok(None),
-            };
-            let solved = carrier.geometry.solved();
-            let line = matches!(solved, Some(SolvedCurveGeometry::Line(_)));
-            let conic = matches!(
-                solved,
-                Some(SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_))
-            );
-            let (within, [first, last]) = match parameters(allowance)? {
-                Some(range) => (true, range),
-                None if line || conic => match parameters(f64::MAX)? {
-                    Some(range) => (false, range),
+                let fit = owners
+                    .curve(curve)
+                    .last()
+                    .and_then(|construction| construction.cache_fit_tolerance())
+                    .map(FitTolerance::get);
+                let edge_tolerance = edge.tolerance.map(PositiveReal::get);
+                let allowance = coincidence_allowance(
+                    linear,
+                    &[edge_tolerance, start_tolerance, end_tolerance, fit],
+                );
+                // On a bounded curve the start inverts from the domain's start
+                // and the end from its end, the ends validation checks an
+                // unranged edge at: on a curve shorter than the allowance, or
+                // closed, the end would otherwise invert to the start's parameter.
+                let domain = cadmpeg_ir::eval::bounded_curve_domain(carrier);
+                let parameters = |tolerance| -> Result<Option<[f64; 2]>, CodecError> {
+                    let invert = |point, seed| {
+                        cadmpeg_ir::eval::model_curve_parameter_near_point_in_index_with_tolerance(
+                            &ctx, &index, curve, point, seed, tolerance,
+                        )
+                        .map(|parameter| parameter.map(cadmpeg_ir::scalar::FiniteReal::get))
+                    };
+                    let Some(first) = invert(start, domain.map_or(0.0, |[low, _]| low))? else {
+                        return Ok(None);
+                    };
+                    Ok(invert(end, domain.map_or(first, |[_, high]| high))?
+                        .map(|last| [first, last]))
+                };
+                let gap = |point: Point3, parameter| match cadmpeg_ir::eval::model_curve_point_by_id(
+                    EvaluationAdmission::Decode(&ctx),
+                    &index,
+                    curve,
+                    parameter,
+                ) {
+                    Ok(foot) => Ok(Some(foot.get().distance(point))),
+                    Err(EvaluationFailure::ResourceLimit(limit)) => {
+                        Err(CodecError::ResourceLimit(limit))
+                    }
+                    Err(
+                        EvaluationFailure::NoValue
+                        | EvaluationFailure::NonFinite(_)
+                        | EvaluationFailure::WorkExhausted,
+                    ) => Ok(None),
+                };
+                let solved = carrier.geometry.solved();
+                let line = matches!(solved, Some(SolvedCurveGeometry::Line(_)));
+                let conic = matches!(
+                    solved,
+                    Some(SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_))
+                );
+                let (within, [first, last]) = match parameters(allowance)? {
+                    Some(range) => (true, range),
+                    None if line || conic => match parameters(f64::MAX)? {
+                        Some(range) => (false, range),
+                        None => continue,
+                    },
                     None => continue,
-                },
-                None => continue,
-            };
-            let reach = [
-                (&ends.start, start, start_tolerance, first),
-                (&ends.end, end, end_tolerance, last),
-            ];
-            let mut range = [first, last];
-            if last <= first && conic {
-                range[1] += std::f64::consts::TAU;
-            }
-            let exchange = line && last < first;
-            if exchange {
-                if self.names_edge_uses(edge) {
+                };
+                let reach = [
+                    (&ends.start, start, start_tolerance, first),
+                    (&ends.end, end, end_tolerance, last),
+                ];
+                let mut range = [first, last];
+                if last <= first && conic {
+                    range[1] += std::f64::consts::TAU;
+                }
+                let exchange = line && last < first;
+                if exchange {
+                    if self.names_edge_uses(edge) {
+                        continue;
+                    }
+                    range = [last, first];
+                }
+                if range[1] <= range[0] {
                     continue;
                 }
-                range = [last, first];
-            }
-            if range[1] <= range[0] {
-                continue;
-            }
-            let Ok(carrier) = EdgeCarrier::new(Some(curve.clone()), Some(range)) else {
-                continue;
-            };
-            let mut off = Vec::new();
-            for (vertex, point, own, parameter) in reach {
-                let Some(distance) = gap(point, parameter)? else {
+                let Ok(carrier) = EdgeCarrier::new(Some(curve.clone()), Some(range)) else {
                     continue;
                 };
-                if !within && distance > allowance {
-                    off.push(format!(
-                        "vertex {vertex} lies {distance:.6} mm off its curve"
-                    ));
-                } else if within
-                    && distance > coincidence_allowance(linear, &[edge_tolerance, own, fit])
-                {
-                    let raised = tolerant.entry(vertex).or_insert(distance);
-                    *raised = raised.max(distance);
+                let mut off = Vec::new();
+                for (vertex, point, own, parameter) in reach {
+                    let Some(distance) = gap(point, parameter)? else {
+                        continue;
+                    };
+                    if !within && distance > allowance {
+                        off.push(format!(
+                            "vertex {vertex} lies {distance:.6} mm off its curve"
+                        ));
+                    } else if within
+                        && distance > coincidence_allowance(linear, &[edge_tolerance, own, fit])
+                    {
+                        let raised = tolerant.entry(vertex).or_insert(distance);
+                        if distance > *raised {
+                            *raised = distance;
+                        }
+                        if own.is_none_or(|current| distance > current) {
+                            if let Some((_, entry)) = vertices.get_mut(vertex.as_str()) {
+                                *entry = Some(distance);
+                                raised_any = true;
+                            }
+                        }
+                    }
                 }
+                if !off.is_empty() {
+                    feet.push(F3dLossCode::WriterGeometryOmitted.note(format!(
+                        "edge {}: {}; its range is stated from the vertices' feet on the curve",
+                        edge.id,
+                        off.join(", ")
+                    )));
+                    invalid.push(edge.id.to_string());
+                }
+                if exchange {
+                    exchanged.insert(edge.id.clone());
+                }
+                stated.push((edge_index, carrier));
             }
-            if !off.is_empty() {
-                feet.push(F3dLossCode::WriterGeometryOmitted.note(format!(
-                    "edge {}: {}; its range is stated from the vertices' feet on the curve",
-                    edge.id,
-                    off.join(", ")
-                )));
-                invalid.push(edge.id.to_string());
+            if !raised_any {
+                break (stated, exchanged, feet, invalid);
             }
-            if exchange {
-                exchanged.insert(edge.id.clone());
-            }
-            stated.push((edge_index, carrier));
-        }
+        };
         drop(index);
         let tolerant = tolerant
             .into_iter()
@@ -1309,6 +1364,19 @@ impl<'a> Reduction<'a> {
             &format!("of the Design stream, because the source-less generator cannot write them consistently ({reason})"),
             dropped,
         ));
+        true
+    }
+
+    /// Write no design scope: every design scope, container, feature and
+    /// parameter is charged by name, also where the document's v10 design
+    /// records keep the export wrapper from charging the design arenas.
+    fn drop_neutral_design(&mut self, reason: &str) -> bool {
+        if !self.writes_neutral_design() {
+            return false;
+        }
+        self.neutral_dropped = true;
+        self.losses
+            .extend(super::design::dropped_records(&self.ir, reason));
         true
     }
 
@@ -1933,7 +2001,7 @@ fn mentions(value: &Value, removed: &BTreeSet<String>) -> bool {
 }
 
 /// One loss listing every id of a dropped family, sorted after the count.
-fn named_loss<I: IntoIterator<Item = String>>(
+pub(super) fn named_loss<I: IntoIterator<Item = String>>(
     code: F3dLossCode,
     family: &str,
     reason: &str,

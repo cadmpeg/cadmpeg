@@ -179,6 +179,34 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     if let Some(assembly) = assembly {
         assembly.apply(&mut decoded);
     }
+    // The root is stated once, after the assembly projection has added its
+    // definitions, so an assembly states its own root and no bare part root.
+    // A scoped root lists only the bodies of its current states. The bodies
+    // of a configuration that is not active are stated by that
+    // configuration's evaluation (§5.4) and stay in the geometry unlisted,
+    // as a scoped CATIA or Rhino root leaves its own (interim, errata A1).
+    // Local digests are stamped after the root is complete.
+    let current = (!decoded.ir.design.scopes.is_empty()).then(|| {
+        decoded
+            .ir
+            .design
+            .scopes
+            .iter()
+            .flat_map(|scope| &scope.current)
+            .flat_map(|state| &state.bodies)
+            .cloned()
+            .collect::<std::collections::HashSet<_>>()
+    });
+    if let Some(root) = decoded.ir.state_root_definition(
+        ctx,
+        root_definition_id(),
+        cadmpeg_ir::products::ExternalDocument::default(),
+    )? {
+        if let Some(current) = &current {
+            root.bodies.retain(|body| current.contains(body));
+        }
+    }
+    stamp_local_digests(ctx, &mut decoded.ir)?;
     Ok(decoded)
 }
 
@@ -350,29 +378,6 @@ fn decode_result(
         source_fidelity.retain_unknown_records("source", [source_image])?;
     }
     retention.apply(&mut source_fidelity)?;
-    // A scoped root lists only the bodies of its current states. The bodies
-    // of a configuration that is not active are stated by that
-    // configuration's evaluation (§5.4) and stay in the geometry unlisted,
-    // as a scoped CATIA or Rhino root leaves its own (interim, errata A1).
-    let current = (!ir.design.scopes.is_empty()).then(|| {
-        ir.design
-            .scopes
-            .iter()
-            .flat_map(|scope| &scope.current)
-            .flat_map(|state| &state.bodies)
-            .cloned()
-            .collect::<std::collections::HashSet<_>>()
-    });
-    if let Some(root) = ir.state_root_definition(
-        ctx,
-        root_definition_id(),
-        cadmpeg_ir::products::ExternalDocument::default(),
-    )? {
-        if let Some(current) = &current {
-            root.bodies.retain(|body| current.contains(body));
-        }
-    }
-    stamp_local_digests(ctx, &mut ir)?;
     Ok(Decoded {
         ir,
         body,
@@ -3047,6 +3052,7 @@ fn ensure_display_appearance(
         base_color: Some(definition.color),
         properties: BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     });
     Ok(id)
 }
@@ -3138,6 +3144,7 @@ fn retain_unresolved_appearance(
                 base_color: Some(color),
                 properties: BTreeMap::new(),
                 textures: Vec::new(),
+                native_ref: None,
             });
     }
     let binding_id = cadmpeg_ir::ids::AppearanceBindingId::compose(
@@ -3164,6 +3171,7 @@ fn retain_unresolved_appearance(
         object_type: Some(unresolved.owner_class.clone()),
         visible: None,
         channels: unresolved_binding_channels(unresolved),
+        native_ref: None,
     });
 }
 
@@ -3344,6 +3352,7 @@ fn push_display_meshes(
                     object_type: Some("DisplayFace".into()),
                     visible: None,
                     channels: display_binding_channels(definition),
+                    native_ref: None,
                 });
             }
             let mesh = display_face.mesh;
@@ -3399,6 +3408,7 @@ fn build_geometry_ir(
     admitted_entities: &mut u64,
     part: bool,
 ) -> Result<BuiltIr, CodecError> {
+    let length_unit = crate::design_v11::length_unit(scan);
     let DecodedBrep {
         metadata_header,
         mut brep,
@@ -3559,7 +3569,7 @@ fn build_geometry_ir(
         );
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
-    let mut held_handles = Vec::new();
+    let mut held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::default();
     crate::resolved_features::profiles::project_marker_backed_sketches(
         ctx,
         &mut ir.model.features,
@@ -3974,6 +3984,7 @@ fn build_geometry_ir(
                 base_color: Some(face_color.color),
                 textures: Vec::new(),
                 properties: BTreeMap::new(),
+                native_ref: None,
             });
         }
         if let Some(target) = face_color.target {
@@ -4003,6 +4014,7 @@ fn build_geometry_ir(
                     object_type: Some("Face".into()),
                     visible: None,
                     channels: BTreeMap::new(),
+                    native_ref: None,
                 });
             }
         }
@@ -4032,6 +4044,7 @@ fn build_geometry_ir(
             base_color: Some(definition.color),
             textures: Vec::new(),
             properties: BTreeMap::new(),
+            native_ref: None,
         });
     }
     let push = push_display_meshes(
@@ -4164,6 +4177,7 @@ fn build_geometry_ir(
             object_type: Some("Native scoped face".into()),
             visible: None,
             channels: display_binding_channels(definition),
+            native_ref: None,
         });
     }
     let mut annotation_builder = AnnotationBuilder::resume(annotations);
@@ -4271,14 +4285,13 @@ fn build_geometry_ir(
                     faces: &brep.native_face_identities,
                     bodies: &brep.native_body_identities,
                 },
+                length: length_unit,
                 rollback,
             },
             &mut pmi_losses,
         )?;
     }
-    // Sort arenas for the order-sensitive loss scans that follow; the local
-    // digests are stamped once, in `decode_result`, after native unknown
-    // records are attached.
+    // Sort arenas for the order-sensitive loss scans that follow.
     ir.finalize();
     stamp_sketch_baseline(ctx, &mut ir, &native.feature_input_lanes)?;
     Ok((ir, annotations, unknowns, retention, pmi_losses))
@@ -4691,6 +4704,7 @@ fn build_metadata_ir(
     transfer_display: bool,
     part: bool,
 ) -> Result<BuiltIr, CodecError> {
+    let length_unit = crate::design_v11::length_unit(scan);
     let mut ir = CadIr::empty();
     let mut retention = retention::Retention::default();
     let mut unknowns = Vec::new();
@@ -4876,7 +4890,7 @@ fn build_metadata_ir(
         );
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
-    let mut held_handles = Vec::new();
+    let mut held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::default();
     crate::resolved_features::profiles::project_marker_backed_sketches(
         ctx,
         &mut ir.model.features,
@@ -5161,14 +5175,13 @@ fn build_metadata_ir(
                     faces: &[],
                     bodies: &[],
                 },
+                length: length_unit,
                 rollback,
             },
             &mut pmi_losses,
         )?;
     }
-    // Sort arenas for the order-sensitive loss scans that follow; the local
-    // digests are stamped once, in `decode_result`, after native unknown
-    // records are attached.
+    // Sort arenas for the order-sensitive loss scans that follow.
     ir.finalize();
     stamp_sketch_baseline(ctx, &mut ir, &native.feature_input_lanes)?;
     Ok((ir, annotations, unknowns, retention, pmi_losses))
@@ -6158,6 +6171,7 @@ mod digest_tests {
             base_color: None,
             properties: BTreeMap::new(),
             textures: Vec::new(),
+            native_ref: None,
         }
     }
 
@@ -6170,6 +6184,7 @@ mod digest_tests {
             object_type: None,
             visible: None,
             channels: BTreeMap::new(),
+            native_ref: None,
         }
     }
 
