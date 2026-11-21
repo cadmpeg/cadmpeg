@@ -8,9 +8,8 @@ use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::dressup::{StandardSize, Thread, ThreadLength, ThreadSpec};
 use cadmpeg_ir::design::options::{Hand, NativeOption};
 use cadmpeg_ir::design::selection::{Anchor, Picks, SetSelection};
-use cadmpeg_ir::features::{
-    CosmeticThreadExtent, FaceSelection, FeatureOperation as LegacyOperation, NativeSelections,
-};
+use cadmpeg_ir::features::selections::{FaceSelection, NativeSelections};
+use cadmpeg_ir::features::{CosmeticThreadExtent, FeatureOperation as LegacyOperation};
 use cadmpeg_ir::scalar::PositiveLength;
 use cadmpeg_ir::CadIr;
 

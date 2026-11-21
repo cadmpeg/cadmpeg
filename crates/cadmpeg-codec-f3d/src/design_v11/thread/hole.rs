@@ -11,12 +11,12 @@ use cadmpeg_ir::design::ops::dressup::{
 use cadmpeg_ir::design::ops::shared::Limit;
 use cadmpeg_ir::design::options::NativeOptions;
 use cadmpeg_ir::design::selection::{Anchor, OrderedSelection, Picks};
+use cadmpeg_ir::features::extents::LinearTermination;
 use cadmpeg_ir::features::holes::{
     HoleBottom as LegacyBottom, HoleConstruction, HoleKind, HolePlacement,
 };
-use cadmpeg_ir::features::{
-    Feature, FeatureOperation as LegacyOperation, LinearTermination, NativeSelections,
-};
+use cadmpeg_ir::features::selections::NativeSelections;
+use cadmpeg_ir::features::{Feature, FeatureOperation as LegacyOperation};
 use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::units::UnitVector3;
 
@@ -151,9 +151,9 @@ pub(super) fn operation(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cadmpeg_ir::features::{
-        DistinctMembers, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
-    };
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::selections::DistinctMembers;
+    use cadmpeg_ir::features::{FeatureContent, FeatureDefinition, FeatureId};
     use cadmpeg_ir::scalar::{NonZeroLength, PositiveLength};
 
     fn source(diameter: Option<PositiveLength>) -> Feature {

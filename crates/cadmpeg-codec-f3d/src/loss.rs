@@ -5200,6 +5200,7 @@ mod tests {
                 "feature.hole-parameters-independent-assumed",
                 "feature.hole-shape-partial-assumed",
                 "feature.hole-extent-leading-word-assumed",
+                "feature.hole-thread-minor-diameter-assumed",
                 "feature.hole-tapped-diameter-stored",
                 "feature.hole-taper-tapped-bore-cylindrical",
                 "feature.base-feature-null-flag-assumed",

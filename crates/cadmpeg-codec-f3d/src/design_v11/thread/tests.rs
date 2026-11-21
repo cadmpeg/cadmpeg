@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use cadmpeg_ir::features::selections::{GeneratedFaceRef, NonEmptyMembers, SelectionReference};
+use cadmpeg_ir::features::FeatureId;
 
 pub(super) fn construction() -> DesignThreadConstruction {
     serde_json::from_value(serde_json::json!({
@@ -87,14 +89,11 @@ fn compact_thread_class_comes_from_its_fixed_prefix() {
 #[test]
 fn thread_selection_without_a_native_face_reference_stays_unresolved() {
     let generated = FaceSelection::Generated {
-        faces: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::GeneratedFaceRef {
-            feature: cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#thread").unwrap(),
-            local_id: cadmpeg_ir::features::SelectionReference::new("face#1".to_owned()).unwrap(),
+        faces: NonEmptyMembers::one(GeneratedFaceRef {
+            feature: FeatureId::mint("f3d:model:feature#thread").unwrap(),
+            local_id: SelectionReference::new("face#1".to_owned()).unwrap(),
         }),
-        native: cadmpeg_ir::features::SelectionReference::new(
-            "f3d:test:face-selection#10".to_owned(),
-        )
-        .unwrap(),
+        native: SelectionReference::new("f3d:test:face-selection#10".to_owned()).unwrap(),
     };
     for face in [
         FaceSelection::Unresolved,
