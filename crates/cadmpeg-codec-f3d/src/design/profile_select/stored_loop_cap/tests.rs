@@ -257,3 +257,73 @@ fn a_reversed_coincident_boundary_curve_uses_the_certified_interval() {
     );
     assert_eq!(regions.len(), 2);
 }
+
+#[test]
+fn counted_member_boundary_certificate_keeps_an_unsampled_conic() {
+    use cadmpeg_ir::features::SketchProfileBoundaryUse;
+    use cadmpeg_ir::geometry::DirectedParameterRange;
+    use cadmpeg_ir::scalar::{Angle, Length};
+
+    let sketch = xy_sketch();
+    let entities = [
+        SketchEntity::new(
+            SketchEntityId::mint("synthetic:test:curve#parabola").unwrap(),
+            sketch.id.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Parabola {
+                vertex: Point2::new(0.0, 0.0),
+                axis_angle: Angle::new(0.0).unwrap(),
+                focal_length: Length::new(1.0).unwrap(),
+                bounds: Some([-2.0, 2.0]),
+            })
+            .unwrap(),
+        ),
+        SketchEntity::new(
+            SketchEntityId::mint("synthetic:test:curve#chord").unwrap(),
+            sketch.id.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: Point2::new(1.0, 2.0),
+                end: Point2::new(1.0, -2.0),
+            })
+            .unwrap(),
+        ),
+    ];
+    let boundary = entities
+        .iter()
+        .zip([[-2.0, 2.0], [0.0, 1.0]])
+        .map(|(entity, range)| SketchProfileBoundaryUse {
+            entity: entity.id().clone(),
+            parameter_range: DirectedParameterRange::new(range).unwrap(),
+            reversed: true,
+        })
+        .collect::<Vec<_>>();
+    let candidate = PlanarProfileRef::sketch_regions(
+        sketch.id.clone(),
+        vec![SketchProfileRegion::trimmed(boundary.clone(), Vec::new()).unwrap()],
+    )
+    .unwrap();
+    let named = entities
+        .iter()
+        .map(|entity| vec![entity.id().clone()])
+        .collect::<Vec<_>>();
+    crate::test_support::with_decode_context(|ctx| {
+        assert!(
+            crate::design::geometry::boundary_use_samples(&boundary[0], &entities, 8, ctx,)
+                .unwrap()
+                .is_none()
+        );
+        let work = ProfileGeometryWork::new();
+        let resolution = ScopedExtrudeProfileResolution {
+            entities: &entities,
+            spatial_entities: &[],
+            histories: &[],
+            linear_tolerance: TOLERANCE,
+            angular_tolerance: TOLERANCE,
+            profile_work: &work,
+            ctx,
+        };
+        let (selected, losses) = super::certify_boundaries(candidate.clone(), &named, resolution)
+            .expect("each counted member bounds the certified region");
+        assert_eq!(selected, candidate);
+        assert!(losses.is_empty());
+    });
+}

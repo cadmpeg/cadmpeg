@@ -56,20 +56,17 @@ pub(super) fn certified_regions_bounded_by(
         BooleanOp::Cut => cap_regions::compact::removed_candidate(sketch, scoped, states, sweep)?,
         _ => cap_regions::compact::added_candidate(sketch, scoped, states, sweep)?,
     };
-    let Some(candidate) = candidate else {
-        return Ok(None);
-    };
+    Ok(candidate.and_then(|candidate| certify_boundaries(candidate, curves, scoped)))
+}
+
+fn certify_boundaries(
+    candidate: PlanarProfileRef,
+    curves: &[Vec<SketchEntityId>],
+    scoped: ScopedExtrudeProfileResolution<'_>,
+) -> Option<(PlanarProfileRef, Vec<F3dLossCode>)> {
     let PlanarProfileRef::SketchRegions { regions, .. } = &candidate else {
-        return Ok(None);
+        return None;
     };
-    if !cap_regions::overlap::regions_are_disjoint(
-        regions,
-        scoped.entities,
-        scoped.linear_tolerance,
-        scoped.ctx,
-    )? {
-        return Ok(None);
-    }
     let mut coincident_boundary = false;
     let mut partial_entry = false;
     for pieces in curves {
@@ -104,7 +101,7 @@ pub(super) fn certified_regions_bounded_by(
                 })
         });
         if !overlaps {
-            return Ok(None);
+            return None;
         }
         coincident_boundary = true;
     }
@@ -115,7 +112,7 @@ pub(super) fn certified_regions_bounded_by(
     if coincident_boundary {
         losses.push(F3dLossCode::FeatureProfileCoincidentBoundaryAssumed);
     }
-    Ok(Some((candidate, losses)))
+    Some((candidate, losses))
 }
 
 /// Whether `curve` has a use in the exterior or a hole ring of a region.

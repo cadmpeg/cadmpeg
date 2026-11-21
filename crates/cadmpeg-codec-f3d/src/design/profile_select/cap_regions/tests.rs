@@ -1463,23 +1463,14 @@ fn selected_nested_interiors_without_a_hole_stay_native() {
     else {
         panic!("nested region with a hole resolves");
     };
-    let entities: Vec<_> = outer_entities.into_iter().chain(inner_entities).collect();
-    crate::test_support::with_decode_context(|ctx| {
-        assert!(
-            super::overlap::regions_are_disjoint(&selected, &entities, TOLERANCE, ctx).unwrap()
-        );
-        let mut overlapping = selected.clone();
-        let SketchProfileRegion::Trimmed {
-            hole_boundaries, ..
-        } = &mut overlapping[0]
-        else {
-            panic!("trimmed region");
-        };
-        hole_boundaries.clear();
-        assert!(
-            !super::overlap::regions_are_disjoint(&overlapping, &entities, TOLERANCE, ctx).unwrap()
-        );
-    });
+    assert!(
+        matches!(&selected[0], SketchProfileRegion::Trimmed { hole_boundaries, .. }
+        if hole_boundaries.len() == 1)
+    );
+    assert!(
+        matches!(&selected[1], SketchProfileRegion::Trimmed { hole_boundaries, .. }
+        if hole_boundaries.is_empty())
+    );
     sampled[0].nested.clear();
     assert!(trimmed_selection(&sampled, &[0, 1], TOLERANCE).is_none());
 }
