@@ -433,6 +433,8 @@ struct Faces<'a> {
     shapes: Vec<(&'a FaceId, Shape)>,
     /// Each edge's coedges with their faces.
     edges: HashMap<&'a EdgeId, Vec<(&'a CoedgeId, &'a FaceId)>>,
+    /// The model points of each edge's start and end vertex.
+    ends: HashMap<&'a EdgeId, [[f64; 3]; 2]>,
     linear: f64,
     angular: f64,
 }
@@ -495,9 +497,31 @@ impl<'a> Faces<'a> {
                     .push((&coedge.id, *face));
             }
         }
+        let points = geometry
+            .points
+            .iter()
+            .map(|at| (&at.id, point(at.position().get())))
+            .collect::<HashMap<_, _>>();
+        let vertices = geometry
+            .vertices
+            .iter()
+            .filter_map(|vertex| Some((&vertex.id, *points.get(&vertex.point)?)))
+            .collect::<HashMap<_, _>>();
+        let ends = geometry
+            .edges
+            .iter()
+            .filter_map(|edge| {
+                let ends = edge.ends.as_ref()?;
+                Some((
+                    &edge.id,
+                    [*vertices.get(&ends.start)?, *vertices.get(&ends.end)?],
+                ))
+            })
+            .collect();
         Self {
             shapes,
             edges,
+            ends,
             linear,
             angular,
         }
@@ -506,7 +530,9 @@ impl<'a> Faces<'a> {
     /// Row 10: the start cap, the end cap at `distance` mm and one side face
     /// per loop entry of the sketch on its origin plane, each the one face
     /// of its shape (a plane for a line, a cylinder for a circle or an
-    /// arc); `None` where a face is missing, ambiguous or left over.
+    /// arc); where several faces have the shape of a line or an arc, the
+    /// one whose edge on the start cap runs between the curve's ends.
+    /// `None` where a face is missing, ambiguous or left over.
     fn matched(
         &self,
         sketch: &PlannedSketch<'_>,
@@ -533,38 +559,65 @@ impl<'a> Faces<'a> {
         };
         let start_cap = cap(scale(normal, -1.0), 0.0)?;
         let end_cap = cap(normal, distance)?;
+        let mut on_start_cap = HashMap::<&'a FaceId, Vec<&'a EdgeId>>::new();
+        for (edge, coedges) in &self.edges {
+            if coedges.iter().any(|(_, face)| *face == start_cap) {
+                for (_, face) in coedges.iter().filter(|(_, face)| *face != start_cap) {
+                    let shared = on_start_cap.entry(*face).or_default();
+                    if !shared.contains(edge) {
+                        shared.push(*edge);
+                    }
+                }
+            }
+        }
+        let near = |a: [f64; 3], b: [f64; 3]| {
+            let offset = sub(a, b);
+            dot(offset, offset).sqrt() <= self.linear
+        };
+        let between = |face: &FaceId, [a, b]: [[f64; 3]; 2]| {
+            on_start_cap.get(face).is_some_and(|shared| {
+                shared.iter().any(|edge| {
+                    self.ends.get(edge).is_some_and(|&[p, q]| {
+                        (near(p, a) && near(q, b)) || (near(p, b) && near(q, a))
+                    })
+                })
+            })
+        };
         let mut sides = Vec::new();
         for (profile_loop, at) in entries(profile) {
             let curve = sketch.curves.get(profile_loop.entries[at].curve)?;
-            let side = match curve.geometry {
+            let (shaped, ends) = match curve.geometry {
                 CurveGeometry::Line { start, end } => {
                     let (a, b) = (model(start)?, model(end)?);
-                    self.one(|shape| match shape {
+                    let shaped = self.all(|shape| match shape {
                         Shape::Plane { origin, normal: n } => {
                             across(n, normal)
                                 && dot(sub(a, origin), n).abs() <= self.linear
                                 && dot(sub(b, origin), n).abs() <= self.linear
                         }
                         Shape::Cylinder { .. } | Shape::Other => false,
-                    })?
+                    });
+                    (shaped, Some([a, b]))
                 }
-                CurveGeometry::Circle { center, radius }
-                | CurveGeometry::Arc { center, radius, .. } => {
-                    let c = model(center)?;
-                    let radius = radius * MM_PER_CM;
-                    self.one(|shape| match shape {
-                        Shape::Cylinder {
-                            origin,
-                            axis,
-                            radius: r,
-                        } => {
-                            (dot(axis, normal).abs() - 1.0).abs() <= self.angular
-                                && distance_to_axis(c, origin, axis) <= self.linear
-                                && (r - radius).abs() <= self.linear
-                        }
-                        Shape::Plane { .. } | Shape::Other => false,
-                    })?
+                CurveGeometry::Circle { center, radius } => {
+                    (self.on_cylinder(model(center)?, radius, normal), None)
                 }
+                CurveGeometry::Arc {
+                    center,
+                    start,
+                    end,
+                    radius,
+                    ..
+                } => (
+                    self.on_cylinder(model(center)?, radius, normal),
+                    Some([model(start)?, model(end)?]),
+                ),
+            };
+            let side = if let [only] = shaped[..] {
+                only
+            } else {
+                let ends = ends?;
+                unique(shaped.into_iter().filter(|face| between(face, ends)))?
             };
             sides.push(side);
         }
@@ -577,13 +630,10 @@ impl<'a> Faces<'a> {
         let links = sides
             .iter()
             .map(|side| {
-                let shared = self
-                    .edges
-                    .values()
-                    .filter(|coedges| {
-                        coedges.iter().any(|(_, face)| face == side)
-                            && coedges.iter().any(|(_, face)| *face == start_cap)
-                    })
+                let shared = on_start_cap
+                    .get(side)?
+                    .iter()
+                    .filter_map(|edge| self.edges.get(edge))
                     .flat_map(|coedges| {
                         coedges
                             .iter()
@@ -604,10 +654,41 @@ impl<'a> Faces<'a> {
 
     /// The one face whose shape `test` accepts.
     fn one(&self, test: impl Fn(Shape) -> bool) -> Option<&'a FaceId> {
-        let mut found = self.shapes.iter().filter(|(_, shape)| test(*shape));
-        let (face, _) = found.next()?;
-        found.next().is_none().then_some(*face)
+        unique(self.all(test).into_iter())
     }
+
+    /// The faces whose shape `test` accepts.
+    fn all(&self, test: impl Fn(Shape) -> bool) -> Vec<&'a FaceId> {
+        self.shapes
+            .iter()
+            .filter(|(_, shape)| test(*shape))
+            .map(|(face, _)| *face)
+            .collect()
+    }
+
+    /// The faces on the cylinder of radius `radius` cm about the model
+    /// point `center` along `normal`.
+    fn on_cylinder(&self, center: [f64; 3], radius: f64, normal: [f64; 3]) -> Vec<&'a FaceId> {
+        let radius = radius * MM_PER_CM;
+        self.all(|shape| match shape {
+            Shape::Cylinder {
+                origin,
+                axis,
+                radius: r,
+            } => {
+                (dot(axis, normal).abs() - 1.0).abs() <= self.angular
+                    && distance_to_axis(center, origin, axis) <= self.linear
+                    && (r - radius).abs() <= self.linear
+            }
+            Shape::Plane { .. } | Shape::Other => false,
+        })
+    }
+}
+
+/// The only item of `items`.
+fn unique<T>(mut items: impl Iterator<Item = T>) -> Option<T> {
+    let found = items.next()?;
+    items.next().is_none().then_some(found)
 }
 
 fn point(point: cadmpeg_ir::math::Point3) -> [f64; 3] {

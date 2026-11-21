@@ -3,7 +3,7 @@
 //! loops of lines and arcs (f3d.md §3.1, "Side-face walk", "Walk of a loop
 //! of lines" and the curve record of a side face).
 
-use std::f64::consts::{FRAC_PI_2, PI, TAU};
+use std::f64::consts::{FRAC_PI_2, FRAC_PI_4, PI, TAU};
 
 use cadmpeg_ir::design::ops::sketch::PlanarCurve;
 use cadmpeg_ir::design::selection::PrincipalEntity;
@@ -447,9 +447,206 @@ fn holes_clear_of_the_arcs_are_written() {
     assert_eq!(profile(&apart, TOLERANCE).map(|loops| loops.len()), Ok(3));
 }
 
+/// A major arc closed by two lines through its centre: the polygon of its
+/// ends and the centre runs clockwise, and the arc's segment turns the loop
+/// counterclockwise.
+#[test]
+fn a_major_arc_turns_its_loop_by_its_segment() {
+    let id = feature_id("pie");
+    let sketch = sketch_id("pie");
+    let angles = [FRAC_PI_4, 7.0 * FRAC_PI_4];
+    let (start, end) = (
+        at([0.0, 0.0], 1.0, angles[0]),
+        at([0.0, 0.0], 1.0, angles[1]),
+    );
+    let pie = drawn(
+        &id,
+        &sketch,
+        &[
+            Draw::Arc {
+                center: [0.0, 0.0],
+                radius: 1.0,
+                angles,
+            },
+            Draw::Line(end, [0.0, 0.0]),
+            Draw::Line([0.0, 0.0], start),
+        ],
+    );
+    assert_eq!(
+        profile(&pie, TOLERANCE),
+        Ok(vec![exterior(vec![
+            entry(2, false),
+            entry(0, false),
+            entry(1, false)
+        ])])
+    );
+}
+
+/// A round hole in the end of a slot, beyond the chord of its arc, is
+/// inside the slot.
+#[test]
+fn a_hole_beyond_the_chord_of_an_arc_is_inside_the_loop() {
+    let id = feature_id("slotend");
+    let sketch = sketch_id("slotend");
+    let curves = [
+        slot([0.0, 0.0], 4.0, 3.0).to_vec(),
+        vec![Draw::Circle([5.5, 0.0], 0.5)],
+    ]
+    .concat();
+    assert_eq!(
+        profile(&drawn(&id, &sketch, &curves), TOLERANCE),
+        Ok(vec![
+            exterior(vec![
+                entry(3, false),
+                entry(0, false),
+                entry(1, false),
+                entry(2, false)
+            ]),
+            hole(vec![entry(4, true)])
+        ])
+    );
+}
+
+/// Each case at `gap` from an arc of the other loop: within the tolerance
+/// the loops meet, at twice the tolerance the profile has a hole.
+fn meets_by_gap(name: &str, case: impl Fn(f64) -> Vec<Draw>) {
+    let id = feature_id(name);
+    let sketch = sketch_id(name);
+    for (gap, expected) in [
+        (TOLERANCE / 2.0, Err("loops of its profile meet")),
+        (2.0 * TOLERANCE, Ok(2)),
+    ] {
+        assert_eq!(
+            profile(&drawn(&id, &sketch, &case(gap)), TOLERANCE).map(|loops| loops.len()),
+            expected,
+            "{name} at {gap}"
+        );
+    }
+}
+
+/// A lens of two arcs with its lower corner at `(0, y)`.
+fn lens(y: f64) -> [Draw; 2] {
+    let left = [-1.5, y + 2.0];
+    let right = [1.5, y + 2.0];
+    [
+        Draw::Arc {
+            center: left,
+            radius: 2.5,
+            angles: [(-2.0_f64).portable_atan2(1.5), 2.0_f64.portable_atan2(1.5)],
+        },
+        Draw::Arc {
+            center: right,
+            radius: 2.5,
+            angles: [
+                2.0_f64.portable_atan2(-1.5),
+                TAU + (-2.0_f64).portable_atan2(-1.5),
+            ],
+        },
+    ]
+}
+
+/// The nearest point of a hole's edge lies within the span of a concave
+/// arc of the exterior.
+#[test]
+fn a_line_beside_an_arc_meets_it() {
+    meets_by_gap("linearc", |gap| {
+        [
+            vec![
+                Draw::Line([-10.0, -10.0], at([0.0, -10.0], 3.0, PI)),
+                Draw::Arc {
+                    center: [0.0, -10.0],
+                    radius: 3.0,
+                    angles: [0.0, PI],
+                },
+                Draw::Line([3.0, -10.0], [10.0, -10.0]),
+                Draw::Line([10.0, -10.0], [10.0, 10.0]),
+                Draw::Line([10.0, 10.0], [-10.0, 10.0]),
+                Draw::Line([-10.0, 10.0], [-10.0, -10.0]),
+            ],
+            polygon(&[
+                [-1.0, -7.0 + gap],
+                [1.0, -7.0 + gap],
+                [1.0, -5.0],
+                [-1.0, -5.0],
+            ]),
+        ]
+        .concat()
+    });
+}
+
+/// A corner of a hole lies inside the circle of an arc of the exterior,
+/// its edges running away from the arc.
+#[test]
+fn a_line_end_beside_an_arc_meets_it() {
+    meets_by_gap("cornerarc", |gap| {
+        [
+            slot([0.0, 0.0], 4.0, 3.0).to_vec(),
+            polygon(&[[7.0 - gap, 0.0], [5.0, 1.0], [5.0, -1.0]]),
+        ]
+        .concat()
+    });
+}
+
+/// The corner where the two arcs of a lens hole meet lies beside a line
+/// of the exterior.
+#[test]
+fn an_arc_end_beside_a_line_meets_it() {
+    meets_by_gap("arcline", |gap| {
+        [
+            polygon(&[[-10.0, -10.0], [10.0, -10.0], [10.0, 10.0], [-10.0, 10.0]]),
+            lens(-10.0 + gap).to_vec(),
+        ]
+        .concat()
+    });
+}
+
+/// The corner where the two arcs of a lens hole meet lies beside the
+/// exterior circle.
+#[test]
+fn an_arc_end_beside_an_arc_meets_it() {
+    meets_by_gap("arcarc", |gap| {
+        [
+            vec![Draw::Circle([0.0, 0.0], 10.0)],
+            lens(-10.0 + gap).to_vec(),
+        ]
+        .concat()
+    });
+}
+
+/// Holes stand in the order of their smallest curve: a slot drawn around a
+/// round hole comes first, although its last curve comes after the circle.
+#[test]
+fn holes_stand_in_the_order_of_their_smallest_curve() {
+    let id = feature_id("holeorder");
+    let sketch = sketch_id("holeorder");
+    let [bottom, right, top, left] = slot([-6.0, 0.0], 2.0, 1.5);
+    let curves = [
+        Draw::Circle([0.0, 0.0], 20.0),
+        bottom,
+        right,
+        top,
+        Draw::Circle([8.0, 0.0], 2.0),
+        left,
+    ];
+    let loops = profile(&drawn(&id, &sketch, &curves), TOLERANCE).expect("one region");
+    let curves_of = loops
+        .iter()
+        .map(|profile_loop| {
+            let mut curves = profile_loop
+                .entries
+                .iter()
+                .map(|entry| entry.curve)
+                .collect::<Vec<_>>();
+            curves.sort_unstable();
+            curves
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(curves_of, [vec![0], vec![1, 2, 3, 5], vec![4]]);
+}
+
 /// One side of a prism loop, from its corner to the next corner.
 #[derive(Clone, Copy)]
-enum Side {
+pub(super) enum Side {
     Line,
     Arc {
         center: [f64; 2],
@@ -769,7 +966,7 @@ fn prism(loops: &[Vec<([f64; 2], Side)>]) -> CadIr {
 
 /// A curve of a source sketch, in mm.
 #[derive(Clone, Copy)]
-enum Stroke {
+pub(super) enum Stroke {
     Line([f64; 2], [f64; 2]),
     /// Counterclockwise from the first angle to the second, in radians.
     Arc([f64; 2], f64, [f64; 2]),
@@ -778,7 +975,7 @@ enum Stroke {
 
 /// `strokes` as the extrude's sketch `c0`, `c1`, ... over the prism of
 /// `loops`, extruded [`SIDE`] mm.
-fn extruded(strokes: &[Stroke], loops: &[Vec<([f64; 2], Side)>]) -> CadIr {
+pub(super) fn extruded(strokes: &[Stroke], loops: &[Vec<([f64; 2], Side)>]) -> CadIr {
     let mut source = Source::new(
         "profile",
         picked(principal(PrincipalEntity::XyPlane)),
@@ -1135,37 +1332,4 @@ fn a_circle_with_a_slot_hole_is_written_as_an_extrude() {
     );
     let residual = loss(&report, "export/record.residual-unavailable").join("\n");
     assert!(residual.contains(ARC_RESIDUAL), "{residual}");
-}
-
-/// Two arcs on one circle have two side faces on one cylinder; neither arc
-/// names one face.
-#[test]
-fn two_arcs_on_one_circle_stay_in_the_base_feature() {
-    let half = 3.0_f64.portable_atan2(4.0);
-    let strokes = [
-        Stroke::Arc([0.0, 0.0], 5.0, [TAU - half, half]),
-        Stroke::Line([4.0, 3.0], [-4.0, 3.0]),
-        Stroke::Arc([0.0, 0.0], 5.0, [PI - half, PI + half]),
-        Stroke::Line([-4.0, -3.0], [4.0, -3.0]),
-    ];
-    let arc = Side::Arc {
-        center: [0.0, 0.0],
-        counterclockwise: true,
-    };
-    let ir = extruded(
-        &strokes,
-        &[vec![
-            ([4.0, -3.0], arc),
-            ([4.0, 3.0], Side::Line),
-            ([-4.0, 3.0], arc),
-            ([-4.0, -3.0], Side::Line),
-        ]],
-    );
-    let (report, decoded) = write(&ir);
-    assert_eq!(kinds(&decoded), ["sketch", "base"], "{:#?}", report.losses);
-    let missing = loss(&report, "export/evaluation.missing").join("\n");
-    assert!(
-        missing.contains("its faces do not match its profile"),
-        "{missing}"
-    );
 }
