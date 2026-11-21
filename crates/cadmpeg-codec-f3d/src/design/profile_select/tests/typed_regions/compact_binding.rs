@@ -5,9 +5,8 @@ use crate::design::profile_select::{
     bind_extrude_profile_selections, SketchCurveSelectionResolution,
 };
 use crate::records::feature::scope::{DesignParameterScope, DesignScopePayload};
-use cadmpeg_ir::features::{
-    Feature, FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef,
-};
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use serde_json::json;
 
 #[test]

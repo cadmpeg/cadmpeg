@@ -283,7 +283,7 @@ fn transfers_ordered_body_membership_and_active_tip() {
                     .expect("identity grammar"),
             );
             edit::replace(children, |previous| {
-                cadmpeg_ir::features::TreeChildren::new(previous.to_vec(), active)
+                cadmpeg_ir::features::tree::TreeChildren::new(previous.to_vec(), active)
             })
         }
         .is_err());
@@ -392,10 +392,22 @@ fn transfers_stored_and_external_part_feature_families() {
         ));
     }
     for (name, format) in [
-        ("Step", cadmpeg_ir::features::GeometryImportFormat::Step),
-        ("Iges", cadmpeg_ir::features::GeometryImportFormat::Iges),
-        ("Brep", cadmpeg_ir::features::GeometryImportFormat::Brep),
-        ("CurveNet", cadmpeg_ir::features::GeometryImportFormat::Brep),
+        (
+            "Step",
+            cadmpeg_ir::features::operation_settings::GeometryImportFormat::Step,
+        ),
+        (
+            "Iges",
+            cadmpeg_ir::features::operation_settings::GeometryImportFormat::Iges,
+        ),
+        (
+            "Brep",
+            cadmpeg_ir::features::operation_settings::GeometryImportFormat::Brep,
+        ),
+        (
+            "CurveNet",
+            cadmpeg_ir::features::operation_settings::GeometryImportFormat::Brep,
+        ),
     ] {
         assert!(matches!(
             result
@@ -555,7 +567,7 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
         .expect("width cell");
     assert_eq!(
         width.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(5.0).unwrap()
         ))
     );
@@ -1098,7 +1110,7 @@ Ve 0.001 0 0 0 0 0 1001000 *
 
 #[test]
 fn spreadsheet_cells_state_quantities_and_literal_text_names_nothing() {
-    use cadmpeg_ir::features::ParameterValue;
+    use cadmpeg_ir::features::parameters::ParameterValue;
 
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Spreadsheet::Sheet" name="Params" id="1"/></Objects>

@@ -9,7 +9,8 @@ use crate::ids::native_stream;
 use crate::loss::F3dLossCode;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{BooleanOp, PlanarProfileRef, SketchProfileRegion};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, SketchProfileRegion};
 use cadmpeg_ir::sketches::{Sketch, SketchEntityId};
 
 pub(super) fn resolve(

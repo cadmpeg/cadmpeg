@@ -32,15 +32,13 @@ use crate::history::project::pattern::parse_count;
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink};
 use cadmpeg_core::decode::index_from_u64;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
+use cadmpeg_ir::features::geometry::{FeatureDirection3, FinitePoint3};
+use cadmpeg_ir::features::patterns::{PatternKind, PatternSeed, PatternTransform};
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::{
-    features::{
-        patterns::{PatternKind, PatternSeed, PatternTransform},
-        FeatureDefinition, FeatureDirection3, FeatureOperation, FinitePoint3, PathRef,
-    },
-    units::UnitVector3,
-};
+use cadmpeg_ir::units::UnitVector3;
 use std::collections::{HashMap, HashSet};
 
 const EPS_BINDINGS_BIND_PATTERN_INPUTS_E12: f64 = 1e-12;
@@ -655,8 +653,8 @@ pub(crate) fn bind_pattern_inputs(
 /// Admits a pattern axis or plane point read from solved `SolidWorks` geometry.
 fn admitted_point(
     point: Point3,
-) -> Result<cadmpeg_ir::features::FinitePoint3, cadmpeg_core::CodecError> {
-    cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+) -> Result<cadmpeg_ir::features::geometry::FinitePoint3, cadmpeg_core::CodecError> {
+    cadmpeg_ir::features::geometry::FinitePoint3::new(point).ok_or_else(|| {
         cadmpeg_core::CodecError::Malformed("SolidWorks pattern point must be finite".into())
     })
 }
@@ -664,8 +662,8 @@ fn admitted_point(
 /// Admits a pattern direction or plane normal read from solved `SolidWorks` geometry.
 fn admitted_direction(
     direction: Vector3,
-) -> Result<cadmpeg_ir::features::FeatureDirection3, cadmpeg_core::CodecError> {
-    cadmpeg_ir::features::FeatureDirection3::new(direction).ok_or_else(|| {
+) -> Result<cadmpeg_ir::features::geometry::FeatureDirection3, cadmpeg_core::CodecError> {
+    cadmpeg_ir::features::geometry::FeatureDirection3::new(direction).ok_or_else(|| {
         cadmpeg_core::CodecError::Malformed(
             "SolidWorks pattern direction must have a finite nonzero norm".into(),
         )
@@ -674,7 +672,7 @@ fn admitted_direction(
 
 fn mirror_plane_from_surface(
     geometry: &SolvedSurfaceGeometry,
-) -> Option<(cadmpeg_ir::features::FinitePoint3, UnitVector3)> {
+) -> Option<(cadmpeg_ir::features::geometry::FinitePoint3, UnitVector3)> {
     match geometry {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
             Some((plane_surface.origin(), *plane_surface.frame().axis()))
@@ -796,7 +794,9 @@ pub(crate) fn bind_mirror_surface_planes(
                     };
                     if let Ok(admitted) = PatternKind::new(PatternTransform::Mirror {
                         plane_origin: *origin,
-                        plane_normal: cadmpeg_ir::features::FeatureDirection3::from(*normal),
+                        plane_normal: cadmpeg_ir::features::geometry::FeatureDirection3::from(
+                            *normal,
+                        ),
                     }) {
                         *pattern = admitted;
                     }
@@ -811,7 +811,7 @@ pub(crate) fn bind_mirror_surface_planes(
 }
 
 pub(crate) fn bind_sweep_profile_inputs(model_features: &mut [cadmpeg_ir::features::Feature]) {
-    use cadmpeg_ir::features::PlanarProfileRef;
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
     let mut represented = HashMap::new();
     for feature in model_features.iter() {
         let Some(native) = &feature.native_ref else {

@@ -2,12 +2,14 @@
 
 use crate::decode::snapshot_active_configuration;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::parameters::{ConfigurationEvaluation, DesignConfiguration};
 use cadmpeg_ir::features::patterns::{
     CompositePattern, PatternKind, PatternSeed, PatternStage, PatternTransform,
 };
+use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{
-    ConfigurationEvaluation, ConfigurationId, DesignConfiguration, DistinctMembers, Feature,
-    FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
+    ConfigurationId, Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
 };
 use cadmpeg_ir::scalar::Length;
 use std::collections::BTreeMap;
@@ -28,7 +30,7 @@ fn run() -> Result<(), CodecError> {
         PatternStage {
             pattern: Box::new(
                 PatternKind::new(PatternTransform::MirrorReference {
-                    plane: cadmpeg_ir::features::FaceSelection::Native(
+                    plane: cadmpeg_ir::features::selections::FaceSelection::Native(
                         "Native mirror plane".into(),
                     ),
                 })
@@ -46,7 +48,9 @@ fn run() -> Result<(), CodecError> {
         }),
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             seeds: vec![PatternSeed::Bodies(
-                cadmpeg_ir::features::BodySelection::Native("Snapshot seed bodies".into()),
+                cadmpeg_ir::features::selections::BodySelection::Native(
+                    "Snapshot seed bodies".into(),
+                ),
             )],
             pattern: PatternKind::new(PatternTransform::Composite {
                 stages: CompositePattern::new(stages).unwrap(),
@@ -61,15 +65,17 @@ fn run() -> Result<(), CodecError> {
             ordinal,
             name: None,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(vec![dependency.clone()])
-                .unwrap(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+                dependency.clone(),
+            ])
+            .unwrap(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: FeatureContent::default(),
             evaluation: FeatureEvaluation::new(
                 definition,
-                cadmpeg_ir::features::DistinctMembers::try_from(vec![
+                cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
                     cadmpeg_ir::ids::BodyId::mint(format!(
                         "synthetic:test:id#snapshot-body-{ordinal}"
                     ))

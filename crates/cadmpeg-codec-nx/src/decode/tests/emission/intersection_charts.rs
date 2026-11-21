@@ -147,7 +147,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
             .expect("vertex point");
         let moved = point.position().get();
         point.set_position(
-            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
                 moved.x + 0.5,
                 moved.y,
                 moved.z,
@@ -156,7 +156,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         );
         let moved = point.position().get();
         point.set_position(
-            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
                 moved.x,
                 moved.y + 0.5,
                 moved.z,
@@ -165,7 +165,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         );
         let moved = point.position().get();
         point.set_position(
-            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
                 moved.x,
                 moved.y,
                 moved.z + 0.5,
@@ -1105,13 +1105,13 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
         ir.geometry.points.extend([
             Point::new(
                 point_ids[0].clone(),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                     .expect("a finite position is a point"),
                 None,
             ),
             Point::new(
                 point_ids[1].clone(),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(10.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(10.0, 0.0, 0.0))
                     .expect("a finite position is a point"),
                 None,
             ),
@@ -1316,7 +1316,7 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
             .extend(points.iter().map(|(id, position)| {
                 Point::new(
                     id.clone(),
-                    cadmpeg_ir::features::FinitePoint3::new(*position)
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(*position)
                         .expect("a finite position is a point"),
                     None,
                 )

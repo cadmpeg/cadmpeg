@@ -428,7 +428,7 @@ pub(in crate::writer::generate) fn native_or_neutral(
 /// The native records' parameters as the decoder projects them.
 fn native_projection(
     native: &F3dNative,
-) -> Result<Vec<cadmpeg_ir::features::DesignParameter>, CodecError> {
+) -> Result<Vec<cadmpeg_ir::features::parameters::DesignParameter>, CodecError> {
     let decode_arena = cadmpeg_core::decode::DecodeArena::new();
     let (decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],

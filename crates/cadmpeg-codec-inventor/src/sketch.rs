@@ -6,15 +6,14 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::parameters::DesignParameter;
+use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::{Angle, FiniteReal, Length, PositiveReal};
 use cadmpeg_ir::sketches::{
     NativeOperandField, Sketch, SketchConstraint, SketchConstraintDefinitionInput,
     SketchConstraintId, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
     SketchGeometryDefinition, SketchId, SketchLocus, SketchNativeOperand, SketchPlacement,
-};
-use cadmpeg_ir::{
-    features::{DesignParameter, ParameterId},
-    scalar::{Angle, FiniteReal, Length, PositiveReal},
 };
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
@@ -2956,16 +2955,18 @@ fn line_carrier_matches(
     start: [f64; 2],
     end: [f64; 2],
 ) -> bool {
-    let Some(unit) =
-        cadmpeg_ir::features::FiniteVector3::new(Vector3::new(direction[0], direction[1], 0.0))
-            .and_then(cadmpeg_ir::features::FiniteVector3::unit_nonzero)
-    else {
+    let Some(unit) = cadmpeg_ir::features::geometry::FiniteVector3::new(Vector3::new(
+        direction[0],
+        direction[1],
+        0.0,
+    ))
+    .and_then(cadmpeg_ir::features::geometry::FiniteVector3::unit_nonzero) else {
         return false;
     };
     let span = Vector3::new(end[0] - start[0], end[1] - start[1], 0.0);
     let span_scale = span.x.abs().max(span.y.abs());
-    let Some(span) = cadmpeg_ir::features::FiniteVector3::new(span)
-        .and_then(cadmpeg_ir::features::FiniteVector3::unit_nonzero)
+    let Some(span) = cadmpeg_ir::features::geometry::FiniteVector3::new(span)
+        .and_then(cadmpeg_ir::features::geometry::FiniteVector3::unit_nonzero)
     else {
         return false;
     };

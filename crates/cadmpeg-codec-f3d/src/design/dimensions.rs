@@ -6127,8 +6127,10 @@ fn line_angle_matches(
     let second_du = second_end.u - second_start.u;
     let second_dv = second_end.v - second_start.v;
     let unit = |du, dv| {
-        cadmpeg_ir::features::FiniteVector3::new(cadmpeg_ir::math::Vector3::new(du, dv, 0.0))
-            .and_then(cadmpeg_ir::features::FiniteVector3::unit_nonzero)
+        cadmpeg_ir::features::geometry::FiniteVector3::new(cadmpeg_ir::math::Vector3::new(
+            du, dv, 0.0,
+        ))
+        .and_then(cadmpeg_ir::features::geometry::FiniteVector3::unit_nonzero)
     };
     let Some(first) = unit(first_du, first_dv) else {
         return false;
@@ -6424,11 +6426,11 @@ fn parallel_line_offset(
     {
         return None;
     }
-    let source_direction = cadmpeg_ir::features::FiniteVector3::new(
+    let source_direction = cadmpeg_ir::features::geometry::FiniteVector3::new(
         cadmpeg_ir::math::Vector3::new(source_du, source_dv, 0.0),
     )?
     .unit_nonzero()?;
-    let result_direction = cadmpeg_ir::features::FiniteVector3::new(
+    let result_direction = cadmpeg_ir::features::geometry::FiniteVector3::new(
         cadmpeg_ir::math::Vector3::new(result_du, result_dv, 0.0),
     )?
     .unit_nonzero()?;
@@ -6614,7 +6616,7 @@ fn reflect_point(point: Point2, axis_start: Point2, axis_end: Point2) -> Option<
     if direction.norm() <= EPS_REFLECTION_AXIS_LENGTH {
         return None;
     }
-    let unit = cadmpeg_ir::features::FiniteVector3::new(direction)?.unit_nonzero()?;
+    let unit = cadmpeg_ir::features::geometry::FiniteVector3::new(direction)?.unit_nonzero()?;
     let normal = Point2::new(-unit.y, unit.x);
     let distance = normal
         .u
@@ -6752,7 +6754,7 @@ pub(super) fn expression_identifiers(expression: &str) -> impl Iterator<Item = &
 /// dependency edge.
 pub(crate) fn unresolved_parameter_expression_dependency_count(
     native: &[DesignParameter],
-    projected: &[cadmpeg_ir::features::DesignParameter],
+    projected: &[cadmpeg_ir::features::parameters::DesignParameter],
 ) -> usize {
     let mut projected_by_native_ref = HashMap::new();
     let mut projected_by_id = HashMap::new();

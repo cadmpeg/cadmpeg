@@ -71,7 +71,7 @@ fn rectangular_trimmed_surface_preserves_basis_ranges_and_senses() {
             0.0,
             0.0
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(3.0, 4.0, 0.0))
     );
     assert_eq!(
@@ -82,7 +82,7 @@ fn rectangular_trimmed_surface_preserves_basis_ranges_and_senses() {
             2.0,
             2.0
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(1.0, 2.0, 0.0))
     );
     let partials = model_surface_partials_by_id(
