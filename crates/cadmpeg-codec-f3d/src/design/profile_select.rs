@@ -509,6 +509,9 @@ pub(crate) fn bind_extrude_profile_selections(
         let mut historical_face_sketch_info: Option<(String, String)> = None;
         let mut historical_face_offset_info: Option<f64> = None;
         let mut curved_face_note: Option<cadmpeg_ir::report::loss::LossNote> = None;
+        // A same-sketch profile group whose bind-time loss was deferred stays
+        // unresolved unless its regions compose below.
+        let mut unresolved_profile_group = false;
         feature.evaluation.edit(|definition, _| {
             edit_result = (|| -> Result<(), CodecError> {
                 'feature_edit: {
@@ -518,6 +521,9 @@ pub(crate) fn bind_extrude_profile_selections(
                     let Some(scope) = scopes.iter().find(|candidate| candidate.id == scope) else {
                         break 'feature_edit;
                     };
+                    unresolved_profile_group = scope
+                        .extrude_native_profiles()
+                        .is_some_and(composable_sketch_profiles);
                     let scoped_histories = histories_for_scope(
                         &scope.id,
                         resolution.scope_histories,
@@ -751,15 +757,9 @@ pub(crate) fn bind_extrude_profile_selections(
                     };
                     let Some(sketch) = sketches.iter().find(|sketch| sketch.id == *sketch_id)
                     else {
-                        if scope
-                            .extrude_native_profiles()
-                            .is_some_and(composable_sketch_profiles)
-                        {
+                        if unresolved_profile_group {
                             *profile =
                                 ProfileRef::Planar(PlanarProfileRef::Native(scope.id.clone()));
-                            scoped_resolution
-                                .profile_work
-                                .note_unresolved_profile_group();
                             break 'feature_edit;
                         }
                         let spatial_id_parts = sketch_id.as_str().split_once("f3d:model:sketch#");
@@ -844,10 +844,7 @@ pub(crate) fn bind_extrude_profile_selections(
                             );
                         }
                     }
-                    if scope
-                        .extrude_native_profiles()
-                        .is_some_and(composable_sketch_profiles)
-                    {
+                    if unresolved_profile_group {
                         let sketch_key = sketch_id.clone();
                         if let Some(merged) = compose_same_sketch_profile_group(
                             scope,
@@ -859,12 +856,10 @@ pub(crate) fn bind_extrude_profile_selections(
                         )? {
                             *profile = merged;
                             scoped_resolution.profile_work.note_composed_profile_group();
+                            unresolved_profile_group = false;
                         } else {
                             *profile =
                                 ProfileRef::Planar(PlanarProfileRef::Native(scope.id.clone()));
-                            scoped_resolution
-                                .profile_work
-                                .note_unresolved_profile_group();
                         }
                         break 'feature_edit;
                     }
@@ -1241,6 +1236,9 @@ pub(crate) fn bind_extrude_profile_selections(
                     }
                 }
             }
+        }
+        if unresolved_profile_group {
+            resolution.profile_work.note_unresolved_profile_group();
         }
         if let Some(dist) = to_distance_info {
             feature
@@ -1823,6 +1821,7 @@ fn compose_same_sketch_profile_group(
                 curve_identities,
                 sketch_entities,
                 scoped_resolution,
+                true,
             )?
             else {
                 return Ok(None);

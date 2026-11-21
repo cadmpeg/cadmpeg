@@ -614,7 +614,7 @@ fn same_sketch_profile_group_composes_merged_regions_and_charges_union_assumptio
         !crate::design::decode::operands::composable_sketch_profiles(&[first.clone(), no_region,])
     );
     let mut other_sketch = second;
-    other_sketch.entity_id = "0_99".into();
+    other_sketch.entity_id = crate::records::identity::DesignEntityId::from_parts("0", 99);
     assert!(
         !crate::design::decode::operands::composable_sketch_profiles(&[
             first.clone(),

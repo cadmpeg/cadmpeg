@@ -438,6 +438,7 @@ fn same_sketch_profile_group_projects_an_extrude() {
                 .unwrap(),
             region_count_offset: u64::from(record_index) * 10 + 8,
             regions: Vec::new(),
+            atomic_regions: Vec::new(),
             companion_class_tag: crate::records::references::DesignClassTag::try_from(
                 "310".to_owned(),
             )
