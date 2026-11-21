@@ -55,6 +55,9 @@ const SELECTOR_CONSTRUCTION_BIT: u16 = 8;
 const STATE: usize = head::STATE;
 /// The state of a curve record outside the sketch's profile.
 const STATE_OUTSIDE_PROFILE: u16 = 0;
+/// The selectors of the curve records whose kind [`framed_curve`] and
+/// [`SketchRecordLists::listed_curve`] decide.
+const ROSTER_SELECTORS: [u16; 2] = [4, 12];
 /// Where a curve record's f64 `-1` stands after its fields start.
 const MINUS_ONE: usize = arc::MINUS_ONE - arc::START;
 /// Where a curve record's sense word stands after its fields start.
@@ -117,7 +120,8 @@ pub(super) enum ListedRecord<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RecordPlace {
     Point,
-    Curve,
+    FirstCurveList,
+    LaterCurveList,
 }
 
 /// Every `sgSketch` record list of one stream.
@@ -154,7 +158,7 @@ impl SketchRecordLists {
                 records.insert(point, (list_index, RecordPlace::Point));
             }
             for &curve in &list.curves {
-                records.insert(curve, (list_index, RecordPlace::Curve));
+                records.insert(curve, (list_index, RecordPlace::FirstCurveList));
             }
         }
         let mut owner = None;
@@ -169,7 +173,7 @@ impl SketchRecordLists {
                 next += 1;
             }
             if let Some(owner) = owner {
-                records.insert(curve, (owner, RecordPlace::Curve));
+                records.insert(curve, (owner, RecordPlace::LaterCurveList));
             }
         }
         Self { lists, records }
@@ -182,13 +186,41 @@ impl SketchRecordLists {
     ) -> impl Iterator<Item = usize> + '_ {
         self.records
             .range(range)
-            .filter(|(_, (_, place))| *place == RecordPlace::Curve)
+            .filter(|(_, (_, place))| *place != RecordPlace::Point)
             .map(|(&offset, _)| offset)
     }
 
     /// Whether a curve record starts at `offset`.
-    fn is_curve(&self, offset: usize) -> bool {
-        matches!(self.records.get(&offset), Some((_, RecordPlace::Curve)))
+    fn is_curve(&self, payload: &[u8], offset: usize) -> bool {
+        matches!(
+            self.records.get(&offset),
+            Some((_, RecordPlace::FirstCurveList | RecordPlace::LaterCurveList))
+        ) && curve_record(payload, offset)
+    }
+
+    /// The form of the curve record of a sketch's first curve list that
+    /// starts at `offset`, when it is in the current layout with selector `4`
+    /// or `12` and [`curve_form`] reads it as a line or an arc.
+    pub(super) fn listed_curve(&self, payload: &[u8], offset: usize) -> Option<CurveForm> {
+        let &(_, RecordPlace::FirstCurveList) = self.records.get(&offset)? else {
+            return None;
+        };
+        let selector = View::u16_le_at(payload, offset.checked_add(SELECTOR)?)?;
+        if curve_fields(payload, offset)? != offset.checked_add(CURRENT_FIELDS)?
+            || !ROSTER_SELECTORS.contains(&selector)
+        {
+            return None;
+        }
+        curve_form(payload, offset)
+    }
+
+    /// The kind of the curve record of a list that starts at `offset`,
+    /// decided from the record's own shape ([`framed_curve`]).
+    pub(super) fn listed_curve_kind(&self, payload: &[u8], offset: usize) -> Option<FramedCurve> {
+        match self.record(offset)? {
+            ListedRecord::Curve(_) => framed_curve(payload, offset).map(|(_, kind)| kind),
+            ListedRecord::Point => None,
+        }
     }
 
     /// The listed record that starts at `offset`.
@@ -197,7 +229,9 @@ impl SketchRecordLists {
         let sketch = self.lists.get(list)?;
         Some(match place {
             RecordPlace::Point => ListedRecord::Point,
-            RecordPlace::Curve => ListedRecord::Curve(sketch),
+            RecordPlace::FirstCurveList | RecordPlace::LaterCurveList => {
+                ListedRecord::Curve(sketch)
+            }
         })
     }
 }
@@ -210,7 +244,8 @@ pub(crate) fn curve_record_markers(lane: &FeatureInputLane) -> HashSet<&str> {
     lane.sketch_entities
         .iter()
         .filter(|marker| {
-            usize::try_from(marker.offset()).is_ok_and(|offset| lists.is_curve(offset))
+            usize::try_from(marker.offset())
+                .is_ok_and(|offset| lists.is_curve(&lane.native_payload, offset))
         })
         .map(SketchInputEntity::id)
         .collect()
@@ -219,7 +254,9 @@ pub(crate) fn curve_record_markers(lane: &FeatureInputLane) -> HashSet<&str> {
 /// The sketch whose first point record is `heads[first]`: the 14-byte header
 /// before it states *N*, the *N* heads from there are point records (or
 /// records projected from outside the sketch), and the next head is a curve
-/// record. The curve list is the run of curve records from there.
+/// record or a record projected from outside the sketch. The curve list is
+/// the run of curve records and projected records from there, up to its last
+/// curve record.
 fn sketch_at(payload: &[u8], heads: &[usize], first: usize) -> Option<SketchRecordList> {
     let head = *heads.get(first)?;
     let header = head.checked_sub(SKETCH_HEADER_LEN)?;
@@ -239,15 +276,18 @@ fn sketch_at(payload: &[u8], heads: &[usize], first: usize) -> Option<SketchReco
     {
         return None;
     }
-    let curves = heads
+    let run = heads
         .get(end..)?
         .iter()
         .copied()
-        .take_while(|&curve| curve_record(payload, curve))
+        .take_while(|&curve| curve_record(payload, curve) || external_record(payload, curve))
         .collect::<Vec<_>>();
-    if curves.is_empty() {
-        return None;
-    }
+    // Projected records stand among the curve records; the list ends at its
+    // last curve record.
+    let last = run
+        .iter()
+        .rposition(|&curve| curve_record(payload, curve))?;
+    let curves = run.get(..=last)?.to_vec();
     Some(SketchRecordList {
         points: points.to_vec(),
         curves,
@@ -344,6 +384,53 @@ pub(super) fn point_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2
     (u.is_finite() && v.is_finite()).then_some([u, v])
 }
 
+/// The kind of a curve record from its own shape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum FramedCurve {
+    /// Type `0`.
+    Line,
+    /// Sense `1` or `-1` in its arc layout with equal endpoint indices.
+    Circle,
+    /// Sense `1` or `-1` in its arc layout with distinct endpoint indices.
+    Arc,
+}
+
+/// The kind of the curve record at `offset` in the current layout with a
+/// roster selector: a low sense half of `0` is a line; sense `1` or `-1`
+/// is an arc when four i32 `-2` follow the centre index.
+fn framed_curve(payload: &[u8], offset: usize) -> Option<(usize, FramedCurve)> {
+    let fields = curve_fields(payload, offset)?;
+    if fields != offset.checked_add(CURRENT_FIELDS)?
+        || !ROSTER_SELECTORS.contains(&View::u16_le_at(payload, offset.checked_add(SELECTOR)?)?)
+    {
+        return None;
+    }
+    match View::i32_le_at(payload, fields.checked_add(SENSE)?)? {
+        sense if sense & LINE_TYPE_MASK == 0 => Some((fields, FramedCurve::Line)),
+        COUNTERCLOCKWISE | CLOCKWISE => {
+            let tail = fields.checked_add(MINUS_TWO)?;
+            if !payload
+                .get(tail..tail.checked_add(4 * I32_MINUS_TWO.len())?)?
+                .chunks_exact(4)
+                .all(|word| word == I32_MINUS_TWO)
+            {
+                return None;
+            }
+            let start = View::u16_le_at(payload, fields)?;
+            let end = View::u16_le_at(payload, fields.checked_add(2)?)?;
+            Some((
+                fields,
+                if start == end {
+                    FramedCurve::Circle
+                } else {
+                    FramedCurve::Arc
+                },
+            ))
+        }
+        _ => None,
+    }
+}
+
 /// The form of the curve record at `offset`, in either head layout, when its
 /// selector has bit 0 clear: a line when the low half of its sense word is
 /// `0` and its endpoint indices differ, and an arc when the word is `1` or
@@ -372,6 +459,15 @@ pub(super) fn curve_form(payload: &[u8], offset: usize) -> Option<CurveForm> {
         });
     }
     (sense & LINE_TYPE_MASK == 0 && start != end).then_some(CurveForm::Line { start, end })
+}
+
+/// Whether bit 3 of the selector of the record at `offset` is set: the
+/// record is construction geometry.
+pub(super) fn construction_record(payload: &[u8], offset: usize) -> bool {
+    offset
+        .checked_add(SELECTOR)
+        .and_then(|at| View::u16_le_at(payload, at))
+        .is_some_and(|selector| selector & SELECTOR_CONSTRUCTION_BIT != 0)
 }
 
 /// The entity a listed record gives the marker that stands on it.
@@ -474,8 +570,7 @@ pub(super) fn listed_entity(
             outside_profile: false,
         }));
     };
-    let construction =
-        View::u16_le_at(payload, offset.checked_add(SELECTOR)?)? & SELECTOR_CONSTRUCTION_BIT != 0;
+    let construction = construction_record(payload, offset);
     let outside_profile =
         View::u16_le_at(payload, offset.checked_add(STATE)?)? == STATE_OUTSIDE_PROFILE;
     let entity = |geometry, endpoints| {

@@ -84,7 +84,7 @@ fn revolve_projects_with_native_profile() {
     .unwrap();
     let Some(cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::Revolve { construction, .. },
-    )) = super::super::project_fixed_revolve_with_entities(
+    )) = crate::design::feature_project::revolve::project_fixed_revolve_with_entities(
         &scope,
         &groups,
         std::slice::from_ref(&axis),
@@ -98,13 +98,15 @@ fn revolve_projects_with_native_profile() {
     };
     assert_eq!(
         construction.profile(),
-        Some(&cadmpeg_ir::features::PlanarProfileRef::Native(
+        Some(&cadmpeg_ir::features::profiles::PlanarProfileRef::Native(
             groups[0].id.clone()
         ))
     );
     assert_eq!(
         construction.axis().unwrap().reference,
-        Some(cadmpeg_ir::features::PathRef::Native(axis.id.clone())),
+        Some(cadmpeg_ir::features::profiles::PathRef::Native(
+            axis.id.clone()
+        )),
     );
     let mut unresolved_axis = axis.clone();
     unresolved_axis.resolved_axis = None;
@@ -113,7 +115,7 @@ fn revolve_projects_with_native_profile() {
             construction: unresolved,
             ..
         },
-    )) = super::super::project_fixed_revolve_with_entities(
+    )) = crate::design::feature_project::revolve::project_fixed_revolve_with_entities(
         &scope,
         &groups,
         &[unresolved_axis],
@@ -128,11 +130,12 @@ fn revolve_projects_with_native_profile() {
     assert_eq!(unresolved.axis(), None);
     assert_eq!(
         unresolved.profile(),
-        Some(&cadmpeg_ir::features::PlanarProfileRef::Native(
+        Some(&cadmpeg_ir::features::profiles::PlanarProfileRef::Native(
             groups[0].id.clone()
         ))
     );
-    let cadmpeg_ir::features::RevolveConstruction::Resolved { solid, .. } = construction else {
+    let cadmpeg_ir::features::revolve::RevolveConstruction::Resolved { solid, .. } = construction
+    else {
         panic!("expected a resolved revolve");
     };
     assert_eq!(solid, Some(false));
@@ -214,7 +217,7 @@ fn revolve_projects_design_geometry_origin_axis_selections() {
         .unwrap()
     };
     let project = |selection: &DesignEntitySelectionOperand| {
-        super::super::project_fixed_revolve_with_entities(
+        crate::design::feature_project::revolve::project_fixed_revolve_with_entities(
             &scope,
             &groups,
             &[],
@@ -241,14 +244,17 @@ fn revolve_projects_design_geometry_origin_axis_selections() {
         let axis = construction.axis().expect("origin axis");
         assert_eq!(
             axis.reference,
-            Some(cadmpeg_ir::features::PathRef::Native(
+            Some(cadmpeg_ir::features::profiles::PathRef::Native(
                 "f3d:Design/BulkStream.dat:entity-selection#201".into(),
             ))
         );
-        assert_eq!(axis.origin, cadmpeg_ir::features::FinitePoint3::ZERO);
+        assert_eq!(
+            axis.origin,
+            cadmpeg_ir::features::geometry::FinitePoint3::ZERO
+        );
         assert_eq!(
             axis.direction,
-            cadmpeg_ir::features::FeatureDirection3::from(direction)
+            cadmpeg_ir::features::geometry::FeatureDirection3::from(direction)
         );
     }
     assert_eq!(project(&selection(38)), None);
@@ -256,21 +262,21 @@ fn revolve_projects_design_geometry_origin_axis_selections() {
 
     // Fusion's symmetric angle applies to each side; the neutral extent
     // states the total. Two Sides keeps the revolution-direction angle first.
-    let angle = |radians| cadmpeg_ir::features::AngularTermination::Angle {
+    let angle = |radians| cadmpeg_ir::features::extents::AngularTermination::Angle {
         angle: cadmpeg_ir::scalar::PositiveAngle::new(radians).unwrap(),
     };
     for (symmetric, opposite, extent) in [
         (
             true,
             std::f64::consts::FRAC_PI_2,
-            cadmpeg_ir::features::RevolveExtent::Symmetric {
+            cadmpeg_ir::features::revolve::RevolveExtent::Symmetric {
                 termination: angle(std::f64::consts::PI),
             },
         ),
         (
             false,
             std::f64::consts::FRAC_PI_6,
-            cadmpeg_ir::features::RevolveExtent::TwoSided {
+            cadmpeg_ir::features::revolve::RevolveExtent::TwoSided {
                 first: angle(std::f64::consts::FRAC_PI_2),
                 second: angle(std::f64::consts::FRAC_PI_6),
             },
@@ -306,12 +312,13 @@ fn revolve_projects_design_geometry_origin_axis_selections() {
         let Some(cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Revolve {
                 construction:
-                    cadmpeg_ir::features::RevolveConstruction::Resolved {
-                        extent: projected, ..
+                    cadmpeg_ir::features::revolve::RevolveConstruction::Resolved {
+                        extent: projected,
+                        ..
                     },
                 ..
             },
-        )) = super::super::project_fixed_revolve_with_entities(
+        )) = crate::design::feature_project::revolve::project_fixed_revolve_with_entities(
             &two_sided,
             &groups,
             &[],
@@ -336,7 +343,7 @@ fn oriented_direction(
     start: [f64; 2],
     end: [f64; 2],
     axis_direction: cadmpeg_ir::units::UnitVector3,
-) -> Option<cadmpeg_ir::features::FeatureDirection3> {
+) -> Option<cadmpeg_ir::features::geometry::FeatureDirection3> {
     oriented_direction_for_angle(
         start,
         end,
@@ -354,7 +361,7 @@ fn oriented_direction_for_angle(
     angle: cadmpeg_ir::scalar::PositiveAngle,
     has_profile: bool,
     reversed: bool,
-) -> Option<cadmpeg_ir::features::FeatureDirection3> {
+) -> Option<cadmpeg_ir::features::geometry::FeatureDirection3> {
     oriented_direction_for_selection(
         start,
         end,
@@ -374,12 +381,13 @@ fn oriented_direction_for_selection(
     has_profile: bool,
     reversed: bool,
     selection: Option<u32>,
-) -> Option<cadmpeg_ir::features::FeatureDirection3> {
-    use cadmpeg_ir::features::{
-        AngularTermination, BooleanOp, Feature, FeatureDefinition, FeatureDirection3, FeatureId,
-        FeatureOperation, FinitePoint3, PlanarProfileRef, RevolutionAxis, RevolveConstruction,
-        RevolveExtent,
-    };
+) -> Option<cadmpeg_ir::features::geometry::FeatureDirection3> {
+    use cadmpeg_ir::features::extents::AngularTermination;
+    use cadmpeg_ir::features::geometry::{FeatureDirection3, FinitePoint3};
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
+    use cadmpeg_ir::features::revolve::{RevolutionAxis, RevolveConstruction, RevolveExtent};
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
         Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
@@ -473,7 +481,7 @@ fn oriented_direction_for_selection(
         Some(0) => PlanarProfileRef::sketch_profiles(sketch_id.clone(), vec![0]).unwrap(),
         Some(1) => PlanarProfileRef::sketch_regions(
             sketch_id.clone(),
-            vec![cadmpeg_ir::features::SketchProfileRegion::loops(0, vec![]).unwrap()],
+            vec![cadmpeg_ir::features::profiles::SketchProfileRegion::loops(0, vec![]).unwrap()],
         )
         .unwrap(),
         Some(2) => {
@@ -491,7 +499,7 @@ fn oriented_direction_for_selection(
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Revolve {
                 construction: RevolveConstruction::Resolved {
                     profile,
@@ -514,7 +522,7 @@ fn oriented_direction_for_selection(
         native_ref: reversed.then(|| scope.id.clone()),
         product_definition: None,
     }];
-    super::super::orient_revolve_axes(
+    crate::design::feature_project::revolve::orient_revolve_axes(
         &mut features,
         std::slice::from_ref(&scope),
         &[sketch],
@@ -531,7 +539,7 @@ fn oriented_direction_for_selection(
 
 #[test]
 fn full_turn_revolve_preserves_selected_axis_without_profile_loops() {
-    use cadmpeg_ir::features::FeatureDirection3;
+    use cadmpeg_ir::features::geometry::FeatureDirection3;
     use cadmpeg_ir::scalar::PositiveAngle;
     use cadmpeg_ir::units::UnitVector3;
 
@@ -570,7 +578,7 @@ fn full_turn_revolve_preserves_selected_axis_without_profile_loops() {
 
 #[test]
 fn revolve_axes_turn_the_profile_toward_the_sketch_normal() {
-    use cadmpeg_ir::features::FeatureDirection3;
+    use cadmpeg_ir::features::geometry::FeatureDirection3;
     use cadmpeg_ir::units::UnitVector3;
 
     let oriented = oriented_direction;
@@ -610,7 +618,9 @@ fn revolve_axes_turn_the_profile_toward_the_sketch_normal() {
 /// positive-normal side of its sketch plane, whatever the stored axis direction.
 #[test]
 fn a_quarter_turn_lands_on_the_positive_normal_side() {
-    use cadmpeg_ir::features::{AngularTermination, FinitePoint3, RevolutionAxis, RevolveExtent};
+    use cadmpeg_ir::features::extents::AngularTermination;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
+    use cadmpeg_ir::features::revolve::{RevolutionAxis, RevolveExtent};
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::units::UnitVector3;
     use cadmpeg_test_support::revolve::swept_box;
@@ -649,7 +659,9 @@ fn a_quarter_turn_lands_on_the_positive_normal_side() {
 /// the profile by its magnitude toward the negative-normal side.
 #[test]
 fn a_reversed_quarter_turn_lands_on_the_negative_normal_side() {
-    use cadmpeg_ir::features::{AngularTermination, FinitePoint3, RevolutionAxis, RevolveExtent};
+    use cadmpeg_ir::features::extents::AngularTermination;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
+    use cadmpeg_ir::features::revolve::{RevolutionAxis, RevolveExtent};
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::scalar::PositiveAngle;
     use cadmpeg_ir::units::UnitVector3;
@@ -705,7 +717,7 @@ fn partial_turn_orientation_uses_selected_profile_curves() {
                 false,
                 Some(selection),
             ),
-            Some(cadmpeg_ir::features::FeatureDirection3::from(
+            Some(cadmpeg_ir::features::geometry::FeatureDirection3::from(
                 cadmpeg_ir::units::UnitVector3::Y_AXIS.reversed(),
             )),
         );

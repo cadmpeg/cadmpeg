@@ -637,7 +637,7 @@ fn nx_formula_dependencies_resolve_within_the_expression_table() {
     );
     assert_ne!(ir.model.parameters[1].owner, ir.model.parameters[3].owner);
     for (parameter, value) in ir.model.parameters.iter_mut().zip([7.0, 14.0, 5.0, 10.0]) {
-        parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
+        parameter.value = Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(value).unwrap(),
         ));
     }
@@ -646,9 +646,10 @@ fn nx_formula_dependencies_resolve_within_the_expression_table() {
         .is_empty());
 
     let mut inconsistent = ir.clone();
-    inconsistent.model.parameters[1].value = Some(cadmpeg_ir::features::ParameterValue::Length(
-        cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
-    ));
+    inconsistent.model.parameters[1].value =
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
+        ));
     assert_eq!(
         feature_completeness::incomplete_expression_parameters(&inconsistent).unwrap(),
         [inconsistent.model.parameters[1].id.clone()].into()
@@ -793,7 +794,7 @@ fn nx_cyclic_formula_table_retains_independent_acyclic_dependencies() {
     assert!(ir.model.parameters[2].dependencies.is_empty());
     assert!(ir.model.parameters[3].dependencies.is_empty());
     for (parameter, value) in ir.model.parameters.iter_mut().zip([7.0, 14.0, 1.0, 1.0]) {
-        parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
+        parameter.value = Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(value).unwrap(),
         ));
     }

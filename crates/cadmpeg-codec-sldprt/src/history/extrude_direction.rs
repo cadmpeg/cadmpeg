@@ -5,10 +5,12 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::document::Model;
-use cadmpeg_ir::features::{
-    BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeStart, Feature, FeatureDefinition,
-    FeatureId, FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
+use cadmpeg_ir::features::extents::{
+    ExtrudeDirection, ExtrudeExtent, ExtrudeStart, LinearTermination,
 };
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchEntityId, SketchGeometryDefinition};
@@ -490,7 +492,7 @@ fn caps(ir: &CadIr, work: &WorkBudget) -> Option<Vec<Cap>> {
                     vertices
                         .get(cadmpeg_core::decode::index_from_u32(i))
                         .and_then(|p| cap.transform.apply_point(p.get()))
-                        .map(cadmpeg_ir::features::FinitePoint3::get)
+                        .map(cadmpeg_ir::features::geometry::FinitePoint3::get)
                 });
                 if let [Some(a), Some(b), Some(c)] = points {
                     if [a, b, c].iter().all(|p| {

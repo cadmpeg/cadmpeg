@@ -50,11 +50,13 @@ pub(super) fn historical_edge_samples(
         .and_then(|tangent| cadmpeg_ir::units::UnitVector3::normalized_by_reciprocal(tangent.get()))
         .map(|tangent| *tangent.as_raw());
         let bounds = sampled_bounds(geometry, start, end)?;
+        let carrier = carrier(geometry, start, end);
         samples.push(crate::history_records::AsmHistoricalEdgeSample {
             edge: edge_ref,
             interior: interior.get(),
             tangent,
             bounds,
+            carrier,
         });
     }
     samples.sort_by_key(|sample| sample.edge);
@@ -109,7 +111,20 @@ fn helix_sample(
         interior: interior.get(),
         tangent: None,
         bounds: None,
+        carrier: None,
     }))
+}
+
+fn carrier(
+    geometry: &SolvedCurveGeometry,
+    start: f64,
+    end: f64,
+) -> Option<cadmpeg_ir::features::evaluation::HistoricalEdgeCarrier> {
+    Some(cadmpeg_ir::features::evaluation::HistoricalEdgeCarrier {
+        curve: cadmpeg_ir::features::evaluation::HistoricalEdgeCurve::from_solved(geometry)?,
+        range: cadmpeg_ir::topology::ParameterInterval::new([start.min(end), start.max(end)])
+            .ok()?,
+    })
 }
 
 fn sampled_bounds(
@@ -235,6 +250,48 @@ mod tests {
     }
 
     #[test]
+    fn a_free_form_edge_keeps_its_carrier_and_interval() {
+        use cadmpeg_ir::features::evaluation::{HistoricalEdgeCarrier, HistoricalEdgeCurve};
+        use cadmpeg_ir::geometry::{Curve, CurveGeometry};
+        use cadmpeg_ir::ids::{CurveId, EdgeId, VertexId};
+        use cadmpeg_ir::topology::{Edge, EdgeCarrier, ParameterInterval};
+
+        let curve = CurveId::mint("f3d:test:curve#1").unwrap();
+        let brep = cadmpeg_asm::brep::AsmBrep {
+            curves: vec![Curve {
+                id: curve.clone(),
+                geometry: CurveGeometry::Solved(peaked_curve()),
+                parameter_range: None,
+                source_object: None,
+                native_ref: None,
+            }],
+            edges: vec![Edge {
+                id: EdgeId::mint("f3d:test:edge#1").unwrap(),
+                carrier: EdgeCarrier::new(Some(curve), Some([0.25, 0.75])).unwrap(),
+                ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                    VertexId::mint("f3d:test:vertex#1").unwrap(),
+                    VertexId::mint("f3d:test:vertex#2").unwrap(),
+                )),
+                tolerance: None,
+                native_ref: None,
+            }],
+            ..Default::default()
+        };
+        let samples = historical_edge_samples(&brep).unwrap();
+        assert_eq!(samples.len(), 1);
+        let SolvedCurveGeometry::Nurbs(nurbs) = peaked_curve() else {
+            panic!("the test curve is a NURBS curve");
+        };
+        assert_eq!(
+            samples[0].carrier,
+            Some(HistoricalEdgeCarrier {
+                curve: HistoricalEdgeCurve::Nurbs(nurbs),
+                range: ParameterInterval::new([0.25, 0.75]).unwrap(),
+            })
+        );
+    }
+
+    #[test]
     fn cacheless_helix_samples_use_the_stored_edge_interval() {
         use cadmpeg_ir::geometry::{
             Curve, CurveGeometry, HelixCurveConstruction, HelixFrame, ProceduralCurve,
@@ -310,6 +367,7 @@ mod tests {
             assert!((samples[0].interior.y - expected.y).abs() < 1.0e-12);
             assert!((samples[0].interior.z - expected.z).abs() < 1.0e-12);
             assert!(samples[0].bounds.is_none());
+            assert!(samples[0].carrier.is_none());
         }
     }
 }

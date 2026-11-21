@@ -10,7 +10,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_parameter_near_point};
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{KnotVector, NurbsCurve, NurbsSurface, NurbsSurfaceAxis},
     pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
@@ -4709,7 +4709,7 @@ fn periodic_value(
 fn coordinate_rows(
     record: &RawRecord,
     scale: f64,
-) -> Option<std::vec::Vec<cadmpeg_ir::features::FinitePoint3>> {
+) -> Option<std::vec::Vec<cadmpeg_ir::features::geometry::FinitePoint3>> {
     for rows in record
         .partials
         .iter()

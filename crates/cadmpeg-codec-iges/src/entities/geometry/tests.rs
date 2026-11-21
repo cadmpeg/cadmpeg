@@ -659,7 +659,7 @@ fn decode_preserves_rational_bspline_weights_and_multiplicities() {
             0.5
         )
         .ok()
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(1.0, 1.0 / 3.0, 0.0))
     );
     assert!(result.report().losses.is_empty());
@@ -925,7 +925,7 @@ fn decode_projects_a_bounded_polynomial_bspline_curve() {
             0.5
         )
         .ok()
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0))
     );
     assert_eq!(
@@ -966,7 +966,7 @@ fn decode_projects_a_degree_zero_polynomial_bspline_curve() {
             0.5
         )
         .ok()
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
     );
     assert_eq!(

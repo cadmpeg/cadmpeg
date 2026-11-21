@@ -557,7 +557,7 @@ fn boundary_vertex_clustering_rejects_non_transitive_tolerance_neighborhoods() {
 
     assert!(matches!(
         cluster_boundary_positions(
-            &points.map(|point| cadmpeg_ir::features::FinitePoint3::new(point).unwrap()),
+            &points.map(|point| cadmpeg_ir::features::geometry::FinitePoint3::new(point).unwrap()),
             cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap(),
         ),
         Err(BoundaryVertexCreationError::Cluster(
@@ -575,7 +575,7 @@ fn boundary_vertex_clustering_uses_canonical_representatives() {
         Point3::new(0.0, 0.0, 0.0),
     ];
     let clusters = cluster_boundary_positions(
-        &points.map(|point| cadmpeg_ir::features::FinitePoint3::new(point).unwrap()),
+        &points.map(|point| cadmpeg_ir::features::geometry::FinitePoint3::new(point).unwrap()),
         cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap(),
     )
     .unwrap();
@@ -603,12 +603,14 @@ fn boundary_vertex_creation_retains_every_source_endpoint() {
         BoundaryVertexSourceEndpoint {
             edge: "iges:model:edge#source-a".into(),
             endpoint: BoundaryEndpoint::Start,
-            position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).unwrap(),
+            position: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                .unwrap(),
         },
         BoundaryVertexSourceEndpoint {
             edge: "iges:model:edge#source-b".into(),
             endpoint: BoundaryEndpoint::End,
-            position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+            position: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                .unwrap(),
         },
     ];
 
@@ -722,25 +724,25 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
     ir.geometry.points.extend([
         Point::new(
             PointId::mint("test:model:point#wrong-point-start").expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(10.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(10.0, 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
         Point::new(
             PointId::mint("test:model:point#wrong-point-end").expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(11.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(11.0, 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
         Point::new(
             PointId::mint("test:model:point#matching-point-start").expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
         Point::new(
             PointId::mint("test:model:point#matching-point-end").expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
@@ -1608,7 +1610,9 @@ fn boundary_clustering_chain_uses_no_call_stack_depth() {
     let points: Vec<_> = (0..=m)
         .map(|i| f64::from(i) * 1.5)
         .chain((0..m).rev().map(|i| f64::from(i) * 1.5 + 0.75))
-        .map(|x| cadmpeg_ir::features::FinitePoint3::new(Point3::new(x, 0.0, 0.0)).unwrap())
+        .map(|x| {
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(x, 0.0, 0.0)).unwrap()
+        })
         .collect();
     assert!(matches!(
         cluster_boundary_positions(&points, cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap()),

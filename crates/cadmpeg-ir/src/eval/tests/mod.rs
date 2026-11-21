@@ -95,10 +95,10 @@ const EPS_DEGREE_ZERO_SURFACE_BOUND: f64 = 1.0e-12;
 /// A contact track through `point` whose track tangent is `tangent`: the
 /// support's first `u` partial is the tangent and the pcurve runs along `u`.
 fn contact_track(point: Point3, tangent: Vector3) -> crate::eval::ContactTrack {
-    let finite = |vector| crate::features::FiniteVector3::new(vector).unwrap();
+    let finite = |vector| crate::features::geometry::FiniteVector3::new(vector).unwrap();
     crate::eval::ContactTrack {
         support: crate::eval::SurfaceFirstOrder {
-            point: crate::features::FinitePoint3::new(point).unwrap(),
+            point: crate::features::geometry::FinitePoint3::new(point).unwrap(),
             first: Ok([finite(tangent), finite(Vector3::new(0.0, 0.0, 0.0))]),
         },
         uv_tangent: Ok(
@@ -488,7 +488,7 @@ fn budgeted_nurbs_surface_evaluation_charges_degree_work() {
                 0.25,
                 0.75
             ))
-            .map(crate::features::FinitePoint3::get),
+            .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(0.25, 0.75, 1.0))
     );
     assert_eq!(budget.consumed(), 13);
@@ -550,7 +550,7 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
                 0.25,
                 2.0
             ))
-            .map(crate::features::FinitePoint3::get),
+            .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(0.25, 0.0, 2.0))
     );
     assert_eq!(budget.consumed(), 6);
@@ -574,7 +574,7 @@ fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
             0.75
         )
         .ok()
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Some(point)
     );
     let bound = nurbs_surface_parameter_segment_chord_bound(
@@ -1120,7 +1120,7 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
             1.0e16,
             -1.0e16
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(1.0e16, -1.0e16, -3.0))
     );
     let budget = WorkBudget::new(2);
@@ -1138,7 +1138,7 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
             .within_work_slice(&budget, |admission| model_surface_point_by_id(
                 admission, &index, &second_id, 1.0e16, -1.0e16
             ))
-            .map(crate::features::FinitePoint3::get),
+            .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(1.0e16, -1.0e16, -3.0))
     );
     assert_eq!(budget.consumed(), 3);
@@ -1333,7 +1333,7 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
             0.25,
             0.5
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(-0.25, 0.5, -2.0))
     );
     let partials = model_surface_partials_by_id(
@@ -1393,7 +1393,7 @@ fn curve_bounded_surface_delegates_evaluation_to_its_support() {
             0.25,
             0.75
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(1.25, 2.75, 3.0))
     );
     let partials = model_surface_partials_by_id(
@@ -1564,7 +1564,7 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
             0.5,
             0.25
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(expected)
     );
     assert_eq!(
@@ -1575,7 +1575,7 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
             0.5,
             0.25
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(expected)
     );
     let partials = model_surface_partials_by_id(
@@ -1690,7 +1690,7 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
     ir.geometry
         .add_procedural_surface(&surface_id, procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#mapped-revolution-construction").expect("valid identity"),
-                definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (crate::features::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS), [0.0, std::f64::consts::PI], Some([10.0, 14.0]), None, false, crate::geometry::CacheContract::from_form(None)).unwrap()),
+                definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (crate::features::geometry::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS), [0.0, std::f64::consts::PI], Some([10.0, 14.0]), None, false, crate::geometry::CacheContract::from_form(None)).unwrap()),
                 cache_fit_tolerance: None,
                 record_bounds: None,
             }).unwrap();
@@ -1740,7 +1740,7 @@ fn revolution_over_wide_angular_parameter_interval_maps_interior_angle() {
             definition: ProceduralSurfaceDefinition::Revolution(
                 crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
                     directrix_id,
-                    (crate::features::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS),
+                    (crate::features::geometry::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS),
                     [0.0, std::f64::consts::PI],
                     Some([-f64::MAX, f64::MAX]),
                     None,
@@ -1794,13 +1794,13 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
     ir.geometry.points.extend([
         Point::new(
             start_point_id.clone(),
-            crate::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
+            crate::features::geometry::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
         Point::new(
             end_point_id.clone(),
-            crate::features::FinitePoint3::new(Point3::new(2.0, 0.0, 10.0))
+            crate::features::geometry::FinitePoint3::new(Point3::new(2.0, 0.0, 10.0))
                 .expect("a finite position is a point"),
             None,
         ),
@@ -1837,7 +1837,7 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
     ir.geometry
         .add_procedural_surface(&surface_id, procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#normalized-revolution-construction").expect("valid identity"),
-                definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (crate::features::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS), [0.0, std::f64::consts::TAU], None, Some([0.0, 1.0]), false, crate::geometry::CacheContract::from_form(None)).unwrap()),
+                definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (crate::features::geometry::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS), [0.0, std::f64::consts::TAU], None, Some([0.0, 1.0]), false, crate::geometry::CacheContract::from_form(None)).unwrap()),
                 cache_fit_tolerance: None,
                 record_bounds: Some(RecordBounds::try_new([
                     Some(0.0),

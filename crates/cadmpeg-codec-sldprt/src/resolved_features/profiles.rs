@@ -48,7 +48,8 @@ use super::relation_geometry::{declared_entity_handle_circular_marker, owned_rel
 use super::relation_loci::same_dimension_length;
 use super::scalars::FeatureObjectNames;
 use super::sketch_lists::{
-    listed_entity, unchecked_record_conflict, ChordConflict, ListedEntity, SketchRecordLists,
+    construction_record, listed_entity, unchecked_record_conflict, ChordConflict, FramedCurve,
+    ListedEntity, SketchRecordLists,
 };
 use super::transforms::{record_top_marker_coordinates, sketch_frame_marker_transform};
 use super::typed_relations::{
@@ -299,7 +300,7 @@ fn enclosed_general_curve_profile(
 pub(crate) fn bind_sketch_profiles(
     features: &mut [cadmpeg_ir::features::Feature],
     arenas: SketchArenas<'_>,
-    parameters: &[cadmpeg_ir::features::DesignParameter],
+    parameters: &[cadmpeg_ir::features::parameters::DesignParameter],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     exact: &ExactProfiles,
@@ -376,12 +377,12 @@ pub(crate) fn bind_sketch_profiles(
                     lanes.iter().all(|candidate| candidate.id == lane.id)
                         && (shape.section_is_unresolved()
                             || matches!(shape.referenced_profile(),
-                                Some(cadmpeg_ir::features::PlanarProfileRef::Native(native))
+                                Some(cadmpeg_ir::features::profiles::PlanarProfileRef::Native(native))
                                     if enclosed_general_curve_profile(native, lane, start, end)))
                 }
                 FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => {
                     matches!(profile,
-                    cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Unresolved(owner))
+                    cadmpeg_ir::features::profiles::ProfileRef::Planar(cadmpeg_ir::features::profiles::PlanarProfileRef::Unresolved(owner))
                         if owner == &native_feature.id)
                 }
                 _ => false,
@@ -406,8 +407,8 @@ pub(crate) fn bind_sketch_profiles(
                             cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id));
                     }
                     FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => {
-                        *profile = cadmpeg_ir::features::ProfileRef::Planar(
-                            cadmpeg_ir::features::PlanarProfileRef::Sketch(sketch_id),
+                        *profile = cadmpeg_ir::features::profiles::ProfileRef::Planar(
+                            cadmpeg_ir::features::profiles::PlanarProfileRef::Sketch(sketch_id),
                         );
                     }
                     FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => {
@@ -454,7 +455,7 @@ pub(super) struct CircleCarrier(pub [f64; 2], pub f64);
 
 fn declared_entity_handle_circular_carriers(
     features: &[cadmpeg_ir::features::Feature],
-    parameters: &[cadmpeg_ir::features::DesignParameter],
+    parameters: &[cadmpeg_ir::features::parameters::DesignParameter],
     lanes: &[FeatureInputLane],
 ) -> HashMap<String, Vec<CircleCarrier>> {
     let ownership = owned_relation_parameters(features, parameters, lanes);
@@ -479,12 +480,16 @@ fn declared_entity_handle_circular_carriers(
             else {
                 continue;
             };
-            let Some(cadmpeg_ir::features::ParameterValue::Length(value)) = &parameter.value else {
+            let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(value)) =
+                &parameter.value
+            else {
                 continue;
             };
             let radius = match parameter.display {
-                Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.get(),
-                Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.get() * 0.5,
+                Some(cadmpeg_ir::features::parameters::DimensionDisplay::Radius) => value.get(),
+                Some(cadmpeg_ir::features::parameters::DimensionDisplay::Diameter) => {
+                    value.get() * 0.5
+                }
                 None => continue,
             };
             let Some((center, encoded_radius)) = declared_entity_handle_circular_marker(
@@ -1320,17 +1325,61 @@ impl<'a> TerminalRelationCarriers<'a> {
     }
 }
 
+/// Whether the sketch marker or record at `offset` with `geometry` is
+/// construction geometry, and whether that reading is the selector-bit-3
+/// assumption for a list line with profile role `1` (DI-77). Construction is
+/// a selected construction line, a selected compact roster axis, or a list
+/// curve with selector bit 3, except a full circle with profile role `1`.
+/// `record_construction` is the selector-bit-3 reading of a curve record that
+/// gave the geometry ([`listed_entity`]). Every marker and record projection
+/// path uses this one predicate.
+fn marker_is_construction(
+    payload: &[u8],
+    record_lists: &SketchRecordLists,
+    offset: usize,
+    geometry: &SketchGeometry,
+    record_construction: bool,
+) -> (bool, bool) {
+    let listed_kind = record_lists.listed_curve_kind(payload, offset);
+    let role_one = marker_profile_curve_role(payload, offset) == Some(1);
+    let role_one_circle = role_one
+        && (matches!(
+            geometry.definition(),
+            SketchGeometryDefinition::Circle { .. }
+        ) || listed_kind == Some(FramedCurve::Circle));
+    let listed_construction =
+        record_construction || (listed_kind.is_some() && construction_record(payload, offset));
+    let construction = !role_one_circle
+        && (marker_is_selected_construction_line(payload, offset)
+            || current_compact_roster_selected_axis(payload, offset)
+            || listed_construction);
+    let line = listed_kind == Some(FramedCurve::Line)
+        || (record_construction
+            && matches!(geometry.definition(), SketchGeometryDefinition::Line { .. }));
+    let assumed = construction && listed_construction && line && role_one;
+    (construction, assumed)
+}
+
+pub(crate) struct MarkerSketchEntities<'a> {
+    pub(crate) projected: &'a mut Vec<SketchEntity>,
+    pub(crate) held: &'a mut HeldMarkerGeometry,
+}
+
 pub(crate) fn project_marker_backed_sketches(
     ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut Vec<Sketch>,
-    sketch_entities: &mut Vec<SketchEntity>,
-    held_geometry: &mut HeldMarkerGeometry,
+    entities: MarkerSketchEntities<'_>,
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
+    let MarkerSketchEntities {
+        projected: sketch_entities,
+        held: held_geometry,
+    } = entities;
     let metadata_ids = history_metadata_ids(histories);
 
     let native_features = crate::records::HistoryFeatures::new(histories);
@@ -1641,6 +1690,15 @@ pub(crate) fn project_marker_backed_sketches(
                 ))
             };
             for marker in markers.iter().copied() {
+                if let Some((form, code)) = marker.listed_curve_relation_drop {
+                    losses.push(
+                        crate::loss::SldprtLossCode::SketchListedCurveRelationDropped.note(format!(
+                            "Sketch {sketch_id} (feature {}) marker {} drops relation code {code} at +17 for a listed {form} (DI-77)",
+                            native_feature.name,
+                            marker.id()
+                        )),
+                    );
+                }
                 let native_kind = cadmpeg_core::nonblank_literal!(
                     "sldprt:marker-geometry:{}",
                     marker.kind().native_code()
@@ -1665,7 +1723,19 @@ pub(crate) fn project_marker_backed_sketches(
                 }
                 let entity = (|| -> Result<_, MarkerGeometryFailure> {
                     if let Some(listed) = &listed {
-                        return Ok((listed.geometry.clone(), listed.construction));
+                        let construction = index_from_u64(marker.offset()).map_or(
+                            (listed.construction, false),
+                            |offset| {
+                                marker_is_construction(
+                                    &lane.native_payload,
+                                    &record_lists,
+                                    offset,
+                                    &listed.geometry,
+                                    listed.construction,
+                                )
+                            },
+                        );
+                        return Ok((listed.geometry.clone(), construction));
                     }
                     let project = |endpoint: &SketchInputEntity| {
                         let [u, v] = endpoint.coordinates_m?.get();
@@ -2313,27 +2383,41 @@ pub(crate) fn project_marker_backed_sketches(
                         SketchGeometryDefinition::Native { .. }
                     ) && record_conflict.is_none()
                     {
-                        if let Some(Ok(read)) = index_from_u64(marker.offset()).and_then(|offset| {
-                            listed_entity(
+                        if let Some((offset, Some(Ok(mut read)))) = index_from_u64(marker.offset())
+                            .map(|offset| {
+                                (
+                                    offset,
+                                    listed_entity(
+                                        &lane.native_payload,
+                                        &record_lists,
+                                        offset,
+                                        &|_| true,
+                                        &project_coordinates,
+                                    ),
+                                )
+                            })
+                        {
+                            read.construction = marker_is_construction(
                                 &lane.native_payload,
                                 &record_lists,
                                 offset,
-                                &|_| true,
-                                &project_coordinates,
+                                &read.geometry,
+                                read.construction,
                             )
-                        }) {
+                            .0;
                             listed_elsewhere.push((marker.id().to_owned(), read));
                         }
                     }
-                    let construction = index_from_u64(marker.offset()).is_some_and(|offset| {
-                        (marker_is_selected_construction_line(&lane.native_payload, offset)
-                            || current_compact_roster_selected_axis(&lane.native_payload, offset))
-                            && !(matches!(
-                                geometry.definition(),
-                                SketchGeometryDefinition::Circle { .. }
-                            ) && marker_profile_curve_role(&lane.native_payload, offset)
-                                == Some(1))
-                    });
+                    let construction =
+                        index_from_u64(marker.offset()).map_or((false, false), |offset| {
+                            marker_is_construction(
+                                &lane.native_payload,
+                                &record_lists,
+                                offset,
+                                &geometry,
+                                false,
+                            )
+                        });
                     Ok((geometry, construction))
                 })();
                 let entity = match entity {
@@ -2341,7 +2425,7 @@ pub(crate) fn project_marker_backed_sketches(
                     Err(MarkerGeometryFailure::Absent) => None,
                     Err(MarkerGeometryFailure::Codec(error)) => return Err(error),
                 };
-                if let Some((geometry, construction)) = entity {
+                if let Some((geometry, (construction, assumed))) = entity {
                     let mut endpoint_refs = Vec::new();
                     if let Some(listed) = &listed {
                         for at in listed.endpoints.into_iter().flatten() {
@@ -2376,6 +2460,17 @@ pub(crate) fn project_marker_backed_sketches(
                         SketchGeometryDefinition::Native { native_kind }
                             if native_kind.as_str() == ARC_POINTS_PLACEHOLDER
                     );
+                    if assumed {
+                        losses.push(
+                            crate::loss::SldprtLossCode::SketchListedLineConstructionAssumed.note(
+                                format!(
+                                    "Sketch {sketch_id} (feature {}) marker {} is marked construction from selector bit 3 with profile role 1 (DI-77)",
+                                    native_feature.name,
+                                    marker.id()
+                                ),
+                            ),
+                        );
+                    }
                     let entity = SketchEntity::new(entity_id, sketch_id.clone(), geometry)
                         .with_construction(construction)
                         .with_native_ref(Some(marker.id().to_owned()))
@@ -2422,8 +2517,25 @@ pub(crate) fn project_marker_backed_sketches(
                     .filter_map(|at| object_marker_ids.get(&u64_from_index(at)))
                     .map(|id| (*id).to_owned())
                     .collect();
+                let (construction, assumed) = marker_is_construction(
+                    &lane.native_payload,
+                    &record_lists,
+                    offset,
+                    &listed.geometry,
+                    listed.construction,
+                );
+                if assumed {
+                    losses.push(
+                        crate::loss::SldprtLossCode::SketchListedLineConstructionAssumed.note(
+                            format!(
+                                "Sketch {sketch_id} (feature {}) curve record at {offset} is marked construction from selector bit 3 with profile role 1 (DI-77)",
+                                native_feature.name,
+                            ),
+                        ),
+                    );
+                }
                 let entity = SketchEntity::new(entity_id, sketch_id.clone(), listed.geometry)
-                    .with_construction(listed.construction)
+                    .with_construction(construction)
                     .with_endpoint_refs(endpoint_refs);
                 if listed.outside_profile {
                     outside_profile.insert(entity.id().clone());
@@ -3857,7 +3969,7 @@ mod detached_legacy_sketch_tests {
     use super::{
         assemble_sketch_block_profile, compact_linear_dimensions, legacy_config_collinear_sketch,
         legacy_config_hex_sketch, project_marker_backed_sketches, HeldMarkerGeometry,
-        SketchBlockInstancePlacement, SketchBlockProfileInput, SortedOffsets,
+        MarkerSketchEntities, SketchBlockInstancePlacement, SketchBlockProfileInput, SortedOffsets,
         TerminalRelationCarriers,
     };
     use crate::layout::current_terminal_relation_carrier as terminal;
@@ -3965,13 +4077,13 @@ mod detached_legacy_sketch_tests {
             ordinal: 0,
             name: None,
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
             native_ref: Some("feature".into()),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
                 }),
@@ -4052,13 +4164,13 @@ mod detached_legacy_sketch_tests {
                 ordinal: 0,
                 name: None,
                 suppressed: None,
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                 source_properties: BTreeMap::new(),
                 source_tag: None,
                 source_text: None,
                 source_content: cadmpeg_ir::features::FeatureContent::default(),
                 native_ref: Some(native.id.clone()),
-                evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::Sketch {
                         sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
                     }),
@@ -4179,13 +4291,13 @@ mod detached_legacy_sketch_tests {
             ordinal: 0,
             name: None,
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
             native_ref: Some("feature".into()),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
                 }),
@@ -4619,12 +4731,12 @@ mod detached_legacy_sketch_tests {
             ordinal: 30,
             name: None,
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::default(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
                 }),
@@ -4648,10 +4760,13 @@ mod detached_legacy_sketch_tests {
             &ctx,
             &mut features,
             &mut sketches,
-            &mut sketch_entities,
-            &mut HeldMarkerGeometry::default(),
+            MarkerSketchEntities {
+                projected: &mut sketch_entities,
+                held: &mut HeldMarkerGeometry::default(),
+            },
             &[history],
             &[lane],
+            &mut Vec::new(),
         )
         .expect("marker profile projection fits service policy");
 
@@ -4720,12 +4835,12 @@ mod detached_legacy_sketch_tests {
             ordinal: 30,
             name: None,
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::default(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
                 }),
@@ -4749,10 +4864,13 @@ mod detached_legacy_sketch_tests {
             &ctx,
             &mut features,
             &mut sketches,
-            &mut sketch_entities,
-            &mut HeldMarkerGeometry::default(),
+            MarkerSketchEntities {
+                projected: &mut sketch_entities,
+                held: &mut HeldMarkerGeometry::default(),
+            },
             &[history],
             &[lane],
+            &mut Vec::new(),
         )
         .expect("marker profile projection fits service policy");
 
@@ -4818,12 +4936,12 @@ mod detached_legacy_sketch_tests {
             ordinal: 30,
             name: Some("point".into()),
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::default(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
                 }),
@@ -4845,10 +4963,13 @@ mod detached_legacy_sketch_tests {
                 &ctx,
                 &mut features,
                 &mut sketches,
-                &mut sketch_entities,
-                &mut HeldMarkerGeometry::default(),
+                MarkerSketchEntities {
+                    projected: &mut sketch_entities,
+                    held: &mut HeldMarkerGeometry::default(),
+                },
                 std::slice::from_ref(&history),
                 std::slice::from_ref(&lane),
+                &mut Vec::new(),
             )
             .expect("marker profile projection fits service policy");
 
@@ -5021,10 +5142,13 @@ mod detached_legacy_sketch_tests {
             &service,
             &mut [],
             &mut Vec::new(),
-            &mut Vec::new(),
-            &mut HeldMarkerGeometry::default(),
+            MarkerSketchEntities {
+                projected: &mut Vec::new(),
+                held: &mut HeldMarkerGeometry::default(),
+            },
             &[history],
             &[],
+            &mut Vec::new(),
         )
         .unwrap();
     }
@@ -5271,3 +5395,6 @@ mod record_profile_tests;
 
 #[cfg(test)]
 mod unread_marker_tests;
+
+#[cfg(test)]
+mod listed_curve_tests;

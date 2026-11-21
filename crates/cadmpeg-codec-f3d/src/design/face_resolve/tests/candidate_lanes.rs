@@ -94,7 +94,7 @@ fn explicit_bounded_face_group_uses_only_its_owned_candidate_lane() {
         assert_eq!(
             resolved_explicit_bounded_face_group(&group, &[operand.clone()])
                 .expect("resolve the bounded face group"),
-            Some(cadmpeg_ir::features::FaceSelection::Resolved {
+            Some(cadmpeg_ir::features::selections::FaceSelection::Resolved {
                 faces: vec![face(10), face(20)],
                 native: group.id.clone(),
             })
@@ -131,8 +131,8 @@ fn explicit_bounded_face_group_uses_only_its_owned_candidate_lane() {
                 &[operand.clone()]
             )
             .unwrap(),
-            Some(cadmpeg_ir::features::ProfileRef::Planar(
-                cadmpeg_ir::features::PlanarProfileRef::Faces(vec![face(10), face(20),])
+            Some(cadmpeg_ir::features::profiles::ProfileRef::Planar(
+                cadmpeg_ir::features::profiles::PlanarProfileRef::Faces(vec![face(10), face(20),])
             ))
         );
         operand.resolved_active_face =
@@ -140,7 +140,7 @@ fn explicit_bounded_face_group_uses_only_its_owned_candidate_lane() {
         assert_eq!(
             resolved_face_group(&group, std::slice::from_ref(&operand))
                 .expect("resolve the face group"),
-            Some(cadmpeg_ir::features::FaceSelection::Resolved {
+            Some(cadmpeg_ir::features::selections::FaceSelection::Resolved {
                 faces: vec![
                     FaceId::mint("f3d:brep/legacy/brep:entity#30").expect("identity grammar")
                 ],
@@ -171,7 +171,7 @@ fn explicit_bounded_face_group_uses_only_its_owned_candidate_lane() {
         assert_eq!(
             resolved_explicit_bounded_face_group(&group, &[operand.clone()])
                 .expect("resolve the bounded face group"),
-            Some(cadmpeg_ir::features::FaceSelection::Resolved {
+            Some(cadmpeg_ir::features::selections::FaceSelection::Resolved {
                 faces: vec![face(10), face(20)],
                 native: group.id.clone(),
             })

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native XML tag and operation-kind helpers for write.
 
-use cadmpeg_ir::features::{
-    patterns::PatternTransform, BodyRetentionMode, FeatureDefinition, FeatureOperation, SweepMode,
-    UnresolvedFamily,
-};
+use cadmpeg_ir::features::operation_settings::BodyRetentionMode;
+use cadmpeg_ir::features::patterns::PatternTransform;
+use cadmpeg_ir::features::sweeps::SweepMode;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, UnresolvedFamily};
 
 use crate::history::classify::extrude_op;
 
