@@ -2949,7 +2949,11 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 In the public `00278-Moons__MS17HD6P420I-04.f3d`, start groups `2506`, `4199`, and `11991` have 144-byte counted frames and one bounded-face member each. Their owning scopes `2492`, `4085`, and `11833` each name preceding state `2`. Their recipes have 14, 72, and 12 prefix references respectively; every reference has an empty face lane in that state. Their ordered auxiliary identity pairs are `(2486, 2249)`, `(4079, 2486)`, and `(9236, 2249)`. Each auxiliary path has compact placement with variant `1`.
 
-**Need.** Designs with two components, A placed once in B. B's first `Extrude` starts from a planar face of a body in A and extends a sketch profile 5 mm. Save one design per selected face of A: the top face, a side face, and a face that a later feature of A changes. Save a further design where A is placed twice and the face of one occurrence is selected. Each save needs the start group frame, its auxiliary records, the ASM histories of both components, and the occurrence transforms of A in B.
+The Moons Design type table registers `2249`, `2486`, `4079`, and `9236` as entities of Fusion type `549FBB80-B890-473E-A5C0-415D3D9BF4E6`, version `4`. The 72-byte component-context record in `f3d.md` §3.1, "Records the timeline context names," has this type and version.
+
+Members `2515`, `4208`, and `12000` have 13, 23, and 12 nodes respectively. The first two programs each have five one-clause nodes. The third program has twelve two-clause nodes. DR-335 covers the one-clause binding.
+
+**Need.** The join from the auxiliary Design records to the source component and its selected ASM state. Designs with two components, A placed once in B. B's first `Extrude` starts from a planar face of a body in A and extends a sketch profile 5 mm. Save one design per selected face of A: the top face, a side face, and a face that a later feature of A changes. Save a further design where A is placed twice and the face of one occurrence is selected. Each save needs the start group frame, its auxiliary records, the ASM histories of both components, and the occurrence transforms of A in B.
 
 **Conflict.** `f3d.md` §3.1 names the sole member of a 143-byte direct construction-group frame a persistent entity-selection operand. In this group it is a bounded-face recipe operand, and the decoder reads it as a face operand.
 
@@ -3154,6 +3158,19 @@ In the public `00278-Moons__MS17HD6P420I-04.f3d`, start groups `2506`, `4199`, a
 **Known.** A two-sided termination stores two bounded-face recipes with Design reference `302`. One program has five nodes, of which four have a parsed two-clause structure. The other has four parsed two-clause nodes; its first prefix operand names face slot `50`, whose preceding loop has eight edges. Its aggregate candidate lane contains four side faces. A further termination program has eight parsed nodes and two empty prefix-face lanes. Two further programs have five nodes each, including a node with one side clause (`f3d.md` §3.1). Their remaining candidates include several preceding faces.
 
 The public `00550-Mini_AfterSherpa_Orbiter_v2_X_Carriage_MGN9C.f3d` has start group `1839` with bounded-face member `1842`. Its recipe has two one-clause nodes and three prefix operands. The middle operand names face `2675` through positive Design reference `7566` and token `6`. The first and third operands have negative Design references and empty face lanes. The selected-face candidate and historical support lanes are empty.
+
+The public `00622-Voron_V1.8_Master_Model_v148.f3z` has six further native starts. Each start group has one bounded-face member and a 123-byte primary frame. These groups have zero auxiliary path records. The counts below refer to each member in its scope's preceding state.
+
+| Scope | Extrude ordinal | Preceding state | Nodes | One-clause nodes | Preceding candidates | Historical support contexts |
+| --- | --- | --- | --- | --- | --- | --- |
+| `1908` | 5 | `8979` | 7 | 1 | 12 | 15 |
+| `22151` | 26 | `9019` | 20 | 1 | 152 | 152 |
+| `22201` | 27 | `9020` | 9 | 1 | 104 | 104 |
+| `22256` | 28 | `9021` | 13 | 1 | 43 | 43 |
+| `7449` | 17 | `340` | 33 | 2 | 2 | 2 |
+| `111282` | 22 | `4015` | 62 | 5 | 0 | 0 |
+
+Scope `22256` has one empty prefix-face lane. Scope `111282` has 63 prefix operands, each with a nonempty face lane. Its selected-face candidate lane is empty. The one-clause form occurs in three independent public designs: Moons, Mini, and Voron.
 
 **Need.** The mapping of a saved boundary edge to a chain of preceding edges, the edge that a one-clause node binds (DR-170), and the binding of empty prefix-face lanes. Independent selections before and after a boundary split must distinguish a selected face from its adjacent faces.
 
