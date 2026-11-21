@@ -687,7 +687,7 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Conflict.** None.
 
-**Note.** The decoder retains each profile operand in the native scope and emits `feature.extrude-profile-group-native` for each scope with multiple Sketch-profile operands.
+**Note.** The decoder retains each profile operand in the native scope. When all operands of an Extrude group name the same planar Sketch and each carries a region selection, the decoder composes them as the union of their selected regions under `feature.extrude-profile-group-union-assumed`. Every other multi-operand group, and any same-sketch group whose composition cannot run (including on a spatial Sketch), stays native and emits `feature.extrude-profile-group-native`.
 
 ### DR-257. Entity-selection serialization form
 
