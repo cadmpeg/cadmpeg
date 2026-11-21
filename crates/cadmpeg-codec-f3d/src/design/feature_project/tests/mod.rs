@@ -40,6 +40,7 @@ mod scope_properties;
 mod sheet_metal;
 mod spatial_profiles;
 mod split;
+mod suppression;
 mod surface;
 mod surface_patch;
 mod surface_untrim;

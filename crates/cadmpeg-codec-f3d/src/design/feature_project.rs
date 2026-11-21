@@ -1765,11 +1765,14 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             str::to_owned,
                         ),
                 ),
-                suppressed: Some(
-                    family.is_some_and(stateless_scope_is_suppressed)
-                        && scope.history_state_id().is_none()
-                        && scope.previous_history_state_id().is_none(),
-                ),
+                suppressed: Some(scope.tail_flags.map_or_else(
+                    || {
+                        family.is_some_and(stateless_scope_is_suppressed)
+                            && scope.history_state_id().is_none()
+                            && scope.previous_history_state_id().is_none()
+                    },
+                    |flags| flags.suppressed,
+                )),
                 dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                 source_properties: if promoted_fillet_source.is_some() || promoted_fillet_sets.is_some() || matches!(
                     &definition,
@@ -6565,9 +6568,10 @@ fn project_fixed_chamfer(
     )))
 }
 
-/// Whether a scope of this family with null current and preceding
-/// history-state identities is suppressed. An active scope of these families
-/// changes ASM topology and carries both identities.
+/// Whether a scope of this family whose tail stores no flags and whose
+/// current and preceding history-state identities are null is suppressed. An
+/// active scope of these families changes ASM topology and carries both
+/// identities.
 fn stateless_scope_is_suppressed(family: DesignFeatureFamily) -> bool {
     matches!(
         family,

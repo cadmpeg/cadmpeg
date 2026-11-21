@@ -618,8 +618,10 @@ pub(crate) enum F3dLossCode {
     ConfigurationScopeWithoutActiveRow,
     /// Configuration properties the design does not state.
     ConfigurationPropertyUnprojected,
-    /// The rollback marker of a timeline is not read; the timeline is stated built through its last item.
+    /// The rollback marker of a timeline is not read, or an unread item follows a rolled-back item; the marker is stated at its most likely position.
     HistoryRollbackUnread,
+    /// An unread timeline item precedes the first rolled-back item; the rollback marker can stand before it.
+    HistoryRollbackBoundUnread,
     /// Feature history-state dependency links were not projected.
     HistoryDependencyUnprojected,
     /// Feature history-state dependency links have multiple source scopes.
@@ -1672,6 +1674,7 @@ impl F3dLossCode {
         Self::ConfigurationScopeWithoutActiveRow,
         Self::ConfigurationPropertyUnprojected,
         Self::HistoryRollbackUnread,
+        Self::HistoryRollbackBoundUnread,
         Self::HistoryDependencyUnprojected,
         Self::HistoryDependencyAmbiguous,
         Self::HistoricalFaceSelectionUnbound,
@@ -2639,6 +2642,7 @@ impl F3dLossCode {
             Self::ConfigurationScopeWithoutActiveRow => "configuration.scope-without-active-row",
             Self::ConfigurationPropertyUnprojected => "configuration.property-unprojected",
             Self::HistoryRollbackUnread => "history.rollback-unread",
+            Self::HistoryRollbackBoundUnread => "history.rollback-bound-unread",
             Self::HistoryDependencyUnprojected => "history.dependency-unprojected",
             Self::HistoricalFaceSelectionUnbound => "history.face-selection-unbound",
             Self::HistoryDeleteFaceMemberOrderAssumed => "history.delete-face-member-order-assumed",
@@ -3633,6 +3637,7 @@ impl F3dLossCode {
             | Self::ConfigurationScopeWithoutActiveRow
             | Self::ConfigurationPropertyUnprojected
             | Self::HistoryRollbackUnread
+            | Self::HistoryRollbackBoundUnread
             | Self::HistoryDependencyUnprojected
             | Self::HistoryDependencyAmbiguous
             | Self::HistoricalFaceSelectionUnbound
@@ -4351,6 +4356,7 @@ impl F3dLossCode {
             | Self::ConfigurationScopeWithoutActiveRow
             | Self::ConfigurationPropertyUnprojected
             | Self::HistoryRollbackUnread
+            | Self::HistoryRollbackBoundUnread
             | Self::HistoryDependencyUnprojected
             | Self::HistoryDependencyAmbiguous
             | Self::HistoricalFaceSelectionUnbound
@@ -5178,6 +5184,7 @@ mod tests {
                 "configuration.scope-without-active-row",
                 "configuration.property-unprojected",
                 "history.rollback-unread",
+                "history.rollback-bound-unread",
                 "history.dependency-unprojected",
                 "history.dependency-ambiguous",
                 "history.face-selection-unbound",
