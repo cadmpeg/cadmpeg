@@ -842,6 +842,9 @@ pub(crate) enum F3dLossCode {
     /// A linked Reverse Normal scope takes its timeline position by record
     /// order among the other linked scopes of its timeline item.
     FeatureReverseNormalLinkOrderAssumed,
+    /// A Combine operand resolved in its input state names no model body and
+    /// no generating feature, so it keeps its input-state bodies.
+    FeatureCombineBodyProducerUnresolved,
     FeatureSilhouetteSplitPrefixUnparsed,
     FeatureSilhouetteSplitModeUnresolved,
     FeatureSilhouetteSplitDirectionUnresolved,
@@ -970,6 +973,8 @@ pub(crate) enum F3dLossCode {
     FeatureLoftGroupsUnassigned,
     /// A `Loft` projects the one role-`0x7` group of its rail list as a centerline.
     FeatureLoftCenterlineAssumed,
+    /// A new-body `Loft` takes its solid setting from the kinds of its output bodies.
+    FeatureLoftSolidInferred,
     /// A `SurfaceExtend` scope projects with an unresolved extension method.
     FeatureSurfaceExtendMethodUnresolved,
     FeatureSplitToolExtensionAssumed,
@@ -1804,6 +1809,7 @@ impl F3dLossCode {
         Self::FeatureReverseNormalLinkUnplaced,
         Self::FeatureReverseNormalLinkShared,
         Self::FeatureReverseNormalLinkOrderAssumed,
+        Self::FeatureCombineBodyProducerUnresolved,
         Self::FeatureSilhouetteSplitPrefixUnparsed,
         Self::FeatureSilhouetteSplitModeUnresolved,
         Self::FeatureSilhouetteSplitDirectionUnresolved,
@@ -1897,6 +1903,7 @@ impl F3dLossCode {
         Self::FeatureLoftListsUnresolved,
         Self::FeatureLoftGroupsUnassigned,
         Self::FeatureLoftCenterlineAssumed,
+        Self::FeatureLoftSolidInferred,
         Self::FeatureSurfaceExtendMethodUnresolved,
         Self::FeatureSplitToolExtensionAssumed,
         Self::FeatureSplitToolExtensionUnresolved,
@@ -2846,6 +2853,9 @@ impl F3dLossCode {
             Self::FeatureReverseNormalLinkOrderAssumed => {
                 "feature.reverse-normal-link-order-assumed"
             }
+            Self::FeatureCombineBodyProducerUnresolved => {
+                "feature.combine-body-producer-unresolved"
+            }
             Self::FeatureSilhouetteSplitPrefixUnparsed => {
                 "feature.silhouette-split-prefix-unparsed"
             }
@@ -2999,6 +3009,7 @@ impl F3dLossCode {
             Self::FeatureLoftListsUnresolved => "feature.loft-lists-unresolved",
             Self::FeatureLoftGroupsUnassigned => "feature.loft-groups-unassigned",
             Self::FeatureLoftCenterlineAssumed => "feature.loft-centerline-assumed",
+            Self::FeatureLoftSolidInferred => "feature.loft-solid-inferred",
             Self::FeatureSplitBodyFaceToolGroupAssumed => {
                 "feature.split-body-face-tool-group-assumed"
             }
@@ -3774,6 +3785,7 @@ impl F3dLossCode {
             | Self::FeatureReverseNormalLinkUnplaced
             | Self::FeatureReverseNormalLinkShared
             | Self::FeatureReverseNormalLinkOrderAssumed
+            | Self::FeatureCombineBodyProducerUnresolved
             | Self::FeatureSilhouetteSplitPrefixUnparsed
             | Self::FeatureSilhouetteSplitModeUnresolved
             | Self::FeatureSilhouetteSplitDirectionUnresolved
@@ -3867,6 +3879,7 @@ impl F3dLossCode {
             | Self::FeatureLoftListsUnresolved
             | Self::FeatureLoftGroupsUnassigned
             | Self::FeatureLoftCenterlineAssumed
+            | Self::FeatureLoftSolidInferred
             | Self::FeatureSurfaceExtendMethodUnresolved
             | Self::FeatureSplitToolExtensionAssumed
             | Self::FeatureSplitToolExtensionUnresolved
@@ -4493,6 +4506,7 @@ impl F3dLossCode {
             | Self::FeatureReverseNormalLinkUnplaced
             | Self::FeatureReverseNormalLinkShared
             | Self::FeatureReverseNormalLinkOrderAssumed
+            | Self::FeatureCombineBodyProducerUnresolved
             | Self::FeatureSilhouetteSplitPrefixUnparsed
             | Self::FeatureSilhouetteSplitModeUnresolved
             | Self::FeatureSilhouetteSplitDirectionUnresolved
@@ -4586,6 +4600,7 @@ impl F3dLossCode {
             | Self::FeatureLoftListsUnresolved
             | Self::FeatureLoftGroupsUnassigned
             | Self::FeatureLoftCenterlineAssumed
+            | Self::FeatureLoftSolidInferred
             | Self::FeatureSurfaceExtendMethodUnresolved
             | Self::FeatureSplitToolExtensionAssumed
             | Self::FeatureSplitToolExtensionUnresolved
@@ -5326,6 +5341,7 @@ mod tests {
                 "feature.reverse-normal-link-unplaced",
                 "feature.reverse-normal-link-shared",
                 "feature.reverse-normal-link-order-assumed",
+                "feature.combine-body-producer-unresolved",
                 "feature.silhouette-split-prefix-unparsed",
                 "feature.silhouette-split-mode-unresolved",
                 "feature.silhouette-split-direction-unresolved",
@@ -5419,6 +5435,7 @@ mod tests {
                 "feature.loft-lists-unresolved",
                 "feature.loft-groups-unassigned",
                 "feature.loft-centerline-assumed",
+                "feature.loft-solid-inferred",
                 "feature.surface-extend-method-unresolved",
                 "feature.split-tool-extension-assumed",
                 "feature.split-tool-extension-unresolved",
