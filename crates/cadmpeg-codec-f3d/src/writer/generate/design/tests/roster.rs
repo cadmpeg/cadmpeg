@@ -389,21 +389,40 @@ fn timestamps_epochs_and_duration_are_the_written_values() {
 
 #[test]
 fn an_unmodeled_or_unset_length_unit_falls_back_to_mm_with_a_loss() {
-    for units in [
-        None,
-        Some(cadmpeg_ir::design::units::Units {
-            length: cadmpeg_ir::design::units::UnitSymbol::Km,
-            angle: cadmpeg_ir::design::units::UnitSymbol::Deg,
-        }),
+    use cadmpeg_ir::design::units::{UnitSymbol, UnitSystem};
+    use cadmpeg_ir::products::{ExternalDocument, ProductDefinition};
+    for (units, label) in [
+        (None, "no declared length unit"),
+        (
+            Some(UnitSystem {
+                length: UnitSymbol::Km,
+                angle: UnitSymbol::Deg,
+                mass: None,
+                time: None,
+            }),
+            "length unit Km",
+        ),
     ] {
         let mut ir = scoped_cube();
-        ir.model.product_definitions[0].units = units;
+        // The root definition the design scope names, so that the writer
+        // reads its units.
+        let mut definition = ProductDefinition::root(super::root(), ExternalDocument::default());
+        definition.bodies = ir
+            .geometry
+            .bodies
+            .iter()
+            .map(|body| body.id.clone())
+            .collect();
+        definition.units = units;
+        ir.model.product_definitions.push(definition);
         let (report, _, _) = write_bytes(&ir);
         assert!(
             loss(&report, "export/record.residual-unavailable")
                 .iter()
-                .any(|message| message.contains("MmMKS") && message.contains("record 0")),
-            "{:#?}",
+                .any(|message| message.contains("MmMKS")
+                    && message.contains(label)
+                    && message.contains("record 0")),
+            "{label}: {:#?}",
             report.losses
         );
     }

@@ -1055,16 +1055,16 @@ fn residual_losses(indices: &Indices, bodies: &[BodyRecords]) -> Vec<LossNote> {
     }));
     let mut stamp_records = vec![format!(
         "record {} (component record-timestamp table)",
-        indices.component_stamps
+        indices.component_timestamps
     )];
     if let Some(item) = &indices.item {
         stamp_records.push(format!(
             "record {} (Base Feature scope record-timestamp table)",
-            item.scope_stamps
+            item.scope_timestamps
         ));
         stamp_records.push(format!(
             "record {} (Base Feature result record-timestamp table)",
-            item.result_stamps
+            item.result_companion
         ));
     }
     record_residual_unavailable(

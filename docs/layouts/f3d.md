@@ -83,7 +83,7 @@ Parsed by:
 | 16 | 3 | `padding` | `bytes[3]` | little | spec | followed by a counted associated-reference list, three zero bytes |
 | 19 | 11 | `first_reference` | `bytes[11]` | little | spec | the required references at offsets 19, 51 and 65 |
 | 30 | 1 | `middle_reference` | `u8` | little | spec | the middle reference at offset 30 |
-| 31 | 4 | `opaque_word` | `u32` | little | spec | the opaque word at offset 31 |
+| 31 | 4 | `previous_history_state_id` | `u32` | little | spec | the preceding history-state identity at offset 31 |
 | 35 | 4 | `lane_word` | `u32` | little | spec | the repeated word at offsets 35 and 47 |
 | 39 | 8 | `lane_scalar` | `f64` | little | spec | the scalar at offset 39 |
 | 47 | 4 | `repeated_word` | `u32` | little | spec | the repeated word at offsets 35 and 47 |
@@ -4029,8 +4029,8 @@ Offsets are relative to the byte after the two parallel 15-byte body-entry runs 
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 1 | `null_reference_marker` | `u8` | little | spec | The marked null reference is `u8 1`, a zero u64 |
 | 1 | 8 | `null_reference` | `bytes[8]` | little | spec | The marked null reference is `u8 1`, a zero u64 |
-| 9 | 1 | `null_reference_flag` | `u8` | little | spec | a flag byte of `0` or `1`, and a zero byte |
-| 10 | 1 | `null_reference_zero` | `u8` | little | spec | a flag byte of `0` or `1`, and a zero byte |
+| 9 | 1 | `null_reference_flag` | `u8` | little | spec | a flag byte of `0` or `1`, and a terminal byte |
+| 10 | 1 | `null_reference_terminal` | `u8` | little | spec | a flag byte of `0` or `1`, and a terminal byte |
 | 11 | 4 | `body_count` | `u32` | little | spec | The ordinary form then stores a marked null reference, u32 `N` |
 
 ## `base_feature_suffix_result_body`
@@ -4050,8 +4050,8 @@ Offsets are relative to the primary indexed header. The LP-UTF16 scope kind payl
 | 33 | 6 | `body_field` | `bytes[6]` | little | spec | an ordinary local 15-byte body-entity element |
 | 39 | 1 | `null_reference_marker` | `u8` | little | spec | the marked null reference at offset 39 |
 | 40 | 8 | `null_reference` | `bytes[8]` | little | spec | the marked null reference at offset 39 |
-| 48 | 1 | `null_reference_flag` | `u8` | little | spec | a flag byte of `0` or `1`, and a zero byte |
-| 49 | 1 | `null_reference_zero` | `u8` | little | spec | a flag byte of `0` or `1`, and a zero byte |
+| 48 | 1 | `null_reference_flag` | `u8` | little | spec | a flag byte of `0` or `1`, and a terminal byte |
+| 49 | 1 | `null_reference_terminal` | `u8` | little | spec | a flag byte of `0` or `1`, and a terminal byte |
 | 50 | 4 | `repeated_count` | `u32` | little | spec | u32 `1` at offset 50 |
 | 54 | 1 | `repeated_marker` | `u8` | little | spec | repeats as a marked u32 value at offset 54 |
 | 55 | 4 | `repeated_body_entity_suffix` | `u32` | little | spec | repeats as a marked u32 value at offset 54 |
