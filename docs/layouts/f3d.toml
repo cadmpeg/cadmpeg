@@ -52560,3 +52560,128 @@ offset = 685
 type = "bytes[11]"
 source = "spec"
 anchor = "`base_feature_browser_root_prefix`"
+
+# --- §3.1 Records of a Sketch item (serializer magic 1234) -----------------
+
+[[record]]
+name = "sketch_item_sketches_root_head"
+kind = "byte"
+section = "Records of a Sketch item"
+anchor = "A design holds one `SketchesRoot` node."
+size = 53
+note = "Offsets are relative to the node's indexed header. The `k` container references and a zero byte follow."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A design holds one `SketchesRoot` node."
+
+[[record.field]]
+name = "zero_word"
+offset = 11
+type = "u32"
+value = 0
+source = "spec"
+anchor = "A design holds one `SketchesRoot` node."
+
+[[record.field]]
+name = "name"
+offset = 15
+type = "bytes[16]"
+value = [12, 0, 0, 0, 83, 107, 101, 116, 99, 104, 101, 115, 82, 111, 111, 116]
+source = "spec"
+anchor = "A design holds one `SketchesRoot` node."
+
+[[record.field]]
+name = "zero_pair"
+offset = 31
+type = "bytes[2]"
+value = [0, 0]
+source = "spec"
+anchor = "A design holds one `SketchesRoot` node."
+
+[[record.field]]
+name = "name_repeat"
+offset = 33
+type = "bytes[16]"
+value = [12, 0, 0, 0, 83, 107, 101, 116, 99, 104, 101, 115, 82, 111, 111, 116]
+source = "spec"
+anchor = "A design holds one `SketchesRoot` node."
+
+[[record.field]]
+name = "container_count"
+offset = 49
+type = "u32"
+source = "spec"
+anchor = "A design holds one `SketchesRoot` node."
+
+[[record]]
+name = "sketch_item_sketch_collection_head"
+kind = "byte"
+section = "Records of a Sketch item"
+anchor = "The sketch collection of a component with `k` sketches stores, in order"
+size = 82
+note = "Offsets are relative to the collection's indexed header. The `k` container references, the u32 `w`, `u8 1`, a u8 `0` or `1`, the record-22 reference, a zero byte, u32 `k`, the `k` container references, and the component aggregate reference follow."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The sketch collection of a component with `k` sketches stores, in order"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[9]"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+source = "spec"
+anchor = "The sketch collection of a component with `k` sketches stores, in order"
+
+[[record.field]]
+name = "property_marker"
+offset = 20
+type = "u8"
+value = 1
+source = "spec"
+anchor = "The sketch collection of a component with `k` sketches stores, in order"
+
+[[record.field]]
+name = "property_count"
+offset = 21
+type = "u32"
+value = 1
+source = "spec"
+anchor = "The sketch collection of a component with `k` sketches stores, in order"
+
+[[record.field]]
+name = "property_name"
+offset = 25
+type = "bytes[18]"
+value = [14, 0, 0, 0, 99, 114, 118, 95, 116, 97, 103, 95, 105, 100, 95, 105, 100, 120]
+source = "spec"
+anchor = "The sketch collection of a component with `k` sketches stores, in order"
+
+[[record.field]]
+name = "property_type"
+offset = 43
+type = "bytes[27]"
+value = [23, 0, 0, 0, 73, 110, 116, 114, 105, 110, 115, 105, 99, 77, 101, 116, 97, 84, 121, 112, 101, 117, 105, 110, 116, 54, 52]
+source = "spec"
+anchor = "The sketch collection of a component with `k` sketches stores, in order"
+
+[[record.field]]
+name = "crv_tag_id_idx"
+offset = 70
+type = "u64"
+source = "spec"
+anchor = "The sketch collection of a component with `k` sketches stores, in order"
+
+[[record.field]]
+name = "container_count"
+offset = 78
+type = "u32"
+source = "spec"
+anchor = "The sketch collection of a component with `k` sketches stores, in order"
