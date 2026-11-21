@@ -29,6 +29,11 @@ const CURVE_COLLECTION: u32 = 22;
 pub(super) const COMPONENT: u32 = 205;
 /// The owner collection.
 pub(super) const OWNER_COLLECTION: u32 = 199;
+/// The secondary identity of every written sketch curve, the null value; a
+/// profile-loop entry, its side face's curve record and its sketch links
+/// store the curve's (f3d.md §3.1, "Tracked results of a profile with
+/// circular holes" and "Sketch links of the start cap").
+pub(in crate::writer::generate::design) const CURVE_SECONDARY_IDENTITY: u64 = 0;
 /// The first origin plane record, `XY`; `XZ` and `YZ` follow.
 const ORIGIN_PLANES: u32 = 29;
 /// The family name of a `Sketch` scope.
@@ -582,7 +587,7 @@ impl Item<'_> {
             .u32(3);
         genesis(out, genesis_value)?;
         property(out, "crv_primary_id", identity)?;
-        property(out, "crv_secondary_id", 0)?;
+        property(out, "crv_secondary_id", CURVE_SECONDARY_IDENTITY)?;
         for value in payload {
             out.f64(value);
         }
