@@ -1239,7 +1239,7 @@ fn generated_projected_brep_c2_curve(
                     let mut point = point.get();
                     let uv = plane_uv(point, origin, u_axis, v_axis);
                     point = cadmpeg_ir::math::Point3::new(uv[0], uv[1], 0.0);
-                    cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(point).ok_or_else(|| {
                         cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                             "control_points contains a non-finite point".into(),
                         )

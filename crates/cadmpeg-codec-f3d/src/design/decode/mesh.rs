@@ -52,7 +52,7 @@ use crate::records::mesh::{
 };
 use cadmpeg_core::decode::{bounded_len, u64_from_index, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::units::UnitVector3;
 use std::collections::{HashMap, HashSet};
 
@@ -2434,8 +2434,8 @@ pub(crate) fn mesh_component_flag_losses(
             .iter()
             .filter(|stream| stream.component_flag)
             .map(|stream| {
-                crate::loss::F3dLossCode::MeshComponentFlagAssumed.note(format!(
-                    "mesh body {} stream {} reads its components flagged Z: true as unflagged f32 components; the native record retains the flag",
+                crate::loss::F3dLossCode::MeshComponentFlagUninterpreted.note(format!(
+                    "mesh body {} stream {} stores the component flag Z: true with no settled meaning; the native record retains the flag",
                     body.placement.record().record_index(), stream.name
                 ))
             })
@@ -2673,7 +2673,7 @@ mod tests {
     use crate::paramesh::MeshContainer;
     use crate::test_support::{lp_ascii, lp_utf16};
     use cadmpeg_core::CodecError;
-    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::units::UnitVector3;
 
     fn parse_mesh_design_records<F>(

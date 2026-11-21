@@ -5,10 +5,11 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::evaluation::{FeatureEvaluation, FeatureResultTopology};
+use cadmpeg_ir::features::operation_settings::BooleanKind;
+use cadmpeg_ir::features::selections::{BodySelection, DistinctMembers, NativeSelections};
 use cadmpeg_ir::features::{
-    BodySelection, BooleanKind, CombineOperands, DistinctMembers, Feature, FeatureContent,
-    FeatureDefinition, FeatureEvaluation, FeatureOperation, FeatureResultTopology,
-    NativeSelections,
+    CombineOperands, Feature, FeatureContent, FeatureDefinition, FeatureOperation,
 };
 use cadmpeg_ir::native::bytes::NativeBytes;
 
@@ -91,7 +92,7 @@ pub(crate) fn definition<'a>(
         op,
         keep_tools,
 
-        destination: cadmpeg_ir::features::CombineDestination::default(),
+        destination: cadmpeg_ir::features::operation_settings::CombineDestination::default(),
     }))
 }
 

@@ -9,7 +9,7 @@ use crate::math::{distance_at_most, distance_below};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::nurbs_surface_partials;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 #[cfg(test)]
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -2442,7 +2442,7 @@ mod tests {
             .map(|site| {
                 let point = super::b2_cylinder_point(cylinder, site.point.get())
                     .expect("finite cylinder site");
-                cadmpeg_ir::features::FinitePoint3::new(point).expect("finite point")
+                cadmpeg_ir::features::geometry::FinitePoint3::new(point).expect("finite point")
             })
             .collect();
         let binding = crate::test_support::with_service_context(|ctx| {

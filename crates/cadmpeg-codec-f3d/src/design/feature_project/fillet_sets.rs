@@ -14,10 +14,11 @@ use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::DesignParameter;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{
-    edge_treatments::{FilletGroup, RadiusForm, RadiusSpec, VariableRadii, VariableRadius},
-    EdgeSelection, FeatureOperation,
+use cadmpeg_ir::features::edge_treatments::{
+    FilletGroup, RadiusForm, RadiusSpec, VariableRadii, VariableRadius,
 };
+use cadmpeg_ir::features::selections::EdgeSelection;
+use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::HashMap;

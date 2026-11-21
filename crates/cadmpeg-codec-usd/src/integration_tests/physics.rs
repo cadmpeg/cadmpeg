@@ -519,9 +519,9 @@ fn box_with_mass() -> cadmpeg_ir::CadIr {
             target: PhysicsTarget::Body { body }.into(),
             mass: cadmpeg_ir::scalar::PositiveReal::new(2.0),
             density: None,
-            center_of_mass: cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
-                5.0, 10.0, 15.0,
-            )),
+            center_of_mass: cadmpeg_ir::features::geometry::FinitePoint3::new(
+                cadmpeg_ir::math::Point3::new(5.0, 10.0, 15.0),
+            ),
             inertia: None,
             material: None,
             native_ref: None,

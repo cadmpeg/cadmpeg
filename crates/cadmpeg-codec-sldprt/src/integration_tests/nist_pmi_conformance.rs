@@ -365,7 +365,7 @@ fn ftc_06_0812_nominal_and_counterbore_parameter_remain_distinct_source_values()
     assert!(ir.model.parameters.iter().any(|parameter| {
         parameter.name == "C'Bore Dia."
             && parameter.value.as_ref().is_some_and(|value| {
-                let cadmpeg_ir::features::ParameterValue::Length(value) = value else {
+                let cadmpeg_ir::features::parameters::ParameterValue::Length(value) = value else {
                     return false;
                 };
                 (value.get() - 0.8125 * MM_PER_INCH).abs() < VALUE_TOLERANCE

@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::design::feature_project::{
-    pattern_seeds::unprojected_pattern_seeds, project_circular_pattern,
-    project_rectangular_pattern_scalars,
-};
+use crate::design::feature_project::pattern::project_circular_pattern;
+use crate::design::feature_project::pattern::project_rectangular_pattern_scalars;
+use crate::design::feature_project::pattern_seeds::unprojected_pattern_seeds;
 use crate::records::{
     feature::{patterns::DesignRectangularPatternConstruction, scope::DesignParameterScope},
     topology::{
@@ -11,10 +10,9 @@ use crate::records::{
         construction::DesignConstructionOperandGroupFrame, extrude_selection::DesignOperandRole,
     },
 };
-use cadmpeg_ir::features::{
-    patterns::{PatternSeed, PatternTransform},
-    BodySelection, FaceSelection, FeatureDefinition, FeatureOperation,
-};
+use cadmpeg_ir::features::patterns::{PatternSeed, PatternTransform};
+use cadmpeg_ir::features::selections::{BodySelection, FaceSelection};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 const EPS_SPACING: f64 = 1.0e-12;
 
@@ -400,13 +398,15 @@ fn rectangular_pattern_direction_records_supply_both_directions() {
     };
     assert!(omitted_instances.is_empty());
     let direction =
-        cadmpeg_ir::features::FiniteVector3::from(direction.expect("first direction")).get();
+        cadmpeg_ir::features::geometry::FiniteVector3::from(direction.expect("first direction"))
+            .get();
     assert!((direction.x - 1.0).abs() < EPS_SPACING);
     assert!(direction.y.abs() < EPS_SPACING && direction.z.abs() < EPS_SPACING);
     assert!((spacing.get() - 10.0).abs() < EPS_SPACING);
     assert_eq!(count, 4);
     let second = second.expect("second direction");
-    let second_direction = cadmpeg_ir::features::FiniteVector3::from(second.direction).get();
+    let second_direction =
+        cadmpeg_ir::features::geometry::FiniteVector3::from(second.direction).get();
     assert!((second_direction.y + 1.0).abs() < EPS_SPACING);
     assert!(second_direction.x.abs() < EPS_SPACING && second_direction.z.abs() < EPS_SPACING);
     assert!((second.spacing.get() - 12.0).abs() < EPS_SPACING);
@@ -495,7 +495,7 @@ fn linear_direction(definition: FeatureDefinition) -> Option<cadmpeg_ir::math::V
         panic!("linear rectangular pattern");
     };
     assert!(omitted_instances.is_empty());
-    direction.map(|direction| cadmpeg_ir::features::FiniteVector3::from(direction).get())
+    direction.map(|direction| cadmpeg_ir::features::geometry::FiniteVector3::from(direction).get())
 }
 
 #[test]
@@ -713,14 +713,14 @@ fn rectangular_pattern_payload_projects_both_axes_and_feature_seed() {
         assert_eq!(*count, 5);
         assert!((spacing.get() - u_spacing).abs() < EPS_SPACING);
         assert_eq!(
-            cadmpeg_ir::features::FiniteVector3::from(direction.unwrap()).get(),
+            cadmpeg_ir::features::geometry::FiniteVector3::from(direction.unwrap()).get(),
             cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
         );
         let second = second.as_ref().unwrap();
         assert_eq!(second.count, 3);
         assert!((second.spacing.get() - v_spacing).abs() < EPS_SPACING);
         assert_eq!(
-            cadmpeg_ir::features::FiniteVector3::from(second.direction).get(),
+            cadmpeg_ir::features::geometry::FiniteVector3::from(second.direction).get(),
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0)
         );
         let record = scope.rectangular_pattern_construction().unwrap();
@@ -985,7 +985,8 @@ fn single_direction(definition: FeatureDefinition) -> (f64, u32) {
     };
     assert!(second.is_none());
     let direction =
-        cadmpeg_ir::features::FiniteVector3::from(direction.expect("first direction")).get();
+        cadmpeg_ir::features::geometry::FiniteVector3::from(direction.expect("first direction"))
+            .get();
     assert!((direction.x - 1.0).abs() < EPS_SPACING);
     (spacing.get(), count)
 }
@@ -1390,7 +1391,8 @@ fn linear_parts(
     };
     assert!(second.is_none());
     (
-        direction.map(|direction| cadmpeg_ir::features::FiniteVector3::from(direction).get()),
+        direction
+            .map(|direction| cadmpeg_ir::features::geometry::FiniteVector3::from(direction).get()),
         spacing.get(),
         count,
         symmetric,

@@ -3,7 +3,8 @@
 
 use crate::design::dimensions::{planar_point, sketch_normal_sign};
 use crate::design::face_resolve::{placement_origin_scale, sketch_curve_is_spatial};
-use crate::design::feature_project::{closed_spatial_sketch_profiles, SpatialProfileSearch};
+use crate::design::feature_project::sweep_loft::closed_spatial_sketch_profiles;
+use crate::design::feature_project::SpatialProfileSearch;
 use crate::design::geometry::closed_sketch_profiles;
 use crate::ids::native_stream;
 use crate::records::{
