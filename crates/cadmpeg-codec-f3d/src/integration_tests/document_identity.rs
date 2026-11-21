@@ -215,7 +215,7 @@ fn archive_merge_keeps_redirections_member_identity() {
     assert_identity(document, "RootKey");
 }
 
-fn api_export_with_placements(linked: bool) -> Vec<u8> {
+fn api_export_with_placements(linked: bool, terminal: Option<(u8, &str)>) -> Vec<u8> {
     use std::io::Read;
     let bytes = f3d_with_identity_xrefs("assembly-design", "root.f3d", &[("child.f3d", XREF_ROLE)]);
     let mut source = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
@@ -238,6 +238,17 @@ fn api_export_with_placements(linked: bool) -> Vec<u8> {
                     &[]
                 });
             bytes.splice(manifest.reference_extension, extension);
+            if let Some((flag, lineage)) = terminal {
+                let mut marker = vec![1];
+                crate::test_support::lp_utf16(&mut marker, "NA_EXPORT");
+                assert!(bytes.ends_with(&marker));
+                bytes.truncate(bytes.len() - marker.len());
+                bytes.push(flag);
+                if flag == 0 {
+                    crate::test_support::lp_utf16(&mut bytes, "Root");
+                }
+                crate::test_support::lp_utf16(&mut bytes, lineage);
+            }
         }
         zip.start_file(name, options).unwrap();
         zip.write_all(&bytes).unwrap();
@@ -246,10 +257,10 @@ fn api_export_with_placements(linked: bool) -> Vec<u8> {
 }
 
 #[test]
-fn api_export_manifest_binds_child_identity_without_assigning_it_to_file_root() {
+fn api_export_manifest_export_marker_keeps_root_lineage_unassigned() {
     let decoded = F3dCodec
         .decode(
-            &mut Cursor::new(api_export_with_placements(true)),
+            &mut Cursor::new(api_export_with_placements(true, None)),
             &DecodeOptions::default(),
         )
         .unwrap();
@@ -290,7 +301,7 @@ fn api_export_manifest_binds_child_identity_without_assigning_it_to_file_root() 
 fn api_export_empty_reference_extension_has_no_external_documents() {
     let decoded = F3dCodec
         .decode(
-            &mut Cursor::new(api_export_with_placements(false)),
+            &mut Cursor::new(api_export_with_placements(false, None)),
             &DecodeOptions::default(),
         )
         .unwrap();
@@ -301,4 +312,64 @@ fn api_export_empty_reference_extension_has_no_external_documents() {
         .iter()
         .all(|row| !matches!(row.storage, Storage::External(_))));
     assert!(f3d_native(decoded.ir()).xref_references.is_empty());
+}
+
+#[test]
+fn api_export_manifest_terminal_lineage_identifies_root() {
+    const ROOT_LINEAGE: &str = "urn:adsk.wipprod:dm.lineage:RootKey";
+    for flag in [0, 1] {
+        for linked in [false, true] {
+            let bytes = api_export_with_placements(linked, Some((flag, ROOT_LINEAGE)));
+            let decoded = F3dCodec
+                .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                .unwrap();
+            let definitions = &decoded.ir().model.product_definitions;
+            let root = definitions.iter().find(|row| row.is_root()).unwrap();
+            let Storage::File { document, .. } = &root.storage else {
+                panic!("file root")
+            };
+            assert_eq!(
+                document.document_id.as_ref().map(NonBlankString::as_str),
+                Some(ROOT_LINEAGE)
+            );
+            assert!(document.version.is_none());
+            if linked {
+                let child = definitions
+                    .iter()
+                    .find_map(|row| match &row.storage {
+                        Storage::External(document) => Some(document),
+                        _ => None,
+                    })
+                    .unwrap();
+                assert_eq!(
+                    child.document_id.as_ref().map(NonBlankString::as_str),
+                    Some("urn:adsk.wipprod:dm.lineage:ChildKey")
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn api_export_manifest_save_markers_keep_root_lineage_unassigned() {
+    for flag in [0, 1] {
+        for marker in ["NA_EXPORT", "NA_OFFLINESAVE"] {
+            let bytes = api_export_with_placements(true, Some((flag, marker)));
+            let decoded = F3dCodec
+                .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                .unwrap();
+            let root = decoded
+                .ir()
+                .model
+                .product_definitions
+                .iter()
+                .find(|row| row.is_root())
+                .unwrap();
+            let Storage::File { document, .. } = &root.storage else {
+                panic!("file root")
+            };
+            assert!(document.document_id.is_none());
+            assert!(document.version.is_none());
+        }
+    }
 }

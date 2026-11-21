@@ -270,7 +270,7 @@ terminal:
 
 The `lineage_suffix` is the fixed byte sequence `48 00 41 00 41 00 48 00 41 00`. It follows a present lineage URN in the terminal form that starts with `u8 0`. Its layout is `manifest_lineage_suffix` in [the layout tables](../layouts/f3d.md).
 
-The terminal form ends at EOF. Any bytes after its final field are invalid. `NA_OFFLINESAVE` marks a document saved without cloud lineage; that manifest carries no lineage URN.
+The terminal form ends at EOF. Any bytes after its final field are invalid. A terminal `lineage_urn` identifies the containing document. `NA_EXPORT` and `NA_OFFLINESAVE` mark an unassigned cloud lineage.
 
 The two folder runs list distinct bases, and every listed base is an asset folder. `active_asset_guid` is the first asset GUID of the active asset. The active asset can be the Design asset, a simulation case, an animation, or another asset kind. It does not select the Design folder.
 
@@ -294,7 +294,7 @@ A document that places other documents records each placement as an **XRef** key
 
 Each reference stores an LP-UTF16 role GUID, an LP-UTF16 source-document path, an LP-UTF16 target-document path, an LP-UTF16 target-cache path, u32 values `2, 4, 1, 0`, and a u32 property count of `6`. Six LP-UTF16 name/value pairs follow. `LineageId` and `LineageUrn` carry the target document's lineage URN. `URL` carries its version URN. `toDocDisplayName` carries its display name. `linkedAssetGUID` is a GUID, and `linkClassification` has value `OriginalDesign`. The source-document path names the containing file, and the target-document path names the external file. The target-cache path is a separate locator.
 
-The role GUID joins this reference to its Design occurrence placement. A segment version context (§3.1) with that role GUID as its asset identity stores `URL` as its version URN and `linkedAssetGUID` as its asset-revision GUID. That context describes the target document. The containing document's lineage is the top-level manifest terminal lineage (§1.3); `NA_EXPORT` marks an unassigned cloud lineage.
+The role GUID joins this reference to its Design occurrence placement. A segment version context (§3.1) with that role GUID as its asset identity stores `URL` as its version URN and `linkedAssetGUID` as its asset-revision GUID. That context describes the target document.
 
 **`ComponentReferenceData.json`** is a top-level STORED entry containing a JSON object. The object is an open document: member names and values are retained without a closed schema.
 

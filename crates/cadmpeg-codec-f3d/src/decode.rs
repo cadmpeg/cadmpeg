@@ -3816,9 +3816,11 @@ impl<'a> F3dDecodeSession<'a> {
             external,
         );
         self.report.losses.extend(external_losses);
-        if let Some(table) = prereqs.xref_table() {
-            crate::xref::api_export::state_file_identity(&mut self.ir.model, table);
-        }
+        crate::xref::api_export::state_file_identity(
+            &mut self.ir.model,
+            prereqs.xref_table(),
+            self.scan.manifest_lineage_urn.as_deref(),
+        );
         let mesh_projection = match &finalize_path {
             FinalizePath::Geometry(index) => &index.mesh_projection,
             FinalizePath::Bodyless(inputs) => &inputs.mesh_projection,

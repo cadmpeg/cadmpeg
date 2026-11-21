@@ -177,17 +177,19 @@ fn parse(ctx: &DecodeContext<'_>, mut view: View<'_>) -> Result<XrefTable, Refer
     })
 }
 
-pub(crate) fn state_file_identity(model: &mut cadmpeg_ir::document::Model, table: &XrefTable) {
-    if table.documents.is_empty() {
+pub(crate) fn state_file_identity(
+    model: &mut cadmpeg_ir::document::Model,
+    table: Option<&XrefTable>,
+    lineage_urn: Option<&str>,
+) {
+    let path = table
+        .filter(|table| !table.documents.is_empty())
+        .and_then(|table| table.references.first())
+        .and_then(|reference| NonBlankString::new(reference.from.as_str()));
+    let lineage = lineage_urn.and_then(NonBlankString::new);
+    if path.is_none() && lineage.is_none() {
         return;
     }
-    let Some(path) = table
-        .references
-        .first()
-        .and_then(|reference| NonBlankString::new(reference.from.as_str()))
-    else {
-        return;
-    };
     if !model
         .product_definitions
         .iter()
@@ -201,7 +203,12 @@ pub(crate) fn state_file_identity(model: &mut cadmpeg_ir::document::Model, table
         .filter(|row| row.is_root())
     {
         if let Storage::File { document, .. } = &mut root.storage {
-            document.path.get_or_insert_with(|| path.clone());
+            if let Some(path) = &path {
+                document.path.get_or_insert_with(|| path.clone());
+            }
+            if let Some(lineage) = &lineage {
+                document.document_id.get_or_insert_with(|| lineage.clone());
+            }
         }
     }
 }
