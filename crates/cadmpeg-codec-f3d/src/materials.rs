@@ -13,7 +13,7 @@ use cadmpeg_core::decode::{index_from_u32, u64_from_index};
 use crate::records::references::DesignVisualToken;
 use cadmpeg_core::container::ContainerRole;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Write};
 
 use crate::records::{bodies::DesignBodyBinding, references::DesignMaterialAssignment};
@@ -729,14 +729,17 @@ pub(crate) fn decode_with_body_bindings<'a>(
         body_bindings,
     )?;
     let body_overrides = decode_body_appearance_overrides(ctx, scan, body_bindings)?;
+    let mut overridden = BTreeSet::new();
     for over in &body_overrides {
         let Some(appearance) = appearance_for_visual_token(&out, &over.visual_guid, None)? else {
             continue;
         };
         // A body-override record takes precedence over the body's material
-        // assignment, so it replaces that binding.
+        // assignment, so it replaces that binding. The first override of a
+        // body binds it.
         bind_body_override(
             &mut bindings,
+            &mut overridden,
             AppearanceBinding {
                 id: crate::ids::body_appearance_binding_id(
                     over.entity_suffix,
@@ -2174,8 +2177,15 @@ fn generic_connection_delta(record: &[u8], value_block: usize) -> Option<usize> 
 /// Binds a body-override appearance. The override takes precedence over the
 /// body's material assignment: a binding of the same body to another
 /// appearance is replaced, and a binding to the same appearance is kept with
-/// its assignment provenance.
-fn bind_body_override(bindings: &mut Vec<AppearanceBinding>, binding: AppearanceBinding) {
+/// its assignment provenance. Only the first override of a body binds it.
+fn bind_body_override(
+    bindings: &mut Vec<AppearanceBinding>,
+    overridden: &mut BTreeSet<AppearanceTarget>,
+    binding: AppearanceBinding,
+) {
+    if !overridden.insert(binding.target.entity.clone()) {
+        return;
+    }
     if bindings.iter().any(|existing| {
         existing.target.entity == binding.target.entity && existing.appearance == binding.appearance
     }) {

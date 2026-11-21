@@ -32,7 +32,7 @@ fn body_override_replaces_the_material_assignment_binding_of_that_body_only() {
     let over = binding("override-1", &first, "override");
     let mut bindings = vec![assigned, other.clone()];
 
-    bind_body_override(&mut bindings, over.clone());
+    bind_body_override(&mut bindings, &mut Default::default(), over.clone());
 
     let on_first: Vec<_> = bindings
         .iter()
@@ -52,7 +52,22 @@ fn body_override_naming_the_assigned_appearance_keeps_the_assignment_binding() {
     let over = binding("override-1", &first, "material");
     let mut bindings = vec![assigned.clone()];
 
-    bind_body_override(&mut bindings, over);
+    bind_body_override(&mut bindings, &mut Default::default(), over);
 
     assert_eq!(bindings, vec![assigned]);
+}
+
+#[test]
+fn the_first_body_override_wins_over_a_later_one() {
+    let first = body("1");
+    let assigned = binding("assigned-1", &first, "material");
+    let earlier = binding("override-1", &first, "red");
+    let later = binding("override-2", &first, "blue");
+    let mut bindings = vec![assigned];
+    let mut overridden = Default::default();
+
+    bind_body_override(&mut bindings, &mut overridden, earlier.clone());
+    bind_body_override(&mut bindings, &mut overridden, later);
+
+    assert_eq!(bindings, vec![earlier]);
 }
