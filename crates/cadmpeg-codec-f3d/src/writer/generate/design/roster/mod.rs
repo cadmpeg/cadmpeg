@@ -406,6 +406,8 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
                 "sketch containers (word 1, sketch word 7, no base record)".to_owned(),
                 "sketch points (flags and state by role)".to_owned(),
                 "sketch curves (curve flag A, EntityGenesis)".to_owned(),
+                "point and curve identities (`pt_tag`, `crv_primary_id`): one sequence from 100 across the sketches, each sketch's origin point, then its points, then its curves".to_owned(),
+                format!("record {SKETCHES} (sketch collection: `crv_tag_id_idx`, one more than the largest point or curve identity)"),
                 "placement tracking flags (01 01 00)".to_owned(),
                 format!(
                     "Sketch scope tails, placements and placement paths (evaluation epoch {}, where f3d.md §3.1 states 252, and duration {}, as the Base Feature item tail)",

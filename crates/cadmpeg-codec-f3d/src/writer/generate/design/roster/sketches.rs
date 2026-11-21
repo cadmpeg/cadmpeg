@@ -8,9 +8,7 @@ use cadmpeg_core::CodecError;
 
 use super::super::base_feature::{timestamp_table, DURATION, EPOCH};
 use super::super::frames::DesignRecords;
-use super::super::sketch::{
-    CurveGeometry, Entity, OriginPlane, PlannedSketch, RelationKind, TangencyEnds,
-};
+use super::super::sketch::{CurveGeometry, Entity, OriginPlane, PlannedSketch, RelationKind};
 use super::super::types;
 use super::{count, Context, AGGREGATE};
 use crate::writer::generate::presentation::TypeRow;
