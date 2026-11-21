@@ -3885,6 +3885,16 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Need.** Controlled saves that vary the auxiliary references and settings while keeping the selected cells and tools fixed.
 
+### DR-820. Region member lists across a crossing curve that leaves the arrangement
+
+**Question.** Does a node where a curve crosses a profile curve split that profile curve into two fragments of a counted member list when the crossing curve leaves the arrangement?
+
+**Known.** `f3d.md` §3.1 "The member list of a counted region names a neutral profile" makes every point where two curves meet a node, and a walk counts a curve once for each fragment. A line that ends on a rectangle side splits that side into two fragments, and the member list names the side twice. One local corpus file stores a planar Extrude whose counted member list names five curves once each. In the arrangement, a non-construction line crosses one of these curves inside the selected face; both parts of the crossing line leave the arrangement. The walk of the face holds the crossed curve as two fragments, so the list matches no walk. The final B-rep of the Extrude matches the face that the five curves bound.
+
+**Need.** Further designs where a curve crosses, not ends on, a selected profile curve and leaves the arrangement, with the stored member multiplicity of the crossed curve.
+
+**Note.** The profile stays native and the decoder reports `feature.profile-selection-native`.
+
 ### DR-819. Opaque word in a typed one-sided distance Extrude
 
 **Question.** What does a nonzero opaque distance word encode in the direct typed-reference scope?
@@ -3952,3 +3962,13 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 **Conflict.** None.
 
 **Note.** The decoder preserves each unread frame in the source archive with `sheet-metal.settings-undecoded` and retains other Design records.
+
+### DR-889. Extrude selection members in sketch text
+
+**Question.** Which glyph region of a sketch text does each Extrude selection member name?
+
+**Known.** `f3d.md` "An Extrude selection resolves to neutral sketch-loop indices" defines the member resolution through Sketch points, curves, and history states. Each member of one selection group names a distinct profile region of the selected Sketch. The local identity of a member that picks a glyph region matches no Sketch point or curve identity, and the `txt_tag` and `textex_tag` records store no glyph outline. A group can hold more members than the regions that the Sketch curves bound.
+
+**Need.** Saves that pick a subset of the glyphs of one text, and saves that pick a glyph counter, with the local identities of each member.
+
+**Note.** When the distinct members of the one selection group of an Extrude match no Sketch point, Sketch curve, or history binding and outnumber the atomic regions of the line, arc, and circle curves of a Sketch with non-construction text, the decoder takes the excess members as glyph picks. When the member count equals the count of non-whitespace characters of the Sketch text, the profile names the text entities and the decoder reports `feature.profile-text-glyphs-assumed`. Otherwise a Sketch with one profile loop selects that loop, any other Sketch keeps the group as a native selection within the Sketch, and the decoder reports `feature.profile-text-glyphs-native`. A Sketch with text and exactly one profile loop resolves to that loop when the distinct members are at most its atomic regions.

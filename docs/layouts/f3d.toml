@@ -31499,6 +31499,89 @@ size = 112
 note = "Scope suffix after the reference table."
 
 [[record]]
+name = "assembly_as_built_scope_381_403_prefix"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The 381- and 403-byte `As-built` scopes store an empty property block."
+size = 171
+parsed_by = ["crates/cadmpeg-codec-f3d/src/design/assembly.rs", "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_alignment.rs"]
+
+[[record.gap]]
+offset = 0
+size = 20
+note = "Prefix before the property block."
+
+[[record.field]]
+name = "property_presence"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "byte of one at offset 20"
+value = 1
+
+[[record.field]]
+name = "property_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "zero u32 property count at offset 21"
+value = 0
+
+[[record.gap]]
+offset = 25
+size = 22
+note = "Two marked references before the owner count."
+
+[[record.field]]
+name = "additional_owner_count"
+offset = 47
+type = "u32"
+source = "spec"
+anchor = "zero u32 additional-owner count is at offset 47"
+value = 0
+
+[[record.field]]
+name = "locator_count"
+offset = 51
+type = "u32"
+source = "spec"
+anchor = "u32 locator count is two at"
+value = 2
+
+[[record.field]]
+name = "first_locator_reference"
+offset = 55
+type = "bytes[11]"
+source = "spec"
+anchor = "two marked locator references at offsets 55 and 66"
+
+[[record.field]]
+name = "second_locator_reference"
+offset = 66
+type = "bytes[11]"
+source = "spec"
+anchor = "two marked locator references at offsets 55 and 66"
+
+[[record.field]]
+name = "joint_reference"
+offset = 77
+type = "bytes[11]"
+source = "spec"
+anchor = "marked joint reference at offset 77"
+
+[[record.gap]]
+offset = 88
+size = 79
+note = "Scope fields before the reference table."
+
+[[record.field]]
+name = "reference_count"
+offset = 167
+type = "u32"
+source = "spec"
+anchor = "u32 reference count at offset 167"
+
+[[record]]
 name = "assembly_as_built_scope_422"
 kind = "byte"
 section = "Assembly operands"
