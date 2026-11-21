@@ -8533,10 +8533,6 @@ fn project_emboss(
             }
         }
     }
-    losses.push(crate::loss::F3dLossCode::EmbossProfileSelectionNative.note(format!(
-        "Emboss scope {} retains its native sketch-profile reference because the selected contour mapping is unresolved.",
-        scope.id
-    )));
     if matches!(target, FaceSelection::Native(_)) {
         losses.push(crate::loss::F3dLossCode::EmbossTargetSelectionNative.note(format!(
             "Emboss scope {} retains its target-face reference because the selected target mapping is unresolved.",

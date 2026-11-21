@@ -37,6 +37,7 @@ use std::collections::{HashMap, HashSet};
 
 mod cap_regions;
 mod compact_members;
+pub(crate) mod emboss;
 pub(crate) mod face_profile_sets;
 mod group_union;
 mod region_members;

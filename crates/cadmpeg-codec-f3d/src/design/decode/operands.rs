@@ -1121,9 +1121,10 @@ pub(crate) fn decode_face_operands(
             && group.role() == DesignOperandRole::ROLE_0X10
             && scope
                 .emboss_operand_construction()
-                .is_some_and(|construction| {
+                .zip(scope.emboss_table_slots())
+                .is_some_and(|(construction, slots)| {
                     group.record_index == construction.face_group.value
-                        && group.scope_reference_ordinal == 2
+                        && group.scope_reference_ordinal == slots.face_group
                 });
         let is_thread_face = scope.kind()
             == crate::records::feature::scope::DesignFeatureKind::Thread
@@ -2070,7 +2071,10 @@ pub(crate) fn bind_sketch_profiles(
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut profiles = Vec::new();
         for (ordinal, record_index) in scope.reference_members().values().copied().enumerate() {
-            if scope.emboss_operand_construction().is_some() && ordinal != 1 {
+            if scope
+                .emboss_table_slots()
+                .is_some_and(|slots| usize::try_from(slots.profile_member).ok() != Some(ordinal))
+            {
                 continue;
             }
             let (Ok(ordinal), Some(header)) =
@@ -2166,7 +2170,10 @@ pub(crate) fn bind_sketch_profiles(
                     .base_flange_profile = Some(profile);
             }
         } else if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Emboss {
-            if profile.scope_reference_ordinal == 1 {
+            if scope
+                .emboss_table_slots()
+                .is_some_and(|slots| profile.scope_reference_ordinal == slots.profile_member)
+            {
                 if let crate::records::feature::scope::DesignScopePayloadMut::Emboss(Some(
                     construction,
                 )) = scope.payload_mut()
@@ -2210,7 +2217,10 @@ pub(crate) fn decode_extrude_selection_groups(
         };
         let bytes = scan.entry_bytes(&entry.name)?;
         for (ordinal, record_index) in scope.reference_members().values().copied().enumerate() {
-            if scope.emboss_operand_construction().is_some() && ordinal != 8 {
+            if scope
+                .emboss_table_slots()
+                .is_some_and(|slots| usize::try_from(slots.auxiliary_group).ok() != Some(ordinal))
+            {
                 continue;
             }
             let Ok(ordinal) = u32::try_from(ordinal) else {
@@ -2335,7 +2345,11 @@ pub(crate) fn decode_construction_operand_groups(
             {
                 continue;
             }
-            if scope.emboss_operand_construction().is_some() && !matches!(ordinal, 0 | 2) {
+            if scope.emboss_table_slots().is_some_and(|slots| {
+                ![slots.profile_group, slots.face_group]
+                    .into_iter()
+                    .any(|slot| usize::try_from(slot).ok() == Some(ordinal))
+            }) {
                 continue;
             }
             let (Ok(ordinal), Some(header)) =

@@ -3810,6 +3810,13 @@ impl DesignParameterScope {
             .filter(|construction| construction.has_fixed_operands(self))
     }
 
+    pub(crate) fn emboss_table_slots(
+        &self,
+    ) -> Option<crate::records::feature::emboss::EmbossTableSlots> {
+        self.emboss_construction()
+            .and_then(|construction| construction.table_slots(self))
+    }
+
     pub(crate) fn thread_construction(&self) -> Option<&DesignThreadConstruction> {
         match &self.payload {
             DesignScopePayload::Thread(value) => value.as_ref(),

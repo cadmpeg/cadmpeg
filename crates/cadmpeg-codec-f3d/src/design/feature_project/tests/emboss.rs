@@ -35,7 +35,6 @@ fn missing_construction_keeps_owned_depth_in_a_neutral_wrap() {
         }) if depth == PositiveLength::new(2.0).unwrap()
     ));
     for code in [
-        crate::loss::F3dLossCode::EmbossProfileSelectionNative,
         crate::loss::F3dLossCode::EmbossTargetSelectionNative,
         crate::loss::F3dLossCode::EmbossDepthSignAssumed,
     ] {

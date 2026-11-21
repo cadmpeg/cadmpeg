@@ -4853,9 +4853,10 @@ fn validate_extrude_selection_groups(ctx: &Ctx<'_, '_>, findings: &mut Vec<Findi
                 == Some(design::DesignFeatureFamily::Extrude)
                 || scope
                     .emboss_operand_construction()
-                    .is_some_and(|construction| {
+                    .zip(scope.emboss_table_slots())
+                    .is_some_and(|(construction, slots)| {
                         group.record_index == construction.auxiliary_group.value
-                            && group.scope_reference_ordinal == 8
+                            && group.scope_reference_ordinal == slots.auxiliary_group
                             && !group.typed_references
                     }))
                 && usize::try_from(group.scope_reference_ordinal)
