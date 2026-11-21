@@ -196,9 +196,7 @@ fn counted(payload: &[u8], at: usize) -> Option<(String, usize)> {
     }
     let end = cursor.checked_add(units.checked_mul(2)?)?;
     let bytes = payload.get(cursor..end)?;
-    let code_units = bytes
-        .chunks_exact(2)
-        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]));
+    let code_units = (0..units).filter_map(|unit| View::u16_le_at(bytes, unit * 2));
     let text = char::decode_utf16(code_units)
         .collect::<Result<String, _>>()
         .ok()?;
@@ -810,14 +808,13 @@ fn references(expression: &Expression) -> Vec<&str> {
 /// algorithm, walked without recursion).
 fn cyclic_nodes(edges: &[Vec<usize>]) -> HashSet<usize> {
     const UNSEEN: usize = usize::MAX;
-    let count = edges.len();
-    let mut order = vec![UNSEEN; count];
-    let mut low = vec![0; count];
-    let mut on_stack = vec![false; count];
+    let mut order = vec![UNSEEN; edges.len()];
+    let mut low = vec![0; edges.len()];
+    let mut on_stack = vec![false; edges.len()];
     let mut stack = Vec::new();
     let mut next = 0;
     let mut cyclic = HashSet::new();
-    for root in 0..count {
+    for root in 0..edges.len() {
         if order[root] != UNSEEN {
             continue;
         }
