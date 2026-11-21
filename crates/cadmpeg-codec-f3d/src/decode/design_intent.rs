@@ -181,6 +181,8 @@ pub(super) struct DesignNative {
     design_surface_trim_operations: Vec<DesignSurfaceTrimOperation>,
     design_sheet_metal_settings:
         Vec<crate::records::sheet_metal_settings::DesignSheetMetalSettings>,
+    sketch_text_extrude_candidates:
+        Vec<crate::design::sketch_text_extrude::SketchTextExtrudeCandidate>,
 }
 
 impl DesignNative {
@@ -232,6 +234,7 @@ impl DesignNative {
             design_record_headers,
             design_surface_trim_operations,
             design_sheet_metal_settings,
+            sketch_text_extrude_candidates: _,
         } = self;
         native.asm_histories = asm_histories;
         native.asm_face_boundaries = asm_face_boundaries;
@@ -421,6 +424,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     let mut remaining_retained_bytes = prereqs.history_retained_allowance;
     let mut remaining_binding_work = MAX_HISTORY_BINDING_WORK;
     let mut unbound_histories = 0_usize;
+    crate::history::clear_chamfer_orientation();
     for history_brep in container::history_breps(scan) {
         let binding_work = WorkBudget::new(remaining_binding_work);
         let history = decode_asm_history(
@@ -808,9 +812,9 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         },
         &mut scope_histories,
     );
-    let fillet_bindings = crate::history::fillet_blends::bind_fillet_blend_edges(
+    let fillet_bindings = crate::history::fillet_blends::bind_treatment_edges(
         &mut model.features,
-        crate::history::fillet_blends::FilletBlendInputs {
+        crate::history::fillet_blends::TreatmentBlendInputs {
             scopes: &design.design_parameter_scopes,
             groups: &design.design_construction_operand_groups,
             histories: &mut design.asm_histories,
@@ -818,8 +822,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         },
     );
     losses.extend(fillet_bindings.notes);
-    // A fillet that took the one history in which its edges resolve reads
-    // its input topology and outputs from that history.
+    // A fillet or chamfer that took the one history in which its edges
+    // resolve reads its input topology and outputs from that history.
     scope_histories.extend(fillet_bindings.inferred_scope_histories);
     crate::design::edge_resolve::fragment_fallback::apply_features(
         &mut model.features,
@@ -836,6 +840,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_edge_operands,
         &scope_histories,
     );
+    crate::history::clear_chamfer_orientation();
     let bound_outputs = crate::history::bind_feature_outputs(
         &mut model.features,
         &design.design_parameter_scopes,
@@ -871,21 +876,6 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             }
         }
     }
-    let (history_bodies, remaining_work) = crate::history::history_bodies::fill(
-        ctx,
-        scan,
-        crate::history::history_bodies::Inputs {
-            features: &model.features,
-            scopes: &design.design_parameter_scopes,
-            histories: &design.asm_histories,
-            bindings: &scope_histories,
-            primary_brep: geometry.primary_brep,
-        },
-        derived_snapshots,
-        &mut losses,
-    )?;
-    model.history_bodies = history_bodies;
-    design.history_body_consumers.remaining_work = remaining_work;
     crate::history::bind_sweep_result_modes(&mut model.features, geometry.bodies);
     losses.extend(crate::design::feature_project::sweep_fallback::project(
         &mut model.features,
@@ -948,6 +938,25 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             geometry.primary_brep,
             &mut losses,
         ));
+    // After the body selections: a Split names its input-state bodies there.
+    let (history_bodies, remaining_work) = crate::history::history_bodies::fill(
+        ctx,
+        scan,
+        crate::history::history_bodies::Inputs {
+            features: &model.features,
+            scopes: &design.design_parameter_scopes,
+            histories: &design.asm_histories,
+            bindings: &scope_histories,
+            primary_brep: geometry.primary_brep,
+            groups: &design.design_construction_operand_groups,
+            operands: &design.design_body_recipe_operands,
+            recipes: &prereqs.construction_recipes,
+        },
+        derived_snapshots,
+        &mut losses,
+    )?;
+    model.history_bodies = history_bodies;
+    design.history_body_consumers.remaining_work = remaining_work;
     losses.extend(crate::history::bind_feature_face_selections(
         &mut model.features,
         &mut model.feature_input_topologies,
@@ -1039,6 +1048,14 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut model.features,
         &design.design_parameter_scopes,
         &model.sketch_entities,
+    );
+    losses.extend(
+        crate::design::sketch_text_extrude::bind_sketch_text_extrude_profiles(
+            &mut model.features,
+            &design.sketch_text_extrude_candidates,
+            &design.sketch_texts,
+            &model.sketch_entities,
+        ),
     );
     crate::design::feature_project::bind_loft_sketch_point_sections(
         &mut model.features,
@@ -1712,6 +1729,7 @@ fn extend_related_design_records(
         &mut design.design_parameter_scopes,
         &design.design_record_headers,
         &prereqs.design_entity_headers,
+        &mut design.sketch_text_extrude_candidates,
     )?;
     design.design_construction_operand_groups =
         crate::design::decode::operands::decode_construction_operand_groups(
