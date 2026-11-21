@@ -5,7 +5,10 @@
 //! each parameter the decoder resolved as a reference, except a literal in a
 //! unit the file states that the stored value confirms, which is a
 //! one-literal expression, and a relation whose whole text is one resolved
-//! parameter of the same kind, which is that reference.
+//! parameter of the same kind, which is that reference. The decode report
+//! names, in one `design.parameter-reference-as-text` note, each parameter
+//! whose expression holds no reference to a dependency the decoder resolved
+//! for it.
 
 use std::collections::BTreeMap;
 use std::num::NonZeroI8;
@@ -15,7 +18,7 @@ use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::dimension::{Dimension, ParameterRef, RefTarget};
 use cadmpeg_ir::design::expr::{
-    Expression, ExpressionDialect, ExpressionToken, Neutral, Node, UnaryOp,
+    self, Expression, ExpressionDialect, ExpressionToken, Neutral, Node, UnaryOp,
 };
 use cadmpeg_ir::design::ops::sketch::{RadialMeasure, SketchRelation};
 use cadmpeg_ir::design::parameter::{
@@ -28,7 +31,10 @@ use cadmpeg_ir::features::{
     ParameterValue as LegacyValue,
 };
 use cadmpeg_ir::ids::ProductDefinitionId;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
+
+use crate::loss::{CreoLossCode, NAMED_INSTANCES_PER_NOTE};
 
 const FIRST_POWER: NonZeroI8 = match NonZeroI8::new(1) {
     Some(power) => power,
@@ -41,10 +47,13 @@ const LITERAL_AGREEMENT: f64 = 1e-12;
 /// Millimetres in one nanometre.
 const MILLIMETRES_PER_NANOMETRE: f64 = 1e-6;
 
+/// States every model parameter as a parameter of `definition`, and adds to
+/// `losses` the note naming those that drop a dependency.
 pub(super) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     definition: &ProductDefinitionId,
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let names = ir
         .model
@@ -59,9 +68,34 @@ pub(super) fn project(
         .map(|parameter| (parameter.id.clone(), kind_and_value(parameter).0))
         .collect::<BTreeMap<_, _>>();
     let mut projected = Vec::new();
+    let mut dropped = Vec::new();
     for parameter in &ir.model.parameters {
         ctx.charge_entities(1, "project Creo v11 parameter")?;
-        projected.push(project_parameter(parameter, definition, &names, &kinds));
+        let design = project_parameter(parameter, definition, &names, &kinds);
+        if let ParameterDefinition::Expression(expression) = &design.definition {
+            if drops_dependency(parameter, expression) {
+                dropped.push(parameter.id.as_str());
+            }
+        }
+        projected.push(design);
+    }
+    if !dropped.is_empty() {
+        let more = if dropped.len() > NAMED_INSTANCES_PER_NOTE {
+            ", ..."
+        } else {
+            ""
+        };
+        losses.push(CreoLossCode::DesignParameterReferenceAsText.note(format!(
+            "{} parameters hold a parameter the decoder resolved as their dependency as text, \
+             or omit it, and state no dependency on it: {}{more}",
+            dropped.len(),
+            dropped
+                .iter()
+                .take(NAMED_INSTANCES_PER_NOTE)
+                .copied()
+                .collect::<Vec<_>>()
+                .join(", ")
+        )));
     }
     ir.design.parameters.extend(projected);
     ir.design.parameters.sort_by(|a, b| a.id.cmp(&b.id));
@@ -327,7 +361,8 @@ fn expression(
 
 /// A relation whose whole text is one resolved parameter is that reference
 /// where the parameter has the same kind, one with a neutral value. Otherwise
-/// the name stays text: a `Source` expression holds a `Text` token (part 10).
+/// the name stays text: a `Source` expression holds a `Text` token (part 10),
+/// and [`drops_dependency`] names the parameter.
 fn whole_reference(
     reference: &ParameterRef,
     text: &str,
@@ -345,6 +380,28 @@ fn whole_reference(
         dialect: ExpressionDialect::Creo,
         tokens: vec![ExpressionToken::Text(text.to_owned())],
     }
+}
+
+/// Whether `expression` holds no reference to a dependency the decoder
+/// resolved for `parameter`.
+fn drops_dependency(parameter: &LegacyParameter, expression: &Expression) -> bool {
+    let held = match expression {
+        Expression::Neutral(Neutral(tree)) => {
+            expr::print(tree).map_or_else(|_| Vec::new(), |wire| wire.refs)
+        }
+        Expression::Source { tokens, .. } => tokens
+            .iter()
+            .filter_map(|token| match token {
+                ExpressionToken::Reference(reference) => Some(reference.clone()),
+                ExpressionToken::Text(_) => None,
+            })
+            .collect(),
+    };
+    parameter.dependencies.iter().any(|dependency| {
+        !held.iter().any(
+            |reference| matches!(&reference.target, RefTarget::Parameter(id) if id == dependency),
+        )
+    })
 }
 
 /// A literal whose unit the file states, written in brackets or declared

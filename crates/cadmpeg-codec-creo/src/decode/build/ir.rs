@@ -826,7 +826,7 @@ pub(in super::super) fn build_ir(
     let definition =
         super::design_v11::root_definition(ctx, &mut ir, super::design_v11::model_kind(scan))?;
     if ctx.depth() >= DecodeDepth::Design {
-        super::design_v11::project(ctx, scan, &mut ir, &definition)?;
+        super::design_v11::project(ctx, scan, &mut ir, &definition, &mut transfer_losses)?;
     }
     Ok(BuiltIr {
         ir,
