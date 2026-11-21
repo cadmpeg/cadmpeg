@@ -18451,6 +18451,51 @@ size = 164
 note = "The ordered references and common scope tail precede the paired header."
 
 [[record]]
+name = "legacy_class_330_blind_cut_extrude_frame"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/extrude.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The legacy class-330/262 blind Cut Extrude has a 438-byte primary frame"
+size = 438
+
+[[record.gap]]
+offset = 0
+size = 102
+note = "The unshifted prologue and seven nullable reference slots precede the extent words."
+
+[[record.field]]
+name = "first_side_extent"
+offset = 102
+type = "u32"
+source = "spec"
+anchor = "The extent words are `[1, 0]` at offsets 102 and 106"
+
+[[record.field]]
+name = "second_side_extent"
+offset = 106
+type = "u32"
+source = "spec"
+anchor = "The extent words are `[1, 0]` at offsets 102 and 106"
+
+[[record.gap]]
+offset = 110
+size = 138
+note = "The remainder of the scope prefix precedes the ordered reference table."
+
+[[record.field]]
+name = "reference_count"
+offset = 248
+type = "u32"
+value = 7
+source = "spec"
+anchor = "The reference count is at offset 248"
+
+[[record.gap]]
+offset = 252
+size = 186
+note = "The ordered references and common scope tail precede the paired header."
+
+[[record]]
 name = "shifted_reference_aware_extrude_class_323_tail"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"
