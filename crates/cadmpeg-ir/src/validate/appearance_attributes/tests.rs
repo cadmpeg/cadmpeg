@@ -265,8 +265,8 @@ fn native_refs_of_appearances_bindings_and_attributes_resolve() {
     }
 }
 
-fn parameter(id: &ParameterId) -> crate::features::DesignParameter {
-    crate::features::DesignParameter {
+fn parameter(id: &ParameterId) -> crate::features::parameters::DesignParameter {
+    crate::features::parameters::DesignParameter {
         product_definition: None,
         id: id.clone(),
         owner: None,
@@ -275,7 +275,7 @@ fn parameter(id: &ParameterId) -> crate::features::DesignParameter {
         expression: "1".into(),
         display: None,
         value: None,
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,

@@ -12,16 +12,12 @@ use cadmpeg_asm::{
     sab::{Record, Token},
 };
 use cadmpeg_core::{decode::DecodeContext, CodecError};
-use cadmpeg_ir::{
-    eval::{
-        decode::{curve_tangent, nurbs_curve_point_at},
-        finite_or_refusal, nurbs_curve_parameter_domain,
-    },
-    features::FinitePoint3,
-    geometry::{CurveGeometry, SolvedCurveGeometry},
-    math::{Point3, Vector3},
-    units::UnitVector3,
-};
+use cadmpeg_ir::eval::decode::{curve_tangent, nurbs_curve_point_at};
+use cadmpeg_ir::eval::{finite_or_refusal, nurbs_curve_parameter_domain};
+use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::units::UnitVector3;
 
 use super::{generated, matched, EdgeName, Selector};
 

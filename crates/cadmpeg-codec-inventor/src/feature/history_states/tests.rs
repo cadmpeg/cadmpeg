@@ -5,7 +5,9 @@ use std::sync::Arc;
 use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_asm::sab::{Record, Token};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation, SplitBodyTool};
+use cadmpeg_ir::features::direct_edit::SplitBodyTool;
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 use super::*;
 use crate::feature::body_selection::WrapperLink;
@@ -576,7 +578,8 @@ fn neutral(
     let mut model = crate::feature::native_feature(&ctx, &feature.identity, None, feature.id())
         .expect("feature");
     model.source_tag = Some(tag.to_owned());
-    model.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(definition);
+    model.evaluation =
+        cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(definition);
     model
 }
 
@@ -613,9 +616,9 @@ fn the_join_resolves_split_and_base_body_keys_through_their_links() {
             FeatureDefinition::Operation(FeatureOperation::SplitBody {
                 extend_tool: None,
                 targets: BodySelection::Native(wrappers[0].id()),
-                tool: SplitBodyTool::Faces(cadmpeg_ir::features::FaceSelection::Native(
-                    "tool".to_owned(),
-                )),
+                tool: SplitBodyTool::Faces(
+                    cadmpeg_ir::features::selections::FaceSelection::Native("tool".to_owned()),
+                ),
             }),
         ),
         stored(&base, BASE_TAG),
@@ -715,7 +718,7 @@ fn a_split_with_a_local_target_binds_through_its_wrapper_link() {
         FeatureDefinition::Operation(FeatureOperation::SplitBody {
             extend_tool: None,
             targets: local,
-            tool: SplitBodyTool::Faces(cadmpeg_ir::features::FaceSelection::Native(
+            tool: SplitBodyTool::Faces(cadmpeg_ir::features::selections::FaceSelection::Native(
                 "tool".to_owned(),
             )),
         }),

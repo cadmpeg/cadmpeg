@@ -88,7 +88,7 @@ pub(super) fn surface_extend_loss(
             )),
         );
     }
-    (operation.extension() == cadmpeg_ir::features::SurfaceExtension::Unresolved).then(|| {
+    (operation.extension() == cadmpeg_ir::features::surface_inputs::SurfaceExtension::Unresolved).then(|| {
         crate::loss::F3dLossCode::FeatureSurfaceExtendMethodUnresolved.note(
             match operation.method_code {
                 Some(code) => format!(

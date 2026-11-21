@@ -2,10 +2,11 @@
 use crate::features::edge_treatments::{FullRoundFilletGroup, FullRoundSideSelection};
 use crate::features::holes::{CounterdrillDiameters, HoleConstruction, HoleKind, HoleShape};
 use crate::features::replace_face::ReplaceFaceOperands;
-use crate::features::{
-    BodySelection, FaceBlendOperands, FaceSelection, GeneratedSweepSection, SewBodySelection,
-    SweepCircularRegion, SweepMode, SweepSection, SweepShape,
+use crate::features::selections::{BodySelection, FaceSelection};
+use crate::features::sweeps::{
+    GeneratedSweepSection, SweepCircularRegion, SweepMode, SweepSection, SweepShape,
 };
+use crate::features::{FaceBlendOperands, SewBodySelection};
 use crate::scalar::{InteriorAngle, PositiveLength};
 
 fn positive(value: f64) -> PositiveLength {
@@ -48,7 +49,7 @@ fn hole_and_sweep_edits_preserve_the_previous_admitted_shape() {
         region: SweepCircularRegion::new(positive(2.0), Some(positive(1.0))).unwrap(),
     });
     let sweep = SweepShape::Solid {
-        op: crate::features::SolidSweepOperation::NewBody,
+        op: crate::features::sweeps::SolidSweepOperation::NewBody,
         section: SweepSection::Unresolved(None),
         sections: vec![circular],
     };

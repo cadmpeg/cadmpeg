@@ -510,7 +510,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             unreachable!();
         };
         groups[2].edges =
-            cadmpeg_ir::features::EdgeSelection::historical(
+            cadmpeg_ir::features::selections::EdgeSelection::historical(
                 cadmpeg_ir::ids::FeatureInputTopologyId::mint(
                     "test:model:feature-input#history-input",
                 )
@@ -1123,7 +1123,8 @@ fn pattern_seed_plane_and_path_selections_count_as_retained_selections() {
 
 #[test]
 fn unstitch_faces_reports_native_and_absent_selections_as_incomplete() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     for (faces, expected) in [
         (FaceSelection::Native("native:face-group".into()), 1),

@@ -4,7 +4,7 @@
 use super::identity::NativeRecordId;
 use super::mesh::DesignMeshSceneBounds;
 use cadmpeg_core::text::NonBlankString;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::Point3;
 use serde::{Deserialize, Serialize};

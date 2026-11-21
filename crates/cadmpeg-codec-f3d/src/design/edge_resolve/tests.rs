@@ -173,7 +173,7 @@ fn sole_compact_identity_group_projects_fixed_fillet_transition_chain() {
     assert!(matches!(
         groups.as_slice(),
         [cadmpeg_ir::features::edge_treatments::FilletGroup {
-            edges: cadmpeg_ir::features::EdgeSelection::Historical { edges, .. },
+            edges: cadmpeg_ir::features::selections::EdgeSelection::Historical { edges, .. },
             radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Constant {
                 radius: actual_radius
             },
@@ -233,7 +233,7 @@ fn only_edge_treatments_use_single_member_transition_chains() {
             decode_ctx
         ))
         .unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Native(_)
+        cadmpeg_ir::features::selections::EdgeSelection::Native(_)
     ));
     let treatment_feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
         .expect("identity grammar");
@@ -255,7 +255,7 @@ fn only_edge_treatments_use_single_member_transition_chains() {
             &treatment_feature_id,
             None,
         ).unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
+        cadmpeg_ir::features::selections::EdgeSelection::Historical { edges, .. }
             if edges.as_slice() == [
                 cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#6:fillet:7:17").expect("identity grammar"),
                 cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#6:fillet:7:19").expect("identity grammar"),
@@ -307,7 +307,7 @@ fn multiple_full_layout_members_do_not_use_the_operation_transition_chain() {
             None,
         )
         .unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Native(_)
+        cadmpeg_ir::features::selections::EdgeSelection::Native(_)
     ));
 }
 
@@ -376,7 +376,7 @@ fn unresolved_standard_recipe_is_not_replaced_by_identity_or_transition_context(
             None,
         )
         .unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Native(_)
+        cadmpeg_ir::features::selections::EdgeSelection::Native(_)
     ));
 
     operand.changed_boundary_edge_slots = vec![17];
@@ -392,7 +392,7 @@ fn unresolved_standard_recipe_is_not_replaced_by_identity_or_transition_context(
             None,
         )
         .unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Native(_)
+        cadmpeg_ir::features::selections::EdgeSelection::Native(_)
     ));
 }
 
@@ -418,7 +418,7 @@ fn unstructured_recipe_is_not_replaced_by_identity_or_transition_context() {
             None,
         )
         .unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Native(_)
+        cadmpeg_ir::features::selections::EdgeSelection::Native(_)
     ));
 }
 
@@ -550,7 +550,7 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
                 &mut Vec::new(),
             )
         }).unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
+        cadmpeg_ir::features::selections::EdgeSelection::Historical { edges, .. }
             if edges.len() == 1 && edges[0].as_str().ends_with(":17")
     ));
 
@@ -574,7 +574,7 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
             )
         })
         .unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Native(_)
+        cadmpeg_ir::features::selections::EdgeSelection::Native(_)
     ));
 }
 
@@ -733,7 +733,7 @@ fn grouped_surface_patch_recipe_projects_historical_edges() {
     let prefix = crate::ids::history_input_prefix(&cadmpeg_ir::identity_key!("surface-patch"), 7);
     assert!(matches!(
         selection,
-        cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
+        cadmpeg_ir::features::selections::EdgeSelection::Historical { edges, .. }
             if edges.as_slice() == [
                 crate::ids::history_input_edge_id(&prefix, 17),
                 crate::ids::history_input_edge_id(&prefix, 18),
@@ -768,7 +768,7 @@ fn contradictory_surface_patch_references_suppress_generic_resolution() {
             decode_ctx
         ))
         .unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Native(_)
+        cadmpeg_ir::features::selections::EdgeSelection::Native(_)
     ));
 }
 
@@ -1044,7 +1044,7 @@ fn edge_flange_uses_one_updated_edge_without_recipe_context() {
     .unwrap();
     assert!(matches!(
         selection,
-        cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
+        cadmpeg_ir::features::selections::EdgeSelection::Historical { edges, .. }
             if edges.as_slice() == [cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#11:edge-flange:7:17").expect("identity grammar")]
     ));
 }
@@ -1071,7 +1071,7 @@ fn edge_flange_does_not_choose_an_ambiguous_updated_boundary() {
             decode_ctx
         ))
         .unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Native(_)
+        cadmpeg_ir::features::selections::EdgeSelection::Native(_)
     ));
 }
 
@@ -1176,7 +1176,7 @@ fn compact_identity_group_uses_selected_recipe_context_boundaries() {
     .unwrap();
     assert!(matches!(
         selection,
-        cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
+        cadmpeg_ir::features::selections::EdgeSelection::Historical { edges, .. }
             if edges.as_slice() == [
                 cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#7:chamfer:7:17").expect("identity grammar"),
                 cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#7:chamfer:7:18").expect("identity grammar"),
@@ -1220,7 +1220,7 @@ fn lost_references_preserve_a_complete_compact_transition_chain() {
             None,
         )
         .unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Native(_)
+        cadmpeg_ir::features::selections::EdgeSelection::Native(_)
     ));
 
     selection_group.lost_edge_references = vec!["f3d:test:lost#0".into()];
@@ -1235,7 +1235,7 @@ fn lost_references_preserve_a_complete_compact_transition_chain() {
             None,
         )
         .unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Unresolved
+        cadmpeg_ir::features::selections::EdgeSelection::Unresolved
     ));
 
     selection_group
@@ -1251,7 +1251,7 @@ fn lost_references_preserve_a_complete_compact_transition_chain() {
             &feature_id,
             None,
         ).unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
+        cadmpeg_ir::features::selections::EdgeSelection::Historical { edges, .. }
             if edges.as_slice() == [
                 cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#7:chamfer:7:17").expect("identity grammar"),
                 cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#7:chamfer:7:18").expect("identity grammar"),
@@ -1312,7 +1312,7 @@ fn compact_edge_treatment_group_selects_exact_deleted_edge_cardinality() {
             decode_ctx
         ))
         .unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Native(_)
+        cadmpeg_ir::features::selections::EdgeSelection::Native(_)
     ));
     assert!(matches!(
         resolved_edge_treatment_group(
@@ -1324,7 +1324,7 @@ fn compact_edge_treatment_group_selects_exact_deleted_edge_cardinality() {
             &feature_id,
             Some(3.0),
         ).unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
+        cadmpeg_ir::features::selections::EdgeSelection::Historical { edges, .. }
             if edges.len() == 2
     ));
 
@@ -1342,7 +1342,7 @@ fn compact_edge_treatment_group_selects_exact_deleted_edge_cardinality() {
             Some(3.0),
         )
         .unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Native(_)
+        cadmpeg_ir::features::selections::EdgeSelection::Native(_)
     ));
 
     let recipe_operands = [
@@ -1365,7 +1365,7 @@ fn compact_edge_treatment_group_selects_exact_deleted_edge_cardinality() {
             &feature_id,
             None,
         ).unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
+        cadmpeg_ir::features::selections::EdgeSelection::Historical { edges, .. }
             if edges.len() == 3
     ));
 
@@ -1384,7 +1384,7 @@ fn compact_edge_treatment_group_selects_exact_deleted_edge_cardinality() {
             None,
         )
         .unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Native(_)
+        cadmpeg_ir::features::selections::EdgeSelection::Native(_)
     ));
 }
 
@@ -1437,7 +1437,7 @@ fn hem_transition_edge_is_the_unique_non_support_boundary() {
 
 #[test]
 fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
-    use cadmpeg_ir::features::EdgeSelection;
+    use cadmpeg_ir::features::selections::EdgeSelection;
     use cadmpeg_ir::ids::FeatureInputTopologyId;
 
     let state =
