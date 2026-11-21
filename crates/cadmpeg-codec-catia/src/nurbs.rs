@@ -70,6 +70,14 @@ impl LaneRefusals {
         self.notes.len()
     }
 
+    pub(crate) fn push_pcurve_circle_plane_mismatch(&mut self, source_offset: usize) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::GeometryPcurveCirclePlaneMismatch.note(format!(
+                "Withheld a derived spherical pcurve at source offset {source_offset}: its midpoint leaves the edge circle plane"
+            )),
+        );
+    }
+
     pub(crate) fn push_body_selection(&mut self, resolved: bool, excluded: usize) {
         let note = if resolved {
             crate::loss::CatiaLossCode::TopologyUnselectedBodiesRetained.note(format!(
@@ -165,6 +173,12 @@ impl LaneRefusals {
     ) {
         self.notes.push(crate::loss::CatiaLossCode::GeometrySheetSurfaceFitted.note(format!(
             "Transferred fitted B-spline surfaces for {rolling_ball} rolling-ball, {offset} offset, {ruled} ruled, and {extrusion} extrusion sheet faces. The fits use sampled geometric checks."
+        )));
+    }
+
+    pub(crate) fn push_plane_bounds_not_transferred(&mut self, face: usize, bounds: [[f64; 2]; 2]) {
+        self.notes.push(crate::loss::CatiaLossCode::GeometryPlaneBoundsNotTransferred.note(format!(
+            "The plane carrier for emitted native face {face} retains its origin and axes; native chart bounds {bounds:?} are omitted from the neutral plane support."
         )));
     }
 
