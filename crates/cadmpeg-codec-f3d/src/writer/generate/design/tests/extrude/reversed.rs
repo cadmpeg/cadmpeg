@@ -18,7 +18,7 @@ use cadmpeg_ir::scalar::Length;
 
 use super::super::sketch::{frame, sketch_id};
 use super::super::{decoded as decoded_parameter, loss, write};
-use super::arcs::extruded_between;
+use super::arcs::{extruded_between, slot_loop, slot_strokes, Side, Stroke};
 use super::faces::{corners, flat, lines, sides_follow_curves};
 use super::{decoded_extrude, kinds, EVALUATION_MISSING, SIDE, TOLERANCE};
 
@@ -90,7 +90,7 @@ fn owned_length(decoded: &CadIr) -> (String, f64) {
 
 /// A prism below its sketch plane, extruded against the sketch normal, is
 /// a reversed one-sided blind Extrude of the source depth. Its distance
-/// parameter is `-(D1)`, `D1` stays a user parameter, and the side tokens
+/// parameter is `-D1`, `D1` stays a user parameter, and the side tokens
 /// run against the ring from the same token `3`.
 #[test]
 fn a_prism_against_its_sketch_normal_is_a_reversed_extrude() {
@@ -107,7 +107,7 @@ fn a_prism_against_its_sketch_normal_is_a_reversed_extrude() {
     assert_eq!(direction, DecodedDirection::ReversedProfileNormal {});
     assert!((length - SIDE).abs() <= TOLERANCE, "{length}");
     let (expression, along) = owned_length(&decoded);
-    assert_eq!(expression, "-(D1)");
+    assert_eq!(expression, "-D1");
     assert!((along + SIDE).abs() <= TOLERANCE, "{along}");
     let (_, depth) = decoded_parameter(&decoded, "D1").expect("D1 decodes");
     assert!((depth - SIDE).abs() <= TOLERANCE, "{depth}");
@@ -231,4 +231,83 @@ fn a_sketch_frame_off_its_origin_plane_keeps_the_base_feature() {
     assert_eq!(kinds(&decoded), ["base"], "{:#?}", report.losses);
     let missing = loss(&report, EVALUATION_MISSING).join("\n");
     assert!(missing.contains("its sketch is not written"), "{missing}");
+}
+
+/// The residual note of an Extrude whose side tokens under a negative
+/// `AlongDistance` follow the walk inferred for hole loops and loops with
+/// arcs.
+const REVERSED_RESIDUAL: &str = "hole loops and loops with arcs under its negative AlongDistance";
+
+/// A slot below its sketch plane, extruded against the sketch normal, is a
+/// reversed Extrude of the source depth; its side tokens follow the walk
+/// inferred for a loop with arcs, which the residual note names.
+#[test]
+fn a_slot_against_its_sketch_normal_is_a_reversed_extrude_with_the_residual_note() {
+    let mut ir = extruded_between(
+        &slot_strokes([0.0, 0.0], 3.0),
+        &[slot_loop([0.0, 0.0], 3.0, false)],
+        [-SIDE, 0.0],
+    );
+    reverse(&mut ir);
+    let (report, decoded) = write(&ir);
+    assert_eq!(
+        kinds(&decoded),
+        ["sketch", "extrude"],
+        "{:#?}",
+        report.losses
+    );
+    let (direction, length) = travel(&decoded);
+    assert_eq!(direction, DecodedDirection::ReversedProfileNormal {});
+    assert!((length - SIDE).abs() <= TOLERANCE, "{length}");
+    assert_eq!(owned_length(&decoded).0, "-D1");
+    let residual = loss(&report, "export/record.residual-unavailable").join("\n");
+    assert!(
+        residual.contains(REVERSED_RESIDUAL) && residual.contains("DR-883"),
+        "{residual}"
+    );
+}
+
+/// A square with a square hole below its sketch plane, extruded against
+/// the sketch normal, is a reversed Extrude; its hole's side tokens follow
+/// the inferred walk, which the residual note names.
+#[test]
+fn a_square_with_a_hole_against_its_sketch_normal_is_a_reversed_extrude_with_the_residual_note() {
+    let square = |corners: [[f64; 2]; 4]| -> Vec<Stroke> {
+        (0..4)
+            .map(|i| Stroke::Line(corners[i], corners[(i + 1) % 4]))
+            .collect()
+    };
+    let outer = [[0.0, 0.0], [20.0, 0.0], [20.0, 20.0], [0.0, 20.0]];
+    let inner = [[5.0, 5.0], [15.0, 5.0], [15.0, 15.0], [5.0, 15.0]];
+    let strokes = [square(outer), square(inner)].concat();
+    let lines = |corners: &[[f64; 2]]| {
+        corners
+            .iter()
+            .map(|corner| (*corner, Side::Line))
+            .collect::<Vec<_>>()
+    };
+    let mut ir = extruded_between(
+        &strokes,
+        &[
+            lines(&outer),
+            lines(&[inner[0], inner[3], inner[2], inner[1]]),
+        ],
+        [-SIDE, 0.0],
+    );
+    reverse(&mut ir);
+    let (report, decoded) = write(&ir);
+    assert_eq!(
+        kinds(&decoded),
+        ["sketch", "extrude"],
+        "{:#?}",
+        report.losses
+    );
+    let (direction, length) = travel(&decoded);
+    assert_eq!(direction, DecodedDirection::ReversedProfileNormal {});
+    assert!((length - SIDE).abs() <= TOLERANCE, "{length}");
+    let residual = loss(&report, "export/record.residual-unavailable").join("\n");
+    assert!(
+        residual.contains(REVERSED_RESIDUAL) && residual.contains("DR-883"),
+        "{residual}"
+    );
 }

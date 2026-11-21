@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Finite B-rep witnesses for implicit extrusion travel.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::document::Model;
 use cadmpeg_ir::features::{
     BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeStart, Feature, FeatureDefinition,
@@ -16,64 +17,176 @@ use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
+use super::literals::parse_bool;
+
 const EPS_CARRIER_DISTANCE: f64 = 1.0e-6;
 const EPS_BOUNDARY_DISTANCE: f64 = 1.0e-4;
 const EPS_CAP_MESH_DISTANCE: f64 = 1.0e-4;
 const EPS_CAP_ALIGNMENT: f64 = 1.0e-8;
+const EPS_SOLID_SIDE: f64 = 1.0e-6;
 const MIN_TRIANGLE_DETERMINANT: f64 = 1.0e-24;
 const CURVE_SAMPLE_INTERVALS: u32 = 16;
 const MAX_WITNESS_WORK: usize = 2_000_000;
 
-pub(crate) fn contradicted_features(ir: &CadIr) -> HashSet<FeatureId> {
-    if !ir.model.features.iter().any(|feature| {
-        candidate(feature)
-            .and_then(|(profile, _, _, _)| profile_sketch(&ir.model, profile))
-            .is_some_and(|sketch| sketch.resolved_placement().is_some())
-    }) {
-        return HashSet::new();
+/// The source property that the decoder sets to `false` where an extrusion
+/// record holds the end-spec reversal flag `1` and the extrusion travels
+/// along its profile normal: a cut, a two-direction extrusion whose end caps
+/// do not confirm the reversal, or a reversal its solid contradicts. The
+/// encoder then keeps the record's flag, and a reversal cleared without it
+/// is an edit.
+pub(crate) const REVERSE_DECODED: &str = "reverse_decoded";
+
+/// Whether `properties` hold the end-spec reversal flag `1`.
+pub(crate) fn reversal_flag(properties: &BTreeMap<NonBlankString, String>) -> bool {
+    properties
+        .get("Reverse")
+        .map(String::as_str)
+        .and_then(parse_bool)
+        == Some(true)
+}
+
+/// Whether the decoder left the reversal flag of `properties` unread.
+pub(crate) fn reversal_unread(properties: &BTreeMap<NonBlankString, String>) -> bool {
+    properties
+        .get(REVERSE_DECODED)
+        .is_some_and(|value| value == "false")
+}
+
+/// Marks a projected extrusion that travels along its profile normal over a
+/// record whose reversal flag is `1`.
+pub(crate) fn mark_unread_reversal(feature: &mut Feature) {
+    if reversal_flag(&feature.source_properties)
+        && matches!(
+            feature.evaluation.definition().operation(),
+            FeatureOperation::Extrude {
+                direction: ExtrudeDirection::ProfileNormal {},
+                ..
+            }
+        )
+    {
+        set_unread(feature, true);
     }
-    let work = WorkBudget::new(MAX_WITNESS_WORK);
-    let Some(caps) = caps(ir, &work) else {
-        return HashSet::new();
+}
+
+fn set_unread(feature: &mut Feature, unread: bool) {
+    if !unread {
+        feature.source_properties.remove(REVERSE_DECODED);
+    } else if let Some(marker) = NonBlankString::new(REVERSE_DECODED.to_owned()) {
+        feature.source_properties.insert(marker, "false".to_owned());
+    }
+}
+
+/// The finite B-rep evidence of extrusion travel.
+struct Witness {
+    /// Planar faces that can cap an extrusion.
+    caps: Vec<Cap>,
+    /// The extent of the whole solid.
+    solid: Solid,
+}
+
+/// The B-rep witness, where a feature can use it.
+fn witness(ir: &CadIr, work: &WorkBudget) -> Option<Witness> {
+    let placed = |profile| {
+        profile_sketch(&ir.model, profile)
+            .is_some_and(|sketch| sketch.resolved_placement().is_some())
     };
-    let mut contradicted = HashSet::new();
+    let mut usable = false;
+    let mut reversed = false;
     for feature in &ir.model.features {
+        if let Some(candidate) = candidate(feature).filter(|candidate| placed(candidate.profile)) {
+            usable = true;
+            reversed |= candidate.adds_against_the_normal();
+        } else if two_sided(feature).is_some_and(|candidate| placed(candidate.profile)) {
+            usable = true;
+        }
+    }
+    if !usable {
+        return None;
+    }
+    evidence(ir, work, reversed)
+}
+
+pub(crate) fn contradicted_features(ir: &CadIr) -> HashSet<FeatureId> {
+    let work = WorkBudget::new(MAX_WITNESS_WORK);
+    witness(ir, &work).map_or_else(HashSet::new, |witness| {
+        matching(&ir.model, &work, |feature| {
+            contradicts(&ir.model, feature, &witness, &work)
+        })
+    })
+}
+
+/// The features of `model` that `test` holds for, while `work` lasts.
+fn matching(
+    model: &Model,
+    work: &WorkBudget,
+    mut test: impl FnMut(&Feature) -> bool,
+) -> HashSet<FeatureId> {
+    let mut matched = HashSet::new();
+    for feature in &model.features {
         if !work.charge() {
             break;
         }
-        if contradicts(&ir.model, feature, &caps, &work) {
-            contradicted.insert(feature.id.clone());
+        if test(feature) {
+            matched.insert(feature.id.clone());
         }
     }
-    contradicted
+    matched
 }
 
 /// What [`retain_contradicted_directions`] changed.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct Retained {
-    /// Whether a feature definition changed.
+    /// Whether a feature changed.
     pub(crate) changed: bool,
-    /// The decoded reversals that the solid contradicts.
-    pub(crate) reversals: usize,
+    /// The decoded reversals that the solid contradicts, each named by its
+    /// feature name and id.
+    pub(crate) reversals: Vec<String>,
 }
 
+/// Settles each extrusion's travel against the B-rep: a contradicted
+/// reversal travels along the profile normal, other contradicted travel
+/// stays in the native lane, and a two-direction extrusion whose end caps
+/// confirm its reversal flag travels against the normal.
 pub(crate) fn retain_contradicted_directions(ir: &mut CadIr) -> Retained {
-    let contradicted = contradicted_features(ir);
+    let work = WorkBudget::new(MAX_WITNESS_WORK);
+    let Some(witness) = witness(ir, &work) else {
+        return Retained::default();
+    };
+    let contradicted = matching(&ir.model, &work, |feature| {
+        contradicts(&ir.model, feature, &witness, &work)
+    });
+    let confirmed = matching(&ir.model, &work, |feature| {
+        confirms(&ir.model, feature, &witness.caps, &work)
+    });
     let mut retained = Retained::default();
     for feature in &mut ir.model.features {
-        if !contradicted.contains(&feature.id) {
+        let settle: fn(&mut FeatureDefinition) = if contradicted.contains(&feature.id) {
+            retain
+        } else if confirmed.contains(&feature.id) {
+            reverse
+        } else {
             continue;
-        }
+        };
         let original = feature.evaluation.definition().clone();
-        feature.evaluation.edit(|definition, _| retain(definition));
+        feature.evaluation.edit(|definition, _| settle(definition));
         retained.changed |= original != *feature.evaluation.definition();
-        retained.reversals += usize::from(matches!(
+        if matches!(
             original.operation(),
             FeatureOperation::Extrude {
                 direction: ExtrudeDirection::ReversedProfileNormal {},
                 ..
             }
-        ));
+        ) {
+            retained.reversals.push(feature.name.as_ref().map_or_else(
+                || feature.id.as_str().to_owned(),
+                |name| format!("\"{name}\" ({})", feature.id.as_str()),
+            ));
+            set_unread(feature, true);
+            retained.changed = true;
+        } else if confirmed.contains(&feature.id) {
+            set_unread(feature, false);
+            retained.changed = true;
+        }
         for configuration in ir
             .model
             .configurations
@@ -82,7 +195,7 @@ pub(crate) fn retain_contradicted_directions(ir: &mut CadIr) -> Retained {
         {
             if let Some(state) = configuration.feature_states.get_mut(&feature.id) {
                 if state.definition == original {
-                    retain(&mut state.definition);
+                    settle(&mut state.definition);
                 }
             }
         }
@@ -101,10 +214,33 @@ fn retain(definition: &mut FeatureDefinition) {
     }
 }
 
-/// The planar profile of `feature`'s one-sided blind extrusion from the
-/// profile plane, its depth, its operation sign (`-1` for a cut) and its
-/// travel along the profile normal (`-1` for a reversed extrusion).
-fn candidate(feature: &Feature) -> Option<(&PlanarProfileRef, f64, f64, f64)> {
+/// A confirmed reversal travels against the profile normal.
+fn reverse(definition: &mut FeatureDefinition) {
+    if let FeatureDefinition::Operation(FeatureOperation::Extrude { direction, .. }) = definition {
+        *direction = ExtrudeDirection::ReversedProfileNormal {};
+    }
+}
+
+/// A one-sided blind extrusion from its planar profile's plane.
+struct OneSided<'a> {
+    profile: &'a PlanarProfileRef,
+    /// The depth.
+    length: f64,
+    /// `-1` for a cut, `1` for an extrusion that adds material.
+    operation_sign: f64,
+    /// `-1` for travel against the profile normal, `1` along it.
+    travel: f64,
+}
+
+impl OneSided<'_> {
+    /// Whether it adds material against the profile normal, the travel
+    /// that the whole solid can contradict.
+    fn adds_against_the_normal(&self) -> bool {
+        self.travel < 0.0 && self.operation_sign > 0.0
+    }
+}
+
+fn candidate(feature: &Feature) -> Option<OneSided<'_>> {
     if feature.suppressed != Some(false) {
         return None;
     }
@@ -125,12 +261,61 @@ fn candidate(feature: &Feature) -> Option<(&PlanarProfileRef, f64, f64, f64)> {
             let LinearTermination::Blind { length } = side.termination else {
                 return None;
             };
-            let sign = match op {
+            let operation_sign = match op {
                 BooleanOp::Cut => -1.0,
                 BooleanOp::NewBody | BooleanOp::Join => 1.0,
                 _ => return None,
             };
-            Some((profile, length.get(), sign, travel))
+            Some(OneSided {
+                profile,
+                length: length.get(),
+                operation_sign,
+                travel,
+            })
+        }
+        _ => None,
+    }
+}
+
+/// A two-direction blind extrusion that adds material, from its planar
+/// profile's plane along the profile normal over a record whose reversal
+/// flag the decoder left unread.
+struct TwoSided<'a> {
+    profile: &'a PlanarProfileRef,
+    /// The first direction's depth.
+    first: f64,
+    /// The second direction's depth.
+    second: f64,
+}
+
+fn two_sided(feature: &Feature) -> Option<TwoSided<'_>> {
+    if feature.suppressed != Some(false)
+        || !reversal_flag(&feature.source_properties)
+        || !reversal_unread(&feature.source_properties)
+    {
+        return None;
+    }
+    match feature.evaluation.definition().operation() {
+        FeatureOperation::Extrude {
+            profile: ProfileRef::Planar(profile),
+            start: ExtrudeStart::ProfilePlane {},
+            direction: ExtrudeDirection::ProfileNormal {},
+            extent: ExtrudeExtent::TwoSided { first, second },
+            op: BooleanOp::Join | BooleanOp::NewBody,
+            ..
+        } => {
+            let (
+                LinearTermination::Blind { length: first },
+                LinearTermination::Blind { length: second },
+            ) = (&first.termination, &second.termination)
+            else {
+                return None;
+            };
+            Some(TwoSided {
+                profile,
+                first: first.get(),
+                second: second.get(),
+            })
         }
         _ => None,
     }
@@ -303,10 +488,77 @@ fn samples(entity: &SketchEntity) -> Option<Vec<Point2>> {
     )
 }
 
-fn contradicts(model: &Model, feature: &Feature, caps: &[Cap], work: &WorkBudget) -> bool {
-    let Some((profile, length, operation_sign, travel)) = candidate(feature) else {
+/// Whether the B-rep contradicts `feature`'s decoded travel: a reversal
+/// that adds material whose whole solid lies on the profile normal's side
+/// of the profile plane, or a start cap holding the profile with an end cap
+/// only on the opposite side.
+fn contradicts(model: &Model, feature: &Feature, witness: &Witness, work: &WorkBudget) -> bool {
+    let Some(candidate) = candidate(feature) else {
         return false;
     };
+    let OneSided {
+        profile,
+        length,
+        operation_sign,
+        travel,
+    } = candidate;
+    let Some(sketch) = profile_sketch(model, profile) else {
+        return false;
+    };
+    let Some((origin, normal, _)) = sketch.resolved_placement() else {
+        return false;
+    };
+    let normal = normal.get();
+    if candidate.adds_against_the_normal()
+        && witness
+            .solid
+            .span(origin.get(), normal)
+            .is_some_and(|(lowest, highest)| lowest >= -EPS_SOLID_SIDE && highest > EPS_SOLID_SIDE)
+    {
+        return work.charge();
+    }
+    let Some(points) = profile_points(model, profile, sketch) else {
+        return false;
+    };
+    let start = witness
+        .caps
+        .iter()
+        .filter(|cap| cap.normal.dot(normal).abs() > 1.0 - EPS_CAP_ALIGNMENT)
+        .any(|cap| points.iter().all(|point| cap.supports(*point, work)));
+    if !start {
+        return false;
+    }
+    let end = |travel: f64| {
+        end_cap(
+            &witness.caps,
+            &points,
+            normal,
+            length * travel,
+            travel * operation_sign,
+            work,
+        )
+    };
+    let decoded = end(travel);
+    let opposite = end(-travel);
+    !decoded && opposite && work.charge()
+}
+
+/// Whether the end caps confirm the reversal of a two-direction extrusion:
+/// they lie at the first depth against the profile normal and at the
+/// second along it, the pair of the unreversed reading is incomplete, and
+/// the depths differ.
+fn confirms(model: &Model, feature: &Feature, caps: &[Cap], work: &WorkBudget) -> bool {
+    let Some(TwoSided {
+        profile,
+        first,
+        second,
+    }) = two_sided(feature)
+    else {
+        return false;
+    };
+    if (first - second).abs() <= EPS_CARRIER_DISTANCE {
+        return false;
+    }
     let Some(sketch) = profile_sketch(model, profile) else {
         return false;
     };
@@ -317,25 +569,66 @@ fn contradicts(model: &Model, feature: &Feature, caps: &[Cap], work: &WorkBudget
         return false;
     };
     let normal = normal.get();
-    let parallel = |cap: &&Cap| cap.normal.dot(normal).abs() > 1.0 - EPS_CAP_ALIGNMENT;
-    let start = caps
-        .iter()
-        .filter(parallel)
-        .any(|cap| points.iter().all(|point| cap.supports(*point, work)));
-    if !start {
-        return false;
-    }
-    let end = |travel: f64| {
-        caps.iter().filter(parallel).any(|cap| {
-            cap.normal.dot(normal) * cap.sense * travel * operation_sign > 1.0 - EPS_CAP_ALIGNMENT
-                && points
-                    .iter()
-                    .any(|point| cap.supports(point.translated(normal, length * travel), work))
+    let end = |offset: f64| end_cap(caps, &points, normal, offset, offset.signum(), work);
+    let reversed = end(-first) && end(second);
+    let unreversed = end(first) && end(-second);
+    reversed && !unreversed && work.charge()
+}
+
+/// Whether a cap facing `outward` (`1` along `normal`, `-1` against it)
+/// holds one of the profile `points` moved `offset` along `normal`.
+fn end_cap(
+    caps: &[Cap],
+    points: &[Point3],
+    normal: Vector3,
+    offset: f64,
+    outward: f64,
+    work: &WorkBudget,
+) -> bool {
+    caps.iter().any(|cap| {
+        cap.normal.dot(normal) * cap.sense * outward > 1.0 - EPS_CAP_ALIGNMENT
+            && points
+                .iter()
+                .any(|point| cap.supports(point.translated(normal, offset), work))
+    })
+}
+
+/// The points and circular edges that bound the solid, in model space: the
+/// vertices, the circles and ellipses (each by its largest radius) and the
+/// control points of NURBS edges. An edge without vertices whose curve has
+/// none of these forms leaves the extent unknown.
+#[derive(Default)]
+struct Solid {
+    points: Vec<Point3>,
+    /// Each circle's center, unit axis and radius.
+    circles: Vec<(Point3, Vector3, f64)>,
+    unknown: bool,
+}
+
+impl Solid {
+    /// The lowest and highest offset of the solid along `normal` from
+    /// `origin`, where its extent is known.
+    fn span(&self, origin: Point3, normal: Vector3) -> Option<(f64, f64)> {
+        if self.unknown {
+            return None;
+        }
+        let points = self
+            .points
+            .iter()
+            .map(|point| point.vector_from(origin).dot(normal));
+        let circles = self.circles.iter().flat_map(|(center, axis, radius)| {
+            let offset = center.vector_from(origin).dot(normal);
+            let reach = radius * (1.0 - axis.dot(normal).powi(2)).max(0.0).sqrt();
+            [offset - reach, offset + reach]
+        });
+        points.chain(circles).fold(None, |span, offset| {
+            Some(
+                span.map_or((offset, offset), |(lowest, highest): (f64, f64)| {
+                    (lowest.min(offset), highest.max(offset))
+                }),
+            )
         })
-    };
-    let decoded = end(travel);
-    let opposite = end(-travel);
-    !decoded && opposite && work.charge()
+    }
 }
 
 struct Cap {
@@ -348,7 +641,10 @@ struct Cap {
     transform: Transform,
 }
 
-fn caps(ir: &CadIr, work: &WorkBudget) -> Option<Vec<Cap>> {
+/// The planar caps of `ir`'s B-rep in model space, and its solid where
+/// `with_solid`. The solid has its own work budget, so that collecting it
+/// never costs a cap witness.
+fn evidence(ir: &CadIr, work: &WorkBudget, with_solid: bool) -> Option<Witness> {
     let indexing_work = [
         ir.geometry.surfaces.len(),
         ir.geometry.shells.len(),
@@ -413,17 +709,85 @@ fn caps(ir: &CadIr, work: &WorkBudget) -> Option<Vec<Cap>> {
         .map(|c| (&c.id, &c.geometry))
         .collect();
     let mut result = Vec::new();
+    let solid_work = WorkBudget::new(MAX_WITNESS_WORK);
+    let mut solid = Solid {
+        unknown: !with_solid,
+        ..Solid::default()
+    };
     let mut indices = HashMap::new();
     for face in &ir.geometry.faces {
-        let Some(SolvedSurfaceGeometry::Plane(plane)) =
-            surfaces.get(&face.surface).and_then(|s| s.solved())
-        else {
-            continue;
-        };
         let Some(transform) = shells
             .get(&face.shell)
             .and_then(|r| regions.get(r))
             .copied()
+        else {
+            solid.unknown = true;
+            continue;
+        };
+        for coedge in face
+            .loops
+            .iter()
+            .filter_map(|lid| loops.get(lid))
+            .flat_map(|loop_| loop_.coedges())
+        {
+            if solid.unknown {
+                break;
+            }
+            if !solid_work.charge() {
+                solid.unknown = true;
+                break;
+            }
+            let Some(edge) = coedges.get(coedge).and_then(|c| edges.get(&c.edge)) else {
+                solid.unknown = true;
+                continue;
+            };
+            if let Some(ends) = edge.ends.as_ref() {
+                for vertex in [&ends.start, &ends.end] {
+                    match vertices
+                        .get(vertex)
+                        .and_then(|point| points.get(point))
+                        .and_then(|point| transform.apply_point(*point))
+                    {
+                        Some(point) => solid.points.push(point.get()),
+                        None => solid.unknown = true,
+                    }
+                }
+            }
+            match edge
+                .curve()
+                .and_then(|c| curves.get(c))
+                .and_then(|c| c.solved())
+            {
+                Some(SolvedCurveGeometry::Circle(circle)) => solid.circle(
+                    &transform,
+                    circle.center().get(),
+                    *circle.frame().axis().as_raw(),
+                    circle.radius().get(),
+                ),
+                Some(SolvedCurveGeometry::Ellipse(ellipse)) => solid.circle(
+                    &transform,
+                    ellipse.center().get(),
+                    *ellipse.frame().axis().as_raw(),
+                    ellipse.major_radius().get(),
+                ),
+                Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
+                    if !solid_work.charge_by(nurbs.pole_count()) {
+                        solid.unknown = true;
+                        break;
+                    }
+                    for control in nurbs.control_points() {
+                        match transform.apply_point(control.get()) {
+                            Some(point) => solid.points.push(point.get()),
+                            None => solid.unknown = true,
+                        }
+                    }
+                }
+                _ if edge.ends.is_none() => solid.unknown = true,
+                _ => {}
+            }
+        }
+        let Some(SolvedSurfaceGeometry::Plane(plane)) =
+            surfaces.get(&face.surface).and_then(|s| s.solved())
         else {
             continue;
         };
@@ -533,7 +897,23 @@ fn caps(ir: &CadIr, work: &WorkBudget) -> Option<Vec<Cap>> {
             }
         }
     }
-    Some(result)
+    Some(Witness {
+        caps: result,
+        solid,
+    })
+}
+
+impl Solid {
+    /// Adds the circle about `center` with `axis` and `radius`, placed by
+    /// `transform`.
+    fn circle(&mut self, transform: &Transform, center: Point3, axis: Vector3, radius: f64) {
+        match (transform.apply_point(center), transform.apply_normal(axis)) {
+            (Some(center), Some(axis)) if radius.is_finite() => {
+                self.circles.push((center.get(), *axis.as_raw(), radius));
+            }
+            _ => self.unknown = true,
+        }
+    }
 }
 
 impl Cap {

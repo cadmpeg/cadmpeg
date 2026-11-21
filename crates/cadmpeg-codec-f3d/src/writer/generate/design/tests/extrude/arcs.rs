@@ -1021,7 +1021,7 @@ pub(super) fn extruded_between(
 
 /// A slot of half length 4 mm and radius 3 mm about the origin: bottom
 /// line, right arc, top line, left arc.
-fn slot_strokes(center: [f64; 2], radius: f64) -> [Stroke; 4] {
+pub(super) fn slot_strokes(center: [f64; 2], radius: f64) -> [Stroke; 4] {
     let [x, y] = center;
     [
         Stroke::Line([x - 4.0, y - radius], [x + 4.0, y - radius]),
@@ -1032,7 +1032,7 @@ fn slot_strokes(center: [f64; 2], radius: f64) -> [Stroke; 4] {
 }
 
 /// The prism loop of [`slot_strokes`], counterclockwise for an exterior.
-fn slot_loop(center: [f64; 2], radius: f64, hole: bool) -> Vec<([f64; 2], Side)> {
+pub(super) fn slot_loop(center: [f64; 2], radius: f64, hole: bool) -> Vec<([f64; 2], Side)> {
     let [x, y] = center;
     let corners = [
         [x - 4.0, y - radius],
