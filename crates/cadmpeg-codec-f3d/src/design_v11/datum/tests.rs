@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use cadmpeg_ir::features::{
-    DistinctMembers, FeatureContent, FeatureCoordinateFrame, FeatureDefinition, FeatureEvaluation,
-    FeatureId,
-};
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::geometry::FeatureCoordinateFrame;
+use cadmpeg_ir::features::selections::DistinctMembers;
+use cadmpeg_ir::features::{FeatureContent, FeatureDefinition, FeatureId};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 fn feature(operation: LegacyOperation) -> Feature {
