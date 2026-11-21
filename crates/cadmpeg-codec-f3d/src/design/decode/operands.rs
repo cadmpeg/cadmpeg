@@ -2028,6 +2028,18 @@ pub(crate) fn unresolved_profile_group_loss(
     ))
 }
 
+/// Several Sketch-profile operands of one Extrude are one selection when they
+/// name the same Sketch and each carries a region selection.
+pub(crate) fn composable_sketch_profiles(profiles: &[DesignSketchProfileOperand]) -> bool {
+    let Some(first) = profiles.first() else {
+        return false;
+    };
+    profiles.len() > 1
+        && profiles.iter().all(|profile| {
+            profile.entity_id == first.entity_id && profile.region_selection.is_some()
+        })
+}
+
 /// Resolve the unique sketch-profile frame named by profile-based scopes, and
 /// record the Extrudes whose operands carry text selections.
 pub(crate) fn bind_sketch_profiles(
@@ -2122,7 +2134,10 @@ pub(crate) fn bind_sketch_profiles(
                             picks,
                         },
                     ),
-                    None => losses.push(unresolved_profile_group_loss(profiles.len())),
+                    None if !composable_sketch_profiles(&profiles) => {
+                        losses.push(unresolved_profile_group_loss(profiles.len()));
+                    }
+                    None => {}
                 }
                 slot.get_or_insert_with(Default::default)
                     .extrude_native_profiles = Some(profiles);
