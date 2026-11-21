@@ -231,7 +231,7 @@ fn a_model_without_a_selected_subset_is_borrowed() {
 
 #[test]
 fn a_spline_cache_moves_back_onto_the_source_parameter() {
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::geometry::nurbs::{NurbsCurve, NurbsPoles3};
 
     let points = [

@@ -219,7 +219,7 @@ fn decode_retains_generated_helix_construction() {
                 point.x = 17.0;
                 point.z = -2.0;
             }
-            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+            cadmpeg_ir::features::geometry::FinitePoint3::new(point).ok_or_else(|| {
                 cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                     "control_points contains a non-finite point".into(),
                 )

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Pattern operands, admitted transforms, and stage composition.
 
-use super::{
-    BodySelection, FaceSelection, FeatureDirection3, FeatureId, FinitePoint3, PathRef,
-    SelectionMembers,
-};
+use super::FeatureId;
+use crate::features::geometry::{FeatureDirection3, FinitePoint3};
+use crate::features::profiles::PathRef;
+use crate::features::selections::{BodySelection, FaceSelection, SelectionMembers};
 use crate::ids::OccurrenceId;
 use crate::scalar::{Angle, Length, PositiveAngle, PositiveLength, PositiveReal};
 use crate::units::UnitVector3;

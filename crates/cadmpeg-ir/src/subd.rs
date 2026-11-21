@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Subdivision-surface control cages.
 
-use crate::features::FinitePoint3;
+use crate::features::geometry::FinitePoint3;
 use crate::ids::SubdId;
 use crate::math::{Point3, Vector3};
 use crate::provenance::SourceObjectAssociation;

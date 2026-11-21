@@ -586,8 +586,10 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
             .points
             .push(cadmpeg_ir::topology::Point::new(
                 point_id.clone(),
-                cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(x, y, z))
-                    .expect("a finite position is a point"),
+                cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                    x, y, z,
+                ))
+                .expect("a finite position is a point"),
                 None,
             ));
         let vertex_id = VertexId::mint(format!("generated:test:inner_vertex#{index}"))
@@ -1164,7 +1166,7 @@ fn generated_source_less_writes_translational_extrusion_definition() {
         Some([0.25, 0.75])
     );
     assert_eq!(
-        native_position.map(cadmpeg_ir::features::FinitePoint3::get),
+        native_position.map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0))
     );
 }
@@ -1251,7 +1253,7 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
                 definition_payload_0.direction().get(),
                 definition_payload_0
                     .native_position()
-                    .map(cadmpeg_ir::features::FinitePoint3::get),
+                    .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
                 cadmpeg_ir::geometry::CacheContract::from_form(revision_form),
             )
             .unwrap();
@@ -1352,7 +1354,7 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
     );
     assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 20.0));
     assert_eq!(
-        native_position.map(cadmpeg_ir::features::FinitePoint3::get),
+        native_position.map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0))
     );
     let directrix_geometry = decoded
@@ -1505,7 +1507,7 @@ fn generated_cacheless_circle_extrusion_decodes_as_analytic_cylinder() {
                 Vector3::new(0.0, 0.0, -20.0),
                 definition_payload
                     .native_position()
-                    .map(cadmpeg_ir::features::FinitePoint3::get),
+                    .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
                 cadmpeg_ir::geometry::CacheContract::from_form(
                     definition_payload
                         .revision_form()

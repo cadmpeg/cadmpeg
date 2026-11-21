@@ -19,7 +19,7 @@ use crate::records::parameters::{
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use cadmpeg_ir::features::edge_treatments::{ChamferForm, ChamferGroup, ChamferSpec};
-use cadmpeg_ir::features::EdgeSelection;
+use cadmpeg_ir::features::selections::EdgeSelection;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
 
@@ -66,10 +66,8 @@ fn localized_chamfer_scope() -> DesignParameterScope {
 }
 #[test]
 fn a_chamfer_without_an_edge_group_keeps_its_distance_and_scope_selector() {
-    use cadmpeg_ir::features::{
-        edge_treatments::{ChamferGroup, ChamferSpec},
-        EdgeSelection,
-    };
+    use cadmpeg_ir::features::edge_treatments::{ChamferGroup, ChamferSpec};
+    use cadmpeg_ir::features::selections::EdgeSelection;
 
     let scope = localized_chamfer_scope();
     let parameters = [localized_fillet_parameter(

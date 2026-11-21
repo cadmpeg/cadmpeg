@@ -2,7 +2,8 @@
 
 use super::{dynamic_relation, line_entity, marker, typed_relation_definition};
 use crate::records::{FeatureInputRelationFamily, SketchInputKind, SketchInputLink};
-use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
+use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
+use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::Angle;
 use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput, SketchId, SketchLocus};
@@ -71,7 +72,7 @@ fn dynamic_angle_disambiguates_one_marker_scoped_line_by_angle() {
         value: Some(ParameterValue::Angle(
             Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
         )),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -125,7 +126,7 @@ fn dynamic_angle_uses_the_unoriented_solver_line_witness() {
         value: Some(ParameterValue::Angle(
             Angle::new(std::f64::consts::FRAC_PI_4).unwrap(),
         )),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -173,7 +174,7 @@ fn dynamic_angle_uses_unique_complete_roster_when_no_line_resolves() {
         value: Some(ParameterValue::Angle(
             Angle::new(std::f64::consts::FRAC_PI_4).unwrap(),
         )),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -242,7 +243,7 @@ fn dynamic_angle_repairs_one_resolved_line_from_the_profile_roster() {
         value: Some(ParameterValue::Angle(
             Angle::new(std::f64::consts::FRAC_PI_4).unwrap(),
         )),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -298,7 +299,7 @@ fn dynamic_angle_uses_solver_lines_for_indirect_operand_references() {
         value: Some(ParameterValue::Angle(
             Angle::new(std::f64::consts::FRAC_PI_4).unwrap(),
         )),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -356,7 +357,7 @@ fn dynamic_angle_prefers_an_explicit_line_over_a_conflicting_solver_alias() {
         value: Some(ParameterValue::Angle(
             Angle::new(std::f64::consts::PI / 6.0).unwrap(),
         )),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,

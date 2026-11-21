@@ -39,8 +39,10 @@ fn split_face_methods_enforce_their_wire_shapes() {
 
 #[test]
 fn split_face_operation_writes_its_unresolved_method() {
+    use crate::features::direct_edit::SplitFaceTool;
+    use crate::features::selections::FaceSelection;
     use crate::features::surfaces::SplitFaceMethod;
-    use crate::features::{FaceSelection, FeatureOperation, SplitFaceTool};
+    use crate::features::FeatureOperation;
     let operation = FeatureOperation::SplitFace {
         targets: FaceSelection::Native("native:targets".into()),
         tool: SplitFaceTool::Native("native:tool".into()),

@@ -43,7 +43,7 @@ fn numerical_0922_small_domain_keeps_fit_samples() {
     s.try_map_control_points(|_, p| {
         let mut p = p.get();
         p.z = p.x * p.y;
-        cadmpeg_ir::features::FinitePoint3::new(p).ok_or_else(|| {
+        cadmpeg_ir::features::geometry::FinitePoint3::new(p).ok_or_else(|| {
             cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                 "control_points contains a non-finite point".into(),
             )

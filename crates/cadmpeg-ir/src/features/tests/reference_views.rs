@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::features::{
-    DatumPlaneReference, DatumPointConstruction, FaceSelection, FeatureId, PlanarProfileRef,
-    SolidSweepOperation, SweepMode, SweepSection, SweepShape,
-};
+use crate::features::datums::{DatumPlaneReference, DatumPointConstruction};
+use crate::features::profiles::PlanarProfileRef;
+use crate::features::selections::FaceSelection;
+use crate::features::sweeps::{SolidSweepOperation, SweepMode, SweepSection, SweepShape};
+use crate::features::FeatureId;
 use crate::sketches::SketchId;
 
 #[test]

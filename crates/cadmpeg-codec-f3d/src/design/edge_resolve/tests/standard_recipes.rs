@@ -47,8 +47,10 @@ fn standard_recipe_group_keeps_proven_members_and_unresolved_recipe_identity() {
         None,
     )
     .unwrap();
-    let cadmpeg_ir::features::EdgeSelection::HistoricalPartial {
-        edges, unresolved, ..
+    let cadmpeg_ir::features::selections::EdgeSelection::HistoricalPartial {
+        edges,
+        unresolved,
+        ..
     } = selected
     else {
         panic!("partial historical selection");
