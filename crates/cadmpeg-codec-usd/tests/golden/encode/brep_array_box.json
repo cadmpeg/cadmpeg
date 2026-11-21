@@ -15,6 +15,23 @@
         "configurations": 0,
         "curves": 12,
         "declared_measures": 0,
+        "design.arrangements": 0,
+        "design.configurations": 0,
+        "design.containers": 0,
+        "design.evaluations": 0,
+        "design.features": 0,
+        "design.parameters": 0,
+        "design.programs": 0,
+        "design.publications": 0,
+        "design.scopes": 0,
+        "design.sheet_metal_rules": 0,
+        "design.sketch_constraints": 0,
+        "design.sketch_entities": 0,
+        "design.sketches": 0,
+        "design.spatial_sketch_constraints": 0,
+        "design.spatial_sketch_entities": 0,
+        "design.spatial_sketches": 0,
+        "design.spreadsheets": 0,
         "drawings": 0,
         "edges": 12,
         "faces": 6,
@@ -35,7 +52,18 @@
         "presentation_layers": 0,
         "procedural_curves": 0,
         "procedural_surfaces": 0,
-        "product_definitions": 1,
+        "process.features": 0,
+        "process.groups": 0,
+        "process.machines": 0,
+        "process.operations": 0,
+        "process.parameters": 0,
+        "process.presets": 0,
+        "process.programs": 0,
+        "process.setups": 0,
+        "process.states": 0,
+        "process.toolpaths": 0,
+        "process.tools": 0,
+        "product_definitions": 2,
         "regions": 1,
         "rigid_bodies": 0,
         "semantic_annotations": 0,
@@ -57,16 +85,18 @@
       }
     },
     "identity": {
-      "payload": "native",
+      "kind": "native",
       "target": "usd:usda-1.0"
     },
     "losses": [
       {
         "code": {
-          "code": "export.appearance-reduced",
-          "kind": "appearance_reduced",
-          "namespace": "usd",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "export.appearance-reduced",
+            "kind": "appearance_reduced",
+            "namespace": "usd"
+          }
         },
         "message": "6 appearance bindings to faces, edges, or carriers were not written",
         "severity": "info"
@@ -77,9 +107,9 @@
     ],
     "write_path": {
       "fidelity": {
-        "status": "not_provided"
+        "kind": "not_provided"
       },
-      "path": "synthesized"
+      "kind": "synthesized"
     }
   },
   "usda": [
@@ -275,6 +305,7 @@
     "        )",
     "        {",
     "            uniform token elementType = \"face\"",
+    "            uniform token familyName = \"materialBind\"",
     "            int[] indices = [0, 1, 2, 3, 4, 5]",
     "            rel material:binding = </Looks/Box_face_1_material>",
     "        }",

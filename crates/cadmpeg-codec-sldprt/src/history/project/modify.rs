@@ -201,12 +201,11 @@ pub(super) fn project_thicken(feature: &Feature) -> FeatureDefinition {
         (Some(Some(false)), _) | (_, Some(Some(false))) => Some(ThickenSide::Forward),
         (None, None) => Some(ThickenSide::Forward),
     };
-    FeatureDefinition::Operation(FeatureOperation::Thicken {
-        faces: property_text(feature, "Faces")
-            .map_or(FaceSelection::Unresolved, FaceSelection::Native),
+    FeatureDefinition::Operation(FeatureOperation::thicken(
+        property_text(feature, "Faces").map_or(FaceSelection::Unresolved, FaceSelection::Native),
         thickness,
         side,
-    })
+    ))
 }
 
 pub(super) fn project_draft(feature: &Feature) -> FeatureDefinition {
@@ -256,6 +255,8 @@ pub(super) fn project_combine(feature: &Feature) -> Option<FeatureDefinition> {
         operands,
         op,
         keep_tools: false,
+
+        destination: cadmpeg_ir::features::CombineDestination::default(),
     }))
 }
 
@@ -327,7 +328,7 @@ pub(super) fn project_replace_face(feature: &Feature) -> Option<FeatureDefinitio
     }
     let faces = property_text(feature, "Faces")?;
     let replacement = property_text(feature, "ReplacementFaces")?;
-    cadmpeg_ir::features::ReplaceFaceOperands::new(
+    cadmpeg_ir::features::replace_face::ReplaceFaceOperands::new(
         FaceSelection::Native(faces),
         FaceSelection::Native(replacement),
     )

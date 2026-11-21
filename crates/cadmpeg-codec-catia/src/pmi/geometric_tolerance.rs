@@ -13,6 +13,7 @@ use cadmpeg_ir::pmi::{
     DatumReference, GeometricToleranceKind, PmiAnnotation, PmiDefinition, PmiMagnitude,
     PmiQuantity, PmiTarget, PmiValue,
 };
+use cadmpeg_ir::references::InstanceTarget;
 
 use super::source::{entry, framed, identity, same_entity_frame, schema};
 use crate::decode::ModelingGraphScope;
@@ -386,7 +387,7 @@ impl<'a> Graph<'a, '_> {
         &self,
         ctx: &DecodeContext<'_>,
         entity: &CatiaEntityRecord,
-    ) -> Result<(Vec<PmiTarget>, usize), CodecError> {
+    ) -> Result<(Vec<InstanceTarget<PmiTarget>>, usize), CodecError> {
         let Some(field) = self
             .selected(entity.entity_id, ["TTRSBloc", "CATTPSTTRSData"])
             .filter(|field| field.parameters.count == 0 && field.references.count > 0)
@@ -402,9 +403,9 @@ impl<'a> Graph<'a, '_> {
                 if inline_type(target, self.catalog)? != "CATMmrTTRS" {
                     return None;
                 }
-                Some(PmiTarget::ShapeAspect {
+                Some(InstanceTarget::new(PmiTarget::ShapeAspect {
                     source_id: cadmpeg_core::text::NonBlankString::new(target.id.clone())?,
-                })
+                }))
             })();
             if let Some(candidate) = candidate {
                 selected[used] = Some(candidate);
@@ -878,15 +879,13 @@ fn emit_frame(
         let target_count = targets.len();
         let admitted = prepared.append(
             ctx,
-            PmiAnnotation {
-                id: id.clone(),
-                name: None,
-                visible: None,
+            PmiAnnotation::new(
+                id.clone(),
                 targets,
-                definition: PmiDefinition::Datum {
+                PmiDefinition::Datum {
                     identification: datum.label.to_owned(),
                 },
-            },
+            ),
             datum.entity.byte_offset,
             Exactness::ByteExact,
             stats,
@@ -912,15 +911,13 @@ fn emit_frame(
     if prepared
         .append(
             ctx,
-            PmiAnnotation {
-                id: id.clone(),
-                name: None,
-                visible: None,
-                targets: Vec::new(),
-                definition: PmiDefinition::DatumSystem {
+            PmiAnnotation::new(
+                id.clone(),
+                Vec::new(),
+                PmiDefinition::DatumSystem {
                     references: references.try_into().map_err(CodecError::malformed)?,
                 },
-            },
+            ),
             frame.entity.byte_offset,
             Exactness::ByteExact,
             stats,
@@ -970,12 +967,10 @@ fn emit_tolerance(
     let target_count = targets.len();
     let emitted = prepared.append(
         ctx,
-        PmiAnnotation {
+        PmiAnnotation::new(
             id,
-            name: None,
-            visible: None,
             targets,
-            definition: PmiDefinition::GeometricTolerance {
+            PmiDefinition::GeometricTolerance {
                 tolerance: tolerance.kind,
                 magnitude: tolerance.magnitude.0,
                 defined_unit: None,
@@ -983,9 +978,11 @@ fn emit_tolerance(
                 defined_area_second_unit: None,
                 datum_system,
                 modifiers: Vec::new(),
-                constraints: cadmpeg_ir::pmi::zones::ToleranceConstraints::default(),
+                displacement: None,
+                maximum_upper: None,
+                zones: Vec::new(),
             },
-        },
+        ),
         tolerance.entity.byte_offset,
         tolerance.magnitude.1,
         stats,
@@ -1017,8 +1014,8 @@ fn retained_size(annotation: &PmiAnnotation) -> Result<usize, CodecError> {
     };
     add(annotation.id.as_str().len())?;
     for target in &annotation.targets {
-        add(std::mem::size_of::<PmiTarget>())?;
-        if let PmiTarget::ShapeAspect { source_id } = target {
+        add(std::mem::size_of::<InstanceTarget<PmiTarget>>())?;
+        if let PmiTarget::ShapeAspect { source_id } = &target.entity {
             add(source_id.as_str().len())?;
         }
     }

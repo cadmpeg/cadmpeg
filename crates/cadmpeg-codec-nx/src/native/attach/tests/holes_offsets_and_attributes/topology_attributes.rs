@@ -41,7 +41,7 @@ fn string_attribute_output_preserves_value() {
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    ir.model.faces[0].id = cadmpeg_ir::ids::FaceId::mint("nx:s3:face#60").unwrap();
+    ir.geometry.faces[0].id = cadmpeg_ir::ids::FaceId::mint("nx:s3:face#60").unwrap();
     let reference = ParasolidTopologyAttributeListReference {
         id: "reference".into(),
         stream_ordinal: 3,
@@ -102,9 +102,9 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    ir.model.shells[0].id = ShellId::mint("nx:s3:shell#58").expect("identity grammar");
-    ir.model.faces[0].id = FaceId::mint("nx:s3:face#60").expect("identity grammar");
-    ir.model.loops[0].id = LoopId::mint("nx:s3:loop#59").expect("identity grammar");
+    ir.geometry.shells[0].id = ShellId::mint("nx:s3:shell#58").expect("identity grammar");
+    ir.geometry.faces[0].id = FaceId::mint("nx:s3:face#60").expect("identity grammar");
+    ir.geometry.loops[0].id = LoopId::mint("nx:s3:loop#59").expect("identity grammar");
     let references = [
         (TopologyAttributeKind::Shell, 58),
         (TopologyAttributeKind::Face, 60),
@@ -221,7 +221,7 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
             .collect::<Vec<_>>();
         assert_eq!(attributes.len(), 6);
         assert_eq!(
-            attributes[0].target,
+            attributes[0].target.entity,
             AttributeTarget::Shell(ShellId::mint("nx:s3:shell#58").expect("identity grammar"))
         );
         assert_eq!(attributes[0].name, "parasolid_type_integer_reference_5");
@@ -252,7 +252,7 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
         ] {
             assert!(attributes
                 .iter()
-                .all(|attribute| attribute.target == target));
+                .all(|attribute| attribute.target.entity == target));
             assert_eq!(
                 attributes[1].values,
                 [
@@ -524,7 +524,7 @@ fn topology_attribute_index_retains_linked_type_81_records() {
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    ir.model.faces[0].id = FaceId::mint("nx:s3:face#60").expect("identity grammar");
+    ir.geometry.faces[0].id = FaceId::mint("nx:s3:face#60").expect("identity grammar");
     let reference = ParasolidTopologyAttributeListReference {
         id: "topology-reference".into(),
         stream_ordinal: 3,
@@ -692,7 +692,7 @@ fn topology_attribute_index_retains_linked_type_81_records() {
             .collect::<Vec<_>>();
         assert_eq!(attributes.len(), 2);
         assert!(attributes.iter().all(|attribute| {
-            attribute.target
+            attribute.target.entity
                 == AttributeTarget::Face(FaceId::mint("nx:s3:face#60").expect("identity grammar"))
                 && attribute.name == "CLASS.field_0.parasolid_type_2"
         }));
@@ -720,7 +720,7 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    ir.model.faces[0].id = FaceId::mint("nx:s3:face#60").expect("identity grammar");
+    ir.geometry.faces[0].id = FaceId::mint("nx:s3:face#60").expect("identity grammar");
     let reference = ParasolidTopologyAttributeListReference {
         id: "topology-reference".into(),
         stream_ordinal: 3,
@@ -842,7 +842,7 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
             .collect::<Vec<_>>();
         assert_eq!(attributes.len(), 6);
         assert!(attributes.iter().all(|attribute| {
-            attribute.target
+            attribute.target.entity
                 == AttributeTarget::Face(FaceId::mint("nx:s3:face#60").expect("identity grammar"))
         }));
         let values = attributes

@@ -5,7 +5,7 @@ use crate::records::feature::scope::DesignScopePayload;
 use crate::test_support::pipe::{Config, Fixture};
 
 fn reopened(native: &crate::native::F3dNative) -> crate::native::F3dNative {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&ctx, &mut namespace).unwrap();
     crate::native::F3dNative::load(&namespace).unwrap()
@@ -13,7 +13,7 @@ fn reopened(native: &crate::native::F3dNative) -> crate::native::F3dNative {
 
 #[test]
 fn pipe_native_admits_known_roles_and_keeps_role8() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for operation in [1, 2, 3, 4] {
         for body_role in [4, 8] {
             let native = Fixture::new(Config {
@@ -61,7 +61,7 @@ fn pipe_native_admits_known_roles_and_keeps_role8() {
 
 #[test]
 fn pipe_native_round_trips_point_relations_and_absent_construction() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for version in [2, 3] {
         let native = Fixture::new(Config {
             point_version: Some(version),
@@ -83,14 +83,20 @@ fn pipe_native_round_trips_point_relations_and_absent_construction() {
 }
 
 fn reject_mutation(arena: &str, mutate: impl FnOnce(&mut serde_json::Value)) {
-    let ctx = cadmpeg_test_support::service_decode_context();
-    let native = Fixture::new(Config {
-        point_version: Some(2),
-        operation: 1,
-        ..Default::default()
-    })
-    .decode(&ctx)
-    .unwrap();
+    reject_mutation_of(
+        Config {
+            point_version: Some(2),
+            operation: 1,
+            ..Default::default()
+        },
+        arena,
+        mutate,
+    );
+}
+
+fn reject_mutation_of(config: Config, arena: &str, mutate: impl FnOnce(&mut serde_json::Value)) {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let native = Fixture::new(config).decode(&ctx).unwrap();
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&ctx, &mut namespace).unwrap();
     let mut values = match arena {
@@ -182,7 +188,7 @@ fn pipe_native_load_rejects_cross_record_tampering() {
 
 #[test]
 fn pipe_wire_rejects_every_deleted_key_and_incomplete_current_fields() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let native = Fixture::new(Config::default()).decode(&ctx).unwrap();
     let DesignScopePayload::Pipe(Some(pipe)) = native.design_parameter_scopes[0].payload() else {
         panic!("Pipe fixture")
@@ -232,7 +238,7 @@ fn pipe_wire_rejects_every_deleted_key_and_incomplete_current_fields() {
 
 #[test]
 fn pipe_new_body_rejects_a_body_role_with_complete_generic_links() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut native = Fixture::new(Config::default()).decode(&ctx).unwrap();
     native.design_construction_operand_groups[0].operand_role =
         crate::records::topology::construction::DesignConstructionOperandRole::Other(
@@ -262,7 +268,7 @@ fn pipe_new_body_rejects_a_body_role_with_complete_generic_links() {
 
 #[test]
 fn pipe_native_load_rejects_an_empty_new_body_path() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut native = Fixture::new(Config::default()).decode(&ctx).unwrap();
     native.design_construction_operand_groups[0]
         .try_set_members(Vec::new())
@@ -273,4 +279,25 @@ fn pipe_native_load_rejects_an_empty_new_body_path() {
         crate::native::F3dNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidCollection(_))
     ));
+}
+
+#[test]
+fn pipe_native_load_rejects_a_misplaced_section_shape() {
+    let shaped = || Config {
+        section: Some(crate::test_support::pipe::SectionFrame::of(1)),
+        ..Default::default()
+    };
+    for offset in [94, 96, 99] {
+        reject_mutation_of(shaped(), "design_parameter_scopes", |rows| {
+            rows[0]["path_feature_construction"]["section"]["shape_offset"] = offset.into();
+        });
+    }
+    let pointed = Config {
+        point_version: Some(2),
+        ..shaped()
+    };
+    reject_mutation_of(pointed, "design_parameter_scopes", |rows| {
+        rows[0]["path_feature_construction"]["section"] =
+            serde_json::json!({ "shape_value": 1, "shape_offset": 95 });
+    });
 }

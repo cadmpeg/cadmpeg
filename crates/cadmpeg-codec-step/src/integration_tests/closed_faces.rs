@@ -32,21 +32,22 @@ fn id<T>(
 }
 
 fn solid(ir: &mut CadIr, surfaces: Vec<(SolvedSurfaceGeometry, Sense)>) {
-    let b = ir.model.bodies.len();
+    let b = ir.geometry.bodies.len();
     let body = id(BodyId::mint, "body", b);
     let region = id(RegionId::mint, "region", b);
     let mut shells = Vec::new();
     for (geometry, sense) in surfaces {
-        let index = ir.model.faces.len();
+        let index = ir.geometry.faces.len();
         let shell = id(ShellId::mint, "shell", index);
         let surface = id(SurfaceId::mint, "surface", index);
         let face = id(FaceId::mint, "face", index);
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: surface.clone(),
             geometry: SurfaceGeometry::Solved(geometry),
             source_object: None,
+            native_ref: None,
         });
-        ir.model.faces.push(Face {
+        ir.geometry.faces.push(Face {
             id: face.clone(),
             shell: shell.clone(),
             surface,
@@ -55,25 +56,27 @@ fn solid(ir: &mut CadIr, surfaces: Vec<(SolvedSurfaceGeometry, Sense)>) {
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         });
-        ir.model
+        ir.geometry
             .shells
-            .push(Shell::with_face(shell.clone(), region.clone(), face));
+            .push(Shell::new(shell.clone(), region.clone()));
         shells.push(shell);
     }
-    ir.model.regions.push(Region {
+    ir.geometry.regions.push(Region {
         id: region.clone(),
         body: body.clone(),
         shells,
+        native_ref: None,
     });
-    ir.model.bodies.push(Body {
+    ir.geometry.bodies.push(Body {
         id: body,
         kind: BodyKind::Solid,
-        regions: vec![region],
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
 }
 
@@ -174,27 +177,29 @@ fn pole_pair(ir: &mut CadIr, height: f64) {
         let point = id(PointId::mint, "point", index);
         let vertex = id(VertexId::mint, "vertex", index);
         let lp = id(LoopId::mint, "loop", index);
-        ir.model.points.push(Point::new(
+        ir.geometry.points.push(Point::new(
             point.clone(),
             FinitePoint3::new(Point3::new(0.0, 0.0, z)).expect("point"),
             None,
         ));
-        ir.model.vertices.push(Vertex {
+        ir.geometry.vertices.push(Vertex {
             id: vertex.clone(),
             point,
             tolerance: None,
+            native_ref: None,
         });
-        ir.model.loops.push(Loop {
+        ir.geometry.loops.push(Loop {
             id: lp.clone(),
-            face: ir.model.faces[0].id.clone(),
+            face: ir.geometry.faces[0].id.clone(),
             boundary: LoopBoundary::Vertex {
                 vertex,
                 pcurves: Vec::new(),
             },
+            native_ref: None,
         });
-        let mut loops: Vec<_> = ir.model.faces[0].loops.iter().cloned().collect();
+        let mut loops: Vec<_> = ir.geometry.faces[0].loops.iter().cloned().collect();
         loops.push(lp);
-        ir.model.faces[0].loops = FaceLoops::unspecified(loops);
+        ir.geometry.faces[0].loops = FaceLoops::unspecified(loops);
     }
 }
 
@@ -214,16 +219,16 @@ fn round_trip(ir: &CadIr, volumes: &[f64]) {
         let text = String::from_utf8(bytes.clone()).expect("text");
         assert_eq!(
             text.matches("= CLOSED_SHELL(").count(),
-            ir.model.shells.len()
+            ir.geometry.shells.len()
         );
         let decoded = StepCodec::default()
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("decode");
         let ir2 = decoded.ir();
-        assert_eq!(ir2.model.faces.len(), ir.model.faces.len());
-        assert_eq!(ir2.model.bodies.len(), volumes.len());
+        assert_eq!(ir2.geometry.faces.len(), ir.geometry.faces.len());
+        assert_eq!(ir2.geometry.bodies.len(), volumes.len());
         assert!(ir2
-            .model
+            .geometry
             .bodies
             .iter()
             .all(|body| body.kind == BodyKind::Solid));
@@ -356,7 +361,7 @@ fn closed_surface_sense_is_retained() {
             let decoded = StepCodec::default()
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .expect("decode either face sense");
-            assert_eq!(decoded.ir().model.faces[0].sense, sense);
+            assert_eq!(decoded.ir().geometry.faces[0].sense, sense);
         }
     }
 }
@@ -464,17 +469,17 @@ fn spindle_poles_require_a_resolved_outer_solid_shell() {
         pole_pair(&mut ir, if case == "horn" { 0.0 } else { 21.0_f64.sqrt() });
         match case {
             "one-pole" => {
-                ir.model.faces[0].loops =
-                    FaceLoops::unspecified(vec![ir.model.loops[0].id.clone()]);
+                ir.geometry.faces[0].loops =
+                    FaceLoops::unspecified(vec![ir.geometry.loops[0].id.clone()]);
             }
             "off-axis" => {
-                ir.model.points[0] = Point::new(
-                    ir.model.points[0].id.clone(),
+                ir.geometry.points[0] = Point::new(
+                    ir.geometry.points[0].id.clone(),
                     FinitePoint3::new(Point3::new(1.0, 0.0, -21.0_f64.sqrt())).expect("point"),
                     None,
                 );
             }
-            "sheet" => ir.model.bodies[0].kind = BodyKind::Sheet,
+            "sheet" => ir.geometry.bodies[0].kind = BodyKind::Sheet,
             _ => {}
         }
         let mut bytes = Vec::new();

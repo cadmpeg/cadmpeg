@@ -47,6 +47,7 @@ fn fixed_extrude(
             side_extent_discriminator_offsets: [77, 90],
             first_side_target_ordinal: None,
             distance_tail: None,
+            opaque_distance_word: None,
             extent,
             direction_face_extend_offsets: [32, 36],
             direction_reversed: false,
@@ -90,9 +91,9 @@ fn geometry_depth_does_not_require_omitted_extrude_face_groups() {
     );
     assert!(conflicts(&native));
     crate::test_support::with_decode_context(|decode| {
-        let mut value = serde_json::to_value(cadmpeg_ir::CadIr::empty()).unwrap();
-        value["decode_depth"] = serde_json::json!("geometry");
-        let ir = serde_json::from_value(value).unwrap();
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        ir.set_scope(cadmpeg_core::decode::DecodeDepth::Geometry.scope())
+            .unwrap();
         let ctx = super::super::Ctx::new(&ir, &native, decode);
         let mut findings = Vec::new();
         super::super::extrude_operands::validate_extrude_parameter_operands(&ctx, &mut findings);

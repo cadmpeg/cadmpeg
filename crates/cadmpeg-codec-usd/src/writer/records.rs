@@ -727,7 +727,7 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
     fn procedural_surface(&mut self, construction: &str) -> Option<(SurfaceRecord, Chart)> {
         let procedural = self
             .ir
-            .model
+            .geometry
             .procedural_surfaces
             .iter()
             .find(|procedural| procedural.id.as_str() == construction)?;
@@ -806,13 +806,13 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
             return Some(*index);
         }
         let edge = self.index.edges(id.as_str(), StandardIndex)?;
-        let vertices = [self.vertex(&edge.start)?, self.vertex(&edge.end)?];
+        let vertices = [self.vertex(edge.start()?)?, self.vertex(edge.end()?)?];
         let curve = edge.curve().and_then(|curve| self.curve(curve));
         let range = edge
             .param_range()
             .map(cadmpeg_ir::units::FiniteVector::finite_components)
             .map(|range| [range[0].get(), range[1].get()]);
-        let closed = edge.start == edge.end;
+        let closed = edge.start() == edge.end();
         let ends = curve.and_then(|(reference, map)| {
             let ends = match range {
                 Some([start, end]) => [map.apply(start), map.apply(end)],
@@ -1343,21 +1343,23 @@ pub(super) fn export<'ir>(
     meshes_wanted: bool,
 ) -> Option<Exported> {
     let mut exporter = Exporter::new(ir, index, tessellator, meshes_wanted);
-    for region_id in &body.regions {
-        let Some(region) = index.regions(region_id.as_str(), StandardIndex) else {
-            continue;
-        };
+    for region in index.ir().geometry.body_regions(&body.id) {
         let mut region_shells = Vec::new();
         for shell_id in &region.shells {
             let Some(shell) = index.shells(shell_id.as_str(), StandardIndex) else {
                 continue;
             };
-            if shell.faces().is_empty() {
+            let shell_faces = index
+                .ir()
+                .geometry
+                .shell_faces(&shell.id)
+                .collect::<Vec<_>>();
+            if shell_faces.is_empty() {
                 continue;
             }
             let start = exporter.brep.faces.len();
-            for face in shell.faces() {
-                exporter.face(face);
+            for face in shell_faces {
+                exporter.face(&face.id);
             }
             let faces: Vec<usize> = (start..exporter.brep.faces.len()).collect();
             if faces.is_empty() {

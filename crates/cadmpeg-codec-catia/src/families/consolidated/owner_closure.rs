@@ -286,7 +286,8 @@ fn owner_reference<'a>(
         ),
         AllocationReferenceEncoding::Selector2
         | AllocationReferenceEncoding::TaggedU8
-        | AllocationReferenceEncoding::TaggedU16 => None,
+        | AllocationReferenceEncoding::TaggedU16
+        | AllocationReferenceEncoding::TaggedU24 => None,
     }
 }
 

@@ -134,7 +134,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 PatternTransform::Unresolved {
                     form: Some(cadmpeg_ir::features::patterns::PatternForm::Mirror),
                 } => Some(NativePatternClass::Mirror),
-                PatternTransform::Unresolved { .. } => None,
+                PatternTransform::Unresolved { .. }
+                | PatternTransform::CurveDrivenPartial { .. } => None,
                 PatternTransform::Linear { .. } | PatternTransform::LinearOffsets { .. } => {
                     Some(NativePatternClass::Linear)
                 }
@@ -168,7 +169,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         })?);
                     }
                     PatternSeed::Faces(_) | PatternSeed::Bodies(_) if existing.is_some() => {}
-                    PatternSeed::Faces(_) | PatternSeed::Bodies(_) => {
+                    PatternSeed::Faces(_) | PatternSeed::Bodies(_) | PatternSeed::Native(_) => {
                         return Err(CodecError::NotImplemented(format!(
                             "SLDPRT feature {} has a source-less topology pattern seed",
                             feature.id
@@ -219,7 +220,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     count,
                     second,
                     omitted_instances,
+                    symmetric,
                 } => {
+                    if *symmetric || second.as_ref().is_some_and(|second| second.symmetric) {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} has a symmetric pattern distribution",
+                            feature.id
+                        )));
+                    }
                     if !omitted_instances.is_empty() {
                         return Err(CodecError::NotImplemented(format!(
                             "SLDPRT feature {} has omitted pattern instances",
@@ -366,6 +374,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     )));
                 }
                 PatternTransform::LinearOffsets { .. }
+                | PatternTransform::CurveDrivenPartial { .. }
                 | PatternTransform::CircularAngles { .. }
                 | PatternTransform::Scale { .. }
                 | PatternTransform::Composite { .. } => {

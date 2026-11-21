@@ -25,7 +25,7 @@
 //!     &mut Cursor::new(bytes),
 //!     &DecodeOptions::default(),
 //! )?;
-//! println!("{} faces", decoded.ir().model.faces.len());
+//! println!("{} faces", decoded.ir().geometry.faces.len());
 //! for loss in &decoded.report().losses {
 //!     eprintln!("{:?}: {}", loss.severity, loss.message);
 //! }
@@ -110,6 +110,7 @@ mod carchive;
 mod classification;
 mod container;
 mod decode;
+mod design_v11;
 mod dialect;
 pub mod exact_ledger;
 mod feature_schema;
@@ -127,6 +128,7 @@ mod parasolid;
 mod pmi;
 mod records;
 mod resolved_features;
+mod rollback;
 mod swift;
 mod tessellation;
 mod writer;
@@ -504,7 +506,9 @@ mod tests {
     fn source_record_join_borrows_the_retained_source_image() {
         let payload = vec![0x5a; 4096];
         let payload_ptr = payload.as_ptr();
-        let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+        let mut fidelity = cadmpeg_ir::SourceFidelity::new(
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(&payload),
+        );
         let id: cadmpeg_ir::ids::UnknownId = SOURCE_IMAGE_ID
             .to_owned()
             .try_into()

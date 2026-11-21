@@ -62,7 +62,7 @@ fn record(bytes: &mut Vec<u8>, class: u8, identity: u32, payload: &[u8]) {
     bytes.extend_from_slice(payload);
 }
 
-fn selected_plane_source(ambiguous: bool, invalid_sign: bool) -> Vec<u8> {
+fn selected_plane_source(ambiguous: bool, invalid_sign: bool, reverse_chart: bool) -> Vec<u8> {
     let (mut main, surfaces) = complete_streams();
     record(&mut main, 0x65, 10, &[0x81, 0x8b, 0x05, 0x0d]);
     record(&mut main, 0x60, 11, &[0x81, 0x8c]);
@@ -105,6 +105,11 @@ fn selected_plane_source(ambiguous: bool, invalid_sign: bool) -> Vec<u8> {
         ),
     ] {
         for (index, value) in values.into_iter().enumerate() {
+            let value = if reverse_chart && offset == b5_plane_payload::DIRECTION_U {
+                -value
+            } else {
+                value
+            };
             plane[offset + 8 * index..offset + 8 * (index + 1)]
                 .copy_from_slice(&value.to_le_bytes());
         }
@@ -125,42 +130,36 @@ fn selected_plane_source(ambiguous: bool, invalid_sign: bool) -> Vec<u8> {
 }
 
 #[test]
-fn selected_shell_plane_agrees_with_the_face_frame_orientation() {
-    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
-
+fn selected_shell_plane_parity_changes_only_the_oriented_face_normal() {
     let baseline = decode(baseline_source());
-    let corrected = decode(selected_plane_source(false, false));
-    let model = &baseline.ir().model;
-    assert_eq!(model.faces.len(), 4);
-    let face = model
-        .faces
-        .iter()
-        .find(|face| face.id.as_str() == "catia:standard:face#1")
-        .expect("plane face");
-    assert_eq!(face.sense, Sense::Reversed);
-    let surface = model
-        .surfaces
-        .iter()
-        .find(|surface| surface.id == face.surface)
-        .expect("plane carrier");
-    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) = &surface.geometry else {
-        panic!("plane carrier");
-    };
-    let frame = 1.0 / 3.0_f64.sqrt();
-    let carrier_normal = plane.frame().axis().as_raw();
-    assert!((carrier_normal.x + frame).abs() < 1e-6);
-    assert!((carrier_normal.y - frame).abs() < 1e-6);
-    assert!((carrier_normal.z + frame).abs() < 1e-6);
-    assert_eq!(corrected.ir().model, baseline.ir().model);
-    assert_valid(&corrected);
+    assert_eq!(baseline.ir().geometry.faces.len(), 4);
+    for reverse_chart in [false, true] {
+        let corrected = decode(selected_plane_source(false, false, reverse_chart));
+        let mut expected = baseline.ir().geometry.clone();
+        let face = expected
+            .faces
+            .iter_mut()
+            .find(|face| face.id.as_str() == "catia:standard:face#1")
+            .expect("plane face");
+        assert_eq!(face.sense, Sense::Forward);
+        face.sense = if reverse_chart {
+            Sense::Reversed
+        } else {
+            Sense::Forward
+        };
+        assert_eq!(corrected.ir().geometry, expected);
+        assert_eq!(corrected.ir().model, baseline.ir().model);
+        assert_valid(&corrected);
+    }
 }
 
 #[test]
 fn ambiguous_or_malformed_shell_owner_preserves_the_existing_standard_model() {
     let baseline = decode(baseline_source());
-    assert_eq!(baseline.ir().model.faces.len(), 4);
+    assert_eq!(baseline.ir().geometry.faces.len(), 4);
     for (ambiguous, invalid_sign) in [(true, false), (false, true)] {
-        let result = decode(selected_plane_source(ambiguous, invalid_sign));
+        let result = decode(selected_plane_source(ambiguous, invalid_sign, false));
+        assert_eq!(result.ir().geometry, baseline.ir().geometry);
         assert_eq!(result.ir().model, baseline.ir().model);
         assert_valid(&result);
     }

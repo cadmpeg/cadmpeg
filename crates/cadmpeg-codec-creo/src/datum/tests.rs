@@ -531,7 +531,7 @@ fn decode_transfers_active_datum_cylinder_with_source_namespace() {
         .expect("decode");
     let surface = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "creo:actdatums:surface#8")
@@ -585,7 +585,7 @@ fn decode_transfers_exact_datum_plane_carrier() {
     assert_eq!(records[0].fields().unwrap()["owner_feature_id"], 1);
     assert_eq!(records[0].fields().unwrap()["normal"][1], 1.0);
     assert_eq!(records[0].fields().unwrap()["plane_offset"], 0.0);
-    assert_eq!(result.ir().model.surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.surfaces.len(), 1);
     assert_eq!(result.ir().model.features.len(), 1);
     let feature = &result.ir().model.features[0];
     assert_eq!(feature.id.as_str(), "creo:model:feature#1");

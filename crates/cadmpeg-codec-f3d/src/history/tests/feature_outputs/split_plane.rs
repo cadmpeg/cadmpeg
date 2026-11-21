@@ -30,7 +30,7 @@ fn sample_segment(topology: &mut AsmHistoricalTopology, edge: i64, start: Point3
     topology.edge_samples.sort_by_key(|sample| sample.edge);
 }
 
-fn split_body_test_feature(scope_id: &str) -> Feature {
+pub(super) fn split_body_test_feature(scope_id: &str) -> Feature {
     Feature {
         id: FeatureId::mint("test:model:feature#split").unwrap(),
         ordinal: 0,
@@ -43,6 +43,7 @@ fn split_body_test_feature(scope_id: &str) -> Feature {
         source_content: Default::default(),
         evaluation: FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::SplitBody {
+                extend_tool: None,
                 targets: BodySelection::Unresolved,
                 tool: SplitBodyTool::Faces(FaceSelection::Faces(vec![])),
             }),
@@ -62,6 +63,7 @@ fn split_body_with_face_tool(scope_id: &str, face_slots: &[i64]) -> Feature {
     feature
         .evaluation
         .set_definition(FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            extend_tool: None,
             targets: BodySelection::Unresolved,
             tool: SplitBodyTool::Faces(FaceSelection::Faces(faces)),
         }));
@@ -107,7 +109,7 @@ fn attach_shell_face(
     }
 }
 
-fn two_solid_boxes_with_planes(
+pub(super) fn two_solid_boxes_with_planes(
     b1: i64,
     min1: Point3,
     max1: Point3,
@@ -416,7 +418,8 @@ fn split_plane_only_emitted_for_split_body() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         feature_unresolved
             .source_properties
@@ -437,7 +440,8 @@ fn split_plane_only_emitted_for_split_body() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         feature_split
             .source_properties
@@ -479,6 +483,7 @@ fn split_plane_only_emitted_for_split_body() {
     feature_datum_split
         .evaluation
         .set_definition(FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            extend_tool: None,
             targets: BodySelection::Unresolved,
             tool: SplitBodyTool::Plane { plane: datum_id },
         }));
@@ -491,7 +496,8 @@ fn split_plane_only_emitted_for_split_body() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         features[1]
             .source_properties
@@ -705,7 +711,8 @@ fn split_plane_separates_body_centers_when_bodies_exist() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         feature_split
             .source_properties
@@ -748,7 +755,8 @@ fn split_plane_separates_body_centers_when_bodies_exist() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         feature_split2
             .source_properties
@@ -1069,7 +1077,8 @@ fn split_plane_unresolved_when_output_body_has_incomplete_topology_or_vertices()
             &Default::default(),
             None,
         )
-        .unwrap();
+        .unwrap()
+        .losses;
         assert_eq!(
             feature_split
                 .source_properties
@@ -1109,7 +1118,8 @@ fn split_plane_unresolved_when_output_body_has_incomplete_topology_or_vertices()
                 &Default::default(),
                 None,
             )
-            .unwrap();
+            .unwrap()
+            .losses;
             assert!(
                 prev_losses.iter().all(|loss| {
                     loss.code != crate::loss::F3dLossCode::HistoricalBodyCenterPartial.kind()
@@ -1168,7 +1178,8 @@ fn split_plane_unresolved_when_output_body_has_incomplete_topology_or_vertices()
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         feat_coplanar
             .source_properties
@@ -1216,6 +1227,8 @@ fn combine_join_test_feature(scope_id: &str, target: Option<i64>, tool: Option<i
                 operands: CombineOperands::new(target_sel, tool_sel).unwrap(),
                 op: BooleanKind::Join,
                 keep_tools: false,
+
+                destination: cadmpeg_ir::features::CombineDestination::default(),
             }),
             DistinctMembers::try_from(vec![]).unwrap(),
         ),

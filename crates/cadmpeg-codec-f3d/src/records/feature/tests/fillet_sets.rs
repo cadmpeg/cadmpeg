@@ -2,7 +2,7 @@
 use crate::records::feature::fillet_set::DesignFilletSetList;
 
 fn wire(sets: &serde_json::Value) -> serde_json::Value {
-    serde_json::json!({"form": "compact", "sets": sets})
+    serde_json::json!({"form": "compact", "rolling_ball_corner": true, "sets": sets})
 }
 
 fn set() -> serde_json::Value {
@@ -13,7 +13,7 @@ fn set() -> serde_json::Value {
         "group_record_index": 284,
         "law": {"kind": "chordal", "chord_length_owner_record_index": 295},
         "tangency_weight_owner_record_index": 292,
-        "flag": true
+        "tangent_chain": true
     })
 }
 

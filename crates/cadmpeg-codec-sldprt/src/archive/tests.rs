@@ -17,7 +17,7 @@ fn tag(index: u16) -> [u8; 2] {
 }
 
 fn test_context() -> cadmpeg_core::decode::DecodeContext<'static> {
-    cadmpeg_test_support::service_decode_context()
+    cadmpeg_core::decode::test_support::service_decode_context()
 }
 
 fn end_count(payload: &[u8], resolved_count: Option<u32>) -> i64 {

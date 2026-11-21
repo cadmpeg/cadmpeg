@@ -586,8 +586,8 @@ fn transfers_length_magnitude_ordered_datums_and_source_aspect_across_encodings(
             .as_str();
         assert!(matches!(
             annotation.targets.as_slice(),
-            [PmiTarget::ShapeAspect { source_id }]
-                if source_id.as_str() == expected_source_id
+            [target] if matches!(&target.entity, PmiTarget::ShapeAspect { source_id }
+                if source_id.as_str() == expected_source_id)
         ));
         assert_eq!(stats.unresolved_bindings, 4);
         assert_eq!(stats.unresolved_target_bindings, 0);
@@ -845,7 +845,7 @@ fn contradictory_inline_field_count_withholds_the_tolerance() {
 
 #[test]
 fn conflicting_existing_dimension_is_preserved_and_cannot_supply_a_datum() {
-    use cadmpeg_ir::pmi::{DimensionKind, PmiAnnotation, PmiDimension, PmiQuantity, PmiValue};
+    use cadmpeg_ir::pmi::{PmiAnnotation, PmiDimension, PmiDimensionKind, PmiQuantity, PmiValue};
     let bytes = fixture(Options::default());
     let native = CatiaNative::decode_with_record_ranges(&bytes, &[]);
     let datum = native
@@ -853,20 +853,16 @@ fn conflicting_existing_dimension_is_preserved_and_cannot_supply_a_datum() {
         .iter()
         .find(|e| e.entity_id == 5)
         .expect("datum source");
-    let existing = PmiAnnotation {
-        id: super::identifier(datum.byte_offset, "datum", 0).expect("fixture identity"),
-        name: Some("existing dimension".to_owned()),
-        visible: None,
-        targets: Vec::new(),
-        definition: PmiDefinition::Dimension(
-            PmiDimension::new(
-                DimensionKind::Size,
-                Some(PmiValue::new(35.0, PmiQuantity::Length).expect("finite length")),
-                None,
-            )
-            .expect("dimension"),
-        ),
-    };
+    let mut dimension = PmiDimension::new(PmiDimensionKind::Size);
+    dimension.nominal = Some(cadmpeg_ir::design::dimension::Dimension::Literal(
+        PmiValue::new(35.0, PmiQuantity::Length).expect("finite length"),
+    ));
+    let mut existing = PmiAnnotation::new(
+        super::identifier(datum.byte_offset, "datum", 0).expect("fixture identity"),
+        Vec::new(),
+        PmiDefinition::Dimension(dimension),
+    );
+    existing.name = Some("existing dimension".to_owned());
     let mut ir = CadIr::empty();
     ir.model.pmi.push(existing.clone());
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
@@ -1430,7 +1426,7 @@ fn another_model_arena_reports_a_generated_tolerance_id_collision() {
     let id =
         super::identifier(datum.byte_offset, "geometric-tolerance", 0).expect("tolerance identity");
     let mut ir = CadIr::empty();
-    ir.model.points.push(cadmpeg_ir::topology::Point::new(
+    ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         cadmpeg_ir::ids::PointId::mint(id.as_str().to_owned()).expect("fixture identity"),
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
             .expect("finite point"),
@@ -1504,8 +1500,8 @@ fn provenance_retention_refusal_keeps_model_and_annotation_tables_unchanged() {
         model_bytes +=
             std::mem::size_of::<cadmpeg_ir::pmi::PmiAnnotation>() + pmi.id.as_str().len();
         for target in &pmi.targets {
-            model_bytes += std::mem::size_of::<PmiTarget>();
-            if let PmiTarget::ShapeAspect { source_id } = target {
+            model_bytes += std::mem::size_of::<cadmpeg_ir::references::InstanceTarget<PmiTarget>>();
+            if let PmiTarget::ShapeAspect { source_id } = &target.entity {
                 model_bytes += source_id.as_str().len();
             }
         }

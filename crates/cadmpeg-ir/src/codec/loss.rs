@@ -2,10 +2,10 @@
 //! Stable loss vocabulary charged by the sealed decode wrapper.
 //!
 //! These codes belong to no codec: the wrapper charges them by comparing the
-//! requested depth with the depth a backend reported, so every codec reports
-//! them under one namespace.
+//! content classes the requested depth names with the classes the document
+//! holds, so every codec reports them under one namespace.
 
-use cadmpeg_core::decode::DecodeDepth;
+use cadmpeg_core::decode::ArenaClass;
 
 use crate::report::{
     loss::{LossKind, LossNamespace, LossNote, LossTaxonomy, NamespacedLossKind},
@@ -17,10 +17,10 @@ const NAMESPACE: LossNamespace<'static> = crate::loss_namespace!("decode");
 /// A stable, machine-readable identifier for one wrapper-charged decode loss.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DecodeLossCode {
-    /// The backend delivered a shallower depth than the request named.
+    /// The document lacks a content class the requested depth names.
     DepthNotDelivered {
-        /// The depth the backend reported.
-        delivered: DecodeDepth,
+        /// The requested class the document does not hold.
+        class: ArenaClass,
     },
 }
 
@@ -40,10 +40,10 @@ impl DecodeLossCode {
 
     /// Shared category of the content the shallower depth left out.
     const fn shared_taxonomy(self) -> LossTaxonomy {
-        let Self::DepthNotDelivered { delivered } = self;
-        match delivered {
-            DecodeDepth::Container => LossTaxonomy::GeometryNotTransferred,
-            DecodeDepth::Geometry | DecodeDepth::Full => LossTaxonomy::ParametricRecordOmitted,
+        let Self::DepthNotDelivered { class } = self;
+        match class {
+            ArenaClass::Model => LossTaxonomy::GeometryNotTransferred,
+            ArenaClass::Design | ArenaClass::Process => LossTaxonomy::ParametricRecordOmitted,
         }
     }
 

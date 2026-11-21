@@ -5,11 +5,11 @@
       "attributes": {
         "offset": "76"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "FeatDefs",
       "role": "model-data",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 140
       }
     },
@@ -17,11 +17,11 @@
       "attributes": {
         "offset": "216"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "MdlStatus",
       "role": "metadata",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 27
       }
     },
@@ -29,28 +29,31 @@
       "attributes": {
         "offset": "243"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "DEPDB_DATA",
       "role": "metadata",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 85
       }
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "version_line": "#UGC:2 P c"
         },
         "dialect": "creo:depdb"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "PSB container: #UGC:2 P c",
     "layout: DEPDB; 3 section(s) enumerated",

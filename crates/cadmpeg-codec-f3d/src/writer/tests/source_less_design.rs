@@ -102,13 +102,12 @@ fn generated_source_less_writes_design_type_metastream() {
     let mut guid_module = source_less.clone();
     f3d_native_mut(&mut guid_module).design_types[2]
         .set_module("11111111-2222-3333-4444-555555555555".into());
-    let error = F3dCodec
-        .plan(EncodeInput::new(&guid_module, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("a GUID-shaped Design module name must not be emitted");
-    assert!(error
-        .to_string()
-        .contains("Design type module name is GUID-shaped"));
+    crate::test_support::assert_written_with_loss(
+        &guid_module,
+        None,
+        "export/native.records-omitted",
+        "Design type module name is GUID-shaped",
+    );
     f3d_native_mut(&mut source_less).design_types[0].set_base_type_guid(
         crate::records::entity_header::BaseTypeGuid::Guid {
             value: "22222222-3333-4444-5555-666666666666"
@@ -118,13 +117,12 @@ fn generated_source_less_writes_design_type_metastream() {
             offset: 0,
         },
     );
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("a cyclic Design type hierarchy must not be emitted");
-    assert!(error
-        .to_string()
-        .contains("Design type hierarchy contains a cycle"));
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        "export/native.records-omitted",
+        "Design type hierarchy contains a cycle",
+    );
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less Design MetaStream round trip");
@@ -245,13 +243,12 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less Design BulkStream encode");
     f3d_native_mut(&mut source_less).construction_recipes[0].recipe_index = 1;
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("recipe group indices must not be renumbered");
-    assert!(error
-        .to_string()
-        .contains("has noncontiguous group index 1"));
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        "export/native.records-omitted",
+        "has noncontiguous group index 1",
+    );
     let mut archive = zip::ZipArchive::new(Cursor::new(&encoded)).expect("generated F3D ZIP");
     let mut bulkstream = Vec::new();
     archive
@@ -469,13 +466,12 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
             )
             .expect("body registration");
     }
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("cross-stream modules must not diverge");
-    assert!(error
-        .to_string()
-        .contains("module conflicts with MetaStream ownership"));
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        "export/native.records-omitted",
+        "module conflicts with MetaStream ownership",
+    );
     crate::test_support::zip_test::with_scan(&encoded, |scan| {
         let bulk_name = "FusionAssetName[Active]/Design1/BulkStream.dat";
         let bulk = scan.entry_bytes(bulk_name).unwrap();
@@ -726,6 +722,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                 .unwrap(),
             ),
             planar_z_noise: None,
+            tail_marker: None,
         },
         SketchCurveIdentity {
             id: "f3d:generated:sketch-curve#1".into(),
@@ -751,6 +748,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                 .unwrap(),
             ),
             planar_z_noise: None,
+            tail_marker: None,
         },
         SketchCurveIdentity {
             id: "f3d:generated:sketch-curve#2".into(),
@@ -786,6 +784,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                 .unwrap(),
             )),
             planar_z_noise: None,
+            tail_marker: None,
         },
     ];
     native.sketch_relations =
@@ -864,27 +863,30 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             .any(|window| window == companion));
     }
     f3d_native_mut(&mut source_less).sketch_points[0].owner_reference = None;
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("source-less points require their direct owner backlink");
-    assert!(matches!(error, cadmpeg_core::CodecError::InvalidInput(_)));
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        "export/native.records-omitted",
+        "",
+    );
     f3d_native_mut(&mut source_less).sketch_points[0].owner_reference = Some(277);
     f3d_native_mut(&mut source_less).design_types[6]
         .set_entities(crate::records::identity::ReferenceRun::unlocated(Vec::new()));
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("source-less points require a registered inverse companion");
-    assert!(matches!(error, cadmpeg_core::CodecError::InvalidInput(_)));
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        "export/native.records-omitted",
+        "",
+    );
     f3d_native_mut(&mut source_less).design_types[6]
         .set_entities(crate::records::identity::ReferenceRun::unlocated(vec![101]));
     f3d_native_mut(&mut source_less).design_types[2].set_version(10);
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("source-less points require the current writable class version");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        "export/native.records-omitted",
+        "",
+    );
     f3d_native_mut(&mut source_less).design_types[2].set_version(11);
     {
         let relation = &mut f3d_native_mut(&mut source_less).sketch_relations[0];
@@ -961,23 +963,23 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             .unwrap();
     }
     f3d_native_mut(&mut source_less).sketch_relations[0].owner_reference = 999;
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("relations with missing sketch owners must not disappear");
-    assert!(error
-        .to_string()
-        .contains("references missing sketch owner"));
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        "export/native.records-omitted",
+        "references missing sketch owner",
+    );
     {
         let mut native = f3d_native_mut(&mut source_less);
         native.sketch_relations[0].owner_reference = 277;
         native.sketch_points[0].record_index = 600;
     }
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("duplicate typed sketch indices must not be deduplicated");
-    assert!(error.to_string().contains("share record index 600"));
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        "export/native.records-omitted",
+        "share record index 600",
+    );
     f3d_native_mut(&mut source_less).sketch_points[0].record_index = 100;
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -1151,15 +1153,12 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             )
             .unwrap();
     }
-    let mut refused_output = Vec::new();
-    let error = F3dCodec
-        .plan(
-            EncodeInput::new(&invalid_zero_marker, None),
-            TargetRequest::Inherit,
-        )
-        .and_then(|plan| plan.write_to(&mut refused_output))
-        .expect_err("a nonzero point cannot carry the zero-coordinate marker");
-    assert!(error.to_string().contains("flag lane 5"));
+    crate::test_support::assert_written_with_loss(
+        &invalid_zero_marker,
+        None,
+        "export/native.records-omitted",
+        "flag lane 5",
+    );
 
     let mut inconsistent = round_trip.ir().clone();
     f3d_native_mut(&mut inconsistent).sketch_relations[0]

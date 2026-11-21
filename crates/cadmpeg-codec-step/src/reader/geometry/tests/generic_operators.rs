@@ -25,7 +25,7 @@ fn ap203_edition_one_generic_operator_restores_a_two_dimensional_replica() {
         .expect("decode AP203 edition 1 generic pcurve operator");
     let pcurve = decoded
         .ir()
-        .model
+        .geometry
         .pcurves
         .iter()
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")

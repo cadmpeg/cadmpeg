@@ -1371,13 +1371,13 @@ fn coil_placement_derives_only_the_encoded_identity_matrix() {
 
 #[test]
 fn move_form_preserves_its_closed_integer_wire_domain() {
-    for code in [0, 1, 2, 5, 6] {
+    for code in [0, 1, 2, 4, 5, 6] {
         let wire = code.to_string();
         let form: crate::records::feature::direct_face::DesignMoveForm =
             serde_json::from_str(&wire).expect("move form");
         assert_eq!(serde_json::to_string(&form).expect("move form wire"), wire);
     }
-    for code in [3, 4, u32::MAX] {
+    for code in [3, 7, u32::MAX] {
         let error = serde_json::from_str::<crate::records::feature::direct_face::DesignMoveForm>(
             &code.to_string(),
         )
@@ -1514,7 +1514,7 @@ fn combine_requires_boolean_operation_local_target_and_nonempty_tools() {
 #[test]
 fn thread_nominal_size_preserves_spelling_and_derives_numeric_wire_value() {
     let wire = |text: &str, number: &str| {
-        format!("{{\"form\":\"standard\",\"designation_offset\":38,\"designation\":\"M1\",\"nominal_size_text\":\"{text}\",\"nominal_size\":{number},\"profile\":\"ISO Metric profile\",\"major_diameter\":1.0,\"minor_diameter\":0.5,\"pitch\":0.1,\"pitch_diameter\":0.75,\"face_group_record_indices\":[10]}}")
+        format!("{{\"form\":\"standard\",\"designation_offset\":38,\"designation\":\"M1\",\"nominal_size_text\":\"{text}\",\"nominal_size\":{number},\"profile\":\"ISO Metric profile\",\"major_diameter\":1.0,\"minor_diameter\":0.5,\"pitch\":0.1,\"pitch_diameter\":0.75,\"modeled\":false,\"face_group_record_indices\":[10]}}")
     };
     for (text, number) in [
         ("1.0", "1.0"),
@@ -1764,10 +1764,9 @@ fn rectangular_pattern_sidecar_rejects_invalid_axis_counts() {
         (0, 2, 0.0, 1.0),
         (2, 0, 1.0, 0.0),
         (1, 1, 0.0, 0.0),
-        (1, 2, 1.0, 1.0),
         (2, 1, 0.0, 0.0),
-        (2, 1, 1.0, 1.0),
         (1, 2, 0.0, 0.0),
+        (1, 1, 1.0, 1.0),
     ] {
         let wire = serde_json::json!({
             "u_count": u_count, "v_count": v_count,
@@ -1966,6 +1965,7 @@ fn vertex_frame_rejects_displaced_indices_and_recipe_prefix() {
 
 mod three_point_planes;
 
+mod thread_wire;
 mod work_points;
 
 #[test]

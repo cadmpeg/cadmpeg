@@ -104,8 +104,8 @@ Ve 0.001 0 0 0 0 0 1001000 *
             )
             .expect("body and free feature shapes with GUI visibility");
         let ir = decoded.ir();
-        assert_eq!(ir.model.bodies.len(), 5);
-        assert_eq!(ir.model.vertices.len(), 5);
+        assert_eq!(ir.geometry.bodies.len(), 5);
+        assert_eq!(ir.geometry.vertices.len(), 5);
         for (name, visible) in [
             ("Body.Shape.brp", body_visible),
             ("Sketch.Shape.brp", false),
@@ -114,7 +114,7 @@ Ve 0.001 0 0 0 0 0 1001000 *
             ("Free.Shape.brp", free_visible),
         ] {
             let body = ir
-                .model
+                .geometry
                 .bodies
                 .iter()
                 .find(|body| body.id.as_str().contains(&format!(":{name}:")))
@@ -122,7 +122,7 @@ Ve 0.001 0 0 0 0 0 1001000 *
             assert_eq!(body.visible, Some(visible), "{depth}: {name}");
         }
         assert_eq!(
-            ir.model
+            ir.geometry
                 .bodies
                 .iter()
                 .filter(|body| body.visible != Some(false))

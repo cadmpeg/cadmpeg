@@ -85,7 +85,7 @@ pub(crate) struct FeatureProjection {
     regeneration_parents: Vec<(FeatureId, FeatureId)>,
 }
 
-pub(super) fn neutral_feature_id(native_id: &str) -> Result<FeatureId, CodecError> {
+pub(crate) fn neutral_feature_id(native_id: &str) -> Result<FeatureId, CodecError> {
     let key = native_id
         .strip_prefix("sldprt:history:feature#")
         .unwrap_or(native_id);
@@ -946,7 +946,7 @@ pub(crate) fn custom_property_attributes(
             }
             attributes.push(SourceAttribute {
                 id,
-                target: AttributeTarget::Document,
+                target: AttributeTarget::Document.into(),
                 name,
                 values,
             });
@@ -1142,6 +1142,18 @@ fn project_feature_dependencies(
     Ok(dependencies)
 }
 
+/// The neutral identity of the native configuration record `native_id`.
+pub(crate) fn neutral_configuration_id(native_id: &str) -> Result<ConfigurationId, CodecError> {
+    let key = native_id
+        .strip_prefix("sldprt:history:configuration#")
+        .unwrap_or(native_id);
+    ConfigurationId::mint(format!(
+        "sldprt:model:configuration#{}",
+        EncodedNativeKey(key)
+    ))
+    .map_err(|_| CodecError::malformed("invalid SLDPRT configuration ID"))
+}
+
 /// Project decoded native configurations into neutral design configurations.
 pub(crate) fn project_configurations(
     histories: &[FeatureHistory],
@@ -1149,13 +1161,7 @@ pub(crate) fn project_configurations(
     let mut projected = Vec::new();
     for history in histories {
         for configuration in &history.configurations {
-            let native_id = configuration
-                .id
-                .strip_prefix("sldprt:history:configuration#")
-                .unwrap_or(&configuration.id);
-            let id = format!("sldprt:model:configuration#{}", EncodedNativeKey(native_id));
-            let id = ConfigurationId::mint(id)
-                .map_err(|_| CodecError::malformed("invalid SLDPRT configuration ID"))?;
+            let id = neutral_configuration_id(&configuration.id)?;
             let properties = configuration.properties.clone();
             let material = configuration.material.clone();
             let native_ref = configuration.id.clone();
@@ -1384,7 +1390,7 @@ fn parameter_names(feature: &Feature) -> Vec<String> {
     names
 }
 
-pub(super) fn projected_parameter_names(feature: &Feature) -> Vec<String> {
+pub(crate) fn projected_parameter_names(feature: &Feature) -> Vec<String> {
     let mut seen = HashSet::new();
     parameter_names(feature)
         .into_iter()
@@ -1392,7 +1398,7 @@ pub(super) fn projected_parameter_names(feature: &Feature) -> Vec<String> {
         .collect()
 }
 
-pub(super) fn neutral_parameter_id(
+pub(crate) fn neutral_parameter_id(
     feature: &Feature,
     ordinal: usize,
 ) -> Result<ParameterId, CodecError> {

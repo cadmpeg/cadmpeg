@@ -15,15 +15,16 @@ fn exact_curve(offset: f64) -> CadIr {
     let mut ir = CadIr::empty();
     for (slot, x) in [(0, -100.0), (1, 0.0), (2, 100.0)] {
         let point = PointId::mint(format!("test:brep:point#{slot}")).unwrap();
-        ir.model.points.push(Point::new(
+        ir.geometry.points.push(Point::new(
             point.clone(),
             FinitePoint3::new(Point3::new(x, 0.0, 0.0)).unwrap(),
             None,
         ));
-        ir.model.vertices.push(Vertex {
+        ir.geometry.vertices.push(Vertex {
             id: VertexId::mint(format!("test:brep:vertex#{slot}")).unwrap(),
             point,
             tolerance: None,
+            native_ref: None,
         });
     }
     for (slot, start, end) in [
@@ -48,7 +49,7 @@ fn exact_curve(offset: f64) -> CadIr {
                 0.0,
             )
         });
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
@@ -62,8 +63,9 @@ fn exact_curve(offset: f64) -> CadIr {
             )),
             parameter_range: None,
             source_object: None,
+            native_ref: None,
         });
-        ir.model
+        ir.geometry
             .add_procedural_curves(vec![(
                 curve.clone(),
                 ProceduralCurve::new(
@@ -75,41 +77,47 @@ fn exact_curve(offset: f64) -> CadIr {
             )])
             .unwrap()
             .unwrap();
-        ir.model.edges.push(Edge {
+        ir.geometry.edges.push(Edge {
             id: EdgeId::mint(format!("test:brep:edge#{slot}")).unwrap(),
             carrier: EdgeCarrier::new(Some(curve), Some([0.0, 1.0])).unwrap(),
-            start: ir.model.vertices[slot].id.clone(),
-            end: ir.model.vertices[slot + 1].id.clone(),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                ir.geometry.vertices[slot].id.clone(),
+                ir.geometry.vertices[slot + 1].id.clone(),
+            )),
             tolerance: None,
+            native_ref: None,
         });
     }
     let body = cadmpeg_ir::ids::BodyId::mint("test:brep:body#0").unwrap();
     let region = cadmpeg_ir::ids::RegionId::mint("test:brep:region#0").unwrap();
     let shell = cadmpeg_ir::ids::ShellId::mint("test:brep:shell#0").unwrap();
-    ir.model.bodies.push(cadmpeg_ir::topology::Body {
+    ir.geometry.bodies.push(cadmpeg_ir::topology::Body {
         id: body.clone(),
         kind: cadmpeg_ir::topology::BodyKind::Wire,
-        regions: vec![region.clone()],
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
-    ir.model.regions.push(cadmpeg_ir::topology::Region {
+    ir.geometry.regions.push(cadmpeg_ir::topology::Region {
         id: region.clone(),
         body,
         shells: vec![shell.clone()],
+        native_ref: None,
     });
-    ir.model.shells.push(
-        cadmpeg_ir::topology::Shell::new(
+    ir.geometry
+        .shells
+        .push(cadmpeg_ir::topology::Shell::with_members(
             shell,
             region,
+            ir.geometry
+                .edges
+                .iter()
+                .map(|edge| edge.id.clone())
+                .collect(),
             Vec::new(),
-            ir.model.edges.iter().map(|edge| edge.id.clone()).collect(),
-            Vec::new(),
-        )
-        .unwrap(),
-    );
+        ));
     ir
 }
 
@@ -129,11 +137,11 @@ fn straddling_exact_cubic_endpoints_widen_the_shared_vertex_tolerance() {
     crate::test_support::with_decode_context(|ctx| {
         let mut ir = exact_curve(0.5);
         let mut expected = ir.clone();
-        expected.model.vertices[1].tolerance = cadmpeg_ir::scalar::PositiveReal::new(0.5);
+        expected.geometry.vertices[1].tolerance = cadmpeg_ir::scalar::PositiveReal::new(0.5);
         let mut losses = Vec::new();
         assert!(!geometry_is_valid(ctx, &ir));
         let mut annotations = vec![cadmpeg_asm::brep::annotations::AnnotationRecord {
-            id: ir.model.vertices[1].id.as_str().to_owned(),
+            id: ir.geometry.vertices[1].id.as_str().to_owned(),
             stream: "synthetic".into(),
             offset: 0,
             tag: cadmpeg_asm::brep::annotations::AnnotationTag::Record("vertex".into()),
@@ -177,7 +185,7 @@ fn matching_cache_and_explicit_endpoint_tolerance_are_preserved() {
         for offset in [0.0, 0.5] {
             let mut ir = exact_curve(offset);
             if offset != 0.0 {
-                ir.model.vertices[1].tolerance = cadmpeg_ir::scalar::PositiveReal::new(0.75);
+                ir.geometry.vertices[1].tolerance = cadmpeg_ir::scalar::PositiveReal::new(0.75);
             }
             let expected = ir.clone();
             let mut losses = Vec::new();
@@ -193,7 +201,7 @@ fn matching_cache_and_explicit_endpoint_tolerance_are_preserved() {
 fn an_unevaluable_incident_endpoint_blocks_widening() {
     crate::test_support::with_decode_context(|ctx| {
         let mut ir = exact_curve(0.5);
-        ir.model.edges[1].carrier = EdgeCarrier::new(None, None).unwrap();
+        ir.geometry.edges[1].carrier = EdgeCarrier::new(None, None).unwrap();
         let expected = ir.clone();
         let mut losses = Vec::new();
         admit(ctx, &mut ir, &mut losses, &mut []).unwrap();
@@ -207,11 +215,11 @@ fn an_unevaluable_incident_endpoint_blocks_widening() {
 fn unresolved_spring_support_keeps_the_solved_cache_and_support_surface() {
     crate::test_support::with_decode_context(|ctx| {
         let mut ir = exact_curve(0.0);
-        ir.model.surfaces.push(
+        ir.geometry.surfaces.push(
             serde_json::from_value(serde_json::json!({
                 "id": "test:brep:surface#1",
-                "geometry": {"kind": "plane", "origin": {"x":0.0,"y":0.0,"z":0.0},
-                    "normal": {"x":0.0,"y":0.0,"z":1.0}, "u_axis":{"x":1.0,"y":0.0,"z":0.0}}
+                "geometry": {"kind": "solved", "value": {"kind": "plane", "origin": {"x":0.0,"y":0.0,"z":0.0},
+                    "normal": {"x":0.0,"y":0.0,"z":1.0}, "u_axis":{"x":1.0,"y":0.0,"z":0.0}}}
             }))
             .unwrap(),
         );
@@ -221,20 +229,21 @@ fn unresolved_spring_support_keeps_the_solved_cache_and_support_surface() {
                 "context":{"sides":[{"surface":"test:brep:surface#1",
                     "pcurve":{"geometry":{"kind":"nurbs", "degree":1,
                         "knots":[0.0,0.0,1.0,1.0], "periodic":false,
-                        "poles":{"form":"polynomial","points":[{"u":4.0,"v":4.0},{"u":6.0,"v":4.0}]}}}},{}],
+                        "poles":{"kind":"polynomial","points":[{"u":4.0,"v":4.0},{"u":6.0,"v":4.0}]}}}},{}],
                     "parameter_range":[0.0,1.0], "discontinuities":[[],[],[]]},
                 "form":{"revision":23000,"cache":{"kind":"solved_cache","fit_tolerance":0.0},
                     "support_bounds":[[null,null,null,null],[null,null,null,null]],
                     "solved_range":[null,null],"extension":0}}
         })).unwrap();
-        ir.model.procedural_curves[0].replace_definition(definition);
-        let curves = ir.model.curves.clone();
-        let surfaces = ir.model.surfaces.clone();
+        ir.geometry.procedural_curves[0].replace_definition(definition);
+        let curves = ir.geometry.curves.clone();
+        let surfaces = ir.geometry.surfaces.clone();
         let mut losses = Vec::new();
         admit(ctx, &mut ir, &mut losses, &mut []).unwrap();
-        assert_eq!(ir.model.curves, curves);
-        assert_eq!(ir.model.surfaces, surfaces);
-        let ProceduralCurveDefinition::Spring(spring) = ir.model.procedural_curves[0].definition()
+        assert_eq!(ir.geometry.curves, curves);
+        assert_eq!(ir.geometry.surfaces, surfaces);
+        let ProceduralCurveDefinition::Spring(spring) =
+            ir.geometry.procedural_curves[0].definition()
         else {
             panic!("spring construction");
         };
@@ -252,9 +261,9 @@ fn unresolved_spring_support_keeps_the_solved_cache_and_support_surface() {
 fn an_unowned_vertex_has_no_body_bound() {
     crate::test_support::with_decode_context(|ctx| {
         let mut ir = exact_curve(0.5);
-        ir.model.bodies.clear();
-        ir.model.regions.clear();
-        ir.model.shells.clear();
+        ir.geometry.bodies.clear();
+        ir.geometry.regions.clear();
+        ir.geometry.shells.clear();
         let expected = ir.clone();
         let mut losses = Vec::new();
         admit(ctx, &mut ir, &mut losses, &mut []).unwrap();
@@ -304,7 +313,7 @@ fn conic_extrusion_unbound_support_has_one_loss_per_native_pcurve() {
             )
             .unwrap();
             let mut ir = CadIr::empty();
-            ir.model.procedural_curves.push(ProceduralCurve::new(
+            ir.geometry.procedural_curves.push(ProceduralCurve::new(
                 ProceduralCurveId::mint("test:model:construction#0").unwrap(),
                 ProceduralCurveDefinition::Intersection {
                     context,
@@ -313,7 +322,7 @@ fn conic_extrusion_unbound_support_has_one_loss_per_native_pcurve() {
                 },
             ));
             let mut losses = Vec::new();
-            let ctx = cadmpeg_test_support::service_decode_context();
+            let ctx = cadmpeg_core::decode::test_support::service_decode_context();
             admit(&ctx, &mut ir, &mut losses, &mut []).unwrap();
             assert_eq!(
                 losses.len(),

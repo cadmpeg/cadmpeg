@@ -35,7 +35,7 @@ fn component_insertions_round_trip_native_partial_and_complete_membership() {
         let wire = serde_json::to_value(&definition).unwrap();
         assert_eq!(
             wire,
-            serde_json::json!({"definition":"insert_components","components":expected})
+            serde_json::json!({"kind":"operation","value":{"kind":"insert_components","value":{"components":expected}}})
         );
         assert_eq!(
             serde_json::from_value::<FeatureDefinition>(wire).unwrap(),

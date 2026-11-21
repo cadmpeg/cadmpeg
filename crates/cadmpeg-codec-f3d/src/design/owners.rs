@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bind component-local construction history to neutral product definitions.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
-    DistinctMembers, FeatureDefinition, FeatureOperation, SketchFeatureBinding,
+    BodySelection, DistinctMembers, FeatureDefinition, FeatureOperation, SketchFeatureBinding,
 };
+use cadmpeg_ir::CadIr;
 use cadmpeg_ir::{
     document::Model, ids::ProductDefinitionId, report::loss::LossNote, sketches::SketchId,
 };
@@ -24,10 +25,10 @@ const CLUSTER_CONFLICT: &str =
 pub(crate) fn attach(
     scan: &crate::container::ContainerScan<'_>,
     native: &F3dNative,
-    model: &mut Model,
+    ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    if model.features.is_empty() && model.parameters.is_empty() {
+    if ir.model.features.is_empty() && ir.model.parameters.is_empty() {
         return Ok(());
     }
     let components = super::decode::components::decode_local_components(
@@ -50,18 +51,19 @@ pub(crate) fn attach(
         })
         .map(|root| crate::ids::neutral_component_id(&root.context_uuid))
         .collect();
-    attach_with_implicit_roots(native, model, losses, &implicit_roots)
+    attach_with_implicit_roots(native, ir, losses, &implicit_roots)
 }
 
 fn attach_with_implicit_roots(
     native: &F3dNative,
-    model: &mut Model,
+    ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
     implicit_roots: &BTreeSet<ProductDefinitionId>,
 ) -> Result<(), CodecError> {
     let mut owners = BTreeMap::new();
     for scope in &native.design_parameter_scopes {
-        if !model
+        if !ir
+            .model
             .features
             .iter()
             .any(|row| row.native_ref.as_deref() == Some(scope.id.as_str()))
@@ -70,7 +72,7 @@ fn attach_with_implicit_roots(
         }
         let owner = resolve(
             native,
-            model,
+            &ir.model,
             losses,
             implicit_roots,
             &scope.id,
@@ -78,7 +80,7 @@ fn attach_with_implicit_roots(
         );
         owners.insert(scope.id.as_str(), owner);
     }
-    for feature in &mut model.features {
+    for feature in &mut ir.model.features {
         feature.product_definition = feature
             .native_ref
             .as_deref()
@@ -88,12 +90,13 @@ fn attach_with_implicit_roots(
     }
     let mut moved = Vec::new();
     let member_root = crate::ids::archive_product_definition_id();
-    let unowned = model
+    let unowned = ir
+        .geometry
         .bodies
         .iter()
         .map(|body| &body.id)
         .filter(|body| {
-            !model
+            !ir.model
                 .product_definitions
                 .iter()
                 .any(|row| row.bodies.contains(body))
@@ -104,7 +107,7 @@ fn attach_with_implicit_roots(
     // unlisted sketches; the explicit collection reference outranks every
     // later ownership move.
     let mut listed = BTreeMap::<SketchId, BTreeSet<ProductDefinitionId>>::new();
-    for definition in &model.product_definitions {
+    for definition in &ir.model.product_definitions {
         for sketch in &definition.sketches {
             listed
                 .entry(sketch.clone())
@@ -112,10 +115,16 @@ fn attach_with_implicit_roots(
                 .insert(definition.id.clone());
         }
     }
+    let unadmitted_outputs = native
+        .design_body_bindings
+        .iter()
+        .filter(|binding| binding.component_owner.is_none())
+        .filter_map(|binding| binding.body.as_ref())
+        .collect::<BTreeSet<_>>();
     let mut bound_by_scope = BTreeMap::new();
-    for feature in &mut model.features {
+    for feature in &mut ir.model.features {
         let owned_bodies = feature.product_definition.as_ref().and_then(|owner| {
-            model
+            ir.model
                 .product_definitions
                 .iter()
                 .find(|row| &row.id == owner)
@@ -136,7 +145,8 @@ fn attach_with_implicit_roots(
             let output_owner = if retained.len() == outputs.len() || outputs.is_empty() {
                 None
             } else {
-                let mut holders = model
+                let mut holders = ir
+                    .model
                     .product_definitions
                     .iter()
                     .filter(|row| outputs.iter().all(|body| row.bodies.contains(body)));
@@ -148,6 +158,14 @@ fn attach_with_implicit_roots(
             if let Some(holder) = output_owner {
                 feature.product_definition = Some(holder.clone());
                 moved.push((feature.id.clone(), holder));
+            } else if retained.len() != outputs.len()
+                && outputs.iter().any(|body| unadmitted_outputs.contains(body))
+            {
+                losses.push(F3dLossCode::ScopeOutputOwnerUnresolved.note(format!(
+                    "Feature {} retains all output body links; its product ownership is unresolved because output body membership is unadmitted.",
+                    feature.id
+                )));
+                feature.product_definition = None;
             } else if retained.len() != outputs.len() {
                 losses.push(F3dLossCode::ScopeOutputOwnerMismatch.note(format!(
                     "Feature {} has {} output body link(s) outside its product definition; those links remain native.",
@@ -166,7 +184,8 @@ fn attach_with_implicit_roots(
                 continue;
             };
             let sketch = sketch.clone();
-            let mut holders = model
+            let mut holders = ir
+                .model
                 .product_definitions
                 .iter()
                 .filter(|row| row.sketches.contains(&sketch));
@@ -178,7 +197,7 @@ fn attach_with_implicit_roots(
                 (None, _) => {
                     // No collection lists the sketch: its scope cluster
                     // places it, and a second cluster claiming it conflicts.
-                    // The first claim in model order keeps the sketch.
+                    // The first claim in &mut ir.model order keeps the sketch.
                     match bound_by_scope.insert(sketch.clone(), cluster_owner.clone()) {
                         Some(earlier) if earlier != cluster_owner => Err(CLUSTER_CONFLICT),
                         _ => Ok(cluster_owner),
@@ -205,7 +224,8 @@ fn attach_with_implicit_roots(
                 }
             };
             feature.product_definition = Some(owner.clone());
-            if let Some(definition) = model
+            if let Some(definition) = ir
+                .model
                 .product_definitions
                 .iter_mut()
                 .find(|row| row.id == owner)
@@ -216,28 +236,44 @@ fn attach_with_implicit_roots(
             }
         }
     }
-    follow_consumed_inputs(model, moved, &listed)?;
-    for index in 0..model.parameters.len() {
-        let parameter = &model.parameters[index];
+    follow_consumed_inputs(&mut ir.model, moved, &listed)?;
+    let mut feature_definitions = HashMap::new();
+    for feature in &ir.model.features {
+        feature_definitions
+            .entry(&feature.id)
+            .or_insert(&feature.product_definition);
+    }
+    let mut sources = HashMap::new();
+    for row in &native.design_parameters {
+        sources.entry(row.id.as_str()).or_insert(row);
+    }
+    let mut parameter_owners = HashMap::new();
+    for row in &native.design_parameter_owners {
+        parameter_owners
+            .entry((native_stream(row.id()), row.record_index()))
+            .or_insert(row);
+    }
+    for index in 0..ir.model.parameters.len() {
+        let parameter = &ir.model.parameters[index];
         let inherited = parameter
             .owner
             .as_ref()
-            .and_then(|owner| model.features.iter().find(|row| &row.id == owner))
-            .map(|row| row.product_definition.clone());
-        let source = parameter
-            .native_ref
-            .as_deref()
-            .and_then(|id| native.design_parameters.iter().find(|row| row.id == id));
+            .and_then(|owner| feature_definitions.get(owner))
+            .copied()
+            .cloned();
         let owner = if let Some(inherited) = inherited {
             inherited
-        } else if let Some(source) = source {
+        } else if let Some(source) = parameter
+            .native_ref
+            .as_deref()
+            .and_then(|id| sources.get(id).copied())
+        {
             let record_index = source
                 .owner_record_index()
                 .and_then(|record| {
-                    native.design_parameter_owners.iter().find(|row| {
-                        native_stream(row.id()) == native_stream(&source.id)
-                            && row.record_index() == record
-                    })
+                    parameter_owners
+                        .get(&(native_stream(&source.id), record))
+                        .copied()
                 })
                 .map_or(
                     source.record_index,
@@ -245,7 +281,7 @@ fn attach_with_implicit_roots(
                 );
             resolve(
                 native,
-                model,
+                &ir.model,
                 losses,
                 implicit_roots,
                 &source.id,
@@ -254,7 +290,7 @@ fn attach_with_implicit_roots(
         } else {
             None
         };
-        model.parameters[index].product_definition = owner;
+        ir.model.parameters[index].product_definition = owner;
     }
     Ok(())
 }
@@ -317,6 +353,12 @@ fn follow_consumed_inputs(
             let row = &model.features[input];
             if row.product_definition.as_ref() == Some(&owner)
                 || !row.evaluation.outputs().is_empty()
+                || matches!(
+                    row.evaluation.definition(),
+                    FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+                        bodies: BodySelection::Historical { .. }
+                    })
+                )
             {
                 continue;
             }

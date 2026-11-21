@@ -215,12 +215,13 @@ fn topology_vertex(
     sequences.record_point(&point_id, stem);
     let vertex_id = crate::ids::vertex(&stem.child(list).slot(index + 1));
     ctx.charge_entities(1, "iges_geometry_brep")?;
-    candidate.model_mut().points.push(point);
+    candidate.geometry_mut().points.push(point);
     ctx.charge_entities(1, "iges_geometry_brep")?;
-    candidate.model_mut().vertices.push(Vertex {
+    candidate.geometry_mut().vertices.push(Vertex {
         id: vertex_id.clone(),
         point: point_id,
         tolerance: None,
+        native_ref: None,
     });
     Ok(Some(
         vertex_ids.entry((list, index)).or_insert(vertex_id).clone(),
@@ -239,7 +240,7 @@ fn source_edge_for_vertices<'a>(
     let mut matching = None;
     for edge in candidates
         .iter()
-        .filter_map(|position| ir.model.edges.get(*position))
+        .filter_map(|position| ir.geometry.edges.get(*position))
     {
         let Some(range) = edge.param_range() else {
             continue;
@@ -325,10 +326,11 @@ fn project_pcurve_uses(
 
         let id = crate::ids::pcurve(&id_stem.slot(index));
         ctx.charge_entities(1, "iges_geometry_brep")?;
-        candidate.model_mut().pcurves.push(Pcurve {
+        candidate.geometry_mut().pcurves.push(Pcurve {
             id: id.clone(),
             geometry,
             metadata: PcurveMetadata::general(None, Some(parameter_range), checked_tolerance),
+            native_ref: None,
         });
         projected.push(PcurveUse {
             pcurve: id,
@@ -1119,13 +1121,13 @@ pub(super) fn project(
     let mut surface_positions = BTreeMap::<String, usize>::new();
     let mut curve_positions = BTreeMap::<String, usize>::new();
     if !body_definitions.is_empty() {
-        for (position, surface) in ir.model.surfaces.iter().enumerate() {
+        for (position, surface) in ir.geometry.surfaces.iter().enumerate() {
             if !surface_positions.contains_key(surface.id.as_str()) {
                 let key = format!("{}", surface.id);
                 surface_positions.insert(key, position);
             }
         }
-        for (position, curve) in ir.model.curves.iter().enumerate() {
+        for (position, curve) in ir.geometry.curves.iter().enumerate() {
             if !curve_positions.contains_key(curve.id.as_str()) {
                 let key = format!("{}", curve.id);
                 curve_positions.insert(key, position);
@@ -1169,7 +1171,6 @@ pub(super) fn project(
                 std::borrow::Cow::Owned(stem.child(shell_sequence))
             };
             let shell_id = crate::ids::shell(&shell_stem);
-            let mut shell_faces = Vec::new();
             for &(face_sequence, native_face_sense) in &shell_definition.faces {
                 let face_sense = compose_sense(native_face_sense, shell_sense);
                 let face_definition = &faces[&face_sequence];
@@ -1177,7 +1178,7 @@ pub(super) fn project(
                     crate::ids::surface(&crate::ids::Stem::directory(face_definition.surface));
                 let Some(support_geometry) = surface_positions
                     .get(surface_id.as_str())
-                    .and_then(|position| ir.model.surfaces.get(*position))
+                    .and_then(|position| ir.geometry.surfaces.get(*position))
                     .map(|surface| &surface.geometry)
                 else {
                     valid = false;
@@ -1393,7 +1394,7 @@ pub(super) fn project(
                             ));
                             if edges_by_curve.is_none() {
                                 let mut positions = BTreeMap::<&str, Vec<usize>>::new();
-                                for (position, edge) in ir.model.edges.iter().enumerate() {
+                                for (position, edge) in ir.geometry.edges.iter().enumerate() {
                                     if let Some(curve) = edge.curve() {
                                         let indexed = positions.entry(curve.as_str()).or_default();
 
@@ -1413,7 +1414,7 @@ pub(super) fn project(
                             };
                             let Some(curve) = curve_positions
                                 .get(curve_id.as_str())
-                                .and_then(|position| ir.model.curves.get(*position))
+                                .and_then(|position| ir.geometry.curves.get(*position))
                             else {
                                 super::push_geometry_loss(
                                     &mut losses,
@@ -1469,16 +1470,21 @@ pub(super) fn project(
                             };
 
                             ctx.charge_entities(1, "iges_geometry_brep")?;
-                            candidate.model_mut().edges.push(Edge {
+                            candidate.geometry_mut().edges.push(Edge {
                                 id: id.clone(),
                                 carrier,
-                                start: vertex_ids
-                                    [&(edge_definition.start_list, edge_definition.start_index)]
-                                    .clone(),
-                                end: vertex_ids
-                                    [&(edge_definition.end_list, edge_definition.end_index)]
-                                    .clone(),
+                                ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                                    vertex_ids[&(
+                                        edge_definition.start_list,
+                                        edge_definition.start_index,
+                                    )]
+                                        .clone(),
+                                    vertex_ids
+                                        [&(edge_definition.end_list, edge_definition.end_index)]
+                                        .clone(),
+                                )),
                                 tolerance: None,
+                                native_ref: None,
                             });
                             edge_ids.insert(edge_key, id.clone());
                             id
@@ -1519,7 +1525,7 @@ pub(super) fn project(
                         ring.push(coedge_id.clone());
 
                         ctx.charge_entities(1, "iges_geometry_brep")?;
-                        candidate.model_mut().coedges.push(Coedge {
+                        candidate.geometry_mut().coedges.push(Coedge {
                             id: coedge_id.clone(),
                             owner_loop: loop_id.clone(),
                             edge: edge_id,
@@ -1527,6 +1533,7 @@ pub(super) fn project(
                             sense: compose_sense(*sense, face_sense),
                             pcurves: projected,
                             use_curve: None,
+                            native_ref: None,
                         });
                     }
                     if !valid {
@@ -1584,10 +1591,11 @@ pub(super) fn project(
                     };
 
                     ctx.charge_entities(1, "iges_geometry_brep")?;
-                    candidate.model_mut().loops.push(Loop {
+                    candidate.geometry_mut().loops.push(Loop {
                         id: loop_id.clone(),
                         face: face_id.clone(),
                         boundary,
+                        native_ref: None,
                     });
                     consumed.insert(loop_sequence);
                 }
@@ -1612,7 +1620,7 @@ pub(super) fn project(
                 };
 
                 ctx.charge_entities(1, "iges_geometry_brep")?;
-                candidate.model_mut().faces.push(Face {
+                candidate.geometry_mut().faces.push(Face {
                     id: face_id.clone(),
                     shell: shell_id.clone(),
                     surface: surface_id,
@@ -1621,8 +1629,8 @@ pub(super) fn project(
                     name: None,
                     color: None,
                     tolerance: None,
+                    native_ref: None,
                 });
-                shell_faces.push(face_id);
                 consumed.insert(face_sequence);
             }
             if !valid {
@@ -1630,21 +1638,10 @@ pub(super) fn project(
             }
 
             ctx.charge_entities(1, "iges_geometry_brep")?;
-            candidate.model_mut().shells.push(
-                match Shell::new(
-                    shell_id.clone(),
-                    region_id.clone(),
-                    shell_faces,
-                    Vec::new(),
-                    Vec::new(),
-                ) {
-                    Ok(shell) => shell,
-                    Err(_) => {
-                        valid = false;
-                        break;
-                    }
-                },
-            );
+            candidate
+                .geometry_mut()
+                .shells
+                .push(Shell::new(shell_id.clone(), region_id.clone()));
             region_shells.push(shell_id);
             consumed.insert(shell_sequence);
         }
@@ -1656,10 +1653,10 @@ pub(super) fn project(
             );
             continue;
         }
-        let coedge_positions = first_coedge_positions(&candidate.model().coedges);
+        let coedge_positions = first_coedge_positions(&candidate.geometry().coedges);
         if definition.closed
             && closed_shell_radial_is_inconsistent(
-                &candidate.model().coedges,
+                &candidate.geometry().coedges,
                 &coedge_positions,
                 &radial,
             )
@@ -1674,28 +1671,28 @@ pub(super) fn project(
             continue;
         }
         assign_radial_next(
-            candidate.model_mut().coedges.as_mut_slice(),
+            candidate.geometry_mut().coedges.as_mut_slice(),
             &coedge_positions,
             &radial,
         );
 
         ctx.charge_entities(1, "iges_geometry_brep")?;
-        candidate.model_mut().regions.push(Region {
+        candidate.geometry_mut().regions.push(Region {
             id: region_id.clone(),
             body: body_id.clone(),
             shells: region_shells,
+            native_ref: None,
         });
-        let body_regions = vec![region_id];
 
         ctx.charge_entities(1, "iges_geometry_brep")?;
-        candidate.model_mut().bodies.push(Body {
+        candidate.geometry_mut().bodies.push(Body {
             id: body_id,
             kind: definition.kind,
-            regions: body_regions,
             transform: definition.transform,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         });
         candidate.model_mut().finalize();
         drop(pcurve_indexes);

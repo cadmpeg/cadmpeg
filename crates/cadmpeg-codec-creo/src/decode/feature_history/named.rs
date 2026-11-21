@@ -433,13 +433,11 @@ pub(in super::super) fn reference_named_feature_definition(
         ));
     }
     if numbered_feature_name_has_family(kind, "Thicken") {
-        return Some(IrFeatureDefinition::Operation(
-            IrFeatureOperation::Thicken {
-                faces: FaceSelection::Unresolved,
-                thickness: None,
-                side: None,
-            },
-        ));
+        return Some(IrFeatureDefinition::Operation(IrFeatureOperation::thicken(
+            FaceSelection::Unresolved,
+            None,
+            None,
+        )));
     }
     if numbered_feature_name_has_family(kind, "Merge") {
         return Some(IrFeatureDefinition::Operation(

@@ -44,7 +44,7 @@ fn b5_topology_entity_limit_refuses_before_first_model_append() {
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
                     && limit.operation == "admit CATIA family model entity"
         ));
-        assert_eq!(ir.model.entity_count(), 0);
+        assert_eq!(ir.entity_count(), 0);
     });
 }
 
@@ -120,7 +120,7 @@ fn b5_closed_triangle_emits_its_vertex_points() {
             &plan,
             &mut admission,
         )?;
-        Ok::<_, cadmpeg_core::CodecError>(ir.model.points.len())
+        Ok::<_, cadmpeg_core::CodecError>(ir.geometry.points.len())
     })
     .expect("emit vertices");
     assert!(admitted > 0);

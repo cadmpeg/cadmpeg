@@ -8,12 +8,12 @@
         "record_count": "0",
         "size": "24"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "table-0x10000014",
       "role": "table",
       "size": {
-        "form": "framed",
         "framing": 12,
+        "kind": "framed",
         "payload": 12
       }
     },
@@ -24,12 +24,12 @@
         "record_count": "1",
         "size": "72"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "table-0x10000015",
       "role": "table",
       "size": {
-        "form": "framed",
         "framing": 12,
+        "kind": "framed",
         "payload": 60
       }
     },
@@ -41,12 +41,12 @@
         "record_count": "1",
         "size": "902"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "table-0x10000013",
       "role": "table",
       "size": {
-        "form": "framed",
         "framing": 12,
+        "kind": "framed",
         "payload": 890
       }
     },
@@ -57,28 +57,31 @@
         "nil_uuid": "false",
         "total_record_bytes": "878"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "class-f09ba4d9-455b-42c3-ba3b-e6ccacef853b",
       "role": "object-class",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 878
       }
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "archive_version": "80"
         },
         "dialect": "rhino:archive-80"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "archive version 80",
     "CRC mismatch at offset 177 for typecode 0x20008070: expected 0x0, got 0x5a8bfa08",

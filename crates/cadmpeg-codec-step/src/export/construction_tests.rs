@@ -17,13 +17,13 @@ fn a_writable_surface_construction_preserves_faces_without_a_solved_cache() {
     for opaque_cache in [false, true] {
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) =
-            &ir.model.surfaces[0].geometry
+            &ir.geometry.surfaces[0].geometry
         else {
             panic!("cube plane")
         };
         let directrix = CurveId::mint("test:model:curve#directrix").unwrap();
         let direction = plane.frame().binormal().into();
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             id: directrix.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 LineCurve::try_new(plane.origin().get(), *plane.frame().reference().as_raw())
@@ -31,9 +31,10 @@ fn a_writable_surface_construction_preserves_faces_without_a_solved_cache() {
             )),
             parameter_range: None,
             source_object: None,
+            native_ref: None,
         });
-        let owner = ir.model.surfaces[0].id.clone();
-        ir.model
+        let owner = ir.geometry.surfaces[0].id.clone();
+        ir.geometry
             .add_procedural_surface(
                 &owner,
                 ProceduralSurface::new(
@@ -45,7 +46,8 @@ fn a_writable_surface_construction_preserves_faces_without_a_solved_cache() {
                 ),
             )
             .unwrap();
-        let SurfaceGeometry::Procedural { cache, .. } = &mut ir.model.surfaces[0].geometry else {
+        let SurfaceGeometry::Procedural { cache, .. } = &mut ir.geometry.surfaces[0].geometry
+        else {
             panic!("construction owner")
         };
         *cache = opaque_cache.then_some(SolvedSurfaceGeometry::Unknown { record: None });
@@ -69,8 +71,8 @@ fn a_writable_surface_construction_preserves_faces_without_a_solved_cache() {
         let decoded = crate::StepCodec::default()
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
-        assert_eq!(decoded.ir().model.faces.len(), 6);
-        assert_eq!(decoded.ir().model.bodies.len(), 1);
+        assert_eq!(decoded.ir().geometry.faces.len(), 6);
+        assert_eq!(decoded.ir().geometry.bodies.len(), 1);
         let checked = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).unwrap();
         assert!(checked.is_ok(), "{:?}", checked.findings);
     }

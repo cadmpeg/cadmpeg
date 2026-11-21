@@ -15,7 +15,6 @@ fn legacy_scale_resolves_explicit_point_data_center() {
         let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
         let operation =
             exact_scale_operation(&bytes, &records, &scope, &HashMap::new(), &mut Vec::new())
-                .unwrap()
                 .expect("legacy Scale operation");
 
         assert_eq!(operation.body_group_record_index, 102);
@@ -40,7 +39,6 @@ fn modern_localized_scale_resolves_explicit_point_data_center() {
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let operation =
         exact_scale_operation(&bytes, &records, &scope, &HashMap::new(), &mut Vec::new())
-            .unwrap()
             .expect("modern localized Scale operation");
 
     assert_eq!(operation.body_group_record_index, 102);
@@ -164,7 +162,6 @@ fn matrix_scale_decodes_uniform_and_axis_factors_with_center() {
             let mut losses = Vec::new();
             let operation =
                 exact_scale_operation(&bytes, &records, &scope, &HashMap::new(), &mut losses)
-                    .unwrap()
                     .unwrap();
             assert_eq!(operation.body_group_record_index, 102);
             assert_eq!(operation.center_record_index, 105);
@@ -200,7 +197,6 @@ fn matrix_scale_rejects_invalid_transform_and_guid() {
         let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
         assert!(
             exact_scale_operation(&bytes, &records, &scope, &HashMap::new(), &mut Vec::new())
-                .unwrap()
                 .is_none()
         );
     }
@@ -210,17 +206,13 @@ fn matrix_scale_rejects_invalid_transform_and_guid() {
     bytes[at + 80..at + 88].copy_from_slice(&1.0e308f64.to_le_bytes());
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     assert!(
-        exact_scale_operation(&bytes, &records, &scope, &HashMap::new(), &mut Vec::new())
-            .unwrap()
-            .is_none()
+        exact_scale_operation(&bytes, &records, &scope, &HashMap::new(), &mut Vec::new()).is_none()
     );
     let (mut bytes, scope, at) = matrix_scale_fixture(0, false);
     bytes[at + 132] = b'1';
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     assert!(
-        exact_scale_operation(&bytes, &records, &scope, &HashMap::new(), &mut Vec::new())
-            .unwrap()
-            .is_none()
+        exact_scale_operation(&bytes, &records, &scope, &HashMap::new(), &mut Vec::new()).is_none()
     );
 }
 
@@ -231,9 +223,7 @@ fn matrix_scale_names_nonzero_prologue_word_assumption() {
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let mut losses = Vec::new();
     assert!(
-        exact_scale_operation(&bytes, &records, &scope, &HashMap::new(), &mut losses)
-            .unwrap()
-            .is_some()
+        exact_scale_operation(&bytes, &records, &scope, &HashMap::new(), &mut losses).is_some()
     );
     assert_eq!(losses, vec![crate::loss::F3dLossCode::FeatureScaleMatrixWordAssumed.note(
         "generated:scale#100 stores word 0x00000007 in its matrix Scale prologue; the Scale assumes that the word leaves the stored matrix unchanged (DR-465)."
@@ -333,9 +323,7 @@ fn modern_scale_accepts_thirty_body_members_and_rejects_mismatched_order() {
     bytes.extend_from_slice(&102u32.to_le_bytes());
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let operation =
-        exact_scale_operation(&bytes, &records, &scope, &HashMap::new(), &mut Vec::new())
-            .unwrap()
-            .unwrap();
+        exact_scale_operation(&bytes, &records, &scope, &HashMap::new(), &mut Vec::new()).unwrap();
     assert_eq!(operation.uniform().unwrap().0.get(), 2.5);
     scope
         .try_edit(|draft| {
@@ -348,8 +336,6 @@ fn modern_scale_accepts_thirty_body_members_and_rejects_mismatched_order() {
         })
         .unwrap();
     assert!(
-        exact_scale_operation(&bytes, &records, &scope, &HashMap::new(), &mut Vec::new())
-            .unwrap()
-            .is_none()
+        exact_scale_operation(&bytes, &records, &scope, &HashMap::new(), &mut Vec::new()).is_none()
     );
 }

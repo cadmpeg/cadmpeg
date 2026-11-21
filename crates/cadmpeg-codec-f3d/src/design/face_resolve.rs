@@ -2518,7 +2518,7 @@ pub(super) fn design_angle(parameter: &DesignParameter) -> Option<cadmpeg_ir::sc
 /// frame is one of them: a sketch on the 5 mm top face of a Fusion screw head
 /// stores a translation of 0.5. The compact frame has no translation, and the
 /// 305/325 legacy frames keep the neutral unit.
-pub(super) fn placement_origin_scale(placement: &DesignSketchPlacement) -> f64 {
+pub(crate) fn placement_origin_scale(placement: &DesignSketchPlacement) -> f64 {
     use crate::records::sketch_placement::DesignSketchFrameForm;
     match placement.frame.form() {
         DesignSketchFrameForm::ScopeGenesisCompact
@@ -2526,6 +2526,7 @@ pub(super) fn placement_origin_scale(placement: &DesignSketchPlacement) -> f64 {
         | DesignSketchFrameForm::ScopeExplicit(_)
         | DesignSketchFrameForm::MemberCompact { .. }
         | DesignSketchFrameForm::MemberTypedCompact { .. }
+        | DesignSketchFrameForm::MemberNullExplicit { .. }
         | DesignSketchFrameForm::MemberExplicit { .. } => 10.0,
         DesignSketchFrameForm::ScopeCompact
         | DesignSketchFrameForm::ScopeLegacy305(_)
@@ -3146,6 +3147,7 @@ mod tests {
                 })
                 .collect(),
             changed_preceding_face_slots: Vec::new(),
+            preceding_surface: None,
         }
     }
 
@@ -3523,6 +3525,7 @@ mod tests {
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         }];
         (operand, group, faces)
     }

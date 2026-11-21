@@ -27,28 +27,27 @@ pub(super) fn project_surface_offset(
     let Some(distance) = cadmpeg_ir::scalar::Length::new(operation.distance.get() * 10.0) else {
         return Ok(None);
     };
-    let DesignSurfaceOffsetSupport::FaceGroups {
-        group_record_indices,
-    } = &operation.support
-    else {
-        let DesignSurfaceOffsetSupport::BoundaryCarrier {
+    let group_record_indices = match &operation.support {
+        DesignSurfaceOffsetSupport::FaceGroups {
+            group_record_indices,
+        } => group_record_indices,
+        DesignSurfaceOffsetSupport::BoundaryCarrier {
             boundary_record_index,
             ..
-        } = &operation.support
-        else {
-            return Ok(None);
-        };
-        return Ok(Some(FeatureDefinition::Operation(
-            FeatureOperation::OffsetSurface {
-                faces: FaceSelection::Native(format!(
-                    "{}{}{}",
-                    stream,
-                    ":design-record#",
-                    u64::from(*boundary_record_index)
-                )),
-                distance: Some(distance),
-            },
-        )));
+        }
+        | DesignSurfaceOffsetSupport::BodyCarrier {
+            boundary_record_index,
+            ..
+        } => {
+            return Ok(Some(FeatureDefinition::Operation(
+                FeatureOperation::OffsetSurface {
+                    faces: FaceSelection::Native(format!(
+                        "{stream}:design-record#{boundary_record_index}"
+                    )),
+                    distance: Some(distance),
+                },
+            )));
+        }
     };
     let mut support_groups = Vec::new();
     for group_record_index in group_record_indices {

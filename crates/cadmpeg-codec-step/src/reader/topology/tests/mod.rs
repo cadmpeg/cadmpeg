@@ -3,6 +3,7 @@ mod components;
 mod depth_limits;
 mod draft;
 pub(crate) mod faces;
+mod negative_torus;
 pub(crate) mod sheets;
 pub(crate) mod shells;
 mod wires;

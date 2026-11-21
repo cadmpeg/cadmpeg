@@ -5,7 +5,7 @@ use crate::{math::Point3, report::check::Check};
 
 fn failing_cube() -> (CadIr, crate::report::check::Finding) {
     let mut document = crate::examples::unit_cube().unwrap();
-    document.model.points[0].set_position(Point3::new(50.0, 0.0, 0.0).try_into().unwrap());
+    document.geometry.points[0].set_position(Point3::new(50.0, 0.0, 0.0).try_into().unwrap());
     let finding = crate::validate_neutral(&document, Vec::new())
         .unwrap()
         .findings
@@ -19,12 +19,12 @@ fn failing_cube() -> (CadIr, crate::report::check::Finding) {
 fn repro_closes_edge_and_shell_context_and_round_trips_document() {
     let (document, finding) = failing_cube();
     let bundle = cut(&document, &finding, &CutOptions::default()).unwrap();
-    assert_eq!(bundle.document.model.shells.len(), 1);
-    assert_eq!(bundle.document.model.faces.len(), 6);
-    assert_eq!(bundle.document.model.coedges.len(), 24);
-    assert_eq!(bundle.document.model.edges.len(), 12);
-    assert_eq!(bundle.document.model.vertices.len(), 8);
-    assert_eq!(bundle.document.model.points.len(), 8);
+    assert_eq!(bundle.document.geometry.shells.len(), 1);
+    assert_eq!(bundle.document.geometry.faces.len(), 6);
+    assert_eq!(bundle.document.geometry.coedges.len(), 24);
+    assert_eq!(bundle.document.geometry.edges.len(), 12);
+    assert_eq!(bundle.document.geometry.vertices.len(), 8);
+    assert_eq!(bundle.document.geometry.points.len(), 8);
     let report = crate::validate_neutral(&bundle.document, Vec::new()).unwrap();
     assert!(report
         .findings
@@ -43,14 +43,14 @@ fn repro_closes_edge_and_shell_context_and_round_trips_document() {
 #[test]
 fn repro_strips_names_paths_ids_and_metadata_and_preserves_context() {
     let (mut document, finding) = failing_cube();
-    document.model.bodies[0].name = Some("PLANTED_NAME".into());
+    document.geometry.bodies[0].name = Some("PLANTED_NAME".into());
     let mut value = serde_json::to_value(&document).unwrap();
-    value["source"] = serde_json::json!({"identity": {"classification":"unclassified","format":"f3d"},
+    value["source"] = serde_json::json!({"identity": {"kind":"unclassified","format":"f3d"},
         "attributes": {"PLANTED_METADATA_KEY":"PLANTED_METADATA_VALUE", "file_path":"/PLANTED_FILE/secret-source.f3d", "private-member.f3z":"member-source.f3d"}});
-    value["model"]["points"][0]["source_object"] = serde_json::json!({"format":"f3d", "object_id":"PLANTED_SOURCE_NAME",
+    value["geometry"]["points"][0]["source_object"] = serde_json::json!({"format":"f3d", "object_id":"PLANTED_SOURCE_NAME",
         "name":"PLANTED_OBJECT_NAME", "layer":"PLANTED_LAYER", "instance_path":["PLANTED_MEMBER_PATH/member.cad"]});
 
-    let old = value["model"]["points"][0]["id"]
+    let old = value["geometry"]["points"][0]["id"]
         .as_str()
         .unwrap()
         .to_owned();
@@ -228,12 +228,12 @@ fn repro_edge_closure_keeps_pcurves_and_use_curve_carriers() {
     use crate::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
     use crate::topology::{CoedgeUseCurve, ParameterInterval, PcurveUse};
     let (mut document, finding) = failing_cube();
-    let mut carrier = document.model.curves[0].clone();
+    let mut carrier = document.geometry.curves[0].clone();
     carrier.id = crate::ids::CurveId::mint("synthetic:use:curve#1").unwrap();
     let curve = carrier.id.clone();
-    document.model.curves.push(carrier);
+    document.geometry.curves.push(carrier);
     let pcurve = crate::ids::PcurveId::mint("synthetic:use:pcurve#1").unwrap();
-    document.model.pcurves.push(Pcurve {
+    document.geometry.pcurves.push(Pcurve {
         id: pcurve.clone(),
         geometry: PcurveGeometry::Line(
             LinePcurve::try_new(
@@ -243,9 +243,10 @@ fn repro_edge_closure_keeps_pcurves_and_use_curve_carriers() {
             .unwrap(),
         ),
         metadata: PcurveMetadata::default(),
+        native_ref: None,
     });
     let coedge = document
-        .model
+        .geometry
         .coedges
         .iter_mut()
         .find(|coedge| Some(coedge.edge.as_str()) == finding.entity.as_deref())
@@ -261,27 +262,27 @@ fn repro_edge_closure_keeps_pcurves_and_use_curve_carriers() {
     });
     document.finalize();
     let bundle = cut(&document, &finding, &CutOptions::default()).unwrap();
-    assert_eq!(bundle.document.model.pcurves.len(), 1);
-    assert!(bundle.document.model.coedges.iter().any(|coedge| coedge
+    assert_eq!(bundle.document.geometry.pcurves.len(), 1);
+    assert!(bundle.document.geometry.coedges.iter().any(|coedge| coedge
         .use_curve
         .as_ref()
         .is_some_and(|use_curve| {
             bundle
                 .document
-                .model
+                .geometry
                 .curves
                 .iter()
                 .any(|curve| curve.id == use_curve.curve)
         })));
     assert!(bundle
         .document
-        .model
+        .geometry
         .coedges
         .iter()
         .flat_map(|coedge| &coedge.pcurves)
         .all(|use_| bundle
             .document
-            .model
+            .geometry
             .pcurves
             .iter()
             .any(|curve| curve.id == use_.pcurve)));
@@ -293,23 +294,23 @@ fn repro_face_closure_keeps_the_complete_shell() {
     let finding = crate::report::check::Finding {
         check: Check::Orientation,
         severity: crate::report::Severity::Warning,
-        entity: Some(document.model.faces[0].id.as_str().into()),
+        entity: Some(document.geometry.faces[0].id.as_str().into()),
         related: Vec::new(),
         message: "face winding is inconsistent".into(),
     };
     let bundle = cut(&document, &finding, &CutOptions::default()).unwrap();
-    assert_eq!(bundle.document.model.faces.len(), 6);
-    assert_eq!(bundle.document.model.coedges.len(), 24);
-    assert_eq!(bundle.document.model.shells.len(), 1);
+    assert_eq!(bundle.document.geometry.faces.len(), 6);
+    assert_eq!(bundle.document.geometry.coedges.len(), 24);
+    assert_eq!(bundle.document.geometry.shells.len(), 1);
 }
 
 #[test]
 fn repro_display_name_equal_to_a_geometry_tag_is_redacted() {
     let (mut document, finding) = failing_cube();
-    document.model.bodies[0].name = Some("line".into());
+    document.geometry.bodies[0].name = Some("line".into());
     let bundle = cut(&document, &finding, &CutOptions::default()).unwrap();
     assert_ne!(
-        bundle.document.model.bodies[0].name.as_deref(),
+        bundle.document.geometry.bodies[0].name.as_deref(),
         Some("line")
     );
     assert!(crate::validate_neutral(&bundle.document, Vec::new())
@@ -349,26 +350,28 @@ fn assembly_boundary_document() -> (CadIr, crate::report::check::Finding) {
             .replace("synthetic:cube:", "synthetic:sibling:"),
     )
     .unwrap();
-    let first_body = value["model"]["bodies"][0]["id"].clone();
-    let second_body = sibling["model"]["bodies"][0]["id"].clone();
-    let surface = value["model"]["faces"][0]["surface"].clone();
-    let model = value["model"].as_object_mut().unwrap();
-    for (arena, rows) in sibling["model"].as_object().unwrap() {
-        if let (Some(target), Some(source)) = (
-            model
-                .get_mut(arena)
-                .and_then(serde_json::Value::as_array_mut),
-            rows.as_array(),
-        ) {
-            target.extend(source.iter().cloned());
+    let first_body = value["geometry"]["bodies"][0]["id"].clone();
+    let second_body = sibling["geometry"]["bodies"][0]["id"].clone();
+    let surface = value["geometry"]["faces"][0]["surface"].clone();
+    for home in ["geometry", "model"] {
+        let arenas = value[home].as_object_mut().unwrap();
+        for (arena, rows) in sibling[home].as_object().unwrap() {
+            if let (Some(target), Some(source)) = (
+                arenas
+                    .get_mut(arena)
+                    .and_then(serde_json::Value::as_array_mut),
+                rows.as_array(),
+            ) {
+                target.extend(source.iter().cloned());
+            }
         }
     }
-    value["model"]["faces"][6]["surface"] = surface;
+    value["geometry"]["faces"][6]["surface"] = surface;
     value["model"]["product_definitions"] = serde_json::json!([
-        {"id":"synthetic:assembly:definition#1", "kind":"part", "bodies":[first_body]},
-        {"id":"synthetic:assembly:definition#2", "kind":"part", "bodies":[second_body]}
+        {"id":"synthetic:assembly:definition#1", "kind":"part", "bom_properties":{}, "storage":{"kind":"embedded"}, "tessellations":[], "occurrences":[], "instance_bodies":[], "representations":[], "bodies":[first_body], "sketches":[]},
+        {"id":"synthetic:assembly:definition#2", "kind":"part", "bom_properties":{}, "storage":{"kind":"embedded"}, "tessellations":[], "occurrences":[], "instance_bodies":[], "representations":[], "bodies":[second_body], "sketches":[]}
     ]);
-    value["model"]["points"][0]["source_object"] = serde_json::json!({
+    value["geometry"]["points"][0]["source_object"] = serde_json::json!({
         "format":"f3d", "object_id":"synthetic:assembly:definition#1",
         "instance_path":["synthetic:assembly:definition#2"]
     });
@@ -379,9 +382,9 @@ fn assembly_boundary_document() -> (CadIr, crate::report::check::Finding) {
 fn repro_closure_stops_before_a_sibling_body_with_a_shared_surface() {
     let (document, finding) = assembly_boundary_document();
     let bundle = cut(&document, &finding, &CutOptions::default()).unwrap();
-    assert_eq!(bundle.document.model.bodies.len(), 1);
-    assert_eq!(bundle.document.model.faces.len(), 6);
-    assert_eq!(bundle.document.model.shells.len(), 1);
+    assert_eq!(bundle.document.geometry.bodies.len(), 1);
+    assert_eq!(bundle.document.geometry.faces.len(), 6);
+    assert_eq!(bundle.document.geometry.shells.len(), 1);
     assert!(crate::validate_neutral(&bundle.document, Vec::new())
         .unwrap()
         .findings
@@ -395,20 +398,20 @@ fn repro_closure_stops_before_sibling_definitions_in_source_instance_paths() {
     let bundle = cut(&document, &finding, &CutOptions::default()).unwrap();
     assert!(bundle.document.model.product_definitions.is_empty());
     assert!(bundle.document.model.occurrences.is_empty());
-    assert_eq!(bundle.document.model.bodies.len(), 1);
+    assert_eq!(bundle.document.geometry.bodies.len(), 1);
 }
 
 #[test]
 fn repro_document_size_does_not_consume_the_closure_limit() {
     let (mut document, finding) = failing_cube();
     let limit = serde_json::to_vec(&document).unwrap().len() + 4096;
-    let rows = document.model.entity_count() + 10;
-    let point = document.model.points[0].clone();
+    let rows = document.entity_count() + 10;
+    let point = document.geometry.points[0].clone();
     for ordinal in 0..200 {
         let mut unrelated = point.clone();
         unrelated.id =
             crate::ids::PointId::mint(format!("synthetic:unrelated:point#{ordinal}")).unwrap();
-        document.model.points.push(unrelated);
+        document.geometry.points.push(unrelated);
     }
     assert!(serde_json::to_vec(&document).unwrap().len() > limit);
     let options = CutOptions {
@@ -418,7 +421,7 @@ fn repro_document_size_does_not_consume_the_closure_limit() {
     };
     let bundle = cut(&document, &finding, &options).unwrap();
     assert!(bundle.incomplete_reason.is_none());
-    assert_eq!(bundle.document.model.points.len(), 8);
+    assert_eq!(bundle.document.geometry.points.len(), 8);
 }
 
 #[test]
@@ -434,7 +437,7 @@ fn repro_global_finding_returns_an_explicit_incomplete_bundle() {
     let bundle = cut(&document, &finding, &CutOptions::default()).unwrap();
     assert!(bundle.document.fragment);
     assert!(bundle.incomplete_reason.is_some());
-    assert_eq!(bundle.document.model.entity_count(), 0);
+    assert_eq!(bundle.document.entity_count(), 0);
     let parsed: Bundle = serde_json::from_value(serde_json::to_value(&bundle).unwrap()).unwrap();
     assert_eq!(parsed, bundle);
 }

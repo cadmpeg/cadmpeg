@@ -265,6 +265,7 @@ pub(crate) fn bind_pattern_inputs(
                             count,
                             second: None,
                             omitted_instances: Vec::new(),
+                            symmetric: false,
                         })
                         .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
                         model_features[model_index]
@@ -517,6 +518,7 @@ pub(crate) fn bind_pattern_inputs(
                         count,
                         second,
                         omitted_instances,
+                        symmetric,
                     } = pattern.definition()
                     else {
                         return Ok(());
@@ -535,6 +537,7 @@ pub(crate) fn bind_pattern_inputs(
                                         direction: *second_direction,
                                         spacing,
                                         count,
+                                        symmetric: false,
                                     });
                             }
                         }
@@ -546,6 +549,7 @@ pub(crate) fn bind_pattern_inputs(
                         count: *count,
                         second,
                         omitted_instances: omitted_instances.clone(),
+                        symmetric: *symmetric,
                     })
                     .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
                 }

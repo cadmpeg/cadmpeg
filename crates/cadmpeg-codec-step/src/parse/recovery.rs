@@ -1,12 +1,64 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded exchange statement recovery and DATA dependency closure.
 
+use cadmpeg_core::CodecError;
+
 use super::{
     AnchorEntry, BTreeMap, BTreeSet, BoundedExpansions, DecodeContext, ExpansionOmissions,
-    ParseDiagnostic, ParseDiagnosticKind, ParseError, Parser, Range, RawRecord, Value,
+    GiveUpCause, GivenUpStatement, ParseDiagnostic, ParseDiagnosticKind, ParseError, Parser, Range,
+    RawRecord, Value,
 };
 
 impl Parser<'_, '_, '_> {
+    /// Parses one statement as a part. `Ok(Err(cause))` gives the statement
+    /// up: it violates the grammar or exceeded a bound of one part.
+    fn statement_part<T>(
+        &mut self,
+        parse: impl FnOnce(&mut Self) -> Result<T, ParseError>,
+    ) -> Result<Result<T, GiveUpCause>, ParseError> {
+        let budget = self.budget;
+        match budget.run_part(|| Ok(parse(self)))? {
+            Ok(Ok(value)) => Ok(Ok(value)),
+            Ok(Err(error @ ParseError::Syntax { .. })) => {
+                Ok(Err(GiveUpCause::Syntax(error.to_string())))
+            }
+            Ok(Err(error)) => Err(error),
+            Err(CodecError::ResourceLimit(limit)) => Ok(Err(GiveUpCause::Resource(limit))),
+            Err(error) => Err(ParseError::Resource(error)),
+        }
+    }
+
+    /// Gives up the statement at `span` and resumes after it.
+    fn give_up_statement(
+        &mut self,
+        kind: &'static str,
+        span: Range<usize>,
+        cause: GiveUpCause,
+        literals: super::LiteralAdmission,
+    ) -> Result<usize, ParseError> {
+        let end = span.end;
+        self.given_up.push(GivenUpStatement {
+            kind,
+            span,
+            cause,
+            dropped: Vec::new(),
+            lost: Vec::new(),
+        });
+        self.lexer.set_literal_admission(literals);
+        self.lexer.seek(end);
+        self.last_end = end;
+        self.current = self.lex_next()?;
+        Ok(self.given_up.len() - 1)
+    }
+
+    /// Drops the record at `span` because it needs given-up statement `part`.
+    fn drop_for_part(&mut self, part: usize, span: Range<usize>, omitted: &mut Vec<Range<usize>>) {
+        if let Some(statement) = self.given_up.get_mut(part) {
+            statement.dropped.push(span.start);
+        }
+        omitted.push(span);
+    }
+
     pub(super) fn diagnostic(
         &mut self,
         offset: usize,
@@ -32,40 +84,31 @@ impl Parser<'_, '_, '_> {
 
     pub(super) fn recover_header_record(
         &mut self,
-        omitted: &mut Vec<Range<usize>>,
     ) -> Result<Option<super::HeaderRecord>, ParseError> {
         let start = self.current_offset();
         let diagnostic_start = self.diagnostics.len();
-        let parsed = (|| {
-            let name = self.take_name()?;
-            let parameters = self.parameter_nesting(Self::parameters_inner)?;
-            self.punct(&super::TokenKind::Semicolon)?;
+        let parsed = self.statement_part(|parser| {
+            let name = parser.take_name()?;
+            let parameters = parser.parameter_nesting(Self::parameters_inner)?;
+            parser.punct(&super::TokenKind::Semicolon)?;
             Ok(super::HeaderRecord {
                 name,
                 parameters,
                 offset: start,
-                end: self.previous_end(),
+                end: parser.previous_end(),
             })
-        })();
+        })?;
         match parsed {
             Ok(record) => Ok(Some(record)),
-            Err(error @ (ParseError::Resource(_) | ParseError::Lex(_))) => Err(error),
-            Err(error @ ParseError::Syntax { .. }) => {
+            Err(cause) => {
                 self.diagnostics.truncate(diagnostic_start);
                 let end = statement_end(self.lexer.input(), start, self.lexer.is_draft())?;
-                self.diagnostic(
-                    start,
-                    ParseDiagnosticKind::HeaderMetadataNoncanonical,
-                    format_args!(
-                        "bounded HEADER statement omitted: {error}; exact source retained"
-                    ),
-                );
-                omitted.push(start..end);
-                self.lexer
-                    .set_literal_admission(super::LiteralAdmission::Metadata);
-                self.lexer.seek(end);
-                self.last_end = end;
-                self.current = self.lex_next()?;
+                self.give_up_statement(
+                    "header_record",
+                    start..end,
+                    cause,
+                    super::LiteralAdmission::Metadata,
+                )?;
                 Ok(None)
             }
         }
@@ -84,34 +127,33 @@ impl Parser<'_, '_, '_> {
             _ => None,
         });
         let diagnostic_start = self.diagnostics.len();
-        let (id, record) = match self.record() {
+        let (id, record) = match self.statement_part(Self::record)? {
             Ok(record) => record,
-            Err(error @ ParseError::Resource(_)) => return Err(error),
-            Err(error @ ParseError::Lex(_)) => return Err(error),
-            Err(error @ ParseError::Syntax { .. }) => {
+            Err(cause) => {
                 self.diagnostics.truncate(diagnostic_start);
                 let end = statement_end(self.lexer.input(), start, self.lexer.is_draft())?;
-                self.omit_record(
+                let part = self.give_up_statement(
+                    "data_record",
                     start..end,
-                    omitted,
-                    format_args!("bounded DATA record omitted: {error}; exact source retained"),
-                );
+                    cause,
+                    super::LiteralAdmission::Required,
+                )?;
                 if let Some(id) = source_id {
+                    self.given_up_names.entry(id).or_insert(part);
                     if let Some(previous) = records.remove(&id) {
-                        self.omit_record(previous.span, omitted, format_args!("duplicate instance name #{id}; ambiguous instance omitted; exact source retained"));
+                        self.drop_for_part(part, previous.span, omitted);
                     }
                     // A readable name in a defective statement cannot give a
                     // later statement permission to select another definition.
                     ambiguous.insert(id);
                 }
-                self.lexer
-                    .set_literal_admission(super::LiteralAdmission::Required);
-                self.lexer.seek(end);
-                self.last_end = end;
-                self.current = self.lex_next()?;
                 return Ok(());
             }
         };
+        if let Some(&part) = self.given_up_names.get(&id) {
+            self.drop_for_part(part, record.span, omitted);
+            return Ok(());
+        }
         if ambiguous.contains(&id) || records.contains_key(&id) {
             if let Some(previous) = records.remove(&id) {
                 self.omit_record(previous.span, omitted, format_args!("duplicate instance name #{id}; ambiguous instance omitted; exact source retained"));
@@ -175,62 +217,130 @@ impl Parser<'_, '_, '_> {
         external_values: &BTreeSet<u64>,
         omitted: &mut Vec<Range<usize>>,
     ) -> Result<(), ParseError> {
+        // Each pending record carries the given-up statement it needs, if its
+        // only missing references name one. A record that names a given-up
+        // statement only as entries of unordered aggregates is not pending:
+        // it loses those entries. An entry of a positional aggregate, or of
+        // a set whose classification carries meaning (a face's bounds, a
+        // solid's voids), is needed like a direct reference (§3.3).
         let mut pending = Vec::new();
+        let mut listing = BTreeSet::new();
         for (&id, record) in records.iter() {
             let mut missing = None;
-            for partial in &record.partials {
-                for value in &partial.parameters {
-                    visit_references(value, self.budget, &mut |target, value_instance| {
-                        if (value_instance && !external_values.contains(&target))
-                            || (!value_instance
-                                && !records.contains_key(&target)
-                                && !external.contains(&target))
-                        {
-                            missing = Some((target, value_instance));
+            let mut given_up = None;
+            let mut listed_given_up = false;
+            visit_record_references(
+                record,
+                self.budget,
+                &mut |target, value_instance, unordered| {
+                    if (value_instance && !external_values.contains(&target))
+                        || (!value_instance
+                            && !records.contains_key(&target)
+                            && !external.contains(&target))
+                    {
+                        match self.given_up_names.get(&target) {
+                            Some(_) if !value_instance && unordered => listed_given_up = true,
+                            Some(&part) if !value_instance => given_up = Some(part),
+                            _ => missing = Some((target, value_instance)),
                         }
-                        Ok(())
-                    })?;
-                }
-            }
+                    }
+                    Ok(())
+                },
+            )?;
             if let Some((target, value_instance)) = missing {
                 let prefix = if value_instance { '@' } else { '#' };
                 self.diagnostic(record.span.start, ParseDiagnosticKind::RecordOmitted, format_args!("instance #{id} omitted: unresolved instance reference {prefix}{target}; exact source retained"));
-                pending.push(id);
+                pending.push((id, None));
+            } else if given_up.is_some() {
+                pending.push((id, given_up));
+            } else if listed_given_up {
+                listing.insert(id);
             }
         }
-        if pending.is_empty() {
-            return Ok(());
+        let mut dropped_for = BTreeMap::new();
+        if !pending.is_empty() {
+            self.propagate_omissions(records, pending, &mut listing, &mut dropped_for, omitted)?;
         }
-        // Build the reverse graph only when an omission must propagate. Each
-        // edge is indexed once; each removed node unlocks its direct users.
-        let mut reverse = BTreeMap::<u64, Vec<u64>>::new();
-
-        for (&id, record) in records.iter() {
-            for partial in &record.partials {
-                for value in &partial.parameters {
-                    visit_references(value, self.budget, &mut |target, value_instance| {
-                        if !value_instance {
-                            reverse.entry(target).or_default().push(id);
-                        }
-                        Ok(())
-                    })?;
+        for id in listing {
+            let Some(mut record) = records.remove(&id) else {
+                continue;
+            };
+            let mut lost = Vec::new();
+            drop_unordered_entries(
+                &mut record,
+                |target| {
+                    if records.contains_key(&target) || external.contains(&target) {
+                        return None;
+                    }
+                    self.given_up_names
+                        .get(&target)
+                        .or_else(|| dropped_for.get(&target))
+                        .copied()
+                },
+                &mut lost,
+            );
+            records.insert(id, record);
+            for (part, entry) in lost {
+                if let Some(statement) = self.given_up.get_mut(part) {
+                    statement.lost.push((id, entry));
                 }
             }
         }
-        let mut queued = pending
-            .iter()
-            .copied()
-            .collect::<std::collections::BTreeSet<_>>();
-        while let Some(id) = pending.pop() {
+        Ok(())
+    }
+
+    /// Removes each pending record and, transitively, every record that
+    /// needs a removed one, and maps each record removed for a given-up
+    /// statement to that statement in `dropped_for`. A record that names a
+    /// record dropped for a given-up statement only as entries of unordered
+    /// aggregates is added to `listing` instead.
+    fn propagate_omissions(
+        &mut self,
+        records: &mut BTreeMap<u64, RawRecord>,
+        mut pending: Vec<(u64, Option<usize>)>,
+        listing: &mut BTreeSet<u64>,
+        dropped_for: &mut BTreeMap<u64, usize>,
+        omitted: &mut Vec<Range<usize>>,
+    ) -> Result<(), ParseError> {
+        // Each edge is indexed once; each removed node unlocks its direct
+        // users.
+        let mut reverse = BTreeMap::<u64, Vec<(u64, bool)>>::new();
+
+        for (&id, record) in records.iter() {
+            visit_record_references(
+                record,
+                self.budget,
+                &mut |target, value_instance, unordered| {
+                    if !value_instance {
+                        reverse.entry(target).or_default().push((id, unordered));
+                    }
+                    Ok(())
+                },
+            )?;
+        }
+        let mut queued = pending.iter().map(|&(id, _)| id).collect::<BTreeSet<_>>();
+        while let Some((id, part)) = pending.pop() {
             if let Some(record) = records.remove(&id) {
-                omitted.push(record.span);
+                match part {
+                    Some(part) => {
+                        dropped_for.insert(id, part);
+                        self.drop_for_part(part, record.span, omitted);
+                    }
+                    None => omitted.push(record.span),
+                }
             }
             if let Some(users) = reverse.get(&id) {
-                for &user in users {
+                for &(user, unordered) in users {
+                    if part.is_some() && unordered {
+                        listing.insert(user);
+                        continue;
+                    }
                     if queued.insert(user) {
                         if let Some(record) = records.get(&user) {
-                            self.diagnostic(record.span.start, ParseDiagnosticKind::RecordOmitted, format_args!("instance #{user} omitted: depends on omitted instance #{id}; exact source retained"));
-                            pending.push(user);
+                            if part.is_none() {
+                                self.diagnostic(record.span.start, ParseDiagnosticKind::RecordOmitted, format_args!("instance #{user} omitted: depends on omitted instance #{id}; exact source retained"));
+                            }
+                            pending.push((user, part));
                         }
                     }
                 }
@@ -240,6 +350,7 @@ impl Parser<'_, '_, '_> {
     }
 }
 
+/// Visits each reference in `value` with whether it is a value instance.
 pub(super) fn visit_references(
     value: &Value,
     budget: &DecodeContext<'_>,
@@ -259,6 +370,158 @@ pub(super) fn visit_references(
         _ => {}
     }
     Ok(())
+}
+
+/// Visits each reference of `record` with whether it is a value instance and
+/// whether it is an entry of an unordered aggregate attribute.
+fn visit_record_references(
+    record: &RawRecord,
+    budget: &DecodeContext<'_>,
+    visit: &mut impl FnMut(u64, bool, bool) -> Result<(), ParseError>,
+) -> Result<(), ParseError> {
+    let simple = record.partials.len() == 1;
+    for partial in &record.partials {
+        for (index, value) in partial.parameters.iter().enumerate() {
+            match value {
+                Value::List(entries) if unordered_attribute(&partial.name, index, simple) => {
+                    let _depth = budget.enter_nested("step_reference_visit_depth")?;
+                    for entry in entries {
+                        match untyped(entry) {
+                            Value::Reference(id) => visit(*id, false, true)?,
+                            Value::ExternalReference(id) => visit(*id, true, true)?,
+                            _ => visit_references(entry, budget, &mut |id, value_instance| {
+                                visit(id, value_instance, false)
+                            })?,
+                        }
+                    }
+                }
+                _ => visit_references(value, budget, &mut |id, value_instance| {
+                    visit(id, value_instance, false)
+                })?,
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Removes each entry of an unordered aggregate attribute of `record` that
+/// refers to a record `removed` maps to a given-up statement, and pushes the
+/// statement and the entry's instance name to `lost`.
+fn drop_unordered_entries(
+    record: &mut RawRecord,
+    removed: impl Fn(u64) -> Option<usize>,
+    lost: &mut Vec<(usize, u64)>,
+) {
+    let simple = record.partials.len() == 1;
+    for partial in &mut record.partials {
+        let name = partial.name.as_str();
+        for (index, value) in (&mut partial.parameters).into_iter().enumerate() {
+            let Value::List(entries) = value else {
+                continue;
+            };
+            if !unordered_attribute(name, index, simple) {
+                continue;
+            }
+            entries.retain(|entry| match untyped(entry) {
+                Value::Reference(id) => match removed(*id) {
+                    Some(part) => {
+                        lost.push((part, *id));
+                        false
+                    }
+                    None => true,
+                },
+                _ => true,
+            });
+        }
+    }
+}
+
+/// The value under any defined-type wrappers.
+fn untyped(mut value: &Value) -> &Value {
+    while let Value::Typed(_, inner) = value {
+        value = inner;
+    }
+    value
+}
+
+/// SET and BAG attributes in the external mapping of a simple instance
+/// whose entries carry no meaning by classification.
+const UNORDERED_SIMPLE: &[(&str, usize)] = &[
+    ("ADVANCED_BREP_SHAPE_REPRESENTATION", 1),
+    ("CLOSED_SHELL", 1),
+    ("CONNECTED_FACE_SET", 1),
+    ("CONSTRUCTIVE_GEOMETRY_REPRESENTATION", 1),
+    ("DEFINITIONAL_REPRESENTATION", 1),
+    ("DERIVED_UNIT", 0),
+    ("DRAUGHTING_MODEL", 1),
+    ("EDGE_BASED_WIREFRAME_SHAPE_REPRESENTATION", 1),
+    ("FACETED_BREP_SHAPE_REPRESENTATION", 1),
+    ("FACE_BASED_SURFACE_MODEL", 1),
+    ("FILL_AREA_STYLE", 1),
+    ("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION", 1),
+    ("GEOMETRICALLY_BOUNDED_WIREFRAME_SHAPE_REPRESENTATION", 1),
+    ("GEOMETRIC_CURVE_SET", 1),
+    ("GEOMETRIC_SET", 1),
+    ("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT", 2),
+    ("GLOBAL_UNIT_ASSIGNED_CONTEXT", 2),
+    ("MANIFOLD_SURFACE_SHAPE_REPRESENTATION", 1),
+    ("MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION", 1),
+    ("OPEN_SHELL", 1),
+    ("OVER_RIDING_STYLED_ITEM", 1),
+    ("PRESENTATION_LAYER_ASSIGNMENT", 2),
+    ("PRESENTATION_STYLE_ASSIGNMENT", 0),
+    ("PRODUCT", 3),
+    ("PRODUCT_RELATED_PRODUCT_CATEGORY", 2),
+    ("REPRESENTATION", 1),
+    ("SHAPE_REPRESENTATION", 1),
+    ("SHELL_BASED_SURFACE_MODEL", 1),
+    ("SHELL_BASED_WIREFRAME_SHAPE_REPRESENTATION", 1),
+    ("STYLED_ITEM", 1),
+    ("SURFACE_SIDE_STYLE", 1),
+    ("TESSELLATED_SHAPE_REPRESENTATION", 1),
+    ("TESSELLATED_SHELL", 1),
+    ("TESSELLATED_SOLID", 1),
+];
+
+/// SET and BAG attributes among the own attributes of a complex partial
+/// whose entries carry no meaning by classification.
+const UNORDERED_PARTIAL: &[(&str, usize)] = &[
+    ("CONNECTED_FACE_SET", 0),
+    ("DERIVED_UNIT", 0),
+    ("FACE_BASED_SURFACE_MODEL", 0),
+    ("FILL_AREA_STYLE", 1),
+    ("GEOMETRIC_SET", 0),
+    ("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT", 0),
+    ("GLOBAL_UNIT_ASSIGNED_CONTEXT", 0),
+    ("PRESENTATION_LAYER_ASSIGNMENT", 2),
+    ("PRESENTATION_STYLE_ASSIGNMENT", 0),
+    ("PRODUCT", 3),
+    ("PRODUCT_RELATED_PRODUCT_CATEGORY", 0),
+    ("REPRESENTATION", 1),
+    ("SHELL_BASED_SURFACE_MODEL", 0),
+    ("STYLED_ITEM", 0),
+    ("SURFACE_SIDE_STYLE", 1),
+    ("TESSELLATED_SHELL", 0),
+    ("TESSELLATED_SOLID", 0),
+];
+
+/// Whether parameter `index` of a partial record named `entity` is a SET or
+/// BAG attribute in the integrated resources of ISO 10303 (parts 41, 42, 43
+/// and 46) whose entries carry no meaning by classification. `simple`
+/// selects the external mapping of a simple instance, whose parameters
+/// include inherited attributes; a partial of a complex instance holds its
+/// entity's own attributes only. Every other aggregate is needed whole: a
+/// positional one would shift its later entries, and a face without one of
+/// its bounds or a solid without one of its voids is another face or solid.
+fn unordered_attribute(entity: &str, index: usize, simple: bool) -> bool {
+    let table = if simple {
+        UNORDERED_SIMPLE
+    } else {
+        UNORDERED_PARTIAL
+    };
+    table
+        .binary_search_by(|&(name, _)| name.cmp(entity))
+        .is_ok_and(|at| table[at].1 == index)
 }
 
 /// A semicolon outside a literal or comment bounds a defective statement.

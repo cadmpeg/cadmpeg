@@ -107,10 +107,11 @@ pub(super) fn radius_native(valid: bool) -> crate::native::F3dNative {
 }
 
 #[test]
-fn fillet_radius_valid_assignment_has_no_finding() {
+fn lowercase_fillet_radius_valid_assignment_has_no_finding() {
     crate::test_support::with_decode_context(|service_ctx| {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-        let native = radius_native(true);
+        let mut native = radius_native(false);
+        add_radius_parameter(&mut native, 201, "radius", 2.0, Some("mm"));
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
         super::super::validate_fillet_radius_groups(&ctx, &mut findings);
@@ -318,6 +319,7 @@ fn fillet_set_native_with(
     };
     slot.sets = Some(DesignFilletSetList {
         form: DesignFilletSetListForm::Current,
+        rolling_ball_corner: true,
         sets: vec![DesignFilletSet {
             record_index: 11,
             byte_offset: 500,
@@ -326,8 +328,9 @@ fn fillet_set_native_with(
             law: DesignFilletSetLaw::Constant {
                 radius_owner_record_index,
             },
-            tangency_weight_owner_record_index,
-            flag: false,
+            tangency_weight_owner_record_index: Some(tangency_weight_owner_record_index),
+            tangent_chain: Some(false),
+            curvature_continuity: Some(false),
         }],
     });
     native
@@ -389,4 +392,90 @@ fn fillet_sets_name_scope_members_and_owners_of_their_kinds() {
             "{radius_owner} {tangency_owner}"
         );
     }
+}
+
+#[test]
+fn fillet_set_flags_belong_to_their_forms() {
+    use crate::records::feature::fillet_set::DesignFilletSetListForm;
+    use crate::records::feature::scope::DesignScopePayloadMut;
+    let edit = |change: &dyn Fn(&mut crate::records::feature::fillet_set::DesignFilletSetList)| {
+        let mut native = fillet_set_native(200);
+        crate::design::test_support::name_scope_references(
+            &mut native.design_parameter_scopes[0],
+            [100],
+        );
+        let DesignScopePayloadMut::Fillet(slot) = native.design_parameter_scopes[0].payload_mut()
+        else {
+            panic!("Fillet fixture");
+        };
+        change(slot.sets.as_mut().unwrap());
+        fillet_set_findings(&native)
+    };
+    assert_eq!(edit(&|_| {}), 0);
+    assert_eq!(edit(&|list| list.sets[0].curvature_continuity = None), 1);
+    assert_eq!(
+        edit(&|list| {
+            list.sets[0].frame_length = 93;
+        }),
+        1
+    );
+    assert_eq!(
+        edit(&|list| {
+            list.form = DesignFilletSetListForm::Compact;
+            list.rolling_ball_corner = false;
+        }),
+        1
+    );
+}
+
+#[test]
+fn validated_explicit_chordal_sets_cover_their_operand_groups() {
+    use crate::records::feature::fillet_set::{
+        DesignFilletSet, DesignFilletSetLaw, DesignFilletSetList, DesignFilletSetListForm,
+    };
+    use crate::records::feature::scope::DesignScopePayloadMut;
+    let mut native = native();
+    for (index, kind, unit) in [
+        (201, "ChordLen", Some("mm")),
+        (204, "ChordLen", Some("mm")),
+        (207, "TangencyWeight", None),
+        (210, "TangencyWeight", None),
+    ] {
+        add_radius_parameter(&mut native, index, kind, 1.0, unit);
+    }
+    let scope = &mut native.design_parameter_scopes[0];
+    crate::design::test_support::name_scope_references(scope, [100, 110]);
+    let DesignScopePayloadMut::Fillet(slot) = scope.payload_mut() else {
+        panic!("Fillet fixture");
+    };
+    let set = |record_index, group_record_index, chord_length_owner_record_index, weight_owner| {
+        DesignFilletSet {
+            record_index,
+            byte_offset: u64::from(record_index) * 100,
+            frame_length: 97,
+            group_record_index,
+            law: DesignFilletSetLaw::Chordal {
+                chord_length_owner_record_index,
+            },
+            tangency_weight_owner_record_index: Some(weight_owner),
+            tangent_chain: Some(true),
+            curvature_continuity: None,
+        }
+    };
+    slot.sets = Some(DesignFilletSetList {
+        form: DesignFilletSetListForm::Compact,
+        rolling_ball_corner: true,
+        sets: vec![set(12, 100, 200, 206), set(13, 110, 203, 209)],
+    });
+    crate::test_support::with_decode_context(|service_ctx| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
+        let mut findings = Vec::new();
+        let groups = super::super::validate_fillet_sets(&ctx, &mut findings);
+        assert!(findings.is_empty());
+        assert!(groups.contains(&("f3d:Design/BulkStream.dat", 100)));
+        assert!(groups.contains(&("f3d:Design/BulkStream.dat", 110)));
+        super::super::validate_fillet_operand_groups(&ctx, &mut findings, &groups);
+        assert!(findings.is_empty());
+    });
 }

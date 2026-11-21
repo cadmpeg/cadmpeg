@@ -24,7 +24,7 @@ fn ctc_03_keeps_the_partition_solid_and_drops_plain_history_images() {
     let result = NxCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    let model = &result.ir().model;
+    let geometry = &result.ir().geometry;
 
     assert!(result
         .report()
@@ -36,12 +36,12 @@ fn ctc_03_keeps_the_partition_solid_and_drops_plain_history_images() {
         .losses
         .iter()
         .any(|loss| loss.code == NxLossCode::SubBodyCompositionUnresolved.kind()));
-    assert_eq!(model.bodies.len(), 1);
-    assert_eq!(model.bodies[0].kind, BodyKind::Solid);
-    assert_eq!(model.faces.len(), CTC_03_FACE_COUNT);
+    assert_eq!(geometry.bodies.len(), 1);
+    assert_eq!(geometry.bodies[0].kind, BodyKind::Solid);
+    assert_eq!(geometry.faces.len(), CTC_03_FACE_COUNT);
     let mut low = [f64::INFINITY; 3];
     let mut high = [f64::NEG_INFINITY; 3];
-    for point in &model.points {
+    for point in &geometry.points {
         let position = point.position().get();
         for (axis, value) in [position.x, position.y, position.z].into_iter().enumerate() {
             low[axis] = low[axis].min(value);

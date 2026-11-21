@@ -37,17 +37,23 @@ fn parameter_dependencies_reject_duplicates_and_preserve_source_order() {
 
     let mut wire = serde_json::json!({
         "id":"test:test:parameter#owner", "ordinal":0, "name":"value", "expression":"first+second",
-        "dependencies":[second, first]
+        "dependencies":[second, first], "properties": {}
     });
     let parameter: DesignParameter = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(parameter).unwrap(), wire);
     wire["dependencies"] = serde_json::json!([first, first]);
     let error = serde_json::from_value::<DesignParameter>(wire.clone()).unwrap_err();
     assert!(error.to_string().contains("dependencies"));
-    wire.as_object_mut().unwrap().remove("dependencies");
+    wire["dependencies"] = serde_json::json!([]);
     let parameter: DesignParameter = serde_json::from_value(wire.clone()).unwrap();
     assert!(parameter.dependencies.is_empty());
     assert_eq!(serde_json::to_value(parameter).unwrap(), wire);
+    wire.as_object_mut().unwrap().remove("dependencies");
+    let error = serde_json::from_value::<DesignParameter>(wire).unwrap_err();
+    assert!(
+        error.to_string().contains("missing field `dependencies`"),
+        "{error}"
+    );
 }
 
 #[test]

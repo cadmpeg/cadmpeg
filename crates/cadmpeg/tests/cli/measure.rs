@@ -228,7 +228,7 @@ fn measures_plate_with_hole() {
     assert!((length(inner) - hole).abs() <= TEST_ABSOLUTE_FLOOR * scale);
     assert_eq!(row["orientation"]["consistent"], true);
     assert_eq!(row["status"], "measured");
-    assert_eq!(report["measure"]["input"]["decode_depth"], "full");
+    assert_eq!(report["measure"]["input"]["decode_depth"], "geometry");
     assert_eq!(report["measure"]["input"]["origin"], "decoded");
 
     let text = measure_text(&[plate.to_str().unwrap(), "--face", "face#69"]);
@@ -241,7 +241,7 @@ fn measures_plate_with_hole() {
 fn measures_full_cylinder_side_face() {
     let solid = fixture("measure_cylinder_solid.p21");
     let report = measure_json(&[solid.to_str().unwrap(), "--face", "face#46"]);
-    assert_eq!(report["measure"]["input"]["decode_depth"], "full");
+    assert_eq!(report["measure"]["input"]["decode_depth"], "geometry");
     let row = face(&report, "step:data:face#46");
     let parameters = &row["carrier"]["parameters"];
     let scale = 30.0;
@@ -640,7 +640,7 @@ fn surface_rows_hold_carrier_parameters_only() {
         .args(["--surface", "surface#99"])
         .assert()
         .code(2)
-        .stderr(predicate::str::contains("model.surfaces"));
+        .stderr(predicate::str::contains("geometry.surfaces"));
     cadmpeg()
         .arg("measure")
         .arg(solid)
@@ -696,8 +696,8 @@ fn suffix_resolution() {
         .args(["--face", "absent", "--edge", "missing"])
         .assert()
         .code(2)
-        .stderr(predicate::str::contains("model.faces (3 entries)"))
-        .stderr(predicate::str::contains("model.edges (3 entries)"));
+        .stderr(predicate::str::contains("geometry.faces (3 entries)"))
+        .stderr(predicate::str::contains("geometry.edges (3 entries)"));
 }
 
 #[cfg(feature = "step")]
@@ -867,7 +867,7 @@ fn ring_order_caveat_is_visible() {
     let cadir = dir.path().join("plate.cadir.json");
     dump(&fixture("measure_plane_hole.p21"), &cadir, &[]);
     let mut document: Value = serde_json::from_slice(&fs::read(&cadir).unwrap()).unwrap();
-    let outer = document["model"]["loops"]
+    let outer = document["geometry"]["loops"]
         .as_array_mut()
         .unwrap()
         .iter_mut()
@@ -939,8 +939,8 @@ fn json_refusal_envelope() {
 fn orientation_conflict_is_visible() {
     let dir = tempdir().unwrap();
     let mut cube = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    let flipped = cube.model.faces[0].id.as_str().to_owned();
-    cube.model.faces[0].sense = match cube.model.faces[0].sense {
+    let flipped = cube.geometry.faces[0].id.as_str().to_owned();
+    cube.geometry.faces[0].sense = match cube.geometry.faces[0].sense {
         cadmpeg_ir::topology::Sense::Forward => cadmpeg_ir::topology::Sense::Reversed,
         cadmpeg_ir::topology::Sense::Reversed => cadmpeg_ir::topology::Sense::Forward,
     };

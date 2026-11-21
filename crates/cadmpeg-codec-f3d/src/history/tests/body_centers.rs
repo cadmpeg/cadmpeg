@@ -146,7 +146,8 @@ fn an_unbound_feature_reads_the_history_of_the_blob_that_holds_its_outputs() {
         &std::collections::HashMap::new(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     // Each feature's history is inferred from its output blob, so each one
     // reports the inference.
     assert_eq!(
@@ -218,13 +219,17 @@ fn spline_pillow(cached: bool) -> AsmHistoricalTopology {
             geometry,
             parameter_range: None,
             source_object: None,
+            native_ref: None,
         });
         brep.edges.push(Edge {
             id: EdgeId::mint(format!("f3d:test:edge#{edge}")).unwrap(),
             carrier: EdgeCarrier::new(Some(id), Some([0., 1.])).unwrap(),
-            start: VertexId::mint("f3d:test:vertex#1").unwrap(),
-            end: VertexId::mint("f3d:test:vertex#2").unwrap(),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                VertexId::mint("f3d:test:vertex#1").unwrap(),
+                VertexId::mint("f3d:test:vertex#2").unwrap(),
+            )),
             tolerance: None,
+            native_ref: None,
         });
     }
     topology.edge_samples = crate::history::edge_samples::historical_edge_samples(&brep).unwrap();
@@ -303,7 +308,8 @@ fn assert_incomplete_center(topology: AsmHistoricalTopology, expected: Option<&s
         &std::collections::HashMap::new(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         feature
             .source_properties

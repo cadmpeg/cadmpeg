@@ -597,7 +597,7 @@ pub(in crate::decode) fn solve_topological_vertices(
     }
     let topology_rows =
         crate::identity::uniquely_identified_rows(&scan.curves.topology_rows, |row| row.id);
-    let model_curves = VisibleModelCurves::new(&ir.model.curves);
+    let model_curves = VisibleModelCurves::new(&ir.geometry.curves);
     let mut pcurve_constraints = Vec::new();
     let mut pcurve_endpoint_candidates = BTreeMap::<u32, Vec<[f64; 3]>>::new();
     for row in &topology_rows {
@@ -722,7 +722,7 @@ pub(in crate::decode) fn solve_topological_vertices(
         if !nurbs_endpoint_witnesses.contains(&id) {
             continue;
         }
-        let Some(geometry) = model_curves.unique(&ir.model.curves, row.id) else {
+        let Some(geometry) = model_curves.unique(&ir.geometry.curves, row.id) else {
             continue;
         };
         let Some(points) =
@@ -738,7 +738,7 @@ pub(in crate::decode) fn solve_topological_vertices(
     // carrier equations for the vertex-domain solver.
     let mut analytic_curves = BTreeMap::new();
     for row in topology_rows {
-        let Some(curve) = model_curves.unique(&ir.model.curves, row.id) else {
+        let Some(curve) = model_curves.unique(&ir.geometry.curves, row.id) else {
             continue;
         };
         let geometry = source_carriers.curve_geometry(curve);
@@ -1117,7 +1117,7 @@ mod tests {
     fn visible_model_curves_reject_duplicate_ids() {
         let id = CurveId::mint("creo:visibgeom:curve#7".to_string()).expect("identity grammar");
         let mut ir = CadIr::empty();
-        ir.model.curves.extend([
+        ir.geometry.curves.extend([
             Curve {
                 parameter_range: None,
                 id: id.clone(),
@@ -1129,6 +1129,7 @@ mod tests {
                     .expect("valid LineCurve fixture"),
                 )),
                 source_object: None,
+                native_ref: None,
             },
             Curve {
                 parameter_range: None,
@@ -1141,11 +1142,12 @@ mod tests {
                     .expect("valid LineCurve fixture"),
                 )),
                 source_object: None,
+                native_ref: None,
             },
         ]);
 
-        assert!(VisibleModelCurves::new(&ir.model.curves)
-            .unique(&ir.model.curves, 7)
+        assert!(VisibleModelCurves::new(&ir.geometry.curves)
+            .unique(&ir.geometry.curves, 7)
             .is_none());
     }
 
@@ -1170,16 +1172,17 @@ mod tests {
             "creo:visibgeom:edge#5",
             "creo:visibgeom:curve#4294967295",
         ] {
-            ir.model.curves.push(Curve {
+            ir.geometry.curves.push(Curve {
                 parameter_range: None,
                 id: CurveId::mint(id.to_owned()).expect("identity grammar"),
                 geometry: line.clone(),
                 source_object: None,
+                native_ref: None,
             });
         }
-        let index = VisibleModelCurves::new(&ir.model.curves);
+        let index = VisibleModelCurves::new(&ir.geometry.curves);
         let position = |curve: &Curve| {
-            ir.model
+            ir.geometry
                 .curves
                 .iter()
                 .position(|candidate| std::ptr::eq(candidate, curve))
@@ -1191,10 +1194,12 @@ mod tests {
             )
             .expect("compose the identity");
             let scanned = crate::decode::uniqueness::exactly_one(
-                ir.model.curves.iter().filter(|curve| curve.id == id),
+                ir.geometry.curves.iter().filter(|curve| curve.id == id),
             );
             assert_eq!(
-                index.unique(&ir.model.curves, curve_id).and_then(position),
+                index
+                    .unique(&ir.geometry.curves, curve_id)
+                    .and_then(position),
                 scanned.and_then(position),
                 "{curve_id}"
             );

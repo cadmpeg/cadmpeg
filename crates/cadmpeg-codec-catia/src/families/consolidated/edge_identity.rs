@@ -27,7 +27,8 @@ pub(crate) fn endpoint_address(
         }
         AllocationReferenceEncoding::OwnedChild
         | AllocationReferenceEncoding::TaggedU8
-        | AllocationReferenceEncoding::TaggedU16 => {
+        | AllocationReferenceEncoding::TaggedU16
+        | AllocationReferenceEncoding::TaggedU24 => {
             base.checked_add(u64::from(value))?.checked_add(1)?
         }
         AllocationReferenceEncoding::Selector2 => return None,

@@ -185,7 +185,7 @@ fn malformed_saved_spline_reports_transfer_loss() {
         .expect("transfer"),
         0
     );
-    assert!(ir.model.curves.is_empty());
+    assert!(ir.geometry.curves.is_empty());
     assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].code,
@@ -378,6 +378,7 @@ fn sweep_carriers_require_complete_envelopes_and_ordered_arcs() {
                 id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#7").expect("surface"),
                 geometry: cylinder.clone(),
                 source_object: None,
+                native_ref: None,
             },
             cadmpeg_ir::geometry::Surface {
                 id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#8").expect("surface"),
@@ -390,6 +391,7 @@ fn sweep_carriers_require_complete_envelopes_and_ordered_arcs() {
                     .expect("plane"),
                 )),
                 source_object: None,
+                native_ref: None,
             },
         ];
         let path = crate::curve::TwoChartPcurveSamples {
@@ -573,6 +575,7 @@ fn hole_circle_intervals_require_owned_paired_samples() {
                     .expect("cylinder"),
             )),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#8").expect("plane id"),
@@ -581,6 +584,7 @@ fn hole_circle_intervals_require_owned_paired_samples() {
                     .expect("cap plane"),
             )),
             source_object: None,
+            native_ref: None,
         },
     ];
     let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(

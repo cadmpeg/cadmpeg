@@ -6,34 +6,38 @@
         "expanded_payload_size": "3",
         "offset": "196"
       },
-      "compression": "unix-compress",
       "expanded": 18,
+      "kind": "unix_compress",
       "name": "SolidPrimdata",
       "role": "metadata",
       "stored": 22
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "residual",
+        "admission": {
+          "kind": "residual"
+        },
         "declared": {
           "version_line": "#UGC:2 P test"
         },
         "dialect": "creo:unknown"
       }
-    }
+    },
+    "kind": "classified"
   },
   "losses": [
     {
       "code": {
-        "code": "source.dialect-unverified",
-        "kind": "source_dialect_unverified",
-        "namespace": "creo",
-        "scope": "namespaced",
-        "strict_floor": "warning"
+        "kind": "namespaced",
+        "value": {
+          "code": "source.dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "creo",
+          "strict_floor": "warning"
+        }
       },
       "message": "the PSB section table carries no layout discriminant: no DEPDB_DATA section with the p_dep_db root record, no ND: section-name decoration, and no complete legacy ASCII #P_OBJECT frame. This decode ran the layout-independent path only, so every ND, DEPDB, and legacy ASCII decode gate was skipped",
       "severity": "warning"

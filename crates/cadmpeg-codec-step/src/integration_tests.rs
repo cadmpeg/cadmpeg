@@ -3,8 +3,15 @@
 
 mod assembly_bodies;
 mod closed_faces;
+mod context_uncertainties;
+mod csg_solids;
 mod declared_measures;
 mod partial_geometry;
+mod plant_units;
+mod pmi_scope;
+mod schema_module_edition;
+mod spindle_sheets;
+mod tessellated_parts;
 mod tolerance_zones;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
@@ -44,10 +51,10 @@ use crate::reader::presentation::tests::{
     step_color_assets_round_trip_names_and_tessellation_targets_strictly,
 };
 use crate::reader::product::tests::{
+    a_repeated_subassembly_states_its_children_once,
     ap203_specified_source_formations_build_occurrence_tree,
     decode_builds_occurrence_placement_from_mapped_item,
     decode_builds_product_occurrences_with_relative_placement,
-    repeated_subassembly_instances_each_receive_the_subtree,
 };
 use crate::reader::tessellation::tests::decode_transfers_ap242_one_based_tessellation_indices;
 use crate::reader::tests::{
@@ -119,7 +126,7 @@ fn product_pipeline_composes_body_ownership_occurrences_mappings_and_recursive_a
     writer_round_trips_product_body_ownership();
     decode_builds_product_occurrences_with_relative_placement();
     decode_builds_occurrence_placement_from_mapped_item();
-    repeated_subassembly_instances_each_receive_the_subtree();
+    a_repeated_subassembly_states_its_children_once();
     ap203_specified_source_formations_build_occurrence_tree();
     standalone_geometry_uses_general_shape_representation();
 }
@@ -175,20 +182,20 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .expect("STEP cube decode"),
         );
-        assert_eq!(result.ir().model.bodies.len(), 1);
-        assert_eq!(result.ir().model.faces.len(), 6);
+        assert_eq!(result.ir().geometry.bodies.len(), 1);
+        assert_eq!(result.ir().geometry.faces.len(), 6);
         assert_valid(&result);
 
         let mut edited = result.ir().clone();
         edited
-            .model
+            .geometry
             .points
             .first_mut()
             .expect("unit cube has a point")
             .position()
             .get()
             .x += 1.0;
-        let expected_model = edited.model.clone();
+        let expected_geometry = edited.geometry.clone();
         let codec = StepCodec {
             options: options.clone(),
         };
@@ -224,21 +231,21 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
         );
         assert_valid(&edited_result);
         assert_eq!(
-            edited_result.ir().model.bodies.len(),
-            expected_model.bodies.len()
+            edited_result.ir().geometry.bodies.len(),
+            expected_geometry.bodies.len()
         );
         assert_eq!(
-            edited_result.ir().model.faces.len(),
-            expected_model.faces.len()
+            edited_result.ir().geometry.faces.len(),
+            expected_geometry.faces.len()
         );
-        let expected_points = expected_model
+        let expected_points = expected_geometry
             .points
             .iter()
             .map(|point| point.position().get())
             .collect::<Vec<_>>();
         let actual_points = edited_result
             .ir()
-            .model
+            .geometry
             .points
             .iter()
             .map(|point| point.position().get())

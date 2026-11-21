@@ -23,7 +23,7 @@ fn decode_retains_generated_rolling_ball_definition() {
         .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
         .unwrap();
 
-    let procedural = result.ir().model.procedural_surfaces.first().unwrap();
+    let procedural = result.ir().geometry.procedural_surfaces.first().unwrap();
     assert_eq!(
         procedural
             .cache_fit_tolerance()
@@ -41,13 +41,13 @@ fn decode_retains_generated_rolling_ball_definition() {
     assert!(supports.iter().all(Option::is_some));
     assert!(supports.iter().flatten().all(|support| result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .any(|surface| surface.id == support.surface)));
     let spine = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| Some(&curve.id) == spine.as_ref())
@@ -77,10 +77,14 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let (support_ids, spine_id) =
-        source_less.model.procedural_surfaces[0].edit_definition(|definition| {
+        source_less.geometry.procedural_surfaces[0].edit_definition(|definition| {
             let ProceduralSurfaceDefinition::Blend(definition_payload) = definition else {
                 panic!("expected rolling-ball definition")
             };
@@ -143,7 +147,7 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
     ];
     for (id, geometry) in support_ids.into_iter().zip(support_geometry) {
         source_less
-            .model
+            .geometry
             .surfaces
             .iter_mut()
             .find(|surface| surface.id == id)
@@ -151,7 +155,7 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
             .geometry = geometry;
     }
     source_less
-        .model
+        .geometry
         .curves
         .iter_mut()
         .find(|curve| curve.id == spine_id)
@@ -181,12 +185,12 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
         .expect("source-less rolling-ball round trip");
     let carrier_id = round_trip
         .ir()
-        .model
-        .procedural_surface_owner(&round_trip.ir().model.procedural_surfaces[0].id)
+        .geometry
+        .procedural_surface_owner(&round_trip.ir().geometry.procedural_surfaces[0].id)
         .expect("rolling-ball carrier");
     assert!(matches!(round_trip
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| &surface.id == carrier_id)
@@ -218,13 +222,17 @@ fn generated_rolling_ball_surface_aliases_decode_and_write_canonically() {
             )
             .expect("rolling-ball alias decode");
         assert!(matches!(
-            result.ir().model.procedural_surfaces[0].definition(),
+            result.ir().geometry.procedural_surfaces[0].definition(),
             ProceduralSurfaceDefinition::Blend(..)
         ));
         let (mut source_less, _, _) = result.into_parts();
         source_less.source = None;
         source_less
-            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .set_native_unknowns(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                "f3d",
+                &[],
+            )
             .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
@@ -235,7 +243,7 @@ fn generated_rolling_ball_surface_aliases_decode_and_write_canonically() {
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("canonical rolling-ball round trip");
         assert!(matches!(
-            round_trip.ir().model.procedural_surfaces[0].definition(),
+            round_trip.ir().geometry.procedural_surfaces[0].definition(),
             ProceduralSurfaceDefinition::Blend(..)
         ));
     }
@@ -250,7 +258,7 @@ fn generated_f3d_rewrites_rolling_ball_radius_law() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated rolling-ball decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    edited.model.procedural_surfaces[0].edit_definition(|definition| {
+    edited.geometry.procedural_surfaces[0].edit_definition(|definition| {
         let ProceduralSurfaceDefinition::Blend(definition_payload) = definition else {
             panic!("expected rolling-ball blend")
         };
@@ -284,7 +292,7 @@ fn generated_f3d_rewrites_rolling_ball_radius_law() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated rolling-ball decode");
     let ProceduralSurfaceDefinition::Blend(definition_payload) =
-        &round_trip.ir().model.procedural_surfaces[0].definition()
+        &round_trip.ir().geometry.procedural_surfaces[0].definition()
     else {
         panic!("expected round-trip rolling-ball blend")
     };
@@ -303,7 +311,7 @@ fn generated_f3d_rewrites_rolling_ball_spine_cache() {
         .expect("generated rolling-ball decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
     let ProceduralSurfaceDefinition::Blend(definition_payload) =
-        edited.model.procedural_surfaces[0].definition()
+        edited.geometry.procedural_surfaces[0].definition()
     else {
         panic!("expected rolling-ball spine")
     };
@@ -313,7 +321,7 @@ fn generated_f3d_rewrites_rolling_ball_spine_cache() {
 
     let spine_id = spine.clone();
     let curve = edited
-        .model
+        .geometry
         .curves
         .iter_mut()
         .find(|curve| curve.id == spine_id)
@@ -344,7 +352,7 @@ fn generated_f3d_rewrites_rolling_ball_spine_cache() {
         .expect("regenerated rolling-ball decode");
     assert!(round_trip
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .any(|curve| curve == &expected));
@@ -360,7 +368,7 @@ fn generated_f3d_rewrites_rolling_ball_support_cache() {
         .expect("generated rolling-ball decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
     let ProceduralSurfaceDefinition::Blend(definition_payload) =
-        edited.model.procedural_surfaces[0].definition()
+        edited.geometry.procedural_surfaces[0].definition()
     else {
         panic!("expected rolling-ball blend")
     };
@@ -372,7 +380,7 @@ fn generated_f3d_rewrites_rolling_ball_support_cache() {
         .surface
         .clone();
     let surface = edited
-        .model
+        .geometry
         .surfaces
         .iter_mut()
         .find(|surface| surface.id == support_id)
@@ -428,7 +436,7 @@ fn generated_f3d_rewrites_rolling_ball_support_cache() {
         .expect("regenerated rolling-ball decode");
     assert!(round_trip
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .any(|surface| surface == &expected));

@@ -333,7 +333,7 @@ impl Serialize for TargetRefusal {
 
 /// Why inheritance must select an encoder catalog default.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case", tag = "kind", content = "format")]
+#[serde(rename_all = "snake_case", tag = "kind", content = "value")]
 pub enum DefaultSource {
     /// The document records no source metadata.
     NoSource,

@@ -1,19 +1,165 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "10",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "assembly_joints": [],
-      "attributes": [],
+    "design": {
+      "arrangements": [],
+      "configurations": [
+        {
+          "active_arrangements": [],
+          "id": "sldprt:model:configuration#350:0",
+          "materials": [],
+          "name": "Default",
+          "native_ref": "sldprt:history:configuration#350:0",
+          "overrides": {
+            "definitions": {},
+            "features": {},
+            "occurrences": {},
+            "parameters": {}
+          },
+          "scope": "sldprt:model:product-definition#root"
+        }
+      ],
+      "containers": [
+        {
+          "kind": "ordered",
+          "value": {
+            "folders": [],
+            "id": "sldprt:model:container#timeline",
+            "kind": "timeline",
+            "members": [
+              {
+                "kind": "feature",
+                "value": "sldprt:model:feature#350:1"
+              },
+              {
+                "kind": "feature",
+                "value": "sldprt:model:feature#350:0"
+              }
+            ],
+            "rollback": {
+              "kind": "end"
+            }
+          }
+        }
+      ],
+      "evaluations": [],
+      "features": [
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "extrude"
+              }
+            }
+          },
+          "id": "sldprt:model:feature#350:0",
+          "name": "Boss",
+          "native_ref": "sldprt:history:feature#350:0",
+          "suppressed": {
+            "kind": "literal",
+            "value": false
+          }
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "curve"
+              }
+            }
+          },
+          "id": "sldprt:model:feature#350:1",
+          "name": "Profile",
+          "native_ref": "sldprt:history:feature#350:1",
+          "suppressed": {
+            "kind": "literal",
+            "value": false
+          }
+        }
+      ],
+      "names": [],
+      "parameters": [
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "12.5[mm]"
+              }
+            }
+          },
+          "id": "sldprt:model:parameter#350:0:0",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Depth",
+          "native_options": {},
+          "owner": {
+            "kind": "feature",
+            "value": "sldprt:model:feature#350:0"
+          },
+          "scope": "sldprt:model:product-definition#root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 12.5
+          }
+        }
+      ],
+      "programs": [],
+      "publications": [],
+      "scopes": [
+        {
+          "active_arrangements": [],
+          "active_configuration": "sldprt:model:configuration#350:0",
+          "current": [
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "sldprt:model:feature#350:0"
+                }
+              },
+              "bodies": [
+                "sldprt:brep:body#900"
+              ],
+              "poses": [],
+              "status": "current"
+            }
+          ],
+          "definition": "sldprt:model:product-definition#root",
+          "occurrences": {},
+          "roots": [
+            "sldprt:model:container#timeline"
+          ]
+        }
+      ],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
+    "fragment": false,
+    "geometry": {
       "bodies": [
         {
           "id": "sldprt:brep:body#900",
-          "kind": "solid",
-          "regions": [
-            "sldprt:brep:region#902"
-          ]
+          "kind": "solid"
         }
       ],
       "coedges": [
@@ -21,6 +167,7 @@
           "edge": "sldprt:brep:edge#40",
           "id": "sldprt:brep:coedge#30",
           "owner_loop": "sldprt:brep:loop#20",
+          "pcurves": [],
           "radial_next": "sldprt:brep:coedge#30",
           "sense": "forward"
         },
@@ -28,6 +175,7 @@
           "edge": "sldprt:brep:edge#41",
           "id": "sldprt:brep:coedge#31",
           "owner_loop": "sldprt:brep:loop#20",
+          "pcurves": [],
           "radial_next": "sldprt:brep:coedge#31",
           "sense": "forward"
         },
@@ -35,100 +183,43 @@
           "edge": "sldprt:brep:edge#42",
           "id": "sldprt:brep:coedge#32",
           "owner_loop": "sldprt:brep:loop#20",
+          "pcurves": [],
           "radial_next": "sldprt:brep:coedge#32",
           "sense": "forward"
         }
       ],
-      "configurations": [
-        {
-          "active": true,
-          "bodies": [
-            "sldprt:brep:body#900"
-          ],
-          "feature_states": {
-            "sldprt:model:feature#350:0": {
-              "definition": {
-                "definition": "extrude",
-                "direction": {
-                  "kind": "profile_normal"
-                },
-                "extent": {
-                  "kind": "one_sided",
-                  "side": {
-                    "termination": {
-                      "kind": "blind",
-                      "length": 12.5
-                    }
-                  }
-                },
-                "op": "join",
-                "profile": {
-                  "kind": "unresolved",
-                  "value": "sldprt:history:feature#350:0"
-                },
-                "solid": true,
-                "start": {
-                  "kind": "profile_plane"
-                }
-              },
-              "evaluation": {
-                "kind": "active"
-              }
-            },
-            "sldprt:model:feature#350:1": {
-              "definition": {
-                "definition": "native",
-                "kind": "EquationDrivenCurve"
-              },
-              "evaluation": {
-                "kind": "active"
-              }
-            }
-          },
-          "id": "sldprt:model:configuration#350:0",
-          "material": "Steel",
-          "name": "Default",
-          "native_ref": "sldprt:history:configuration#350:0",
-          "ordinal": 0,
-          "parameter_values": {
-            "sldprt:model:parameter#350:0:0": {
-              "kind": "length",
-              "value": 12.5
-            }
-          },
-          "properties": {
-            "DisplayState": "Shaded"
-          },
-          "source_index": 0
-        }
-      ],
       "curves": [],
-      "drawings": [],
       "edges": [
         {
           "carrier": {},
-          "end": "sldprt:brep:vertex#51",
-          "id": "sldprt:brep:edge#40",
-          "start": "sldprt:brep:vertex#50"
+          "ends": {
+            "end": "sldprt:brep:vertex#51",
+            "start": "sldprt:brep:vertex#50"
+          },
+          "id": "sldprt:brep:edge#40"
         },
         {
           "carrier": {},
-          "end": "sldprt:brep:vertex#52",
-          "id": "sldprt:brep:edge#41",
-          "start": "sldprt:brep:vertex#51"
+          "ends": {
+            "end": "sldprt:brep:vertex#52",
+            "start": "sldprt:brep:vertex#51"
+          },
+          "id": "sldprt:brep:edge#41"
         },
         {
           "carrier": {},
-          "end": "sldprt:brep:vertex#50",
-          "id": "sldprt:brep:edge#42",
-          "start": "sldprt:brep:vertex#52"
+          "ends": {
+            "end": "sldprt:brep:vertex#50",
+            "start": "sldprt:brep:vertex#52"
+          },
+          "id": "sldprt:brep:edge#42"
         }
       ],
       "faces": [
         {
           "id": "sldprt:brep:face#10",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "sldprt:brep:loop#20"
             ]
@@ -136,66 +227,6 @@
           "sense": "forward",
           "shell": "sldprt:brep:shell#901",
           "surface": "sldprt:brep:surf#10"
-        }
-      ],
-      "features": [
-        {
-          "definition": {
-            "definition": "extrude",
-            "direction": {
-              "kind": "profile_normal"
-            },
-            "extent": {
-              "kind": "one_sided",
-              "side": {
-                "termination": {
-                  "kind": "blind",
-                  "length": 12.5
-                }
-              }
-            },
-            "op": "join",
-            "profile": {
-              "kind": "unresolved",
-              "value": "sldprt:history:feature#350:0"
-            },
-            "solid": true,
-            "start": {
-              "kind": "profile_plane"
-            }
-          },
-          "id": "sldprt:model:feature#350:0",
-          "name": "Boss",
-          "native_ref": "sldprt:history:feature#350:0",
-          "ordinal": 0,
-          "source_content": [
-            {
-              "kind": "parameter",
-              "value": "sldprt:model:parameter#350:0:0"
-            },
-            {
-              "kind": "feature",
-              "value": "sldprt:model:feature#350:1"
-            }
-          ],
-          "source_properties": {
-            "Scope": "Body1"
-          },
-          "source_tag": "Extrusion",
-          "suppressed": false
-        },
-        {
-          "definition": {
-            "definition": "native",
-            "kind": "EquationDrivenCurve"
-          },
-          "id": "sldprt:model:feature#350:1",
-          "name": "Profile",
-          "native_ref": "sldprt:history:feature#350:1",
-          "ordinal": 1,
-          "regeneration_parent": "sldprt:model:feature#350:0",
-          "source_tag": "EquationDrivenCurve",
-          "suppressed": false
         }
       ],
       "loops": [
@@ -206,28 +237,14 @@
               "sldprt:brep:coedge#31",
               "sldprt:brep:coedge#32"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "sldprt:brep:face#10",
           "id": "sldprt:brep:loop#20"
         }
       ],
-      "occurrences": [],
-      "parameters": [
-        {
-          "expression": "12.5mm",
-          "id": "sldprt:model:parameter#350:0:0",
-          "name": "Depth",
-          "ordinal": 0,
-          "owner": "sldprt:model:feature#350:0",
-          "value": {
-            "kind": "length",
-            "value": 12.5
-          }
-        }
-      ],
       "pcurves": [],
-      "pmi": [],
       "points": [
         {
           "id": "sldprt:brep:point#60",
@@ -254,11 +271,8 @@
           }
         }
       ],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [],
       "regions": [
         {
           "body": "sldprt:brep:body#900",
@@ -268,50 +282,40 @@
           ]
         }
       ],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "sldprt:brep:shell#901",
-          "members": [
-            {
-              "id": "sldprt:brep:face#10",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "sldprt:brep:region#902"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "sldprt:brep:surf#10"
         }
       ],
-      "tessellations": [],
       "vertices": [
         {
           "id": "sldprt:brep:vertex#50",
@@ -325,7 +329,237 @@
           "id": "sldprt:brep:vertex#52",
           "point": "sldprt:brep:point#62"
         }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [
+        {
+          "active": true,
+          "bodies": [
+            "sldprt:brep:body#900"
+          ],
+          "feature_states": {
+            "sldprt:model:feature#350:0": {
+              "definition": {
+                "kind": "operation",
+                "value": {
+                  "kind": "extrude",
+                  "value": {
+                    "direction": {
+                      "kind": "profile_normal"
+                    },
+                    "extent": {
+                      "kind": "one_sided",
+                      "side": {
+                        "termination": {
+                          "kind": "blind",
+                          "length": 12.5
+                        }
+                      }
+                    },
+                    "op": "join",
+                    "profile": {
+                      "kind": "planar",
+                      "value": {
+                        "kind": "unresolved",
+                        "value": "sldprt:history:feature#350:0"
+                      }
+                    },
+                    "solid": true,
+                    "start": {
+                      "kind": "profile_plane"
+                    }
+                  }
+                }
+              },
+              "dependencies": [],
+              "evaluation": {
+                "kind": "active",
+                "outputs": []
+              }
+            },
+            "sldprt:model:feature#350:1": {
+              "definition": {
+                "kind": "operation",
+                "value": {
+                  "kind": "native",
+                  "value": {
+                    "kind": "EquationDrivenCurve",
+                    "parameters": {}
+                  }
+                }
+              },
+              "dependencies": [],
+              "evaluation": {
+                "kind": "active",
+                "outputs": []
+              }
+            }
+          },
+          "id": "sldprt:model:configuration#350:0",
+          "material": "Steel",
+          "name": "Default",
+          "native_ref": "sldprt:history:configuration#350:0",
+          "ordinal": 0,
+          "parameter_overrides": {},
+          "parameter_values": {
+            "sldprt:model:parameter#350:0:0": {
+              "kind": "length",
+              "value": 12.5
+            }
+          },
+          "properties": {
+            "DisplayState": "Shaded"
+          },
+          "source_index": 0
+        }
       ],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "extrude",
+              "value": {
+                "direction": {
+                  "kind": "profile_normal"
+                },
+                "extent": {
+                  "kind": "one_sided",
+                  "side": {
+                    "termination": {
+                      "kind": "blind",
+                      "length": 12.5
+                    }
+                  }
+                },
+                "op": "join",
+                "profile": {
+                  "kind": "planar",
+                  "value": {
+                    "kind": "unresolved",
+                    "value": "sldprt:history:feature#350:0"
+                  }
+                },
+                "solid": true,
+                "start": {
+                  "kind": "profile_plane"
+                }
+              }
+            }
+          },
+          "dependencies": [],
+          "id": "sldprt:model:feature#350:0",
+          "name": "Boss",
+          "native_ref": "sldprt:history:feature#350:0",
+          "ordinal": 0,
+          "outputs": [],
+          "source_content": [
+            {
+              "kind": "parameter",
+              "value": "sldprt:model:parameter#350:0:0"
+            },
+            {
+              "kind": "feature",
+              "value": "sldprt:model:feature#350:1"
+            }
+          ],
+          "source_properties": {
+            "Scope": "Body1"
+          },
+          "source_tag": "Extrusion",
+          "suppressed": false
+        },
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "native",
+              "value": {
+                "kind": "EquationDrivenCurve",
+                "parameters": {}
+              }
+            }
+          },
+          "dependencies": [],
+          "id": "sldprt:model:feature#350:1",
+          "name": "Profile",
+          "native_ref": "sldprt:history:feature#350:1",
+          "ordinal": 1,
+          "outputs": [],
+          "regeneration_parent": "sldprt:model:feature#350:0",
+          "source_content": [],
+          "source_properties": {},
+          "source_tag": "EquationDrivenCurve",
+          "suppressed": false
+        }
+      ],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [
+        {
+          "dependencies": [],
+          "expression": "12.5mm",
+          "id": "sldprt:model:parameter#350:0:0",
+          "name": "Depth",
+          "ordinal": 0,
+          "owner": "sldprt:model:feature#350:0",
+          "properties": {},
+          "value": {
+            "kind": "length",
+            "value": 12.5
+          }
+        }
+      ],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [
+        {
+          "bodies": [
+            "sldprt:brep:body#900"
+          ],
+          "bom_properties": {},
+          "id": "sldprt:model:product-definition#root",
+          "instance_bodies": [],
+          "kind": "part",
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "tessellations": [],
       "view_presentations": []
     },
     "native": {
@@ -418,29 +652,46 @@
         "sketch_input_entities": [],
         "unknowns": [
           {
-            "id": "sldprt:file:block#12"
+            "id": "sldprt:file:block#12",
+            "links": []
           },
           {
-            "id": "sldprt:file:block#350"
+            "id": "sldprt:file:block#350",
+            "links": []
           },
           {
-            "id": "sldprt:file:block#585"
+            "id": "sldprt:file:block#585",
+            "links": []
           }
         ]
       }
     },
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "active_parasolid_block": "Contents/Config-0-Partition",
-        "block_count": "3",
-        "bmp_thumbnail_count": "0",
         "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "compound_stream_count": "0",
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "outer_version": "0x00000004",
         "parasolid_description": "partition body",
         "parasolid_schema": "SCH_SW_33103_11000",
-        "png_preview_count": "0",
         "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_configuration_snapshot_synthesized": "sldprt:model:configuration#350:0",
@@ -457,11 +708,12 @@
         "sw_configuration_name": "Default"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [
             {
-              "admission": "admitted",
+              "admission": {
+                "kind": "admitted"
+              },
               "declared": {
                 "carrier": "block@12:Contents/Config-0-Partition+0",
                 "schema": "SCH_SW_33103_11000"
@@ -470,10 +722,14 @@
             }
           ],
           "primary": {
-            "admission": "residual",
+            "admission": {
+              "kind": "residual"
+            },
+            "declared": {},
             "dialect": "sldprt:unknown"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -481,16 +737,21 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [
           {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "carrier": "block@12:Contents/Config-0-Partition+0",
               "schema": "SCH_SW_33103_11000"
@@ -499,39 +760,73 @@
           }
         ],
         "primary": {
-          "admission": "residual",
+          "admission": {
+            "kind": "residual"
+          },
+          "declared": {},
           "dialect": "sldprt:unknown"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "source.dialect-unverified",
-          "kind": "source_dialect_unverified",
-          "namespace": "sldprt",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "source.dialect-unverified",
+            "kind": "source_dialect_unverified",
+            "namespace": "sldprt",
+            "strict_floor": "warning"
+          }
         },
         "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "feature.unresolved-output-scope",
-          "kind": "feature_history_retained",
-          "namespace": "sldprt",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "design.feature-unresolved",
+            "kind": "record_not_typed",
+            "namespace": "sldprt"
+          }
+        },
+        "message": "0 sketch and 1 extrude features state their family without operands: sldprt:model:feature#350:0 (the extrude's profile is no whole sketch)",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "history.rollback-unread",
+            "kind": "feature_history_retained",
+            "namespace": "sldprt"
+          }
+        },
+        "message": "The rollback position of the feature tree is not read (the partition section holds no deltas transmit); the timeline is stated built through its last member.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "feature.unresolved-output-scope",
+            "kind": "feature_history_retained",
+            "namespace": "sldprt"
+          }
         },
         "message": "1 feature(s) retain non-empty native output scopes that do not resolve to model bodies.",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "feature.typed-operand-incomplete",
-          "kind": "feature_history_retained",
-          "namespace": "sldprt",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "feature.typed-operand-incomplete",
+            "kind": "feature_history_retained",
+            "namespace": "sldprt"
+          }
         },
         "message": "1 typed feature(s) retain native or unresolved required operation operands.",
         "severity": "warning"
@@ -544,7 +839,10 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
@@ -554,7 +852,7 @@
           "fields": {
             "geometry.u_axis": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         }
       },
       "provenance": {
@@ -690,39 +988,52 @@
         }
       }
     },
+    "decode_digest": "d75dc3ee025b84315a6a882a5480498a6f0079ff9fe04831eb1488e5ed18b0a2",
+    "file_digests": {},
     "retained_records": {
       "sldprt:file:block#12": {
         "bytes": {
           "data": "UFMAAAAOcGFydGl0aW9uIGJvZHkAABJTQ0hfU1dfMzMxMDNfMTEwMDAAMgBkAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4ACgAAAAAAAMK8ko+ZbgAAAAAAAAAUAAAAZCsAAAAAAAAAAAAAAA8AFAAAAAAAAAAeAAoAAAARAB4AAAAUAB8AIAAzAAAAKAAAAAArABEAHwAAABQAIAAeADQAAAApAAAAACsAEQAgAAAAFAAeAB8AMgAAACoAAAAAKwAQACgAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAOEABAAKQAAAAAAAMK8ko+ZbgAAAAAAAAAAAAAAAAAAA4QAEAAqAAAAAAAAwrySj5luAAAAAAAAAAAAAAAAAAADhAASADIAAAAAAAAAAAAAAAAAPMK8ko+ZbgAAA4QAEgAzAAAAAAAAAAAAAAAAAD3CvJKPmW4AAAOEABIANAAAAAAAAAAAAAAAAAA+wrySj5luAAADhAAdADwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHQA9AAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB0APgAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAM/wOEAAGKJAAFAAYAAQABAAEAAUCPQAAAAAAAPkV5juIwjDoAAQABAAEBAAIBAQOFAAEAAQABAAEAAQABA4YAAQABAAEADf8DhQADEMUAAQOEAAEAAQABAAEDhgABABP/A4YABJdmAAEDhAABAAEDhVMADv8ACgAGGooAAcK8ko+ZbgAAAAEAAQAAA4UAZCs=",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Config-0-Partition"
+        "stream": "Contents/Config-0-Partition",
+        "untyped": []
       },
       "sldprt:file:block#350": {
         "bytes": {
           "data": "PEtleXdvcmRzIE5hbWU9IkJyYWNrZXQiPjxDb25maWd1cmF0aW9uIE5hbWU9IkRlZmF1bHQiIFNvdXJjZUluZGV4PSIwIiBNYXRlcmlhbD0iU3RlZWwiIERpc3BsYXlTdGF0ZT0iU2hhZGVkIi8+PEV4dHJ1c2lvbiBOYW1lPSJCb3NzIiBUeXBlPSJCb3NzRXh0cnVkZSIgaWQ9IjciIFNjb3BlPSJCb2R5MSI+PERpbWVuc2lvbiBOYW1lPSJEZXB0aCI+MTIuNW1tPC9EaW1lbnNpb24+PEVxdWF0aW9uRHJpdmVuQ3VydmUgTmFtZT0iUHJvZmlsZSIgaWQ9IjgiLz48L0V4dHJ1c2lvbj48L0tleXdvcmRzPg==",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Keywords"
+        "stream": "Contents/Keywords",
+        "untyped": []
       },
       "sldprt:file:block#585": {
         "bytes": {
           "data": "PHN3U29saWRXb3JrcyB4bWxucz0iaHR0cDovL3d3dy5zb2xpZHdvcmtzLmNvbS9zdzIwMDMvc2NoZW1hIj48c3dNb2RlbCBpZD0ibW9kZWwtMCIgc3dDb25maWd1cmF0aW9uTmFtZT0iRGVmYXVsdCIvPjxzd0NvbmZpZ3VyYXRpb25MaXN0Pjxzd0NvbmZpZ3VyYXRpb24gc3dJRD0iMCIgc3dNb2RlbFJlZj0ibW9kZWwtMCIgc3dNb3N0UmVjZW50Q29uZmlndXJhdGlvbj0iWUVTIi8+PC9zd0NvbmZpZ3VyYXRpb25MaXN0Pjwvc3dTb2xpZFdvcmtzPg==",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 0,
-        "stream": "Contents/Features"
+        "stream": "Contents/Features",
+        "untyped": [
+          "model",
+          "design"
+        ]
       },
       "sldprt:file:source-image#0": {
         "bytes": {
           "data": "AQAAAAAAAARa2ciHFAAGAAgAIAAAAELkeVwZAQAAvQIAABsAAAA09uZHVuZHN/I09uZmlnbSA9IFFidHlkeW9uaNkb9KA0EQxr91NYXomUQr4eIVFiZp9rKpJIkBESyFKywP5RDSJCJp0icWQQzYiO9iJfgiPoFvcM7u3pnb/P+WY+a+38zOsnsTAHAe7576nX6n1/Xue9EAKAaX12FwG0rpCxn6vhACNUSwVMWGuvi145wc7Jrk6/Nt8tFN3CP6ouyQA20plXRDgaIqO4EHSdmZOVWBDGV7hOuUlVPb03aJcI2yirHzpm1mdiI+JF5ewysreVEPm6qR1mkmLda0WN1irQxz0cAmctHM/i69fxetRfZc/V5Mw9n4FDvIgZnVnrTN+a4Grz/i5dy4DFuM8VFapBZ/TrL9mADPf5M1tOBhTGH7/SEFfBTAiempc8djsP/7VQ2gLaLqH1rZyIcUAAYACABCAAAA5twcJ7wAAAAbAQAAEQAAADT25kdW5kc38rRWl3f2J0Y3TZBBDoIwEEWv0swBRE2MLoCF4sIYjQleoKGDNJYWpy3C7a2I6O5nXmb+y8RH7J+GhGVnXmMCW+LFHR2k8c7oUt48cSeNHmmGJffKAcuNpwIPWmCXwBzYiTskyVUCuUNUwDJpG8X73AUQhhUXKCBK433nyNvfxa2xFti1b8Y8cIHApEhgHYoK80GiXwSpTNao7b9Q4ypIF8vZqq7jaMKh6OEH84xki3rnqcVx50KmlGqs2Lyloskq5O9D0hda2ciHFAAGAAgAQwAAAH22JuOZAAAA/QAAABEAAAA09uZHVuZHN/JkVhZHVydWN22Puw6CQBBFf4VML0u0MyyNWJiIBRTGcgOLbNyHYYaMn69L5Ua7yZzce3JL5C5YM1zD/MDs5axHCRPRcy8EM+cYIUeY98EJ5G1R7AT2k3YKqhK5CYO2mRkkuHhtCsiQD8GP5r7MikzwF+W0hFqParEEIoYSfjZIP89PyamWsLatilaPiaIJSK3utackJ+F27KJE/LWI77nVG0UrfigAABQABgAIACAAAABC5HlcGQEAAL0CAAAbAAAAAAAAAAEAAAAAAAAAAAA09uZHVuZHN/I09uZmlnbSA9IFFidHlkeW9uZFK34oAAAUAAYACABCAAAA5twcJ7wAAAAbAQAAEQAAAAAAAAABAAAAAABSAQAANPbmR1bmRzfytFaXd/YnRjdFK34oAAAUAAYACABDAAAAfbYm45kAAAD9AAAAEQAAAAAAAAABAAAAAAA9AgAANPbmR1bmRzfyZFYWR1cnVjefgl4CAAAAAAMAAwDHAAAABQMAAAAA",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 0,
-        "stream": "source"
+        "stream": "source",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": [
+      "model",
+      "design"
+    ]
   }
 }

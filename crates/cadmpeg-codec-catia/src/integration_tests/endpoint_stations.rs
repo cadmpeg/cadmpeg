@@ -9,13 +9,13 @@ fn assert_square(bytes: &[u8]) {
     let validation =
         cadmpeg_ir::validate_neutral(ir, Vec::new()).expect("validate generated sheet");
     assert!(validation.is_ok(), "{:?}", validation.findings);
-    assert_eq!(ir.model.faces.len(), 1);
-    assert_eq!(ir.model.edges.len(), 4);
-    assert_eq!(ir.model.vertices.len(), 4);
+    assert_eq!(ir.geometry.faces.len(), 1);
+    assert_eq!(ir.geometry.edges.len(), 4);
+    assert_eq!(ir.geometry.vertices.len(), 4);
     for (x, y) in [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)] {
         let expected = Point3::new(x, y, 0.0);
-        assert!(ir.model.vertices.iter().any(|vertex| {
-            ir.model
+        assert!(ir.geometry.vertices.iter().any(|vertex| {
+            ir.geometry
                 .points
                 .iter()
                 .find(|point| point.id == vertex.point)

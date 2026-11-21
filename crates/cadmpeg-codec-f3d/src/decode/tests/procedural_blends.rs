@@ -52,7 +52,7 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
                 )
                 .expect("G2 blend decode");
             let ProceduralSurfaceDefinition::G2Blend(definition_payload) =
-                &result.ir().model.procedural_surfaces[0].definition()
+                &result.ir().geometry.procedural_surfaces[0].definition()
             else {
                 panic!("expected G2 blend")
             };
@@ -96,11 +96,15 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
             let (mut source_less, _, _) = result.into_parts();
             source_less.source = None;
             source_less
-                .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+                .set_native_unknowns(
+                    &cadmpeg_core::decode::test_support::service_decode_context(),
+                    "f3d",
+                    &[],
+                )
                 .unwrap();
             for (ordinal, side) in side_curves.into_iter().enumerate() {
                 source_less
-                    .model
+                    .geometry
                     .curves
                     .iter_mut()
                     .find(|curve| curve.id == side)
@@ -121,7 +125,7 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
                     ));
             }
             source_less
-                .model
+                .geometry
                 .curves
                 .iter_mut()
                 .find(|curve| curve.id == center_curve)
@@ -144,7 +148,7 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
                 .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
                 .expect("source-less G2 round trip");
             let ProceduralSurfaceDefinition::G2Blend(definition_payload) =
-                &round_trip.ir().model.procedural_surfaces[0].definition()
+                &round_trip.ir().geometry.procedural_surfaces[0].definition()
             else {
                 panic!("expected round-trip G2 blend")
             };
@@ -162,7 +166,7 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
                 assert!(matches!(
                         round_trip
                             .ir()
-                            .model
+                            .geometry
                             .curves
                             .iter()
                             .find(|curve| curve.id == side.curve)
@@ -174,7 +178,7 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
             assert!(matches!(
                 round_trip
                     .ir()
-                    .model
+                    .geometry
                     .curves
                     .iter()
                     .find(|curve| curve.id == construction.center_curve)
@@ -206,7 +210,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
             )
             .expect("rolling-ball decode");
         let ProceduralSurfaceDefinition::Blend(definition_payload) =
-            &result.ir().model.procedural_surfaces[0].definition()
+            &result.ir().geometry.procedural_surfaces[0].definition()
         else {
             panic!("expected complete rolling-ball graph")
         };
@@ -280,11 +284,15 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
         let (mut source_less, _, _) = result.into_parts();
         source_less.source = None;
         source_less
-            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .set_native_unknowns(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                "f3d",
+                &[],
+            )
             .unwrap();
         for (ordinal, side) in side_curves.iter().enumerate() {
             source_less
-                .model
+                .geometry
                 .curves
                 .iter_mut()
                 .find(|curve| Some(&curve.id) == side.as_ref())
@@ -305,7 +313,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
         }
         if let Some(third) = &third_curve {
             source_less
-                .model
+                .geometry
                 .curves
                 .iter_mut()
                 .find(|curve| curve.id == *third)
@@ -321,7 +329,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
             ));
         }
         source_less
-            .model
+            .geometry
             .curves
             .iter_mut()
             .find(|curve| curve.id == slice_curve)
@@ -344,7 +352,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("source-less rolling-ball round trip");
         let ProceduralSurfaceDefinition::Blend(definition_payload) =
-            &round_trip.ir().model.procedural_surfaces[0].definition()
+            &round_trip.ir().geometry.procedural_surfaces[0].definition()
         else {
             panic!("expected complete round-trip rolling-ball graph")
         };
@@ -360,7 +368,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
             assert!(matches!(
                 round_trip
                     .ir()
-                    .model
+                    .geometry
                     .curves
                     .iter()
                     .find(|curve| Some(&curve.id) == side.curve.as_ref().map(|support| &support.curve))
@@ -373,7 +381,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
             assert!(matches!(
                 round_trip
                     .ir()
-                    .model
+                    .geometry
                     .curves
                     .iter()
                     .find(|curve| curve.id == third.curve)
@@ -385,7 +393,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
         assert!(matches!(
             round_trip
                 .ir()
-                .model
+                .geometry
                 .curves
                 .iter()
                 .find(|curve| curve.id == actual.slice)
@@ -424,7 +432,7 @@ fn a_non_positive_rolling_ball_revision_is_outside_the_complete_grammar() {
         assert!(
             !result
                 .ir()
-                .model
+                .geometry
                 .procedural_surfaces
                 .iter()
                 .any(|surface| matches!(
@@ -452,7 +460,7 @@ fn parameterized_tail_form_decodes_in_every_blend_carrier() {
             &DecodeOptions::default(),
         )
         .expect("parameterized variable-blend decode");
-    let procedural = &decoded.ir().model.procedural_surfaces[0];
+    let procedural = &decoded.ir().geometry.procedural_surfaces[0];
     assert_eq!(procedural.cache_fit_tolerance(), None);
     let ProceduralSurfaceDefinition::VariableBlend(definition_payload) = procedural.definition()
     else {
@@ -478,7 +486,7 @@ fn parameterized_tail_form_decodes_in_every_blend_carrier() {
                 &DecodeOptions::default(),
             )
             .expect("parameterized rolling-ball decode");
-        let procedural = &decoded.ir().model.procedural_surfaces[0];
+        let procedural = &decoded.ir().geometry.procedural_surfaces[0];
         assert_eq!(procedural.cache_fit_tolerance(), None);
         let ProceduralSurfaceDefinition::Blend(definition_payload) = procedural.definition() else {
             panic!("expected complete rolling-ball graph")
@@ -513,7 +521,7 @@ fn parameterized_tail_form_decodes_in_every_blend_carrier() {
             &DecodeOptions::default(),
         )
         .expect("parameterized extrusion decode");
-    let procedural = &decoded.ir().model.procedural_surfaces[0];
+    let procedural = &decoded.ir().geometry.procedural_surfaces[0];
     // Form `2` stores no cache and no fit tolerance. The surface block inside
     // the directrix scope is not this record's cache and its trailing scalar is
     // not this record's fit tolerance.
@@ -560,16 +568,16 @@ fn stale_variable_blend_cache_yields_to_the_construction_carrier() {
             &DecodeOptions::default(),
         )
         .expect("current variable-blend cache");
-    let current_procedural = &current.ir().model.procedural_surfaces[0];
+    let current_procedural = &current.ir().geometry.procedural_surfaces[0];
     let current_carrier = current
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| {
             current
                 .ir()
-                .model
+                .geometry
                 .procedural_surface_owner(&current_procedural.id)
                 == Some(&surface.id)
         })
@@ -588,16 +596,16 @@ fn stale_variable_blend_cache_yields_to_the_construction_carrier() {
             &DecodeOptions::default(),
         )
         .expect("stale variable-blend cache");
-    let stale_procedural = &stale.ir().model.procedural_surfaces[0];
+    let stale_procedural = &stale.ir().geometry.procedural_surfaces[0];
     let stale_carrier = stale
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| {
             stale
                 .ir()
-                .model
+                .geometry
                 .procedural_surface_owner(&stale_procedural.id)
                 == Some(&surface.id)
         })
@@ -641,16 +649,20 @@ fn parameterized_blend_tails_round_trip_source_less_generation() {
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
         source_less
-            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .set_native_unknowns(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                "f3d",
+                &[],
+            )
             .unwrap();
-        let expected = source_less.model.procedural_surfaces[0].clone();
+        let expected = source_less.geometry.procedural_surfaces[0].clone();
         assert_eq!(expected.cache_fit_tolerance(), None);
         let carrier = source_less
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| {
-                source_less.model.procedural_surface_owner(&expected.id) == Some(&surface.id)
+                source_less.geometry.procedural_surface_owner(&expected.id) == Some(&surface.id)
             })
             .expect("blend surface carrier");
         assert!(matches!(
@@ -665,7 +677,7 @@ fn parameterized_blend_tails_round_trip_source_less_generation() {
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("parameterized blend round trip");
-        let actual = &round_trip.ir().model.procedural_surfaces[0];
+        let actual = &round_trip.ir().geometry.procedural_surfaces[0];
         assert_eq!(actual.cache_fit_tolerance(), None);
         let (parameterized, parameterization) = match actual.definition() {
             ProceduralSurfaceDefinition::Blend(definition_payload) => {
@@ -717,7 +729,7 @@ fn variable_blend_second_interval_decodes_unbounded_upper_bound() {
         )
         .expect("half-bounded second-interval decode");
     let ProceduralSurfaceDefinition::VariableBlend(definition_payload) =
-        &decoded.ir().model.procedural_surfaces[0].definition()
+        &decoded.ir().geometry.procedural_surfaces[0].definition()
     else {
         panic!("expected variable blend")
     };
@@ -758,7 +770,7 @@ fn generated_interp_radius_law_leaves_the_cross_section_enum_unconsumed() {
             )
             .expect("interp variable-blend decode");
         let ProceduralSurfaceDefinition::VariableBlend(definition_payload) =
-            &result.ir().model.procedural_surfaces[0].definition()
+            &result.ir().geometry.procedural_surfaces[0].definition()
         else {
             panic!("expected variable blend")
         };
@@ -804,7 +816,7 @@ fn generated_edge_offset_radius_law_reads_two_parameters_and_one_offset() {
         )
         .expect("edge-offset variable-blend decode");
     let ProceduralSurfaceDefinition::VariableBlend(definition_payload) =
-        &result.ir().model.procedural_surfaces[0].definition()
+        &result.ir().geometry.procedural_surfaces[0].definition()
     else {
         panic!("expected variable blend")
     };
@@ -865,7 +877,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
             )
             .expect("variable-blend decode");
         let ProceduralSurfaceDefinition::VariableBlend(definition_payload) =
-            &result.ir().model.procedural_surfaces[0].definition()
+            &result.ir().geometry.procedural_surfaces[0].definition()
         else {
             panic!("expected variable blend")
         };
@@ -964,10 +976,14 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         let (mut source_less, _, _) = result.into_parts();
         source_less.source = None;
         source_less
-            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .set_native_unknowns(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                "f3d",
+                &[],
+            )
             .unwrap();
         source_less
-            .model
+            .geometry
             .curves
             .iter_mut()
             .find(|curve| curve.id == post_curve)
@@ -982,7 +998,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
             .unwrap(),
         ));
         source_less
-            .model
+            .geometry
             .curves
             .iter_mut()
             .find(|curve| curve.id == slice_curve)
@@ -998,7 +1014,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         ));
         for (ordinal, side) in side_curves.iter().enumerate() {
             source_less
-                .model
+                .geometry
                 .curves
                 .iter_mut()
                 .find(|curve| curve.id == *side)
@@ -1026,7 +1042,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("source-less variable-blend round trip");
         let ProceduralSurfaceDefinition::VariableBlend(definition_payload) =
-            &round_trip.ir().model.procedural_surfaces[0].definition()
+            &round_trip.ir().geometry.procedural_surfaces[0].definition()
         else {
             panic!("expected round-trip variable blend")
         };
@@ -1036,7 +1052,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         assert!(matches!(
             round_trip
                 .ir()
-                .model
+                .geometry
                 .curves
                 .iter()
                 .find(|curve| Some(&curve.id) == actual.post_curve.as_ref())
@@ -1048,7 +1064,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
             assert!(matches!(
                 round_trip
                     .ir()
-                    .model
+                    .geometry
                     .curves
                     .iter()
                     .find(|curve| Some(&curve.id) == side.curve.as_ref().map(|support| &support.curve))
@@ -1060,7 +1076,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         assert!(matches!(
             round_trip
                 .ir()
-                .model
+                .geometry
                 .curves
                 .iter()
                 .find(|curve| curve.id == actual.slice)
@@ -1087,7 +1103,7 @@ fn generated_two_radii_variable_blend_round_trips_rounded_chamfer() {
         )
         .expect("two-radii variable-blend decode");
     let ProceduralSurfaceDefinition::VariableBlend(definition_payload) =
-        &decoded.ir().model.procedural_surfaces[0].definition()
+        &decoded.ir().geometry.procedural_surfaces[0].definition()
     else {
         panic!("expected variable blend")
     };
@@ -1126,7 +1142,11 @@ fn generated_two_radii_variable_blend_round_trips_rounded_chamfer() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
@@ -1137,7 +1157,7 @@ fn generated_two_radii_variable_blend_round_trips_rounded_chamfer() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("two-radii variable-blend round trip");
     assert!(matches!(
-        &round_trip.ir().model.procedural_surfaces[0].definition(), ProceduralSurfaceDefinition::VariableBlend(definition_payload) if matches!((definition_payload.construction(),), (construction,) if construction.to_raw() == expected)));
+        &round_trip.ir().geometry.procedural_surfaces[0].definition(), ProceduralSurfaceDefinition::VariableBlend(definition_payload) if matches!((definition_payload.construction(),), (construction,) if construction.to_raw() == expected)));
 }
 
 #[test]
@@ -1156,7 +1176,7 @@ fn generated_two_radii_variable_blend_decodes_explicit_circular_cross_section() 
         )
         .expect("two-radii selector-zero decode");
     let ProceduralSurfaceDefinition::VariableBlend(definition_payload) =
-        &decoded.ir().model.procedural_surfaces[0].definition()
+        &decoded.ir().geometry.procedural_surfaces[0].definition()
     else {
         panic!("expected variable blend")
     };
@@ -1171,7 +1191,11 @@ fn generated_two_radii_variable_blend_decodes_explicit_circular_cross_section() 
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
@@ -1182,5 +1206,5 @@ fn generated_two_radii_variable_blend_decodes_explicit_circular_cross_section() 
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("selector-zero round trip");
     assert!(matches!(
-        &round_trip.ir().model.procedural_surfaces[0].definition(), ProceduralSurfaceDefinition::VariableBlend(definition_payload) if matches!((definition_payload.construction(),), (construction,) if construction.to_raw() == expected)));
+        &round_trip.ir().geometry.procedural_surfaces[0].definition(), ProceduralSurfaceDefinition::VariableBlend(definition_payload) if matches!((definition_payload.construction(),), (construction,) if construction.to_raw() == expected)));
 }

@@ -282,3 +282,154 @@ impl Fixture {
         );
     }
 }
+
+/// A contour flange: the plate travels the slot-3 length along slot 1, which
+/// is the profile-plane normal `+Z`; the contour attachment holds thickness
+/// 7 and radius 11; the bend and corner repeat the plate operands.
+pub(crate) struct ContourFixture {
+    pub(crate) plate: PmDcFeature,
+    pub(crate) bend: PmDcFeature,
+    pub(crate) corner: PmDcFeature,
+    pub(crate) style: style::Style,
+    pub(crate) properties: Vec<PmDcFeatureProperty>,
+}
+
+impl ContourFixture {
+    pub(crate) fn new() -> Self {
+        let mut base = Fixture::new();
+        base.edit(3, |kind| {
+            *kind = Kind::Enumeration {
+                family: EnumFamily::PlateSide,
+                type_value: 2,
+                value: 0,
+            };
+        });
+        base.edit(5, |kind| {
+            *kind = Kind::SheetMetal {
+                definition: Sheet::ContourAttachment {
+                    control: reference(20),
+                    thickness: reference(4),
+                    first_mode: reference(21),
+                    directions: [reference(2), reference(34)],
+                    radius: reference(25),
+                    second_mode: reference(22),
+                    relief_width: reference(26),
+                    minimum_remnant: reference(28),
+                    first_option: reference(23),
+                    states: cadmpeg_ir::native::bytes::NativeBytes::new([1, 1, 1]),
+                    second_option: reference(24),
+                    extension: reference(51),
+                    value: 0,
+                },
+            };
+        });
+        base.edit(22, |kind| {
+            *kind = Kind::SheetMetal {
+                definition: Sheet::Enumeration {
+                    type_value: 9,
+                    value: 4,
+                },
+            };
+        });
+        base.edit(14, |kind| {
+            *kind = Kind::Enumeration {
+                family: EnumFamily::PartOperation,
+                type_value: 5,
+                value: 1,
+            };
+        });
+        base.properties.extend([
+            property(
+                51,
+                &Kind::SheetMetal {
+                    definition: Sheet::AttachmentState {
+                        state: 10,
+                        thickness: reference(4),
+                        radius: reference(25),
+                        attachment: reference(5),
+                        relief_width: reference(26),
+                        minimum_remnant: reference(28),
+                        options: [reference(23), reference(24)],
+                    },
+                },
+            ),
+            property(
+                52,
+                &Kind::References {
+                    family: RefFamily::FeatureDimensions,
+                    items: list(&[]),
+                },
+            ),
+        ]);
+        base.properties.sort_by_key(|p| p.identity.record_ordinal);
+        Self {
+            plate: feature(
+                100,
+                &[1, 2, 3, 50, 5, 0, 0, 6, 7, 8, 9, 10, 0, 12, 0, 13, 14],
+            ),
+            bend: base.bend,
+            corner: feature(300, &[8, 0, 52, 0, 1, 0, 13]),
+            style: base.style,
+            properties: base.properties,
+        }
+    }
+    pub(crate) fn property(&self, reference: Reference) -> Option<&PmDcFeatureProperty> {
+        self.properties
+            .iter()
+            .find(|p| p.identity.record_ordinal + 1 == reference.index())
+    }
+    pub(crate) fn length(reference: Reference) -> Option<Length> {
+        match reference.index() {
+            50 => Some(Length::new(29.0).expect("length")),
+            _ => Fixture::length(reference),
+        }
+    }
+    pub(crate) fn direction(reference: Reference) -> Option<cadmpeg_ir::units::UnitVector3> {
+        match reference.index() {
+            2 => Some(cadmpeg_ir::units::UnitVector3::Z_AXIS),
+            _ => None,
+        }
+    }
+    pub(crate) fn stored(reference: Reference) -> bool {
+        matches!(reference.index(), 2 | 34)
+    }
+    pub(crate) fn children(&self) -> crate::feature::sheet_metal::contour::Children<'_> {
+        crate::feature::sheet_metal::contour::Children {
+            plate: &self.plate,
+            bend: &self.bend,
+            corner: &self.corner,
+            attachment_edges: None,
+        }
+    }
+    pub(crate) fn operands(
+        &self,
+    ) -> Result<
+        crate::feature::sheet_metal::contour::ContourOperands,
+        crate::feature::sheet_metal::contour::ContourRefusal,
+    > {
+        crate::feature::sheet_metal::contour::operands(
+            self.children(),
+            Some(&self.style),
+            |r| self.property(r),
+            Self::length,
+            Self::direction,
+            Self::stored,
+            cadmpeg_ir::units::UnitVector3::Z_AXIS,
+        )
+    }
+    pub(crate) fn edit(&mut self, index: u32, edit: impl FnOnce(&mut Kind)) {
+        let p = self
+            .properties
+            .iter_mut()
+            .find(|p| p.identity.record_ordinal + 1 == index)
+            .expect("property");
+        let mut payload = (**p).clone();
+        edit(&mut payload.kind);
+        *p = Located::new(
+            payload,
+            p.identity.type_id.clone(),
+            p.identity.segment_token.clone(),
+            p.identity.record_ordinal,
+        );
+    }
+}

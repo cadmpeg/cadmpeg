@@ -50,17 +50,26 @@ pub(super) fn hole_support_faces(
         return None;
     }
     let planes = updated_planes(transition, preceding);
+    let drum_faces = updated_cylinders(transition, preceding);
     let mut faces = Vec::with_capacity(entries.len());
     for entry in &entries {
-        let mut carriers = planes.iter().filter(|(face, plane)| {
-            plane_carries_entry(plane, *entry, axis)
-                && face_has_rim(transition, *face, *entry, axis)
-        });
-        let (face, _) = carriers.next()?;
+        let mut carriers = planes
+            .iter()
+            .filter(|(face, plane)| {
+                plane_carries_entry(plane, *entry, axis)
+                    && face_has_rim(transition, *face, *entry, axis)
+            })
+            .map(|(face, _)| *face)
+            .chain(drum_faces.iter().filter_map(|(face, cylinder)| {
+                (cylinder_carries_entry(cylinder, *entry, axis)
+                    && face_meets_inserted_bore(transition, *face, *entry, axis))
+                .then_some(*face)
+            }));
+        let face = carriers.next()?;
         if carriers.next().is_some() {
             return None;
         }
-        faces.push(*face);
+        faces.push(face);
     }
     faces.sort_unstable();
     faces.dedup();
@@ -163,6 +172,39 @@ fn inserted_cylinder_axes(transition: &AsmHistoricalTransition) -> Option<Vec<(P
         .collect()
 }
 
+/// Cylinders of the preceding state's faces that the transition updates. A
+/// face with more than one carrier or cylinder row has no cylinder here.
+fn updated_cylinders<'a>(
+    transition: &AsmHistoricalTransition,
+    preceding: &'a AsmHistoricalTopology,
+) -> Vec<(i64, &'a AsmHistoricalCylinder)> {
+    let faces: HashSet<i64> = preceding.faces.iter().copied().collect();
+    transition
+        .topology
+        .faces
+        .updated
+        .iter()
+        .copied()
+        .filter(|face| faces.contains(face))
+        .filter_map(|face| {
+            let mut bindings = preceding
+                .face_surfaces
+                .iter()
+                .filter(|binding| binding.entity == face);
+            let binding = bindings.next()?;
+            if bindings.next().is_some() {
+                return None;
+            }
+            let mut cylinders = preceding
+                .surface_cylinders
+                .iter()
+                .filter(|cylinder| cylinder.surface == binding.carrier);
+            let cylinder = cylinders.next()?;
+            cylinders.next().is_none().then_some((face, cylinder))
+        })
+        .collect()
+}
+
 /// Planes of the preceding state's faces that the transition updates. A face
 /// with more than one carrier or plane row has no plane here.
 fn updated_planes<'a>(
@@ -203,6 +245,80 @@ fn plane_carries_entry(plane: &AsmHistoricalPlane, entry: Point3, axis: Vector3)
     (normal.dot(axis).abs() - 1.0).abs() <= HOLE_SUPPORT_NORMAL_TOLERANCE
         && entry.vector_from(plane.origin).dot(normal).abs()
             <= HOLE_SUPPORT_POINT_TOLERANCE * coordinate_scale(entry, plane.origin)
+}
+
+/// Whether the Hole axis through `entry` is a radial line of `cylinder` and
+/// `entry` lies on the cylinder surface.
+fn cylinder_carries_entry(cylinder: &AsmHistoricalCylinder, entry: Point3, axis: Vector3) -> bool {
+    let Some(cylinder_axis) = cylinder.axis.unit() else {
+        return false;
+    };
+    let offset = entry.vector_from(cylinder.origin);
+    let radial = offset - cylinder_axis.scale(offset.dot(cylinder_axis));
+    let scale = coordinate_scale(entry, cylinder.origin);
+    cylinder_axis.dot(axis).abs() <= HOLE_SUPPORT_NORMAL_TOLERANCE
+        && (radial.norm() - cylinder.radius).abs() <= HOLE_SUPPORT_POINT_TOLERANCE * scale
+        && radial.cross(axis).norm() <= HOLE_SUPPORT_POINT_TOLERANCE * scale
+}
+
+/// Edges of the loops of `face` in the transition rows.
+fn face_edges(transition: &AsmHistoricalTransition, face: i64) -> HashSet<i64> {
+    let rows = &transition.rows;
+    rows.face_loops
+        .set
+        .iter()
+        .filter(|relation| relation.owner_ref == face)
+        .flat_map(|relation| &relation.member_refs)
+        .flat_map(|face_loop| {
+            rows.loop_coedges
+                .set
+                .iter()
+                .filter(move |relation| relation.owner_ref == *face_loop)
+        })
+        .flat_map(|relation| &relation.member_refs)
+        .flat_map(|coedge| {
+            rows.coedge_topology
+                .set
+                .iter()
+                .filter(move |row| row.coedge == *coedge)
+        })
+        .map(|row| row.edge)
+        .collect()
+}
+
+/// Whether `face` shares an edge with an inserted face whose cylinder lies on
+/// the Hole axis through `entry`.
+fn face_meets_inserted_bore(
+    transition: &AsmHistoricalTransition,
+    face: i64,
+    entry: Point3,
+    axis: Vector3,
+) -> bool {
+    let rows = &transition.rows;
+    let own = face_edges(transition, face);
+    if own.is_empty() {
+        return false;
+    }
+    transition.topology.faces.inserted.iter().any(|inserted| {
+        let carries_bore = rows
+            .face_surfaces
+            .set
+            .iter()
+            .filter(|binding| binding.entity == *inserted)
+            .flat_map(|binding| {
+                rows.surface_cylinders
+                    .set
+                    .iter()
+                    .filter(move |cylinder| cylinder.surface == binding.carrier)
+            })
+            .any(|cylinder| {
+                cylinder
+                    .axis
+                    .unit()
+                    .is_some_and(|unit| same_axis_line((cylinder.origin, unit), (entry, axis)))
+            });
+        carries_bore && !face_edges(transition, *inserted).is_disjoint(&own)
+    })
 }
 
 /// Whether a loop of `face` in the transition rows has an edge on a circle

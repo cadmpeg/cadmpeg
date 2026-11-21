@@ -1489,3 +1489,36 @@ fn terminal_scalar_frame_keeps_gaps_and_opaque_end_distinct() {
     with_opaque_end.body.push(0x5f);
     assert!(with_opaque_end.terminal_scalar_frame().is_none());
 }
+
+#[test]
+fn spline_parameters_read_the_banded_positive_dict_heads() {
+    for (prefix, value) in [(0x54, 0.18), (0x58, 0.22)] {
+        let bytes = f64::to_be_bytes(value);
+        let mut body = vec![prefix];
+        body.extend_from_slice(&bytes[2..]);
+        let slots = crate::surface::named_spline_scalar_slots(
+            &SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Spline),
+            "u_params",
+            &body,
+            1,
+            &scalar::ScalarCache::default(),
+            &mut ScalarBodyRefusal::default(),
+        )
+        .expect("complete spline parameter body");
+        assert_eq!(slots, [(Some(value), body)]);
+    }
+}
+
+#[test]
+fn forward_find_answers_each_query_as_find_from_does() {
+    let haystack = b"..crv_array\0..crv_array\0crv_array\0..";
+    let needle = b"crv_array\0";
+    let mut forward = crate::surface::ForwardFind::new(haystack, needle);
+    for from in [0, 0, 3, 2, 14, 15, 24, 25, 1, 36, 37, 100, 13] {
+        assert_eq!(
+            forward.at_or_after(from),
+            cadmpeg_core::bytes::find_from(haystack, needle, from),
+            "query at {from}"
+        );
+    }
+}

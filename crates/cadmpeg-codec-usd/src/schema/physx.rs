@@ -33,27 +33,29 @@ pub(crate) enum Value {
     Targets,
 }
 
-/// The exponents of length, mass, and angle of a unit, and whether its
-/// angle unit is the degree.
+/// The exponents of length, mass, angle, and time of a unit, and whether
+/// its angle unit is the degree.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Dim {
     pub(crate) length: i8,
     pub(crate) mass: i8,
     pub(crate) angle: i8,
+    pub(crate) time: i8,
     pub(crate) degrees: bool,
 }
 
 impl Dim {
-    pub(crate) const fn new(length: i8, mass: i8, angle: i8, degrees: bool) -> Self {
+    pub(crate) const fn new(length: i8, mass: i8, angle: i8, time: i8, degrees: bool) -> Self {
         Self {
             length,
             mass,
             angle,
+            time,
             degrees,
         }
     }
 
-    const NONE: Self = Self::new(0, 0, 0, false);
+    const NONE: Self = Self::new(0, 0, 0, 0, false);
 
     /// The unit of a quotient of two units.
     const fn over(self, other: Self) -> Self {
@@ -61,13 +63,14 @@ impl Dim {
             self.length - other.length,
             self.mass - other.mass,
             self.angle - other.angle,
+            self.time - other.time,
             self.degrees || other.degrees,
         )
     }
 
-    /// The exponents as an IR dimension.
-    pub(crate) fn dimension(self) -> cadmpeg_ir::physics::solver::Dimension {
-        cadmpeg_ir::physics::solver::Dimension::new(self.length, self.mass, self.angle)
+    /// The exponents as an IR quantity.
+    pub(crate) fn dimension(self) -> cadmpeg_ir::design::units::Quantity {
+        cadmpeg_ir::design::units::Quantity::of(self.length, self.mass, self.angle, self.time)
     }
 }
 
@@ -115,8 +118,8 @@ impl Unit {
     }
 }
 
-const DISTANCE: Dim = Dim::new(1, 0, 0, false);
-const DEGREES: Dim = Dim::new(0, 0, 1, true);
+const DISTANCE: Dim = Dim::new(1, 0, 0, 0, false);
+const DEGREES: Dim = Dim::new(0, 0, 1, 0, true);
 
 /// One carried attribute.
 #[derive(Debug, Clone, Copy)]

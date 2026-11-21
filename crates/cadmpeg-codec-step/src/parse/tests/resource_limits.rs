@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Nesting follows the session depth; value-node limits omit the bounded item.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::Write as _;
 
 use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
@@ -97,10 +97,16 @@ fn parameter_nesting_follows_the_session_depth() {
             assert!(exchange.records().contains_key(&1));
         });
         with_policy_context(source.as_bytes(), &depth_policy(200), |source, ctx| {
-            let error = crate::parse::parse(source, ctx).expect_err("the session refuses");
-            assert!(matches!(error, CodecError::ResourceLimit(refusal)
-                if refusal.dimension == ResourceDimension::RecursionDepth
-                    && refusal.operation == "step_parse_parameter_nesting"));
+            let (exchange, _) =
+                crate::parse::parse(source, ctx).expect("the record is given up alone");
+            assert!(exchange.records().is_empty());
+            assert!(matches!(
+                exchange.given_up(),
+                [statement] if matches!(statement.cause,
+                    crate::parse::GiveUpCause::Resource(refusal)
+                        if refusal.dimension == ResourceDimension::RecursionDepth
+                            && refusal.operation == "step_parse_parameter_nesting")
+            ));
         });
     });
 }
@@ -306,6 +312,28 @@ fn repeated_bounded_anchor_items_stop_before_copying() {
             None
         );
         assert_eq!(resolver.remaining_nodes, 10_000 - 8_191);
+    });
+}
+
+#[test]
+fn aggregate_anchor_materialization_omits_the_records_past_the_total() {
+    with_service_context(b"", |_, ctx| {
+        let anchors = doubling_anchor_values(3);
+        let mut resolver = AnchorResolver::new(&anchors, EXPANDED_PAYLOAD_BASE, ctx);
+        // Each copy of `a3` takes 31 value nodes, so five copies fit.
+        resolver.remaining_nodes = 5 * 31 + 30;
+        for copy in 1..=8 {
+            let mut item = [Value::Resource("#a3".into())];
+            assert_eq!(
+                resolver
+                    .resolve_item(item.iter_mut())
+                    .expect("a node limit is not an error")
+                    .as_deref(),
+                (copy > 5).then_some(ANCHOR_BOUND),
+                "copy {copy}"
+            );
+        }
+        assert_eq!(resolver.remaining_nodes, 30);
     });
 }
 
@@ -662,12 +690,15 @@ fn assert_payload_bounded(source: &str, allowance: usize, expansion: &str, occur
     let bound = format!(
         "{expansion} expansion exceeds {allowance} payload bytes (MAX_EXPANDED_PAYLOAD_PER_INPUT_BYTE)"
     );
+    let bounded = diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.kind == ParseDiagnosticKind::ExpansionBounded)
+        .map(|diagnostic| diagnostic.message.as_str())
+        .collect::<HashSet<_>>();
     for id in kept + 1..=LARGE_STRING_RECORDS {
         assert!(
-            has_diagnostic(
-                &diagnostics,
-                ParseDiagnosticKind::ExpansionBounded,
-                &format!("instance #{id} omitted: {bound}; exact source retained"),
+            bounded.contains(
+                format!("instance #{id} omitted: {bound}; exact source retained").as_str()
             ),
             "#{id}"
         );
@@ -714,15 +745,15 @@ fn repeated_large_reference_string_stops_at_the_payload_allowance() {
 }
 
 #[test]
-fn unknown_record_omits_non_finite_real_at_lex_admission() {
+fn unknown_record_gives_up_non_finite_real_at_lex_admission() {
     const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=UNKNOWN_ITEM(1.E9999);ENDSEC;END-ISO-10303-21;";
     with_service_context(SOURCE, |source, ctx| {
-        let (exchange, diagnostics) =
+        let (exchange, _) =
             crate::parse::parse(source, ctx).expect("literal failure has a bounded record");
         assert!(exchange.records().is_empty());
-        assert!(diagnostics.iter().any(|diagnostic| {
-            diagnostic.kind == crate::parse::ParseDiagnosticKind::RecordOmitted
-                && diagnostic.message.contains("finite binary64 range")
-        }));
+        assert!(exchange.given_up().iter().any(|statement| matches!(
+            &statement.cause,
+            crate::parse::GiveUpCause::Syntax(message) if message.contains("finite binary64 range")
+        )));
     });
 }

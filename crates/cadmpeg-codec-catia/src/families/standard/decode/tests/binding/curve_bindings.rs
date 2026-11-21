@@ -104,14 +104,14 @@ fn tilted_spherical_circle_rejects_chord_outside_circle_plane() {
 #[test]
 fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
     let mut ir = CadIr::empty();
-    ir.model.points.push(Point::new(
+    ir.geometry.points.push(Point::new(
         PointId::mint("catia:test:point#point-0").expect("identity grammar"),
         cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
             .expect("a finite position is a point"),
         None,
     ));
     let surface_id = SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar");
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -122,6 +122,7 @@ fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
     let support = StandardCurveSupport {
         pos: 0,
@@ -153,7 +154,7 @@ fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
     assert_eq!(range, Some([0.0, std::f64::consts::TAU]));
     let curve = curve.expect("closed circle support identifies a curve");
     assert!(matches!(ir
-        .model
+        .geometry
         .curves
         .iter()
         .find(|candidate| candidate.id == curve), Some(Curve {
@@ -755,10 +756,11 @@ fn edge_support_reuses_the_surface_with_matching_source_record() {
     let id = SurfaceId::mint("catia:test:surface#matching".to_owned()).expect("surface identity");
     let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: id.clone(),
         geometry: geometry.clone(),
         source_object: Some(source),
+        native_ref: None,
     });
     let carrier = crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry);
     let matched = crate::test_support::with_service_context(|ctx| {
@@ -773,7 +775,7 @@ fn edge_support_reuses_the_surface_with_matching_source_record() {
     })
     .expect("ensure native edge support surface");
     assert_eq!(matched, id);
-    assert_eq!(ir.model.surfaces.len(), 1);
+    assert_eq!(ir.geometry.surfaces.len(), 1);
 }
 
 #[test]
@@ -791,7 +793,7 @@ fn nurbs_edge_support_adds_one_surface_and_returns_its_id() {
             &carrier,
             &mut admission,
         )?;
-        Ok::<_, cadmpeg_core::CodecError>((id, ir.model.surfaces))
+        Ok::<_, cadmpeg_core::CodecError>((id, ir.geometry.surfaces))
     })
     .expect("ensure native edge support surface");
     assert_eq!(admitted.1.len(), 1);

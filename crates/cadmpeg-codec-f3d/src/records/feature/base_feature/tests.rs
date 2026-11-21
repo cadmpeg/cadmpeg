@@ -59,7 +59,61 @@ fn construction_wires() -> Vec<serde_json::Value> {
             "linkage_record_offset":234, "auxiliary_record":401,
             "auxiliary_record_offset":253
         }),
+        json!({
+            "body_entity_suffixes":[218], "body_entity_suffix_offsets":[25],
+            "body_entity_fields":["000001000000"],
+            "repeated_suffix_fields":["000000000000"],
+            "metadata_record":215, "metadata_record_offset":67,
+            "metadata_field":"000000000000", "result_records":[229],
+            "result_record_offsets":[86], "result_fields":["000000000000"],
+            "null_reference_flag_offset":48
+        }),
     ]
+}
+
+#[test]
+fn a_suffix_result_body_wire_reads_as_its_own_form() {
+    let value: DesignBaseFeatureConstruction =
+        serde_json::from_value(construction_wires().remove(5)).unwrap();
+    assert!(matches!(
+        value,
+        DesignBaseFeatureConstruction::SuffixResultBodies { .. }
+    ));
+    assert_eq!(value.body_entity_suffixes().collect::<Vec<_>>(), [218]);
+    assert_eq!(value.body_reference_records().count(), 0);
+    assert_eq!(value.null_reference_flag_offset(), Some(48));
+
+    for (field, refused) in [
+        ("result_records", json!([229, 230])),
+        ("body_entity_suffixes", json!([0])),
+        ("body_entity_suffixes", json!([1_099_511_627_776_u64])),
+        ("metadata_field", json!("")),
+        ("repeated_suffix_fields", json!([])),
+        ("result_record_offsets", json!([86, 97])),
+        ("result_fields", json!([])),
+        ("body_entity_suffix_offsets", json!([])),
+        ("body_entity_fields", json!(["010000000000"])),
+    ] {
+        let mut wire = construction_wires().remove(5);
+        wire[field] = refused.clone();
+        assert!(
+            serde_json::from_value::<DesignBaseFeatureConstruction>(wire).is_err(),
+            "{field} = {refused}"
+        );
+    }
+    let mut empty = construction_wires().remove(5);
+    for field in [
+        "body_entity_suffixes",
+        "body_entity_suffix_offsets",
+        "body_entity_fields",
+        "repeated_suffix_fields",
+        "result_records",
+        "result_record_offsets",
+        "result_fields",
+    ] {
+        empty[field] = json!([]);
+    }
+    assert!(serde_json::from_value::<DesignBaseFeatureConstruction>(empty).is_err());
 }
 
 #[test]

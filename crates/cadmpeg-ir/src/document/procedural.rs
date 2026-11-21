@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::CodecError;
 
-use super::{Model, ProceduralCarrierError};
+use super::{ProceduralCarrierError, Topology};
 use crate::geometry::{ProceduralCurve, ProceduralSurface};
 use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 
@@ -88,13 +88,13 @@ impl FamilyIndex {
 /// Discard this index before moving the model or replacing, removing, or reordering arena entries.
 #[derive(Default)]
 pub struct ProceduralIndex {
-    model: Option<*const Model>,
+    model: Option<*const Topology>,
     curves: FamilyIndex,
     surfaces: FamilyIndex,
 }
 
 impl ProceduralIndex {
-    fn bind(&mut self, model: &Model) -> Result<(), CodecError> {
+    fn bind(&mut self, model: &Topology) -> Result<(), CodecError> {
         if self
             .model
             .is_some_and(|previous| !std::ptr::eq(previous, model))
@@ -110,13 +110,13 @@ impl ProceduralIndex {
     /// Admit one curve attachment.
     pub fn add_curve(
         &mut self,
-        model: &mut Model,
+        geometry: &mut Topology,
         owner: &CurveId,
         procedural: ProceduralCurve,
     ) -> Result<Result<(), ProceduralCarrierError>, CodecError> {
-        self.bind(model)?;
+        self.bind(geometry)?;
         self.curves.sync(
-            model.curves.iter().enumerate().map(|(slot, carrier)| {
+            geometry.curves.iter().enumerate().map(|(slot, carrier)| {
                 (
                     slot,
                     carrier.id.as_str(),
@@ -126,7 +126,7 @@ impl ProceduralIndex {
                         .map(ProceduralCurveId::as_str),
                 )
             }),
-            model
+            geometry
                 .procedural_curves
                 .iter()
                 .map(|procedural| procedural.id.as_str()),
@@ -135,21 +135,21 @@ impl ProceduralIndex {
             match self
                 .curves
                 .owner("curve", owner.as_str(), procedural.id.as_str(), |slot| {
-                    model.curves[slot].id.as_str()
+                    geometry.curves[slot].id.as_str()
                 }) {
                 Ok(slot) => slot,
                 Err(error) => return Ok(Err(error)),
             };
-        if model.curves[slot].id.as_str() != owner.as_str() {
+        if geometry.curves[slot].id.as_str() != owner.as_str() {
             return Err(CodecError::malformed("procedural admission prefix changed"));
         }
-        let associated = model.curves[slot]
+        let associated = geometry.curves[slot]
             .geometry
             .procedural_construction()
             .is_some();
-        let result = model.attach_procedural_curve(owner, slot, procedural);
+        let result = geometry.attach_procedural_curve(owner, slot, procedural);
         if result.is_ok() {
-            let construction = model
+            let construction = geometry
                 .procedural_curves
                 .last()
                 .ok_or_else(|| {
@@ -161,7 +161,7 @@ impl ProceduralIndex {
                 self.curves.associate(construction, slot);
             }
             self.curves.constructions.insert(construction.to_owned());
-            self.curves.construction_count = model.procedural_curves.len();
+            self.curves.construction_count = geometry.procedural_curves.len();
         }
         Ok(result)
     }
@@ -169,13 +169,13 @@ impl ProceduralIndex {
     /// Admit one surface attachment.
     pub fn add_surface(
         &mut self,
-        model: &mut Model,
+        geometry: &mut Topology,
         owner: &SurfaceId,
         procedural: ProceduralSurface,
     ) -> Result<Result<(), ProceduralCarrierError>, CodecError> {
-        self.bind(model)?;
+        self.bind(geometry)?;
         self.surfaces.sync(
-            model.surfaces.iter().enumerate().map(|(slot, carrier)| {
+            geometry.surfaces.iter().enumerate().map(|(slot, carrier)| {
                 (
                     slot,
                     carrier.id.as_str(),
@@ -185,7 +185,7 @@ impl ProceduralIndex {
                         .map(ProceduralSurfaceId::as_str),
                 )
             }),
-            model
+            geometry
                 .procedural_surfaces
                 .iter()
                 .map(|procedural| procedural.id.as_str()),
@@ -194,21 +194,21 @@ impl ProceduralIndex {
             match self
                 .surfaces
                 .owner("surface", owner.as_str(), procedural.id.as_str(), |slot| {
-                    model.surfaces[slot].id.as_str()
+                    geometry.surfaces[slot].id.as_str()
                 }) {
                 Ok(slot) => slot,
                 Err(error) => return Ok(Err(error)),
             };
-        if model.surfaces[slot].id.as_str() != owner.as_str() {
+        if geometry.surfaces[slot].id.as_str() != owner.as_str() {
             return Err(CodecError::malformed("procedural admission prefix changed"));
         }
-        let associated = model.surfaces[slot]
+        let associated = geometry.surfaces[slot]
             .geometry
             .procedural_construction()
             .is_some();
-        let result = model.attach_procedural_surface(owner, slot, procedural);
+        let result = geometry.attach_procedural_surface(owner, slot, procedural);
         if result.is_ok() {
-            let construction = model
+            let construction = geometry
                 .procedural_surfaces
                 .last()
                 .ok_or_else(|| {
@@ -220,7 +220,7 @@ impl ProceduralIndex {
                 self.surfaces.associate(construction, slot);
             }
             self.surfaces.constructions.insert(construction.to_owned());
-            self.surfaces.construction_count = model.procedural_surfaces.len();
+            self.surfaces.construction_count = geometry.procedural_surfaces.len();
         }
         Ok(result)
     }
@@ -233,7 +233,7 @@ pub struct ProceduralAdmission {
 
 impl ProceduralAdmission {
     /// Start an index for one model. Each family indexes on first use.
-    pub fn new(model: &Model) -> Self {
+    pub fn new(model: &Topology) -> Self {
         Self {
             index: ProceduralIndex {
                 model: Some(model),
@@ -244,7 +244,7 @@ impl ProceduralAdmission {
     /// Admit one attachment while preserving the append-only prefix.
     pub fn add_curve(
         &mut self,
-        model: &mut Model,
+        model: &mut Topology,
         owner: &CurveId,
         procedural: ProceduralCurve,
     ) -> Result<Result<(), ProceduralCarrierError>, CodecError> {
@@ -253,7 +253,7 @@ impl ProceduralAdmission {
     /// Admit one attachment while preserving the append-only prefix.
     pub fn add_surface(
         &mut self,
-        model: &mut Model,
+        model: &mut Topology,
         owner: &SurfaceId,
         procedural: ProceduralSurface,
     ) -> Result<Result<(), ProceduralCarrierError>, CodecError> {
@@ -261,7 +261,7 @@ impl ProceduralAdmission {
     }
 }
 
-impl Model {
+impl Topology {
     /// Attach an owned batch using one index. Semantic rejection keeps
     /// the accepted prefix, as repeated single attachments do.
     pub fn add_procedural_curves(

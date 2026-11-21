@@ -43,7 +43,8 @@ fuzz_target!(|data: &[u8]| {
         else {
             return;
         };
-        let mut source_fidelity = SourceFidelity::default();
+        let mut source_fidelity =
+            SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(data));
         if source_fidelity
             .attach_native_unknown_records(
                 &mut ir,

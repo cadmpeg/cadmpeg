@@ -38,6 +38,7 @@ fn surface_draft(id: &str) -> ModelDraft {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         })
         .expect("insert surface into draft");
     draft
@@ -48,7 +49,7 @@ fn cross_root_surface_filter_tracks_successful_commits_only() {
     let committed_id = "step:data:surface#implicit-face-1";
     let rejected_id = "step:data:surface#implicit-face-2";
     let mut ir = CadIr::empty();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 
     session
@@ -57,7 +58,7 @@ fn cross_root_surface_filter_tracks_successful_commits_only() {
         .expect("first root commit");
     let mut second_root = surface_draft(committed_id);
     drop_committed_surfaces(&mut second_root, &mut session).unwrap();
-    assert!(second_root.model().surfaces.is_empty());
+    assert!(second_root.geometry().surfaces.is_empty());
 
     let mut rejected_root = surface_draft(rejected_id);
     rejected_root
@@ -69,13 +70,14 @@ fn cross_root_surface_filter_tracks_successful_commits_only() {
                 .try_into()
                 .expect("valid identity"),
             tolerance: None,
+            native_ref: None,
         })
         .expect("insert invalid root reference");
     assert!(session.commit_model(rejected_root).unwrap().is_err());
 
     let mut later_root = surface_draft(rejected_id);
     drop_committed_surfaces(&mut later_root, &mut session).unwrap();
-    assert_eq!(later_root.model().surfaces.len(), 1);
+    assert_eq!(later_root.geometry().surfaces.len(), 1);
 }
 
 #[test]
@@ -91,10 +93,11 @@ fn trimmed_pcurve_fit_uses_declared_endpoints() {
         .unwrap(),
     ));
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: surface_geometry.clone(),
         source_object: None,
+        native_ref: None,
     });
     let pcurve = PcurveGeometry::Trimmed(
         cadmpeg_ir::geometry::pcurve::TrimmedPcurve::try_new(
@@ -117,7 +120,7 @@ fn trimmed_pcurve_fit_uses_declared_endpoints() {
     );
 
     let fit = pcurve_declared_endpoint_fit(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ModelIndex::build(&ir),
         &surface_id,
         &pcurve,
@@ -147,10 +150,11 @@ fn bounded_pcurve_search_can_miss_an_unsampled_exact_point() {
         .unwrap(),
     ));
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: surface_geometry.clone(),
         source_object: None,
+        native_ref: None,
     });
 
     // The polar harmonic has a stationary chart tangent at seed 0. Its
@@ -217,7 +221,7 @@ fn stale_trim_recovery_is_retained_above_step_tolerance() {
     assert!((decoded.ir().tolerances.linear.get() - 0.1).abs() <= f64::EPSILON);
     let use_ = decoded
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .flat_map(|coedge| &coedge.pcurves)
@@ -241,7 +245,7 @@ fn finite_pcurve_admission_marks_unsampled_global_divergence() {
 
     let edge_use = decoded
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .find(|coedge| coedge.edge.as_str() == "step:data:edge#10")
@@ -249,7 +253,7 @@ fn finite_pcurve_admission_marks_unsampled_global_divergence() {
     assert_eq!(edge_use.pcurves.len(), 1);
     let pcurve = decoded
         .ir()
-        .model
+        .geometry
         .pcurves
         .iter()
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#27")
@@ -263,7 +267,7 @@ fn finite_pcurve_admission_marks_unsampled_global_divergence() {
     };
     let surface_id = decoded
         .ir()
-        .model
+        .geometry
         .surfaces
         .first()
         .expect("pcurve plane")
@@ -271,7 +275,7 @@ fn finite_pcurve_admission_marks_unsampled_global_divergence() {
         .clone();
     let (curve_center, curve_radius) = decoded
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find_map(|curve| match curve.geometry {
@@ -342,7 +346,7 @@ fn strict_decode_accepts_a_finitely_admitted_pcurve() {
 
     let edge_use = decoded
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .find(|coedge| coedge.edge.as_str() == "step:data:edge#10")
@@ -380,7 +384,7 @@ fn one_document_warning_counts_every_admitted_pcurve_relation() {
     for edge in ["step:data:edge#44", "step:data:edge#45"] {
         let edge_use = decoded
             .ir()
-            .model
+            .geometry
             .coedges
             .iter()
             .find(|coedge| coedge.edge.as_str() == edge)
@@ -431,7 +435,7 @@ fn a_discarded_topology_root_counts_no_admitted_relation() {
         .losses
         .iter()
         .any(|loss| { loss.code == StepLossCode::TopologyRootRejected.kind() }));
-    assert!(decoded.ir().model.coedges.is_empty());
+    assert!(decoded.ir().geometry.coedges.is_empty());
     assert!(!decoded
         .report()
         .losses
@@ -470,7 +474,7 @@ fn divergent_interior_pcurve_is_omitted_from_coedge() {
 
     let edge_use = decoded
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .find(|coedge| coedge.edge.as_str() == "step:data:edge#19")
@@ -501,10 +505,10 @@ fn competing_same_surface_pcurves_remain_detached() {
         )
         .expect("decode competing pcurve witness");
 
-    assert!(decoded.ir().model.pcurves.is_empty());
+    assert!(decoded.ir().geometry.pcurves.is_empty());
     let edge_use = decoded
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .find(|coedge| coedge.edge.as_str() == "step:data:edge#19")
@@ -536,10 +540,10 @@ fn assert_tp09_competing_pcurves_are_order_independent(source: &[u8]) {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode competing pcurve witness");
 
-    assert!(decoded.ir().model.pcurves.is_empty());
+    assert!(decoded.ir().geometry.pcurves.is_empty());
     let edge_use = decoded
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .find(|coedge| coedge.edge.as_str() == "step:data:edge#19")
@@ -598,7 +602,7 @@ fn shared_step_pcurve_mismatch_omits_optional_use() {
 
     let source = decoded
         .ir()
-        .model
+        .geometry
         .pcurves
         .iter()
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#33")
@@ -613,14 +617,14 @@ fn shared_step_pcurve_mismatch_omits_optional_use() {
 
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .pcurves
         .iter()
         .all(|pcurve| !pcurve.id.as_str().contains("-use-")));
 
     let first_use = decoded
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .find(|coedge| coedge.edge.as_str() == "step:data:edge#42")
@@ -629,7 +633,7 @@ fn shared_step_pcurve_mismatch_omits_optional_use() {
     assert_eq!(first_use.pcurves[0].pcurve.as_str(), "step:data:pcurve#33");
     let second_use = decoded
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .find(|coedge| coedge.edge.as_str() == "step:data:edge#45")
@@ -657,7 +661,7 @@ fn reordered_shared_step_pcurve_mismatch_omits_optional_use() {
 
     let source = decoded
         .ir()
-        .model
+        .geometry
         .pcurves
         .iter()
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#33")
@@ -672,14 +676,14 @@ fn reordered_shared_step_pcurve_mismatch_omits_optional_use() {
 
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .pcurves
         .iter()
         .all(|pcurve| !pcurve.id.as_str().contains("-use-")));
 
     let uses = decoded
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .filter(|coedge| coedge.edge.as_str() == "step:data:edge#42")
@@ -690,7 +694,7 @@ fn reordered_shared_step_pcurve_mismatch_omits_optional_use() {
     assert_eq!(uses[0][0].pcurve.as_str(), "step:data:pcurve#33");
     let second_use = decoded
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .find(|coedge| coedge.edge.as_str() == "step:data:edge#45")
@@ -720,34 +724,38 @@ fn shared_surface_carrier_is_staged_once() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     };
     let body_id = BodyId::mint("step:data:body#shared-surface").expect("identity grammar");
     let region_id = RegionId::mint("step:data:region#shared-surface").expect("identity grammar");
     let built = super::super::staged_topology(super::super::StagedTopologyParts {
         typed: HashSet::new(),
+        points: Vec::new(),
         vertices: Vec::new(),
         edges: Vec::new(),
         coedges: Vec::new(),
         loops: Vec::new(),
         faces: Vec::new(),
+        curves: Vec::new(),
         surfaces: vec![surface.clone(), surface],
         shells: Vec::new(),
         region: Region {
             id: region_id.clone(),
             body: body_id.clone(),
             shells: Vec::new(),
+            native_ref: None,
         },
         body: Body {
             id: body_id,
             kind: BodyKind::Sheet,
-            regions: vec![region_id],
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         },
     })
     .expect("duplicate references to one source surface must stage");
 
-    assert_eq!(built.draft.model().surfaces.len(), 1);
+    assert_eq!(built.draft.geometry().surfaces.len(), 1);
 }

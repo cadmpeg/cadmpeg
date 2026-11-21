@@ -8,7 +8,8 @@ use crate::validate::validate_neutral;
 #[test]
 fn ids_are_globally_unique_across_arenas() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    ir.model.points[0].id = crate::ids::PointId::mint(ir.model.vertices[0].id.as_str()).unwrap();
+    ir.geometry.points[0].id =
+        crate::ids::PointId::mint(ir.geometry.vertices[0].id.as_str()).unwrap();
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
         .findings
@@ -19,7 +20,7 @@ fn ids_are_globally_unique_across_arenas() {
 #[test]
 fn arena_ids_must_be_sorted() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    ir.model.points.swap(0, 1);
+    ir.geometry.points.swap(0, 1);
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
         .findings
@@ -50,7 +51,7 @@ fn native_order_groups_preserve_combined_name_and_finding_order() {
                 );
         }
     }
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut findings = Vec::new();
     super::check_identity_and_order(&crate::index::ModelIndex::build(&ir), &mut findings).unwrap();
     assert_eq!(
@@ -86,7 +87,7 @@ fn duplicate_identity_findings_keep_model_then_native_visit_order() {
         "test:validation:point#a",
         "test:validation:point#b",
     ] {
-        ir.model.points.push(crate::topology::Point::new(
+        ir.geometry.points.push(crate::topology::Point::new(
             id.try_into().unwrap(),
             crate::features::FinitePoint3::new(crate::math::Point3::new(0.0, 0.0, 0.0)).unwrap(),
             None,
@@ -103,7 +104,7 @@ fn duplicate_identity_findings_keep_model_then_native_visit_order() {
                     .unwrap(),
             );
     }
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut findings = Vec::new();
     super::check_identity_and_order(&crate::index::ModelIndex::build(&ir), &mut findings).unwrap();
     assert_eq!(

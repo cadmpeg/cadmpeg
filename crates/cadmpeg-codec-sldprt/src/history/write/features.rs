@@ -170,12 +170,12 @@ fn allocate_feature_source_id(
 
 /// Apply neutral native-feature edits to the `SolidWorks` history used for writing.
 pub(in crate::history) fn sync_neutral_features(
-    model: &cadmpeg_ir::document::Model,
+    ir: &cadmpeg_ir::CadIr,
     parameters: &[DesignParameter],
     bodies: &[Body],
     native: &mut Option<crate::native::SldprtNative>,
 ) -> Result<Vec<FeatureInputRename>, CodecError> {
-    let features = &model.features;
+    let features = &ir.model.features;
     if features.is_empty() {
         if let Some(native) = native {
             for history in &mut native.feature_histories {
@@ -196,7 +196,7 @@ pub(in crate::history) fn sync_neutral_features(
         feature_input_lanes: Vec::new(),
         pmi_dimensions: Vec::new(),
     });
-    let contradicted_travel = crate::history::extrude_direction::contradicted_features(model);
+    let contradicted_travel = crate::history::extrude_direction::contradicted_features(ir);
     let original_parameters = native
         .feature_histories
         .iter()
@@ -426,7 +426,7 @@ pub(in crate::history) fn sync_neutral_features(
         }
         let ordinal = u32::try_from(feature.ordinal)
             .map_err(|_| CodecError::NotImplemented("feature ordinal exceeds u32".into()))?;
-        let tree_parent = model.feature_parent(&feature.id).and_then(|parent| {
+        let tree_parent = ir.model.feature_parent(&feature.id).and_then(|parent| {
             let source_id = structural_parent_sources.get(parent).copied().flatten();
             match record_ids.get(parent) {
                 Some(record_id) => Some(crate::records::TreeParent::Record {
@@ -795,15 +795,15 @@ mod tests {
                 &DecodeOptions::default(),
             )
             .expect("the fixture decodes");
-        let mut model = decoded.ir().model.clone();
-        model.features[0].name = Some("PatternRenamed".into());
+        let mut ir = decoded.ir().clone();
+        ir.model.features[0].name = Some("PatternRenamed".into());
 
         let mut native = sldprt_native(decoded.ir());
         let mut second = native.feature_input_lanes[0].clone();
         second.id = format!("{}-second", second.id);
         native.feature_input_lanes.push(second);
 
-        let error = sync_neutral_features(&model, &[], &[], &mut Some(native))
+        let error = sync_neutral_features(&ir, &[], &[], &mut Some(native))
             .expect_err("two lanes state the same object name");
         assert_eq!(
             error.to_string(),
@@ -819,10 +819,10 @@ mod tests {
                 &DecodeOptions::default(),
             )
             .expect("the fixture decodes");
-        let mut model = decoded.ir().model.clone();
-        model.features[0].name = Some(" ".into());
+        let mut ir = decoded.ir().clone();
+        ir.model.features[0].name = Some(" ".into());
 
-        let error = sync_neutral_features(&model, &[], &[], &mut Some(sldprt_native(decoded.ir())))
+        let error = sync_neutral_features(&ir, &[], &[], &mut Some(sldprt_native(decoded.ir())))
             .expect_err("a blank object name is not writable");
         assert_eq!(
             error.to_string(),

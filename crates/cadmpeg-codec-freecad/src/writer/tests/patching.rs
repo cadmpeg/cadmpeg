@@ -276,7 +276,7 @@ fn writer_rejects_direct_link_carrier_graph_drift() {
         .insert("value".into(), "Missing".into());
     namespace
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "properties",
             &properties,
         )
@@ -334,7 +334,7 @@ pub(crate) fn writer_rejects_unserialized_declaration_and_stale_payload_edits() 
     objects[0].type_name = "App::FeaturePython".into();
     namespace
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "objects",
             &objects,
         )
@@ -361,7 +361,7 @@ pub(crate) fn writer_rejects_unserialized_declaration_and_stale_payload_edits() 
     entry["data"] = serde_json::json!(format!("{data}00"));
     namespace
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "entries",
             &entries,
         )
@@ -564,7 +564,7 @@ fn checked_native_input_record_edits_also_schedule_owner_recomputation() {
         .insert("value".to_owned(), "15".to_owned());
     namespace
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "properties",
             &properties,
         )

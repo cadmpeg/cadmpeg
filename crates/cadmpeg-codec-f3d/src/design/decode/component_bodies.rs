@@ -7,7 +7,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use crate::records::body_ownership::{
-    membership, terminal_membership, BodyOwnership, CONTAINER_BASE_GUID, CONTAINER_GUID,
+    membership, terminal_membership_for_bodies, BodyOwnership, CONTAINER_BASE_GUID, CONTAINER_GUID,
 };
 use crate::records::entity_header::SegmentTypeData;
 
@@ -130,7 +130,13 @@ pub(crate) fn owners(
             continue;
         }
         let record = &bytes[frame.start..frame.end];
-        let Some(start) = terminal_membership(record) else {
+        let Some(start) = terminal_membership_for_bodies(record, |body| {
+            lookup(body).is_some_and(|data| {
+                data.type_guid
+                    .as_str()
+                    .eq_ignore_ascii_case(crate::design::presentation::BODY_PRESENTATION_TYPE_GUID)
+            })
+        }) else {
             complete = false;
             continue;
         };

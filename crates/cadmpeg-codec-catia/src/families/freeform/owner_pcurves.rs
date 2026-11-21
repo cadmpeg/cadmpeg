@@ -232,7 +232,7 @@ pub(in crate::families) fn attach(
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<AttachResult, CodecError> {
     let mut result = AttachResult::default();
-    if ir.model.coedges.is_empty()
+    if ir.geometry.coedges.is_empty()
         || !records
             .iter()
             .any(|r| r.family() == ConsolidatedFamily::A && r.class() == 0x20)
@@ -261,17 +261,23 @@ pub(in crate::families) fn attach(
         }
     }
     nodes.sort_unstable_by_key(|node| node.as_ref().map(|(tag, _, _)| *tag));
-    let mut coedges =
-        ctx.alloc_filled(ir.model.coedges.len(), (0, &ir.model.coedges[0]), OPERATION)?;
-    for (slot, value) in coedges.iter_mut().zip(ir.model.coedges.iter().enumerate()) {
+    let mut coedges = ctx.alloc_filled(
+        ir.geometry.coedges.len(),
+        (0, &ir.geometry.coedges[0]),
+        OPERATION,
+    )?;
+    for (slot, value) in coedges
+        .iter_mut()
+        .zip(ir.geometry.coedges.iter().enumerate())
+    {
         *slot = value;
     }
     coedges.sort_unstable_by(|a, b| a.1.edge.cmp(&b.1.edge));
-    let mut plans = ctx.alloc_filled(ir.model.coedges.len(), None, OPERATION)?;
+    let mut plans = ctx.alloc_filled(ir.geometry.coedges.len(), None, OPERATION)?;
     let mut used = 0;
     {
         let model = ModelIndex::new_model_only(ir);
-        for edge in &ir.model.edges {
+        for edge in &ir.geometry.edges {
             let Some(curve) = edge
                 .curve()
                 .and_then(|id| model.curves(id.as_str(), StandardIndex))
@@ -290,10 +296,16 @@ pub(in crate::families) fn attach(
             let Some((_, node_index, node)) = &nodes[lower] else {
                 continue;
             };
-            let Some(start) = model.vertices(edge.start.as_str(), StandardIndex) else {
+            let Some(start) = edge
+                .start()
+                .and_then(|start| model.vertices(start.as_str(), StandardIndex))
+            else {
                 continue;
             };
-            let Some(end) = model.vertices(edge.end.as_str(), StandardIndex) else {
+            let Some(end) = edge
+                .end()
+                .and_then(|end| model.vertices(end.as_str(), StandardIndex))
+            else {
                 continue;
             };
             let (Some(a), Some(b), Some(start_tag), Some(end_tag)) = (
@@ -461,6 +473,7 @@ pub(in crate::families) fn attach(
                         cadmpeg_ir::units::FiniteVector::new(range),
                         None,
                     ),
+                    native_ref: None,
                 };
                 if matches!(coedge.pcurves.as_slice(), [usage]
                     if usage.pcurve == id && usage.isoparametric.is_none()
@@ -493,7 +506,7 @@ pub(in crate::families) fn attach(
                 }
                 let replaced_pcurve = coedge.pcurves.first().map(|usage| usage.pcurve.clone());
                 if replaced_pcurve.as_ref().is_some_and(|replaced| {
-                    ir.model
+                    ir.geometry
                         .coedges
                         .iter()
                         .flat_map(|candidate| &candidate.pcurves)
@@ -534,7 +547,7 @@ pub(in crate::families) fn attach(
             u64_from_index(retained_size(
                 plan,
                 annotations.annotations(),
-                &ir.model.coedges[plan.coedge],
+                &ir.geometry.coedges[plan.coedge],
             )?),
             OPERATION,
         )?;
@@ -544,7 +557,7 @@ pub(in crate::families) fn attach(
     }
     for plan in plans.into_iter().take(used).flatten() {
         if let Some(replaced_pcurve) = plan.replaced_pcurve {
-            ir.model
+            ir.geometry
                 .pcurves
                 .retain(|pcurve| pcurve.id != replaced_pcurve);
             annotations.remove_entity(replaced_pcurve.as_str());
@@ -558,7 +571,7 @@ pub(in crate::families) fn attach(
             Exactness::Derived,
         )?;
         annotations.derived(&plan.pcurve.id, "geometry")?;
-        let coedge = &mut ir.model.coedges[plan.coedge];
+        let coedge = &mut ir.geometry.coedges[plan.coedge];
         if coedge.pcurves.is_empty() {
             coedge.pcurves = plan.use_slots;
         } else {
@@ -569,7 +582,7 @@ pub(in crate::families) fn attach(
             };
         }
         annotations.derived(&coedge.id, "pcurves")?;
-        ir.model.pcurves.push(plan.pcurve);
+        ir.geometry.pcurves.push(plan.pcurve);
     }
     result.pcurves = used;
     Ok(result)

@@ -15,29 +15,29 @@ fn profile_model(geometry: &Value, construction: bool) -> CadIr {
     let mut ir = CadIr::empty();
     ir.model.features = serde_json::from_value(json!([
         {"id": OWNER, "ordinal": 0, "suppressed": false,
-         "definition": {"definition": "sketch", "sketch": {"space": "planar", "sketch": SKETCH}}},
+         "definition": {"kind": "operation", "value": {"kind": "sketch", "value": {"sketch": {"kind": "planar", "sketch": SKETCH}}}}, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []},
         {"id": EXTRUDE, "ordinal": 1, "suppressed": false,
-         "definition": {"definition": "extrude", "profile": {"kind": "feature", "value": OWNER},
+         "definition": {"kind": "operation", "value": {"kind": "extrude", "value": {"profile": {"kind": "planar", "value": {"kind": "feature", "value": OWNER}},
           "direction": {"kind": "profile_normal"}, "start": {"kind": "profile_plane"},
           "extent": {"kind": "one_sided", "side": {"termination": {"kind": "blind", "length": 3.0}}},
-          "op": "join", "solid": true}}
+          "op": "join", "solid": true}}}, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []}
     ])).expect("synthetic feature definitions");
     ir.model.sketches.push(
         serde_json::from_value(json!({
-            "id": SKETCH, "placement": {"kind": "unresolved"}
+            "id": SKETCH, "placement": {"kind": "unresolved"}, "profiles": []
         }))
         .expect("synthetic sketch"),
     );
     ir.model.sketch_entities.push(
         serde_json::from_value(json!({
             "id": "synthetic:test:entity#curve", "sketch": SKETCH,
-            "construction": construction, "geometry": geometry
+            "construction": construction, "geometry": geometry, "endpoint_refs": []
         }))
         .expect("synthetic geometry"),
     );
     crate::native::SldprtNative::default()
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             ir.native.namespace_mut("sldprt"),
         )
         .expect("synthetic native namespace");
@@ -47,7 +47,7 @@ fn profile_model(geometry: &Value, construction: bool) -> CadIr {
 fn assert_curve_diagnostic(ir: &CadIr, missing: bool) {
     let mut report = DecodeBody::new(DecodeTransfer::full(true));
     crate::decode::append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         ir,
         &mut report,
     )
@@ -73,7 +73,7 @@ fn assert_curve_diagnostic(ir: &CadIr, missing: bool) {
         missing
     );
     let findings = crate::resolved_features::validate::validate_native(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         ir,
     )
     .expect("native validation");
@@ -112,7 +112,7 @@ fn feature_profile_curve_data_distinguishes_points_native_and_construction() {
     );
     assert_curve_diagnostic(
         &profile_model(
-            &json!({"kind": "external_reference", "object": "synthetic:curve"}),
+            &json!({"kind": "external_reference", "object": "synthetic:curve", "subelements": []}),
             false,
         ),
         true,
@@ -126,7 +126,7 @@ fn feature_profile_curve_data_accepts_lines_arcs_circles_and_splines() {
         json!({"kind": "arc", "center": {"u": 0.0, "v": 0.0}, "radius": 2.0, "start_angle": 0.0, "end_angle": 1.0}),
         json!({"kind": "circle", "center": {"u": 0.0, "v": 0.0}, "radius": 2.0}),
         json!({"kind": "nurbs", "curve": {"degree": 1, "knots": [0.0, 0.0, 1.0, 1.0],
-            "poles": {"form": "polynomial", "points": [{"u": 0.0, "v": 0.0}, {"u": 2.0, "v": 0.0}]}, "periodic": false}}),
+            "poles": {"kind": "polynomial", "points": [{"u": 0.0, "v": 0.0}, {"u": 2.0, "v": 0.0}]}, "periodic": false}}),
     ] {
         assert_curve_diagnostic(&profile_model(&geometry, false), false);
     }
@@ -158,7 +158,7 @@ fn native_profile_diagnostics_require_sldprt_namespace() {
     );
     ir.native = cadmpeg_ir::native::Native::default();
     assert!(crate::resolved_features::validate::validate_native(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
     )
     .expect("native validation")

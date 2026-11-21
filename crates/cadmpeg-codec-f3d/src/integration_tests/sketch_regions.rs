@@ -25,11 +25,11 @@ fn decoded(bodies: &[TriangleBody], pairs: &[(u64, u64)]) -> EditableDecodeResul
 fn kept_source_ordinals(result: &EditableDecodeResult) -> Vec<u32> {
     let mut ordinals = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .map(|surface| {
-            let height = serde_json::to_value(surface).unwrap()["geometry"]["origin"]["z"]
+            let height = serde_json::to_value(surface).unwrap()["geometry"]["value"]["origin"]["z"]
                 .as_f64()
                 .unwrap()
                 / 10.0;
@@ -68,7 +68,7 @@ fn selectors_of_a_keyless_blob_count_only_the_bodies_after_its_sketch_regions() 
     ] {
         let result = decoded(bodies, pairs);
         assert_eq!(kept_source_ordinals(&result), kept);
-        assert_eq!(result.ir().model.bodies.len(), kept.len());
+        assert_eq!(result.ir().geometry.bodies.len(), kept.len());
         assert!(reports(&result, F3dLossCode::SketchRegionBodyOmitted));
         assert!(!reports(&result, F3dLossCode::DesignBodyBindingUnresolved));
         let native = f3d_native(result.ir());
@@ -119,7 +119,7 @@ fn a_stored_body_key_selects_without_the_sketch_region_form() {
 #[test]
 fn a_blob_of_only_sketch_regions_selects_no_physical_model() {
     let result = decoded(&[SKETCH_REGION, SKETCH_REGION], &[]);
-    assert!(result.ir().model.bodies.is_empty());
+    assert!(result.ir().geometry.bodies.is_empty());
     let has = |text: &str| {
         result
             .report()
@@ -131,6 +131,6 @@ fn a_blob_of_only_sketch_regions_selects_no_physical_model() {
     assert!(!has("the selected model has no surfaces"));
     // One model body beside the regions and no selector stays out of the form.
     let result = decoded(&[SKETCH_REGION, MODEL_BODY], &[]);
-    assert_eq!(result.ir().model.bodies.len(), 2);
+    assert_eq!(result.ir().geometry.bodies.len(), 2);
     assert!(!reports(&result, F3dLossCode::SketchRegionBodyOmitted));
 }

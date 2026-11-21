@@ -134,7 +134,7 @@ fn fixture() -> CadIr {
         let angle = 0.2 + 0.2 * (parameter - 2.0);
         let point = PointId::mint(format!("catia:test:point#{at}")).expect("point id");
         let vertex = VertexId::mint(format!("catia:test:vertex#{at}")).expect("vertex id");
-        ir.model.points.push(Point::new(
+        ir.geometry.points.push(Point::new(
             point.clone(),
             FinitePoint3::new(Point3::new(RADIUS * angle.cos(), RADIUS * angle.sin(), 0.0))
                 .expect("finite point"),
@@ -143,14 +143,15 @@ fn fixture() -> CadIr {
                     .expect("source tag"),
             ),
         ));
-        ir.model.vertices.push(Vertex {
+        ir.geometry.vertices.push(Vertex {
             id: vertex,
             point,
             tolerance: None,
+            native_ref: None,
         });
     }
     let curve = CurveId::mint("catia:test:curve#edge").expect("curve id");
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         id: curve.clone(),
         parameter_range: None,
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -163,15 +164,19 @@ fn fixture() -> CadIr {
             .expect("circle"),
         )),
         source_object: Some(crate::assemble::cgm_source("edge-support", 7).expect("source tag")),
+        native_ref: None,
     });
     let edge = EdgeId::mint("catia:test:edge#one").expect("edge id");
-    ir.model.edges.push(Edge {
+    ir.geometry.edges.push(Edge {
         id: edge.clone(),
-        start: ir.model.vertices[0].id.clone(),
-        end: ir.model.vertices[1].id.clone(),
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            ir.geometry.vertices[0].id.clone(),
+            ir.geometry.vertices[1].id.clone(),
+        )),
         carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some([0.28, 0.74]))
             .expect("curve interval"),
         tolerance: None,
+        native_ref: None,
     });
     for side in 0..2 {
         let surface = SurfaceId::mint(format!("catia:test:surface#{side}")).expect("surface id");
@@ -198,15 +203,16 @@ fn fixture() -> CadIr {
                 .expect("plane"),
             ))
         };
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: surface.clone(),
             geometry,
             source_object: Some(
                 crate::assemble::cgm_source("carrier", if side == 0 { 8 } else { 10 })
                     .expect("face tag"),
             ),
+            native_ref: None,
         });
-        ir.model.faces.push(Face {
+        ir.geometry.faces.push(Face {
             id: face.clone(),
             shell: ShellId::mint("catia:test:shell#one").expect("shell id"),
             surface,
@@ -215,15 +221,17 @@ fn fixture() -> CadIr {
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         });
-        ir.model.loops.push(Loop {
+        ir.geometry.loops.push(Loop {
             id: owner_loop.clone(),
             face,
             boundary: LoopBoundary::Ring(
                 LoopRing::new(vec![coedge.clone()], Vec::new()).expect("ring"),
             ),
+            native_ref: None,
         });
-        ir.model.coedges.push(Coedge {
+        ir.geometry.coedges.push(Coedge {
             id: coedge.clone(),
             owner_loop,
             edge: edge.clone(),
@@ -236,6 +244,7 @@ fn fixture() -> CadIr {
             },
             pcurves: Vec::new(),
             use_curve: None,
+            native_ref: None,
         });
     }
     ir
@@ -248,14 +257,15 @@ fn add_existing(
     tag: &str,
 ) {
     let id = PcurveId::mint("catia:test:pcurve#prior").expect("pcurve id");
-    ir.model.pcurves.push(Pcurve {
+    ir.geometry.pcurves.push(Pcurve {
         id: id.clone(),
         geometry: PcurveGeometry::Line(
             LinePcurve::try_new(Point2::new(9.0, 8.0), Point2::new(1.0, 2.0)).expect("line"),
         ),
         metadata: PcurveMetadata::default(),
+        native_ref: None,
     });
-    ir.model.coedges[0]
+    ir.geometry.coedges[0]
         .pcurves
         .push(cadmpeg_ir::topology::PcurveUse {
             pcurve: id.clone(),
@@ -272,7 +282,7 @@ fn add_existing(
     )
     .expect("provenance");
     annotations
-        .derived(&ir.model.coedges[0].id, "pcurves")
+        .derived(&ir.geometry.coedges[0].id, "pcurves")
         .expect("generated use");
     annotations
         .field_exactness(&id, "geometry", exactness)
@@ -290,10 +300,10 @@ fn source_closed_sphere_jet_keeps_its_native_interval_and_coedge_direction() {
     ] {
         let mut ir = fixture();
         if swap {
-            let edge = &mut ir.model.edges[0];
-            std::mem::swap(&mut edge.start, &mut edge.end);
+            let ends = ir.geometry.edges[0].ends.as_mut().expect("edge ends");
+            std::mem::swap(&mut ends.start, &mut ends.end);
         }
-        ir.model.coedges[0].sense = sense;
+        ir.geometry.coedges[0].sense = sense;
         let mut annotations = AnnotationBuilder::new();
         let mut refusal = crate::nurbs::LaneRefusals::new();
         crate::test_support::with_service_context(|ctx| {
@@ -313,7 +323,7 @@ fn source_closed_sphere_jet_keeps_its_native_interval_and_coedge_direction() {
             );
             assert_eq!(admission.admitted(), 1);
         });
-        let pcurve = &ir.model.pcurves[0];
+        let pcurve = &ir.geometry.pcurves[0];
         let range = pcurve
             .metadata
             .parameter_range()
@@ -327,7 +337,7 @@ fn source_closed_sphere_jet_keeps_its_native_interval_and_coedge_direction() {
         if swap ^ (sense == Sense::Reversed) {
             expected.reverse();
         }
-        let use_range = ir.model.coedges[0].pcurves[0]
+        let use_range = ir.geometry.coedges[0].pcurves[0]
             .parameter_range
             .expect("directed source use")
             .endpoints();
@@ -352,7 +362,7 @@ fn source_jet_rebinds_generated_use_and_removes_its_orphaned_curve() {
         Exactness::Derived,
         super::GENERATED_TAG,
     );
-    let prior = ir.model.pcurves[0].clone();
+    let prior = ir.geometry.pcurves[0].clone();
     crate::test_support::with_service_context(|ctx| {
         let mut admission = FamilyEntityAdmission::new(ctx);
         assert_eq!(
@@ -369,8 +379,12 @@ fn source_jet_rebinds_generated_use_and_removes_its_orphaned_curve() {
             1
         );
     });
-    assert_ne!(ir.model.coedges[0].pcurves[0].pcurve, prior.id);
-    assert!(ir.model.pcurves.iter().all(|pcurve| pcurve.id != prior.id));
+    assert_ne!(ir.geometry.coedges[0].pcurves[0].pcurve, prior.id);
+    assert!(ir
+        .geometry
+        .pcurves
+        .iter()
+        .all(|pcurve| pcurve.id != prior.id));
     assert!(!annotations
         .annotations()
         .provenance
@@ -379,7 +393,7 @@ fn source_jet_rebinds_generated_use_and_removes_its_orphaned_curve() {
         .annotations()
         .exactness()
         .contains_key(prior.id.as_str()));
-    let source_id = &ir.model.pcurves[0].id;
+    let source_id = &ir.geometry.pcurves[0].id;
     assert_eq!(
         annotations.annotations().provenance[source_id.as_str()]
             .tag
@@ -403,7 +417,7 @@ fn native_unknown_or_differently_tagged_pcurves_keep_all_model_and_annotation_va
         let before = ir.clone();
         let notes = annotations.annotations().clone();
         assert!(!replaceable(
-            &ir.model.coedges[0],
+            &ir.geometry.coedges[0],
             annotations.annotations()
         ));
         crate::test_support::with_service_context(|ctx| {
@@ -473,15 +487,15 @@ fn source_owner_port_face_and_chart_mismatches_withhold_the_jet() {
                 data[payload.start] = compact(2);
             }
             1 => {
-                ir.model.points[0].source_object =
+                ir.geometry.points[0].source_object =
                     Some(crate::assemble::cgm_source("vertex", 6).expect("tag"));
             }
             2 => {
-                ir.model.surfaces[0].source_object =
+                ir.geometry.surfaces[0].source_object =
                     Some(crate::assemble::cgm_source("carrier", 9).expect("tag"));
             }
             _ => {
-                ir.model.surfaces[0].geometry =
+                ir.geometry.surfaces[0].geometry =
                     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
                         SphereSurface::try_new(
                             Point3::new(0.0, 0.0, 0.0),
@@ -584,9 +598,9 @@ fn another_model_arena_cannot_supply_the_generated_pcurve_identity() {
             1
         );
     });
-    let id = admitted.model.pcurves[0].id.as_str();
+    let id = admitted.geometry.pcurves[0].id.as_str();
     let mut ir = fixture();
-    ir.model.points.push(Point::new(
+    ir.geometry.points.push(Point::new(
         PointId::mint(id).expect("cross-arena identity"),
         FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).expect("point"),
         None,
@@ -623,13 +637,13 @@ fn a_multi_use_chain_is_preserved_and_counted_as_an_unsupported_replacement() {
         Exactness::Derived,
         super::GENERATED_TAG,
     );
-    let mut second = ir.model.coedges[0].pcurves[0].clone();
-    ir.model.coedges[0].pcurves[0].parameter_range =
+    let mut second = ir.geometry.coedges[0].pcurves[0].clone();
+    ir.geometry.coedges[0].pcurves[0].parameter_range =
         Some(cadmpeg_ir::geometry::DirectedParameterRange::new([0.0, 0.5]).expect("first segment"));
     second.parameter_range = Some(
         cadmpeg_ir::geometry::DirectedParameterRange::new([0.5, 1.0]).expect("second segment"),
     );
-    ir.model.coedges[0].pcurves.push(second);
+    ir.geometry.coedges[0].pcurves.push(second);
     let before = ir.clone();
     let notes = annotations.annotations().clone();
     crate::test_support::with_service_context(|ctx| {
@@ -747,8 +761,8 @@ fn a_generated_pcurve_shared_by_another_coedge_is_preserved() {
         Exactness::Derived,
         super::GENERATED_TAG,
     );
-    let prior = ir.model.pcurves[0].clone();
-    ir.model.coedges[1].pcurves = ir.model.coedges[0].pcurves.clone();
+    let prior = ir.geometry.pcurves[0].clone();
+    ir.geometry.coedges[1].pcurves = ir.geometry.coedges[0].pcurves.clone();
     let before = ir.clone();
     let prior_annotations = annotations.annotations().clone();
     crate::test_support::with_service_context(|ctx| {
@@ -766,7 +780,7 @@ fn a_generated_pcurve_shared_by_another_coedge_is_preserved() {
     });
     assert_eq!(ir, before);
     assert_eq!(annotations.annotations(), &prior_annotations);
-    assert_eq!(ir.model.pcurves, [prior]);
+    assert_eq!(ir.geometry.pcurves, [prior]);
 }
 
 #[test]
@@ -780,7 +794,7 @@ fn source_map_fit_admits_rounded_endpoints_and_withholds_residuals_outside_its_b
         let data = source_with_fit(SOURCE_MODEL_FIT_MM, operand);
         let records = consolidated_records(&data);
         let mut ir = fixture();
-        let point = &mut ir.model.points[0];
+        let point = &mut ir.geometry.points[0];
         let exact = point.position().get();
         let rounded = |value| f64::from(cadmpeg_core::convert::f32_from_f64(value).expect("f32"));
         point.set_position(
@@ -808,12 +822,12 @@ fn source_map_fit_admits_rounded_endpoints_and_withholds_residuals_outside_its_b
                 expected,
             );
         });
-        assert_eq!(ir.model.points, before.model.points);
-        assert_eq!(ir.model.vertices, before.model.vertices);
+        assert_eq!(ir.geometry.points, before.geometry.points);
+        assert_eq!(ir.geometry.vertices, before.geometry.vertices);
         if expected == 0 {
             assert_eq!(ir, before);
         } else {
-            assert!(ir.model.pcurves[0].metadata.fit_tolerance().is_none());
+            assert!(ir.geometry.pcurves[0].metadata.fit_tolerance().is_none());
         }
     }
 }

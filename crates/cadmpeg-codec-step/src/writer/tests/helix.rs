@@ -35,14 +35,15 @@ fn helix_edge_doc(cache: bool) -> CadIr {
         None,
     )
     .unwrap();
-    ir.model.points[0] = Point::new(
-        ir.model.points[0].id.clone(),
+    ir.geometry.points[0] = Point::new(
+        ir.geometry.points[0].id.clone(),
         cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).unwrap(),
         None,
     );
-    ir.model.edges[0].end = ir.model.edges[0].start.clone();
+    ir.geometry.edges[0].ends.as_mut().unwrap().end =
+        ir.geometry.edges[0].ends.as_ref().unwrap().start.clone();
     let fitted = cadmpeg_ir::eval::helix_nurbs::helix_nurbs(&helix, ir.tolerances.linear).unwrap();
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Procedural {
@@ -50,12 +51,13 @@ fn helix_edge_doc(cache: bool) -> CadIr {
             cache: cache.then_some(cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(fitted)),
         },
         source_object: None,
+        native_ref: None,
     });
-    ir.model.procedural_curves.push(ProceduralCurve::new(
+    ir.geometry.procedural_curves.push(ProceduralCurve::new(
         construction_id,
         ProceduralCurveDefinition::Helix(helix),
     ));
-    ir.model.edges[0].carrier = EdgeCarrier::unbounded(Some(curve_id));
+    ir.geometry.edges[0].carrier = EdgeCarrier::unbounded(Some(curve_id));
     ir
 }
 
@@ -94,11 +96,11 @@ fn an_edge_on_an_uncached_helix_is_written_on_a_fitted_bspline() {
 #[test]
 fn an_edge_on_a_subset_of_an_uncached_helix_is_written_on_a_trimmed_fitted_bspline() {
     let mut ir = helix_edge_doc(false);
-    let helix_id = ir.model.edges[0].curve().unwrap().clone();
+    let helix_id = ir.geometry.edges[0].curve().unwrap().clone();
     let subset_id = CurveId::mint("test:model:curve#helix-subset").unwrap();
     let construction_id =
         ProceduralCurveId::mint("test:model:procedural_curve#helix-subset").unwrap();
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: subset_id.clone(),
         geometry: CurveGeometry::Procedural {
@@ -106,8 +108,9 @@ fn an_edge_on_a_subset_of_an_uncached_helix_is_written_on_a_trimmed_fitted_bspli
             cache: None,
         },
         source_object: None,
+        native_ref: None,
     });
-    ir.model.procedural_curves.push(ProceduralCurve::new(
+    ir.geometry.procedural_curves.push(ProceduralCurve::new(
         construction_id,
         ProceduralCurveDefinition::Subset(
             cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction::try_new(
@@ -119,7 +122,7 @@ fn an_edge_on_a_subset_of_an_uncached_helix_is_written_on_a_trimmed_fitted_bspli
             .unwrap(),
         ),
     ));
-    ir.model.edges[0].carrier = EdgeCarrier::unbounded(Some(subset_id));
+    ir.geometry.edges[0].carrier = EdgeCarrier::unbounded(Some(subset_id));
     let mut bytes = Vec::new();
     let report = write_step(
         &ir,
@@ -177,8 +180,8 @@ fn helix_surface_doc() -> CadIr {
         HelixSurfaceProfile::Circle(HelixCircleProfile::try_new(0.0, 0.5).unwrap()),
     )
     .unwrap();
-    let owner = ir.model.surfaces[0].id.clone();
-    ir.model
+    let owner = ir.geometry.surfaces[0].id.clone();
+    ir.geometry
         .add_procedural_surface(
             &owner,
             ProceduralSurface::new(
@@ -190,7 +193,7 @@ fn helix_surface_doc() -> CadIr {
             ),
         )
         .unwrap();
-    let SurfaceGeometry::Procedural { cache, .. } = &mut ir.model.surfaces[0].geometry else {
+    let SurfaceGeometry::Procedural { cache, .. } = &mut ir.geometry.surfaces[0].geometry else {
         panic!("construction owner")
     };
     *cache = None;

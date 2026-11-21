@@ -38,7 +38,7 @@ fn point_file() -> Vec<u8> {
 }
 
 fn decoded_position(result: &cadmpeg_ir::codec::DecodeResult) -> [f64; 3] {
-    let point = &result.ir().model.points[0];
+    let point = &result.ir().geometry.points[0];
     [
         point.position().get().x,
         point.position().get().y,

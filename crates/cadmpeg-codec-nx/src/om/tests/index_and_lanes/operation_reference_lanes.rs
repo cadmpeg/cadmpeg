@@ -4,7 +4,6 @@ use crate::om::compact::LocatedCompactIndex;
 use crate::om::pattern::{PatternRows, PatternScalarEncoding};
 use crate::om::pattern_references::{PatternPayloadReferenceLayout, PatternReferences};
 use crate::om::projected_references::ProjectedCurveReferences;
-use crate::om::scalar::ShiftedScalar;
 use crate::om::surface_payload_strings;
 use crate::om::PatternPayloadTransformLane;
 
@@ -33,10 +32,7 @@ impl PatternPayloadTransformLane {
                 .as_slice()
                 .iter()
                 .map(|row| {
-                    let encoding = match row.values.scalar {
-                        ShiftedScalar::Binary32(_) => PatternScalarEncoding::Binary32,
-                        ShiftedScalar::Binary64(_) => PatternScalarEncoding::Binary64,
-                    };
+                    let encoding = row.values.scalar.encoding();
                     (
                         vec![ObservedPatternScalar {
                             encoding,
@@ -286,7 +282,7 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
             .flat_map(|(values, _)| values)
             .map(|token| token.value)
             .collect::<Vec<_>>(),
-        [3.3125, -3.3125]
+        [20.0, -20.0]
     );
     assert_eq!(
         lane.rows()
@@ -342,7 +338,7 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
             .flat_map(|(values, _)| values)
             .map(|token| token.value)
             .collect::<Vec<_>>(),
-        [132.0, 264.0]
+        [33.0, 66.0]
     );
     assert_eq!(
         lane.rows()

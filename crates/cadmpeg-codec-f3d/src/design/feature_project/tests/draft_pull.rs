@@ -52,6 +52,7 @@ fn draft_scope(angle: f64, flipped: Option<bool>) -> DesignParameterScope {
                 flipped,
                 tangent_chain: false,
                 two_sided: None,
+                ..Default::default()
             }),
         });
     }
@@ -169,7 +170,7 @@ fn project(
     scope: &DesignParameterScope,
     selections: &[DesignEntitySelectionOperand],
 ) -> Option<Projected> {
-    let definition = super::super::project_draft(
+    let definition = super::super::draft::exact(
         scope,
         &super::super::ProjectInputs {
             scopes: std::slice::from_ref(scope),
@@ -245,7 +246,7 @@ fn an_origin_plane_in_a_stream_of_several_components_keeps_no_frame() {
         (vec![space(1)], true),
         (vec![space(1), space(2)], false),
     ] {
-        let definition = super::super::project_draft(
+        let definition = super::super::draft::exact(
             &scope,
             &super::super::ProjectInputs {
                 scopes: std::slice::from_ref(&scope),
@@ -367,7 +368,7 @@ fn a_flip_reverses_the_pull_of_a_work_plane() {
     let plane = work_plane_scope();
     for (flipped, z) in [(false, 1.0), (true, -1.0)] {
         let scope = draft_scope(0.25, Some(flipped));
-        let definition = super::super::project_draft(
+        let definition = super::super::draft::exact(
             &scope,
             &super::super::ProjectInputs {
                 scopes: &[scope.clone(), plane.clone()],
@@ -410,7 +411,7 @@ fn a_flip_reverses_the_pull_of_a_parting_line() {
         .unwrap();
     let [faces, neutral] = groups();
     let tool = group(103, 113, DesignOperandRole::ROLE_0X21);
-    let definition = super::super::project_draft(
+    let definition = super::super::draft::exact(
         &scope,
         &super::super::ProjectInputs {
             scopes: &[scope.clone(), plane],
@@ -450,6 +451,7 @@ fn two_sided_scope(
             flipped,
             tangent_chain: false,
             two_sided: Some(two_sided),
+            ..Default::default()
         });
     }
     scope
@@ -507,7 +509,7 @@ fn the_first_lane_drafts_the_plane_normal_side_whatever_the_flip() {
             (282, vec![scope.clone(), plane.clone()]),
             (42, vec![scope.clone()]),
         ] {
-            let definition = super::super::project_draft(
+            let definition = super::super::draft::exact(
                 &scope,
                 &super::super::ProjectInputs {
                     scopes: &scopes,
@@ -570,7 +572,7 @@ fn a_two_sided_draft_needs_a_neutral_plane_pull() {
                 draft.layout_fixture_tail();
             })
             .unwrap();
-        let definition = super::super::project_draft(
+        let definition = super::super::draft::exact(
             &scope,
             &super::super::ProjectInputs {
                 scopes: &[scope.clone(), plane.clone()],
@@ -585,5 +587,281 @@ fn a_two_sided_draft_needs_a_neutral_plane_pull() {
         )
         .unwrap();
         assert_eq!(definition.is_some(), expected);
+    }
+}
+
+fn parting_scope(form: u32) -> DesignParameterScope {
+    use crate::records::feature::direct_face::DesignDraftParting;
+    use crate::records::identity::Located;
+    let mut scope = draft_scope(0.25, Some(false));
+    scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                ReferenceRun::unlocated(vec![101, 111, 102, 112, 103, 113, 104, 114]);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    if let DesignScopePayloadMut::Draft(Some(operation)) = scope.payload_mut() {
+        operation.opposite_angle = Some(cadmpeg_ir::scalar::Angle::new(0.25).unwrap());
+        operation.flags = Some(DesignDraftFlags {
+            parting: Some(DesignDraftParting {
+                form,
+                mode: if form == 2 { 3 } else { 1 },
+                prefix_scalars: [
+                    cadmpeg_ir::scalar::FiniteReal::new(1.5).unwrap(),
+                    cadmpeg_ir::scalar::FiniteReal::new(0.5).unwrap(),
+                ],
+                boundary_flag: false,
+                fixed_edges: (form == 3).then_some(Located {
+                    value: 104,
+                    offset: 74,
+                }),
+                pull: Located {
+                    value: 102,
+                    offset: if form == 2 { 75 } else { 85 },
+                },
+                tool: Located {
+                    value: 103,
+                    offset: if form == 2 { 86 } else { 96 },
+                },
+                faces: Located {
+                    value: 101,
+                    offset: if form == 2 { 101 } else { 111 },
+                },
+            }),
+            ..Default::default()
+        });
+    }
+    scope
+}
+
+#[test]
+fn legacy_parting_groups_keep_the_work_plane_and_tool_selection() {
+    let [faces, plane_group] = groups();
+    let tool = group(103, 113, DesignOperandRole::ROLE_0X21);
+    let expected_tool = FaceSelection::Native(tool.id.clone());
+    let construction_groups = [faces, plane_group, tool];
+    let plane = work_plane_scope();
+    let expected_plane = crate::ids::neutral_feature_id(&plane);
+    for (form, mode, flipped, opposite) in
+        [(2, 1, false, 0.0), (2, 2, true, 0.0), (3, 2, true, 0.25)]
+    {
+        let mut scope = parting_scope(form);
+        if let DesignScopePayloadMut::Draft(Some(operation)) = scope.payload_mut() {
+            operation.opposite_angle = Some(cadmpeg_ir::scalar::Angle::new(opposite).unwrap());
+            let flags = operation.flags.as_mut().unwrap();
+            flags.flipped = flipped;
+            flags.tangent_chain = true;
+            let parting = flags.parting.as_mut().unwrap();
+            parting.mode = mode;
+            if form == 2 && mode == 1 {
+                std::mem::swap(&mut parting.pull.value, &mut parting.tool.value);
+            }
+        }
+        let operation = scope.draft_operation().unwrap();
+        assert_eq!(operation.opposite_angle.unwrap().get(), opposite);
+        let flags = operation.flags.unwrap();
+        assert!(flags.tangent_chain);
+        assert_eq!(flags.parting.unwrap().fixed_edges.is_some(), form == 3);
+        let mut losses = Vec::new();
+        let definition = super::super::draft::project(
+            &scope,
+            &super::super::ProjectInputs {
+                scopes: &[scope.clone(), plane.clone()],
+                construction_groups: &construction_groups,
+                entity_selection_operands: &[selection(282, &[])],
+                ..Default::default()
+            },
+            &mut losses,
+        )
+        .unwrap();
+        let FeatureDefinition::Operation(FeatureOperation::Draft {
+            anchor: DraftAnchor::PartingLine { tool, pull },
+            angle,
+            second_side: None,
+            ..
+        }) = definition
+        else {
+            panic!("expected the resolved parting-line Draft");
+        };
+        assert_eq!(tool, expected_tool);
+        assert_eq!(pull.plane.as_ref(), Some(&expected_plane));
+        assert_eq!(
+            pull.direction.get(),
+            Vector3::new(0.0, 0.0, if flipped { -1.0 } else { 1.0 })
+        );
+        assert_eq!(angle.unwrap().get(), 0.25);
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code.local_code(),
+            "feature.draft-parting-controls-partial"
+        );
+    }
+}
+
+#[test]
+fn parting_draft_retains_origin_pull_faces_and_tool_with_a_named_control_loss() {
+    for form in [2, 3] {
+        for flipped in [false, true] {
+            let mut scope = parting_scope(form);
+            if let DesignScopePayloadMut::Draft(Some(operation)) = scope.payload_mut() {
+                operation.flags.as_mut().unwrap().flipped = flipped;
+            }
+            let mut losses = Vec::new();
+            let definition = super::super::draft::project(
+                &scope,
+                &super::super::ProjectInputs {
+                    scopes: std::slice::from_ref(&scope),
+                    construction_groups: &[
+                        group(101, 111, DesignOperandRole::ROLE_0X10),
+                        group(102, 112, DesignOperandRole::ROLE_0X21),
+                        group(103, 113, DesignOperandRole::BODIES_B),
+                        group(104, 114, DesignOperandRole::BODIES_B),
+                    ],
+                    entity_selection_operands: &[selection(42, &[])],
+                    design_types: &crate::test_support::origin_types::origin_design_types(
+                        "f3d:test/Design/MetaStream.dat",
+                        39,
+                    ),
+                    ..Default::default()
+                },
+                &mut losses,
+            )
+            .unwrap();
+            let FeatureDefinition::Operation(FeatureOperation::Draft {
+                faces: FaceSelection::Native(faces),
+                anchor:
+                    DraftAnchor::PartingLine {
+                        tool: FaceSelection::Native(tool),
+                        pull,
+                    },
+                angle: Some(angle),
+                outward: Some(outward),
+                second_side: None,
+            }) = definition
+            else {
+                panic!("partial parting Draft")
+            };
+            assert!(faces.ends_with("#101"));
+            assert!(tool.ends_with("#103"));
+            assert!((angle.get() - 0.25).abs() < 1.0e-12);
+            assert!(!outward);
+            assert_eq!(
+                pull.direction.get(),
+                Vector3::new(0.0, 0.0, if flipped { -1.0 } else { 1.0 })
+            );
+            assert_eq!(losses.len(), 1);
+            assert_eq!(
+                losses[0].code.local_code(),
+                "feature.draft-parting-controls-partial"
+            );
+        }
+    }
+}
+
+#[test]
+fn parting_draft_keeps_angles_when_pull_bindings_are_missing_duplicate_or_foreign() {
+    let scope = parting_scope(2);
+    let groups = [
+        group(101, 111, DesignOperandRole::ROLE_0X10),
+        group(102, 112, DesignOperandRole::ROLE_0X21),
+        group(103, 113, DesignOperandRole::BODIES_B),
+    ];
+    let mut foreign = selection(42, &[]);
+    foreign.id = "f3d:other/Design/BulkStream.dat:design-entity-selection-operand#112".into();
+    for selections in [
+        vec![],
+        vec![selection(42, &[]), selection(42, &[])],
+        vec![foreign],
+    ] {
+        let mut losses = Vec::new();
+        let result = super::super::draft::project(
+            &scope,
+            &super::super::ProjectInputs {
+                scopes: std::slice::from_ref(&scope),
+                construction_groups: &groups,
+                entity_selection_operands: &selections,
+                design_types: &crate::test_support::origin_types::origin_design_types(
+                    "f3d:test/Design/MetaStream.dat",
+                    39,
+                ),
+                ..Default::default()
+            },
+            &mut losses,
+        )
+        .unwrap();
+        assert!(matches!(
+            result,
+            FeatureDefinition::Operation(FeatureOperation::Draft {
+                anchor: DraftAnchor::NeutralPlane { pull: None, .. },
+                angle: Some(_),
+                ..
+            })
+        ));
+        assert!(losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "feature.draft-neutral-anchor-assumed"));
+    }
+}
+
+#[test]
+fn missing_draft_definition_preserves_unique_owned_angle_and_omits_ambiguous_angles() {
+    use crate::records::parameters::DesignParameterOwner;
+    let mut scope = draft_scope(0.25, None);
+    if let DesignScopePayloadMut::Draft(operation) = scope.payload_mut() {
+        *operation = None;
+    }
+    let owner = |stream: &str, value: f64| -> DesignParameterOwner {
+        serde_json::from_value(serde_json::json!({
+            "id": format!("{stream}:design-parameter-owner#111"), "byte_offset":0, "frame_length":104,"variant":0,"class_tag":"277",
+            "record_index":111,"scope_record_index":100,"local_ordinal":0,"evaluated_value":value,
+            "evaluated_value_offset":40,"parameter_record_index":112,"owned_ordinal":0,"companion_record_index":113
+        })).unwrap()
+    };
+    for (owners, expected) in [
+        (vec![], None),
+        (vec![owner(STREAM, -0.375)], Some(-0.375)),
+        (vec![owner(STREAM, 0.25), owner(STREAM, 0.5)], None),
+        (vec![owner("f3d:foreign/Design/BulkStream.dat", 0.5)], None),
+        (vec![owner(STREAM, 2.0)], None),
+    ] {
+        let mut losses = Vec::new();
+        let result = super::super::draft::project(
+            &scope,
+            &super::super::ProjectInputs {
+                owners: &owners,
+                ..Default::default()
+            },
+            &mut losses,
+        )
+        .unwrap();
+        let FeatureDefinition::Operation(FeatureOperation::Draft {
+            angle,
+            faces: FaceSelection::Native(faces),
+            anchor: DraftAnchor::NeutralPlane { pull: None, .. },
+            ..
+        }) = result
+        else {
+            panic!("partial Draft")
+        };
+        assert_eq!(angle.is_some(), expected.is_some());
+        if let (Some(angle), Some(expected)) = (angle, expected) {
+            assert!((angle.get() - expected).abs() < 1.0e-12);
+        }
+        assert_eq!(faces, scope.id);
+        assert!(losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "feature.draft-neutral-anchor-assumed"));
+        assert_eq!(
+            losses
+                .iter()
+                .any(|loss| loss.code.local_code() == "feature.draft-slope-out-of-range"),
+            owners
+                .first()
+                .is_some_and(|owner| owner.evaluated_value().get() == 2.0)
+        );
     }
 }
