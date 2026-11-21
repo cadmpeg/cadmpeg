@@ -17,7 +17,6 @@ use cadmpeg_ir::products::{
     AssemblyJoint, DriveAxis, DriveMode, FrameAxis, JointConnector, JointId, JointLimits,
     JointOperands, OperandContainer, PairedJointKind,
 };
-use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
@@ -885,7 +884,9 @@ impl Writer<'_> {
                 ratio,
                 coupled_joints,
             } => (
-                ratio.map(PositiveReal::get).or_else(|| {
+                // PhysX turns the second hinge the other way for a positive
+                // ratio.
+                ratio.map(|ratio| -ratio.get()).or_else(|| {
                     let (first, second) = ((*distance)?.get(), (*distance2)?.get());
                     (second != 0.0).then(|| (first / second).abs())
                 }),
