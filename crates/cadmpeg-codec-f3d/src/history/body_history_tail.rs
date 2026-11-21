@@ -25,8 +25,8 @@ pub(crate) struct BodyHistoryTail {
     body: BodyId,
     previous: FeatureId,
     native: String,
-    state: i64,
-    previous_state: i64,
+    state: Option<i64>,
+    previous_state: Option<i64>,
     bounded: bool,
 }
 
@@ -62,32 +62,46 @@ pub(crate) fn collect(
         let Some(history) = histories.iter().find(|history| history.id == history_id) else {
             continue;
         };
-        let Some((current, _)) = super::feature_history_states(feature, scopes, histories) else {
-            continue;
+        let unproved = |native: String, previous_state, state, bounded| BodyHistoryTail {
+            body: body.clone(),
+            previous: feature.id.clone(),
+            native,
+            state,
+            previous_state,
+            bounded,
         };
-        let Some(order) = history.states_oldest_first() else {
-            continue;
-        };
-        let Some(&head) = order.last() else {
+        let Some(head) = history
+            .states_oldest_first()
+            .and_then(|order| order.last().copied())
+        else {
+            tails.push(unproved(history.id.clone(), None, None, false));
             continue;
         };
         let head = &history.states()[head];
+        let Some((current, _)) = super::feature_history_states(feature, scopes, histories) else {
+            tails.push(unproved(head.id.clone(), None, Some(head.state_id), false));
+            continue;
+        };
         if current == head.state_id {
             continue;
         }
         let Some(slot) = super::stable_ref(body.as_str()) else {
+            tails.push(unproved(
+                head.id.clone(),
+                Some(current),
+                Some(head.state_id),
+                false,
+            ));
             continue;
         };
         let work = WorkBudget::new(MAX_HISTORY_TAIL_WORK);
         if changed_after(history, histories, current, head.state_id, slot, &work) {
-            tails.push(BodyHistoryTail {
-                body: body.clone(),
-                previous: feature.id.clone(),
-                native: head.id.clone(),
-                state: head.state_id,
-                previous_state: current,
-                bounded: work.exhausted(),
-            });
+            tails.push(unproved(
+                head.id.clone(),
+                Some(current),
+                Some(head.state_id),
+                work.exhausted(),
+            ));
         }
     }
     tails
@@ -175,6 +189,13 @@ fn changed_after(
     false
 }
 
+fn state_text(state: Option<i64>, noun: &str) -> String {
+    state.map_or_else(
+        || "an unread state".into(),
+        |state| format!("{noun}{state}"),
+    )
+}
+
 pub(crate) fn append(
     model: &mut Model,
     tails: &[BodyHistoryTail],
@@ -209,8 +230,10 @@ pub(crate) fn append(
                     "no owner"
                 };
                 losses.push(F3dLossCode::FeatureBodyHistoryOwnerUnresolved.note(format!(
-                    "Body {} has {gap} in product definitions; the native history interval from state {} to {} remains unowned and retains the imported final shape.",
-                    tail.body, tail.previous_state, tail.state,
+                    "Body {} has {gap} in product definitions; the native history interval from {} to {} remains unowned and retains the imported final shape.",
+                    tail.body,
+                    state_text(tail.previous_state, "state "),
+                    state_text(tail.state, ""),
                 )));
                 (None, String::new())
             }
@@ -243,8 +266,11 @@ pub(crate) fn append(
             ""
         };
         losses.push(F3dLossCode::FeatureBodyHistoryIncomplete.note(format!(
-            "Body {} retains the native history interval from state {} to {} after feature {}.{ownership}{bound}",
-            tail.body, tail.previous_state, tail.state, tail.previous,
+            "Body {} retains the native history interval from {} to {} after feature {}.{ownership}{bound}",
+            tail.body,
+            state_text(tail.previous_state, "state "),
+            state_text(tail.state, ""),
+            tail.previous,
         )));
     }
     Ok(())

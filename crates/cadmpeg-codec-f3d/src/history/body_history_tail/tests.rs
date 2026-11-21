@@ -300,3 +300,73 @@ fn assert_unresolved_owner(definitions: Vec<ProductDefinition>, gap: &str) {
         .iter()
         .any(|loss| loss.code == F3dLossCode::FeatureBodyHistoryIncomplete.kind()));
 }
+
+fn assert_unproved(
+    features: &[Feature],
+    scopes: &[DesignParameterScope],
+    histories: &[AsmHistory],
+    native: &str,
+) {
+    let tails = collect(features, scopes, histories, None);
+    assert_eq!(tails.len(), 1);
+    let mut model = Model::default();
+    model.features.extend_from_slice(features);
+    let mut owner = definition();
+    owner.bodies = features[0].evaluation.outputs().to_vec();
+    model.product_definitions = vec![owner];
+    let mut losses = Vec::new();
+    append(&mut model, &tails, &mut losses).unwrap();
+    let retained = model.features.last().unwrap();
+    assert_eq!(retained.source_tag.as_deref(), Some("Body history change"));
+    assert_eq!(retained.native_ref.as_deref(), Some(native));
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        F3dLossCode::FeatureBodyHistoryIncomplete.kind()
+    );
+}
+
+#[test]
+fn a_feature_without_a_readable_history_state_retains_the_tail_native() {
+    let scope = scope(59);
+    assert_unproved(
+        &[feature(&scope, 1)],
+        &[],
+        &[history()],
+        "f3d:BREP.panel.smbh:asm-delta-state#64",
+    );
+}
+
+#[test]
+fn a_history_without_a_state_order_retains_the_tail_native() {
+    let scope = scope(59);
+    let empty = crate::test_support::history::history(
+        "f3d:BREP.panel.smbh:asm-history#0".into(),
+        0,
+        None,
+        false,
+        Vec::new(),
+    );
+    assert_unproved(
+        &[feature(&scope, 1)],
+        &[scope],
+        &[empty],
+        "f3d:BREP.panel.smbh:asm-history#0",
+    );
+}
+
+#[test]
+fn a_body_with_an_unknown_slot_retains_the_tail_native() {
+    let scope = scope(59);
+    let mut feature = feature(&scope, 1);
+    let unknown = BodyId::mint("f3d:brep/panel.smbh/brep:entity#unread").unwrap();
+    feature
+        .evaluation
+        .set_outputs(DistinctMembers::try_from(vec![unknown]).unwrap());
+    assert_unproved(
+        &[feature],
+        &[scope],
+        &[history()],
+        "f3d:BREP.panel.smbh:asm-delta-state#64",
+    );
+}
