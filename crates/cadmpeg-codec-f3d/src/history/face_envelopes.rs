@@ -3,7 +3,7 @@
 
 use crate::history_records::AsmHistoricalEnvelope;
 use cadmpeg_asm::brep::AsmBrep;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::units::FiniteVector;

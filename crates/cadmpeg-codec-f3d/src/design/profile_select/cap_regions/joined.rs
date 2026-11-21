@@ -12,7 +12,8 @@ use crate::history_records::{
 };
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{BooleanOp, PlanarProfileRef};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::PlanarProfileRef;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{Sketch, SketchEntityId, SketchGeometryDefinition};
 use std::collections::{HashMap, HashSet};

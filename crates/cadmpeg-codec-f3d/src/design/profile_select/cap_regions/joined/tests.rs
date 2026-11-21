@@ -5,7 +5,7 @@ use crate::history_records::{
     AsmHistoricalCurveAxis, AsmHistoricalEdge, AsmHistoricalOptionalCarrierBinding,
     AsmHistoricalPlane, AsmHistoricalPoint,
 };
-use cadmpeg_ir::features::{
+use cadmpeg_ir::features::extents::{
     ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
 };
 use cadmpeg_ir::scalar::NonZeroLength;
