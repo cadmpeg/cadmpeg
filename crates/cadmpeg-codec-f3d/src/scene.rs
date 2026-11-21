@@ -381,7 +381,11 @@ pub(crate) fn bind(
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => crate::tree::Expanded {
             definitions: ir.model.product_definitions.clone(),
-            parents: crate::tree::parent_ids(&ir.model.product_definitions, &ir.model.occurrences),
+            parents: crate::tree::parent_ids(
+                &ir.model.product_definitions,
+                &ir.model.occurrences,
+                instance_scopes,
+            ),
             occurrences: ir.model.occurrences.clone(),
             occurrence_of: ir
                 .model

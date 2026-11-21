@@ -26,7 +26,7 @@ impl LocalOccurrencePaths {
         occurrences: &[Occurrence],
         scopes: &[DesignParameterScope],
     ) -> Self {
-        let parents = crate::tree::parent_ids(definitions, occurrences);
+        let parents = crate::tree::parent_ids(definitions, occurrences, &BTreeMap::new());
         let inserts = scopes
             .iter()
             .filter_map(|scope| {

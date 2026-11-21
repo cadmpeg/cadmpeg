@@ -1340,3 +1340,5 @@ fn a_world_path_proves_one_expanded_object_snapshot() {
         .iter()
         .all(|occurrence| occurrence.id != unresolved));
 }
+
+mod stored_world;

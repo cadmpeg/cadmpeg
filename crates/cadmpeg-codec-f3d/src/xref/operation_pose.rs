@@ -511,6 +511,7 @@ pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
     poses: &BTreeMap<String, OperationPose>,
+    instance_scopes: &BTreeMap<cadmpeg_ir::ids::OccurrenceId, String>,
     protected: &BTreeSet<cadmpeg_ir::ids::OccurrenceId>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<usize, CodecError> {
@@ -535,7 +536,11 @@ pub(crate) fn project(
             streams.insert(r.id.clone(), s.to_owned());
         }
     }
-    let parents = crate::tree::parent_ids(&ir.model.product_definitions, &ir.model.occurrences);
+    let parents = crate::tree::parent_ids(
+        &ir.model.product_definitions,
+        &ir.model.occurrences,
+        instance_scopes,
+    );
     let mut placement = Placement {
         occurrences: &ir.model.occurrences,
         parents,

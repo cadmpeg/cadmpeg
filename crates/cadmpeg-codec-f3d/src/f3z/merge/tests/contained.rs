@@ -1211,7 +1211,7 @@ fn typed_contained_pose_without_an_own_carrier_composes_in_each_member_instance(
             &mut losses,
             &mut protected,
             super::super::ContainedPass::Ordered,
-            Some(&boundary),
+            (Some(&boundary), &std::collections::BTreeMap::new()),
         )
         .unwrap();
     }
@@ -1250,7 +1250,7 @@ fn typed_contained_pose_without_an_own_carrier_composes_in_each_member_instance(
         &mut losses,
         &mut protected,
         super::super::ContainedPass::Ordered,
-        Some(&absent),
+        (Some(&absent), &std::collections::BTreeMap::new()),
     )
     .is_err());
 }
