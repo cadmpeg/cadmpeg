@@ -73,13 +73,13 @@ fn configuration_empty_table_preserves_discriminator_five_user_parameters() {
     assert_eq!(height.expression, "Width / 2");
     assert_eq!(
         width.value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(20.0).unwrap()
         ))
     );
     assert_eq!(
         height.value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(10.0).unwrap()
         ))
     );
@@ -135,7 +135,7 @@ fn configuration_parameter_cells_bind_to_neutral_parameter_identity() {
         );
         assert_eq!(
             configuration.parameter_values.get(&width.id),
-            Some(&cadmpeg_ir::features::ParameterValue::Length(
+            Some(&cadmpeg_ir::features::parameters::ParameterValue::Length(
                 cadmpeg_ir::scalar::Length::new(millimetres).unwrap()
             ))
         );

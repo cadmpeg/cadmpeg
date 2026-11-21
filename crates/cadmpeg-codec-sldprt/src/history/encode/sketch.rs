@@ -8,7 +8,10 @@ use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::classification::NativeClassKind;
 use crate::history::classify::feature_input_class;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{FaceSelection, FeatureId, PlanarProfileRef, WrapMode};
+use cadmpeg_ir::features::profiles::PlanarProfileRef;
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::surface_inputs::WrapMode;
+use cadmpeg_ir::features::FeatureId;
 
 impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_sketch_block_definition(

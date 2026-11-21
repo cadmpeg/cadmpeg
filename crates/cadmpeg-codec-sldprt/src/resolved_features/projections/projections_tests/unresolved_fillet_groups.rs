@@ -5,10 +5,8 @@ use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 #[test]
 fn a_sole_unresolved_fillet_group_carries_its_edges() {
-    use cadmpeg_ir::features::{
-        edge_treatments::{FilletGroup, RadiusSpec},
-        EdgeSelection,
-    };
+    use cadmpeg_ir::features::edge_treatments::{FilletGroup, RadiusSpec};
+    use cadmpeg_ir::features::selections::EdgeSelection;
 
     let group = |edges: EdgeSelection, radius: RadiusSpec| FilletGroup {
         edges,
@@ -78,10 +76,8 @@ fn a_sole_unresolved_fillet_group_carries_its_edges() {
 
 #[test]
 fn a_sole_unresolved_fillet_group_carries_its_tangency_weight() {
-    use cadmpeg_ir::features::{
-        edge_treatments::{FilletGroup, RadiusSpec},
-        EdgeSelection,
-    };
+    use cadmpeg_ir::features::edge_treatments::{FilletGroup, RadiusSpec};
+    use cadmpeg_ir::features::selections::EdgeSelection;
 
     let weight = cadmpeg_ir::scalar::FiniteReal::new(0.75).expect("a finite tangency weight");
     let fillet = |tangency_weight| {

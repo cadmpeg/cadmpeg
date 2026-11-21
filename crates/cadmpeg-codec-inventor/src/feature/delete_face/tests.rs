@@ -5,9 +5,9 @@ use crate::pmdc::{PmDcListMetadata, PmDcReferenceList};
 use crate::record_identity::Located;
 
 fn placed(sources: &[PmDcFeature]) -> Vec<cadmpeg_ir::features::Feature> {
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
     use cadmpeg_ir::features::{
-        Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
-        NativeFeatureKind,
+        Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation, NativeFeatureKind,
     };
     sources
         .iter()
@@ -19,7 +19,7 @@ fn placed(sources: &[PmDcFeature]) -> Vec<cadmpeg_ir::features::Feature> {
             ordinal: 0,
             name: None,
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::default(),
             source_tag: None,
             source_text: None,

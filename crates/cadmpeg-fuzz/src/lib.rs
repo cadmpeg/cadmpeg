@@ -22,9 +22,8 @@ pub fn check_ir_canonical_roundtrip(
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_ir::features::{
-        Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
-    };
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 
     use super::check_ir_canonical_roundtrip;
 

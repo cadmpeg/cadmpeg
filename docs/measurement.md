@@ -8,8 +8,9 @@ rustdoc.
 
 Measurement is an oracle on decoded output. A decoder or encoder never
 selects a layout, carrier, sense, unit or interpretation by measuring
-geometry. Only the `cadmpeg` command line package depends on
-`cadmpeg-measure` outside `[dev-dependencies]`.
+geometry. Outside `[dev-dependencies]`, the `cadmpeg` command line package
+and `cadmpeg-registry` depend on `cadmpeg-measure`. The source policy also
+admits `cadmpeg-codec-f3d`, for the body boxes its writer writes.
 
 ## Value object
 
@@ -882,9 +883,14 @@ revision.
 
 Measurement is an oracle on decoded output. A decoder or encoder never
 selects a layout, carrier, sense, unit, or interpretation by measuring
-geometry. Only the `cadmpeg` CLI crate depends on `cadmpeg-measure` outside
-`[dev-dependencies]`; the source-policy rule `measurement_dependency`
-enforces this.
+geometry. Outside `[dev-dependencies]`, the `cadmpeg` CLI crate and
+`cadmpeg-registry` depend on `cadmpeg-measure`. The source-policy rule
+`measurement_dependency` admits a production dependency in those two crates
+and in `cadmpeg-codec-f3d`, whose writer may write the boxes `body_boxes`
+measures, and fails it elsewhere. The source-policy rule `measurement_use`
+fails the name `cadmpeg_measure` in production code of a codec crate outside
+`crates/cadmpeg-codec-f3d/src/writer/`. It checks direct use only: it does
+not follow a re-export, a wrapper or an included file out of the writer.
 
 A writer test compares the measures of a document and of its written and
 decoded copy with `cadmpeg_measure::test_support::round_trip`. The writer

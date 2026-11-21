@@ -147,7 +147,7 @@ fn typed_identity_rewrite_retains_its_grammar_proof_through_the_cache() {
 #[test]
 fn typed_rewrite_skips_identity_free_point_grids() {
     let rows = (0..4096)
-        .map(|_| vec![crate::features::FinitePoint3::ZERO; 4])
+        .map(|_| vec![crate::features::geometry::FinitePoint3::ZERO; 4])
         .collect::<Vec<_>>();
     let outer = rows.as_ptr();
     let inner = rows[0].as_ptr();
@@ -164,7 +164,7 @@ fn typed_rewrite_skips_identity_free_point_grids() {
     assert!(rows
         .iter()
         .flatten()
-        .all(|point| *point == crate::features::FinitePoint3::ZERO));
+        .all(|point| *point == crate::features::geometry::FinitePoint3::ZERO));
     map.finish().unwrap();
     drop(map);
     ctx.finish_session().unwrap();

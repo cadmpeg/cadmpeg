@@ -9,7 +9,7 @@ use super::{
     CacheFirstCurveForm, CurveOffsetRange, DeformableCurveData, DeformableCurveSource,
     IntcurveSupportContext, OffsetSide, ProceduralGeometryError, SilhouetteKind, VectorOffsetRoles,
 };
-use crate::features::{FinitePoint3, FiniteVector3};
+use crate::features::geometry::{FinitePoint3, FiniteVector3};
 use crate::ids::{CurveId, SurfaceId};
 use crate::math::Vector3;
 use crate::scalar::FiniteReal;

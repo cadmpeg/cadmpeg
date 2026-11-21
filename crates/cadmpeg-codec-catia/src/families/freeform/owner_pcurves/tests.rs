@@ -4,7 +4,7 @@ use super::{attach, replaceable};
 use crate::families::FamilyEntityAdmission;
 use crate::wire::records::consolidated_records;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{CircleCurve, PlaneSurface, SphereSurface};
 use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
 use cadmpeg_ir::geometry::{

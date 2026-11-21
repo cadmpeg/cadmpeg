@@ -54,7 +54,9 @@ fn sectioned_area_pattern_plane(
     let point = transform.apply_point(Point3::new(0.0, 0.0, z))?.get();
     let normal = transform
         .apply_normal(Vector3::new(0.0, 0.0, 1.0))
-        .and_then(|normal| cadmpeg_ir::features::FiniteVector3::from(normal).unit_nonzero())?;
+        .and_then(|normal| {
+            cadmpeg_ir::features::geometry::FiniteVector3::from(normal).unit_nonzero()
+        })?;
     Some((point, normal))
 }
 

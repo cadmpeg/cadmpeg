@@ -30,7 +30,8 @@ use crate::design::selection::{
     Anchor, MemberOrder, Members, OrderedSelection, PickTarget, Picked, Picks, Selection,
     SetSelection,
 };
-use crate::features::{FinitePoint3, ParameterId};
+use crate::features::geometry::FinitePoint3;
+use crate::features::ParameterId;
 use crate::math::Point3;
 use crate::scalar::{Angle, Length};
 use crate::units::UnitVector3;

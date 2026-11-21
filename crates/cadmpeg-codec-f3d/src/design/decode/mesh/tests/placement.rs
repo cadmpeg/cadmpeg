@@ -3,7 +3,7 @@ use super::matrix;
 use crate::design::decode::mesh::{mesh_body_transform, MeshBody};
 use crate::layout::paramesh_mesh_body_join_prefix;
 use crate::paramesh::MeshContainer;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::units::UnitVector3;
 
 const EPS_MESH_NORMAL_ALIGNMENT: f64 = 1.0e-12;
@@ -42,7 +42,6 @@ fn reflected_mesh_placement_preserves_triangle_and_corner_order() {
     let transform = mesh_body_transform(&mesh_body_payload(cells), PLAIN).expect("reflected map");
     let container = MeshContainer {
         split_streams: Vec::new(),
-        history_streams: Vec::new(),
         face_group_metadata: None,
         fusion_uuid: "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE".into(),
         mesh_uuid: crate::records::mesh::DesignMeshUuid::try_from(
@@ -101,7 +100,6 @@ fn mesh_placement_transforms_corner_normals_with_oriented_cofactors() {
     let transform = mesh_body_transform(&mesh_body_payload(cells), PLAIN).expect("affine map");
     let container = MeshContainer {
         split_streams: Vec::new(),
-        history_streams: Vec::new(),
         face_group_metadata: None,
         fusion_uuid: "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE".into(),
         mesh_uuid: crate::records::mesh::DesignMeshUuid::try_from(

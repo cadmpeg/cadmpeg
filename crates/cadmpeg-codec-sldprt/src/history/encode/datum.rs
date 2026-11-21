@@ -7,11 +7,11 @@ use super::support::require_same_family;
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::history::classify::is_offset_plane;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::datums::DatumPlaneReference;
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::PrincipalPlane;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::{
-    features::{DatumPlaneReference, FinitePoint3, FiniteVector3, PrincipalPlane},
-    scalar::Length,
-};
+use cadmpeg_ir::scalar::Length;
 
 impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_datum_principal_plane(
@@ -54,7 +54,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_datum_plane(
         &self,
-        frame: &cadmpeg_ir::features::FeatureDatumPlaneFrame,
+        frame: &cadmpeg_ir::features::geometry::FeatureDatumPlaneFrame,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -236,7 +236,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_datum_coordinate_system(
         &self,
-        frame: &cadmpeg_ir::features::FeatureCoordinateFrame,
+        frame: &cadmpeg_ir::features::geometry::FeatureCoordinateFrame,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;

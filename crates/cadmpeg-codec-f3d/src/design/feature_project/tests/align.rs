@@ -1,4 +1,5 @@
 use crate::design::decode::scopes::align::decode_align_envelope;
+
 use crate::design::feature_project::{
     project_parameter_design_with_edge_identities, ProjectInputs, ProjectedParameterDesign,
 };
@@ -12,7 +13,8 @@ use crate::records::sketch_placement::SketchPlacementMatrix;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use crate::test_support::align::{align_motion_fixture, ALIGN_MOTION_MATRIX};
-use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 fn fixture(
     omitted: bool,
@@ -207,7 +209,7 @@ fn align_without_its_exact_nonempty_unique_body_group_projects_an_unresolved_sel
     malformed.id = "malformed".into();
     let mut losses = Vec::new();
     assert!(matches!(
-        super::super::project_align(&malformed, &[group], &mut losses),
+        crate::design::feature_project::body_ops::project_align(&malformed, &[group], &mut losses),
         Some(FeatureDefinition::Operation(FeatureOperation::MoveBody {
             bodies: BodySelection::Unresolved,
             ..

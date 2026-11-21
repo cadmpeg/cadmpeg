@@ -90,7 +90,7 @@ fn procedural_surface_points_read_the_callers_index() {
     for index in 0..POINTS {
         ir.geometry.points.push(crate::topology::Point::new(
             crate::ids::PointId::mint(format!("test:model:point#{index}")).unwrap(),
-            crate::features::FinitePoint3::ZERO,
+            crate::features::geometry::FinitePoint3::ZERO,
             None,
         ));
     }

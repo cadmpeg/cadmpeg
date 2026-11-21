@@ -284,7 +284,7 @@ fn decode_projects_a_bspline_surface_with_u_major_control_order() {
             0.25,
             0.75
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(cadmpeg_ir::math::Point3::new(0.25, 0.75, 0.0))
     );
     assert!(result.report().losses.is_empty());
@@ -318,7 +318,7 @@ fn decode_projects_a_degree_zero_bspline_surface() {
             0.25,
             0.75
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(1.0, 2.0, 3.0))
     );
     assert!(result.report().losses.is_empty());
@@ -350,7 +350,7 @@ fn decode_projects_multispan_degree_zero_bspline_surface() {
             0.5,
             0.5
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(1.0, 2.0, 3.0))
     );
     assert_eq!(
@@ -360,7 +360,7 @@ fn decode_projects_multispan_degree_zero_bspline_surface() {
             1.5,
             0.5
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(4.0, 5.0, 6.0))
     );
     assert!(result.report().losses.is_empty());
@@ -461,7 +461,7 @@ fn rational_boundary_comparison_accepts_projectively_scaled_curves() {
                 if index == 1 {
                     point.x = 1.1;
                 }
-                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                cadmpeg_ir::features::geometry::FinitePoint3::new(point).ok_or_else(|| {
                     cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                         "control_points contains a non-finite point".into(),
                     )

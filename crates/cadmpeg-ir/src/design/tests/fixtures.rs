@@ -35,7 +35,9 @@ use crate::design::selection::{
 use crate::design::units::{Unit, UnitFactor, UnitSymbol};
 use crate::document::Topology;
 use crate::examples::unit_cube;
-use crate::features::{ConfigurationId, FeatureId, FinitePoint3, NativeSelections, ParameterId};
+use crate::features::geometry::FinitePoint3;
+use crate::features::selections::NativeSelections;
+use crate::features::{ConfigurationId, FeatureId, ParameterId};
 use crate::geometry::{ProceduralCurve, ProceduralCurveDefinition};
 use crate::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, OccurrenceId, PcurveId, PointId,

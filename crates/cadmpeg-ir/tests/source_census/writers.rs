@@ -64,13 +64,13 @@ const WRITING_DECLARATIONS: &[(&str, &str, &str, Option<&str>)] = &[
         None,
     ),
     (
-        "crates/cadmpeg-ir/src/features.rs",
+        "crates/cadmpeg-ir/src/features/sweeps.rs",
         "SweepCircularRegionWire",
         "SweepCircularRegion",
         None,
     ),
     (
-        "crates/cadmpeg-ir/src/features.rs",
+        "crates/cadmpeg-ir/src/features/tree.rs",
         "TreeChildrenWire",
         "TreeChildren",
         None,
@@ -130,7 +130,7 @@ pub(crate) const HAND_WRITTEN_KEYS: &[(&str, &str, &str, WriteSpelling)] = &[
         WriteSpelling::Omitted,
     ),
     (
-        "crates/cadmpeg-ir/src/features.rs",
+        "crates/cadmpeg-ir/src/features/sweeps.rs",
         "SweepSection",
         "<tuple field>",
         WriteSpelling::Omitted,
