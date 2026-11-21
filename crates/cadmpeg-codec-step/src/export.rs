@@ -378,6 +378,10 @@ pub(crate) struct Builder<'a> {
     /// pole leaves without a vertex.
     point_loop_points: BTreeSet<String>,
 
+    /// Vertex points of faces written as `CURVE_BOUNDED_SURFACE`s, which
+    /// their boundary curves imply.
+    boundary_points: BTreeSet<String>,
+
     /// Rings that are only a seam and edges collapsed at its poles, by loop.
     seam_rings: HashMap<&'a str, SeamRing<'a>>,
 
@@ -637,6 +641,7 @@ impl<'a> Builder<'a> {
             curveless_edges: BTreeSet::new(),
             point_loop_curves: BTreeSet::new(),
             point_loop_points: BTreeSet::new(),
+            boundary_points: BTreeSet::new(),
             collapsed_curveless_coedges: BTreeSet::new(),
             seam_rings: HashMap::new(),
             unknown_surface_faces: BTreeSet::new(),
@@ -2281,17 +2286,289 @@ impl<'a> Builder<'a> {
                         }),
                 }
         };
-        if faces.is_empty() || !faces.iter().all(whole_bounded) {
+        let curve_bounded = |face: &&Face| {
+            face.sense == Sense::Forward
+                && face.name.is_none()
+                && !self.implicit_outer_bounds.contains_key(face.id.as_str())
+                && self.bounded_by_its_boundaries(face)
+                && !self.pmi_targets_topology_of(face)
+        };
+        if faces.is_empty()
+            || !faces
+                .iter()
+                .all(|face| whole_bounded(face) || curve_bounded(face))
+            || self.set_members_would_split_shared_topology(&faces)
+        {
             return None;
         }
         let members = faces
             .iter()
-            .map(|face| self.emit_surface(face.surface.as_str()))
+            .map(|face| {
+                if face.loops.is_empty() {
+                    self.emit_surface(face.surface.as_str())
+                } else {
+                    self.emit_curve_bounded_member(face)
+                }
+            })
             .collect::<Option<Vec<_>>>()?;
         Some(
             self.emitter
                 .emit("GEOMETRIC_SET", &format!("'',{}", refs(&members))),
         )
+    }
+
+    /// Whether the members of a geometric set of `faces` would split
+    /// topology that the faces share. A set member states its own boundaries
+    /// and no edge or vertex, so the members read back with their own shells,
+    /// each boundary segment with its own edge, and each boundary with one
+    /// vertex per segment. So the faces qualify only when no edge is used
+    /// twice, by one loop or by two, no vertex is used by two loops, no loop
+    /// passes through a vertex twice, and no two faces share the curve of an
+    /// edge. A closed loop reaches each vertex it passes through by two
+    /// edge ends, so a vertex is used more than once by a loop when more
+    /// than two of the loop's edge ends name it.
+    fn set_members_would_split_shared_topology(&self, faces: &[&Face]) -> bool {
+        let mut edges: HashSet<&str> = HashSet::new();
+        let mut vertices: HashMap<&str, usize> = HashMap::new();
+        let mut curves: HashMap<&str, usize> = HashMap::new();
+        let face_loops = faces.iter().enumerate().flat_map(|(index, face)| {
+            face.loops
+                .iter()
+                .filter_map(|id| self.loops.get(id.as_str()))
+                .map(move |face_loop| (index, face_loop))
+        });
+        for (ordinal, (index, face_loop)) in face_loops.enumerate() {
+            let mut ends: HashMap<&str, usize> = HashMap::new();
+            for coedge in face_loop.coedges() {
+                let Some(edge) = self
+                    .coedges
+                    .get(coedge.as_str())
+                    .and_then(|coedge| self.edges.get(coedge.edge.as_str()))
+                else {
+                    continue;
+                };
+                if !edges.insert(edge.id.as_str()) {
+                    return true;
+                }
+                for vertex in edge.vertices() {
+                    if *vertices.entry(vertex.as_str()).or_insert(ordinal) != ordinal {
+                        return true;
+                    }
+                    let count = ends.entry(vertex.as_str()).or_insert(0);
+                    *count += 1;
+                    if *count > 2 {
+                        return true;
+                    }
+                }
+                if let Some(curve) = edge.curve() {
+                    if *curves.entry(curve.as_str()).or_insert(index) != index {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Whether `face` has a curve-bounded surface whose boundary curves
+    /// pair one to one with its loops: each loop has one coedge per segment
+    /// of its boundary, on that segment's curve, in the segments'
+    /// order or its reverse. A coedge with a pcurve keeps the face out, as a
+    /// set member writes no coedge and so no pcurve.
+    fn bounded_by_its_boundaries(&self, face: &Face) -> bool {
+        let Some(ProceduralSurfaceDefinition::CurveBounded { boundaries, .. }) = self
+            .procedural_surfaces
+            .get(face.surface.as_str())
+            .map(|procedural| procedural.definition())
+        else {
+            return false;
+        };
+        if face.loops.len() != boundaries.len() {
+            return false;
+        }
+        let mut loop_curves = Vec::new();
+        for loop_id in &face.loops {
+            let Some(face_loop) = self.loops.get(loop_id.as_str()) else {
+                return false;
+            };
+            let mut curves = Vec::new();
+            for coedge in face_loop.coedges() {
+                let Some(coedge) = self.coedges.get(coedge.as_str()) else {
+                    return false;
+                };
+                if !coedge.pcurves.is_empty() {
+                    return false;
+                }
+                let Some(curve) = self
+                    .edges
+                    .get(coedge.edge.as_str())
+                    .and_then(|edge| edge.curve())
+                else {
+                    return false;
+                };
+                curves.push(curve.as_str());
+            }
+            loop_curves.push(Some(curves));
+        }
+        for boundary in boundaries {
+            let Some(SolvedCurveGeometry::Composite { segments, .. }) = self
+                .curves
+                .get(boundary.as_str())
+                .and_then(|curve| curve.geometry.solved())
+            else {
+                return false;
+            };
+            let segment_curves: Vec<&str> = segments
+                .iter()
+                .map(|segment| segment.curve.as_str())
+                .collect();
+            let Some(paired) = loop_curves.iter_mut().find(|curves| {
+                curves
+                    .as_deref()
+                    .is_some_and(|curves| runs_on_segments(curves, &segment_curves))
+            }) else {
+                return false;
+            };
+            *paired = None;
+        }
+        true
+    }
+
+    /// Whether a PMI annotation targets `face`, an edge of its loops, a
+    /// vertex of those edges, or the point of such a vertex. A
+    /// `CURVE_BOUNDED_SURFACE` member states none of them as an item that
+    /// the annotation can name.
+    fn pmi_targets_topology_of(&self, face: &Face) -> bool {
+        let mut edges = BTreeSet::new();
+        let mut vertices = BTreeSet::new();
+        let mut points = BTreeSet::new();
+        for coedge in face
+            .loops
+            .iter()
+            .filter_map(|id| self.loops.get(id.as_str()))
+            .flat_map(|face_loop| face_loop.coedges())
+        {
+            let Some(edge) = self
+                .coedges
+                .get(coedge.as_str())
+                .and_then(|coedge| self.edges.get(coedge.edge.as_str()))
+            else {
+                continue;
+            };
+            edges.insert(edge.id.as_str());
+            for vertex in edge.vertices() {
+                vertices.insert(vertex.as_str());
+                if let Some(vertex) = self.vertices.get(vertex.as_str()) {
+                    points.insert(vertex.point.as_str());
+                }
+            }
+        }
+        self.ir.model.pmi.iter().any(|annotation| {
+            let zone_targets = match &annotation.definition {
+                PmiDefinition::GeometricTolerance { zones, .. } => zones
+                    .iter()
+                    .flat_map(|zone| &zone.projections)
+                    .flat_map(cadmpeg_ir::pmi::zones::ToleranceProjection::targets)
+                    .collect::<Vec<_>>(),
+                _ => Vec::new(),
+            };
+            annotation
+                .targets
+                .iter()
+                .chain(zone_targets)
+                .any(|target| match &target.entity {
+                    PmiTarget::Face { face: target } => target == &face.id,
+                    PmiTarget::Edge { edge } => edges.contains(edge.as_str()),
+                    PmiTarget::Vertex { vertex } => vertices.contains(vertex.as_str()),
+                    PmiTarget::Point { point } => points.contains(point.as_str()),
+                    _ => false,
+                })
+        })
+    }
+
+    /// A face bounded by the boundary curves of its curve-bounded surface,
+    /// as a `CURVE_BOUNDED_SURFACE`. A boundary that shares a curve with the
+    /// face's outer loop is its `OUTER_BOUNDARY_CURVE`.
+    fn emit_curve_bounded_member(&mut self, face: &Face) -> Option<Ref> {
+        let ProceduralSurfaceDefinition::CurveBounded {
+            support,
+            boundaries,
+            implicit_outer,
+            ..
+        } = self
+            .procedural_surfaces
+            .get(face.surface.as_str())?
+            .definition()
+            .clone()
+        else {
+            return None;
+        };
+        let outer_curves: BTreeSet<String> = face
+            .loops
+            .iter()
+            .filter(|id| face.loop_role(id) == LoopBoundaryRole::Outer)
+            .filter_map(|id| self.loops.get(id.as_str()))
+            .flat_map(|face_loop| face_loop.coedges().to_vec())
+            .filter_map(|coedge| self.coedges.get(coedge.as_str()))
+            .filter_map(|coedge| self.edges.get(coedge.edge.as_str()))
+            .filter_map(|edge| edge.curve())
+            .map(|curve| curve.as_str().to_owned())
+            .collect();
+        let support = self.emit_surface(support.as_str())?;
+        let mut members = Vec::new();
+        for boundary in &boundaries {
+            let Some(SolvedCurveGeometry::Composite {
+                segments,
+                self_intersect,
+            }) = self
+                .curves
+                .get(boundary.as_str())
+                .and_then(|curve| curve.geometry.solved())
+                .cloned()
+            else {
+                return None;
+            };
+            let outer = segments
+                .iter()
+                .any(|segment| outer_curves.contains(segment.curve.as_str()));
+            let entity = if outer {
+                "OUTER_BOUNDARY_CURVE"
+            } else {
+                "BOUNDARY_CURVE"
+            };
+            let member = self.emit_composite(entity, &segments, self_intersect)?;
+            self.curve_refs.insert(boundary.as_str().to_owned(), member);
+            members.push(member);
+        }
+        let reference = self.emitter.emit(
+            "CURVE_BOUNDED_SURFACE",
+            &format!(
+                "'',{support},{},{}",
+                refs(&members),
+                if implicit_outer { ".T." } else { ".F." }
+            ),
+        );
+        self.surface_refs.insert(
+            face.surface.as_str().to_owned(),
+            WrittenSurface {
+                reference,
+                chart: None,
+                reversed_normal: false,
+            },
+        );
+        let points: Vec<String> = face
+            .loops
+            .iter()
+            .filter_map(|id| self.loops.get(id.as_str()))
+            .flat_map(|face_loop| face_loop.coedges().to_vec())
+            .filter_map(|coedge| self.coedges.get(coedge.as_str()))
+            .filter_map(|coedge| self.edges.get(coedge.edge.as_str()))
+            .flat_map(|edge| edge.vertices().cloned().collect::<Vec<_>>())
+            .filter_map(|vertex| self.vertices.get(vertex.as_str()))
+            .map(|vertex| vertex.point.as_str().to_owned())
+            .collect();
+        self.boundary_points.extend(points);
+        Some(reference)
     }
 
     fn place_body_item(
@@ -2557,6 +2834,7 @@ impl<'a> Builder<'a> {
         for point in &self.ir.geometry.points {
             if !self.point_refs.contains_key(point.id.as_str())
                 && !self.point_loop_points.contains(point.id.as_str())
+                && !self.boundary_points.contains(point.id.as_str())
                 && (owned_points.contains(point.id.as_str())
                     || ownership::is_support(
                         point.id.as_str(),
@@ -4389,6 +4667,49 @@ impl<'a> Builder<'a> {
         )
     }
 
+    /// A composite curve of `segments` as an `entity` of the composite-curve
+    /// family.
+    fn emit_composite(
+        &mut self,
+        entity: &'static str,
+        segments: &[cadmpeg_ir::geometry::CompositeCurveSegment],
+        self_intersect: Option<bool>,
+    ) -> Option<Ref> {
+        let mut segment_refs = Vec::new();
+        for segment in segments {
+            let curve = self.emit_curve(segment.curve.as_str())?;
+            let transition = match segment.transition {
+                cadmpeg_ir::geometry::CompositeCurveTransition::Discontinuous => ".DISCONTINUOUS.",
+                cadmpeg_ir::geometry::CompositeCurveTransition::Continuous => ".CONTINUOUS.",
+                cadmpeg_ir::geometry::CompositeCurveTransition::ContSameGradient => {
+                    ".CONTSAMEGRADIENT."
+                }
+                cadmpeg_ir::geometry::CompositeCurveTransition::ContSameGradientSameCurvature => {
+                    ".CONTSAMEGRADIENTSAMECURVATURE."
+                }
+            };
+            segment_refs.push(self.emitter.emit(
+                "COMPOSITE_CURVE_SEGMENT",
+                &format!(
+                    "{transition},{},{curve}",
+                    if segment.same_sense { ".T." } else { ".F." }
+                ),
+            ));
+        }
+        Some(self.emitter.emit(
+            entity,
+            &format!(
+                "'',{},{}",
+                refs(&segment_refs),
+                match self_intersect {
+                    Some(true) => ".T.",
+                    Some(false) => ".F.",
+                    None => ".U.",
+                }
+            ),
+        ))
+    }
+
     pub(crate) fn emit_curve(&mut self, curve_id: &str) -> Option<Ref> {
         if let Some(r) = self.curve_refs.get(curve_id) {
             return Some(*r);
@@ -4417,41 +4738,7 @@ impl<'a> Builder<'a> {
                 self_intersect,
             }) = &geometry
             {
-                let mut segment_refs = Vec::new();
-                for segment in segments {
-                    let curve = self.emit_curve(segment.curve.as_str())?;
-                    let transition = match segment.transition {
-                    cadmpeg_ir::geometry::CompositeCurveTransition::Discontinuous => {
-                        ".DISCONTINUOUS."
-                    }
-                    cadmpeg_ir::geometry::CompositeCurveTransition::Continuous => ".CONTINUOUS.",
-                    cadmpeg_ir::geometry::CompositeCurveTransition::ContSameGradient => {
-                        ".CONTSAMEGRADIENT."
-                    }
-                    cadmpeg_ir::geometry::CompositeCurveTransition::ContSameGradientSameCurvature => {
-                        ".CONTSAMEGRADIENTSAMECURVATURE."
-                    }
-                };
-                    segment_refs.push(self.emitter.emit(
-                        "COMPOSITE_CURVE_SEGMENT",
-                        &format!(
-                            "{transition},{},{curve}",
-                            if segment.same_sense { ".T." } else { ".F." }
-                        ),
-                    ));
-                }
-                self.emitter.emit(
-                    "COMPOSITE_CURVE",
-                    &format!(
-                        "'',{},{}",
-                        refs(&segment_refs),
-                        match self_intersect {
-                            Some(true) => ".T.",
-                            Some(false) => ".F.",
-                            None => ".U.",
-                        }
-                    ),
-                )
+                self.emit_composite("COMPOSITE_CURVE", segments, *self_intersect)?
             } else if let Some((id, helix)) = self.unsolved_helix(curve_id) {
                 if self.failed_helix_fits.contains_key(id) {
                     return None;
@@ -6796,6 +7083,12 @@ impl<'a> Builder<'a> {
             notes: Vec::new(),
         }
     }
+}
+
+/// Whether a loop's coedge curves run on `segment_curves` one to one, in
+/// their order or its reverse.
+fn runs_on_segments(loop_curves: &[&str], segment_curves: &[&str]) -> bool {
+    loop_curves == segment_curves || loop_curves.iter().rev().eq(segment_curves.iter())
 }
 
 fn datum_target_form_text(form: &DatumTargetForm) -> &str {

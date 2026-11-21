@@ -649,6 +649,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     face_operands,
                     entity_selection_operands,
                     scopes,
+                    &source_ordinals,
                     &mut projection_losses,
                 )
                 .unwrap_or_else(|| {
@@ -659,6 +660,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             face_operands,
                             entity_selection_operands,
                             scopes,
+                            &source_ordinals,
+                            &mut projection_losses,
                         ),
                         pattern: PatternKind::UNRESOLVED_CIRCULAR,
                     })
@@ -670,6 +673,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         face_operands,
                         entity_selection_operands,
                         scopes,
+                        &source_ordinals,
                         &mut projection_losses,
                     )
                     .unwrap_or_else(|| {
@@ -680,6 +684,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 face_operands,
                                 entity_selection_operands,
                                 scopes,
+                                &source_ordinals,
+                                &mut projection_losses,
                             ),
                             pattern: PatternKind::UNRESOLVED_LINEAR,
                         })
@@ -691,6 +697,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     face_operands,
                     entity_selection_operands,
                     scopes,
+                    &source_ordinals,
                     &mut projection_losses,
                 )
                 .unwrap_or_else(|| {
@@ -701,6 +708,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             face_operands,
                             entity_selection_operands,
                             scopes,
+                            &source_ordinals,
+                            &mut projection_losses,
                         ),
                         pattern: PatternKind::UNRESOLVED_MIRROR,
                     })
