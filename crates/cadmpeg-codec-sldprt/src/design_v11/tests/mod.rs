@@ -631,6 +631,119 @@ fn a_length_display_is_a_literal_in_the_part_length_unit() {
     );
 }
 
+/// The neutral expression `text` over `targets`, as a parameter definition.
+fn neutral_definition(
+    text: &str,
+    targets: &[&cadmpeg_ir::features::ParameterId],
+) -> cadmpeg_ir::design::parameter::ParameterDefinition {
+    use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
+    use cadmpeg_ir::design::expr::{parse, Expression, Neutral};
+
+    let references = targets
+        .iter()
+        .map(|target| ParameterRef {
+            target: RefTarget::Parameter((*target).clone()),
+            through: None,
+        })
+        .collect::<Vec<_>>();
+    cadmpeg_ir::design::parameter::ParameterDefinition::Expression(Expression::Neutral(Neutral(
+        parse(text, &references, &[]).unwrap(),
+    )))
+}
+
+#[test]
+fn a_bare_reference_of_the_same_kind_is_a_neutral_link() {
+    let ir = part_with_history(
+        br#"<Keywords Name="Bracket">
+            <Feature Name="Equations" Type="EquationDriven" id="16">
+                <Dimension Name="wall">5</Dimension>
+                <Dimension Name="rib">"wall"</Dimension>
+            </Feature>
+            <Extrusion Name="Boss" Type="BossExtrude" id="7">
+                <Dimension Name="D1">12.5mm</Dimension>
+                <Dimension Name="D2" Value="12.5mm">"D1@Boss"</Dimension>
+                <Dimension Name="D3" Value="12.5mm"> D1 </Dimension>
+            </Extrusion>
+        </Keywords>"#,
+        &[],
+    );
+    let d1 = parameter_named(&ir, "D1").id.clone();
+    for name in ["D2", "D3"] {
+        let parameter = parameter_named(&ir, name);
+        assert_eq!(
+            parameter.definition,
+            neutral_definition("$0", &[&d1]),
+            "{name}"
+        );
+    }
+    let wall = parameter_named(&ir, "wall").id.clone();
+    assert_eq!(
+        parameter_named(&ir, "rib").definition,
+        neutral_definition("$0", &[&wall])
+    );
+    assert_no_design_findings(&ir);
+}
+
+#[test]
+fn a_global_variable_used_as_a_length_or_an_angle_is_read_unit_blind() {
+    use cadmpeg_ir::design::expr::{Expression, ExpressionDialect, ExpressionToken};
+    use cadmpeg_ir::design::parameter::ParameterDefinition;
+    use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
+    use cadmpeg_ir::features::ParameterValue as V10;
+    use cadmpeg_ir::scalar::{Angle, Length};
+
+    let (_, parameters, _) = parameters_with_readings(
+        br#"<Keywords Name="Bracket">
+            <Feature Name="Equations" Type="EquationDriven" id="16">
+                <Dimension Name="wall">5</Dimension>
+            </Feature>
+            <Extrusion Name="Boss" Type="BossExtrude" id="7">
+                <Dimension Name="D1">"wall"</Dimension>
+                <Dimension Name="D2">"wall"</Dimension>
+                <Dimension Name="D3">"D1@Boss"</Dimension>
+            </Extrusion>
+        </Keywords>"#,
+        &[
+            ("Boss", "D1", V10::Length(Length::new(5.0).unwrap()), None),
+            ("Boss", "D2", V10::Angle(Angle::new(0.1).unwrap()), None),
+            ("Boss", "D3", V10::Angle(Angle::new(0.1).unwrap()), None),
+        ],
+        &[],
+        Some(UnitSymbol::Mm),
+    );
+    let named = |name: &str| {
+        parameters
+            .iter()
+            .find(|parameter| {
+                parameter
+                    .name
+                    .as_ref()
+                    .map(cadmpeg_core::text::NonBlankString::as_str)
+                    == Some(name)
+            })
+            .unwrap_or_else(|| panic!("{name}: {parameters:#?}"))
+    };
+    let wall = named("wall").id.clone();
+    assert_eq!(named("D1").kind, ValueKind::Quantity(Quantity::LENGTH));
+    assert_eq!(
+        named("D1").definition,
+        neutral_definition("$0 * 1[mm]", &[&wall])
+    );
+    assert_eq!(named("D2").kind, ValueKind::Quantity(Quantity::ANGLE));
+    assert_eq!(
+        named("D2").definition,
+        neutral_definition("$0 * 1[deg]", &[&wall])
+    );
+    assert_eq!(named("D3").kind, ValueKind::Quantity(Quantity::ANGLE));
+    assert_eq!(
+        named("D3").definition,
+        ParameterDefinition::Expression(Expression::Source {
+            dialect: ExpressionDialect::SolidWorks,
+            tokens: vec![ExpressionToken::Text("\"D1@Boss\"".to_owned())],
+        })
+    );
+}
+
 #[test]
 fn a_bare_display_number_states_no_unit() {
     use super::parameters::bare_display_number;
