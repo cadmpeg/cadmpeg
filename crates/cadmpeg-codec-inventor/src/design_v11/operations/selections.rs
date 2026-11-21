@@ -196,3 +196,6 @@ pub(super) fn planar(value: &PlanarProfileRef, sketches: &[Sketch]) -> Projected
         _ => Err("the profile selection has unresolved members"),
     }
 }
+
+#[cfg(test)]
+mod tests;
