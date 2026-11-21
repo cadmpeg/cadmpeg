@@ -462,21 +462,13 @@ fn utf16_at(bytes: &[u8], at: usize) -> (String, usize) {
     (String::from_utf16(&units).expect("UTF-16"), end)
 }
 
-/// Each parameter record is framed by the version of the type the
+/// The kind and comment of each parameter record of the archive `bytes`,
+/// asserting that each is framed by the version of the type the
 /// `MetaStream` registers for it (f3d.md §3.1): the eleven-byte header,
 /// and the nine-byte expression trailer at version 7 or the ten-byte one at
 /// version 8, whose last byte is the document flag.
-#[test]
-fn every_parameter_record_closes_with_the_trailer_of_its_type_version() {
-    let mut ir = sketch_and_extrude(blind(), false);
-    ir.design
-        .parameters
-        .iter_mut()
-        .find(|parameter| parameter.id == parameter_id("width"))
-        .expect("Width")
-        .comment = Some("overall width".into());
-    let (_, _, bytes) = write_bytes(&ir);
-    let design = segment(&bytes, "FusionDesignSegmentType1");
+pub(super) fn parameter_records(bytes: &[u8]) -> Vec<(String, String)> {
+    let design = segment(bytes, "FusionDesignSegmentType1");
     let mut written = Vec::new();
     for (index, version) in design.records_of(super::super::types::PARAMETER.guid) {
         let record = design.record(index);
@@ -505,6 +497,20 @@ fn every_parameter_record_closes_with_the_trailer_of_its_type_version() {
         assert_eq!(u32_at(record, end), 0, "record {index}: the text value");
         written.push((kind, comment));
     }
+    written
+}
+
+#[test]
+fn every_parameter_record_closes_with_the_trailer_of_its_type_version() {
+    let mut ir = sketch_and_extrude(blind(), false);
+    ir.design
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.id == parameter_id("width"))
+        .expect("Width")
+        .comment = Some("overall width".into());
+    let (_, _, bytes) = write_bytes(&ir);
+    let written = parameter_records(&bytes);
     for expected in [
         ("AlongDistance", ""),
         ("TaperAngle", ""),

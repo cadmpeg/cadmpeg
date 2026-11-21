@@ -467,6 +467,25 @@ fn the_records_of_a_workplane_item_have_the_stated_sizes() {
     assert_eq!(&collection[52..54], [1, 1], "the bytes after the zero word");
 }
 
+/// The construction plane's `AlongDistance` and `ExtraOffset` parameters
+/// are written in the form of the parameter type's version, as the
+/// Extrude's are.
+#[test]
+fn the_workplane_parameters_close_with_the_trailer_of_their_type_version() {
+    let top = frame([0.0, 0.0, 10.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+    let ir = with(Vec::new(), vec![rectangle("top", unread(), top, true)]);
+    let (_, _, bytes) = write_bytes(&ir);
+    let written = super::extrude::parameter_records(&bytes);
+    for kind in ["AlongDistance", "ExtraOffset"] {
+        assert!(
+            written
+                .iter()
+                .any(|(written, comment)| written == kind && comment.is_empty()),
+            "{kind} in {written:?}"
+        );
+    }
+}
+
 #[test]
 fn the_fixed_clock_note_names_the_workplane_timestamp_tables() {
     let top = frame([0.0, 0.0, 10.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);

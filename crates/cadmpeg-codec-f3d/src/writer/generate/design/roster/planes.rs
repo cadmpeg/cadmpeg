@@ -10,7 +10,7 @@ use super::super::base_feature::timestamp_table;
 use super::super::frames::DesignRecords;
 use super::super::sketch::PlannedPlane;
 use super::super::types;
-use super::owned::{self, Owned, Trailer};
+use super::owned::{self, Owned};
 use super::sketches::{
     genesis, item_companion, item_tail, placement_base, placement_path, placement_transform,
     tracked_results, transform, Classes, ItemTail, PathRecords, PlacementBase, COMPONENT,
@@ -230,7 +230,6 @@ impl Item<'_> {
                     scope: self.records.scope,
                     local,
                     kind,
-                    trailer: Trailer::Owned,
                     value,
                 },
             )?;
