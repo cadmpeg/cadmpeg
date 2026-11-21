@@ -694,5 +694,5 @@ fn a_vertex_raised_by_one_edge_prevents_false_record_invalid_on_a_sibling_edge()
         "E2 should not charge record.invalid: {:#?}",
         report.losses
     );
-    assert_eq!(edge_errors(&decoded), Vec::<String>::new());
+    assert_eq!(edge_errors(&decoded, 0), Vec::<String>::new());
 }

@@ -807,17 +807,15 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Note.** The decoder places a Canvas with a zero byte in a non-legacy layout by its boundary segments and payload frame, keeps the byte in the native `second_boundary_flag` field, and reports `appearance.reference-image-flag-assumed`.
 
-### DR-879. Empty-label named tails and 78-byte fixed tails
+### DR-879. Preceding history-state identity of a labeled tail
 
-**Question.** How does a reader tell an empty-label named parameter-scope tail from a 78-byte fixed tail?
+**Question.** Does a named parameter-scope tail with a label of positive length `L` store a preceding history-state identity, and at which tail offset?
 
-**Known.** `f3d.md` "A named `Combine` tail also has a marked-reference form" gives the named tail. The fixed tail table gives the 78-byte fixed tail, with the preceding history-state identity at tail offset 31. With an empty label, the two readings cover the same bytes. The named field identity and first lane value are the bytes of the first record reference of the fixed form, and the named opaque u32 is the preceding history-state identity of the fixed form. Three `Combine` saves store the same tail layout. In the first two, the first tail reference names record `0x199` or `0x1fe`. The named first lane value is then `1`, and the scope reads as named with no preceding history state. In the third, the reference names record `0x263`, the lane value is `2`, and the scope reads as fixed.
+**Known.** `f3d.md` §3.1 states that a tail whose label is empty is the 78-byte fixed tail, with the preceding history-state identity at tail offset 31 and the evaluation epoch at tail offsets 35 and 47. The feature item tail paragraph moves each later offset by `2L` after a custom label of `L` code units, which places a preceding history-state identity at tail offset `31 + 2L`. For a labeled tail, the decoder reads a preceding history-state identity for reciprocal `Hole` named tails from their reciprocal member layout, and leaves other labeled tails without one.
 
-**Need.** A save whose `Combine` tail of this layout has a label, to tell whether the named form also stores a preceding history-state identity at the opaque u32.
+**Need.** Labeled tails whose preceding identity can be checked against the current identity of another scope, to settle whether offset `31 + 2L` holds it.
 
 **Conflict.** None.
-
-**Note.** When a `Combine` scope stores no preceding history state, the decoder binds its operands in the predecessor that the history header names. An operand that this binding leaves native binds through its direct body recipe.
 
 ### DR-881. Tracked-entry record variants
 
@@ -882,6 +880,14 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 **Known.** `f3d.md` §3.1 "This subsection gives the records of one `Sketch` timeline item" gives the record sizes and offsets of a record whose references are all same-segment references or null references, and a fifteen-byte reference moves every later offset of its record by four bytes. Scopes, placements, placement paths, sketch containers, points, relations, dimension frames, and dimension owners of `Sketch` items store fifteen-byte references.
 
 **Need.** A writer must choose the form of each reference it writes. The field that holds each fifteen-byte reference, and the segment it names against the segments of the design, would settle it.
+
+### DR-917. Variable fields of a sketch dimension frame
+
+**Question.** What selects the relation ordinal of a dimension frame's null locus, the fourth point of a linear measurement, the origin and the axis signs of the text frame, the byte before the text frame, the style byte and values, the two f64 values of the linear kind block, the flag byte of a diameter measurement, the second quadrant word of an angular measurement, and the order of the two point positions of each line of an angular measurement? Which boundary combination does a linear dimension between two circular curves measure, and which dimensions do the kind masks `0x1000000` and `0x800000000` name?
+
+**Known.** `f3d.md` §3.1 "**Sketch dimensions.**" gives the frame grammar. In most sketches, the null-locus ordinal of the `j`-th frame of the container's dimension-frame run, from `0`, is `c + j` with one constant `c` for the sketch. `c` is `3` in most sketches and another value in others, and `c` can increase between two frames of one sketch. The fourth point of a linear measurement is the first anchor `A1`, the text-frame origin, or another point. The text-frame origin is `(0, 0, 0)`, the fourth point of a linear measurement, the centre of a radial or diameter measurement, a point position of an angular measurement, the common centre of the two circular curves of a linear measurement, or another point. The byte before the text frame is `1`, and `0` in some offset and radial frames. The style byte is `0` with the values `(0, 0, 0, 1)` in most frames, `1` with `(0.25, 0.25, 0.25, 1)` in others, and `0` with other values in others. The two f64 values of the linear kind block are `(0, 1)` in most frames, and `(1, 0)`, `(1, 1)`, `(0, 0)`, or `(0, -1)` in others. The flag byte of a diameter measurement is `0` in most frames, and `1` or another byte value in others. The second quadrant word equals the first in most angular frames, and the first word selects the angle. Most angular frames store each line's end point before its start point, and some store the start point first. A linear dimension between two circular curves with centre distance `d` and radii `r1` and `r2` measures `d + r1 - r2` or `d - r1 + r2`. The masks `0x1000000` and `0x800000000` occur in linear frames that measure one circular curve of type `FF23079A-D99C-47AB-940E-2F4E18F022AB`. In some linear frames between two lines, `A1` lies on the second measured line and `A2` on the first.
+
+**Need.** A writer must choose each of these values. The null-locus ordinals against the deleted frames and relations of the sketch, the text-frame fields and the fourth point against the text placement of the dimension and the normal of the sketch, and the style, flag, and kind-block values against the display settings of the dimension would settle them.
 
 ### DR-918. Varying bytes of the serializer-trigger, Scene and settings records of a Base Feature design
 
@@ -950,6 +956,7 @@ In the design with three solid bodies, records 193 to 200 are the further design
 **Known.** `f3d.md` §3.1 "**`Body` owners.**", "**Root instance.**", and "**Snapshot body-map companions.**" give the common forms. A design `Body` owner can store byte `1` after its ten zero bytes, followed by u32 `0`; its later fields then start four bytes later, and in a design with a sheet result body its first reference run names the alternate `Body` owner. A root instance can store a property list of count `3` with the properties `GatedByParent` (`IntrinsicMetaTypebool`), `ResolutionTime` (`IntrinsicMetaTypeHString`), and `SelfGated` (`IntrinsicMetaTypebool`), each an LP-ASCII name, an LP-ASCII value type, and the value; that form is 384 bytes. The parameter companion's next value is `n + 1`, `n`, or `n + 3` for `n` listed values.
 
 **Need.** A writer stores the common forms and the next value `n + 1`. The save conditions that produce each form would settle the selection.
+>>>>>>> origin/main
 
 ### DR-888. Nonzero one-byte ordinal prefix of an attributed local occurrence
 
@@ -2173,17 +2180,17 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** Enclosing node framing is not decoded. The local transform reader leaves visibility and material override attributes unread. Binding uses the root design scene; member scenes retain their separate saved state.
 
-### DR-253. Typed occurrence path identity-word variants
+### DR-253. Typed occurrence path identity-pair words
 
-**Question.** What do the eight-byte word between the two identity-GUID pairs and the eight-byte tail after the final u32 `2` mean in a positive-count typed occurrence path, and how do they affect binding?
+**Question.** What does the u32 pair word after each u32 `2` in a positive-count typed occurrence path state, and how does it affect binding?
 
-**Known.** The admitted identity suffix in `f3d.md` §3.1 "A class-329 path begins with its indexed header" stores eight-byte value `2` between the two GUID pairs and an eight-byte zero tail. Twenty-six live version-4 paths of type `96CBEA21-17E0-4BCB-BA77-04EA87B47934`, in four documents, store `0x0000000100000002` and `1` at those positions. Each path has one or two occurrence keys and four identity GUIDs. Each 425-byte path is bounded by its indexed wrapper. The paths belong to thirteen 806-byte Assemble scopes. The primary record index fixes their live offsets. Their scopes retain explicit connector matrices and the `assembly.joint-unprojected` loss. On all thirteen scopes the occurrence keys resolve, and the connector frames at the current occurrence poses, with the identity for an occurrence that stores no pose, satisfy the joint relation in "Assembly operands" in rotation and translation. These scopes do not separate the two word pairs, because no such scope stores `(2, 0)`.
+**Known.** `f3d.md` "Assembly operands" gives the two pair words of a typed path record. Each word is `0` or `1`, and the records of one continued path store the same pair. Twenty-six live version-4 paths of type `96CBEA21-17E0-4BCB-BA77-04EA87B47934`, in four documents, store `(1, 1)` (encoded as `0x0000000100000002` between the two GUID pairs and u32 `1` after the second `u32 2`); other observed typed paths store `(0, 0)`. Each path has one or two occurrence keys and four identity GUIDs. Each 425-byte path is bounded by its indexed wrapper. The 26 `(1, 1)` paths belong to thirteen 806-byte Assemble scopes whose occurrence keys resolve and whose connector frames at current occurrence poses satisfy the joint relation in "Assembly operands". The decoder reads the occurrence and identity GUIDs of a path with word `1` as it reads them with word `0`, projects the joint, and charges `assembly.operand-path-word-assumed`.
 
-**Need.** Make controlled saves of one joint between two fixed component occurrences. Give each occurrence an identity-transform child with a coincident connector. In separate saves, change the first operand from its root connector to its child connector, then change the second operand in the same way. Hold both connector matrices fixed. In further independent saves, update only the first component revision, only the second component revision, and only the joint suppression state. Create two component configuration rows with equal geometry and equal connector matrices; switch each operand between those rows independently. Compare both identity words and all five GUID fields with the baseline. Obtain both word pairs `(2, 0)` and `(0x0000000100000002, 1)`. Establish which controlled changes affect each word and whether the words can vary independently before projection.
+**Need.** Make controlled saves of one joint between two fixed component occurrences. Give each occurrence an identity-transform child with a coincident connector. In separate saves, change the first operand from its root connector to its child connector, then change the second operand in the same way. Hold both connector matrices fixed. In further independent saves, update only the first component revision, only the second component revision, and only the joint suppression state. Create two component configuration rows with equal geometry and equal connector matrices; switch each operand between those rows independently. Compare both pair words and all five GUID fields with the baseline. Obtain both `(0, 0)` and `(1, 1)` and establish which controlled changes affect each word so a writer knows when to emit word `1`.
 
-**Conflict.** The nonzero words change the admitted identity suffix. Treating them as padding would discard stored values.
+**Conflict.** None.
 
-**Note.** The current path decoder retains these scopes natively. Their thirteen paired-frame findings remain errors until the identity state has a complete grammar and binding rule.
+**Note.** The decoder projects joints backed by paths with word `1` and charges `assembly.operand-path-word-assumed`.
 
 ### DR-255. Decal target selected by a face-recipe entity selection
 
@@ -3401,7 +3408,7 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Question.** What does the terminal byte of the marked null field mean when it is `1` before the repeated-reference count in a Base Feature envelope?
 
-**Known.** One design has Base Feature scope record `213` at Design offset `107014`, class pair `329/264`, frame length `318`, and history transition `365` to `404`. Its first two marked fifteen-byte entries name `219` and `225`. Both targets have Body presentation-owner type `D3937028-C20C-4E65-B010-94AD418A5C20`. The eleven-byte field after those entries starts with `1`, has nine zero bytes, and ends with `1`. A u32 count `1` follows, then a marked reference to `219`, shared metadata record `217`, and result record `227`. The ordinary result-body reader requires a zero byte after the flag byte and stops at the final byte. The history transition binds body `f3d:brep:entity#1` and supplies the resolved Base Feature result set.
+**Known.** One design has Base Feature scope record `213` at Design offset `107014`, class pair `329/264`, frame length `318`, and history transition `365` to `404`. Its first two marked fifteen-byte entries name `219` and `225`. Both targets have Body presentation-owner type `D3937028-C20C-4E65-B010-94AD418A5C20`. The eleven-byte field after those entries is a marked null reference with flag byte `0` and terminal byte `1`. A u32 count `1` follows, then a marked reference to `219`, shared metadata record `217`, and result record `227`. The decoder reads the ordinary result-body envelope when the terminal byte is `0`, and leaves this frame's payload uninterpreted. The history transition binds body `f3d:brep:entity#1` and supplies the resolved Base Feature result set.
 
 **Need.** A rule for the terminal marker and the roles of the two initial reference runs. Compare a controlled capture, paste, and body-to-component operation with equal geometry, including their referenced Body records and preceding ASM state. Confirm the role rule in a second independent design before selecting a source or construction operation.
 

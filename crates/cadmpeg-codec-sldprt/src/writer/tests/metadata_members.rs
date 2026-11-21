@@ -78,7 +78,7 @@ fn edit_radius(ir: &mut cadmpeg_ir::CadIr) {
         .iter_mut()
         .find(|attribute| attribute.name == "bounding_envelope")
         .unwrap();
-    let AttributeValue::Vector(values) = &mut attribute.values[0] else {
+    let Some(AttributeValue::Vector(values)) = &mut attribute.values[0] else {
         panic!("bbox vector")
     };
     values[3] = cadmpeg_ir::scalar::FiniteReal::new(41.0).unwrap();
@@ -127,7 +127,7 @@ fn metadata_edit_in_a_shared_feature_member_is_written_once() {
         .iter()
         .find(|attribute| attribute.name == "bounding_envelope")
         .unwrap();
-    let AttributeValue::Vector(values) = &bbox.values[0] else {
+    let Some(AttributeValue::Vector(values)) = &bbox.values[0] else {
         panic!("bbox vector")
     };
     assert_eq!(values[3].get(), 41.0);
@@ -321,10 +321,11 @@ fn unsupported_manager_fields_cannot_patch_a_retained_member() {
         target: AttributeTarget::Document.into(),
         name: "configuration_manager".into(),
         values: vec![
-            AttributeValue::Integer(17),
-            AttributeValue::Integer(4),
-            AttributeValue::Integer(132_537_600_000_000_000),
+            Some(AttributeValue::Integer(17)),
+            Some(AttributeValue::Integer(4)),
+            Some(AttributeValue::Integer(132_537_600_000_000_000)),
         ],
+        native_ref: None,
     });
     records.push(crate::SourceRecord {
         id: record_id,
@@ -445,7 +446,8 @@ fn source_unit_code_uses_its_separate_units_route() {
         id,
         target: AttributeTarget::Document.into(),
         name: "source_linear_unit_code".into(),
-        values: vec![AttributeValue::Integer(1)],
+        values: vec![Some(AttributeValue::Integer(1))],
+        native_ref: None,
     });
     let retained = crate::writer::retained_swobjects_sections(&ir, &records, &annotations).unwrap();
     assert_eq!(
@@ -689,7 +691,7 @@ fn metadata_edits_preserve_unedited_f64_bits_and_complete_display_member() {
             .iter_mut()
             .find(|attribute| attribute.id == target)
             .unwrap();
-        let AttributeValue::Vector(values) = &mut attribute.values[0] else {
+        let Some(AttributeValue::Vector(values)) = &mut attribute.values[0] else {
             panic!("bbox vector");
         };
         values[3] = cadmpeg_ir::scalar::FiniteReal::new(41.0).unwrap();
