@@ -483,3 +483,24 @@ fn the_context_value_of_a_design_with_planes_and_no_dimension_is_named() {
         assert!(note.contains(named), "{named}: {note}");
     }
 }
+
+#[test]
+fn the_workplane_note_names_the_parameter_numbering() {
+    let top = frame([0.0, 0.0, 10.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+    let ir = with(Vec::new(), vec![rectangle("top", unread(), top, false)]);
+    let (report, _, _) = write_bytes(&ir);
+    let notes = loss(&report, "export/record.residual-unavailable")
+        .into_iter()
+        .filter(|message| message.contains("writes the WorkPlane items"))
+        .collect::<Vec<_>>();
+    let [note] = notes.as_slice() else {
+        panic!("one WorkPlane note: {:#?}", report.losses);
+    };
+    for named in [
+        "parameter source ordinals",
+        "AlongDistance parameter takes the ordinal after the parameters of the items before it",
+        "ExtraOffset parameter's ordinal plus one",
+    ] {
+        assert!(note.contains(named), "{named}: {note}");
+    }
+}

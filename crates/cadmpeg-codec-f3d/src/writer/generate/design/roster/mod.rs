@@ -536,6 +536,7 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
             ),
             "placements and frame records of the sketches on construction planes (origin at the plane entity's origin)".to_owned(),
             "record 11 (construction collection: its entities in timeline order)".to_owned(),
+            "parameter source ordinals (one counter from 1 in timeline order: each WorkPlane item's AlongDistance parameter takes the ordinal after the parameters of the items before it, and the dimension parameters of the Sketch item after it continue from its ExtraOffset parameter's ordinal plus one)".to_owned(),
         ];
         // The dimension note names the context value of a design with
         // dimensions.
