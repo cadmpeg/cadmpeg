@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::design::feature_project::authored_scope_ordinals;
 use crate::design::feature_project::reverse_normal::project_reverse_normal;
+use crate::design::feature_project::scope_order::authored_scope_ordinals;
 use crate::loss::F3dLossCode;
 use crate::records::entity_header::{BaseTypeGuid, SegmentType, SegmentTypeData};
 use crate::records::feature::body_ops::DesignReverseNormalOperation;
