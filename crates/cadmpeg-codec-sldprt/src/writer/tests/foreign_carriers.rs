@@ -433,3 +433,21 @@ fn history_with_another_formats_native_references_is_written() {
     let decoded = crate::test_support::ir::encode_decode(&ir);
     assert_eq!(decoded.model.sketches.len(), 1);
 }
+
+#[test]
+fn every_shell_of_a_region_is_written_in_its_shell_chain() {
+    use cadmpeg_ir::ids::ShellId;
+    use cadmpeg_ir::topology::Shell;
+    let mut ir = cube();
+    let region = ir.geometry.regions[0].id.clone();
+    let second = ShellId::mint("other:model:shell#second").unwrap();
+    ir.geometry.shells.push(Shell::new(second.clone(), region));
+    ir.geometry.regions[0].shells.push(second.clone());
+    for face in ir.geometry.faces.iter_mut().skip(3) {
+        face.shell = second.clone();
+    }
+    let decoded = crate::test_support::ir::encode_decode(&ir);
+    assert_eq!(decoded.geometry.faces.len(), 6);
+    assert_eq!(decoded.geometry.shells.len(), 2);
+    assert_eq!(decoded.geometry.regions[0].shells.len(), 2);
+}
