@@ -16,13 +16,13 @@
 
 **Need.** Establish the stream paths, framing fields, partition boundaries, and active-state selection from native document bytes.
 
-### DR-1011. Governing versions
+### DR-1011. Governing versions and length units
 
-**Question.** Which stored version fields govern the compound stream grammars?
+**Question.** Which stored version fields govern the compound stream grammars, and which fields set the length unit of each partition?
 
-**Known.** `cadmpeg-parasolid` reads a schema token from the transmit header. Parasolid model-space lengths are in metres.
+**Known.** `cadmpeg-parasolid` reads a schema token from the transmit header and converts its supported model-space geometry from metres to millimetres.
 
-**Need.** Establish the outer version declarations and the stream grammars each declaration selects.
+**Need.** Establish the outer version declarations and the relationship between document display units and kernel coordinates.
 
 ### DR-1012. Remaining unit codes
 

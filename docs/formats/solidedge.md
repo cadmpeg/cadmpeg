@@ -70,21 +70,45 @@ record identifiers do not.
 | `DefaultAnglePrimary` | Angle unit code |
 | `DefaultAnglePrecision` | Displayed decimal places of an angle |
 
-The length unit codes are:
+The length unit codes are below. An option that has abbreviated and full
+display forms has one code for each form.
 
 | Code | Unit |
 | ---: | --- |
 | 59 | metre |
+| 60 | nanometre |
 | 61 | millimetre |
 | 62 | centimetre |
+| 63 | kilometre |
 | 64 | inch |
+| 65 | foot |
+| 66 | yard |
+| 67 | mile |
+| 68 | tenth |
+| 69 | hundredth |
+| 70 | thousandth |
+| 71 | rod |
+| 72 | pole |
+| 74 | chain |
+| 76 | furlong |
+| 360 | foot, abbreviated |
+| 361 | inch, abbreviated |
 
 The angle unit codes are:
 
 | Code | Unit |
 | ---: | --- |
 | 77 | radian |
-| 357 | degree |
+| 78 | degree |
+| 79 | minute of arc |
+| 80 | second of arc |
+| 81 | gradian |
+| 357 | degree, abbreviated |
+| 358 | minute of arc, abbreviated |
+| 359 | second of arc, abbreviated |
+
+The foot-and-inch length display stores the foot code. The
+degree-minute-second angle display stores the degree code.
 
 The document units are display settings. They do not change Parasolid
 coordinates, which are in metres for every unit setting.

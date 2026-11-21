@@ -14,6 +14,7 @@ pub(crate) enum SolidEdgeLossCode {
     BodiesPending,
     UnitsUnread,
     UnitCodeUnknown,
+    UnitNotNeutral,
 }
 
 impl SolidEdgeLossCode {
@@ -26,6 +27,7 @@ impl SolidEdgeLossCode {
             Self::BodiesPending => ("body.decode-pending", LossTaxonomy::GeometryNotTransferred),
             Self::UnitsUnread => ("units.unread", LossTaxonomy::MetadataNotTransferred),
             Self::UnitCodeUnknown => ("units.code-unknown", LossTaxonomy::MetadataNotTransferred),
+            Self::UnitNotNeutral => ("units.not-neutral", LossTaxonomy::MetadataNotTransferred),
         };
         LossNote::new(LossKind::namespaced(NAMESPACE, code, taxonomy), message)
     }
