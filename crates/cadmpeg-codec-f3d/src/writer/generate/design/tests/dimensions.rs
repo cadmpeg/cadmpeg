@@ -22,7 +22,7 @@ use cadmpeg_ir::scalar::{Angle, PositiveLength};
 use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Kind;
 
 use super::roster::{segment, Segment};
-use super::sketch::{constraint_id, frame, picked, point2, principal, Source};
+use super::sketch::{constraint_id, fixed_clock_tables, frame, picked, point2, principal, Source};
 use super::{
     loss, neutral, number, parameter, parameter_id, reference, scoped_cube, u32_at, u64_at, write,
     write_bytes,
@@ -671,6 +671,15 @@ fn the_container_scope_and_collections_list_the_dimensions() {
 }
 
 #[test]
+fn the_fixed_clock_note_names_each_dimension_table() {
+    let (report, _, bytes) = write_bytes(&on_xy());
+    let frames = written_frames(&segment(&bytes, "FusionDesignSegmentType1")).len();
+    // The component and Base Feature tables, three of the sketch and one
+    // of each dimension's parameter.
+    assert_eq!(fixed_clock_tables(&report, &bytes).len(), 3 + 3 + frames);
+}
+
+#[test]
 fn a_failure_in_the_dimension_records_keeps_the_sketches() {
     super::super::FAIL_NEXT_DIMENSIONS.with(|fail| fail.set(true));
     let (report, decoded) = write(&on_xy());
@@ -696,4 +705,23 @@ fn a_failure_in_the_dimension_records_keeps_the_sketches() {
         .parameters
         .iter()
         .any(|parameter| parameter.name == "Side" && parameter.owner.is_none()));
+}
+
+#[test]
+fn the_residual_note_names_the_ordinals_suffixes_and_angular_point_order() {
+    let (report, _) = write(&on_xy());
+    let notes = loss(&report, "export/record.residual-unavailable")
+        .into_iter()
+        .filter(|message| message.contains("DR-917"))
+        .collect::<Vec<_>>();
+    let [note] = notes.as_slice() else {
+        panic!("one sketch dimension note: {:#?}", report.losses);
+    };
+    for named in [
+        "each angular line's point positions, end then start",
+        "relation ordinals",
+        "the dimension suffix 2 for a sketch's first dimension of a kind",
+    ] {
+        assert!(note.contains(named), "{named}: {note}");
+    }
 }

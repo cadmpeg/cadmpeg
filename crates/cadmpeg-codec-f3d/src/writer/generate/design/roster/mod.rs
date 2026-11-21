@@ -480,6 +480,28 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
     }
     notes.extend(record_residual_unavailable(
         "F3D",
+        "writes fixed-clock (2026-01-01 UTC) authoring timestamps in the record-timestamp tables: the document records no authoring clock",
+        ctx.roster
+            .rows()
+            .iter()
+            .filter(|(_, row)| row.guid == super::types::RECORD_TIMESTAMPS.guid)
+            .map(|(record, _)| format!("record {record} (record-timestamp table)")),
+    ));
+    if let Some(fallback) = ctx.values.unit_system_fallback {
+        let label = match fallback {
+            values::UnitFallback::Unmodeled(unit) => format!("length unit {unit:?}"),
+            values::UnitFallback::Undeclared => "no declared length unit".to_owned(),
+        };
+        notes.extend(record_residual_unavailable(
+            "F3D",
+            &format!(
+                "writes MmMKS (unit system 67) for {label}: Fusion's custom unit-system table models only mm, cm, m, in and ft"
+            ),
+            ["record 0 (AssetSettings)".to_owned()],
+        ));
+    }
+    notes.extend(record_residual_unavailable(
+        "F3D",
         "fits the HOME camera, the AssetSettings view blocks and the scene radius to the body boxes by a rule f3d-open-items.md DR-896 leaves open",
         [
             "record 0 (AssetSettings)".to_owned(),
@@ -529,6 +551,8 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
                 "sketch containers (word 1, sketch word 7, no base record)".to_owned(),
                 "sketch points (flags and state by role)".to_owned(),
                 "sketch curves (curve flag A, EntityGenesis)".to_owned(),
+                "point and curve identities (`pt_tag`, `crv_primary_id`): one sequence from 100 across the sketches, each sketch's origin point, then its points, then its curves".to_owned(),
+                format!("record {SKETCHES} (sketch collection: `crv_tag_id_idx`, one more than the largest point or curve identity)"),
                 "placement tracking flags (01 01 00)".to_owned(),
                 format!(
                     "Sketch scope tails, placements and placement paths (evaluation epoch {}, where f3d.md §3.1 states 252, and duration {}, as the Base Feature item tail)",

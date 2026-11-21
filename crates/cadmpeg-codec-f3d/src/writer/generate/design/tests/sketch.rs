@@ -649,6 +649,70 @@ fn written_sketches_leave_evaluation_missing() {
 }
 
 #[test]
+fn the_sketch_note_names_the_point_and_curve_identities() {
+    let (ir, _) = scoped_sketches();
+    let (report, _) = write(&ir);
+    let notes = loss(&report, "export/record.residual-unavailable");
+    for named in [
+        "point and curve identities (`pt_tag`, `crv_primary_id`): one sequence from 100",
+        "record 10 (sketch collection: `crv_tag_id_idx`",
+    ] {
+        let holding = notes
+            .iter()
+            .filter(|message| message.contains(named))
+            .collect::<Vec<_>>();
+        let [note] = holding.as_slice() else {
+            panic!("{named} in one note: {notes:#?}");
+        };
+        assert!(note.contains("DR-901 leaves their rule open"), "{note}");
+        assert_eq!(note.matches(named).count(), 1, "{note}");
+    }
+}
+
+/// The record-timestamp tables of the written Design segment `bytes`, each
+/// of which the one fixed-clock note of `report` names.
+pub(super) fn fixed_clock_tables(
+    report: &cadmpeg_ir::report::export::ExportReport,
+    bytes: &[u8],
+) -> Vec<u64> {
+    let design = segment(bytes, "FusionDesignSegmentType1");
+    let tables = design
+        .primary
+        .iter()
+        .map(|(index, _)| *index)
+        .filter(|index| {
+            design
+                .type_of(*index)
+                .0
+                .eq_ignore_ascii_case(super::super::types::RECORD_TIMESTAMPS.guid)
+        })
+        .collect::<Vec<_>>();
+    let notes = loss(report, "export/record.residual-unavailable")
+        .into_iter()
+        .filter(|message| message.contains("fixed-clock"))
+        .collect::<Vec<_>>();
+    let [note] = notes.as_slice() else {
+        panic!("one fixed-clock note: {:#?}", report.losses);
+    };
+    for table in &tables {
+        assert!(
+            note.contains(&format!("record {table} (")),
+            "{table}: {note}"
+        );
+    }
+    tables
+}
+
+#[test]
+fn the_fixed_clock_note_names_every_record_timestamp_table() {
+    let (ir, _) = scoped_sketches();
+    let (report, _, bytes) = write_bytes(&ir);
+    // The component, Base Feature scope and result tables, and three for
+    // each of the four sketches.
+    assert_eq!(fixed_clock_tables(&report, &bytes).len(), 3 + 3 * 4);
+}
+
+#[test]
 fn the_id_table_lists_sketches_then_the_base_feature() {
     let (ir, _) = scoped_sketches();
     let (_, decoded, bytes) = write_bytes(&ir);
@@ -1186,4 +1250,139 @@ fn a_tangent_contact_at_the_ends_writes_its_endpoint_branch() {
         .filter(|relation| relation.kind == RelationKind::Coincident)
         .count();
     assert_eq!(joins, 1);
+}
+
+#[test]
+fn relation_ordinals_are_named_in_a_sketch_without_dimensions() {
+    let (ir, _) = scoped_sketches();
+    let (report, _) = write(&ir);
+    let notes = loss(&report, "export/record.residual-unavailable")
+        .into_iter()
+        .filter(|message| message.contains("relation ordinals"))
+        .collect::<Vec<_>>();
+    let [note] = notes.as_slice() else {
+        panic!("one relation-ordinal note: {:#?}", report.losses);
+    };
+    assert!(!note.contains("dimension frames"), "{note}");
+}
+
+#[test]
+fn a_tangent_via_a_shared_endpoint_writes_its_branch_and_branchless_uses_shared_class() {
+    use super::super::sketch::{plan, RelationKind, TangencyEnds};
+    use super::super::types;
+    let mut ir = scoped_cube();
+    // A line along +x to `joint`, and an arc from `joint` turning up to
+    // `(20, 10)`: `joint` bounds both curves.
+    let mut sketch = Source::new(
+        "tangent-via",
+        picked(principal(PrincipalEntity::XyPlane)),
+        frame([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+    );
+    sketch
+        .entity(
+            "p0",
+            PlanarCurve::Point(point2(0.0, 0.0)),
+            &[("line", DefiningRole::Start)],
+        )
+        .entity(
+            "joint",
+            PlanarCurve::Point(point2(10.0, 0.0)),
+            &[("line", DefiningRole::End), ("arc", DefiningRole::Start)],
+        )
+        .entity(
+            "arc-end",
+            PlanarCurve::Point(point2(20.0, 10.0)),
+            &[("arc", DefiningRole::End)],
+        )
+        .entity(
+            "line",
+            PlanarCurve::Line {
+                start: point2(0.0, 0.0),
+                end: point2(10.0, 0.0),
+            },
+            &[],
+        )
+        .entity(
+            "arc",
+            PlanarCurve::Arc {
+                center: point2(10.0, 10.0),
+                radius: PositiveLength::new(10.0).expect("a radius"),
+                start: Angle::THREE_QUARTER_TURN,
+                end: Angle::ZERO,
+            },
+            &[],
+        );
+    let (line, arc) = (sketch.operand("line"), sketch.operand("arc"));
+    sketch
+        .constraint(
+            "via-end",
+            SketchRelation::Tangent {
+                a: line.clone(),
+                b: arc.clone(),
+                contact: Some(Contact::Via(entity_id("tangent-via", "joint"))),
+            },
+        )
+        .constraint(
+            "no-contact",
+            SketchRelation::Tangent {
+                a: line,
+                b: arc,
+                contact: None,
+            },
+        );
+    let id = sketch.add_to(&mut ir);
+    let planned = plan(&ir, &[&id]);
+    let [item] = planned.items.as_slice() else {
+        panic!("one written sketch: {:?}", planned.unwritten);
+    };
+    let tangents = item
+        .relations
+        .iter()
+        .filter_map(|relation| match relation.kind {
+            RelationKind::Tangent(ends) => Some(ends),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    // The line's stored end meets the arc's stored start, where both run
+    // along +x.
+    assert_eq!(
+        tangents,
+        [
+            Some(TangencyEnds {
+                starts: [false, true],
+                aligned: true,
+            }),
+            None,
+        ]
+    );
+    let shared = item
+        .relations
+        .iter()
+        .filter(|relation| !matches!(relation.kind, RelationKind::Tangent(Some(_))))
+        .count();
+    let Some(Container::Ordered { members, .. }) = ir.design.containers.first_mut() else {
+        panic!("the cube's timeline");
+    };
+    members.insert(0, Member::Feature(id));
+    let (report, decoded, bytes) = write_bytes(&ir);
+    let design = segment(&bytes, "FusionDesignSegmentType1");
+    let records_of = |row: &crate::writer::generate::presentation::TypeRow| {
+        design
+            .primary
+            .iter()
+            .filter(|(index, _)| design.type_of(*index).0.eq_ignore_ascii_case(row.guid))
+            .count()
+    };
+    // Only the tangency with an endpoint branch takes the tangency class;
+    // every other relation, the branchless tangency among them, takes the
+    // shared relation class.
+    assert_eq!(records_of(&types::SKETCH_TANGENCY), 1);
+    assert_eq!(records_of(&types::SKETCH_RELATION), shared);
+    let decoded_tangents = decoded
+        .model
+        .sketch_constraints
+        .iter()
+        .filter(|constraint| format!("{:?}", constraint.definition.kind()).starts_with("Tangent"))
+        .count();
+    assert_eq!(decoded_tangents, 2, "{:#?}", report.losses);
 }

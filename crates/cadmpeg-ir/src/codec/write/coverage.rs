@@ -75,6 +75,25 @@ fn arena_kind<T: ArenaRecord>(_: &[T]) -> EntityKind {
     T::KIND
 }
 
+/// Whether a v10 design record restates the records of this design arena.
+const fn has_v10_counterpart(kind: EntityKind) -> bool {
+    matches!(
+        kind,
+        EntityKind::DesignScope
+            | EntityKind::DesignContainer
+            | EntityKind::DesignFeature
+            | EntityKind::DesignSketch
+            | EntityKind::DesignSketchEntity
+            | EntityKind::DesignSketchConstraint
+            | EntityKind::DesignSpatialSketch
+            | EntityKind::DesignSpatialSketchEntity
+            | EntityKind::DesignSpatialSketchConstraint
+            | EntityKind::DesignParameter
+            | EntityKind::DesignSpreadsheet
+            | EntityKind::DesignConfiguration
+    )
+}
+
 /// A disposition field of [`ArenaDispositions`]: the arenas of the `design`
 /// and `process` homes are fields of its `design` and `process` members.
 macro_rules! disposition {
@@ -166,7 +185,8 @@ macro_rules! declare_arena_dispositions {
 
             fn omission_losses(&self, ir: &CadIr, format: &str) -> Vec<LossNote> {
                 // While the document holds a v10 design record, the v11 design
-                // arenas restate content the v10 path writes.
+                // arenas with a v10 counterpart restate content the v10 path
+                // writes.
                 let restated = ir.arenas().holds(ArenaClass::Design, ArenaHome::Model);
                 let mut losses = Vec::new();
                 $(
@@ -178,7 +198,7 @@ macro_rules! declare_arena_dispositions {
                     };
                     if disposition!(self, $field, $home) == ArenaDisposition::Omitted
                         && records != 0
-                        && !(restated && crate::document::arena_home!($home) == ArenaHome::Design)
+                        && !(restated && has_v10_counterpart(arena_kind(&ir.$home.$field)))
                     {
                         losses.push(
                             ExportLossCode::ArenaOmitted(arena_kind(&ir.$home.$field))

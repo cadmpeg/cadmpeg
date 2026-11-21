@@ -380,6 +380,7 @@ pub(super) fn decode(
                 base_color: Some(color),
                 textures: Vec::new(),
                 properties: BTreeMap::new(),
+                native_ref: None,
             });
             appearance_ids.insert(appearance_key, id.clone());
             id
@@ -417,6 +418,7 @@ pub(super) fn decode(
                     )?
                     .then_some(false),
                     channels: BTreeMap::new(),
+                    native_ref: None,
                 });
             }
         }
