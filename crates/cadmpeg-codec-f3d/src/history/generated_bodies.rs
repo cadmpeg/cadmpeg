@@ -3,7 +3,7 @@
 
 use super::stored_bodies::ActiveBodies;
 use super::{historical_body_slot, stable_ref, FeatureBodySelectionInputs};
-use crate::history_records::AsmHistory;
+use crate::history_records::{AsmHistoricalRow, AsmHistoricalRowDelta, AsmHistory};
 use crate::loss::F3dLossCode;
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::{HashMap, HashSet};
@@ -11,15 +11,14 @@ use std::collections::{HashMap, HashSet};
 /// Re-express body selections of ASM body slots as bodies of the features
 /// that generate them.
 ///
-/// A body pattern seed resolved in its input state, a body deletion whose
-/// operands resolved through their recipe identity, and a Reverse Normal
-/// resolved in its input state name ASM body slots. When every selected slot
+/// A body pattern seed and a body move resolved in their input states, a body
+/// deletion whose operands resolved through their recipe identity, and a
+/// Reverse Normal resolved in its input state name ASM body slots. When every selected slot
 /// is absent from the model bodies, the one feature whose history transition
 /// inserts that slot generates the body, and the selection names it there.
-/// A Reverse Normal reads its slots in its bound history: see
-/// [`reverse_normal_binding`]. A body pattern seed whose every slot is a model
-/// body selects those model bodies: see [`live_seed_binding`]. The generating
-/// feature becomes a dependency of
+/// A body move and a Reverse Normal read their slots in the bound history.
+/// A body-pattern seed that resolves to model bodies also reads its bound
+/// history. The generating feature becomes a dependency of
 /// the selecting feature. Returns the result states of the producers of
 /// generated bodies, each listing every body slot that the producer's
 /// transition inserts.
@@ -49,20 +48,25 @@ pub(crate) fn bind_generated_body_selections(
             ))
         })
         .collect::<HashMap<_, _>>();
-    let producer = |slot: i64| -> Option<Producer> {
+    let producer = |slot: i64, history: Option<&AsmHistory>| -> Option<Producer> {
+        let in_history =
+            |candidate: &AsmHistory| history.is_none_or(|history| std::ptr::eq(candidate, history));
         let mut inserting = inputs
             .histories
             .iter()
+            .filter(|candidate| in_history(candidate))
             .flat_map(AsmHistory::states)
             .filter(|state| inserts_body(state, slot));
         let state = inserting.next()?;
         if inserting.next().is_some() {
             return None;
         }
-        let mut scopes = inputs
-            .scopes
-            .iter()
-            .filter(|scope| scope.history_state_id() == Some(state.state_id));
+        let mut scopes = inputs.scopes.iter().filter(|scope| {
+            scope.history_state_id() == Some(state.state_id)
+                && (history.is_none()
+                    || scope_history(scope, scope_histories, inputs.histories)
+                        .is_some_and(in_history))
+        });
         let scope = scopes.next()?;
         if scopes.next().is_some() {
             return None;
@@ -105,6 +109,14 @@ pub(crate) fn bind_generated_body_selections(
                     .collect::<Option<Vec<_>>>()
                     .map(|slots| (slots, native.as_str().to_owned()))
             }
+            FeatureDefinition::Operation(FeatureOperation::MoveBody {
+                bodies: BodySelection::Historical { bodies, native, .. },
+                ..
+            }) => bodies
+                .iter()
+                .map(|body| historical_body_slot(body.as_str()))
+                .collect::<Option<Vec<_>>>()
+                .map(|slots| (slots, native.as_str().to_owned())),
             FeatureDefinition::Operation(FeatureOperation::DeleteBody {
                 bodies: BodySelection::Native(group_id),
                 ..
@@ -199,9 +211,22 @@ pub(crate) fn bind_generated_body_selections(
             if slots.iter().any(|slot| live.contains(slot)) {
                 continue;
             }
+            let history = if matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::MoveBody { .. })
+            ) {
+                let Some(history) =
+                    scope.and_then(|scope| scope_history(scope, scope_histories, inputs.histories))
+                else {
+                    continue;
+                };
+                Some(history)
+            } else {
+                None
+            };
             let Some(producers) = slots
                 .iter()
-                .map(|slot| producer(*slot))
+                .map(|slot| producer(*slot, history))
                 .collect::<Option<Vec<_>>>()
             else {
                 continue;
@@ -233,6 +258,7 @@ pub(crate) fn bind_generated_body_selections(
             }
             FeatureDefinition::Operation(
                 FeatureOperation::DeleteBody { bodies, .. }
+                | FeatureOperation::MoveBody { bodies, .. }
                 | FeatureOperation::ReverseShape { source: bodies },
             ) => {
                 *bodies = generated;
@@ -343,7 +369,7 @@ fn reverse_normal_binding(
 /// The model bodies of a body-pattern seed of `slots` in state `seed_state`,
 /// read in the feature's bound history as a Reverse Normal reads its slots.
 /// The walk from that history's terminal state back to the seed state passes
-/// the scope's input state, and no transition on it updates or deletes a slot.
+/// the scope's input state. Each transition must preserve the seed geometry.
 fn live_seed_binding(
     context: &ReverseContext<'_>,
     feature: &cadmpeg_ir::features::Feature,
@@ -367,7 +393,9 @@ fn live_seed_binding(
             .states()
             .iter()
             .find(|state| state.state_id == current)?;
-        let delta = &state.transition.as_ref()?.topology;
+        let transition = state.transition.as_ref()?;
+        let delta = &transition.topology;
+        let rows = &transition.rows;
         if slots
             .iter()
             .any(|slot| delta.bodies.updated.contains(slot) || delta.bodies.deleted.contains(slot))
@@ -379,9 +407,26 @@ fn live_seed_binding(
                 &delta.coedges,
                 &delta.edges,
                 &delta.vertices,
+                &delta.surfaces,
+                &delta.curves,
+                &delta.pcurves,
+                &delta.points,
             ]
             .into_iter()
             .any(|family| !family.updated.is_empty() || !family.deleted.is_empty())
+            || changes_existing_rows(&rows.surface_repeats, &delta.surfaces.inserted)
+            || changes_existing_rows(&rows.surface_radii, &delta.surfaces.inserted)
+            || changes_existing_rows(&rows.surface_cylinders, &delta.surfaces.inserted)
+            || changes_existing_rows(&rows.surface_planes, &delta.surfaces.inserted)
+            || changes_existing_rows(&rows.surface_axes, &delta.surfaces.inserted)
+            || changes_existing_rows(&rows.curve_repeats, &delta.curves.inserted)
+            || changes_existing_rows(&rows.curve_axes, &delta.curves.inserted)
+            || changes_existing_rows(&rows.face_surfaces, &delta.faces.inserted)
+            || changes_existing_rows(&rows.edge_curves, &delta.edges.inserted)
+            || changes_existing_rows(&rows.coedge_pcurves, &delta.coedges.inserted)
+            || changes_existing_rows(&rows.vertex_points, &delta.vertices.inserted)
+            || changes_existing_rows(&rows.point_positions, &delta.points.inserted)
+            || changes_existing_rows(&rows.edge_samples, &delta.edges.inserted)
         {
             return None;
         }
@@ -392,6 +437,17 @@ fn live_seed_binding(
     }
     let source = super::historical_brep_source(&history.id)?;
     history_model_bodies(context, feature, history, source, slots)
+}
+
+fn changes_existing_rows<R: AsmHistoricalRow>(
+    rows: &AsmHistoricalRowDelta<R>,
+    inserted: &[i64],
+) -> bool {
+    !rows.removed.is_empty()
+        || rows
+            .set
+            .iter()
+            .any(|row| inserted.binary_search(&row.key()).is_err())
 }
 
 /// The result bodies of `slots` in BREP source `source` of `history`, with the

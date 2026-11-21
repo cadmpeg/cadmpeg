@@ -513,16 +513,45 @@ fn a_pattern_seed_without_a_stored_preceding_state_binds_through_its_history() {
 
 /// An extrude whose state 77 inserts body slot 1 and a feature that selects
 /// that body: a pattern whose seed is the body in its own input state 79, or,
-/// with `remove`, a `RemoveBody` whose group 20 resolves to slot 1. The
-/// history `history_id` holds states 2, 77, 79, and 80, and with
-/// `later_update` a state 81 after the pattern that updates slot 1. State 79
-/// updates slot 1, and state 80 keeps it.
+/// with `remove`, a `RemoveBody` whose group 20 resolves to slot 1.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum GeneratedSelector {
+    Pattern,
+    Remove,
+    Move,
+}
+
 fn generated_case(
     live: &[cadmpeg_ir::topology::Body],
-    remove: bool,
-    history_id: &str,
-    seed_state: i64,
-    later_update: bool,
+    selector: GeneratedSelector,
+) -> (
+    cadmpeg_ir::features::Feature,
+    Vec<cadmpeg_ir::features::FeatureResultTopology>,
+) {
+    generated_case_in(
+        live,
+        selector,
+        GeneratedHistory::Single {
+            id: "history",
+            seed_state: 79,
+            later_update: false,
+        },
+    )
+}
+
+enum GeneratedHistory<'a> {
+    Split,
+    Single {
+        id: &'a str,
+        seed_state: i64,
+        later_update: bool,
+    },
+}
+
+fn generated_case_in(
+    live: &[cadmpeg_ir::topology::Body],
+    selector: GeneratedSelector,
+    history: GeneratedHistory<'_>,
 ) -> (
     cadmpeg_ir::features::Feature,
     Vec<cadmpeg_ir::features::FeatureResultTopology>,
@@ -566,6 +595,10 @@ fn generated_case(
     };
     let group_id = "f3d:Design/BulkStream.dat:design-construction-operand-group#20";
     let pattern_id = FeatureId::mint("f3d:test:feature#mirror").unwrap();
+    let seed_state = match history {
+        GeneratedHistory::Split => 79,
+        GeneratedHistory::Single { seed_state, .. } => seed_state,
+    };
     let seed_body = crate::ids::history_input_body_id(
         &crate::ids::feature_input_prefix(&pattern_id, seed_state),
         1,
@@ -591,16 +624,24 @@ fn generated_case(
         feature(
             pattern_id.as_str(),
             &scopes[1].id,
-            FeatureDefinition::Operation(if remove {
-                FeatureOperation::DeleteBody {
+            FeatureDefinition::Operation(match selector {
+                GeneratedSelector::Remove => FeatureOperation::DeleteBody {
                     bodies: BodySelection::Native(group_id.into()),
                     mode: BodyRetentionMode::DeleteSelected,
-                }
-            } else {
-                FeatureOperation::Pattern {
+                },
+                GeneratedSelector::Pattern => FeatureOperation::Pattern {
                     seeds: vec![PatternSeed::Bodies(seed)],
                     pattern: PatternKind::UNRESOLVED_CIRCULAR,
-                }
+                },
+                GeneratedSelector::Move => FeatureOperation::MoveBody {
+                    bodies: seed,
+                    translation: cadmpeg_ir::features::FiniteVector3::new(
+                        cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                    rotation: None,
+                    copies: 0,
+                },
             }),
         ),
     ];
@@ -640,22 +681,35 @@ fn generated_case(
                 versions,
             )
         };
-    let histories = [crate::test_support::history::history(
-        history_id.into(),
-        0,
-        None,
-        false,
-        later_update
-            .then(|| state(81, 81, vec![1]))
-            .into_iter()
-            .chain([
-                state(80, 79, vec![1]),
-                state(79, 79, vec![1]),
-                state(77, 77, vec![1]),
-                state(2, 2, Vec::new()),
-            ])
-            .collect(),
-    )];
+    let build_history =
+        |id: &str, states| crate::test_support::history::history(id.into(), 0, None, false, states);
+    let histories = match history {
+        GeneratedHistory::Split => vec![
+            build_history(
+                "history",
+                vec![state(80, 80, Vec::new()), state(79, 79, Vec::new())],
+            ),
+            build_history(
+                "other-history",
+                vec![state(77, 77, vec![1]), state(2, 2, Vec::new())],
+            ),
+        ],
+        GeneratedHistory::Single {
+            id, later_update, ..
+        } => vec![build_history(
+            id,
+            later_update
+                .then(|| state(81, 81, vec![1]))
+                .into_iter()
+                .chain([
+                    state(80, 79, vec![1]),
+                    state(79, 79, vec![1]),
+                    state(77, 77, vec![1]),
+                    state(2, 2, Vec::new()),
+                ])
+                .collect(),
+        )],
+    };
     let inputs = FeatureBodySelectionInputs {
         scopes: &scopes,
         groups: &groups,
@@ -681,7 +735,7 @@ fn generated_case(
 #[test]
 fn a_seed_body_the_final_model_omits_is_generated_by_the_feature_that_inserts_it() {
     use cadmpeg_ir::features::{patterns::PatternSeed, BodySelection, FeatureDefinition};
-    let (pattern, results) = generated_case(&[], false, "history", 79, false);
+    let (pattern, results) = generated_case(&[], GeneratedSelector::Pattern);
     let FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Pattern {
         seeds, ..
     }) = pattern.evaluation.definition()
@@ -728,7 +782,7 @@ fn a_kept_seed_body_outside_a_brep_history_stays_historical() {
         .remove(0);
     body.id = cadmpeg_ir::ids::BodyId::mint("f3d:brep:entity#1").unwrap();
     let (pattern, results) =
-        generated_case(std::slice::from_ref(&body), false, "history", 79, false);
+        generated_case(std::slice::from_ref(&body), GeneratedSelector::Pattern);
     assert!(results.is_empty());
     assert!(matches!(
         pattern.evaluation.definition(),
@@ -747,12 +801,14 @@ fn a_seed_body_the_final_model_keeps_selects_that_model_body() {
         .bodies
         .remove(0);
     body.id = cadmpeg_ir::ids::BodyId::mint("f3d:brep:entity#1").unwrap();
-    let (pattern, results) = generated_case(
+    let (pattern, results) = generated_case_in(
         std::slice::from_ref(&body),
-        false,
-        "f3d:Assets/BREP.source.smbh:asm-history#0",
-        79,
-        false,
+        GeneratedSelector::Pattern,
+        GeneratedHistory::Single {
+            id: "f3d:Assets/BREP.source.smbh:asm-history#0",
+            seed_state: 79,
+            later_update: false,
+        },
     );
     assert!(results.is_empty());
     let FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Pattern {
@@ -777,12 +833,14 @@ fn a_seed_body_the_final_model_keeps_selects_that_model_body() {
 
     let mut other = body.clone();
     other.id = cadmpeg_ir::ids::BodyId::mint("f3d:brep:entity#2").unwrap();
-    let (pattern, _) = generated_case(
+    let (pattern, _) = generated_case_in(
         &[body, other],
-        false,
-        "f3d:Assets/BREP.source.smbh:asm-history#0",
-        79,
-        false,
+        GeneratedSelector::Pattern,
+        GeneratedHistory::Single {
+            id: "f3d:Assets/BREP.source.smbh:asm-history#0",
+            seed_state: 79,
+            later_update: false,
+        },
     );
     assert!(matches!(
         pattern.evaluation.definition(),
@@ -800,12 +858,14 @@ fn a_seed_body_updated_after_its_seed_state_stays_historical() {
         .bodies
         .remove(0);
     body.id = cadmpeg_ir::ids::BodyId::mint("f3d:brep:entity#1").unwrap();
-    let (pattern, _) = generated_case(
+    let (pattern, _) = generated_case_in(
         std::slice::from_ref(&body),
-        false,
-        "f3d:Assets/BREP.source.smbh:asm-history#0",
-        77,
-        false,
+        GeneratedSelector::Pattern,
+        GeneratedHistory::Single {
+            id: "f3d:Assets/BREP.source.smbh:asm-history#0",
+            seed_state: 77,
+            later_update: false,
+        },
     );
     assert!(matches!(
         pattern.evaluation.definition(),
@@ -823,12 +883,14 @@ fn a_seed_body_updated_after_the_pattern_state_stays_historical() {
         .bodies
         .remove(0);
     body.id = cadmpeg_ir::ids::BodyId::mint("f3d:brep:entity#1").unwrap();
-    let (pattern, _) = generated_case(
+    let (pattern, _) = generated_case_in(
         std::slice::from_ref(&body),
-        false,
-        "f3d:Assets/BREP.source.smbh:asm-history#0",
-        79,
-        true,
+        GeneratedSelector::Pattern,
+        GeneratedHistory::Single {
+            id: "f3d:Assets/BREP.source.smbh:asm-history#0",
+            seed_state: 79,
+            later_update: true,
+        },
     );
     assert!(matches!(
         pattern.evaluation.definition(),
@@ -839,6 +901,17 @@ fn a_seed_body_updated_after_the_pattern_state_stays_historical() {
 
 #[test]
 fn a_seed_body_with_a_face_updated_after_the_pattern_state_stays_historical() {
+    assert_seed_with_updated_entity_stays_historical(|topology| &mut topology.faces);
+}
+
+#[test]
+fn a_seed_body_with_a_surface_updated_after_the_pattern_state_stays_historical() {
+    assert_seed_with_updated_entity_stays_historical(|topology| &mut topology.surfaces);
+}
+
+fn assert_seed_with_updated_entity_stays_historical(
+    entity_slots: impl Fn(&mut crate::history_records::AsmHistoricalTopology) -> &mut Vec<i64>,
+) {
     use crate::history_records::{AsmDeltaState, AsmEntityVersion, AsmHistoricalTopology};
     use cadmpeg_ir::features::{
         patterns::{PatternKind, PatternSeed},
@@ -914,7 +987,7 @@ fn a_seed_body_with_a_face_updated_after_the_pattern_state_stays_historical() {
     let operands = [body_recipe_operand(8)];
     let mk_state = |state_id: i64,
                     body_version: i64,
-                    face_version: Option<i64>,
+                    entity_version: Option<i64>,
                     bodies: Vec<i64>|
      -> crate::test_support::history::State {
         let mut versions: Vec<AsmEntityVersion> = bodies
@@ -924,15 +997,17 @@ fn a_seed_body_with_a_face_updated_after_the_pattern_state_stays_historical() {
                 record_ref: body_version,
             })
             .collect();
-        let faces = if let Some(fv) = face_version {
+        let mut topology = AsmHistoricalTopology {
+            bodies,
+            ..AsmHistoricalTopology::default()
+        };
+        if let Some(record_ref) = entity_version {
             versions.push(AsmEntityVersion {
                 entity_ref: 100,
-                record_ref: fv,
+                record_ref,
             });
-            vec![100]
-        } else {
-            Vec::new()
-        };
+            entity_slots(&mut topology).push(100);
+        }
         (
             AsmDeltaState {
                 id: format!("f3d:history:asm-delta-state#{state_id}"),
@@ -950,15 +1025,10 @@ fn a_seed_body_with_a_face_updated_after_the_pattern_state_stays_historical() {
                 records: Vec::new(),
                 transition: None,
             },
-            Some(AsmHistoricalTopology {
-                bodies,
-                faces,
-                ..AsmHistoricalTopology::default()
-            }),
+            Some(topology),
             versions,
         )
     };
-    // State 81 updates face 100 (version 79 -> 81) while keeping body 1 at version 79.
     let histories = [crate::test_support::history::history(
         "f3d:Assets/BREP.source.smbh:asm-history#0".into(),
         0,
@@ -1000,7 +1070,7 @@ fn a_seed_body_with_a_face_updated_after_the_pattern_state_stays_historical() {
 #[test]
 fn a_removed_body_the_final_model_omits_is_generated_by_the_feature_that_inserts_it() {
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
-    let (remove, results) = generated_case(&[], true, "history", 79, false);
+    let (remove, results) = generated_case(&[], GeneratedSelector::Remove);
     let FeatureDefinition::Operation(FeatureOperation::DeleteBody {
         bodies: BodySelection::Generated { bodies, native },
         ..
@@ -1025,4 +1095,49 @@ fn a_removed_body_the_final_model_omits_is_generated_by_the_feature_that_inserts
         .iter()
         .any(|dependency| dependency.as_str() == "f3d:test:feature#extrude"));
     assert_eq!(results.len(), 1);
+}
+
+#[test]
+fn a_moved_body_the_final_model_omits_is_generated_by_the_feature_that_inserts_it() {
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    let (moved, results) = generated_case(&[], GeneratedSelector::Move);
+    let FeatureDefinition::Operation(FeatureOperation::MoveBody {
+        bodies: BodySelection::Generated { bodies, native },
+        ..
+    }) = moved.evaluation.definition()
+    else {
+        panic!("generated move: {:?}", moved.evaluation.definition());
+    };
+    assert_eq!(
+        bodies
+            .iter()
+            .map(|body| (body.feature.as_str(), body.local_id.as_str()))
+            .collect::<Vec<_>>(),
+        [("f3d:test:feature#extrude", "1")]
+    );
+    assert_eq!(
+        native.as_str(),
+        "f3d:Design/BulkStream.dat:design-construction-operand-group#20"
+    );
+    assert!(moved
+        .dependencies
+        .as_slice()
+        .iter()
+        .any(|dependency| dependency.as_str() == "f3d:test:feature#extrude"));
+    assert_eq!(results.len(), 1);
+}
+
+#[test]
+fn a_moved_body_that_another_history_inserts_stays_historical() {
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    let (moved, results) = generated_case_in(&[], GeneratedSelector::Move, GeneratedHistory::Split);
+    assert!(results.is_empty());
+    assert!(matches!(
+        moved.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::MoveBody {
+            bodies: BodySelection::Historical { .. },
+            ..
+        })
+    ));
+    assert!(moved.dependencies.is_empty());
 }

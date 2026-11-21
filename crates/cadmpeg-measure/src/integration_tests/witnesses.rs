@@ -181,7 +181,7 @@ fn everything() -> Selection {
 
 /// A cylinder of radius 5 from `z = 0` to `z = 10` closed by two
 /// hemispheres; the top dome has `top` as its sense.
-fn capsule(top: Sense) -> CadIr {
+pub(super) fn capsule(top: Sense) -> CadIr {
     let mut builder = Builder::new();
     let low = builder.vertex([RADIUS, 0.0, 0.0]);
     let high = builder.vertex([RADIUS, 0.0, LENGTH]);
