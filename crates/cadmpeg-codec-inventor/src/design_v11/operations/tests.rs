@@ -435,6 +435,19 @@ fn project_part(ir: &mut CadIr) -> Vec<LossNote> {
 fn unsupported_operands_keep_the_full_native_operation_and_pin_loss() {
     let cases = [
         legacy(
+            "sheet_metal_attached_plate",
+            json!({"profile":profile(),"thickness":2.0,"side":"forward","attachment":native_selection()}),
+        ),
+        legacy(
+            "sheet_metal_bend",
+            json!({
+                "plate":"inventor:design:feature#plate",
+                "attachment":native_selection(),"inside_radius":1.0,
+                "relief":{"form":"style_default","width":2.0,"depth":3.0,"minimum_remnant":4.0,"seam_gap":0.5},
+                "transition":{"form":"style_default","radius":6.0}
+            }),
+        ),
+        legacy(
             "sheet_metal_contour_flange",
             json!({"construction":{"profile":profile(),"direction":[0.0,0.0,1.0],"thickness":2.0,"neutral_factor":0.4}}),
         ),

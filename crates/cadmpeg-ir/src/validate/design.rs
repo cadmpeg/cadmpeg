@@ -38,6 +38,7 @@ mod programs;
 pub(super) mod records;
 pub(super) mod resolved;
 pub(super) mod selections;
+mod sheet_metal;
 mod states;
 mod tolerances;
 mod walk;
@@ -171,6 +172,7 @@ pub(super) fn check_design(
     let _depth = ctx.enter_nested("IR design validation")?;
     let held = collect(ctx, ir, &index)?;
     index.add_dependencies(&held);
+    sheet_metal::check(&index, findings);
     let states = states::States::new(ir);
     let matchers = matching::Matchers::new(&states);
     names::check(ctx, &index, &states, &held, findings)?;
