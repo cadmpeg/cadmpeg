@@ -5148,13 +5148,14 @@ fn finish_brep_fallback(mut staged: BrepDraft, cause: impl std::fmt::Display) ->
 /// Projects one embedded Brep into a self-contained semantic topology value.
 pub(crate) fn embedded_brep_json(
     expand: crate::mesh::MeshExpand<'_>,
-    data: &[u8],
     range: std::ops::Range<usize>,
     archive: ArchiveVersion,
     writer_version: Option<i64>,
     scale: MillimeterScale,
+    mesh_budget: &mut crate::mesh::MeshBudget,
     refusal: &mut Option<cadmpeg_core::CodecError>,
 ) -> Option<String> {
+    let data = expand.data();
     let parsed = match crate::brep::parse(expand.ctx(), data, range, archive, writer_version, &[]) {
         Ok(value) => value,
         Err(crate::curves::GeometryError::Codec(error)) => {
@@ -5181,7 +5182,6 @@ pub(crate) fn embedded_brep_json(
         &cadmpeg_ir::identity_namespace!("rhino", "history", "brep"),
         cadmpeg_ir::identity_key!("embedded"),
     );
-    let mut mesh_budget = crate::mesh::MeshBudget::new();
     let staged = match stage_brep(BrepTransferInput {
         expand,
         data,
@@ -5192,7 +5192,7 @@ pub(crate) fn embedded_brep_json(
         association: &association,
         unknown: &unknown,
         scale,
-        mesh_budget: &mut mesh_budget,
+        mesh_budget,
     }) {
         Ok(value) => value,
         Err(crate::curves::GeometryError::Codec(error)) => {
@@ -6430,15 +6430,18 @@ pub(crate) fn decode(
         )
     });
     let mut history_warnings = Diagnostics::new();
+    let mut mesh_budget = context.mesh_budget.clone();
     let untyped = context.validate_candidate_fallible(|candidate, _annotations| {
         crate::history::project(
             expand.ctx(),
             &scan.history,
             geometry_context,
+            &mut mesh_budget,
             candidate,
             &mut history_warnings,
         )
     });
+    context.mesh_budget = mesh_budget;
     context.report.phase_warnings.append(&mut history_warnings);
     let history_projected = untyped.is_ok();
     match untyped {

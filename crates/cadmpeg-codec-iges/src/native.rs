@@ -4656,6 +4656,20 @@ pub(crate) fn store(
             })
         },
     )?;
+    let mut property_owners: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
+    for sequence in by_directory.keys() {
+        let Some(TrailingPointerAnalysis::Unambiguous(groups)) =
+            trailing_pointer_analysis.get(sequence)
+        else {
+            continue;
+        };
+        for property in groups.properties() {
+            let owners = property_owners.entry(*property).or_default();
+            if owners.last() != Some(sequence) {
+                owners.push(*sequence);
+            }
+        }
+    }
     let product_properties = collect_native_items(
         directory
             .iter()
@@ -4674,23 +4688,12 @@ pub(crate) fn store(
                     .and_then(|record| record.string(2))
                     .map(|bytes| NativeBytes::from(bytes.to_vec())),
                 owners: native_entity_ids(
-                    by_directory
-                        .iter()
-                        .filter(|(sequence, _owner_record)| {
-                            **sequence != entry.sequence
-                                && trailing_pointer_analysis
-                                    .get(sequence)
-                                    .and_then(|analysis| match analysis {
-                                        TrailingPointerAnalysis::Unambiguous(groups) => {
-                                            Some(groups)
-                                        }
-                                        _ => None,
-                                    })
-                                    .is_some_and(|groups| {
-                                        groups.properties().contains(&entry.sequence)
-                                    })
-                        })
-                        .map(|(sequence, _)| *sequence),
+                    property_owners
+                        .get(&entry.sequence)
+                        .into_iter()
+                        .flatten()
+                        .copied()
+                        .filter(|owner| *owner != entry.sequence),
                 ),
             })
         },
@@ -5020,19 +5023,12 @@ pub(crate) fn store(
             form: entry.form,
             declared_value_count: record.integer(1),
             owners: native_entity_ids(
-                by_directory
-                    .iter()
-                    .filter(|(sequence, _owner)| {
-                        **sequence != entry.sequence
-                            && trailing_pointer_analysis
-                                .get(sequence)
-                                .and_then(|analysis| match analysis {
-                                    TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
-                                    _ => None,
-                                })
-                                .is_some_and(|groups| groups.properties().contains(&entry.sequence))
-                    })
-                    .map(|(sequence, _)| *sequence),
+                property_owners
+                    .get(&entry.sequence)
+                    .into_iter()
+                    .flatten()
+                    .copied()
+                    .filter(|owner| *owner != entry.sequence),
             ),
             value,
         });
@@ -5046,18 +5042,11 @@ pub(crate) fn store(
             let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
             let count = overdeclared_counts.counted_tail(entry.sequence, record, end, 1, 3);
             let owners = native_entity_ids(
-                by_directory
-                    .iter()
-                    .filter(|(sequence, _owner)| {
-                        trailing_pointer_analysis
-                            .get(sequence)
-                            .and_then(|analysis| match analysis {
-                                TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
-                                _ => None,
-                            })
-                            .is_some_and(|groups| groups.properties().contains(&entry.sequence))
-                    })
-                    .map(|(sequence, _)| *sequence),
+                property_owners
+                    .get(&entry.sequence)
+                    .into_iter()
+                    .flatten()
+                    .copied(),
             );
             Ok(NativeUnitsData {
                 id: format!("iges:metadata:units-data#D{}", entry.sequence),

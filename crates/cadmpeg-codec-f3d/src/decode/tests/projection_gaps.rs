@@ -471,6 +471,8 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             partially_resolved_edge_members: 1,
             unresolved_edge_selections: 1,
             unrepaired_lost_edge_references: 1,
+            unplaced_linked_scopes: Vec::new(),
+            record_ordered_linked_scopes: Vec::new(),
         }
     );
 
@@ -999,6 +1001,7 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
         category: None,
         base_color: Some(material),
         properties: Default::default(),
+        native_ref: None,
     });
     let binding = |id: &str, target: AppearanceTarget| AppearanceBinding {
         id: format!("test:model:appearance-binding#{id}")
@@ -1010,6 +1013,7 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
         object_type: None,
         visible: None,
         channels: Default::default(),
+        native_ref: None,
     };
     ir.model.appearance_bindings = vec![
         binding("body", AppearanceTarget::Body(body)),

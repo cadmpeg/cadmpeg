@@ -392,10 +392,12 @@ fn standalone_mesh_round_trips_across_archive_versions() {
 
     ir.model.tessellations[0] = ir.model.tessellations[0]
         .clone()
-        .with_triangle_groups(vec![cadmpeg_ir::tessellation::TessellationTriangleGroup {
-            source_id: Some("synthetic:test:group#0".into()),
-            triangles: vec![0],
-        }])
+        .with_triangle_groups(vec![
+            cadmpeg_ir::tessellation::TessellationTriangleGroup::new(
+                Some("synthetic:test:group#0".into()),
+                vec![0],
+            ),
+        ])
         .expect("valid triangle group partition");
     assert!(matches!(
         RhinoCodec.plan(
