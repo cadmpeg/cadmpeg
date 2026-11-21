@@ -691,7 +691,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 .and_then(|index| objects.get(index))
                 .and_then(|(offset, _, _)| usize::try_from(*offset).ok())
                 .unwrap_or(0);
-            let top_frame = principal_component_profile_frame(
+            let component_frame = principal_component_profile_frame(
                 &plane_frames,
                 &plane_index,
                 context_start,
@@ -701,19 +701,14 @@ pub(crate) fn project_compact_sketch_profiles(
             let Some(ProfileSketchFrame {
                 frame: (origin, normal, u_axis),
                 assumed,
-            }) = top_frame
-                .map(|frame| ProfileSketchFrame {
-                    frame,
-                    assumed: false,
-                })
-                .or_else(|| {
-                    profile_sketch_frame(
-                        &lane.native_payload,
-                        &plane_frames,
-                        &plane_index,
-                        [context_start, start, end],
-                    )
-                })
+            }) = component_frame.map(ProfileSketchFrame::stored).or_else(|| {
+                profile_sketch_frame(
+                    &lane.native_payload,
+                    &plane_frames,
+                    &plane_index,
+                    [context_start, start, end],
+                )
+            })
             else {
                 continue;
             };
@@ -839,7 +834,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 if assumed {
                     assumed_planes.push(sketch_id.clone());
                 }
-                record_component_marker_coordinates(&mut features[feature_index], top_frame);
+                record_component_marker_coordinates(&mut features[feature_index], component_frame);
                 features[feature_index].evaluation.set_definition(
                     cadmpeg_ir::features::FeatureDefinition::Operation(
                         cadmpeg_ir::features::FeatureOperation::Sketch {
@@ -982,7 +977,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 if assumed {
                     assumed_planes.push(sketch_id.clone());
                 }
-                record_component_marker_coordinates(&mut features[feature_index], top_frame);
+                record_component_marker_coordinates(&mut features[feature_index], component_frame);
                 features[feature_index].evaluation.set_definition(
                     cadmpeg_ir::features::FeatureDefinition::Operation(
                         cadmpeg_ir::features::FeatureOperation::Sketch {
@@ -1060,7 +1055,7 @@ pub(crate) fn project_compact_sketch_profiles(
             if assumed {
                 assumed_planes.push(sketch_id.clone());
             }
-            record_component_marker_coordinates(&mut features[feature_index], top_frame);
+            record_component_marker_coordinates(&mut features[feature_index], component_frame);
             features[feature_index].evaluation.set_definition(
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Sketch {
@@ -1478,7 +1473,7 @@ pub(crate) fn project_marker_backed_sketches(
             ) else {
                 continue;
             };
-            let top_frame = (!block_definition)
+            let component_frame = (!block_definition)
                 .then(|| {
                     principal_component_profile_frame(
                         &plane_frames,
@@ -1489,12 +1484,8 @@ pub(crate) fn project_marker_backed_sketches(
                     )
                 })
                 .flatten();
-            let stored = |frame| ProfileSketchFrame {
-                frame,
-                assumed: false,
-            };
-            let frame = top_frame
-                .map(stored)
+            let frame = component_frame
+                .map(ProfileSketchFrame::stored)
                 .or_else(|| {
                     profile_sketch_frame(
                         &lane.native_payload,
@@ -1505,7 +1496,7 @@ pub(crate) fn project_marker_backed_sketches(
                 })
                 .or_else(|| feature_frames.get(native_feature.id.as_str()).copied())
                 .or_else(|| {
-                    block_definition.then_some(stored((
+                    block_definition.then_some(ProfileSketchFrame::stored((
                         Point3::new(0.0, 0.0, 0.0),
                         Vector3::new(0.0, 0.0, 1.0),
                         Vector3::new(1.0, 0.0, 0.0),
@@ -1585,7 +1576,7 @@ pub(crate) fn project_marker_backed_sketches(
                         }
                         record_component_marker_coordinates(
                             &mut features[feature_index],
-                            top_frame,
+                            component_frame,
                         );
                     }
                     features[feature_index].evaluation.set_definition(
@@ -2688,7 +2679,7 @@ pub(crate) fn project_marker_backed_sketches(
             if assumed {
                 held_geometry.assumed_planes.push(sketch_id.clone());
             }
-            record_component_marker_coordinates(&mut features[feature_index], top_frame);
+            record_component_marker_coordinates(&mut features[feature_index], component_frame);
             features[feature_index]
                 .evaluation
                 .set_definition(if block_definition {

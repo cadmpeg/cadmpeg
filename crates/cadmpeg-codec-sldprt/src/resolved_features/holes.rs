@@ -4311,16 +4311,23 @@ pub(super) struct ProfileSketchFrame {
     pub(super) assumed: bool,
 }
 
+impl ProfileSketchFrame {
+    /// A frame the profile's records store.
+    pub(super) fn stored(frame: (Point3, Vector3, Vector3)) -> Self {
+        Self {
+            frame,
+            assumed: false,
+        }
+    }
+}
+
 pub(super) fn profile_sketch_frame(
     payload: &[u8],
     plane_frames: &HashMap<u32, SketchPlaneFrame>,
     plane_index: &CompactReferencePlaneIndex,
     [context_start, start, end]: [usize; 3],
 ) -> Option<ProfileSketchFrame> {
-    let stored = |frame| ProfileSketchFrame {
-        frame,
-        assumed: false,
-    };
+    let stored = ProfileSketchFrame::stored;
     if let Some(frame) =
         resolved_support_component_frame(plane_frames, plane_index, [context_start, start, end])
     {
