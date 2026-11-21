@@ -1032,7 +1032,7 @@ pub(in crate::design::profile_select) fn candidate(
             continue;
         }
         let Some(ResolvedProfileSelection::Regions(regions)) =
-            trimmed_selection(&sampled, &selected)
+            trimmed_selection(&sampled, &selected, tolerance)
         else {
             continue;
         };

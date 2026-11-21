@@ -70,7 +70,11 @@ pub(super) fn resolve(
     {
         return Ok(None);
     }
-    cap_regions::joined::candidate(source, scoped, states, sweep, &curves)
+    let named: Vec<SketchEntityId> = curves.iter().flatten().cloned().collect();
+    Ok(
+        cap_regions::joined::candidate(source, scoped, states, sweep, &named)?
+            .map(|profile| (profile, Vec::new())),
+    )
 }
 
 /// The exact reading requires every curve to bound a selected region.
