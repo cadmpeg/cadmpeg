@@ -3969,16 +3969,6 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Note.** When the distinct members of the one selection group of an Extrude match no Sketch point, Sketch curve, or history binding and outnumber the atomic regions of the line, arc, and circle curves of a Sketch with non-construction text, the decoder takes the excess members as glyph picks. When the member count equals the count of non-whitespace characters of the Sketch text, the profile names the text entities and the decoder reports `feature.profile-text-glyphs-assumed`. Otherwise a Sketch with one profile loop selects that loop, any other Sketch keeps the group as a native selection within the Sketch, and the decoder reports `feature.profile-text-glyphs-native`. A Sketch with text and exactly one profile loop resolves to that loop when the distinct members are at most its atomic regions.
 
-### DR-893. Mesh collection counts after a conversion
-
-**Question.** What does the u32 at offset 21 of a mesh collection count once a `Convert Mesh` feature consumes a listed body?
-
-**Known.** A `MeshTessellate` produced body stays in its collection's body list through a later `MeshReduce`. A later `Convert Mesh` removes it: the nested collection base then stores body count `0` and no body reference, and the u32 at offset 21 of the collection keeps `1`. Every listed collection stores equal counts in the two places.
-
-**Need.** A conversion of one of two listed bodies, and a conversion followed by a new mesh import into the same collection.
-
-**Note.** The decoder requires the two counts to agree; such a collection reports `mesh.container-undecoded` with an invalid mesh-collection frame.
-
 ### DR-920. Scene slot of a tessellated mesh body
 
 **Question.** What does the Scene-node slot of a `MeshTessellate` produced body name, and which Scene node displays the body?

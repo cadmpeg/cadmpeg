@@ -134,3 +134,23 @@ fn a_later_mesh_operation_takes_the_produced_body() {
         assert_eq!(later[0]["source_properties"][key], produced, "{tag}");
     }
 }
+
+/// A Convert Mesh of the one produced body leaves the collection listing no
+/// body, an empty ParaMesh registry.
+#[test]
+fn a_converted_produced_body_leaves_an_empty_collection() {
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(&include_bytes!("../../../../corpus/f3d/tessellate_convert.f3d")[..]),
+            &DecodeOptions::default(),
+        )
+        .expect("decode the corpus file");
+    let codes = result
+        .report()
+        .losses
+        .iter()
+        .map(|loss| loss.code.local_code().to_owned())
+        .collect::<Vec<_>>();
+    assert!(!codes.contains(&"mesh.container-undecoded".to_owned()), "{codes:?}");
+    assert!(codes.contains(&"mesh.container-unjoined".to_owned()), "{codes:?}");
+}
