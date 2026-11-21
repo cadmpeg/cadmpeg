@@ -44,6 +44,7 @@ fn historical_edges_keep_samples_and_require_one_input_state() {
         start: Some(point([0., 2., 3.])),
         end: Some(point([2., 2., 3.])),
         faces: DistinctMembers::default(),
+        supports: Vec::new(),
     };
     let input = FeatureInputTopology {
         id: state.clone(),
