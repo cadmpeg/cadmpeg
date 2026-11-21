@@ -10624,7 +10624,7 @@ Body-reference record of type `D3937028-C20C-4E65-B010-94AD418A5C20`, type versi
 | 301 | 1 | `constant_flag` | `u8` | little | spec | appearance-entry count `k`: `0` \| \| u32 \| `0x00236810` \| \| u8 \| `1` \| · value `1` |
 | 302 | 1 | `design_flag` | `u8` | little | spec | `1` in the design body-reference record, `0` in the parameter body-reference record |
 | 303 | 32 | `minus_one` | `f64[4]` | little | spec | \| 4 × f64 \| `-1.0` \| |
-| 335 | 4 | `unit_scale` | `f32` | little | spec | \| 4 × f64 \| `-1.0` \| \| f32 \| `1.0` \| |
+| 335 | 4 | `unit_scale` | `f32` | little | spec | \| 4 × f64 \| `-1.0` \| \| f32 \| `1.0` \| · value `1.0` |
 | 339 | 10 | `zero_run` | `bytes[10]` | little | spec | \| 10 × u8 \| zero \| · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
 | 349 | 4 | `node_guid_length` | `u32` | little | spec | node GUID in the design body-reference record, parameter GUID in the parameter body-reference record · value `36` |
 | 353 | 72 | `node_guid_code_units` | `bytes[72]` | little | spec | node GUID in the design body-reference record, parameter GUID in the parameter body-reference record |
@@ -10651,7 +10651,7 @@ Body-reference record of type `D3937028-C20C-4E65-B010-94AD418A5C20`, type versi
 | 841 | 4 | `appearance_name_length` | `u32` | little | spec | appearance `PrismOpaque` · value `11` |
 | 845 | 22 | `appearance_name_code_units` | `bytes[22]` | little | spec | appearance `PrismOpaque` |
 | 867 | 4 | `tail_word` | `u32` | little | spec | appearance `PrismOpaque` \| \| u32 \| `0` \| · value `0` |
-| 871 | 4 | `tail_scale` | `f32` | little | spec | appearance `PrismOpaque` \| \| u32 \| `0` \| \| f32 \| `1.0` \| |
+| 871 | 4 | `tail_scale` | `f32` | little | spec | appearance `PrismOpaque` \| \| u32 \| `0` \| \| f32 \| `1.0` \| · value `1.0` |
 | 875 | 1 | `tail_flag` | `u8` | little | spec | \| f32 \| `1.0` \| \| u8 \| `1` \| \| u32 \| `0` \| \| reference \| the `Body` owner of the first presentation envelope \| · value `1` |
 | 876 | 4 | `tail_zero` | `u32` | little | spec | \| u8 \| `1` \| \| u32 \| `0` \| \| reference \| the `Body` owner of the first presentation envelope \| · value `0` |
 | 880 | 11 | `body_owner_repeat` | `bytes[11]` | little | spec | the `Body` owner of the first presentation envelope |
@@ -10701,7 +10701,7 @@ Component aggregate of type `E03784ED-5E19-4E14-B9F2-3B07017018CD`, type version
 | 20 | 4 | `word_one` | `u32` | little | spec | \| u8 \| `0` \| \| u32 \| `1` \| · value `1` |
 | 24 | 1 | `flag_a` | `u8` | little | spec | \| u32 \| `1` \| \| u8 \| `0` \| \| u8 \| `1` \| · value `0` |
 | 25 | 1 | `flag_b` | `u8` | little | spec | \| u8 \| `0` \| \| u8 \| `1` \| \| f32 \| `1.0` \| · value `1` |
-| 26 | 4 | `scale` | `f32` | little | spec | \| u8 \| `1` \| \| f32 \| `1.0` \| |
+| 26 | 4 | `scale` | `f32` | little | spec | \| u8 \| `1` \| \| f32 \| `1.0` \| · value `1.0` |
 | 30 | 11 | `record_8ef00d65` | `bytes[11]` | little | spec | records of types `8EF00D65-F18D-4179-A644-FE0CA39943D6` |
 | 41 | 11 | `record_878c70a7` | `bytes[11]` | little | spec | records of types `8EF00D65-F18D-4179-A644-FE0CA39943D6` |
 | 52 | 11 | `record_1e650ea7` | `bytes[11]` | little | spec | records of types `8EF00D65-F18D-4179-A644-FE0CA39943D6` |
@@ -10803,8 +10803,8 @@ Origin record with the shared head and tail of the origin records and its geomet
 | 120 | 8 | `zero_b` | `bytes[8]` | little | spec | `00 00 01` \| \| 8 × u8 \| zero \| · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
 | 128 | 11 | `asset_settings` | `bytes[11]` | little | spec | the `AssetSettings` record (type `23FD63FB-4EBE-4c85-A42B-5D9809AA3499`) |
 | 139 | 2 | `zero_c` | `bytes[2]` | little | spec | \| 2 × u8 \| zero \| · value `[0, 0]` |
-| 141 | 4 | `scale_a` | `f32` | little | spec | \| 2 × u8 \| zero \| \| f32 \| `1.0` \| |
-| 145 | 4 | `scale_b` | `f32` | little | spec | `1.0` for the point and the planes, `1.3` for the axes |
+| 141 | 4 | `scale_a` | `f32` | little | spec | \| 2 × u8 \| zero \| \| f32 \| `1.0` \| · value `1.0` |
+| 145 | 4 | `scale_b` | `f32` | little | spec | `1.0` for the point and the planes, `1.3` for the axes · value `1.0` |
 | 149 | 5 | `zero_d` | `bytes[5]` | little | spec | \| 5 × u8 \| zero \| \| reference \| the origin container \| · value `[0, 0, 0, 0, 0]` |
 | 154 | 11 | `origin_container` | `bytes[11]` | little | spec | \| 5 × u8 \| zero \| \| reference \| the origin container \| |
 
@@ -10827,8 +10827,8 @@ Origin record with the shared head and tail of the origin records and its geomet
 | 69 | 8 | `property_value` | `u64` | little | spec | `IntrinsicMetaTypeuint64` \| \| u64 \| `0` \| · value `0` |
 | 77 | 24 | `origin` | `f64[3]` | little | spec | f64 origin `(0, 0, 0)`, f64 unit direction |
 | 101 | 24 | `direction` | `f64[3]` | little | spec | f64 unit direction, f64 `0.175` |
-| 125 | 8 | `scalar_a` | `f64` | little | spec | f64 unit direction, f64 `0.175`, f64 `2.25` |
-| 133 | 8 | `scalar_b` | `f64` | little | spec | f64 `0.175`, f64 `2.25` |
+| 125 | 8 | `scalar_a` | `f64` | little | spec | f64 unit direction, f64 `0.175`, f64 `2.25` · value `0.175` |
+| 133 | 8 | `scalar_b` | `f64` | little | spec | f64 `0.175`, f64 `2.25` · value `2.25` |
 | 141 | 5 | `geometry_end_zero` | `bytes[5]` | little | spec | the geometry of the record \| \| 5 × u8 \| zero \| · value `[0, 0, 0, 0, 0]` |
 | 146 | 4 | `word` | `u32` | little | spec | `0xffffffff` · value `4294967295` |
 | 150 | 1 | `name_flag` | `u8` | little | spec | `0xffffffff` \| \| u8 \| `1` \| · value `1` |
@@ -10838,8 +10838,8 @@ Origin record with the shared head and tail of the origin records and its geomet
 | 160 | 8 | `zero_b` | `bytes[8]` | little | spec | `00 00 01` \| \| 8 × u8 \| zero \| · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
 | 168 | 11 | `asset_settings` | `bytes[11]` | little | spec | the `AssetSettings` record (type `23FD63FB-4EBE-4c85-A42B-5D9809AA3499`) |
 | 179 | 2 | `zero_c` | `bytes[2]` | little | spec | \| 2 × u8 \| zero \| · value `[0, 0]` |
-| 181 | 4 | `scale_a` | `f32` | little | spec | \| 2 × u8 \| zero \| \| f32 \| `1.0` \| |
-| 185 | 4 | `scale_b` | `f32` | little | spec | `1.0` for the point and the planes, `1.3` for the axes |
+| 181 | 4 | `scale_a` | `f32` | little | spec | \| 2 × u8 \| zero \| \| f32 \| `1.0` \| · value `1.0` |
+| 185 | 4 | `scale_b` | `f32` | little | spec | `1.0` for the point and the planes, `1.3` for the axes · value `1.3` |
 | 189 | 5 | `zero_d` | `bytes[5]` | little | spec | \| 5 × u8 \| zero \| \| reference \| the origin container \| · value `[0, 0, 0, 0, 0]` |
 | 194 | 11 | `origin_container` | `bytes[11]` | little | spec | \| 5 × u8 \| zero \| \| reference \| the origin container \| |
 
@@ -10861,14 +10861,14 @@ Origin record with the shared head and tail of the origin records and its geomet
 | 46 | 23 | `property_type` | `bytes[23]` | little | spec | `IntrinsicMetaTypeuint64` · value `"IntrinsicMetaTypeuint64"` |
 | 69 | 8 | `property_value` | `u64` | little | spec | `IntrinsicMetaTypeuint64` \| \| u64 \| `0` \| · value `0` |
 | 77 | 4 | `geometry_word` | `u32` | little | spec | u32 `0`, f64 `0.25`, f64 `0.25`, u8 `0` · value `0` |
-| 81 | 8 | `scalar_a` | `f64` | little | spec | u32 `0`, f64 `0.25`, f64 `0.25` |
-| 89 | 8 | `scalar_b` | `f64` | little | spec | u32 `0`, f64 `0.25`, f64 `0.25` |
+| 81 | 8 | `scalar_a` | `f64` | little | spec | u32 `0`, f64 `0.25`, f64 `0.25` · value `0.25` |
+| 89 | 8 | `scalar_b` | `f64` | little | spec | u32 `0`, f64 `0.25`, f64 `0.25` · value `0.25` |
 | 97 | 1 | `flag` | `u8` | little | spec | f64 `0.25`, u8 `0`, f64 origin `(0, 0, 0)` · value `0` |
 | 98 | 24 | `origin` | `f64[3]` | little | spec | u8 `0`, f64 origin `(0, 0, 0)`, f64 unit u direction |
 | 122 | 24 | `u_direction` | `f64[3]` | little | spec | f64 unit u direction |
 | 146 | 24 | `v_direction` | `f64[3]` | little | spec | f64 unit v direction |
-| 170 | 8 | `scalar_c` | `f64` | little | spec | f64 unit v direction, f64 `2.0`, f64 `2.0` |
-| 178 | 8 | `scalar_d` | `f64` | little | spec | f64 unit v direction, f64 `2.0`, f64 `2.0` |
+| 170 | 8 | `scalar_c` | `f64` | little | spec | f64 unit v direction, f64 `2.0`, f64 `2.0` · value `2.0` |
+| 178 | 8 | `scalar_d` | `f64` | little | spec | f64 unit v direction, f64 `2.0`, f64 `2.0` · value `2.0` |
 | 186 | 5 | `geometry_end_zero` | `bytes[5]` | little | spec | the geometry of the record \| \| 5 × u8 \| zero \| · value `[0, 0, 0, 0, 0]` |
 | 191 | 4 | `word` | `u32` | little | spec | `0xffffffff` · value `4294967295` |
 | 195 | 1 | `name_flag` | `u8` | little | spec | `0xffffffff` \| \| u8 \| `1` \| · value `1` |
@@ -10878,8 +10878,8 @@ Origin record with the shared head and tail of the origin records and its geomet
 | 207 | 8 | `zero_b` | `bytes[8]` | little | spec | `00 00 01` \| \| 8 × u8 \| zero \| · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
 | 215 | 11 | `asset_settings` | `bytes[11]` | little | spec | the `AssetSettings` record (type `23FD63FB-4EBE-4c85-A42B-5D9809AA3499`) |
 | 226 | 2 | `zero_c` | `bytes[2]` | little | spec | \| 2 × u8 \| zero \| · value `[0, 0]` |
-| 228 | 4 | `scale_a` | `f32` | little | spec | \| 2 × u8 \| zero \| \| f32 \| `1.0` \| |
-| 232 | 4 | `scale_b` | `f32` | little | spec | `1.0` for the point and the planes, `1.3` for the axes |
+| 228 | 4 | `scale_a` | `f32` | little | spec | \| 2 × u8 \| zero \| \| f32 \| `1.0` \| · value `1.0` |
+| 232 | 4 | `scale_b` | `f32` | little | spec | `1.0` for the point and the planes, `1.3` for the axes · value `1.0` |
 | 236 | 5 | `zero_d` | `bytes[5]` | little | spec | \| 5 × u8 \| zero \| \| reference \| the origin container \| · value `[0, 0, 0, 0, 0]` |
 | 241 | 11 | `origin_container` | `bytes[11]` | little | spec | \| 5 × u8 \| zero \| \| reference \| the origin container \| |
 
@@ -14445,7 +14445,7 @@ Record 34.
 | 32 | 8 | `zero_b` | `bytes[8]` | little | spec | `base_feature_record_34` · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
 | 40 | 1 | `flag_a` | `u8` | little | spec | `base_feature_record_34` · value `1` |
 | 41 | 1 | `flag_b` | `u8` | little | spec | `base_feature_record_34` · value `1` |
-| 42 | 4 | `scale` | `f32` | little | spec | `base_feature_record_34` |
+| 42 | 4 | `scale` | `f32` | little | spec | `base_feature_record_34` · value `1.0` |
 | 46 | 11 | `paired_header` | `bytes[11]` | little | spec | `base_feature_record_34` |
 | 57 | 12 | `zero_c` | `bytes[12]` | little | spec | `base_feature_record_34` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
 | 69 | 11 | `aggregate` | `bytes[11]` | little | spec | `base_feature_record_34` |
@@ -14461,7 +14461,7 @@ Record 36.
 | 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_record_36` |
 | 11 | 10 | `zero_a` | `bytes[10]` | little | spec | `base_feature_record_36` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
 | 21 | 1 | `flag` | `u8` | little | spec | `base_feature_record_36` · value `1` |
-| 22 | 4 | `scale` | `f32` | little | spec | `base_feature_record_36` |
+| 22 | 4 | `scale` | `f32` | little | spec | `base_feature_record_36` · value `1.0` |
 | 26 | 11 | `paired_header` | `bytes[11]` | little | spec | `base_feature_record_36` |
 | 37 | 12 | `zero_b` | `bytes[12]` | little | spec | `base_feature_record_36` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
 | 49 | 11 | `aggregate` | `bytes[11]` | little | spec | `base_feature_record_36` |
@@ -14665,13 +14665,13 @@ Records 164, 166, 168, and 170. Values are stated where every camera of every de
 | 29 | 4 | `word_c` | `u32` | little | spec | `base_feature_camera` · value `64` |
 | 33 | 4 | `word_d` | `u32` | little | spec | `base_feature_camera` · value `0` |
 | 37 | 2 | `zero_b` | `bytes[2]` | little | spec | `base_feature_camera` · value `[0, 0]` |
-| 39 | 4 | `scale` | `f32` | little | spec | `base_feature_camera` |
+| 39 | 4 | `scale` | `f32` | little | spec | `base_feature_camera` · value `12.0` |
 | 43 | 8 | `extent_0` | `f64` | little | spec | `base_feature_camera` |
 | 51 | 8 | `extent_1` | `f64` | little | spec | `base_feature_camera` |
-| 59 | 4 | `unit_scale` | `f32` | little | spec | `base_feature_camera` |
+| 59 | 4 | `unit_scale` | `f32` | little | spec | `base_feature_camera` · value `1.0` |
 | 63 | 4 | `word_e` | `u32` | little | spec | `base_feature_camera` · value `0` |
 | 67 | 2 | `zero_c` | `bytes[2]` | little | spec | `base_feature_camera` · value `[0, 0]` |
-| 69 | 8 | `field_of_view` | `f64` | little | spec | `base_feature_camera` |
+| 69 | 8 | `field_of_view` | `f64` | little | spec | `base_feature_camera` · value `0.39479111969976155` |
 | 77 | 24 | `eye` | `f64[3]` | little | spec | `base_feature_camera` |
 | 101 | 4 | `marker` | `u32` | little | spec | `base_feature_camera` · value `1` |
 | 105 | 24 | `target` | `f64[3]` | little | spec | `base_feature_camera` |
@@ -14701,27 +14701,27 @@ Record 172.
 | 21 | 36 | `name` | `bytes[36]` | little | spec | `base_feature_lighting_environment` |
 | 57 | 12 | `zero_b` | `bytes[12]` | little | spec | `base_feature_lighting_environment` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
 | 69 | 12 | `colour` | `f32[3]` | little | spec | `base_feature_lighting_environment` |
-| 81 | 4 | `alpha` | `f32` | little | spec | `base_feature_lighting_environment` |
+| 81 | 4 | `alpha` | `f32` | little | spec | `base_feature_lighting_environment` · value `1.0` |
 | 85 | 4 | `word_a` | `u32` | little | spec | `base_feature_lighting_environment` · value `0` |
-| 89 | 4 | `range` | `f32` | little | spec | `base_feature_lighting_environment` |
+| 89 | 4 | `range` | `f32` | little | spec | `base_feature_lighting_environment` · value `1000.0` |
 | 93 | 4 | `word_b` | `u32` | little | spec | `base_feature_lighting_environment` · value `2` |
 | 97 | 25 | `zero_c` | `bytes[25]` | little | spec | `base_feature_lighting_environment` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
-| 122 | 4 | `angle` | `f32` | little | spec | `base_feature_lighting_environment` |
-| 126 | 4 | `height` | `f32` | little | spec | `base_feature_lighting_environment` |
-| 130 | 4 | `intensity` | `f32` | little | spec | `base_feature_lighting_environment` |
+| 122 | 4 | `angle` | `f32` | little | spec | `base_feature_lighting_environment` · value `-2.3561945` |
+| 126 | 4 | `height` | `f32` | little | spec | `base_feature_lighting_environment` · value `9.5` |
+| 130 | 4 | `intensity` | `f32` | little | spec | `base_feature_lighting_environment` · value `1.0` |
 | 134 | 1 | `slot` | `u8` | little | spec | `base_feature_lighting_environment` · value `0` |
 | 135 | 11 | `record_0` | `bytes[11]` | little | spec | `base_feature_lighting_environment` |
 | 146 | 2 | `zero_d` | `bytes[2]` | little | spec | `base_feature_lighting_environment` · value `[0, 0]` |
 | 148 | 18 | `environment` | `bytes[18]` | little | spec | `base_feature_lighting_environment` |
 | 166 | 5 | `zero_e` | `bytes[5]` | little | spec | `base_feature_lighting_environment` · value `[0, 0, 0, 0, 0]` |
-| 171 | 4 | `exposure` | `f32` | little | spec | `base_feature_lighting_environment` |
+| 171 | 4 | `exposure` | `f32` | little | spec | `base_feature_lighting_environment` · value `1.6973956` |
 | 175 | 11 | `entry_175` | `bytes[11]` | little | spec | `base_feature_lighting_environment` |
 | 186 | 11 | `entry_176` | `bytes[11]` | little | spec | `base_feature_lighting_environment` |
 | 197 | 11 | `entry_173` | `bytes[11]` | little | spec | `base_feature_lighting_environment` |
 | 208 | 11 | `entry_174` | `bytes[11]` | little | spec | `base_feature_lighting_environment` |
 | 219 | 21 | `zero_f` | `bytes[21]` | little | spec | `base_feature_lighting_environment` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
-| 240 | 8 | `distance` | `f64` | little | spec | `base_feature_lighting_environment` |
-| 248 | 4 | `scale` | `f32` | little | spec | `base_feature_lighting_environment` |
+| 240 | 8 | `distance` | `f64` | little | spec | `base_feature_lighting_environment` · value `150.0` |
+| 248 | 4 | `scale` | `f32` | little | spec | `base_feature_lighting_environment` · value `0.1` |
 | 252 | 9 | `zero_g` | `bytes[9]` | little | spec | `base_feature_lighting_environment` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
 
 ## `base_feature_archive_entry_name`
@@ -15084,9 +15084,9 @@ Record 0. Values are stated where every design agrees; the view block and the sc
 | 270 | 24 | `up_a` | `f64[3]` | little | spec | `base_feature_asset_settings` |
 | 294 | 1 | `flag_a` | `u8` | little | spec | `base_feature_asset_settings` · value `0` |
 | 295 | 1 | `flag_b` | `u8` | little | spec | `base_feature_asset_settings` · value `1` |
-| 296 | 8 | `grid` | `f64` | little | spec | `base_feature_asset_settings` |
+| 296 | 8 | `grid` | `f64` | little | spec | `base_feature_asset_settings` · value `1.8` |
 | 304 | 37 | `zero_d` | `bytes[37]` | little | spec | `base_feature_asset_settings` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
-| 341 | 8 | `grid_scale` | `f64` | little | spec | `base_feature_asset_settings` |
+| 341 | 8 | `grid_scale` | `f64` | little | spec | `base_feature_asset_settings` · value `1.0` |
 | 349 | 1 | `null_slot` | `u8` | little | spec | `base_feature_asset_settings` · value `0` |
 | 350 | 11 | `named_views` | `bytes[11]` | little | spec | `base_feature_asset_settings` |
 | 361 | 6 | `zero_e` | `bytes[6]` | little | spec | `base_feature_asset_settings` · value `[0, 0, 0, 0, 0, 0]` |
