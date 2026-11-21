@@ -258,12 +258,13 @@ fn named_scope_tail_with_label(label: &str, lane_value: u64, class_word: u32) ->
 }
 
 #[test]
-fn named_scope_tail_requires_one_repeated_byte_lane_value() {
-    for lane_value in [0, 1, 8, 0xff] {
+fn named_scope_tail_lanes_name_three_descending_records() {
+    for lane_value in [0, 1, 8, 0xff, 0x100, 0x10e, 0xff_ffff] {
         let bytes = named_scope_tail(lane_value);
         assert_eq!(
             named_parameter_scope_tail_is_valid(&bytes, 0, bytes.len(), bytes.len()),
-            Some(true)
+            Some(true),
+            "lane {lane_value}"
         );
     }
 
@@ -275,7 +276,7 @@ fn named_scope_tail_requires_one_repeated_byte_lane_value() {
         Some(false)
     );
 
-    let outside_domain = named_scope_tail(0x100);
+    let outside_domain = named_scope_tail(0x100_0000);
     assert_eq!(
         named_parameter_scope_tail_is_valid(
             &outside_domain,
@@ -283,6 +284,25 @@ fn named_scope_tail_requires_one_repeated_byte_lane_value() {
             outside_domain.len(),
             outside_domain.len()
         ),
+        Some(false)
+    );
+}
+
+#[test]
+fn named_scope_tail_lanes_cross_a_high_byte_boundary() {
+    let mut bytes = named_scope_tail(0);
+    let marker = bytes.len() - 59;
+    for (at, record) in [(1, 0x1_0001u32), (33, 0x1_0000), (47, 0xffff)] {
+        bytes[marker + at..marker + at + 9].fill(0);
+        bytes[marker + at..marker + at + 4].copy_from_slice(&record.to_le_bytes());
+    }
+    assert_eq!(
+        named_parameter_scope_tail_is_valid(&bytes, 0, bytes.len(), bytes.len()),
+        Some(true)
+    );
+    bytes[marker + 47..marker + 51].copy_from_slice(&0xfffeu32.to_le_bytes());
+    assert_eq!(
+        named_parameter_scope_tail_is_valid(&bytes, 0, bytes.len(), bytes.len()),
         Some(false)
     );
 }

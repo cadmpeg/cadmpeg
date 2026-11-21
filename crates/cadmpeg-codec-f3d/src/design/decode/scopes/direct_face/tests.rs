@@ -437,7 +437,7 @@ fn labeled_scale_fixture(mut prefix: Vec<u8>, references: &[u32]) -> Vec<u8> {
     prefix.extend_from_slice(&[0; 4]);
     lp_utf16(&mut prefix, "Example");
     prefix.extend_from_slice(&[0; 7]);
-    prefix.extend_from_slice(&[1, 2]);
+    prefix.extend_from_slice(&[1, 4]);
     prefix.extend_from_slice(&[0; 10]);
     prefix.extend_from_slice(&17_u32.to_le_bytes());
     prefix.extend_from_slice(&252_u32.to_le_bytes());
@@ -445,7 +445,7 @@ fn labeled_scale_fixture(mut prefix: Vec<u8>, references: &[u32]) -> Vec<u8> {
     prefix.extend_from_slice(&252_u32.to_le_bytes());
     prefix.extend_from_slice(&[1, 3]);
     prefix.extend_from_slice(&[0; 9]);
-    prefix.extend_from_slice(&[1, 0, 0, 1, 4]);
+    prefix.extend_from_slice(&[1, 0, 0, 1, 2]);
     prefix.extend_from_slice(&[0; 11]);
     let paired = usize::try_from(parse_scope(&bytes, 0).unwrap().paired_byte_offset()).unwrap();
     prefix.extend_from_slice(&bytes[paired..]);

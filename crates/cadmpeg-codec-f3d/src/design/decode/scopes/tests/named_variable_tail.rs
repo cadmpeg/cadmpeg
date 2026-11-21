@@ -144,3 +144,71 @@ fn parameter_scope_parses_named_variable_tail() {
     assert_eq!(operation.angle_offset, 111);
     assert_eq!(operation.opposite_angle_offset, 222);
 }
+
+#[test]
+fn parameter_scope_parses_named_tail_whose_lane_records_exceed_16_bits() {
+    let record_index = 0x1_0c2bu32;
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"329");
+    bytes.extend_from_slice(&record_index.to_le_bytes());
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&(record_index + 1).to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&11u32.to_le_bytes());
+    lp_utf16(&mut bytes, "Thicken");
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 4]);
+    lp_utf16(&mut bytes, "wall");
+    bytes.extend_from_slice(&[0; 7]);
+    for (lane, record) in [0x1_0cacu32, 0x1_0cab, 0x1_0caa].into_iter().enumerate() {
+        bytes.push(1);
+        bytes.extend_from_slice(&record.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        match lane {
+            0 => {
+                bytes.push(0);
+                bytes.extend_from_slice(&10u32.to_le_bytes());
+                bytes.extend_from_slice(&210u32.to_le_bytes());
+                bytes.extend_from_slice(&0.25f64.to_le_bytes());
+                bytes.extend_from_slice(&210u32.to_le_bytes());
+            }
+            1 => bytes.extend_from_slice(&[1, 0, 0]),
+            _ => bytes.extend_from_slice(&[0; 2]),
+        }
+    }
+    let paired_at = bytes.len();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"262");
+    bytes.extend_from_slice(&record_index.to_le_bytes());
+
+    let scope = parse_parameter_scope(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        record_index,
+        &crate::records::references::DesignClassTag::try_from("329".to_owned()).unwrap(),
+        0,
+    )
+    .unwrap()
+    .expect("named scope with lane records above 0xffff");
+    assert_eq!(
+        scope.kind(),
+        crate::records::feature::scope::DesignFeatureKind::Thicken
+    );
+    assert_eq!(scope.history_state_id(), Some(11));
+    assert_eq!(
+        scope.label.as_ref().map(|label| label.value.as_str()),
+        Some("wall")
+    );
+    assert_eq!(
+        scope
+            .reference_members()
+            .values()
+            .copied()
+            .collect::<Vec<_>>(),
+        [record_index + 1]
+    );
+    assert_eq!(scope.frame_length(), u64_from_index(paired_at));
+}

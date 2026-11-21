@@ -2468,11 +2468,10 @@ fn exact_canvas_scope_tail(tail: &[u8], record_index: u32) -> bool {
         && tail.get(canvas_tail::ZERO_TAIL) == Some(&canvas_tail::ZERO_TAIL_VALUE)
 }
 
-/// Largest repeated lane value of a named-scope lane block with a nonempty
-/// label: the high byte of the three descending 16-bit field targets. An empty
-/// label takes only the values zero and one with epoch 252; that match ranks
-/// the candidate, and the tail reads as the 78-byte fixed tail.
-const NAMED_LANE_VALUE_MAX: u64 = 0xff;
+/// Largest repeated lane value of an empty-label lane block. With epoch 252
+/// this match ranks the candidate, and the tail reads as the 78-byte fixed
+/// tail.
+const EMPTY_LABEL_LANE_VALUE_MAX: u64 = 1;
 /// Three-digit dynamic class numbers admitted for the two equal class words of
 /// a named-scope lane block.
 const NAMED_LANE_CLASS_WORDS: std::ops::RangeInclusive<u32> = 100..=999;
@@ -2601,33 +2600,37 @@ fn named_parameter_scope_tail_is_valid(
         if marker.checked_add(59)? != paired_at || bytes.get(label_end..marker)? != [0; 7] {
             return Some(false);
         }
-        let first_lane_value = View::u64_le_at(bytes, marker + 2)?;
-        let second_lane_value = View::u64_le_at(bytes, marker + 34)?;
-        let third_lane_value = View::u64_le_at(bytes, marker + 48)?;
         let class_word = View::u32_le_at(bytes, marker + 16)?;
+        let lanes = if label_code_units == 0 {
+            let first_lane_value = View::u64_le_at(bytes, marker + 2)?;
+            [1, 33, 47].into_iter().all(|at| {
+                bytes
+                    .get(marker + at)
+                    .is_some_and(|field_id| *field_id != 0)
+            }) && first_lane_value <= EMPTY_LABEL_LANE_VALUE_MAX
+                && class_word == 0xfc
+                && View::u64_le_at(bytes, marker + 34)? == first_lane_value
+                && View::u64_le_at(bytes, marker + 48)? == first_lane_value
+        } else {
+            let reference = |at| crate::bytes::local_reference_target(bytes, marker + at, false);
+            NAMED_LANE_CLASS_WORDS.contains(&class_word)
+                && reference(0).is_some_and(|first| {
+                    first.checked_sub(2).is_some_and(|last| {
+                        last != 0 && reference(32) == Some(last + 1) && reference(46) == Some(last)
+                    })
+                })
+        };
         Some(
             bytes.get(kind_end + 4..kind_end + 8)? == [0; 4]
                 && bytes.get(marker) == Some(&1)
-                && bytes.get(marker + 1).is_some_and(|field_id| *field_id != 0)
-                && ((first_lane_value <= 1 && class_word == 0xfc)
-                    || (label_code_units > 0
-                        && first_lane_value <= NAMED_LANE_VALUE_MAX
-                        && NAMED_LANE_CLASS_WORDS.contains(&class_word)))
-                && second_lane_value == first_lane_value
-                && third_lane_value == first_lane_value
+                && lanes
                 && bytes.get(marker + 10..marker + 12)? == [0; 2]
                 && View::u32_le_at(bytes, marker + 12)? > 0
                 && View::f64_le_at(bytes, marker + 20)?.is_finite()
                 && View::u32_le_at(bytes, marker + 28)? == class_word
                 && bytes.get(marker + 32) == Some(&1)
-                && bytes
-                    .get(marker + 33)
-                    .is_some_and(|field_id| *field_id != 0)
                 && bytes.get(marker + 42..marker + 46)? == [0, 1, 0, 0]
                 && bytes.get(marker + 46) == Some(&1)
-                && bytes
-                    .get(marker + 47)
-                    .is_some_and(|field_id| *field_id != 0)
                 && bytes.get(marker + 56..marker + 59)? == [0; 3],
         )
     })()

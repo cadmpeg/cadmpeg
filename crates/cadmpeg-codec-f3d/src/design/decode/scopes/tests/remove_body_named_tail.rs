@@ -81,8 +81,17 @@ fn remove_body_scope_admits_a_lane_block_over_high_record_indices() {
 }
 
 #[test]
+fn remove_body_scope_admits_lane_records_above_16_bits() {
+    let scope = parse(&remove_body_scope(0x10e, 0x101)).expect("named RemoveBody scope");
+    assert_eq!(
+        scope.label.as_ref().map(|label| label.value.as_str()),
+        Some("RemoveBody-Top Half (1)")
+    );
+}
+
+#[test]
 fn remove_body_scope_refuses_lane_values_and_class_words_outside_the_layout() {
-    assert!(parse(&remove_body_scope(0x100, 0x101)).is_none());
+    assert!(parse(&remove_body_scope(0x100_0000, 0x101)).is_none());
     assert!(parse(&remove_body_scope(8, 1000)).is_none());
     assert!(parse(&remove_body_scope(8, 0)).is_none());
 }
