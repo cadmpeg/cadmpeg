@@ -1013,6 +1013,8 @@ fn message_pack_name_table(bytes: &[u8]) -> Result<UniqueStreamNames, CodecError
 struct MeshStream {
     descriptor: Vec<(String, StreamDescriptorValue)>,
     split_descriptor: Option<Vec<u8>>,
+    /// Whether a nested split component stores the `Z: true` flag.
+    component_flag: bool,
     history_lengths: Vec<u32>,
     bytes: Vec<u8>,
 }
@@ -1191,6 +1193,7 @@ fn inflate_stream_inner(
         }
         let mut components = Vec::new();
         let mut history_lengths = Vec::new();
+        let mut component_flag = false;
         let mut position = at;
         for (ordinal, size) in sizes.iter().enumerate() {
             let length = usize::try_from(*size).map_err(|_| {
@@ -1208,13 +1211,14 @@ fn inflate_stream_inner(
                     )),
                 },
             )?;
-            if component.descriptor != [("T".to_owned(), StreamDescriptorValue::Integer(3))]
+            if !split_component_descriptor(&component.descriptor, packed)
                 || component.bytes.len() % 4 != 0
             {
                 return Err(CodecError::malformed(
                     "paramesh split component has an invalid descriptor or length",
                 ));
             }
+            component_flag |= component.descriptor.len() == 2;
             history_lengths.extend(component.history_lengths);
             components.push(component.bytes);
             position = end;
@@ -1249,6 +1253,7 @@ fn inflate_stream_inner(
         return Ok(MeshStream {
             descriptor,
             split_descriptor: Some(body[2..at].to_vec()),
+            component_flag,
             history_lengths,
             bytes,
         });
@@ -1278,6 +1283,7 @@ fn inflate_stream_inner(
         return Ok(MeshStream {
             descriptor,
             split_descriptor: None,
+            component_flag: false,
             history_lengths: Vec::new(),
             bytes: payload.to_vec(),
         });
@@ -1326,6 +1332,7 @@ fn inflate_stream_inner(
     Ok(MeshStream {
         descriptor,
         split_descriptor: None,
+        component_flag: false,
         history_lengths: if window > nominal_window {
             vec![declared]
         } else {
@@ -1333,6 +1340,27 @@ fn inflate_stream_inner(
         },
         bytes: writer.expansion.finalize_owned()?,
     })
+}
+
+/// A split component stores f32 values under `{T: 3}`. A component of a
+/// packed-direction split stream can also store `{T: 3, Z: true}` with the
+/// same payload layout.
+fn split_component_descriptor(
+    descriptor: &[(String, StreamDescriptorValue)],
+    packed: bool,
+) -> bool {
+    match descriptor {
+        [(name, StreamDescriptorValue::Integer(3))] => name == "T",
+        [first, second] if packed => {
+            let mut keys = [first, second];
+            keys.sort_by(|left, right| left.0.cmp(&right.0));
+            keys[0].0 == "T"
+                && keys[0].1 == StreamDescriptorValue::Integer(3)
+                && keys[1].0 == "Z"
+                && keys[1].1 == StreamDescriptorValue::Boolean(true)
+        }
+        _ => false,
+    }
 }
 
 /// Keeps the typed expansion error across the LZMA library's I/O boundary.
@@ -2148,6 +2176,7 @@ pub(crate) fn decode_mesh_container(
                 crate::records::mesh::DesignMeshSplitStream {
                     name: name.clone(),
                     descriptor: cadmpeg_ir::native::bytes::NativeBytes::new(descriptor.clone()),
+                    component_flag: stream.component_flag,
                 }
             })
         })
@@ -3715,6 +3744,42 @@ mod tests {
     }
 
     #[test]
+    fn split_direction_components_admit_the_z_flag() {
+        let component_descriptor = [0x82, 0xa1, b'T', 3, 0xa1, b'Z', 0xc3];
+        let part = |first: f32, second: f32| {
+            let mut payload = Vec::new();
+            payload.extend_from_slice(&first.to_le_bytes());
+            payload.extend_from_slice(&second.to_le_bytes());
+            raw_stream_body(&component_descriptor, 8, &payload)
+        };
+        let body = |descriptor: &[u8]| {
+            let mut body = Vec::new();
+            body.extend_from_slice(&u16::try_from(descriptor.len()).unwrap().to_le_bytes());
+            body.extend_from_slice(descriptor);
+            body.extend_from_slice(&part(1.0, 3.0));
+            body.extend_from_slice(&part(2.0, 4.0));
+            body
+        };
+        let packed = [
+            0x85, 0xa1, b'D', 3, 0xa1, b'I', 0xc3, 0xa1, b'S', 0x92, 23, 23, 0xa1, b'T', 3, 0xa1,
+            b'U', 0xc3,
+        ];
+        let stream = inflate_stream(&body(&packed)).unwrap();
+        assert!(stream.component_flag);
+        let expected = [1.0f32, 2.0, 3.0, 4.0]
+            .into_iter()
+            .flat_map(f32::to_le_bytes)
+            .collect::<Vec<_>>();
+        assert_eq!(stream.bytes, expected);
+        assert!(require_version_2_descriptor(&stream).is_ok());
+
+        let unpacked = [
+            0x84, 0xa1, b'D', 2, 0xa1, b'I', 0xc3, 0xa1, b'S', 0x92, 23, 23, 0xa1, b'T', 3,
+        ];
+        assert!(inflate_stream(&body(&unpacked)).is_err());
+    }
+
+    #[test]
     fn lzma_history_extends_to_the_declared_length_beyond_one_mebibyte() {
         const PAYLOAD: &str = "0053a48ba682b207b0fc90f390f421bbe0454d93fbdef3696a4b6d4d92722dce9b3e68c474434892c98c07c5beb98dca44aeaba9ab2223f2882aee8b03d2f91f0db2d992bc4bd6264eb20170048e0fbb4664c8d8d61d6518c42f1d81863421753d7e9f702f114b4d2d35d5979c83aa50622bdb69839a374be1eb877da227ab52d1b16c861b74f87be1e3b043fceff052a73d3f97ecb51a94141b4e995df947fa4ee752e2920656199e449ee2d2e446f654f088752c30dbc2505491229706035fc9703b14c0323798a51501a5e8a3092aecaaff5a26ac720c1692a7be398f24e1709ea7235fec28cb85d195988a7e2a91f22775f719c006984d98fdd8afd5900fc42553f8f591363105a5b0ee6fc1704d470cd19111aaad5ffb0606e2778f2008a66bfffecd0a40";
         let head = (0..64u32)
@@ -3914,6 +3979,7 @@ mod tests {
             let stream = MeshStream {
                 descriptor: stream_descriptor(&descriptor).expect("version-2 descriptor"),
                 split_descriptor: None,
+                component_flag: false,
                 history_lengths: Vec::new(),
                 bytes: Vec::new(),
             };
@@ -3927,6 +3993,7 @@ mod tests {
             let stream = MeshStream {
                 descriptor: stream_descriptor(&descriptor).expect("scalar descriptor"),
                 split_descriptor: None,
+                component_flag: false,
                 history_lengths: Vec::new(),
                 bytes: Vec::new(),
             };

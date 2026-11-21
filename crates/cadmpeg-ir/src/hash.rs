@@ -66,7 +66,11 @@ pub fn canonical_json_sha256<T: Serialize + ?Sized>(
 ) -> Result<String, DigestError> {
     let mut buffered =
         std::io::BufWriter::with_capacity(DIGEST_BUFFER_BYTES, DigestWriter(Sha256::new()));
-    write_canonical_json(CanonicalAdmission::limited(ctx), &mut buffered, value)?;
+    write_canonical_json(
+        CanonicalAdmission::limited(ctx, "walk document digest"),
+        &mut buffered,
+        value,
+    )?;
     let writer = buffered
         .into_inner()
         .map_err(|error| DigestError::Write(error.into_error()))?;
@@ -300,7 +304,7 @@ mod tests {
 
     #[test]
     fn canonical_json_sha256_matches_json_larger_than_the_buffer() {
-        let value: Vec<String> = (0..20_000).map(|index| format!("entry-{index}")).collect();
+        let value: Vec<String> = (0..6_000).map(|index| format!("entry-{index}")).collect();
         let json = crate::hash::finite_json::to_canonical_json_string(&value).unwrap();
         assert!(json.len() > super::DIGEST_BUFFER_BYTES);
         assert_eq!(

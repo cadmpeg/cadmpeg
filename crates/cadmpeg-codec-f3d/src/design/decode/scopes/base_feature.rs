@@ -714,7 +714,7 @@ fn marked_null_reference_flag(bytes: &[u8], at: usize) -> Option<bool> {
     if bytes.get(at + null_count::NULL_REFERENCE_MARKER) != Some(&1)
         || bytes.get(at + null_count::NULL_REFERENCE..at + null_count::NULL_REFERENCE_FLAG)
             != Some(&[0; 8])
-        || bytes.get(at + null_count::NULL_REFERENCE_ZERO) != Some(&0)
+        || bytes.get(at + null_count::NULL_REFERENCE_TERMINAL) != Some(&0)
     {
         return None;
     }
@@ -763,6 +763,11 @@ fn unclassed_result_body_count(
 /// Distance from the null GUID length field of the typed zero-body form to
 /// the scope kind.
 const TYPED_ZERO_BODY_GUID_COUNT_BEFORE_KIND: usize = 142;
+/// Offset of the kind payload in a 257-byte zero-body frame. The frame has the
+/// 258-byte prefix and a 76-byte scope tail instead of a 77-byte one.
+const ZERO_BODY_SHORT_TAIL_KIND_OFFSET: u64 = 157;
+/// Offset of the previous history-state identity in a 257-byte zero-body frame.
+const ZERO_BODY_SHORT_TAIL_PREVIOUS_STATE: u64 = 211;
 
 /// The typed-reference zero-body form: the class-409 zero-body prefix with a
 /// 51-byte typed shared-metadata reference, then zero bytes up to the null
@@ -1382,9 +1387,14 @@ pub(super) fn exact_base_feature_construction(
             scope.class_tag.as_str() == "360" && scope.paired_class_tag.as_str() == "258";
         let legacy_444_263 =
             scope.class_tag.as_str() == "444" && scope.paired_class_tag.as_str() == "263";
-        if !legacy_444_263 && scope.frame_length() == 258 {
+        if !legacy_444_263 && matches!(scope.frame_length(), 257 | 258) {
             if scope.byte_offset().checked_add(scope.frame_length())
                 != Some(scope.paired_byte_offset())
+                || (scope.frame_length() == 257
+                    && (scope.kind_offset().checked_sub(scope.byte_offset())
+                        != Some(ZERO_BODY_SHORT_TAIL_KIND_OFFSET)
+                        || scope.previous_history_state_id_offset()
+                            != Some(scope.byte_offset() + ZERO_BODY_SHORT_TAIL_PREVIOUS_STATE)))
             {
                 return None;
             }
@@ -1445,7 +1455,7 @@ pub(super) fn exact_base_feature_construction(
         if let Some(construction) = exact_wide_shifted_zero_body_base_feature(bytes, scope, start) {
             return Some(Ok(construction));
         }
-        if legacy_444_263 && scope.frame_length() == 258 {
+        if legacy_444_263 && matches!(scope.frame_length(), 257 | 258) {
             if scope.byte_offset().checked_add(scope.frame_length())
                 != Some(scope.paired_byte_offset())
                 || scope.reference_members().len() != 1
