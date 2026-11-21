@@ -634,7 +634,7 @@ pub(crate) fn bind_extrude_profile_selections(
                                 .history_state_id()
                                 .zip(effective_previous_history_state_id),
                         ) {
-                            if let Some(selection) = stored_loop_cap::resolve(
+                            if let Some((selection, selection_losses)) = stored_loop_cap::resolve(
                                 group,
                                 &curve_resolution.path_resolution(),
                                 scoped_resolution,
@@ -647,6 +647,12 @@ pub(crate) fn bind_extrude_profile_selections(
                                 },
                             )? {
                                 *profile = ProfileRef::Planar(selection);
+                                for code in selection_losses {
+                                    losses.push(code.note(format!(
+                                        "{}: stored profile entries use their participating intervals on the certified cap boundary",
+                                        feature.id,
+                                    )));
+                                }
                                 break 'feature_edit;
                             }
                         }
@@ -5074,6 +5080,7 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
     let mut island_absence = false;
     let mut flags_read = false;
     let mut coincident = false;
+    let mut crossing_runs = false;
     let mut unions = Vec::new();
     let mut cursor = 0usize;
     for (ordinal, member) in group.members().iter().enumerate() {
@@ -5141,6 +5148,7 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
                                     coincident |= selected.coincident
                                         && (allow_assumptions || !selected.identity_unique);
                                     island_absence |= selected.island_absence;
+                                    crossing_runs |= selected.crossing_runs_assumed();
                                     if !regions.contains(region) {
                                         regions.push(region.clone());
                                     }
@@ -5224,13 +5232,18 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
     // A later member can repeat a group whose first region was removed as
     // the union of its further regions; the further regions still cover it.
     regions.retain(|region| !unions.contains(region));
-    if !allow_assumptions && (assumed || island_absence || flags_read || coincident) {
+    if !allow_assumptions
+        && (assumed || island_absence || flags_read || coincident || crossing_runs)
+    {
         return Ok(None);
     }
     let profile = PlanarProfileRef::sketch_regions(sketch, regions)
         .ok()
         .map(ProfileRef::Planar);
     if profile.is_some() {
+        if crossing_runs {
+            scoped.profile_work.note_crossing_runs_assumed();
+        }
         if assumed {
             scoped.profile_work.note_crossing_loop_assumed();
         }
