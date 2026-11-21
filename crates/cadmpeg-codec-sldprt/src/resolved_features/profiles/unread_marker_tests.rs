@@ -329,6 +329,35 @@ fn an_inline_arc_whose_read_points_define_no_minor_arc_keeps_its_handle() {
     assert!(losses[0].message.contains(id.as_str()));
 }
 
+/// A placeholder whose marker has held `sgSketch` record geometry in its
+/// sketch takes that geometry and charges no loss; the same marker in another
+/// sketch keeps its role and its loss.
+#[test]
+fn a_placeholder_with_held_record_geometry_takes_it_without_a_loss() {
+    let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
+        start: Point2::new(0.0, 0.0),
+        end: Point2::new(1.0, 0.0),
+    })
+    .unwrap();
+    let read = entity("read", placeholder("sldprt:marker-geometry:1"));
+    let mut other_sketch = entity("read", placeholder("sldprt:marker-geometry:1"));
+    other_sketch.sketch = SketchId::mint("synthetic:test:id#other-sketch").unwrap();
+    let mut held = HeldMarkerGeometry::default();
+    held.listed.insert(
+        (read.sketch.clone(), "marker-read".to_owned()),
+        line.clone(),
+    );
+    let mut entities = vec![read, other_sketch];
+    let mut losses = Vec::new();
+    finalize_unread_marker_entities(&mut entities, held, &mut losses);
+    assert_eq!(entities[0].geometry, line);
+    assert_eq!(
+        native_kind(&entities[1]),
+        Some("sldprt:line-or-circle-handle")
+    );
+    assert_eq!(losses.len(), 1);
+}
+
 /// The 64-byte head of an `sgSketch` record (`docs/formats/sldprt.md`,
 /// "Sketch objects").
 fn sketch_record_head(out: &mut Vec<u8>) {
@@ -568,14 +597,20 @@ fn a_framed_box_projects_the_rectangle_of_its_records() {
         ));
     }
     let mut incidence = BTreeMap::<String, usize>::new();
-    let unmarked = format!("sldprt:feature-input:sketch-entity#lane:{}", lines[3]);
     for index in 0..4 {
-        let marker = if index == 3 {
-            unmarked.clone()
+        let edge = if index == 3 {
+            entities
+                .iter()
+                .find(|entity| {
+                    entity
+                        .id()
+                        .as_str()
+                        .ends_with(&format!(":record:{}", lines[3]))
+                })
+                .expect("the unmarked edge record is read")
         } else {
-            format!("edge{index}")
+            marker_entity(&entities, &format!("edge{index}"))
         };
-        let edge = marker_entity(&entities, &marker);
         let SketchGeometryDefinition::Line { start, end } = *edge.geometry.definition() else {
             panic!("edge {index} is a line: {:?}", edge.geometry);
         };

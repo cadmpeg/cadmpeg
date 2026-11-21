@@ -1086,6 +1086,11 @@ const ARC_POINTS_PLACEHOLDER: &str = "sldprt:marker-geometry:arc-points";
 pub(crate) struct HeldMarkerGeometry {
     /// Arc handles whose inline points define no minor arc.
     handles: Vec<SketchEntity>,
+    /// The geometry the `sgSketch` record of a marker gives by point-record
+    /// position when the marker reading leaves the marker unread and the
+    /// record indexes point records of another feature object, by sketch and
+    /// marker reference.
+    listed: HashMap<(SketchId, String), SketchGeometry>,
     /// Why the `sgSketch` curve record of a line's marker gives no entity
     /// although it states another form, by sketch and marker reference.
     chord_conflicts: HashMap<(SketchId, String), ChordConflict>,
@@ -1118,9 +1123,10 @@ impl HeldMarkerGeometry {
 }
 
 /// Adds the held arc handles, gives every marker entity that no recovery
-/// pass resolved the marker role as its native kind with one loss per
-/// entity, and charges one loss for each line whose curve record states
-/// another form.
+/// pass resolved its held `sgSketch` record geometry where it has one, and
+/// otherwise the marker role as its native kind with one loss per entity,
+/// and charges one loss for each line whose curve record states another
+/// form.
 pub(crate) fn finalize_unread_marker_entities(
     sketch_entities: &mut Vec<SketchEntity>,
     held: HeldMarkerGeometry,
@@ -1129,6 +1135,7 @@ pub(crate) fn finalize_unread_marker_entities(
     use crate::loss::SldprtLossCode;
     let HeldMarkerGeometry {
         handles,
+        mut listed,
         chord_conflicts,
         unchecked,
         finalized,
@@ -1144,6 +1151,14 @@ pub(crate) fn finalize_unread_marker_entities(
         else {
             continue;
         };
+        if let Some(geometry) = entity
+            .native_ref
+            .clone()
+            .and_then(|marker| listed.remove(&(entity.sketch.clone(), marker)))
+        {
+            entity.geometry = geometry;
+            continue;
+        }
         let (role, code) = match placeholder {
             "1" => ("line-or-circle", SldprtLossCode::SketchHandleUnresolved),
             "2" | "arc-points" => ("arc", SldprtLossCode::SketchHandleUnresolved),
@@ -1589,6 +1604,7 @@ pub(crate) fn project_marker_backed_sketches(
             let mut projected = Vec::new();
             let mut held = Vec::new();
             let mut chord_conflicts = Vec::new();
+            let mut listed_elsewhere = Vec::new();
             let mut listed_entities = HashMap::new();
             let project_coordinates = |[u, v]: [f64; 2]| {
                 let point = transform.apply(quantize(
@@ -2267,6 +2283,23 @@ pub(crate) fn project_marker_backed_sketches(
                     {
                         chord_conflicts.push((marker.id().to_owned(), conflict));
                     }
+                    if matches!(
+                        geometry.definition(),
+                        SketchGeometryDefinition::Native { .. }
+                    ) && record_conflict.is_none()
+                    {
+                        if let Some(Ok(read)) = index_from_u64(marker.offset()).and_then(|offset| {
+                            listed_entity(
+                                &lane.native_payload,
+                                &record_lists,
+                                offset,
+                                &|_| true,
+                                &project_coordinates,
+                            )
+                        }) {
+                            listed_elsewhere.push((marker.id().to_owned(), read.geometry));
+                        }
+                    }
                     let construction = index_from_u64(marker.offset()).is_some_and(|offset| {
                         (marker_is_selected_construction_line(&lane.native_payload, offset)
                             || current_compact_roster_selected_axis(&lane.native_payload, offset))
@@ -2363,9 +2396,6 @@ pub(crate) fn project_marker_backed_sketches(
                     .collect();
                 let entity = SketchEntity::new(entity_id, sketch_id.clone(), listed.geometry)
                     .with_construction(listed.construction)
-                    .with_native_ref(Some(format!(
-                        "sldprt:feature-input:sketch-entity#{lane_key}:{offset}"
-                    )))
                     .with_endpoint_refs(endpoint_refs);
                 listed_entities.insert(
                     entity.id().clone(),
@@ -2564,9 +2594,18 @@ pub(crate) fn project_marker_backed_sketches(
                     entity.endpoint_refs = endpoint_refs.clone();
                 }
             }
-            let Ok(profiles) =
-                cadmpeg_ir::sketches::SketchProfiles::try_from(closed_marker_profiles(&projected))
-            else {
+            let mut closed = closed_marker_profiles(&projected);
+            if listed_curves {
+                let read = projected
+                    .iter()
+                    .filter(|entity| listed_entities.contains_key(entity.id()))
+                    .collect::<Vec<_>>();
+                let read = closed_marker_profiles(&read);
+                if read.len() > closed.len() {
+                    closed = read;
+                }
+            }
+            let Ok(profiles) = cadmpeg_ir::sketches::SketchProfiles::try_from(closed) else {
                 continue;
             };
             sketch.profiles = profiles;
@@ -2579,6 +2618,11 @@ pub(crate) fn project_marker_backed_sketches(
             }
             sketch_entities.extend(projected);
             held_geometry.handles.extend(held);
+            held_geometry.listed.extend(
+                listed_elsewhere
+                    .into_iter()
+                    .map(|(marker, geometry)| ((sketch_id.clone(), marker), geometry)),
+            );
             held_geometry.chord_conflicts.extend(
                 chord_conflicts
                     .into_iter()
