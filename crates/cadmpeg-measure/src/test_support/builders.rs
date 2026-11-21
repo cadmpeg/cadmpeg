@@ -217,7 +217,8 @@ impl Builder {
         let [x, y, z] = position;
         self.ir.geometry.points.push(Point::new(
             point.clone(),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(x, y, z)).expect("finite"),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(x, y, z))
+                .expect("finite"),
             None,
         ));
         self.ir.geometry.vertices.push(Vertex {

@@ -22,7 +22,8 @@ use cadmpeg_ir::design::selection::{
     Anchor, Members, PickTarget, Picked, Picks, PrincipalEntity, Selection,
 };
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{FeatureId, FinitePoint3};
+use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{Angle, Length, PositiveLength};
 use cadmpeg_ir::sketches::{SketchConstraintId, SketchEntityId, SketchId};

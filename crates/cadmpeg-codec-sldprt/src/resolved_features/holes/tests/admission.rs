@@ -84,8 +84,8 @@ fn hole_position_axes_refuse_nesting_limit() {
 #[test]
 fn bore_backed_position_projection_projects_one_point_sketch() {
     use crate::resolved_features::holes::project_bore_backed_position_sketches;
+    use cadmpeg_ir::features::geometry::{FeatureDirection3, FinitePoint3};
     use cadmpeg_ir::features::holes::HolePlacement;
-    use cadmpeg_ir::features::{FeatureDirection3, FinitePoint3};
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
     use cadmpeg_ir::ids::SurfaceId;
     use cadmpeg_ir::math::{Point2, Point3, Vector3};

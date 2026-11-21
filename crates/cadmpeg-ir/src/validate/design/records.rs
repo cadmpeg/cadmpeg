@@ -382,3 +382,12 @@ impl<'a> DesignRecords<'a> {
         spanned
     }
 }
+
+impl CadIr {
+    pub(crate) fn spanned_definitions(
+        &self,
+        scope: &crate::ids::ProductDefinitionId,
+    ) -> BTreeSet<&str> {
+        DesignRecords::new(self).spanned_definitions(scope.as_str())
+    }
+}

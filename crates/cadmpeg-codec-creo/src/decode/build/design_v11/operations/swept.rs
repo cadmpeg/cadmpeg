@@ -17,10 +17,9 @@ use cadmpeg_ir::design::ops::shared::{Limit, Span};
 use cadmpeg_ir::design::ops::swept::{Extrude, ExtrudeDirection, ExtrudeOrigin, Revolve};
 use cadmpeg_ir::design::options::{BodyForm, Boolean, BooleanOp, SolidOutput, SymmetricMeasure};
 use cadmpeg_ir::design::selection::{Anchor, Picks, Selection};
-use cadmpeg_ir::features::{
-    self as old, AngularTermination, ExtrudeExtent, FeatureOperation as LegacyOperation,
-    LinearTermination, RevolveExtent,
-};
+use cadmpeg_ir::features::extents::{AngularTermination, ExtrudeExtent, LinearTermination};
+use cadmpeg_ir::features::revolve::RevolveExtent;
+use cadmpeg_ir::features::FeatureOperation as LegacyOperation;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::units::UnitVector3;
@@ -31,18 +30,23 @@ use super::{selections, Stated};
 /// section normal at which the travel is the section normal.
 const PARALLEL: f64 = 1e-9;
 
-pub(super) fn boolean(op: old::BooleanOp) -> Option<Boolean> {
+pub(super) fn boolean(op: cadmpeg_ir::features::operation_settings::BooleanOp) -> Option<Boolean> {
     let apply = |op| Boolean::Apply { op, targets: None };
     Some(match op {
-        old::BooleanOp::NewBody => Boolean::NewBody,
-        old::BooleanOp::Join => apply(BooleanOp::Join),
-        old::BooleanOp::Cut => apply(BooleanOp::Cut),
-        old::BooleanOp::Intersect => apply(BooleanOp::Intersect),
-        old::BooleanOp::Unresolved => return None,
+        cadmpeg_ir::features::operation_settings::BooleanOp::NewBody => Boolean::NewBody,
+        cadmpeg_ir::features::operation_settings::BooleanOp::Join => apply(BooleanOp::Join),
+        cadmpeg_ir::features::operation_settings::BooleanOp::Cut => apply(BooleanOp::Cut),
+        cadmpeg_ir::features::operation_settings::BooleanOp::Intersect => {
+            apply(BooleanOp::Intersect)
+        }
+        cadmpeg_ir::features::operation_settings::BooleanOp::Unresolved => return None,
     })
 }
 
-pub(super) fn output(op: old::BooleanOp, solid: Option<bool>) -> SolidOutput {
+pub(super) fn output(
+    op: cadmpeg_ir::features::operation_settings::BooleanOp,
+    solid: Option<bool>,
+) -> SolidOutput {
     SolidOutput {
         body: solid.map(|solid| {
             if solid {
@@ -160,11 +164,11 @@ fn revolve_span(value: &RevolveExtent) -> Option<Span<Angle>> {
 /// The travel's sense against the section's normal, where the travel lies
 /// along it.
 fn travel(
-    value: &old::ExtrudeDirection,
-    profile: &old::ProfileRef,
+    value: &cadmpeg_ir::features::extents::ExtrudeDirection,
+    profile: &cadmpeg_ir::features::profiles::ProfileRef,
     stated: &Stated<'_>,
 ) -> Option<ExtrudeDirection> {
-    let old::ExtrudeDirection::Explicit {
+    let cadmpeg_ir::features::extents::ExtrudeDirection::Explicit {
         vector,
         source: None,
     } = value
@@ -213,9 +217,12 @@ pub(super) fn extrude(value: &LegacyOperation, stated: &Stated<'_>) -> Option<Fe
     let section = selections::profile(profile, stated);
     let span = span(extent);
     let direction = travel(direction, profile, stated);
-    let origin = matches!(start, old::ExtrudeStart::ProfilePlane {})
-        .then_some(ExtrudeOrigin::ProfilePlane)
-        .filter(|_| span.is_some());
+    let origin = matches!(
+        start,
+        cadmpeg_ir::features::extents::ExtrudeStart::ProfilePlane {}
+    )
+    .then_some(ExtrudeOrigin::ProfilePlane)
+    .filter(|_| span.is_some());
     let output = output(*op, *solid);
     if section.is_none() && span.is_none() && direction.is_none() && unread(&output) {
         return None;
@@ -241,7 +248,7 @@ pub(super) fn revolve(value: &LegacyOperation, stated: &Stated<'_>) -> Option<Fe
         return None;
     };
     let (profile, axis, extent, solid) = match construction {
-        old::RevolveConstruction::Resolved {
+        cadmpeg_ir::features::revolve::RevolveConstruction::Resolved {
             profile,
             axis,
             extent,
@@ -250,8 +257,8 @@ pub(super) fn revolve(value: &LegacyOperation, stated: &Stated<'_>) -> Option<Fe
             fuse_order: None,
             allow_multi_profile_faces: None,
         } => (Some(profile), Some(axis), Some(extent), *solid),
-        old::RevolveConstruction::Unresolved(partial) => match partial {
-            old::PartialRevolveConstruction::Profile {
+        cadmpeg_ir::features::revolve::RevolveConstruction::Unresolved(partial) => match partial {
+            cadmpeg_ir::features::revolve::PartialRevolveConstruction::Profile {
                 axis,
                 extent,
                 solid,
@@ -259,7 +266,7 @@ pub(super) fn revolve(value: &LegacyOperation, stated: &Stated<'_>) -> Option<Fe
                 fuse_order: None,
                 allow_multi_profile_faces: None,
             } => (None, axis.as_ref(), extent.as_ref(), *solid),
-            old::PartialRevolveConstruction::Axis {
+            cadmpeg_ir::features::revolve::PartialRevolveConstruction::Axis {
                 profile,
                 extent,
                 solid,
@@ -267,7 +274,7 @@ pub(super) fn revolve(value: &LegacyOperation, stated: &Stated<'_>) -> Option<Fe
                 fuse_order: None,
                 allow_multi_profile_faces: None,
             } => (Some(profile), None, extent.as_ref(), *solid),
-            old::PartialRevolveConstruction::Extent {
+            cadmpeg_ir::features::revolve::PartialRevolveConstruction::Extent {
                 profile,
                 axis,
                 solid,
@@ -277,7 +284,7 @@ pub(super) fn revolve(value: &LegacyOperation, stated: &Stated<'_>) -> Option<Fe
             } => (Some(profile), Some(axis), None, *solid),
             _ => return None,
         },
-        old::RevolveConstruction::Resolved { .. } => return None,
+        cadmpeg_ir::features::revolve::RevolveConstruction::Resolved { .. } => return None,
     };
     let section = profile.and_then(|profile| selections::planar_profile(profile, stated));
     let axis = axis

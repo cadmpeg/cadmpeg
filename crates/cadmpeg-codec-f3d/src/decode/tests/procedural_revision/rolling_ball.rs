@@ -397,7 +397,7 @@ fn generated_f3d_rewrites_rolling_ball_support_cache() {
                 pole.x = 6.0;
                 pole.z = 4.0;
             }
-            cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+            cadmpeg_ir::features::geometry::FinitePoint3::new(pole).ok_or_else(|| {
                 cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                     "control_points contains a non-finite point".into(),
                 )

@@ -2,9 +2,11 @@
 
 use super::super::{project_compact_combine_paths, COMPACT_EDGE_VECTOR_MARKER};
 use super::{Feature, FeatureHistory, FeatureInputLane, FeatureSource};
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::operation_settings::BooleanKind;
+use cadmpeg_ir::features::selections::BodySelection;
 use cadmpeg_ir::features::{
-    BodySelection, BooleanKind, CombineOperands, FeatureDefinition, FeatureEvaluation, FeatureId,
-    FeatureOperation, SketchFeatureBinding,
+    CombineOperands, FeatureDefinition, FeatureId, FeatureOperation, SketchFeatureBinding,
 };
 use std::collections::BTreeMap;
 
@@ -77,7 +79,7 @@ fn combine_projection_binds_generated_target_and_tool_bodies() {
         ordinal,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
@@ -105,7 +107,8 @@ fn combine_projection_binds_generated_target_and_tool_bodies() {
                 op: BooleanKind::Join,
                 keep_tools: false,
 
-                destination: cadmpeg_ir::features::CombineDestination::default(),
+                destination: cadmpeg_ir::features::operation_settings::CombineDestination::default(
+                ),
             }),
         ),
     ];

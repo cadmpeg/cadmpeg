@@ -5,7 +5,7 @@ mod repeated_owners;
 
 use crate::records::sketch_placement::DesignSketchPlacement;
 use cadmpeg_ir::document::{Model, Topology};
-use cadmpeg_ir::features::DistinctMembers;
+use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::Feature;
 use cadmpeg_ir::features::FeatureContent;
 use cadmpeg_ir::features::FeatureDefinition;
@@ -37,7 +37,7 @@ fn feature(id: &str, ordinal: u64) -> Feature {
         source_text: None,
         source_content: FeatureContent::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "test".into(),
                 parameters: std::collections::BTreeMap::new(),
@@ -325,7 +325,7 @@ fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
 #[test]
 fn occurrence_merge_rewrites_only_member_native_record_text() {
     use cadmpeg_ir::document::EntityRewrite;
-    use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
     use cadmpeg_ir::NativeRecord;
 
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
@@ -366,13 +366,13 @@ fn occurrence_merge_scopes_unmaterialized_partial_pattern_references() {
     use cadmpeg_ir::features::patterns::{
         curve_driven::CurveDrivenPatternParameters, PatternKind, PatternSeed, PatternTransform,
     };
-    use cadmpeg_ir::features::PathRef;
+    use cadmpeg_ir::features::profiles::PathRef;
 
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let source = "f3d:Design1/BulkStream.dat:design-record#91";
     let mut row = feature("f3d:model:feature#pattern", 0);
     row.name = Some(source.into());
-    row.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+    row.evaluation = cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             seeds: vec![PatternSeed::Native(source.into())],
             pattern: PatternKind::new(PatternTransform::CurveDrivenPartial {
@@ -749,7 +749,7 @@ fn merged_documents_keep_parameter_names_and_document_local_expression_dependenc
     assert!(matches!(
         container.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::TreeNode {
-            role: cadmpeg_ir::features::FeatureTreeNodeRole::Equations,
+            role: cadmpeg_ir::features::tree::FeatureTreeNodeRole::Equations,
             ..
         })
     ));

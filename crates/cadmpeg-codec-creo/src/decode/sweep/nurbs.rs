@@ -646,7 +646,7 @@ pub(in super::super) fn extruded_nurbs_surface(
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<NurbsSurface> {
-    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::geometry::nurbs::{NurbsPoleGrid, NurbsSurfaceAxis, WeightedPole3};
     use cadmpeg_ir::scalar::NonZeroReal;
 
@@ -734,7 +734,7 @@ pub(in super::super) fn extruded_nurbs_surface(
 }
 
 pub(super) fn sketch_nurbs_curve(geometry: &SketchGeometry) -> Option<NurbsCurve> {
-    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::geometry::nurbs::{NurbsPoles3, WeightedPole3};
     use cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles;
     use cadmpeg_ir::scalar::FiniteReal;

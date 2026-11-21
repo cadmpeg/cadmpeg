@@ -13,9 +13,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::mesh::{
     MeshModification, MeshSelection, MeshSeparation, MeshSeparationGroups, MeshSeparationMethod,
 };
-use cadmpeg_ir::features::{
-    Feature, FeatureDefinition, FeatureOperation, NativeSelections, SelectionReference,
-};
+use cadmpeg_ir::features::selections::{NativeSelections, SelectionReference};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::native::bytes::NativeBytes;
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::{BTreeMap, HashMap, HashSet};

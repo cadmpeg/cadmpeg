@@ -36,7 +36,8 @@ use crate::design::refs::{ConfigurationRef, EntityRef, Evaluated, Member, Positi
 use crate::design::scope::{DesignScope, OccurrenceDesign};
 use crate::design::selection::{Anchor, Members, PickTarget, Picked, Picks, Selection};
 use crate::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKind};
-use crate::features::{ConfigurationId, FeatureId, FinitePoint3, ParameterId};
+use crate::features::geometry::FinitePoint3;
+use crate::features::{ConfigurationId, FeatureId, ParameterId};
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
 use crate::pmi::LimitsAndFits;
 use crate::scalar::{FiniteReal, Length};

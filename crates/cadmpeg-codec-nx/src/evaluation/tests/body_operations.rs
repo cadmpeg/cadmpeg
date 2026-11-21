@@ -10,22 +10,22 @@ use crate::evaluation::BodyCensusEvaluation;
 use crate::evaluation::FeatureBoundary;
 use crate::evaluation::UnsupportedBodyCensusReason;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::direct_edit::ThickenSide;
 use cadmpeg_ir::features::edge_treatments::ChamferGroup;
 use cadmpeg_ir::features::edge_treatments::ChamferSpec;
 use cadmpeg_ir::features::edge_treatments::FilletGroup;
 use cadmpeg_ir::features::edge_treatments::RadiusSpec;
-use cadmpeg_ir::features::BodySelection;
-use cadmpeg_ir::features::BodyTrimSide;
-use cadmpeg_ir::features::BooleanOp;
-use cadmpeg_ir::features::EdgeSelection;
-use cadmpeg_ir::features::FaceSelection;
+use cadmpeg_ir::features::operation_settings::BodyTrimSide;
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::selections::EdgeSelection;
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::surface_inputs::SurfaceExtension;
+use cadmpeg_ir::features::surface_inputs::TrimRegion;
 use cadmpeg_ir::features::Feature;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureId;
-use cadmpeg_ir::features::PathRef;
-use cadmpeg_ir::features::SurfaceExtension;
-use cadmpeg_ir::features::ThickenSide;
-use cadmpeg_ir::features::TrimRegion;
 use cadmpeg_ir::features::UnresolvedFamily;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::ids::CurveId;
@@ -49,7 +49,7 @@ fn combine_consumes_tools_and_preserves_the_target_identity() {
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::BaseFeature {
                 bodies: BodySelection::Bodies(
-                    cadmpeg_ir::features::DistinctMembers::try_from(vec![
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
                         target.clone(),
                         tool.clone(),
                     ])
@@ -64,20 +64,22 @@ fn combine_consumes_tools_and_preserves_the_target_identity() {
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Bodies(
-                    cadmpeg_ir::features::DistinctMembers::try_from(vec![target.clone()])
-                        .expect("distinct bodies"),
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+                        target.clone()
+                    ])
+                    .expect("distinct bodies"),
                 ),
                 BodySelection::Bodies(
-                    cadmpeg_ir::features::DistinctMembers::try_from(vec![tool])
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![tool])
                         .expect("distinct bodies"),
                 ),
             )
             .unwrap(),
 
-            op: cadmpeg_ir::features::BooleanKind::Join,
+            op: cadmpeg_ir::features::operation_settings::BooleanKind::Join,
             keep_tools: false,
 
-            destination: cadmpeg_ir::features::CombineDestination::default(),
+            destination: cadmpeg_ir::features::operation_settings::CombineDestination::default(),
         }),
     ));
 
@@ -101,7 +103,7 @@ fn combine_preserves_tools_when_requested() {
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::BaseFeature {
                 bodies: BodySelection::Bodies(
-                    cadmpeg_ir::features::DistinctMembers::try_from(vec![
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
                         target.clone(),
                         tool.clone(),
                     ])
@@ -116,20 +118,22 @@ fn combine_preserves_tools_when_requested() {
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Bodies(
-                    cadmpeg_ir::features::DistinctMembers::try_from(vec![target.clone()])
-                        .expect("distinct bodies"),
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+                        target.clone()
+                    ])
+                    .expect("distinct bodies"),
                 ),
                 BodySelection::Bodies(
-                    cadmpeg_ir::features::DistinctMembers::try_from(vec![tool.clone()])
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![tool.clone()])
                         .expect("distinct bodies"),
                 ),
             )
             .unwrap(),
 
-            op: cadmpeg_ir::features::BooleanKind::Join,
+            op: cadmpeg_ir::features::operation_settings::BooleanKind::Join,
             keep_tools: true,
 
-            destination: cadmpeg_ir::features::CombineDestination::default(),
+            destination: cadmpeg_ir::features::operation_settings::CombineDestination::default(),
         }),
     ));
 
@@ -150,18 +154,20 @@ fn combine_with_exact_local_tools_preserves_its_retained_target() {
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Bodies(
-                    cadmpeg_ir::features::DistinctMembers::try_from(vec![target.clone()])
-                        .expect("distinct bodies"),
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+                        target.clone()
+                    ])
+                    .expect("distinct bodies"),
                 ),
                 BodySelection::local(vec!["local-tool".to_string()], "native-tools".to_string())
                     .unwrap(),
             )
             .unwrap(),
 
-            op: cadmpeg_ir::features::BooleanKind::Cut,
+            op: cadmpeg_ir::features::operation_settings::BooleanKind::Cut,
             keep_tools: false,
 
-            destination: cadmpeg_ir::features::CombineDestination::default(),
+            destination: cadmpeg_ir::features::operation_settings::CombineDestination::default(),
         }),
     );
     combine.suppressed = None;
@@ -187,10 +193,10 @@ fn output_free_combine_with_exact_native_operands_is_local_to_history() {
             )
             .unwrap(),
 
-            op: cadmpeg_ir::features::BooleanKind::Intersect,
+            op: cadmpeg_ir::features::operation_settings::BooleanKind::Intersect,
             keep_tools: false,
 
-            destination: cadmpeg_ir::features::CombineDestination::default(),
+            destination: cadmpeg_ir::features::operation_settings::CombineDestination::default(),
         }),
     );
     combine.suppressed = None;
@@ -211,7 +217,7 @@ fn trim_bodies_preserves_all_targets_and_tools() {
     ir.geometry.bodies.push(model_body(second.as_str()));
     ir.geometry.bodies.push(model_body(tool.as_str()));
     ir.model.features[0].evaluation.set_outputs(
-        cadmpeg_ir::features::DistinctMembers::try_from(vec![
+        cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
             first.clone(),
             second.clone(),
             tool.clone(),
@@ -223,7 +229,7 @@ fn trim_bodies_preserves_all_targets_and_tools() {
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::BaseFeature {
                 bodies: BodySelection::Bodies(
-                    cadmpeg_ir::features::DistinctMembers::try_from(vec![
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
                         first.clone(),
                         second.clone(),
                         tool.clone(),
@@ -238,14 +244,14 @@ fn trim_bodies_preserves_all_targets_and_tools() {
         FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::Bodies(
-                    cadmpeg_ir::features::DistinctMembers::try_from(vec![
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
                         first.clone(),
                         second.clone(),
                     ])
                     .expect("distinct bodies"),
                 ),
                 BodySelection::Bodies(
-                    cadmpeg_ir::features::DistinctMembers::try_from(vec![tool.clone()])
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![tool.clone()])
                         .expect("distinct bodies"),
                 ),
             )
@@ -255,8 +261,11 @@ fn trim_bodies_preserves_all_targets_and_tools() {
         }),
     );
     trim.evaluation.set_outputs(
-        cadmpeg_ir::features::DistinctMembers::try_from(vec![first.clone(), second.clone()])
-            .unwrap(),
+        cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+            first.clone(),
+            second.clone(),
+        ])
+        .unwrap(),
     );
     ir.model.features.push(trim);
 
@@ -280,7 +289,7 @@ fn trim_bodies_rejects_outputs_that_do_not_match_its_targets() {
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::BaseFeature {
                 bodies: BodySelection::Bodies(
-                    cadmpeg_ir::features::DistinctMembers::try_from(vec![
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
                         target.clone(),
                         tool.clone(),
                     ])
@@ -295,11 +304,11 @@ fn trim_bodies_rejects_outputs_that_do_not_match_its_targets() {
         FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::Bodies(
-                    cadmpeg_ir::features::DistinctMembers::try_from(vec![target])
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![target])
                         .expect("distinct bodies"),
                 ),
                 BodySelection::Bodies(
-                    cadmpeg_ir::features::DistinctMembers::try_from(vec![tool])
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![tool])
                         .expect("distinct bodies"),
                 ),
             )
@@ -335,14 +344,14 @@ fn trim_bodies_requires_a_resolved_retained_side_before_lineage() {
         FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::Bodies(
-                    cadmpeg_ir::features::DistinctMembers::try_from(vec![target])
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![target])
                         .expect("distinct bodies"),
                 ),
                 BodySelection::Bodies(
-                    cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
-                        "test:model:entity#tool".to_string(),
-                    )
-                    .expect("identity grammar")])
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+                        BodyId::mint("test:model:entity#tool".to_string())
+                            .expect("identity grammar"),
+                    ])
                     .expect("distinct bodies"),
                 ),
             )
@@ -376,13 +385,13 @@ fn output_free_trim_is_body_census_neutral_without_resolved_roles() {
         ordinal: 1,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::TrimBodies {
                 operands: cadmpeg_ir::features::TrimBodyOperands::new(
                     BodySelection::Unresolved,
@@ -411,15 +420,18 @@ fn sew_replaces_all_inputs_with_its_declared_outputs() {
     let sewn = BodyId::mint("test:model:entity#sewn".to_string()).expect("identity grammar");
     ir.geometry.bodies[0] = model_body(sewn.as_str());
     ir.model.features[0].evaluation.set_outputs(
-        cadmpeg_ir::features::DistinctMembers::try_from(vec![first.clone(), second.clone()])
-            .unwrap(),
+        cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+            first.clone(),
+            second.clone(),
+        ])
+        .unwrap(),
     );
     ir.model.features[0]
         .evaluation
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::BaseFeature {
                 bodies: BodySelection::Bodies(
-                    cadmpeg_ir::features::DistinctMembers::try_from(vec![
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
                         first.clone(),
                         second.clone(),
                     ])
@@ -433,7 +445,7 @@ fn sew_replaces_all_inputs_with_its_declared_outputs() {
         sewn.clone(),
         FeatureDefinition::Operation(FeatureOperation::SewBodies {
             bodies: (BodySelection::Bodies(
-                cadmpeg_ir::features::DistinctMembers::try_from(vec![first, second])
+                cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![first, second])
                     .expect("distinct bodies"),
             ))
             .try_into()
@@ -441,9 +453,9 @@ fn sew_replaces_all_inputs_with_its_declared_outputs() {
             gap_tolerance: None,
         }),
     );
-    feature
-        .evaluation
-        .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(vec![sewn.clone()]).unwrap());
+    feature.evaluation.set_outputs(
+        cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![sewn.clone()]).unwrap(),
+    );
     ir.model.features.push(feature);
 
     assert_eq!(
@@ -462,13 +474,13 @@ fn local_sew_with_an_already_retained_output_is_census_invariant() {
         ordinal: 1,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::SewBodies {
                 bodies: (BodySelection::local(
                     vec![
@@ -482,7 +494,8 @@ fn local_sew_with_an_already_retained_output_is_census_invariant() {
                 .unwrap(),
                 gap_tolerance: None,
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(vec![output.clone()]).unwrap(),
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![output.clone()])
+                .unwrap(),
         ),
         native_ref: None,
     });
@@ -504,23 +517,23 @@ fn combine_rejects_a_tool_absent_from_prior_history() {
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Bodies(
-                    cadmpeg_ir::features::DistinctMembers::try_from(vec![body])
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![body])
                         .expect("distinct bodies"),
                 ),
                 BodySelection::Bodies(
-                    cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
-                        "test:model:entity#missing".to_string(),
-                    )
-                    .expect("identity grammar")])
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+                        BodyId::mint("test:model:entity#missing".to_string())
+                            .expect("identity grammar"),
+                    ])
                     .expect("distinct bodies"),
                 ),
             )
             .unwrap(),
 
-            op: cadmpeg_ir::features::BooleanKind::Cut,
+            op: cadmpeg_ir::features::operation_settings::BooleanKind::Cut,
             keep_tools: false,
 
-            destination: cadmpeg_ir::features::CombineDestination::default(),
+            destination: cadmpeg_ir::features::operation_settings::CombineDestination::default(),
         }),
     ));
 
@@ -548,7 +561,7 @@ fn sew_rejects_an_output_identity_owned_by_an_unconsumed_body() {
         BodyId::mint("test:model:entity#unrelated".to_string()).expect("identity grammar");
     ir.geometry.bodies = vec![model_body(unrelated.as_str())];
     ir.model.features[0].evaluation.set_outputs(
-        cadmpeg_ir::features::DistinctMembers::try_from(vec![
+        cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
             first.clone(),
             second.clone(),
             unrelated.clone(),
@@ -560,7 +573,7 @@ fn sew_rejects_an_output_identity_owned_by_an_unconsumed_body() {
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::BaseFeature {
                 bodies: BodySelection::Bodies(
-                    cadmpeg_ir::features::DistinctMembers::try_from(vec![
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
                         first.clone(),
                         second.clone(),
                         unrelated.clone(),
@@ -575,7 +588,7 @@ fn sew_rejects_an_output_identity_owned_by_an_unconsumed_body() {
         unrelated,
         FeatureDefinition::Operation(FeatureOperation::SewBodies {
             bodies: (BodySelection::Bodies(
-                cadmpeg_ir::features::DistinctMembers::try_from(vec![first, second])
+                cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![first, second])
                     .expect("distinct bodies"),
             ))
             .try_into()
@@ -648,7 +661,7 @@ fn complete_chamfer_and_fillet_preserve_the_existing_body() {
         1,
         body.clone(),
         FeatureDefinition::Operation(FeatureOperation::Chamfer {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
+            groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(ChamferGroup {
                 edges: EdgeSelection::All,
                 spec: ChamferSpec::Distance {
                     distance: cadmpeg_ir::scalar::PositiveLength::new(0.25).unwrap(),
@@ -662,7 +675,7 @@ fn complete_chamfer_and_fillet_preserve_the_existing_body() {
         2,
         body.clone(),
         FeatureDefinition::Operation(FeatureOperation::Fillet {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(FilletGroup {
+            groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(FilletGroup {
                 edges: EdgeSelection::All,
                 radius: RadiusSpec::Constant {
                     radius: cadmpeg_ir::scalar::PositiveLength::new(0.2).unwrap(),
@@ -687,7 +700,7 @@ fn incomplete_chamfer_construction_does_not_change_its_body_identity_effect() {
         1,
         body.clone(),
         FeatureDefinition::Operation(FeatureOperation::Chamfer {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
+            groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(ChamferGroup {
                 edges: EdgeSelection::Unresolved,
                 spec: ChamferSpec::Distance {
                     distance: cadmpeg_ir::scalar::PositiveLength::new(0.25).unwrap(),
@@ -736,11 +749,13 @@ fn complete_single_body_dress_up_families_preserve_identity() {
         )),
         FeatureDefinition::Operation(FeatureOperation::Draft {
             faces: first.clone(),
-            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+            anchor: cadmpeg_ir::features::direct_edit::DraftAnchor::NeutralPlane {
                 plane: second.clone(),
-                pull: Some(cadmpeg_ir::features::DraftPull::new(
-                    cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
-                        .unwrap(),
+                pull: Some(cadmpeg_ir::features::direct_edit::DraftPull::new(
+                    cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                        0.0, 0.0, 1.0,
+                    ))
+                    .unwrap(),
                     None,
                 )),
             },
@@ -782,7 +797,7 @@ fn complete_surface_edits_preserve_every_declared_body_identity() {
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::BaseFeature {
                 bodies: BodySelection::Bodies(
-                    cadmpeg_ir::features::DistinctMembers::try_from(vec![
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
                         first.clone(),
                         second.clone(),
                     ])
@@ -806,8 +821,11 @@ fn complete_surface_edits_preserve_every_declared_body_identity() {
         }),
     );
     trim.evaluation.set_outputs(
-        cadmpeg_ir::features::DistinctMembers::try_from(vec![first.clone(), second.clone()])
-            .unwrap(),
+        cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+            first.clone(),
+            second.clone(),
+        ])
+        .unwrap(),
     );
     let mut extend = body_neutral_feature(
         "extend-surface",
@@ -819,8 +837,11 @@ fn complete_surface_edits_preserve_every_declared_body_identity() {
         }),
     );
     extend.evaluation.set_outputs(
-        cadmpeg_ir::features::DistinctMembers::try_from(vec![first.clone(), second.clone()])
-            .unwrap(),
+        cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+            first.clone(),
+            second.clone(),
+        ])
+        .unwrap(),
     );
     ir.model.features.extend([trim, extend]);
 
@@ -876,13 +897,13 @@ fn output_free_unresolved_loft_is_body_census_neutral() {
         ordinal: 1,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::Loft,
             }),
@@ -906,13 +927,13 @@ fn output_free_unresolved_freeform_surface_is_body_census_neutral() {
         ordinal: 1,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::FreeformSurface,
             }),
@@ -945,8 +966,9 @@ fn complete_surface_edit_rejects_an_output_absent_from_prior_history() {
             keep: TrimRegion::Outside,
         }),
     );
-    trim.evaluation
-        .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(vec![missing]).unwrap());
+    trim.evaluation.set_outputs(
+        cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![missing]).unwrap(),
+    );
     ir.model.features.push(trim);
 
     assert_eq!(
@@ -973,13 +995,13 @@ fn unresolved_suppression_is_irrelevant_to_output_free_construction() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::DatumCoordinateSystem,
             }),
@@ -1131,13 +1153,13 @@ fn native_delete_without_a_primary_body_is_body_neutral() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "DELETE".into(),
                 parameters: BTreeMap::new(),

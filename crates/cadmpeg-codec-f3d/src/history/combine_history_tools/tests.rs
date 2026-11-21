@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::operation_settings::BooleanKind;
+use cadmpeg_ir::features::selections::{BodySelection, DistinctMembers};
 use cadmpeg_ir::features::{
-    BodySelection, BooleanKind, CombineOperands, DistinctMembers, Feature, FeatureDefinition,
-    FeatureEvaluation, FeatureId, FeatureOperation,
+    CombineOperands, Feature, FeatureDefinition, FeatureId, FeatureOperation,
 };
 
 use super::bind;
@@ -87,6 +89,8 @@ fn combine_scope(tools: &[(u32, u32)]) -> DesignParameterScope {
                 first: rows.next().unwrap(),
                 additional: rows.collect(),
             },
+            created_body_nodes: Vec::new(),
+            consumed_body_nodes: Vec::new(),
         });
     }
     scope

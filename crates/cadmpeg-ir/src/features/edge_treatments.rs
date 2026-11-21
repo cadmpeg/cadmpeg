@@ -2,7 +2,7 @@
 //! Fillet and chamfer operands, dimensions, and radius laws.
 
 use super::selection_overlap::face_selections_overlap;
-use super::{EdgeSelection, FaceSelection};
+use crate::features::selections::{EdgeSelection, FaceSelection};
 use crate::scalar::{
     FiniteReal, Fraction, InteriorAngle, Length, NonNegativeLength, PositiveLength,
 };

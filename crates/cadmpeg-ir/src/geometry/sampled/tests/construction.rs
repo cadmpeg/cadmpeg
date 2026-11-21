@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::features::FinitePoint3;
+use crate::features::geometry::FinitePoint3;
 use crate::geometry::sampled::{GeometryLayoutError, PolygonalSurface};
 use crate::math::Point3;
 use crate::scalar::{NonNegativeReal, PositiveReal};

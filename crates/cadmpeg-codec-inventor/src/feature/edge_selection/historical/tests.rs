@@ -11,13 +11,10 @@ fn parse(payload: View<'_>, version: u8) -> Result<Option<StoredSelector>, Codec
     super::parse(&ctx, payload, version)
 }
 use cadmpeg_asm::sab::Token;
-use cadmpeg_ir::{
-    features::{
-        edge_treatments::{ChamferGroup, ChamferSpec, FilletGroup, RadiusSpec},
-        FeatureEvaluation, NonEmptyMembers,
-    },
-    scalar::PositiveLength,
-};
+use cadmpeg_ir::features::edge_treatments::{ChamferGroup, ChamferSpec, FilletGroup, RadiusSpec};
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::selections::NonEmptyMembers;
+use cadmpeg_ir::scalar::PositiveLength;
 
 fn selector_bytes(generators: &[u32], secondary: &[u32], version: u8) -> Vec<u8> {
     selector_bytes_with_form(generators, secondary, version, 5)
@@ -511,13 +508,15 @@ pub(crate) fn fixture(
         .identity
         .record_ordinal;
     let sample = EdgeGeometry {
-        start: cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        start: cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             0.0, 0.0, 0.0,
         ))
         .expect("point"),
-        end: cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(2.0, 0.0, 0.0))
-            .expect("point"),
-        interior: cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        end: cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            2.0, 0.0, 0.0,
+        ))
+        .expect("point"),
+        interior: cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             1.0, 0.0, 0.0,
         ))
         .expect("point"),
@@ -882,7 +881,8 @@ fn selector_list_counts_are_bounded_before_allocation() {
 }
 
 fn attachment_features(ctx: &DecodeContext<'_>) -> [Feature; 3] {
-    use cadmpeg_ir::features::{PlanarProfileRef, SheetMetalCornerEffect};
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
+    use cadmpeg_ir::features::sheet_metal_forms::SheetMetalCornerEffect;
     let fixture = crate::test_support::sheet_metal::Fixture::new();
     let values = fixture.values();
     let make = |source: &crate::feature::PmDcFeature, operation| {

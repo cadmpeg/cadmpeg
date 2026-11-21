@@ -53,8 +53,9 @@ fn scalar(value: f64) -> cadmpeg_ir::scalar::FiniteReal {
     cadmpeg_ir::scalar::FiniteReal::new(value).unwrap()
 }
 
-fn point(x: f64, y: f64, z: f64) -> cadmpeg_ir::features::FinitePoint3 {
-    cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(x, y, z)).unwrap()
+fn point(x: f64, y: f64, z: f64) -> cadmpeg_ir::features::geometry::FinitePoint3 {
+    cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(x, y, z))
+        .unwrap()
 }
 
 fn unsupported_items(result: &cadmpeg_ir::codec::DecodeResult) -> Vec<String> {
