@@ -100,7 +100,11 @@ pub(crate) enum DesignParameterSource {
 }
 
 /// Localized source kinds of a document parameter.
-const DOCUMENT_PARAMETER_SOURCE_KINDS: [&str; 2] = ["User Parameter", "Paramètre utilisateur"];
+const DOCUMENT_PARAMETER_SOURCE_KINDS: [&str; 3] = [
+    "User Parameter",
+    "Paramètre utilisateur",
+    "Parâmetro do usuário",
+];
 
 /// Whether a parameter source kind names a document parameter.
 pub(crate) fn is_document_source_kind(source_kind: &str) -> bool {

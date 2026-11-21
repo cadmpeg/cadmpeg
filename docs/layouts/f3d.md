@@ -504,7 +504,10 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 9 B
 
-This trailer is relative to the end of the variable LP-UTF16 expression of an eleven-byte discriminated parameter. DR-144 gives the four flag bytes before the document flag.
+This trailer is relative to the end of the variable LP-UTF16 expression of a discriminated parameter. DR-144 gives the four flag bytes before the document flag.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -516,7 +519,10 @@ This trailer is relative to the end of the variable LP-UTF16 expression of an el
 
 Spec §3.1 · layout: byte offsets · size: 10 B
 
-This trailer is relative to the end of the variable LP-UTF16 expression of an eleven-byte discriminated parameter. DR-144 gives the four flag bytes before the document flag.
+This trailer is relative to the end of the variable LP-UTF16 expression of a discriminated parameter. DR-144 gives the four flag bytes before the document flag.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |

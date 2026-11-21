@@ -1380,11 +1380,12 @@ anchor = "The wide expression trailer is eleven bytes"
 
 [[record]]
 name = "design_parameter_discriminated_expression_trailer"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs"
 kind = "byte"
 section = "3.1"
 anchor = "The nine-byte trailer is four zero bytes and five flag bytes"
 size = 9
-note = "This trailer is relative to the end of the variable LP-UTF16 expression of an eleven-byte discriminated parameter. DR-144 gives the four flag bytes before the document flag."
+note = "This trailer is relative to the end of the variable LP-UTF16 expression of a discriminated parameter. DR-144 gives the four flag bytes before the document flag."
 
 [[record.field]]
 name = "zero_run_4"
@@ -1409,11 +1410,12 @@ anchor = "The last flag byte is `1` exactly for a document parameter"
 
 [[record]]
 name = "design_parameter_discriminated_text_expression_trailer"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs"
 kind = "byte"
 section = "3.1"
 anchor = "The ten-byte trailer is the text flag, four zero bytes, and five flag bytes"
 size = 10
-note = "This trailer is relative to the end of the variable LP-UTF16 expression of an eleven-byte discriminated parameter. DR-144 gives the four flag bytes before the document flag."
+note = "This trailer is relative to the end of the variable LP-UTF16 expression of a discriminated parameter. DR-144 gives the four flag bytes before the document flag."
 
 [[record.field]]
 name = "text"
