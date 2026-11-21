@@ -2332,7 +2332,8 @@ fn report_design_projection_gaps(
         if matches!(
             prologue.extent(),
             Some(
-                crate::records::feature::extrude::DesignExtrudeExtent::TwoSidedDistanceThroughAll
+                crate::records::feature::extrude::DesignExtrudeExtent::OneSidedDistance
+                    | crate::records::feature::extrude::DesignExtrudeExtent::TwoSidedDistanceThroughAll
                     | crate::records::feature::extrude::DesignExtrudeExtent::TwoSidedThroughAllToFace
             )
         ) && crate::ids::native_stream(&scope.id).is_some_and(|stream| {
