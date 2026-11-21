@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
 
+mod ambiguity;
+
 fn parse(payload: View<'_>, version: u8) -> Result<Option<StoredSelector>, CodecError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(
@@ -287,7 +289,7 @@ fn each_generator_form_joins_one_stored_edge_with_signed_geometry() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())
             .expect("context");
-    for schema in [38, 40, 42, 44] {
+    for schema in [38, 40, 42, 43, 44] {
         for generators in [&[31][..], &[31, 37][..], &[31, 37, 41, 43][..]] {
             let bytes = selector_bytes(generators, &[], 29);
             let selector = parse(View::over_retained(&bytes), 29)
@@ -761,7 +763,7 @@ fn identical_geometry_owners_resolve_to_the_lowest_record_index() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())
             .expect("context");
-    for schema in [38, 40, 42, 44] {
+    for schema in [38, 40, 42, 43, 44] {
         let bytes = selector_bytes(&[31, 37], &[], 29);
         let selector = || {
             parse(View::over_retained(&bytes), 29)
