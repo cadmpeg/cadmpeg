@@ -204,8 +204,15 @@ fn projected_curve(
 /// value is no relation code. A line that the list reading takes no geometry
 /// from stays a line handle, not a relation.
 fn assert_unresolved_line_handle(payload: Vec<u8>, curve: usize) {
-    let (kind, entity, _) = projected_curve(payload, curve);
+    let (kind, entity, losses) = projected_curve(payload, curve);
     assert_eq!(kind, SketchInputKind::LineOrCircle);
+    assert_eq!(
+        losses
+            .iter()
+            .filter(|loss| loss.code == SldprtLossCode::SketchListedLineRelationDropped.kind())
+            .count(),
+        1
+    );
     let entity = entity.expect("the curve record keeps an entity");
     assert!(matches!(
         entity.geometry.definition(),
@@ -234,20 +241,49 @@ fn a_line_with_equal_endpoint_indices_and_a_relation_code_is_a_line_handle() {
 
 #[test]
 fn a_readable_line_with_a_relation_code_is_a_line() {
-    let (payload, curve) = sketch_with_line(CODE_FOUR, 4, [0, 1], 0, u32::MAX);
-    let (kind, entity, _) = projected_curve(payload, curve);
+    for (code, relation) in [(CODE_FOUR, "Horizontal"), (5, "Vertical")] {
+        let (payload, curve) = sketch_with_line(code, 4, [0, 1], 0, u32::MAX);
+        let (kind, entity, losses) = projected_curve(payload, curve);
+        assert_eq!(kind, SketchInputKind::LineOrCircle);
+        let entity = entity.expect("the line is projected");
+        assert!(matches!(
+            entity.geometry.definition(),
+            SketchGeometryDefinition::Line { .. }
+        ));
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            SldprtLossCode::SketchListedLineRelationDropped.kind()
+        );
+        assert!(losses[0].message.contains(relation));
+        assert!(losses[0].message.contains(entity.sketch.as_str()));
+        assert!(losses[0].message.contains("generated-profile"));
+        assert!(losses[0]
+            .message
+            .contains(entity.native_ref.as_deref().expect("marker reference")));
+    }
+}
+
+#[test]
+fn a_readable_line_with_another_code_has_no_relation_drop_loss() {
+    let (payload, curve) = sketch_with_line(1, 4, [0, 1], 0, u32::MAX);
+    let (kind, entity, losses) = projected_curve(payload, curve);
     assert_eq!(kind, SketchInputKind::LineOrCircle);
     assert!(matches!(
         entity.expect("the line is projected").geometry.definition(),
         SketchGeometryDefinition::Line { .. }
     ));
+    assert!(losses.is_empty());
 }
 
 #[test]
 fn a_curve_record_with_another_selector_keeps_its_relation_kind() {
     let (payload, curve) = sketch_with_line(CODE_FOUR, 68, [0, 1], 0, u32::MAX);
-    let (kind, _, _) = projected_curve(payload, curve);
+    let (kind, _, losses) = projected_curve(payload, curve);
     assert!(matches!(kind, SketchInputKind::Relation(_)));
+    assert!(losses
+        .iter()
+        .all(|loss| loss.code != SldprtLossCode::SketchListedLineRelationDropped.kind()));
 }
 
 #[test]
@@ -298,7 +334,11 @@ fn selector_twelve_roster_line_is_construction() {
         SketchGeometryDefinition::Line { .. }
     ));
     assert!(entity.construction);
-    assert!(losses.is_empty());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        SldprtLossCode::SketchListedLineRelationDropped.kind()
+    );
     assert_eq!(
         marker_is_construction(&payload, &lists, curve, &entity.geometry),
         (true, false)
@@ -322,17 +362,28 @@ fn selector_twelve_role_one_line_is_construction_on_both_paths() {
                 marker_is_construction(&payload, &lists, curve, &entity.geometry),
                 (true, true)
             );
-            assert_eq!(losses.len(), 1);
+            assert_eq!(losses.len(), if code == CODE_FOUR { 2 } else { 1 });
             assert_eq!(
-                losses[0].code,
-                SldprtLossCode::SketchListedLineConstructionAssumed.kind()
+                losses
+                    .iter()
+                    .filter(
+                        |loss| loss.code == SldprtLossCode::SketchListedLineRelationDropped.kind()
+                    )
+                    .count(),
+                usize::from(code == CODE_FOUR)
             );
-            assert!(losses[0].message.contains(entity.sketch.as_str()));
-            assert!(losses[0].message.contains("generated-profile"));
-            assert!(losses[0]
+            let loss = losses
+                .iter()
+                .find(|loss| {
+                    loss.code == SldprtLossCode::SketchListedLineConstructionAssumed.kind()
+                })
+                .expect("construction assumption is reported");
+            assert!(loss.message.contains(entity.sketch.as_str()));
+            assert!(loss.message.contains("generated-profile"));
+            assert!(loss
                 .message
                 .contains(entity.native_ref.as_deref().expect("marker reference")));
-            assert!(losses[0].message.contains("selector bit 3"));
+            assert!(loss.message.contains("selector bit 3"));
         }
     }
 }
