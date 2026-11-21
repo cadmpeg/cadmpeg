@@ -4,13 +4,19 @@
 use super::geometry::FeatureDirection3;
 use super::profiles::PathRef;
 use super::selections::{EdgeSelection, NonEmptyMembers};
-use super::{deserialize_continuity, deserialize_filled_surface_weight, deserialize_wrap_depth};
+use super::{deserialize_filled_surface_weight, deserialize_wrap_depth};
 use crate::scalar::{Length, PositiveLength, PositiveReal};
 use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+
+cadmpeg_core::named_optional_field!(
+    deserialize_continuity,
+    FilledSurfaceContinuity,
+    "continuity"
+);
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]

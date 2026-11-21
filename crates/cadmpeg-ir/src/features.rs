@@ -70,17 +70,13 @@ use operation_settings::{
     BodyRetentionMode, BodyTrimSide, BooleanKind, BooleanOp, CombineDestination, FuzzyTolerance,
     GeometryImportFormat, RuledCurveOrientation, ShellJoin, ShellMode, SolidFeatureResult,
 };
-use parameters::{
-    ConfigurationEvaluation, ConfigurationFeatureState, DimensionDisplay, ParameterPmi,
-    ParameterValue, PolygonSideCount,
-};
+use parameters::{ConfigurationEvaluation, ConfigurationFeatureState, PolygonSideCount};
 use primitives::PrimitiveSolid;
 use profiles::{
     GeometryImportPath, LoftSection, PathRef, PlanarProfileRef, ProfileRef, ThreePointSelection,
 };
 use revolve::{
     RevolutionAxis, RevolutionFuseOrder, RevolveConstruction, RevolveExtent, RibConstruction,
-    RibSide,
 };
 use selections::{
     BodySelection, DistinctMembers, EdgeSelection, FaceSelection, InsertedBodies,
@@ -91,9 +87,8 @@ use sheet_metal_forms::{
     SheetMetalRelief, SheetMetalThicknessSide, SheetMetalTransition,
 };
 use surface_inputs::{
-    CurveProjectionDirection, FilledSurfaceContinuity, FilledSurfaceContinuityState,
-    RuledSurfaceCorner, RuledSurfaceMode, SurfaceBoundary, SurfaceExtension, SurfaceProjectionMode,
-    TrimRegion, WrapMode,
+    CurveProjectionDirection, FilledSurfaceContinuityState, RuledSurfaceCorner, RuledSurfaceMode,
+    SurfaceBoundary, SurfaceExtension, SurfaceProjectionMode, TrimRegion, WrapMode,
 };
 use sweeps::{
     CoilConstruction, FaceMaker, HelicalSweepConstruction, HelixConstructionStyle, HelixShape,
@@ -685,8 +680,6 @@ impl CombineOperands {
         (self.target, self.tools)
     }
 }
-
-cadmpeg_core::named_optional_field!(deserialize_captured_occurrence, OccurrenceId, "occurrence");
 
 /// A feature operation: neutral construction semantics with an explicit native escape hatch, and no post-processing layer of its own.
 #[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
@@ -2400,20 +2393,12 @@ impl From<SketchFeatureBindingWire> for SketchFeatureBinding {
 
 cadmpeg_core::named_optional_field!(deserialize_filled_surface_weight, PositiveReal, "weight");
 
-cadmpeg_core::named_optional_field!(
-    deserialize_continuity,
-    FilledSurfaceContinuity,
-    "continuity"
-);
-cadmpeg_core::named_optional_field!(deserialize_section_native, String, "value");
-
 selection_field_deserializer!(deserialize_selection_native, "native");
 selection_field_deserializer!(deserialize_selection_local_id, "local_id");
 selection_field_deserializer!(deserialize_selection_edges, "edges");
 selection_field_deserializer!(deserialize_selection_faces, "faces");
 selection_field_deserializer!(deserialize_selection_unresolved, "unresolved");
-cadmpeg_core::named_optional_field!(deserialize_flange_first, PositiveLength, "first");
-cadmpeg_core::named_optional_field!(deserialize_flange_second, PositiveLength, "second");
+
 selection_field_deserializer!(deserialize_selection_profiles, "profiles");
 selection_field_deserializer!(deserialize_selection_entities, "entities");
 selection_field_deserializer!(deserialize_selection_selections, "selections");
@@ -2458,29 +2443,21 @@ cadmpeg_core::named_optional_field!(deserialize_boundary_fill_remove_tools, bool
 mod tests;
 
 // Each optional key below names itself in whatever it refuses.
-cadmpeg_core::named_optional_field!(deserialize_plane, FeatureId, "plane");
+
 cadmpeg_core::named_optional_field!(deserialize_section_sketch, FeatureId, "sketch");
 cadmpeg_core::named_optional_field!(deserialize_section_plane, FeatureSupportPlaneFrame, "plane");
 cadmpeg_core::named_optional_field!(deserialize_pull, DraftPull, "pull");
-cadmpeg_core::named_optional_field!(deserialize_frame, FeatureSupportPlaneFrame, "frame");
+
 cadmpeg_core::named_optional_field!(
     deserialize_draft_second_side,
     DraftSecondSide,
     "second_side"
 );
-cadmpeg_core::named_optional_field!(deserialize_edge_geometry_tangent, UnitVector3, "tangent");
-cadmpeg_core::named_optional_field!(deserialize_edge_geometry_start, FinitePoint3, "start");
-cadmpeg_core::named_optional_field!(deserialize_edge_geometry_end, FinitePoint3, "end");
-cadmpeg_core::named_optional_field!(deserialize_source_index, u32, "source_index");
+
 cadmpeg_core::named_optional_field!(deserialize_name, String, "name");
-cadmpeg_core::named_optional_field!(deserialize_material, String, "material");
-cadmpeg_core::named_optional_field!(deserialize_bodies, DistinctMembers<BodyId>, "bodies");
+
 cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
-cadmpeg_core::named_optional_field!(deserialize_owner, FeatureId, "owner");
-cadmpeg_core::named_optional_field!(deserialize_display, DimensionDisplay, "display");
-cadmpeg_core::named_optional_field!(deserialize_value, ParameterValue, "value");
-cadmpeg_core::named_optional_field!(deserialize_pmi, ParameterPmi, "pmi");
-cadmpeg_core::named_optional_field!(deserialize_display_text, String, "display_text");
+
 cadmpeg_core::named_optional_field!(
     deserialize_regeneration_parent,
     FeatureId,
@@ -2514,7 +2491,7 @@ cadmpeg_core::named_optional_field!(
     "target_transform"
 );
 cadmpeg_core::named_optional_field!(deserialize_source_text, String, "source_text");
-cadmpeg_core::named_optional_field!(deserialize_active_child, FeatureId, "active_child");
+
 cadmpeg_core::named_optional_field!(deserialize_diameter, PositiveLength, "diameter");
 cadmpeg_core::named_optional_field!(deserialize_extent, CosmeticThreadExtent, "extent");
 cadmpeg_core::named_optional_field!(deserialize_thread_standard, NonBlankString, "standard");
@@ -2668,18 +2645,10 @@ cadmpeg_core::named_optional_field!(
     RevolveExtent,
     "extent"
 );
-cadmpeg_core::named_optional_field!(deserialize_revolution_axis_reference, PathRef, "reference");
-cadmpeg_core::named_optional_field!(
-    deserialize_rib_construction_direction,
-    FeatureDirection3,
-    "direction"
-);
-cadmpeg_core::named_optional_field!(deserialize_rib_construction_side, RibSide, "side");
+
 cadmpeg_core::named_optional_field!(deserialize_offset, Length, "offset");
 cadmpeg_core::named_optional_field!(deserialize_wrap_depth, Length, "depth");
-cadmpeg_core::named_optional_field!(deserialize_draft, SlopeAngle, "draft");
-cadmpeg_core::named_optional_field!(deserialize_wall_thickness, PositiveLength, "wall_thickness");
-cadmpeg_core::named_optional_field!(deserialize_tolerance, PositiveReal, "tolerance");
+
 cadmpeg_core::named_optional_field!(
     deserialize_binder_construction_offset,
     BinderOffset,

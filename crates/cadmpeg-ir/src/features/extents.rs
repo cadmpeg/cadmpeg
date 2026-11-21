@@ -4,15 +4,15 @@
 use super::geometry::{FeatureDirection3, FeatureSupportPlaneFrame};
 use super::profiles::PathRef;
 use super::selections::{FaceSelection, VertexSelection};
-use super::{
-    deserialize_draft, deserialize_offset, deserialize_plane_target_source, deserialize_source,
-};
+use super::{deserialize_offset, deserialize_plane_target_source, deserialize_source};
 use crate::scalar::{Length, NonZeroLength, PositiveAngle, PositiveLength, SlopeAngle};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+cadmpeg_core::named_optional_field!(deserialize_draft, SlopeAngle, "draft");
 
 /// Direction in which an extrusion sweeps its profile.
 #[derive(Clone, Debug, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]

@@ -4,10 +4,7 @@
 use super::geometry::{FeatureDirection3, FeatureSupportPlaneFrame, FinitePoint3};
 use super::profiles::PathRef;
 use super::selections::{FaceSelection, SelectionMembers};
-use super::{
-    deserialize_form, deserialize_frame, deserialize_plane, deserialize_pull, FeatureId,
-    EPS_DRAFT_PULL_FRAME_PARALLEL,
-};
+use super::{deserialize_form, deserialize_pull, FeatureId, EPS_DRAFT_PULL_FRAME_PARALLEL};
 use crate::math::Vector3;
 use crate::scalar::{Angle, Length, NonZeroReal, PositiveReal, SlopeAngle};
 use crate::transform::Transform;
@@ -15,6 +12,10 @@ use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+cadmpeg_core::named_optional_field!(deserialize_frame, FeatureSupportPlaneFrame, "frame");
+
+cadmpeg_core::named_optional_field!(deserialize_plane, FeatureId, "plane");
 
 /// Resolved pull frame of a draft anchor.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

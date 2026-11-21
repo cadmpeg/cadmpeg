@@ -3,12 +3,16 @@
 
 use super::selections::NonEmptyMembers;
 use super::sheet_metal;
-use super::{deserialize_flange_first, deserialize_flange_second, FeatureId};
+use super::FeatureId;
 use crate::scalar::{Angle, Length, NonNegativeLength, PositiveLength};
 use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+cadmpeg_core::named_optional_field!(deserialize_flange_first, PositiveLength, "first");
+
+cadmpeg_core::named_optional_field!(deserialize_flange_second, PositiveLength, "second");
 
 /// Relief form selected by the document's sheet-metal rule.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]

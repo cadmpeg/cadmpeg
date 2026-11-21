@@ -8,15 +8,27 @@ use super::sweeps::FaceMaker;
 use super::{
     deserialize_allow_multi_profile_faces, deserialize_face_maker_class, deserialize_fuse_order,
     deserialize_partial_revolve_construction_axis, deserialize_partial_revolve_construction_extent,
-    deserialize_profile, deserialize_revolution_axis_reference,
-    deserialize_rib_construction_direction, deserialize_rib_construction_side, deserialize_solid,
-    deserialize_thickness, EPS_FEATURE_FULL_TURN,
+    deserialize_solid, EPS_FEATURE_FULL_TURN,
 };
 use crate::scalar::{PositiveLength, SlopeAngle};
 use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+cadmpeg_core::named_optional_field!(deserialize_profile, PlanarProfileRef, "profile");
+
+cadmpeg_core::named_optional_field!(deserialize_revolution_axis_reference, PathRef, "reference");
+
+cadmpeg_core::named_optional_field!(
+    deserialize_rib_construction_direction,
+    FeatureDirection3,
+    "direction"
+);
+
+cadmpeg_core::named_optional_field!(deserialize_rib_construction_side, RibSide, "side");
+
+cadmpeg_core::named_optional_field!(deserialize_thickness, PositiveLength, "thickness");
 
 /// Resolution state and inputs of a profile revolution.
 #[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]

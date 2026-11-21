@@ -13,14 +13,23 @@ use super::geometry::{FeatureUnitPlaneFrame, FinitePoint3};
 use super::operation_settings::BooleanOp;
 use super::profiles::{PathRef, PlanarProfileRef};
 use super::selections::{FaceSelection, SelectionReference};
-use super::{
-    deserialize_allow_multi_profile_faces, deserialize_section_native, deserialize_tolerance,
-    deserialize_wall_thickness,
-};
+
 use crate::units::UnitVector3;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+cadmpeg_core::named_optional_field!(
+    deserialize_allow_multi_profile_faces,
+    bool,
+    "allow_multi_profile_faces"
+);
+
+cadmpeg_core::named_optional_field!(deserialize_section_native, String, "value");
+
+cadmpeg_core::named_optional_field!(deserialize_tolerance, PositiveReal, "tolerance");
+
+cadmpeg_core::named_optional_field!(deserialize_wall_thickness, PositiveLength, "wall_thickness");
 
 /// Native algorithm used to construct faces from wires.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

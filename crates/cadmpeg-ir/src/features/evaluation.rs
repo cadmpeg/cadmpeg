@@ -4,10 +4,7 @@
 use super::geometry::FinitePoint3;
 use super::membership;
 use super::selections::{BodySelectionError, DistinctMembers, NonEmptyMembers};
-use super::{
-    deserialize_edge_geometry_end, deserialize_edge_geometry_start,
-    deserialize_edge_geometry_tangent, deserialize_native_ref, FeatureDefinition, FeatureId,
-};
+use super::{FeatureDefinition, FeatureId};
 use crate::ids::{
     BodyId, FeatureInputTopologyId, FeatureResultTopologyId, HistoricalBodyId, HistoricalEdgeId,
     HistoricalFaceId, HistoricalVertexId,
@@ -17,6 +14,14 @@ use cadmpeg_core::text::NonBlankString;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+cadmpeg_core::named_optional_field!(deserialize_edge_geometry_end, FinitePoint3, "end");
+
+cadmpeg_core::named_optional_field!(deserialize_edge_geometry_start, FinitePoint3, "start");
+
+cadmpeg_core::named_optional_field!(deserialize_edge_geometry_tangent, UnitVector3, "tangent");
+
+cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
 
 /// A feature definition and the bodies its evaluation produces.
 #[derive(Debug, Clone, PartialEq)]

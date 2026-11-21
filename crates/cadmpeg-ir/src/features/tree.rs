@@ -3,15 +3,17 @@
 
 use super::membership;
 use super::selections::DistinctMembers;
-use super::{
-    deserialize_active_child, deserialize_captured_occurrence, FeatureCollectionError, FeatureId,
-};
+use super::{FeatureCollectionError, FeatureId};
 use crate::ids::OccurrenceId;
 use crate::transform::Transform;
 use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+cadmpeg_core::named_optional_field!(deserialize_active_child, FeatureId, "active_child");
+
+cadmpeg_core::named_optional_field!(deserialize_captured_occurrence, OccurrenceId, "occurrence");
 
 /// Distinct tree children and an optional active member.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]

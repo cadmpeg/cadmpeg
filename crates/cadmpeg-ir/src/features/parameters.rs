@@ -3,11 +3,8 @@
 
 use super::selections::DistinctMembers;
 use super::{
-    deserialize_bodies, deserialize_dependencies, deserialize_display, deserialize_display_text,
-    deserialize_material, deserialize_name, deserialize_native_ref, deserialize_owner,
-    deserialize_parameter_real, deserialize_pmi, deserialize_product_definition,
-    deserialize_source_index, deserialize_value, ConfigurationId, FeatureDefinition, FeatureId,
-    ParameterId,
+    deserialize_dependencies, deserialize_parameter_real, ConfigurationId, FeatureDefinition,
+    FeatureId, ParameterId,
 };
 use crate::ids::{BodyId, ProductDefinitionId};
 use crate::scalar::{Angle, FiniteReal, Length};
@@ -17,6 +14,32 @@ use cadmpeg_derive::DeserializeName;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+
+cadmpeg_core::named_optional_field!(deserialize_bodies, DistinctMembers<BodyId>, "bodies");
+
+cadmpeg_core::named_optional_field!(deserialize_display, DimensionDisplay, "display");
+
+cadmpeg_core::named_optional_field!(deserialize_display_text, String, "display_text");
+
+cadmpeg_core::named_optional_field!(deserialize_material, String, "material");
+
+cadmpeg_core::named_optional_field!(deserialize_name, String, "name");
+
+cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
+
+cadmpeg_core::named_optional_field!(deserialize_owner, FeatureId, "owner");
+
+cadmpeg_core::named_optional_field!(deserialize_pmi, ParameterPmi, "pmi");
+
+cadmpeg_core::named_optional_field!(
+    deserialize_product_definition,
+    ProductDefinitionId,
+    "product_definition"
+);
+
+cadmpeg_core::named_optional_field!(deserialize_source_index, u32, "source_index");
+
+cadmpeg_core::named_optional_field!(deserialize_value, ParameterValue, "value");
 
 /// A named parametric model variant.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
