@@ -52,7 +52,7 @@ use super::sketch_lists::{
 };
 use super::transforms::{record_top_marker_coordinates, sketch_frame_marker_transform};
 use super::typed_relations::{
-    current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
+    current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers, marker_owns_constraint,
 };
 use super::SKETCH_POINT_TOLERANCE;
 use crate::classification::{native_object_class, NativeClassKind};
@@ -1341,6 +1341,11 @@ pub(crate) fn project_marker_backed_sketches(
                     .insert(marker.id().to_owned(), conflict);
             }
         }
+        let relation_ids = lane
+            .relation_instances
+            .iter()
+            .map(|relation| relation.id.as_str())
+            .collect::<HashSet<_>>();
         let names = FeatureObjectNames::new(&lane.names);
         let markers_by_feature = markers_by_owner(&lane.sketch_entities);
         let marker_offsets =
@@ -1490,7 +1495,11 @@ pub(crate) fn project_marker_backed_sketches(
                         || terminal_carriers.carries(marker)
                 });
                 if skipped {
-                    if !reads_from_record(marker) {
+                    // A relation's own marker stays with the relation pass.
+                    if marker_owns_constraint(marker, &markers_by_id)
+                        || relation_ids.contains(marker.id())
+                        || !reads_from_record(marker)
+                    {
                         continue;
                     }
                     admitted_by_record.insert(marker.id());
