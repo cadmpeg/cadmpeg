@@ -2297,21 +2297,24 @@ impl<'a> Builder<'a> {
     }
 
     /// Whether two of `faces` share an edge, a vertex of an edge, or the
-    /// curve of an edge. A set member states its own boundaries and no edge
-    /// or vertex, so the members of a geometric set read back with their own
-    /// edges, vertices and shells, and the adjacency of such faces would be
-    /// lost.
+    /// curve of an edge, or two loops of one face share a vertex. A set
+    /// member states its own boundaries and no edge or vertex, so the members
+    /// of a geometric set read back with their own edges, vertices and
+    /// shells, and each boundary with its own vertices, and the adjacency of
+    /// such faces or loops would be lost. A closed loop reaches each of its
+    /// vertices through two coedges, so vertices are keyed by loop.
     fn faces_share_an_edge_a_vertex_or_a_curve(&self, faces: &[&Face]) -> bool {
         let mut edges: HashMap<&str, usize> = HashMap::new();
         let mut vertices: HashMap<&str, usize> = HashMap::new();
         let mut curves: HashMap<&str, usize> = HashMap::new();
-        for (index, face) in faces.iter().enumerate() {
-            for coedge in face
-                .loops
+        let face_loops = faces.iter().enumerate().flat_map(|(index, face)| {
+            face.loops
                 .iter()
                 .filter_map(|id| self.loops.get(id.as_str()))
-                .flat_map(|face_loop| face_loop.coedges())
-            {
+                .map(move |face_loop| (index, face_loop))
+        });
+        for (ordinal, (index, face_loop)) in face_loops.enumerate() {
+            for coedge in face_loop.coedges() {
                 let Some(edge) = self
                     .coedges
                     .get(coedge.as_str())
@@ -2324,7 +2327,7 @@ impl<'a> Builder<'a> {
                 }
                 if edge
                     .vertices()
-                    .any(|vertex| *vertices.entry(vertex.as_str()).or_insert(index) != index)
+                    .any(|vertex| *vertices.entry(vertex.as_str()).or_insert(ordinal) != ordinal)
                 {
                     return true;
                 }

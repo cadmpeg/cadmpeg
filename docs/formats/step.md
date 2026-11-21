@@ -1774,8 +1774,9 @@ reverse, with no face name and no coedge pcurve (a set member writes neither),
 and that no PMI annotation targets, through the face, an edge of its
 loops, a vertex of those edges, or the point of such a vertex. A set member
 states its own boundaries and no edge or vertex, and each member reads back
-in its own shell with its own vertices, so a region in which two faces share
-an edge, a vertex of an edge, or the curve of an edge takes the `OPEN_SHELL`
+in its own shell with its own vertices for each boundary, so a region in
+which two faces share an edge, a vertex of an edge, or the curve of an edge,
+or in which two loops of one face share a vertex, takes the `OPEN_SHELL`
 path and keeps the shared edge or vertex and the shell. The
 writer states a curve-bounded face as a `CURVE_BOUNDED_SURFACE` on its support,
 with each boundary composite curve of the construction as a member of its

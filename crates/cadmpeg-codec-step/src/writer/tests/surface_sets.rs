@@ -1019,3 +1019,100 @@ fn curve_bounded_faces_that_share_a_vertex_keep_the_sheet_a_shell() {
         .count();
     assert_eq!(shared, 1, "{:#?}", geometry.edges);
 }
+
+/// A ring of outer radius 5 whose hole, of radius 2 centred at `(3, 0, 0)`,
+/// touches the outer boundary at `(5, 0, 0)`, where both boundary circles
+/// start: the two loops of the one face use one vertex there and share no
+/// edge or curve.
+fn ring_whose_loops_share_a_vertex() -> CadIr {
+    let source = ring_and_disc_set()
+        .replace(
+            "#12=GEOMETRIC_SET('',(#11,#20));",
+            "#12=GEOMETRIC_SET('',(#11));",
+        )
+        .replace("#17=CIRCLE('',#6,1.);\n", "")
+        .replace("#18=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#17);\n", "")
+        .replace("#19=OUTER_BOUNDARY_CURVE('',(#18),.F.);\n", "")
+        .replace("#20=CURVE_BOUNDED_SURFACE('disc',#8,(#19),.F.);\n", "")
+        .replace(
+            "#14=CIRCLE('',#6,2.);",
+            "#14=CIRCLE('',#22,2.);\n\
+             #21=CARTESIAN_POINT('',(3.,0.,0.));\n\
+             #22=AXIS2_PLACEMENT_3D('',#21,#4,#5);",
+        );
+    let source = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = source.ir().clone();
+    let geometry = &mut ir.geometry;
+    assert_eq!(geometry.faces.len(), 1);
+    let loop_edges = |geometry: &cadmpeg_ir::document::Topology,
+                      loop_id: &cadmpeg_ir::ids::LoopId| {
+        geometry
+            .loops
+            .iter()
+            .filter(|face_loop| &face_loop.id == loop_id)
+            .flat_map(|face_loop| face_loop.coedges().to_vec())
+            .filter_map(|id| geometry.coedges.iter().find(|coedge| coedge.id == id))
+            .map(|coedge| coedge.edge.clone())
+            .collect::<Vec<_>>()
+    };
+    let start_of = |geometry: &cadmpeg_ir::document::Topology,
+                    edges: &[cadmpeg_ir::ids::EdgeId]| {
+        let [edge] = edges else {
+            panic!("one edge per loop: {edges:?}");
+        };
+        geometry
+            .edges
+            .iter()
+            .find(|candidate| &candidate.id == edge)
+            .and_then(|edge| edge.start().cloned())
+            .unwrap()
+    };
+    let loops: Vec<_> = geometry.faces[0].loops.iter().cloned().collect();
+    let first_edges = loop_edges(geometry, &loops[0]);
+    let second_edges = loop_edges(geometry, &loops[1]);
+    let kept = start_of(geometry, &first_edges);
+    let dropped = start_of(geometry, &second_edges);
+    assert_ne!(kept, dropped);
+    for edge in &mut geometry.edges {
+        if second_edges.contains(&edge.id) {
+            edge.ends = Some(cadmpeg_ir::topology::EdgeEnds::new(
+                kept.clone(),
+                kept.clone(),
+            ));
+        }
+    }
+    geometry.vertices.retain(|vertex| vertex.id != dropped);
+    ir.finalize();
+    ir
+}
+
+/// The two loops of one curve-bounded face that meet at one vertex: the
+/// reader states a vertex per boundary of a set member, so the writer keeps
+/// the sheet a shell, and the shared vertex survives a round trip.
+#[test]
+fn a_curve_bounded_face_whose_loops_share_a_vertex_keeps_the_sheet_a_shell() {
+    let ir = ring_whose_loops_share_a_vertex();
+    assert_eq!(sheet_loop_counts(&ir), [2]);
+    assert_eq!(ir.geometry.edges.len(), 2);
+    assert_eq!(ir.geometry.vertices.len(), 1);
+    let mut output = Vec::new();
+    write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    let text = String::from_utf8(output).unwrap();
+    assert_eq!(text.matches("= GEOMETRIC_SET(").count(), 0, "{text}");
+    assert_eq!(text.matches("= OPEN_SHELL(").count(), 1, "{text}");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(text), &DecodeOptions::default())
+        .unwrap();
+    let geometry = &decoded.ir().geometry;
+    assert_eq!(sheet_loop_counts(decoded.ir()), [2]);
+    assert_eq!(geometry.edges.len(), 2, "{:#?}", geometry.edges);
+    assert_eq!(geometry.vertices.len(), 1, "{:#?}", geometry.vertices);
+}
