@@ -385,9 +385,10 @@ impl JsonSchema for IrDiff {
 /// so when their JSON values are identical the difference is one JSON does not
 /// state, and the whole value is reported.
 fn differing_fields<T: Serialize>(left: &T, right: &T) -> Vec<String> {
-    let (Ok(Value::Object(left)), Ok(Value::Object(right))) =
-        (serde_json::to_value(left), serde_json::to_value(right))
-    else {
+    let (Ok(Value::Object(left)), Ok(Value::Object(right))) = (
+        crate::hash::finite_json::to_json_value(left),
+        crate::hash::finite_json::to_json_value(right),
+    ) else {
         return vec!["value".to_string()];
     };
     if left == right {
