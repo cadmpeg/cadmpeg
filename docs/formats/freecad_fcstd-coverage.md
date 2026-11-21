@@ -277,7 +277,8 @@ containers violate product or feature-tree ownership and refuse the document.
 
 The first solid feature of a `PartDesign::Body` decodes with a new-body operation when it adds
 material and both the body and feature `BaseFeature` links are empty. When that first solid feature
-removes material, it remains native and emits `fcstd/feature.removal-without-base`. Each body owns its result;
+removes material, it keeps its typed removal operation with an empty input solid and emits
+`fcstd/feature.removal-without-base`. Each body owns its result;
 a feature outside every body keeps its additive operation.
 
 ## Revolution admission

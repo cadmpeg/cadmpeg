@@ -192,7 +192,7 @@ fn pad_of_a_body_with_a_base_feature_joins_it() {
 }
 
 #[test]
-fn first_pocket_of_an_empty_body_stays_native_with_a_loss() {
+fn first_pocket_of_an_empty_body_keeps_its_cut_with_a_loss() {
     let result = decode(
         &[
             ("PartDesign::Body", "Part"),
@@ -200,11 +200,7 @@ fn first_pocket_of_an_empty_body_stays_native_with_a_loss() {
         ],
         &[body("Part", &["Pocket"], None), feature("Pocket", None)],
     );
-    assert!(matches!(
-        operation(&result, "Pocket"),
-        FeatureDefinition::Operation(FeatureOperation::Native { kind, .. })
-            if kind.as_str() == "PartDesign::Pocket"
-    ));
+    assert_eq!(extrude_op(&result, "Pocket"), BooleanOp::Cut);
     assert!(result
         .report()
         .losses
@@ -407,7 +403,7 @@ fn a_later_primitive_joins_its_body() {
 }
 
 #[test]
-fn first_subtractive_primitive_stays_native_with_a_loss() {
+fn first_subtractive_primitive_keeps_its_cut_with_a_loss() {
     let result = decode(
         &[
             ("PartDesign::Body", "Part"),
@@ -415,9 +411,13 @@ fn first_subtractive_primitive_stays_native_with_a_loss() {
         ],
         &[body("Part", &["Box"], None), box_feature("Box")],
     );
-    assert!(
-        matches!(operation(&result, "Box").operation(), FeatureOperation::Native { kind, .. } if kind.as_str() == "PartDesign::SubtractiveBox")
-    );
+    assert!(matches!(
+        operation(&result, "Box").operation(),
+        FeatureOperation::Primitive {
+            op: BooleanOp::Cut,
+            ..
+        }
+    ));
     assert!(result
         .report()
         .losses
@@ -426,7 +426,7 @@ fn first_subtractive_primitive_stays_native_with_a_loss() {
 }
 
 #[test]
-fn first_hole_stays_native_with_a_loss() {
+fn first_hole_keeps_its_hole_operation_with_a_loss() {
     let hole = r#"<Object name="Hole"><Properties Count="4"><Property name="Profile" type="App::PropertyLink"><Link value="Locations"/></Property><Property name="Diameter" type="App::PropertyLength"><Float value="6"/></Property><Property name="Depth" type="App::PropertyLength"><Float value="5"/></Property><Property name="DrillPointAngle" type="App::PropertyAngle"><Float value="118"/></Property></Properties></Object>"#;
     let result = decode(
         &[
@@ -440,9 +440,10 @@ fn first_hole_stays_native_with_a_loss() {
             hole.to_owned(),
         ],
     );
-    assert!(
-        matches!(operation(&result, "Hole").operation(), FeatureOperation::Native { kind, .. } if kind.as_str() == "PartDesign::Hole")
-    );
+    assert!(matches!(
+        operation(&result, "Hole").operation(),
+        FeatureOperation::Hole { .. }
+    ));
     assert!(result
         .report()
         .losses

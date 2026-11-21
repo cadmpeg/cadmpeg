@@ -544,7 +544,7 @@ pub(crate) fn transfer(
             native_ref: Some(object.id().to_owned()),
         });
     }
-    first_feature::bind_first_features(ctx, ir, objects, &properties_by_owner, &mut losses)?;
+    first_feature::bind_first_features(ir, objects, &properties_by_owner, &mut losses);
     let mut initial_cycle_affected_features = BTreeSet::new();
     for object in objects
         .iter()

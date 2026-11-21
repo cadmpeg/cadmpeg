@@ -3,12 +3,10 @@
 
 use super::{
     body_membership_property, is_body, is_boolean, is_dress_up, is_pattern, is_primitive,
-    is_stored_geometry_feature, native_definition, nonempty_link, property,
+    is_stored_geometry_feature, nonempty_link, property,
 };
 use crate::loss::FreecadLossCode;
 use crate::native::{ObjectRecord, PropertyRecord};
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     BooleanOp, FeatureDefinition, FeatureOperation, SolidSweepOperation, SweepShape,
 };
@@ -87,12 +85,11 @@ fn set_additive_operation(operation: &mut FeatureOperation, starts_body: bool) {
 }
 
 pub(super) fn bind_first_features(
-    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     objects: &[ObjectRecord],
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) {
     let kinds = objects
         .iter()
         .map(|object| (object.id().as_str(), object.type_name.as_str()))
@@ -143,18 +140,10 @@ pub(super) fn bind_first_features(
             }
         });
         if removal {
-            let kind = kinds.get(native).copied().unwrap_or_default();
-            let owned = properties_by_owner
-                .get(native)
-                .map_or(&[][..], Vec::as_slice);
-            feature
-                .evaluation
-                .set_definition(native_definition(ctx, kind, owned)?);
             losses.push(
                 FreecadLossCode::FeatureRemovalWithoutBase
                     .note(format!("{native} starts a removal from an empty body")),
             );
         }
     }
-    Ok(())
 }
