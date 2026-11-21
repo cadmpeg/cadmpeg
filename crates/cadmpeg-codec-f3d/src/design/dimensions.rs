@@ -1446,12 +1446,6 @@ fn project_all_dimension_constraints(
     constraints
 }
 
-/// Resolve one direct presentation carrier only when its selected geometry
-/// measures the parameter value. Presentation operands are authoritative for
-/// selection, while the geometric check prevents a presentation record from
-/// assigning a nearby entity with the same source sketch.
-/// The definition of the one presentation frame among `frames` whose operand
-/// measurement equals the parameter.
 /// The parameters whose dimension frame stores the text-frame style byte of
 /// a driven dimension (f3d.md §3.1, "Sketch dimensions"), by stream and
 /// record index.
@@ -1529,6 +1523,12 @@ fn text_style(bytes: &[u8], parameter: &DesignParameter) -> Option<u8> {
     .then_some(style)
 }
 
+/// Resolve one direct presentation carrier only when its selected geometry
+/// measures the parameter value. Presentation operands are authoritative for
+/// selection, while the geometric check prevents a presentation record from
+/// assigning a nearby entity with the same source sketch.
+/// The definition of the one presentation frame among `frames` whose operand
+/// measurement equals the parameter.
 fn governing_presentation_definition<'a>(
     frames: impl Iterator<Item = &'a crate::records::dimensions::DesignDimensionPresentationFrame>,
     scope: &str,
