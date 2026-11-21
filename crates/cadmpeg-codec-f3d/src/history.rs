@@ -7810,29 +7810,34 @@ fn keep_first_error(
 
 /// The topology of each history's one terminal state.
 fn terminal_topologies(histories: &[AsmHistory]) -> Vec<(i64, &AsmHistoricalTopology)> {
-    let mut terminal_topologies = Vec::new();
-    for history in histories {
-        let mut preceding = HashSet::new();
-        for state in history.states() {
-            if let Some(previous) = state
+    histories
+        .iter()
+        .filter_map(|history| {
+            let state = terminal_state(history)?;
+            Some((state.state_id, history.topology(state)?))
+        })
+        .collect()
+}
+
+/// The one state of `history` that no bound transition names as its
+/// predecessor.
+fn terminal_state(history: &AsmHistory) -> Option<&AsmDeltaState> {
+    let preceding: HashSet<i64> = history
+        .states()
+        .iter()
+        .filter_map(|state| {
+            state
                 .transition
                 .as_ref()
                 .and_then(|transition| transition.previous_state_id)
-            {
-                preceding.insert(previous);
-            }
-        }
-        let mut terminals = history
-            .states()
-            .iter()
-            .filter(|state| !preceding.contains(&state.state_id));
-        if let Some(state) = terminals.next().filter(|_| terminals.next().is_none()) {
-            if let Some(topology) = history.topology(state) {
-                terminal_topologies.push((state.state_id, topology));
-            }
-        }
-    }
-    terminal_topologies
+        })
+        .collect();
+    let mut terminals = history
+        .states()
+        .iter()
+        .filter(|state| !preceding.contains(&state.state_id));
+    let state = terminals.next()?;
+    terminals.next().is_none().then_some(state)
 }
 
 /// One edge operand's scope and state pair with their topologies.
