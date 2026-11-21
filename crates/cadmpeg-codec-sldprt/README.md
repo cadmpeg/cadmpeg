@@ -118,7 +118,10 @@ envelope it derives a nonzero `file_id` from a SHA-256 of the written members
 and three nonzero, distinct tokens from that `file_id`, and charges
 `export:record.residual-unavailable` naming each one. A member with no source
 member takes a placeholder time/date word and `internal_attrs`, charged the
-same way.
+same way. Open item CM-16 holds the rules these fields lack. No serializer
+writes a saved property: each property carrier is written as its retained
+record stores it, and each saved property that carrier does not hold as the
+document states it is charged.
 
 Retained writing can synchronize supported feature, sketch, parameter,
 configuration, active-configuration XML, and PMI edits while rejecting

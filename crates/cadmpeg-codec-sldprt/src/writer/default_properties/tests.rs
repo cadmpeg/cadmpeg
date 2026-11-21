@@ -1,21 +1,51 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
+use std::collections::HashSet;
+
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::ids::AttributeId;
+use cadmpeg_ir::ids::{AttributeId, UnknownId};
+use cadmpeg_ir::Annotations;
 
-use super::{edited_properties, is_property, requires_guard, same_attribute, Carrier};
-use crate::test_support::container::{make_block, outer_header, scan};
+use super::{carrier_scan, changed, same_attribute, unwritten, Held};
 
-/// The one saved-property owner of `scan` and what the write emits for it.
-fn carrier(
-    scan: &crate::container::ContainerScan<'_>,
-    records: &[crate::SourceRecord<'_>],
-    notes: &cadmpeg_ir::Annotations,
-) -> Carrier {
-    let carriers = super::carriers(scan, records, notes);
-    assert_eq!(carriers.len(), 1);
-    *carriers.values().next().unwrap()
+const DEFAULT: &str = "docProps/ISolidWorksInformation.xml";
+const DEFAULT_XML: &[u8] = br#"<p:Properties xmlns:p="http://schemas.openxmlformats.org/officeDocument/2006/SolidworksInformation-properties" xmlns:v="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes" SW_UnitsLinear="0"><propertySection fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}"><property pid="2" name="Designer"><v:lpstr>Merlin</v:lpstr></property><property pid="3" name="Mass"><v:r8>-0.0</v:r8></property></propertySection></p:Properties>"#;
+const CONFIGURATION: &str = "docProps/Config-3-Properties.xml";
+const CONFIGURATION_XML: &[u8] = br#"<ConfigProperties xmlns="http://www.solidworks.com/config-properties" xmlns:v="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><propertySection xmlns="" fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}"><property name="Finish" pid="3" IsEquation="False"><v:lpstr>Anodized</v:lpstr></property><propertyNameDictionaryElement name="Finish" pid="3"/></propertySection></ConfigProperties>"#;
+
+/// One retained record of `id` with `data`, and its provenance in `stream`.
+fn record(
+    notes: &mut Annotations,
+    id: &str,
+    stream: &str,
+    data: Option<&'static [u8]>,
+) -> crate::SourceRecord<'static> {
+    crate::annotations::note(
+        notes,
+        id,
+        &cadmpeg_ir::StreamName::try_from(stream.to_owned()).unwrap(),
+        0,
+        "xml",
+        cadmpeg_ir::Exactness::ByteExact,
+    )
+    .unwrap();
+    crate::SourceRecord {
+        id: UnknownId::mint(id).unwrap(),
+        data,
+    }
+}
+
+/// The saved-property rows a decode of `records` states.
+fn decoded(records: &[crate::SourceRecord<'_>], notes: &Annotations) -> CadIr {
+    let scan = carrier_scan(records, notes);
+    let mut ir = CadIr::empty();
+    ir.model.attributes = crate::metadata::saved_property_rows(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &scan,
+    )
+    .unwrap();
+    ir
 }
 
 fn property(id: &str, name: &str, value: AttributeValue) -> SourceAttribute {
@@ -28,17 +58,19 @@ fn property(id: &str, name: &str, value: AttributeValue) -> SourceAttribute {
     }
 }
 
+fn charged(stated: &CadIr, stored: &CadIr) -> Vec<(String, Held)> {
+    changed(
+        &stated.model.attributes,
+        &stored.model.attributes,
+        &HashSet::new(),
+    )
+    .into_iter()
+    .collect()
+}
+
 #[test]
-fn configuration_carrier_facts_are_guarded_even_when_removed_or_forged() {
-    let mut bytes = outer_header();
-    bytes.extend(make_block(
-        0x43,
-        "docProps/Config-3-Properties.xml",
-        b"opaque",
-    ));
-    let source_scan = scan(&bytes);
+fn configuration_properties_are_compared_even_when_removed_or_forged() {
     let mut original = CadIr::empty();
-    assert!(requires_guard(&original, Some(&source_scan)));
     let row = property(
         "sldprt:metadata:configuration_property#8:3",
         "saved_configuration_property",
@@ -46,16 +78,24 @@ fn configuration_carrier_facts_are_guarded_even_when_removed_or_forged() {
     );
     let mut forged = original.clone();
     forged.model.attributes.push(row.clone());
-    assert!(requires_guard(&forged, None));
-    assert!(!edited_properties(&forged, &original, &source_scan).is_empty());
+    assert_eq!(
+        charged(&forged, &original),
+        [(row.id.as_str().to_owned(), Held::Nothing)]
+    );
     original.model.attributes.push(row);
-    assert!(edited_properties(&original, &original, &source_scan).is_empty());
+    assert!(charged(&original, &original).is_empty());
     let mut removed = original.clone();
     removed.model.attributes.clear();
-    assert!(!edited_properties(&removed, &original, &source_scan).is_empty());
-    let mut changed = original.clone();
-    changed.model.attributes[0].values.clear();
-    assert!(!edited_properties(&changed, &original, &source_scan).is_empty());
+    assert_eq!(
+        charged(&removed, &original),
+        [(
+            original.model.attributes[0].id.as_str().to_owned(),
+            Held::Source
+        )]
+    );
+    let mut edited = original.clone();
+    edited.model.attributes[0].values.clear();
+    assert!(!charged(&edited, &original).is_empty());
 }
 
 #[test]
@@ -90,8 +130,6 @@ fn owned_properties_keep_names_values_and_exact_float_bits() {
 
 #[test]
 fn empty_saved_property_remains_read_only_and_distinct_from_a_blank_string() {
-    let bytes = outer_header();
-    let source_scan = scan(&bytes);
     let mut original = CadIr::empty();
     let mut row = property(
         "sldprt:metadata:default_property#8:5:Empty",
@@ -100,33 +138,29 @@ fn empty_saved_property_remains_read_only_and_distinct_from_a_blank_string() {
     );
     row.values.clear();
     original.model.attributes.push(row);
-    assert!(edited_properties(&original, &original, &source_scan).is_empty());
-    assert!(requires_guard(&original, None));
-    let mut changed = original.clone();
-    changed.model.attributes[0]
+    assert!(charged(&original, &original).is_empty());
+    let mut edited = original.clone();
+    edited.model.attributes[0]
         .values
         .push(Some(AttributeValue::String(String::new())));
-    assert!(!edited_properties(&changed, &original, &source_scan).is_empty());
-    changed = original.clone();
-    changed.model.attributes[0].name = "Other".into();
-    assert!(!edited_properties(&changed, &original, &source_scan).is_empty());
-    changed = original.clone();
-    changed.model.attributes.clear();
-    assert!(!edited_properties(&changed, &original, &source_scan).is_empty());
+    assert!(!charged(&edited, &original).is_empty());
+    edited = original.clone();
+    edited.model.attributes[0].name = "Other".into();
+    assert!(!charged(&edited, &original).is_empty());
+    edited = original.clone();
+    edited.model.attributes.clear();
+    assert!(!charged(&edited, &original).is_empty());
 }
 
 #[test]
-fn retained_guard_detects_removed_added_renamed_and_reidentified_properties() {
-    let bytes = outer_header();
-    let source_scan = scan(&bytes);
+fn removed_added_renamed_and_reidentified_properties_are_charged() {
     let mut original = CadIr::empty();
     original.model.attributes.push(property(
         "sldprt:metadata:default_property#8:5:Name",
         "Name",
         AttributeValue::String("saved".into()),
     ));
-    assert!(edited_properties(&original, &original, &source_scan).is_empty());
-    assert!(requires_guard(&original, None));
+    assert!(charged(&original, &original).is_empty());
     for mutation in 0..6 {
         let mut current = original.clone();
         match mutation {
@@ -148,222 +182,160 @@ fn retained_guard_detects_removed_added_renamed_and_reidentified_properties() {
                 .push(current.model.attributes[0].clone()),
             _ => unreachable!(),
         }
-        assert!(!edited_properties(&current, &original, &source_scan).is_empty());
+        assert!(!charged(&current, &original).is_empty(), "{mutation}");
     }
 }
 
 #[test]
-fn only_exact_default_carrier_owns_the_unit_mirror_guard() {
-    for (name, owned) in [
-        ("docProps/ISolidWorksInformation.xml", true),
-        ("other/docProps/ISolidWorksInformation.xml", false),
-        ("docProps/custom.xml", false),
-        ("docProps/Config-0-Properties.xml", false),
-    ] {
-        let mut bytes = outer_header();
-        bytes.extend(make_block(0x42, name, b"<authored/>"));
-        let source_scan = scan(&bytes);
-        let ordinal = source_scan.blocks[0].offset;
-        let mut original = CadIr::empty();
-        original.model.attributes.push(property(
-            &format!("sldprt:metadata:source_linear_unit_code#{ordinal}:0"),
-            "source_linear_unit_code",
-            AttributeValue::Integer(0),
-        ));
+fn a_unit_mirror_is_compared_only_for_an_emitted_carrier() {
+    let mirror = property(
+        "sldprt:metadata:source_linear_unit_code#40:0",
+        "source_linear_unit_code",
+        AttributeValue::Integer(0),
+    );
+    let mut edited = mirror.clone();
+    edited.values = vec![Some(AttributeValue::Integer(3))];
+    for (carriers, charged) in [(HashSet::from([40]), true), (HashSet::from([41]), false)] {
         assert_eq!(
-            requires_guard(&original, Some(&source_scan)),
-            owned || name == "docProps/Config-0-Properties.xml"
+            !changed(
+                std::slice::from_ref(&edited),
+                std::slice::from_ref(&mirror),
+                &carriers
+            )
+            .is_empty(),
+            charged
         );
-        let mut current = original.clone();
-        current.model.attributes[0].values = vec![Some(AttributeValue::Integer(3))];
-        assert_eq!(
-            !edited_properties(&current, &original, &source_scan).is_empty(),
-            owned
-        );
-        assert!(!is_property(&original.model.attributes[0]));
     }
 }
 
 #[test]
-fn a_default_carrier_is_emitted_as_stored_only_with_its_complete_source_owner() {
-    let mut bytes = outer_header();
-    bytes.extend(make_block(
-        0x43,
-        "docProps/ISolidWorksInformation.xml",
-        b"<authored/>",
-    ));
-    let scan = scan(&bytes);
-    let owner = scan
-        .sections()
-        .find(|section| super::is_owner(*section))
-        .unwrap();
-    let id = owner.native_id();
-    let mut notes = cadmpeg_ir::Annotations::default();
-    crate::annotations::note(
-        &mut notes,
-        id.as_str(),
-        owner.source_stream(),
-        0,
-        "xml",
-        cadmpeg_ir::Exactness::ByteExact,
-    )
-    .unwrap();
-    let record = || crate::SourceRecord {
-        id: id.clone(),
-        data: Some(owner.payload()),
+fn the_carriers_are_the_retained_owner_blocks_with_bytes() {
+    let mut notes = Annotations::default();
+    let records = [
+        record(
+            &mut notes,
+            "sldprt:file:block#40",
+            DEFAULT,
+            Some(DEFAULT_XML),
+        ),
+        record(
+            &mut notes,
+            "sldprt:file:block#41",
+            CONFIGURATION,
+            Some(CONFIGURATION_XML),
+        ),
+        record(&mut notes, "sldprt:file:block#42", DEFAULT, None),
+        record(
+            &mut notes,
+            "sldprt:file:block#43",
+            "other/docProps/ISolidWorksInformation.xml",
+            Some(DEFAULT_XML),
+        ),
+        record(
+            &mut notes,
+            "sldprt:file:block#44",
+            "docProps/custom.xml",
+            Some(DEFAULT_XML),
+        ),
+        record(
+            &mut notes,
+            "sldprt:file:compound-stream#45",
+            "ISolidWorksInformation",
+            Some(DEFAULT_XML),
+        ),
+        crate::SourceRecord {
+            id: UnknownId::mint("sldprt:file:block#46").unwrap(),
+            data: Some(DEFAULT_XML),
+        },
+    ];
+    let scan = carrier_scan(&records, &notes);
+    assert_eq!(
+        scan.blocks
+            .iter()
+            .map(|block| (block.offset, block.payload.as_slice()))
+            .collect::<Vec<_>>(),
+        [(40, DEFAULT_XML), (41, CONFIGURATION_XML)]
+    );
+}
+
+/// The output holds each property of an emitted carrier as stored: an
+/// unedited one is written, an edited or removed one is charged as kept,
+/// and an added one, or one whose carrier has no bytes, as written nowhere.
+#[test]
+fn each_property_is_charged_by_the_carrier_bytes_the_write_emits() {
+    let mut notes = Annotations::default();
+    let records = [
+        record(
+            &mut notes,
+            "sldprt:file:block#40",
+            DEFAULT,
+            Some(DEFAULT_XML),
+        ),
+        record(
+            &mut notes,
+            "sldprt:file:block#41",
+            CONFIGURATION,
+            Some(CONFIGURATION_XML),
+        ),
+    ];
+    let source = decoded(&records, &notes);
+    let id = |name: &str| {
+        source
+            .model
+            .attributes
+            .iter()
+            .find(|row| row.name == name)
+            .unwrap()
+            .id
+            .as_str()
+            .to_owned()
     };
-    assert_eq!(carrier(&scan, &[record()], &notes), Carrier::AsStored);
-    assert_eq!(carrier(&scan, &[], &notes), Carrier::Absent);
-    assert_eq!(
-        carrier(&scan, &[record(), record()], &notes),
-        Carrier::Retained
-    );
-    assert_eq!(
-        carrier(
-            &scan,
-            &[crate::SourceRecord {
-                id: id.clone(),
-                data: Some(b"<changed/>")
-            }],
-            &notes
-        ),
-        Carrier::Retained
-    );
-    assert_eq!(
-        carrier(
-            &scan,
-            &[crate::SourceRecord {
-                id: id.clone(),
-                data: None
-            }],
-            &notes
-        ),
-        Carrier::Absent
-    );
-    assert_eq!(
-        carrier(&scan, &[record()], &cadmpeg_ir::Annotations::default()),
-        Carrier::Absent
-    );
-    let mut rehomed = cadmpeg_ir::Annotations::default();
-    crate::annotations::note(
-        &mut rehomed,
-        id.as_str(),
-        &cadmpeg_ir::StreamName::try_from("docProps/custom.xml".to_owned()).unwrap(),
-        0,
-        "xml",
-        cadmpeg_ir::Exactness::ByteExact,
-    )
-    .unwrap();
-    assert_eq!(carrier(&scan, &[record()], &rehomed), Carrier::Retained);
-}
-#[test]
-fn compound_default_streams_are_absent() {
-    let bytes = outer_header();
-    let mut scan = scan(&bytes);
-    scan.compound_streams
-        .push(crate::container::CompoundStream {
-            path: cadmpeg_ir::StreamName::try_from("ISolidWorksInformation".to_owned()).unwrap(),
-            directory_id: 9,
-            start_sector: 0,
-            payload: b"retained compound property data".to_vec(),
-            decoded_payload: None,
-            ps_streams: Vec::new(),
-            ps_probe_capped: false,
-            ps_auxiliary_refusal: None,
-        });
-    assert_eq!(
-        carrier(&scan, &[], &cadmpeg_ir::annotations::Annotations::default()),
-        Carrier::Absent
-    );
-}
+    assert_eq!(source.model.attributes.len(), 4);
+    assert!(unwritten(&source, &records, &notes).unwrap().is_empty());
 
-#[test]
-fn legacy_compound_configuration_carriers_are_absent() {
-    let bytes = outer_header();
-    let mut scan = scan(&bytes);
-    scan.compound_streams
-        .push(crate::container::CompoundStream {
-            path: cadmpeg_ir::StreamName::try_from("Config-7-Properties".to_owned()).unwrap(),
-            directory_id: 19,
-            start_sector: 0,
-            payload: b"retained compound property data".to_vec(),
-            decoded_payload: None,
-            ps_streams: Vec::new(),
-            ps_probe_capped: false,
-            ps_auxiliary_refusal: None,
-        });
-    assert!(requires_guard(&CadIr::empty(), Some(&scan)));
-    assert_eq!(
-        carrier(&scan, &[], &cadmpeg_ir::Annotations::default()),
-        Carrier::Absent
-    );
-}
-
-#[test]
-fn each_carrier_charges_only_its_own_properties() {
-    let mut bytes = outer_header();
-    bytes.extend(make_block(
-        0x43,
-        "docProps/ISolidWorksInformation.xml",
-        b"<authored/>",
-    ));
-    bytes.extend(make_block(
-        0x44,
-        "docProps/Config-0-Properties.xml",
-        b"<config/>",
-    ));
-    let scan = scan(&bytes);
-    let owners = scan
-        .sections()
-        .filter(|section| super::is_owner(*section))
-        .collect::<Vec<_>>();
-    assert_eq!(owners.len(), 2);
-    let (stored, absent) = (owners[0], owners[1]);
-    let mut notes = cadmpeg_ir::Annotations::default();
-    crate::annotations::note(
-        &mut notes,
-        stored.native_id().as_str(),
-        stored.source_stream(),
-        0,
-        "xml",
-        cadmpeg_ir::Exactness::ByteExact,
-    )
-    .unwrap();
-    let records = [crate::SourceRecord {
-        id: stored.native_id(),
-        data: Some(stored.payload()),
-    }];
-    let default_row = format!(
-        "sldprt:metadata:default_property#{}:5:Name",
-        stored.ordinal()
-    );
-    let configuration_row = format!(
-        "sldprt:metadata:configuration_property#{}:3",
-        absent.ordinal()
-    );
-    let mut source = CadIr::empty();
-    source.model.attributes.extend([
-        property(&default_row, "Name", AttributeValue::String("saved".into())),
-        property(
-            &configuration_row,
-            "saved_configuration_property",
-            AttributeValue::String("stored".into()),
-        ),
-    ]);
-    let charged = super::unwritten(&source, Some(&source), Some(&scan), &records, &notes);
-    assert_eq!(
-        charged.into_iter().collect::<Vec<_>>(),
-        [(configuration_row.clone(), super::Held::Nothing)],
-        "an unedited property of the emitted carrier is written"
-    );
     let mut edited = source.clone();
-    edited.model.attributes[0].values = vec![Some(AttributeValue::String("edited".into()))];
-    let charged = super::unwritten(&edited, Some(&source), Some(&scan), &records, &notes);
+    for row in &mut edited.model.attributes {
+        if row.name == "Designer" {
+            row.values = vec![Some(AttributeValue::String("edited".into()))];
+        }
+    }
+    edited.model.attributes.retain(|row| row.name != "Mass");
+    let added = "sldprt:metadata:default_property#40:9:Added";
+    edited
+        .model
+        .attributes
+        .push(property(added, "Added", AttributeValue::Integer(1)));
+    let mut expected = vec![
+        (id("Designer"), Held::Source),
+        (id("Mass"), Held::Source),
+        (added.to_owned(), Held::Nothing),
+    ];
+    expected.sort();
     assert_eq!(
-        charged.into_iter().collect::<Vec<_>>(),
-        [
-            (configuration_row, super::Held::Nothing),
-            (default_row, super::Held::Source),
-        ]
+        unwritten(&edited, &records, &notes)
+            .unwrap()
+            .into_iter()
+            .collect::<Vec<_>>(),
+        expected
+    );
+
+    let without_bytes = [
+        crate::SourceRecord {
+            id: records[0].id.clone(),
+            data: None,
+        },
+        crate::SourceRecord {
+            id: records[1].id.clone(),
+            data: records[1].data,
+        },
+    ];
+    let mut expected = vec![(id("Designer"), Held::Nothing), (id("Mass"), Held::Nothing)];
+    expected.sort();
+    assert_eq!(
+        unwritten(&source, &without_bytes, &notes)
+            .unwrap()
+            .into_iter()
+            .collect::<Vec<_>>(),
+        expected
     );
 }

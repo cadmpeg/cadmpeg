@@ -137,20 +137,8 @@ pub(crate) fn write_semantic_with_records(
     let mut losses = content_losses;
     // `export:value.unwritable` entries: texts cut to their field's width.
     let mut cut = Vec::new();
-    if default_properties::requires_guard(&normalized, source_scan.as_ref()) {
-        let baseline = retained_source_baseline(&mut source_baseline, source_context.as_ref())?;
-        // No serializer writes a saved property: an edited one is charged and
-        // its carrier is emitted as the source stored it, or not at all.
-        let edited = default_properties::unwritten(
-            &normalized,
-            baseline.map(|baseline| &baseline.ir),
-            source_scan.as_ref(),
-            retained_records,
-            annotations,
-        );
-        for (id, held) in edited {
-            unwritten.record(&id, Unwritten::SavedProperty, held);
-        }
+    for (id, held) in default_properties::unwritten(&normalized, retained_records, annotations)? {
+        unwritten.record(&id, Unwritten::SavedProperty, held);
     }
     let retained_partition =
         retained_partition(&normalized, source_scan.as_ref(), native.as_ref())?;

@@ -59,6 +59,15 @@ impl UnwrittenLosses {
         );
         assert!(!other.iter().any(names), "{held:?} {id}: {self:?}");
     }
+
+    /// No message of either code names `id`.
+    pub(crate) fn assert_uncharged(&self, id: &str) {
+        let names = |message: &String| message.split([' ', ',']).any(|token| token == id);
+        assert!(
+            !self.dropped.iter().chain(&self.omitted).any(names),
+            "{id}: {self:?}"
+        );
+    }
 }
 
 /// Plans and writes an inherited write. Returns its bytes and its
