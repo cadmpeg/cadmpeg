@@ -12659,7 +12659,7 @@ value = 0
 [[record.field]]
 name = "locus"
 offset = 23
-type = "u16[2]"
+type = "bytes[4]"
 source = "spec"
 anchor = "two little-endian u16, the locus (`04 00 02 00` profile, `05 00 01 00` geometry)"
 
