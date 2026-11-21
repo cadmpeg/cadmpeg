@@ -123,7 +123,7 @@ fn extent(
 ) -> Option<RevolveExtent> {
     let axis = axis();
     let FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) =
-        super::super::project_fixed_revolve_with_entities(
+        crate::design::feature_project::revolve::project_fixed_revolve_with_entities(
             scope,
             groups,
             std::slice::from_ref(&axis),

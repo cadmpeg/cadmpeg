@@ -683,7 +683,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             native_ref: Some(placement.id.clone()),
         }];
         {
-            crate::design::feature_project::bind_sketch_feature_geometry(
+            crate::design::feature_project::sketch_geometry::bind_sketch_feature_geometry(
                 &mut features,
                 &scopes,
                 std::slice::from_ref(&placement),
@@ -755,7 +755,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             native_ref: Some(placement.id.clone()),
         };
         {
-            crate::design::feature_project::bind_sketch_feature_geometry(
+            crate::design::feature_project::sketch_geometry::bind_sketch_feature_geometry(
                 &mut spatial_features,
                 &scopes,
                 std::slice::from_ref(&placement),
@@ -826,7 +826,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             native_ref: Some(placement.id.clone()),
         };
         {
-            crate::design::feature_project::bind_sketch_feature_geometry(
+            crate::design::feature_project::sketch_geometry::bind_sketch_feature_geometry(
                 &mut open_spatial_features,
                 &scopes,
                 std::slice::from_ref(&placement),
@@ -1982,7 +1982,7 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
     let mut features = vec![planar_feature, spatial_feature, base_flange, loft];
 
     {
-        crate::design::feature_project::bind_sketch_feature_geometry(
+        crate::design::feature_project::sketch_geometry::bind_sketch_feature_geometry(
             &mut features,
             &[],
             &[],
