@@ -2540,6 +2540,10 @@ pub(crate) fn project_relation_bindings(
         markers_by_id.insert(marker.id(), marker);
     }
     let relation_parameters = owned_relation_parameters(features, parameters, lanes);
+    let entity_sketches = sketch_entities
+        .iter()
+        .map(|entity| (entity.id(), &entity.sketch))
+        .collect::<HashMap<_, _>>();
     let mut parameters_by_id = HashMap::new();
     for parameter in parameters {
         parameters_by_id.insert(&parameter.id, parameter);
@@ -2610,6 +2614,10 @@ pub(crate) fn project_relation_bindings(
             }
             entities.sort_unstable_by(|left, right| left.as_str().cmp(right.as_str()));
             entities.dedup();
+            // A marker can also have an entity in a sketch the feature does
+            // not bind, such as its unbound marker sketch beside a stream
+            // circle; the constraint names only entities of its own sketch.
+            entities.retain(|entity| entity_sketches.get(entity) == Some(sketch));
             let typed_definition = match relation.family {
                 FeatureInputRelationFamily::PointPointHorizontalDistance
                 | FeatureInputRelationFamily::PointPointVerticalDistance => {
