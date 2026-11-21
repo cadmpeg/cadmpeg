@@ -10,7 +10,7 @@ pub(crate) fn redactions(ir: &CadIr) -> Result<BTreeMap<String, String>, CodecEr
         return Ok(replacements);
     };
     let mut components = BTreeMap::new();
-    let value = serde_json::to_value(ir).map_err(CodecError::malformed)?;
+    let value = cadmpeg_ir::hash::finite_json::to_json_value(ir).map_err(CodecError::malformed)?;
     for row in cadmpeg_ir::repro::rows(&value) {
         let Some(id) = cadmpeg_ir::repro::record(&value, &row)["id"].as_str() else {
             continue;

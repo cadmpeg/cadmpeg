@@ -762,6 +762,24 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         }
     }
     let axis_bindings = AxisBindings::new(native, owners, scopes);
+    let mut scope_owners = HashMap::<_, Vec<_>>::new();
+    for owner in owners {
+        if let Some(stream) = native_stream(owner.id()) {
+            scope_owners
+                .entry((stream, owner.scope_record_index()))
+                .or_default()
+                .push(owner);
+        }
+    }
+    let mut parameters_by_index = HashMap::<_, Vec<_>>::new();
+    for parameter in native {
+        if let Some(stream) = native_stream(&parameter.id) {
+            parameters_by_index
+                .entry((stream, parameter.record_index))
+                .or_default()
+                .push(parameter);
+        }
+    }
     let extended_assembly_frames = scopes
         .iter()
         .filter(|scope| scope.kind() == crate::records::feature::scope::DesignFeatureKind::Assemble)
@@ -790,15 +808,20 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         .map(|scope| -> Result<Feature, CodecError> {
             let native_scope = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
             let mut parameters = Vec::new();
-            for owner in owners.iter().filter(|owner| {
-                native_stream(owner.id()) == Some(native_scope)
-                    && owner.scope_record_index() == scope.record_index
-            }) {
-                if let Some(parameter) = native.iter().find(|parameter| {
-                    native_stream(&parameter.id) == Some(native_scope)
-                        && parameter.record_index == owner.parameter_record_index()
-                        && !matches!(axis_bindings.owner(native_scope,owner.record_index(),parameter.record_index), AxisBinding::Unresolved)
-                }) {
+            for &owner in scope_owners
+                .get(&(native_scope, scope.record_index))
+                .into_iter()
+                .flatten()
+            {
+                if let Some(parameter) = parameters_by_index
+                    .get(&(native_scope, owner.parameter_record_index()))
+                    .into_iter()
+                    .flatten()
+                    .copied()
+                    .find(|parameter| {
+                        !matches!(axis_bindings.owner(native_scope,owner.record_index(),parameter.record_index), AxisBinding::Unresolved)
+                    })
+                {
                     parameters.push((owner.local_ordinal(), parameter));
                 }
             }
@@ -6450,9 +6473,32 @@ fn project_fixed_chamfer(
 
     let fixed = or_none!(scope.fixed_chamfer_parameters());
     let stream = or_none!(native_stream(&scope.id));
-    let group = unique_feature_match(construction_groups.iter().filter(|group| {
-        native_stream(&group.id) == Some(stream) && group.scope_record_index == scope.record_index
-    }));
+    let mut groups = construction_groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+                && group.extrude_role().is_none()
+        })
+        .collect::<Vec<_>>();
+    groups.sort_by_key(|group| group.scope_reference_ordinal);
+    // Face-role groups next to the one edge-role group take its fixed
+    // specification, as in the parameterised projection.
+    let face_groups = groups
+        .iter()
+        .filter(|group| group.role() == DesignOperandRole::ROLE_0X10)
+        .count();
+    let shared_specification = face_groups != 0 && groups.len() - face_groups == 1;
+    if groups.len() > 1 && (scope.chamfer_sets().is_some() || !shared_specification) {
+        groups.clear();
+    }
+    let edge_role_assumed = groups.len() > 1
+        && groups.iter().any(|group| {
+            !matches!(
+                group.role(),
+                DesignOperandRole::ROLE_0X10 | DesignOperandRole::BODIES_B
+            )
+        });
     let spec = match fixed {
         crate::records::feature::fixed_parameters::DesignFixedChamferParameters::EqualDistance { distance } => {
             ChamferSpec::Distance {
@@ -6467,29 +6513,53 @@ fn project_fixed_chamfer(
         }
     };
     chamfer::note_orientation_assumptions(&format!("Chamfer scope {}", scope.id), spec, losses);
+    let shared = groups.len() > 1;
+    let mut projected = Vec::with_capacity(groups.len());
+    for group in groups {
+        let edges = resolved_edge_treatment_group_with_corners(
+            group,
+            crate::design::edge_resolve::EdgeTreatmentInputs {
+                groups: construction_groups,
+                operands: edge_operands,
+                identity_operands: edge_identity_operands,
+                vertex_operands: edge_treatment_vertex_operands,
+                histories,
+                previous_state_id: scope.previous_history_state_id(),
+                feature_id: &crate::ids::neutral_feature_id(scope),
+                treatment_radius: None,
+            },
+            ctx,
+            losses,
+        )?;
+        if shared && matches!(edges, cadmpeg_ir::features::EdgeSelection::Native(_)) {
+            losses.push(crate::loss::F3dLossCode::ChamferSelectionUnresolved.note(format!(
+                "Chamfer {} retains native selection {} because the group of its shared fixed specification resolves to no input edges.",
+                scope.id, group.id
+            )));
+        }
+        projected.push(ChamferGroup { edges, spec });
+    }
+    if shared {
+        losses.push(crate::loss::F3dLossCode::ChamferFixedFaceGroupAssumed.note(format!(
+            "Chamfer scope {} applies its fixed scalar to each face-role group beside its edge-role group (DR-891).",
+            scope.id
+        )));
+    }
+    if edge_role_assumed {
+        losses.push(crate::loss::F3dLossCode::ChamferEdgeRoleAssumed.note(format!(
+            "Chamfer scope {} shares one specification between face groups and a group whose role is not the edge role; the group is read as the edge group.",
+            scope.id
+        )));
+    }
+    let groups = projected.try_into().unwrap_or_else(|_| {
+        cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
+            edges: chamfer::unresolved_selection(scope, None, losses),
+            spec,
+        })
+    });
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Chamfer {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
-                edges: match group {
-                    None => chamfer::unresolved_selection(scope, None, losses),
-                    Some(group) => resolved_edge_treatment_group_with_corners(
-                        group,
-                        crate::design::edge_resolve::EdgeTreatmentInputs {
-                            groups: construction_groups,
-                            operands: edge_operands,
-                            identity_operands: edge_identity_operands,
-                            vertex_operands: edge_treatment_vertex_operands,
-                            histories,
-                            previous_state_id: scope.previous_history_state_id(),
-                            feature_id: &crate::ids::neutral_feature_id(scope),
-                            treatment_radius: None,
-                        },
-                        ctx,
-                        losses,
-                    )?,
-                },
-                spec,
-            }),
+            groups,
             flip_direction: false,
         },
     )))
@@ -7664,12 +7734,25 @@ fn project_rectangular_pattern_scalars(
         },
         |distribution| !distribution.total_extent.value,
     );
-    let symmetric = distribution.is_some_and(|distribution| distribution.symmetric.value);
-    if symmetric {
-        // The extent of a symmetric direction has no settled measurement.
-        if !adjacent || construction.u_extent() == 0.0 {
-            return None;
-        }
+    let direction_one_active = construction.u_count() > 1 && construction.u_extent() != 0.0;
+    let stored_symmetric = distribution.is_some_and(|distribution| distribution.symmetric.value);
+    let symmetric = stored_symmetric && direction_one_active;
+    if stored_symmetric && !direction_one_active {
+        losses.push(
+            crate::loss::F3dLossCode::FeatureRectangularPatternInactiveSymmetricDropped.note(format!(
+                "RectangularPattern scope {} drops the symmetric flag of its inactive direction one.",
+                scope.id
+            )),
+        );
+    }
+    let payload_names_direction_one = construction.secondary_direction().is_some();
+    if symmetric && !adjacent {
+        losses.push(
+            crate::loss::F3dLossCode::FeatureRectangularPatternSymmetricTotalExtentAssumed.note(format!(
+                "RectangularPattern scope {} reads the total extent of its symmetric direction one as the span from the first to the last instance.",
+                scope.id
+            )),
+        );
     }
     for (axis, (count, extent)) in [
         (construction.u_count(), construction.u_extent()),
@@ -7678,6 +7761,22 @@ fn project_rectangular_pattern_scalars(
     .into_iter()
     .enumerate()
     {
+        let payload_direction = axis == 1 && construction.secondary_direction().is_some();
+        let axis_active = count > 1 && extent != 0.0;
+        let record =
+            if payload_direction || !(axis_active || (axis == 0 && payload_names_direction_one)) {
+                None
+            } else {
+                direction_records.next()
+            };
+        if let (false, Some(record)) = (axis_active, record) {
+            losses.push(
+                crate::loss::F3dLossCode::FeatureRectangularPatternDirectionOneRecordAssumed.note(format!(
+                    "RectangularPattern scope {} reads direction record {} as the record of its inactive direction one: the pattern payload names it as the U-direction record.",
+                    scope.id, record.record_index
+                )),
+            );
+        }
         let Some(intervals) = PatternIntervals::new(count) else {
             continue;
         };
@@ -7688,14 +7787,18 @@ fn project_rectangular_pattern_scalars(
             ));
             continue;
         }
-        let stored_direction = if axis == 1 && construction.secondary_direction().is_some() {
+        let axis_adjacent = match (distribution, record) {
+            (None, Some(record)) => record.distance_type == 7,
+            _ => adjacent,
+        };
+        let stored_direction = if payload_direction {
             construction.secondary_direction().and_then(|record| {
                 cadmpeg_ir::units::UnitVector3::normalized(Vector3::from(
                     record.value.map(cadmpeg_ir::scalar::FiniteReal::get),
                 ))
             })
         } else {
-            direction_records.next().and_then(
+            record.and_then(
                 crate::records::feature::patterns::DesignRectangularPatternDirection::direction,
             )
         };
@@ -7706,7 +7809,7 @@ fn project_rectangular_pattern_scalars(
                 direction
             }
         });
-        let divisor = if adjacent {
+        let divisor = if axis_adjacent {
             1.0
         } else {
             f64::from(intervals.get())
@@ -7734,7 +7837,14 @@ fn project_rectangular_pattern_scalars(
                     if 1.0 - run.as_raw().dot(*record.as_raw())
                         > EPS_RECTANGULAR_PATTERN_DIRECTION_AGREEMENT =>
                 {
-                    None
+                    losses.push(
+                        crate::loss::F3dLossCode::FeatureRectangularPatternDirectionRecordDisagrees
+                            .note(format!(
+                                "RectangularPattern scope {} keeps the direction of its generated-instance run; its direction record states another direction.",
+                                scope.id
+                            )),
+                    );
+                    Some(run)
                 }
                 (run, record) => run.or(record),
             };
@@ -7764,13 +7874,21 @@ fn project_rectangular_pattern_scalars(
     .ok()?;
     if let Some(record) = construction
         .directions()
-        .first()
-        .filter(|record| distribution.is_none() && record.distance_type == 10)
+        .iter()
+        .find(|record| distribution.is_none() && record.distance_type == 10)
     {
         losses.push(crate::loss::F3dLossCode::FeatureRectangularPatternDistanceFormAssumed.note(format!(
             "RectangularPattern scope {} reads its distances as seed-to-final-instance extents: direction record {} stores distance type 10 without a readable distribution block.",
             scope.id, record.record_index
         )));
+    }
+    if direction.is_none() {
+        losses.push(
+            crate::loss::F3dLossCode::FeatureRectangularPatternDirectionUnresolved.note(format!(
+                "RectangularPattern scope {} keeps its first direction unresolved: it has no admitted direction record or generated-instance run.",
+                scope.id
+            )),
+        );
     }
     if !dropped.is_empty() {
         losses.push(
