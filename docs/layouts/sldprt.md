@@ -64,6 +64,19 @@ Parsed by:
 | 4 | 4 | `reference_sentinel` | `bytes[4]` | little | spec | `ff ff ff ff` at +4 |
 | 8 | 4 | `zero_trailer` | `bytes[4]` | little | spec | four zero bytes at +8 |
 
+## `feature_input_scalar_parameter_class`
+
+Spec §2 · layout: byte offsets · size: 2 B
+
+The parameter-class slot of a named scalar in the token form; the scalar's name record begins at +2.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/parameter_classes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `parameter_class_token` | `u16` | little | spec | a class token in the two bytes before it |
+
 ## `outer_header`
 
 Spec §1.1 · layout: byte offsets · size: 8 B
