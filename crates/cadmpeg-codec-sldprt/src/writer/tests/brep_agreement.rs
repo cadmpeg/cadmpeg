@@ -240,12 +240,7 @@ fn native_extrusion_edit_without_source_image_is_refused() {
         .data()
         .is_none());
     assert!(!native_id.is_empty());
-    assert!(
-        error
-            .to_string()
-            .contains("validated retained local, central and EOCD signature tokens"),
-        "{error}"
-    );
+    assert!(error.to_string().contains(&native_id), "{error}");
 }
 
 #[test]

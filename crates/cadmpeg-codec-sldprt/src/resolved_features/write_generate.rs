@@ -10,6 +10,7 @@ use super::transforms::{
 };
 use super::write_prepare::{
     arc_angle_relation_kind, binary_marker_relation, ellipse_angle_relation_kind, same_point2,
+    GENERATED_NAME,
 };
 use super::{CLASS_MARKER, NAME_MARKER, SCALAR_HEADER, SKETCH_MARKER};
 use crate::records::operand_tag::NativeOperandTag;
@@ -159,6 +160,7 @@ pub(super) fn append_generated_sketch_markers(
     ir: &cadmpeg_ir::CadIr,
     sketch: &Sketch,
     payload: &mut Vec<u8>,
+    cut: &mut Vec<String>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let relations = ir
         .model
@@ -490,7 +492,15 @@ pub(super) fn append_generated_sketch_markers(
                 )));
             }
         };
-        append_generated_scalar(payload, class, &parameter.name, value, next_id, &operands)?;
+        append_generated_scalar(
+            payload,
+            class,
+            (parameter.id.as_str(), &parameter.name),
+            value,
+            next_id,
+            &operands,
+            cut,
+        )?;
         next_id = next_id.checked_add(1).ok_or_else(|| {
             cadmpeg_core::CodecError::Malformed(
                 "source-less SLDPRT marker-local id space is exhausted".into(),
@@ -595,25 +605,26 @@ pub(super) fn generated_locus_is_point(ir: &cadmpeg_ir::CadIr, entity: &SketchEn
         })
 }
 
+/// Append one generated scalar named `name`, the text of record `name.0`.
 fn append_generated_scalar(
     payload: &mut Vec<u8>,
     class: &str,
-    name: &str,
+    (record, name): (&str, &str),
     value: f64,
     object_id: u32,
     operands: &[(FeatureInputOperandKind, u16)],
+    cut: &mut Vec<String>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let units = name.encode_utf16().collect::<Vec<_>>();
-    let length = u8::try_from(units.len()).map_err(|_| {
-        cadmpeg_core::CodecError::Malformed(
-            "SLDPRT generated parameter name exceeds 255 UTF-16 code units".into(),
-        )
-    })?;
-    if length == 0 || length > 128 {
+    let name = GENERATED_NAME.fit(name);
+    if name.units == 0 {
         return Err(cadmpeg_core::CodecError::Malformed(
-            "SLDPRT generated parameter name must contain 1 to 128 UTF-16 code units".into(),
+            "SLDPRT generated parameter name is empty".into(),
         ));
     }
+    cut.extend(name.unwritable_entry(record));
+    let units = name.text.encode_utf16().collect::<Vec<_>>();
+    let length = u8::try_from(units.len())
+        .expect("GENERATED_NAME.width fits the u8 count (writer::tests::capacity)");
     let class_length = u16::try_from(class.len()).map_err(|_| {
         cadmpeg_core::CodecError::Malformed(
             "SLDPRT generated parameter class name exceeds 65535 bytes".into(),
@@ -850,22 +861,24 @@ pub(super) fn append_reference_marker(
     payload[start + 88..start + 92].copy_from_slice(&local_id.to_le_bytes());
 }
 
+/// Append the generated object name `name` of record `record`.
 pub(super) fn append_generated_object_name(
     payload: &mut Vec<u8>,
     name: &str,
     object_id: u32,
+    record: &str,
+    cut: &mut Vec<String>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let units = name.encode_utf16().collect::<Vec<_>>();
-    let length = u8::try_from(units.len()).map_err(|_| {
-        cadmpeg_core::CodecError::Malformed(
-            "SLDPRT generated feature name exceeds 255 UTF-16 code units".into(),
-        )
-    })?;
-    if length == 0 || length > 128 {
+    let name = GENERATED_NAME.fit(name);
+    if name.units == 0 {
         return Err(cadmpeg_core::CodecError::Malformed(
-            "SLDPRT generated feature name must contain 1 to 128 UTF-16 code units".into(),
+            "SLDPRT generated feature name is empty".into(),
         ));
     }
+    cut.extend(name.unwritable_entry(record));
+    let units = name.text.encode_utf16().collect::<Vec<_>>();
+    let length = u8::try_from(units.len())
+        .expect("GENERATED_NAME.width fits the u8 count (writer::tests::capacity)");
     payload.extend_from_slice(NAME_MARKER);
     payload.push(length);
     for unit in units {

@@ -2,7 +2,6 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::AttributeValue;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_test_support::EditableDecodeResult;
@@ -12,7 +11,7 @@ use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
 #[test]
-fn anonymous_metadata_replays_but_only_a_real_named_owner_can_be_edited() {
+fn anonymous_metadata_replays_and_only_a_real_named_owner_is_patched() {
     for name in ["", "block@8"] {
         let mut payload = b"moBBoxCenterData_c".to_vec();
         payload.extend(1u32.to_le_bytes());
@@ -62,19 +61,30 @@ fn anonymous_metadata_replays_but_only_a_real_named_owner_can_be_edited() {
             };
             values[3] = cadmpeg_ir::scalar::FiniteReal::new(41.0).unwrap();
         }
-        let mut written = Vec::new();
-        let result = crate::test_support::plan_inherited_write(
+        let (written, losses) = crate::test_support::write_with_unwritten_attributes(
             decoded.ir(),
             decoded.source_fidelity(),
-            &mut written,
-        );
+        )
+        .unwrap();
         if name.is_empty() {
-            assert!(
-                matches!(result, Err(CodecError::NotImplemented(detail)) if detail.contains("anonymous metadata owner"))
+            let scan = crate::test_support::container::scan(&written);
+            assert!(scan.blocks.iter().any(|block| block.payload == payload));
+            let bbox = decoded
+                .ir()
+                .model
+                .attributes
+                .iter()
+                .find(|attribute| attribute.name == "bounding_envelope")
+                .unwrap()
+                .id
+                .as_str()
+                .to_owned();
+            losses.assert_charged(
+                crate::writer::Held::Source,
+                "does not patch: one of several, unnamed",
+                &bbox,
             );
-            assert!(written.is_empty());
         } else {
-            result.unwrap();
             let scan = crate::test_support::container::scan(&written);
             let owned: Vec<_> = scan
                 .blocks

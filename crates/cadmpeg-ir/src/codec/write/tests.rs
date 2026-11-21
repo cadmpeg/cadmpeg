@@ -555,6 +555,18 @@ fn a_dropped_edit_is_an_error_named_by_its_record_kind() {
 }
 
 #[test]
+fn the_unwritable_and_residual_codes_are_listed_warnings() {
+    let note = super::value_unwritable("x", "cuts texts", ["b", "a", "b"]).unwrap();
+    assert_eq!(note.code.local_code(), "value.unwritable");
+    assert_eq!(note.severity, Severity::Warning);
+    assert_eq!(note.message, "the x write cuts texts (2): a, b");
+    let note = super::record_residual_unavailable("x", "states no tokens", ["f"]).unwrap();
+    assert_eq!(note.code.local_code(), "record.residual-unavailable");
+    assert_eq!(note.severity, Severity::Warning);
+    assert!(super::value_unwritable("x", "r", Vec::<String>::new()).is_none());
+}
+
+#[test]
 fn an_ignored_arena_charges_no_loss_when_it_holds_a_record() {
     let ir = crate::examples::unit_cube_with_history_body().expect("valid fixture");
     assert_eq!(ir.model.history_bodies.len(), 1);

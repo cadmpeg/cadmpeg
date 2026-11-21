@@ -1405,7 +1405,7 @@ fn duplicate_member_identity_replays_but_refuses_semantic_edit() {
     )
     .unwrap_err();
     assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(ref reason) if reason.contains("validated retained local, central and EOCD signature tokens")),
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(ref reason) if reason.contains("cannot regenerate B-rep after parameter edit")),
         "{error}"
     );
 }

@@ -26,6 +26,7 @@ use cadmpeg_core::target::TargetCatalog;
 use cadmpeg_core::CodecError;
 
 pub mod approximation;
+pub mod capacity;
 mod carried;
 mod coverage;
 pub mod edge_recovery;

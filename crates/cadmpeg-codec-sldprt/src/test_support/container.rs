@@ -227,6 +227,13 @@ pub(crate) fn scan(bytes: &[u8]) -> crate::container::ContainerScan<'_> {
     .expect("synthetic container fits service policy")
 }
 
+/// The local, central and end-of-directory signature tokens
+/// [`native_envelope_fixture`] writes. They are made up: nonzero and
+/// pairwise distinct, as §1.1 states.
+pub(crate) const FIXTURE_LOCAL_TOKEN: [u8; 4] = [0x66, 0x5a, 0x7e, 0x56];
+pub(crate) const FIXTURE_CENTRAL_TOKEN: [u8; 4] = [0x93, 0xff, 0xad, 0x47];
+pub(crate) const FIXTURE_ROOT_TOKEN: [u8; 4] = [0x2c, 0x35, 0x07, 0x31];
+
 pub(crate) fn native_envelope_fixture(source: &[u8]) -> Vec<u8> {
     use cadmpeg_core::decode::View;
     let indexed = scan(source);
@@ -236,9 +243,10 @@ pub(crate) fn native_envelope_fixture(source: &[u8]) -> Vec<u8> {
         let pre = usize::try_from(View::u32_le_at(source, block.offset + 22).unwrap()).unwrap();
         let end = block.offset + 26 + pre + usize::try_from(block.comp_sz).unwrap();
         let relative = u32::try_from(output.len() - 8).unwrap();
-        output.extend([0x5a, 0xd9, 0xc8, 0x87]);
+        output.extend(FIXTURE_LOCAL_TOKEN);
         output.extend(&source[block.offset..end]);
-        central.extend([0x45, 0x2b, 0x7e, 0x28, 0, 0]);
+        central.extend(FIXTURE_CENTRAL_TOKEN);
+        central.extend([0u8; 2]);
         central.extend(&source[block.offset..block.offset + 26]);
         central.extend([0u8; 4]);
         central.extend(1u16.to_le_bytes());
@@ -252,7 +260,7 @@ pub(crate) fn native_envelope_fixture(source: &[u8]) -> Vec<u8> {
     let central_start = output.len();
     let central_size = u32::try_from(central.len()).unwrap();
     output.extend(central);
-    output.extend([0x9f, 0x82, 0x5e, 0x02]);
+    output.extend(FIXTURE_ROOT_TOKEN);
     output.extend([0u8; 4]);
     let count = u16::try_from(indexed.blocks.len()).unwrap();
     output.extend(count.to_le_bytes());
