@@ -39,6 +39,7 @@ mod alternate_profile_points;
 mod dimension_carriers;
 mod four_link_profile_points;
 mod lanes;
+mod listed_curves;
 mod profile_curves;
 mod profile_points;
 mod spatial;

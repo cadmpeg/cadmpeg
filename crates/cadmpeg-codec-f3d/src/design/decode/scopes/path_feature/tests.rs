@@ -120,7 +120,7 @@ fn standard_loft_reads_marked_group_reference() {
     );
     assert_eq!(
         loss.message,
-        "Loft scope generated:loft#20 stores a non-null marked reference with target 16015 at prefix offset 33; the Loft setting it selects is unresolved (DR-268), and a Loft projected from the scope uses closed false, solid true, ruled false, and linearize false."
+        "Loft scope generated:loft#20 stores a non-null marked reference with target 16015 at prefix offset 33; the Loft setting it selects is unresolved (DR-268), and a Loft projected from the scope uses closed false, ruled false, and linearize false."
     );
 
     let scope = DesignParameterScope::empty(
@@ -643,13 +643,13 @@ fn three_flag_compact_loft_reports_assumed_settings() {
     assert_loft_operation(&bytes, 24);
     assert_eq!(
         settings_loss_message(&bytes).as_deref(),
-        Some("Loft scope generated:loft#20 stores the three-flag compact prefix with flag bytes 01 01 00 at prefix offset 21; the Loft settings these flags select are unresolved (DR-294), and a Loft projected from the scope uses closed false, solid true, ruled false, and linearize false.")
+        Some("Loft scope generated:loft#20 stores the three-flag compact prefix with flag bytes 01 01 00 at prefix offset 21; the Loft settings these flags select are unresolved (DR-294), and a Loft projected from the scope uses closed false, ruled false, and linearize false.")
     );
     bytes[23] = 1;
     assert_loft_operation(&bytes, 24);
     assert_eq!(
         settings_loss_message(&bytes).as_deref(),
-        Some("Loft scope generated:loft#20 stores the three-flag compact prefix with flag bytes 01 01 01 at prefix offset 21; the Loft settings these flags select are unresolved (DR-294), and a Loft projected from the scope uses closed false, solid true, ruled false, and linearize false.")
+        Some("Loft scope generated:loft#20 stores the three-flag compact prefix with flag bytes 01 01 01 at prefix offset 21; the Loft settings these flags select are unresolved (DR-294), and a Loft projected from the scope uses closed false, ruled false, and linearize false.")
     );
 }
 
@@ -660,7 +660,7 @@ fn three_flag_standard_loft_reports_assumed_settings() {
     assert_loft_operation(&bytes, 28);
     assert_eq!(
         settings_loss_message(&bytes).as_deref(),
-        Some("Loft scope generated:loft#20 stores the three-flag standard prefix with flag bytes 01 00 01 at prefix offset 25; the Loft settings these flags select are unresolved (DR-294), and a Loft projected from the scope uses closed false, solid true, ruled false, and linearize false.")
+        Some("Loft scope generated:loft#20 stores the three-flag standard prefix with flag bytes 01 00 01 at prefix offset 25; the Loft settings these flags select are unresolved (DR-294), and a Loft projected from the scope uses closed false, ruled false, and linearize false.")
     );
 }
 

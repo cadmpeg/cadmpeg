@@ -792,7 +792,8 @@ Parsed by:
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A chamfer set is one indexed record |
 | 11 | 10 | `zero_run_10_at_11` | `bytes[10]` | little | spec | Every byte that the form does not name is zero |
 | 21 | 1 | `flag` | `u8` | little | spec | `+21: u8 flag` |
-| 22 | 2 | `zero_run_2_at_22` | `bytes[2]` | little | spec | Every byte that the form does not name is zero |
+| 22 | 1 | `distance_reversed` | `u8` | little | spec | `+22: u8 distance reversal` |
+| 23 | 1 | `zero_at_23` | `u8` | little | spec | Every byte that the form does not name is zero |
 | 24 | 11 | `first_distance_owner_reference` | `bytes[11]` | little | spec | `+24: first distance owner reference` |
 | 35 | 11 | `second_distance_owner_reference` | `bytes[11]` | little | spec | `+35: second distance owner reference` |
 | 46 | 4 | `spec_kind` | `u32` | little | spec | `+46: u32 spec kind 2` · value `2` |
@@ -5737,6 +5738,25 @@ Unstated regions:
 - `0..106` (106 B): The shifted prologue and local reference slots precede the extent words.
 - `114..252` (138 B): The remainder of the scope prefix precedes the ordered reference table.
 - `256..420` (164 B): The ordered references and common scope tail precede the paired header.
+
+## `legacy_class_330_blind_cut_extrude_frame`
+
+Spec §3.1 · layout: byte offsets · size: 438 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/extrude.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 102 | 4 | `first_side_extent` | `u32` | little | spec | The extent words are `[1, 0]` at offsets 102 and 106 |
+| 106 | 4 | `second_side_extent` | `u32` | little | spec | The extent words are `[1, 0]` at offsets 102 and 106 |
+| 248 | 4 | `reference_count` | `u32` | little | spec | The reference count is at offset 248 · value `7` |
+
+Unstated regions:
+
+- `0..102` (102 B): The unshifted prologue and seven nullable reference slots precede the extent words.
+- `110..248` (138 B): The remainder of the scope prefix precedes the ordered reference table.
+- `252..438` (186 B): The ordered references and common scope tail precede the paired header.
 
 ## `shifted_reference_aware_extrude_class_323_tail`
 
