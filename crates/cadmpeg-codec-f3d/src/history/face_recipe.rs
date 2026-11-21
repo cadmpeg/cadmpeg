@@ -373,13 +373,6 @@ impl FaceRecipeIndex {
         operand: &DesignFaceOperand,
         work: &WorkBudget,
     ) -> Result<Option<i64>, BudgetExhausted> {
-        if operand
-            .recipe_nodes
-            .iter()
-            .any(|node| !node.has_two_side_clauses())
-        {
-            return Ok(None);
-        }
         let Some(recipe) = self.prepare(operand) else {
             return Ok(None);
         };

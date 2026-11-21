@@ -547,8 +547,9 @@ fn a_one_clause_node_leaves_the_bounded_face_member_unresolved() {
     assert_eq!(FaceRecipeIndex::new(&topology).resolve(&operand), None);
 }
 
+/// Face 100 owns both coedges of closed edge 20 in a one-edge loop.
 #[test]
-fn counted_shell_program_keeps_a_one_clause_hole_loop_unresolved() {
+fn counted_shell_program_binds_a_one_clause_closed_edge_loop() {
     let mut topology = topology_with_inner_loop();
     topology.faces.retain(|face| *face != 104);
     let other = topology.face_loops.pop().unwrap();
@@ -572,7 +573,7 @@ fn counted_shell_program_keeps_a_one_clause_hole_loop_unresolved() {
                 &cadmpeg_core::decode::WorkBudget::new(super::MAX_FACE_RECIPE_MATCH_WORK),
             )
             .unwrap(),
-        None
+        Some(100)
     );
     assert!(super::bind_operation_operand(
         &mut operand,
@@ -581,7 +582,7 @@ fn counted_shell_program_keeps_a_one_clause_hole_loop_unresolved() {
         &mut super::SnapshotCache::default(),
     )
     .is_none());
-    assert!(operand.resolved_face_slots.is_empty());
+    assert_eq!(operand.resolved_face_slots, [100]);
 }
 
 #[test]
