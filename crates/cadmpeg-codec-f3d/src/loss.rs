@@ -759,6 +759,9 @@ pub(crate) enum F3dLossCode {
     /// Extrude profile selections assume that an inserted region's holes belong to the selected
     /// profile.
     FeatureProfileRegionHoleInferred,
+    /// Extrude profile selections assume the smallest concentric sketch-circle ring set that
+    /// covers a cap bounded by a preceding body cylinder.
+    FeatureProfileBodyCircleRingsAssumed,
     /// Extrude profile selections stated the stored spatial profiles of a
     /// spatial Sketch frame that the Extrude transition did not certify.
     FeatureSpatialProfileTransitionAssumed,
@@ -1724,6 +1727,7 @@ impl F3dLossCode {
         Self::FeatureProfileCapCarrierAssumed,
         Self::FeatureProfileHoleBoundaryInferred,
         Self::FeatureProfileRegionHoleInferred,
+        Self::FeatureProfileBodyCircleRingsAssumed,
         Self::FeatureSpatialProfileTransitionAssumed,
         Self::FeaturePathSelectionNative,
         Self::FeatureFaceSelectionNative,
@@ -2707,6 +2711,9 @@ impl F3dLossCode {
             Self::FeatureProfileCapCarrierAssumed => "feature.profile-cap-carrier-assumed",
             Self::FeatureProfileHoleBoundaryInferred => "feature.profile-hole-boundary-inferred",
             Self::FeatureProfileRegionHoleInferred => "feature.profile-region-hole-inferred",
+            Self::FeatureProfileBodyCircleRingsAssumed => {
+                "feature.profile-body-circle-rings-assumed"
+            }
             Self::FeatureSpatialProfileTransitionAssumed => {
                 "feature.spatial-profile-transition-assumed"
             }
@@ -3663,6 +3670,7 @@ impl F3dLossCode {
             | Self::FeatureProfileCapCarrierAssumed
             | Self::FeatureProfileHoleBoundaryInferred
             | Self::FeatureProfileRegionHoleInferred
+            | Self::FeatureProfileBodyCircleRingsAssumed
             | Self::FeatureSpatialProfileTransitionAssumed
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
@@ -4375,6 +4383,7 @@ impl F3dLossCode {
             | Self::FeatureProfileCapCarrierAssumed
             | Self::FeatureProfileHoleBoundaryInferred
             | Self::FeatureProfileRegionHoleInferred
+            | Self::FeatureProfileBodyCircleRingsAssumed
             | Self::FeatureSpatialProfileTransitionAssumed
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
@@ -5194,6 +5203,7 @@ mod tests {
                 "feature.profile-cap-carrier-assumed",
                 "feature.profile-hole-boundary-inferred",
                 "feature.profile-region-hole-inferred",
+                "feature.profile-body-circle-rings-assumed",
                 "feature.spatial-profile-transition-assumed",
                 "feature.path-selection-native",
                 "feature.face-selection-native",
