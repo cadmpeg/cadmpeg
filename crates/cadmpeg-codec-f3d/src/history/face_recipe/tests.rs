@@ -419,7 +419,7 @@ fn a_branching_fan_refuses_an_edge_without_a_corner_at_its_vertex() {
 }
 
 #[test]
-fn a_candidate_face_without_a_complete_boundary_leaves_the_unique_match() {
+fn a_candidate_face_without_a_complete_boundary_vetoes_the_group() {
     let mut topology = topology();
     topology.faces.push(104);
     topology.face_loops.push(AsmHistoricalRelation {
@@ -433,6 +433,9 @@ fn a_candidate_face_without_a_complete_boundary_leaves_the_unique_match() {
     let index = FaceRecipeIndex::new(&topology);
     assert!(!index.boundaries.contains_key(&104));
     assert_eq!(index.resolve(&operand), Some(100));
+    let mut recipe = index.prepare(&operand).unwrap();
+    recipe.candidates.insert(104);
+    assert_eq!(index.resolve_prepared_boundary(recipe, false), None);
 }
 
 #[test]

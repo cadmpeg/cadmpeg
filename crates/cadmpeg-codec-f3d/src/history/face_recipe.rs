@@ -406,17 +406,23 @@ impl FaceRecipeIndex {
     }
 
     fn resolve_boundary(&self, operand: &DesignFaceOperand, single_loop: bool) -> Option<i64> {
+        self.resolve_prepared_boundary(self.prepare(operand)?, single_loop)
+    }
+
+    fn resolve_prepared_boundary(
+        &self,
+        recipe: BoundaryRecipe<'_>,
+        single_loop: bool,
+    ) -> Option<i64> {
         let BoundaryRecipe {
             lanes,
             nodes,
             candidates,
-        } = self.prepare(operand)?;
+        } = recipe;
         let mut resolved = None;
         for face in candidates {
-            let (Some(boundary), Some(loops)) = (self.boundaries.get(&face), self.loops.get(&face))
-            else {
-                continue;
-            };
+            let boundary = self.boundaries.get(&face)?;
+            let loops = self.loops.get(&face)?;
             let whole = 0..boundary.len();
             let ranges = if single_loop {
                 loops.as_slice()
