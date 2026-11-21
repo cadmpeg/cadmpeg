@@ -4,11 +4,14 @@
 //! equations folder is a user parameter.
 //!
 //! A dimension whose text is one literal holds a `Neutral` expression that
-//! keeps the literal's authored unit. Any other text is a `Source`
-//! expression in the `SolidWorks` dialect, its references to parameters as
-//! reference tokens. A value is the cache the file stores: the literal, the
-//! dimension's stored `Value`, or the value the decoder read from a record
-//! that stores it in a stated unit.
+//! keeps the literal's authored unit. A parameter whose text is one
+//! reference to a parameter of its kind holds that reference as a `Neutral`
+//! link (§5.13). [`link_bare_references`] states the interim form of a text
+//! that is one reference with no such reading. Any other text is a
+//! `Source` expression in the `SolidWorks` dialect, its references to
+//! parameters as reference tokens. A value is the cache the file stores: the
+//! literal, the dimension's stored `Value`, or the value the decoder read
+//! from a record that stores it in a stated unit.
 //!
 //! Keywords displays a dimension's number in the document's length unit or
 //! in degrees, with no unit (`docs/formats/sldprt.md`). Where the root
@@ -283,34 +286,49 @@ impl<'a> Entries<'a> {
         self.ids.contains(id)
     }
 
-    /// The parameters, their expressions read, and the note naming those
-    /// whose literal is a rounded display.
+    /// The parameters, their expressions read, and the notes naming those
+    /// whose literal is a rounded display and those whose reference is
+    /// kept as text.
     pub(super) fn parameters(
         &self,
         scope: &ProductDefinitionId,
         readings: &Readings<'_>,
-    ) -> (Vec<DesignParameter>, Option<LossNote>) {
+    ) -> (Vec<DesignParameter>, Vec<LossNote>) {
         let aliases = Aliases::new(&self.list);
+        let mut read_entries = self
+            .list
+            .iter()
+            .map(|entry| read(entry, &aliases, readings))
+            .collect::<Vec<_>>();
+        let as_text = link_bare_references(&self.list, &mut read_entries, &readings.driven);
         let mut rounded = NamedCount::default();
         let parameters = self
             .list
             .iter()
-            .map(|entry| {
-                let reading = read(entry, &aliases, readings);
+            .zip(read_entries)
+            .map(|(entry, reading)| {
                 if reading.rounded {
                     rounded.push(entry.id.as_str());
                 }
                 parameter(entry, reading, scope, readings)
             })
             .collect();
-        let loss = (!rounded.is_empty()).then(|| {
+        let rounded = (!rounded.is_empty()).then(|| {
             SldprtLossCode::DesignParameterDisplayRounded.note(format!(
                 "{} parameters hold their dimension's displayed number, rounded to the display \
                  precision, as their literal and value: {rounded}",
                 rounded.count()
             ))
         });
-        (parameters, loss)
+        let as_text = (!as_text.is_empty()).then(|| {
+            SldprtLossCode::DesignParameterReferenceAsText.note(format!(
+                "{} parameters whose text is one reference with no neutral reading of their kind \
+                 hold the text as one `Text` token and state no dependency on the parameter it \
+                 names: {as_text}",
+                as_text.count()
+            ))
+        });
+        (parameters, rounded.into_iter().chain(as_text).collect())
     }
 }
 
@@ -482,6 +500,64 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Readin
         display,
         rounded: false,
     }
+}
+
+/// Rewrites each `Source` expression whose text is one reference as that
+/// reference where the target has the parameter's kind and that kind is
+/// neutral (§5.13), and returns the parameters whose reference is kept as
+/// text. A parameter that `driven` holds states no expression.
+///
+/// Interim, gap 20261121-IR-BARE-PARAM-REF-1: where the kinds differ or are
+/// `Native`, §5.13 gives a `Source` expression of the reference token, which
+/// part 10 refuses, so the expression is one `Text` token, the whole text.
+fn link_bare_references(
+    entries: &[Entry<'_>],
+    readings: &mut [Reading],
+    driven: &HashSet<ParameterId>,
+) -> NamedCount {
+    let kinds = entries
+        .iter()
+        .zip(readings.iter())
+        .map(|(entry, reading)| (entry.id.clone(), reading.kind.clone()))
+        .collect::<HashMap<_, _>>();
+    let mut as_text = NamedCount::default();
+    for (entry, reading) in entries.iter().zip(readings.iter_mut()) {
+        if driven.contains(&entry.id) {
+            continue;
+        }
+        let Some(reference) = bare_reference(&reading.expression).cloned() else {
+            continue;
+        };
+        let linked = match &reference.target {
+            RefTarget::Parameter(target) => kinds
+                .get(target)
+                .is_some_and(|kind| *kind == reading.kind && !matches!(kind, ValueKind::Native(_))),
+            // §5.13: a whole-text external reference is the parameter's own
+            // expression, of the parameter's kind.
+            RefTarget::External { .. } => true,
+        };
+        reading.expression = if linked {
+            Expression::Neutral(Neutral(Node::Reference(reference)))
+        } else {
+            as_text.push(entry.id.as_str());
+            Expression::Source {
+                dialect: ExpressionDialect::SolidWorks,
+                tokens: vec![ExpressionToken::Text(entry.text.to_owned())],
+            }
+        };
+    }
+    as_text
+}
+
+/// The reference of a `Source` expression that is one reference token.
+fn bare_reference(expression: &Expression) -> Option<&ParameterRef> {
+    let Expression::Source { tokens, .. } = expression else {
+        return None;
+    };
+    let [ExpressionToken::Reference(reference)] = tokens.as_slice() else {
+        return None;
+    };
+    Some(reference)
 }
 
 /// The literal of a dimension whose text is the bare display `number`, and
