@@ -606,9 +606,9 @@ fn parse_header_form(
         (None, Some(flagged)) => (flagged.document, flagged.text),
         (None, None) => (false, false),
     };
-    if discriminated
-        && document_flag != crate::records::parameters::is_document_source_kind(&source_kind)
-    {
+    // The document flag selects a document parameter whatever its
+    // `source_kind`, and a document parameter has no owner.
+    if discriminated && document_flag && owner_record_index.is_some() {
         return None;
     }
     let flags = match (wide_flags, compact_flags) {
@@ -661,7 +661,7 @@ fn parse_header_form(
         record_index,
         source_ordinal,
         source_kind,
-        document: None,
+        document: discriminated.then_some(document_flag),
         owner_record_index,
         family_discriminator,
         discriminator_offset: u64_from_index(discriminator_at),

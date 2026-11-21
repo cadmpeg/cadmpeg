@@ -99,7 +99,8 @@ pub(crate) enum DesignParameterSource {
     Owned(OwnedDesignParameter),
 }
 
-/// Localized source kinds of a document parameter.
+/// Localized source kinds of a document parameter, which name it in the frame
+/// forms that store no document flag.
 const DOCUMENT_PARAMETER_SOURCE_KINDS: [&str; 3] = [
     "User Parameter",
     "Paramètre utilisateur",

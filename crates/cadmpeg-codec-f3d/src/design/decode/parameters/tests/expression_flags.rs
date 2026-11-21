@@ -282,3 +282,37 @@ fn localized_document_source_kind_matches_the_document_flag() {
     assert_eq!(parameter.kind(), DesignParameterKind::User);
     assert_eq!(parameter.source_kind(), "Parâmetro do usuário");
 }
+
+#[test]
+fn document_flag_selects_a_document_parameter_whatever_its_source_kind() {
+    for trailer in [
+        &[0, 0, 0, 0, 0, 0, 0, 0, 1][..],
+        &[0, 0, 0, 0, 0, 0, 0, 0, 0, 1][..],
+    ] {
+        let parameter =
+            parse_design_parameter_record(&discriminated(None, "Benutzerparameter", trailer))
+                .unwrap_or_else(|| panic!("German document parameter, {trailer:?}"));
+        assert_eq!(parameter.kind(), DesignParameterKind::User);
+        assert_eq!(parameter.source_kind(), "Benutzerparameter");
+        assert_eq!(parameter.owner_record_index(), None);
+        assert_eq!(parameter.name(), "d4");
+
+        // Without the document flag, a document source kind names an owned
+        // parameter.
+        let mut unflagged = trailer.to_vec();
+        *unflagged.last_mut().unwrap() = 0;
+        let owned =
+            parse_design_parameter_record(&discriminated(Some(0x31), "User Parameter", &unflagged))
+                .unwrap_or_else(|| panic!("owned parameter, {unflagged:?}"));
+        assert_ne!(owned.kind(), DesignParameterKind::User);
+        assert_eq!(owned.owner_record_index(), Some(0x31));
+
+        // An owner with the document flag matches no grammar.
+        assert!(parse_design_parameter_record(&discriminated(
+            Some(0x31),
+            "Benutzerparameter",
+            trailer
+        ))
+        .is_none());
+    }
+}
