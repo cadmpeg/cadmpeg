@@ -3408,6 +3408,7 @@ fn build_geometry_ir(
     admitted_entities: &mut u64,
     part: bool,
 ) -> Result<BuiltIr, CodecError> {
+    let length_unit = crate::design_v11::length_unit(scan);
     let DecodedBrep {
         metadata_header,
         mut brep,
@@ -3568,7 +3569,7 @@ fn build_geometry_ir(
         );
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
-    let mut held_handles = Vec::new();
+    let mut held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::default();
     crate::resolved_features::profiles::project_marker_backed_sketches(
         ctx,
         &mut ir.model.features,
@@ -4284,6 +4285,7 @@ fn build_geometry_ir(
                     faces: &brep.native_face_identities,
                     bodies: &brep.native_body_identities,
                 },
+                length: length_unit,
                 rollback,
             },
             &mut pmi_losses,
@@ -4702,6 +4704,7 @@ fn build_metadata_ir(
     transfer_display: bool,
     part: bool,
 ) -> Result<BuiltIr, CodecError> {
+    let length_unit = crate::design_v11::length_unit(scan);
     let mut ir = CadIr::empty();
     let mut retention = retention::Retention::default();
     let mut unknowns = Vec::new();
@@ -4887,7 +4890,7 @@ fn build_metadata_ir(
         );
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
-    let mut held_handles = Vec::new();
+    let mut held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::default();
     crate::resolved_features::profiles::project_marker_backed_sketches(
         ctx,
         &mut ir.model.features,
@@ -5172,6 +5175,7 @@ fn build_metadata_ir(
                     faces: &[],
                     bodies: &[],
                 },
+                length: length_unit,
                 rollback,
             },
             &mut pmi_losses,

@@ -13,13 +13,18 @@
 //! no history the decoder reads, states no design.
 
 mod configurations;
+mod extrude;
 mod names;
 mod operation;
+mod order;
 mod parameters;
+mod sketch;
 mod states;
 #[cfg(test)]
 mod tests;
 mod tree;
+mod typed;
+mod units;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -33,6 +38,7 @@ use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::names::NameTable;
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
+use cadmpeg_ir::design::units::{UnitSymbol, UnitSystem};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitionKind};
@@ -43,6 +49,7 @@ use crate::records::{FeatureHistory, FeatureInputLane};
 use crate::rollback::{Reading, Unread};
 
 pub(crate) use names::Persistent;
+pub(crate) use units::length_unit;
 
 /// What a part's design is projected from.
 pub(crate) struct Part<'a> {
@@ -54,15 +61,18 @@ pub(crate) struct Part<'a> {
     pub(crate) bodies: Vec<BodyId>,
     /// The persistent ids of every decoded face and body.
     pub(crate) persistent: Persistent<'a>,
+    /// The part's length unit.
+    pub(crate) length: Option<UnitSymbol>,
     /// What the stored marks state of the rollback position.
     pub(crate) rollback: Reading,
 }
 
 /// Project the design of a part document into `ir.design`, beside its v10
 /// records, and state the part's root definition. A rollback reading that
-/// does not fix the position, and a configuration whose state cannot be
-/// stated, add their reasons to `losses`. Returns the number of records
-/// added.
+/// does not fix the position, a configuration whose state cannot be stated, a
+/// sketch or extrude that cannot be typed, and a parameter whose literal is a
+/// rounded display add their reasons to `losses`. Returns the number of
+/// records added.
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -74,15 +84,37 @@ pub(crate) fn project(
         lanes,
         bodies,
         persistent,
+        length,
         rollback,
     } = part;
-    let timeline = tree::timeline(histories)?;
+    let mut timeline = tree::timeline(histories)?;
     if timeline.features.is_empty() {
         return Ok(0);
     }
+    losses.extend(order::regeneration_order(&mut timeline, &ir.model));
     let definition = root_definition();
-    let decoded = parameters::Decoded::new(&ir.model.parameters, lanes);
-    let parameters = parameters::parameters(histories, &timeline, &definition, &decoded)?;
+    let entries = parameters::Entries::new(histories, &timeline)?;
+    let typed = typed::project(
+        &ir.model,
+        histories,
+        lanes,
+        &mut timeline,
+        &entries,
+        &definition,
+    );
+    losses.extend(typed.loss);
+    losses.extend(typed.assumed);
+    let readings = parameters::Readings {
+        decoded: parameters::Decoded::new(&ir.model.parameters, lanes),
+        length_unit: length,
+        bound: typed.bound,
+        measured: typed.measured,
+        driven: typed.references,
+    };
+    let (mut parameters, rounded) = entries.parameters(&definition, &readings);
+    losses.extend(rounded);
+    let sketches = typed.sketches;
+    parameters.extend(sketches.driven);
     let configurations =
         configurations::configurations(histories, ir.source.as_ref(), &definition)?;
     let id = container_id(cadmpeg_ir::identity_key!("timeline"));
@@ -132,6 +164,9 @@ pub(crate) fn project(
     let features = timeline.features;
     let added = 3
         + features.len()
+        + sketches.records.len()
+        + sketches.entities.len()
+        + sketches.constraints.len()
         + parameters.len()
         + configurations.records.len()
         + table.len()
@@ -139,6 +174,12 @@ pub(crate) fn project(
         + state_records;
     let mut root = ProductDefinition::root(definition.clone(), ExternalDocument::default());
     root.kind = Some(ProductDefinitionKind::Part);
+    root.units = length.map(|length| UnitSystem {
+        length,
+        angle: UnitSymbol::Deg,
+        mass: None,
+        time: None,
+    });
     root.bodies = bodies;
     ir.model.product_definitions.push(root);
     ir.design.scopes.push(DesignScope {
@@ -151,6 +192,9 @@ pub(crate) fn project(
     });
     ir.design.containers.push(container);
     ir.design.features.extend(features);
+    ir.design.sketches.extend(sketches.records);
+    ir.design.sketch_entities.extend(sketches.entities);
+    ir.design.sketch_constraints.extend(sketches.constraints);
     ir.design.parameters.extend(parameters);
     ir.design.configurations.extend(configurations.records);
     ir.design.evaluations.extend(evaluations);

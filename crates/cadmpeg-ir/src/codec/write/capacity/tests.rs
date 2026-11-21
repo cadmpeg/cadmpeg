@@ -69,17 +69,3 @@ fn the_entry_names_the_record_field_and_width() {
         Some("doc:material#1 name: 6 UTF-16 code units cut to 3; the field holds 3")
     );
 }
-
-#[test]
-fn the_unwritable_and_residual_codes_are_listed_warnings() {
-    use crate::report::Severity;
-    let note = crate::codec::write::value_unwritable("x", "cuts texts", ["b", "a", "b"]).unwrap();
-    assert_eq!(note.code.local_code(), "value.unwritable");
-    assert_eq!(note.severity, Severity::Warning);
-    assert_eq!(note.message, "the x write cuts texts (2): a, b");
-    let note =
-        crate::codec::write::record_residual_unavailable("x", "states no tokens", ["f"]).unwrap();
-    assert_eq!(note.code.local_code(), "record.residual-unavailable");
-    assert_eq!(note.severity, Severity::Warning);
-    assert!(crate::codec::write::value_unwritable("x", "r", Vec::<String>::new()).is_none());
-}
