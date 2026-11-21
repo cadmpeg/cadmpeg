@@ -590,7 +590,7 @@ mod through_all;
 
 #[test]
 fn signed_distance_lanes_keep_both_end_heights_relative_to_the_profile_plane() {
-    use cadmpeg_ir::features::ExtrudeDirection;
+    use cadmpeg_ir::features::extents::ExtrudeDirection;
     for (along, against, first_length, second_length, reversed) in [
         (4.4, 3.7, 44.0, 37.0, false),
         (-4.4, 3.7, 44.0, -37.0, true),

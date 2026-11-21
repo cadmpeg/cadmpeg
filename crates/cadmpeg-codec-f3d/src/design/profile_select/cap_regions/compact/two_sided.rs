@@ -10,10 +10,11 @@ use crate::design::geometry::{atomic_sketch_regions, ProfileGeometryWork};
 use crate::design::profile_select::{ResolvedProfileSelection, ScopedExtrudeProfileResolution};
 use crate::history_records::{AsmHistoricalTopology, AsmHistoricalTransition};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{
-    BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
-    PlanarProfileRef,
+use cadmpeg_ir::features::extents::{
+    ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
 };
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::PlanarProfileRef;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::Sketch;
 
