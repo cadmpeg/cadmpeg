@@ -498,10 +498,10 @@ fn selector_bit_three_marks_construction() {
 }
 
 /// A curve record of state `0` (+29) stands outside the sketch's profile, and
-/// one of state `1` belongs to it.
+/// one of state `1` or `2` belongs to it.
 #[test]
 fn a_curve_record_of_state_zero_stands_outside_the_profile() {
-    for (state, outside_profile) in [(1u16, false), (0, true)] {
+    for (state, outside_profile) in [(1u16, false), (2, false), (0, true)] {
         let mut sample = sample();
         for offset in [sample.line, sample.arc, sample.circle] {
             sample.payload[offset + STATE..offset + STATE + 2]

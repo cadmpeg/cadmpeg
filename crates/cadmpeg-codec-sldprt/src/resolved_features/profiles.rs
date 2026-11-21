@@ -444,7 +444,9 @@ pub(crate) fn bind_sketch_profiles(
     let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
     builder.retain_exactness(keep);
     *annotations = builder.build();
-    bind_circular_profile_by_dimension(features, sketches, sketch_entities, parameters);
+    bind_circular_profile_by_dimension(features, sketches, sketch_entities, parameters, |sketch| {
+        annotations.provenance.contains_key(sketch.id.as_str())
+    });
 }
 
 #[derive(Debug)]
@@ -5260,6 +5262,9 @@ mod exact_tests;
 
 #[cfg(test)]
 mod index_tests;
+
+#[cfg(test)]
+mod configuration_binding_tests;
 
 #[cfg(test)]
 mod record_profile_tests;

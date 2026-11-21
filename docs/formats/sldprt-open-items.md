@@ -1098,6 +1098,14 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Need.** The frame of such a sketch's point records, checked against the circular edges and side faces of the feature that consumes the sketch.
 
+### EV-32. The state of a sketch curve record
+
+**Question.** What do states `0` and `2` of an `sgSketch` curve record (u16 at +29) select, and which curves of state `0` belong to the profile of their sketch?
+
+**Known.** A curve record of state `0` has u32 `0` after its endpoint indices, and a curve record of state `1` or `2` has u32 `1` there (`sldprt.md` §2.3 "In a curve record whose selector (+37) has bit 0 clear"). Every construction curve has state `0`. State `2` occurs in one sketch saved at three `swVersion` values, schema `07 00`: four lines and three arcs, which together form the sketch's one closed loop. Most non-construction curves of state `0` lie off the stored solid: an outer rectangle around a profile of state `1`, or a second record of a curve that a record of state `1` already gives. In one sketch, twelve lines of state `0` each run along a straight edge of the solid from end to end, and each is the only curve that joins two arcs of state `1`. The decoder reads a curve record of state `0` as a curve outside the profile, which joins no profile loop, and reads a curve record of state `1` or `2` as a curve of the profile.
+
+**Need.** For each curve record of state `0` or `2`, its curve against the edges and faces of the feature that consumes its sketch, and the fields of its record that differ from those of a curve record of state `1`.
+
 ### EV-24. Bytes after the last top-level object
 
 **Question.** What owns the four zero bytes some `ResolvedFeatures` streams write after their last top-level object, and the two zero bytes an in-context part writes after a top-level `moProfileFeature_c` whose sketch plane is written in place?
