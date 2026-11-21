@@ -13,12 +13,17 @@ use std::collections::{HashMap, HashSet};
 ///
 /// A body pattern seed and a body move resolved in their input states, a body
 /// deletion whose operands resolved through their recipe identity, and a
-/// Reverse Normal resolved in its input state name ASM body slots. When every selected slot
-/// is absent from the model bodies, the one feature whose history transition
-/// inserts that slot generates the body, and the selection names it there.
-/// A body move reads its slots in its bound history. A Reverse Normal reads
-/// its slots in its bound history: see [`reverse_normal_binding`]. The
-/// generating feature becomes a dependency of
+/// Reverse Normal resolved in its input state name ASM body slots. Body slots
+/// are local to one ASM history. A pattern seed or body deletion reads its
+/// slots in the history bound to the selecting scope (see [`scope_history`]).
+/// If that history is unresolved or has no producer, it searches every history
+/// and charges a loss. A body move reads its slots in its bound history and
+/// keeps its historical selection when that history or a producer is unresolved.
+/// When every selected slot is absent from the model bodies, the one projected
+/// feature of the same Design stream whose transition inserts the slot
+/// generates the body. In a bound history, its scope belongs to that history.
+/// A Reverse Normal reads its slots in its bound history: see
+/// [`reverse_normal_binding`]. The generating feature becomes a dependency of
 /// the selecting feature. Returns the result states of the producers of
 /// generated bodies, each listing every body slot that the producer's
 /// transition inserts.
@@ -48,36 +53,37 @@ pub(crate) fn bind_generated_body_selections(
             ))
         })
         .collect::<HashMap<_, _>>();
-    let producer = |slot: i64, history: Option<&AsmHistory>| -> Option<Producer> {
-        let in_history =
-            |candidate: &AsmHistory| history.is_none_or(|history| std::ptr::eq(candidate, history));
-        let mut inserting = inputs
-            .histories
-            .iter()
-            .filter(|candidate| in_history(candidate))
-            .flat_map(AsmHistory::states)
-            .filter(|state| inserts_body(state, slot));
-        let state = inserting.next()?;
-        if inserting.next().is_some() {
-            return None;
-        }
-        let mut scopes = inputs.scopes.iter().filter(|scope| {
-            scope.history_state_id() == Some(state.state_id)
-                && (history.is_none()
-                    || scope_history(scope, scope_histories, inputs.histories)
-                        .is_some_and(in_history))
-        });
-        let scope = scopes.next()?;
-        if scopes.next().is_some() {
-            return None;
-        }
-        let inserted = state.transition.as_ref()?.topology.bodies.inserted.clone();
-        Some((
-            feature_by_scope.get(&scope.id)?.0.clone(),
-            state.state_id,
-            inserted,
-        ))
-    };
+    let producer =
+        |history: Option<&AsmHistory>, stream: Option<&str>, slot: i64| -> Option<Producer> {
+            let states: Box<dyn Iterator<Item = &crate::history_records::AsmDeltaState>> =
+                match history {
+                    Some(history) => Box::new(history.states().iter()),
+                    None => Box::new(inputs.histories.iter().flat_map(AsmHistory::states)),
+                };
+            let mut inserting = states.filter(|state| inserts_body(state, slot));
+            let state = inserting.next()?;
+            if inserting.next().is_some() {
+                return None;
+            }
+            let mut scopes = inputs.scopes.iter().filter(|scope| {
+                crate::ids::native_stream(&scope.id) == stream
+                    && scope.history_state_id() == Some(state.state_id)
+                    && history.is_none_or(|history| {
+                        scope_history(scope, scope_histories, inputs.histories)
+                            .is_some_and(|candidate| std::ptr::eq(candidate, history))
+                    })
+            });
+            let scope = scopes.next()?;
+            if scopes.next().is_some() {
+                return None;
+            }
+            let inserted = state.transition.as_ref()?.topology.bodies.inserted.clone();
+            Some((
+                feature_by_scope.get(&scope.id)?.0.clone(),
+                state.state_id,
+                inserted,
+            ))
+        };
     let reverse_context = ReverseContext {
         inputs,
         scope_histories,
@@ -177,24 +183,47 @@ pub(crate) fn bind_generated_body_selections(
             if slots.iter().any(|slot| live.contains(slot)) {
                 continue;
             }
-            let history = if matches!(
+            let Some(scope) = scope else {
+                continue;
+            };
+            let history = scope_history(scope, scope_histories, inputs.histories);
+            let stream = crate::ids::native_stream(&scope.id);
+            let strict = matches!(
                 feature.evaluation.definition(),
                 FeatureDefinition::Operation(FeatureOperation::MoveBody { .. })
-            ) {
-                let Some(history) =
-                    scope.and_then(|scope| scope_history(scope, scope_histories, inputs.histories))
-                else {
-                    continue;
-                };
-                Some(history)
-            } else {
-                None
-            };
-            let Some(producers) = slots
+            );
+            if strict && history.is_none() {
+                continue;
+            }
+            let mut fell_back = !strict && history.is_none();
+            let mut producers = slots
                 .iter()
-                .map(|slot| producer(*slot, history))
-                .collect::<Option<Vec<_>>>()
-            else {
+                .map(|slot| producer(history, stream, *slot))
+                .collect::<Option<Vec<_>>>();
+            if !strict && producers.is_none() && history.is_some() {
+                fell_back = true;
+                producers = slots
+                    .iter()
+                    .map(|slot| producer(None, stream, *slot))
+                    .collect::<Option<Vec<_>>>();
+            }
+            if fell_back {
+                losses.push(F3dLossCode::FeatureGeneratedBodyHistoryUnresolved.note(format!(
+                    "Feature {} selects body slots {slots:?} of {native} with {}: {}.",
+                    feature.id,
+                    if history.is_some() {
+                        "no producer in its bound ASM history"
+                    } else {
+                        "no resolved ASM history"
+                    },
+                    if producers.is_some() {
+                        "the one state of any history that inserts each slot is taken as its producer"
+                    } else {
+                        "the selection keeps its slots"
+                    }
+                )));
+            }
+            let Some(producers) = producers else {
                 continue;
             };
             producers
