@@ -259,43 +259,41 @@ pub(super) fn historical_selections_note(ir: &CadIr) -> Option<LossNote> {
     })
 }
 
-/// Rewrite each fillet of another format into what a Keywords fillet record
+/// Rewrite each feature of another format into what its Keywords record
 /// holds (§3.4):
-/// - a tangency weight, for which the record has no field, is not written;
-/// - the one owned parameter whose length is a constant radius is written as
-///   `D1`, the positional dimension the fillet record's radius is read from
-///   (`sldprt.md`, Keywords history), unless the feature owns a `D1` or a
-///   `Radius` already.
+/// - a fillet's tangency weight, for which the record has no field, is not
+///   written;
+/// - each owned parameter whose length is a construction value the record
+///   reads from a positional dimension (`sldprt.md`, Keywords history) is
+///   written under that name, when exactly one owned parameter holds that
+///   length and the feature owns no parameter of a positional or named
+///   construction dimension already.
 ///
-/// Runs after [`equations_as_displayed_values`], so no expression names the
-/// renamed parameter. The rewrites come back as [`FilletRewrites`], named once
-/// the write knows which records it keeps.
-pub(super) fn fillets_as_keywords_records(ir: &mut CadIr) -> FilletRewrites {
-    use cadmpeg_ir::features::edge_treatments::RadiusSpec;
+/// Runs after [`equations_as_displayed_values`], so no expression names a
+/// renamed parameter. The rewrites come back as [`KeywordsRewrites`], named
+/// once the write knows which records it keeps.
+pub(super) fn foreign_records_as_keywords(ir: &mut CadIr) -> KeywordsRewrites {
     use cadmpeg_ir::features::ParameterValue;
 
-    let mut rewrites = FilletRewrites::default();
-    let mut radii = Vec::new();
+    let mut rewrites = KeywordsRewrites::default();
+    let mut roles = Vec::new();
     for feature in &mut ir.model.features {
         let id = feature.id.as_str().to_owned();
         feature.evaluation.edit(|definition, _| {
-            let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) = definition
-            else {
-                return;
-            };
-            for group in groups.iter_mut() {
-                if group.tangency_weight.take().is_some() {
-                    rewrites.weights.insert(id.clone());
+            if let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) = definition {
+                for group in groups.iter_mut() {
+                    if group.tangency_weight.take().is_some() {
+                        rewrites.weights.insert(id.clone());
+                    }
                 }
             }
-            if let [group] = &**groups {
-                if let RadiusSpec::Constant { radius } = group.radius {
-                    radii.push((id.clone(), radius.get()));
-                }
+            let lengths = positional_lengths(definition);
+            if !lengths.is_empty() {
+                roles.push((id.clone(), lengths));
             }
         });
     }
-    for (feature, radius) in radii {
+    for (feature, lengths) in roles {
         let owned = |parameter: &&mut cadmpeg_ir::features::DesignParameter| {
             parameter
                 .owner
@@ -308,37 +306,82 @@ pub(super) fn fillets_as_keywords_records(ir: &mut CadIr) -> FilletRewrites {
             .iter_mut()
             .filter(owned)
             .collect::<Vec<_>>();
-        if owned
-            .iter()
-            .any(|parameter| matches!(parameter.name.as_str(), "D1" | "Radius"))
-        {
+        if owned.iter().any(|parameter| {
+            matches!(
+                parameter.name.as_str(),
+                "D1" | "D2" | "Depth" | "Depth2" | "Radius"
+            )
+        }) {
             continue;
         }
-        owned.retain(|parameter| {
-            matches!(parameter.value, Some(ParameterValue::Length(length)) if length.get() == radius)
-        });
-        let [parameter] = owned.as_mut_slice() else {
-            continue;
-        };
-        rewrites.renamed.push((
-            parameter.id.as_str().to_owned(),
-            format!("{} ({} as D1)", parameter.id.as_str(), parameter.name),
-        ));
-        parameter.name = "D1".into();
+        let mut renames = Vec::new();
+        for (name, length) in lengths {
+            let mut holders = owned.iter().enumerate().filter(|(_, parameter)| {
+                matches!(parameter.value, Some(ParameterValue::Length(value)) if value.get() == length)
+            });
+            if let (Some((index, _)), None) = (holders.next(), holders.next()) {
+                renames.push((index, name));
+            }
+        }
+        for (index, name) in renames {
+            let parameter = &mut *owned[index];
+            rewrites.renamed.push((
+                parameter.id.as_str().to_owned(),
+                format!("{} ({} as {name})", parameter.id.as_str(), parameter.name),
+            ));
+            parameter.name = name.into();
+        }
     }
     rewrites
 }
 
-/// The fillets [`fillets_as_keywords_records`] rewrote: the features whose
+/// The positional dimensions a Keywords record of `definition` reads a
+/// construction length from, each with the length the definition states: a
+/// constant fillet radius from `D1`, a blind extrusion depth from `D1` and a
+/// second blind depth from `D2`.
+fn positional_lengths(definition: &FeatureDefinition) -> Vec<(&'static str, f64)> {
+    use cadmpeg_ir::features::edge_treatments::RadiusSpec;
+    use cadmpeg_ir::features::{ExtrudeExtent, LinearTermination};
+
+    match definition {
+        FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) => match &**groups {
+            [group] => match group.radius {
+                RadiusSpec::Constant { radius } => vec![("D1", radius.get())],
+                _ => Vec::new(),
+            },
+            _ => Vec::new(),
+        },
+        FeatureDefinition::Operation(FeatureOperation::Extrude { extent, .. }) => match extent {
+            ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
+                match side.termination {
+                    LinearTermination::Blind { length } => vec![("D1", length.get())],
+                    _ => Vec::new(),
+                }
+            }
+            ExtrudeExtent::TwoSided { first, second } => {
+                match (&first.termination, &second.termination) {
+                    (
+                        LinearTermination::Blind { length: first },
+                        LinearTermination::Blind { length: second },
+                    ) => vec![("D1", first.get()), ("D2", second.get())],
+                    _ => Vec::new(),
+                }
+            }
+        },
+        _ => Vec::new(),
+    }
+}
+
+/// The records [`foreign_records_as_keywords`] rewrote: the fillets whose
 /// tangency weight is left out, and each renamed parameter's id and the text
 /// that names it.
 #[derive(Default)]
-pub(super) struct FilletRewrites {
+pub(super) struct KeywordsRewrites {
     weights: BTreeSet<String>,
     renamed: Vec<(String, String)>,
 }
 
-impl FilletRewrites {
+impl KeywordsRewrites {
     /// The notes naming the rewritten records that `ir` still holds. A record
     /// a later drop removed is named by that drop.
     pub(super) fn notes(self, ir: &CadIr) -> Vec<LossNote> {
@@ -376,8 +419,9 @@ impl FilletRewrites {
         }
         if !renamed.is_empty() {
             notes.push(SldprtLossCode::WriterParametersRenamed.note(format!(
-                "the SLDPRT history writer writes {} parameter(s) as D1, the positional \
-                 dimension a fillet record's radius is read from: {}",
+                "the SLDPRT history writer writes {} parameter(s) under the positional \
+                 dimension name its feature's SLDPRT record reads a construction length \
+                 from: {}",
                 renamed.len(),
                 renamed.join(", ")
             )));

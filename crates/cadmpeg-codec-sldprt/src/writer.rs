@@ -173,13 +173,13 @@ pub(crate) fn write_semantic_with_records(
     losses.extend(history_drop::foreign_native_operations(&mut normalized));
     let reducible = history_drop::HistoryDrop::applies(&normalized);
     let mut displayed_values = history_drop::DisplayedValues::default();
-    let mut fillet_rewrites = history_drop::FilletRewrites::default();
+    let mut keywords_rewrites = history_drop::KeywordsRewrites::default();
     if reducible {
         history_drop::clear_foreign_native_refs(&mut normalized, native.as_ref());
         let (displayed, notes) = history_drop::equations_as_displayed_values(&mut normalized);
         displayed_values = displayed;
         losses.extend(notes);
-        fillet_rewrites = history_drop::fillets_as_keywords_records(&mut normalized);
+        keywords_rewrites = history_drop::foreign_records_as_keywords(&mut normalized);
     }
     let mut dropped_history = history_drop::HistoryDrop::default();
     let feature_input_renames = loop {
@@ -208,7 +208,7 @@ pub(crate) fn write_semantic_with_records(
     };
     losses.extend(dropped_history.finish());
     losses.extend(displayed_values.note(&normalized));
-    losses.extend(fillet_rewrites.notes(&normalized));
+    losses.extend(keywords_rewrites.notes(&normalized));
     if reducible {
         losses.extend(history_drop::historical_selections_note(&normalized));
     }

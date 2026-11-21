@@ -672,6 +672,58 @@ fn a_fillet_the_history_drop_removes_is_named_by_that_drop_alone() {
 }
 
 #[test]
+fn a_blind_extrude_of_another_format_decodes_back_with_its_depth_parameter() {
+    use cadmpeg_ir::features::{
+        ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureOperation, LinearTermination,
+    };
+
+    let mut ir = cube_with_foreign_history();
+    let boss = ir.model.features[1].id.clone();
+    push_length_parameter(&mut ir, &boss, "d1", 12.0);
+    push_length_parameter(&mut ir, &boss, "d2", 5.0);
+    let losses = plan_losses(&ir);
+    let note = loss(&losses, "writer.parameters-renamed").expect("named rename");
+    assert!(
+        note.message.contains("other:model:parameter#d1 (d1 as D1)"),
+        "{}",
+        note.message
+    );
+
+    let decoded = crate::test_support::ir::encode_decode(&ir);
+    let boss = decoded
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Boss"))
+        .expect("the extrude decodes back");
+    let FeatureDefinition::Operation(FeatureOperation::Extrude { extent, .. }) =
+        boss.evaluation.definition()
+    else {
+        panic!("{:?}", boss.evaluation.definition());
+    };
+    assert_eq!(
+        extent,
+        &ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination: LinearTermination::Blind {
+                    length: cadmpeg_ir::scalar::NonZeroLength::new(12.0).unwrap(),
+                },
+                draft: None,
+            },
+        }
+    );
+    let mut names = decoded
+        .model
+        .parameters
+        .iter()
+        .filter(|parameter| parameter.owner.as_ref() == Some(&boss.id))
+        .map(|parameter| parameter.name.as_str())
+        .collect::<Vec<_>>();
+    names.sort_unstable();
+    assert_eq!(names, ["D1", "d2"]);
+}
+
+#[test]
 fn a_delete_face_on_input_topology_faces_decodes_back_and_is_named() {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
 
