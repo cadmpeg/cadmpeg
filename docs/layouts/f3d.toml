@@ -1379,6 +1379,73 @@ source = "spec"
 anchor = "The wide expression trailer is eleven bytes"
 
 [[record]]
+name = "design_parameter_discriminated_expression_trailer"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The nine-byte trailer is four zero bytes and five flag bytes"
+size = 9
+note = "This trailer is relative to the end of the variable LP-UTF16 expression of a discriminated parameter. DR-144 gives the four flag bytes before the document flag."
+
+[[record.field]]
+name = "zero_run_4"
+offset = 0
+type = "bytes[4]"
+source = "spec"
+anchor = "The nine-byte trailer is four zero bytes and five flag bytes"
+
+[[record.field]]
+name = "flags"
+offset = 4
+type = "bytes[4]"
+source = "spec"
+anchor = "DR-144 gives the other four flag bytes"
+
+[[record.field]]
+name = "document"
+offset = 8
+type = "u8"
+source = "spec"
+anchor = "The last flag byte is `1` exactly for a document parameter"
+
+[[record]]
+name = "design_parameter_discriminated_text_expression_trailer"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The ten-byte trailer is the text flag, four zero bytes, and five flag bytes"
+size = 10
+note = "This trailer is relative to the end of the variable LP-UTF16 expression of a discriminated parameter. DR-144 gives the four flag bytes before the document flag."
+
+[[record.field]]
+name = "text"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "The text flag is `1` exactly for a text parameter"
+
+[[record.field]]
+name = "zero_run_4"
+offset = 1
+type = "bytes[4]"
+source = "spec"
+anchor = "The ten-byte trailer is the text flag, four zero bytes, and five flag bytes"
+
+[[record.field]]
+name = "flags"
+offset = 5
+type = "bytes[4]"
+source = "spec"
+anchor = "DR-144 gives the other four flag bytes"
+
+[[record.field]]
+name = "document"
+offset = 9
+type = "u8"
+source = "spec"
+anchor = "The last flag byte is `1` exactly for a document parameter"
+
+[[record]]
 name = "design_parameter_compact_owned_expression_trailer"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs"
 kind = "byte"
@@ -48062,14 +48129,14 @@ kind = "byte"
 section = "Records of a Sketch item"
 anchor = "The text frame is 91 bytes"
 size = 91
-note = "Offsets are relative to the first byte after the measurement. The LP-UTF16 prefix follows at 91."
+note = "Offsets are relative to the first byte after the measurement. The LP-UTF16 prefix follows at 91. A legacy annotated dimension frame in a segment whose serializer magic is neither 1234 nor 134225558 or more stores offsets 0 to 17 only, and its LP-UTF16 prefix follows at 18."
 
 [[record.field]]
 name = "style_byte"
 offset = 0
 type = "u8"
 source = "spec"
-anchor = "a style byte and four f32 style values"
+anchor = "The frame of a driven dimension stores the style byte `1`"
 
 [[record.field]]
 name = "style_values"

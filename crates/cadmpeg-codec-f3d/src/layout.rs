@@ -536,6 +536,44 @@ pub(crate) mod design_parameter_wide_expression_trailer {
     pub(crate) const DOCUMENT: usize = 10;
 }
 
+/// Byte offsets for the `design_parameter_discriminated_expression_trailer` record.
+///
+/// Spec §3.1. Record length 9 B.
+///
+/// ```text
+/// This trailer is relative to the end of the variable LP-UTF16 expression of a discriminated parameter. DR-144 gives the four flag bytes before the document flag.
+/// ```
+pub(crate) mod design_parameter_discriminated_expression_trailer {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 9;
+    /// Offset of `zero_run_4` (`bytes[4]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_4: usize = 0;
+    /// Offset of `flags` (`bytes[4]`). Spec §3.1.
+    pub(crate) const FLAGS: usize = 4;
+    /// Offset of `document` (`u8`). Spec §3.1.
+    pub(crate) const DOCUMENT: usize = 8;
+}
+
+/// Byte offsets for the `design_parameter_discriminated_text_expression_trailer` record.
+///
+/// Spec §3.1. Record length 10 B.
+///
+/// ```text
+/// This trailer is relative to the end of the variable LP-UTF16 expression of a discriminated parameter. DR-144 gives the four flag bytes before the document flag.
+/// ```
+pub(crate) mod design_parameter_discriminated_text_expression_trailer {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 10;
+    /// Offset of `text` (`u8`). Spec §3.1.
+    pub(crate) const TEXT: usize = 0;
+    /// Offset of `zero_run_4` (`bytes[4]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_4: usize = 1;
+    /// Offset of `flags` (`bytes[4]`). Spec §3.1.
+    pub(crate) const FLAGS: usize = 5;
+    /// Offset of `document` (`u8`). Spec §3.1.
+    pub(crate) const DOCUMENT: usize = 9;
+}
+
 /// Byte offsets for the `design_parameter_compact_owned_expression_trailer` record.
 ///
 /// Spec §3.1. Record length 5 B.
