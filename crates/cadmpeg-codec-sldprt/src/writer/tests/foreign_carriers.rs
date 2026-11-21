@@ -785,17 +785,17 @@ fn an_equation_is_written_as_its_displayed_value_and_named() {
 }
 
 #[test]
-fn a_displayed_value_parameter_a_later_drop_removes_is_not_named_as_written() {
+fn a_displayed_value_parameter_the_history_drop_removes_is_named_by_that_drop_alone() {
     use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
     let mut ir = cube_with_foreign_history();
-    let id = ParameterId::mint("other:model:parameter#d6").unwrap();
-    ir.model.parameters.push(DesignParameter {
+    let owner = ir.model.features[1].id.clone();
+    let parameter = |name: &str, owner| DesignParameter {
         product_definition: None,
-        id: id.clone(),
-        owner: Some(ir.model.features[1].id.clone()),
+        id: ParameterId::mint(format!("other:model:parameter#{name}")).unwrap(),
+        owner,
         ordinal: 0,
-        name: "d6".into(),
-        expression: "d5 * 2".into(),
+        name: name.into(),
+        expression: "width * 2".into(),
         display: None,
         value: Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(12.7).unwrap(),
@@ -804,10 +804,35 @@ fn a_displayed_value_parameter_a_later_drop_removes_is_not_named_as_written() {
         properties: std::collections::BTreeMap::new(),
         pmi: None,
         native_ref: None,
-    });
-    let (displayed, _) = super::super::history_drop::equations_as_displayed_values(&mut ir);
-    ir.model.parameters.retain(|parameter| parameter.id != id);
-    assert!(displayed.note(&ir).is_none());
+    };
+    ir.model.parameters.push(parameter("kept", Some(owner)));
+    ir.model.parameters.push(parameter("global", None));
+    let losses = plan_losses(&ir);
+    let dropped = loss(&losses, "writer.features-omitted").expect("named drop");
+    assert!(
+        dropped
+            .message
+            .contains("parameters [other:model:parameter#global]"),
+        "{}",
+        dropped.message
+    );
+    let note = loss(&losses, "writer.parameter-expressions-omitted").expect("named equation");
+    assert!(
+        note.message.contains("writes 1 parameter(s)"),
+        "{}",
+        note.message
+    );
+    assert!(
+        note.message
+            .contains("other:model:parameter#kept (kept = width * 2)"),
+        "{}",
+        note.message
+    );
+    assert!(
+        !note.message.contains("parameter#global"),
+        "{}",
+        note.message
+    );
 }
 
 #[test]
