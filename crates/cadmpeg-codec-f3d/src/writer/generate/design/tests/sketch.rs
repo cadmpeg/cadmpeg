@@ -1188,3 +1188,17 @@ fn a_tangent_contact_at_the_ends_writes_its_endpoint_branch() {
         .count();
     assert_eq!(joins, 1);
 }
+
+#[test]
+fn relation_ordinals_are_named_in_a_sketch_without_dimensions() {
+    let (ir, _) = scoped_sketches();
+    let (report, _) = write(&ir);
+    let notes = loss(&report, "export/record.residual-unavailable")
+        .into_iter()
+        .filter(|message| message.contains("relation ordinals"))
+        .collect::<Vec<_>>();
+    let [note] = notes.as_slice() else {
+        panic!("one relation-ordinal note: {:#?}", report.losses);
+    };
+    assert!(!note.contains("dimension frames"), "{note}");
+}

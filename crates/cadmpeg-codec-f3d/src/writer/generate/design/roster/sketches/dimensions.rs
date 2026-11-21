@@ -252,37 +252,48 @@ fn kind_block(out: &mut DesignRecords, dimension: &PlannedDimension) -> Result<(
     Ok(())
 }
 
-/// The values the writer chooses where f3d.md and f3d-open-items.md DR-917
-/// leave the rule open, in the records of the sketch dimensions of `ctx`.
+/// The values the writer chooses where f3d.md and f3d-open-items.md DR-901
+/// and DR-917 leave the rule open, in the records of the sketch relations
+/// and dimensions of `ctx`.
 pub(in crate::writer::generate::design::roster) fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
+    let mut related = Vec::new();
     let mut frames = Vec::new();
     let mut parameters = Vec::new();
     for records in &ctx.roster.sketches.items {
+        related.extend(records.relations.iter().map(u32::to_string));
         for [frame, parameter, _, _] in &records.dimensions {
+            related.push(frame.to_string());
             frames.push(frame.to_string());
             parameters.push(parameter.to_string());
         }
     }
-    if frames.is_empty() {
+    if related.is_empty() {
         return Vec::new();
     }
-    cadmpeg_ir::codec::write::record_residual_unavailable(
-        "F3D",
-        "writes the sketch dimensions with these values where f3d-open-items.md DR-917 states no rule",
-        [
+    let mut values = vec![format!(
+        "relation ordinals {} (a member's ordinal in a relation or dimension frame the number of relations and frames of its sketch written before it that name the member)",
+        related.join(" ")
+    )];
+    if !frames.is_empty() {
+        values.extend([
             format!(
-                "dimension frames {} (null-locus ordinal {NULL_LOCUS_ORDINAL} plus the frame's position in its sketch; the fourth point of a linear measurement its first anchor; text frame style {STYLE} with values (0, 0, 0, 1), byte {TEXT_MARKER}, origin (0, 0, 0) and axes (1, 0, 0), (0, 1, 0); linear kind-block values (0, 1); diameter flag {DIAMETER_FLAG}; the second quadrant word equal to the first; no property block)",
+                "dimension frames {} (null-locus ordinal {NULL_LOCUS_ORDINAL} plus the frame's position in its sketch; the fourth point of a linear measurement its first anchor; each angular line's point positions, end then start; text frame style {STYLE} with values (0, 0, 0, 1), byte {TEXT_MARKER}, origin (0, 0, 0) and axes (1, 0, 0), (0, 1, 0); linear kind-block values (0, 1); diameter flag {DIAMETER_FLAG}; the second quadrant word equal to the first; no property block)",
                 frames.join(" ")
             ),
             format!(
-                "dimension parameters {} (family discriminator {DISCRIMINATOR}, the expression trailer of ten zero bytes, the owner's parameter number the source ordinal)",
+                "dimension parameters {} (family discriminator {DISCRIMINATOR}, the expression trailer of ten zero bytes, the owner's parameter number the source ordinal, the dimension suffix {FIRST_SUFFIX} for a sketch's first dimension of a kind and one more for each later one)",
                 parameters.join(" ")
             ),
             format!(
                 "record 198 (timeline context: context value {}, the largest source ordinal of an owned parameter; f3d.md states the value for a design whose every parameter is named d<n>)",
                 ctx.context_value()
             ),
-        ],
+        ]);
+    }
+    cadmpeg_ir::codec::write::record_residual_unavailable(
+        "F3D",
+        "writes the sketch relations and dimensions with these values where f3d-open-items.md DR-901 and DR-917 state no rule",
+        values,
     )
     .into_iter()
     .collect()
