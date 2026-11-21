@@ -3602,7 +3602,7 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Need.** A controlled object-prelude save with a moved component, its original and solved BREP frames, and an independent current placement. Determine the reference frame of the closing matrix and the body-frame correction before admitting that matrix as a body placement.
 
-**Conflict.** Treating every object-prelude closing matrix as a solved-body local placement gives the two incorrect mating placements above.
+**Conflict.** Treating the closing matrix of an object-prelude carrier whose GUID follows the ordinal directly as a solved-body local placement gives the two incorrect mating placements above.
 
 **Note.** The decoder retains the native carrier. A matrix-bearing object-prelude occurrence whose carrier GUID follows the ordinal directly requires an independently resolved component-path pose before neutral projection. Its unresolved subtree retains stored body frames and the existing `assembly.local-occurrence-unplaced` loss. Identity frames retain their definition frame. Ancestor placement must also resolve.
 
