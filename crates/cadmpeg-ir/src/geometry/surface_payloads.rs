@@ -10,7 +10,7 @@ use super::{
     VariableBlendConstruction, VertexBlendBoundaryGeometry, VertexBlendConstruction,
 };
 use super::{CacheContract, LegacyCache, LegacyCacheSlot};
-use crate::features::{FinitePoint3, FiniteVector3};
+use crate::features::geometry::{FinitePoint3, FiniteVector3};
 use crate::ids::{CurveId, SurfaceId};
 use crate::math::{Point3, Vector3};
 use crate::scalar::FiniteReal;

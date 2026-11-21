@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::features::{
-    EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation,
-    FilledSurfaceContinuityState, SheetSweepSection, SurfaceBoundary, SweepSection,
-};
+use crate::features::selections::{EdgeSelection, FaceSelection};
+use crate::features::surface_inputs::{FilledSurfaceContinuityState, SurfaceBoundary};
+use crate::features::sweeps::{SheetSweepSection, SweepSection};
+use crate::features::{FeatureDefinition, FeatureOperation};
 
 #[test]
 fn an_unresolved_sweep_section_states_its_native_name_only_where_it_has_one() {

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{empty_data, TestResult};
-use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureOperation, ParameterValue};
+use cadmpeg_ir::features::parameters::ParameterValue;
+use cadmpeg_ir::features::selections::EdgeSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 #[test]
 fn historical_treatment_validation_checks_each_input_state_and_operand() -> TestResult {

@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_ir::features::direct_edit::SplitBodyTool;
+use cadmpeg_ir::features::evaluation::{FeatureResultMembers, FeatureResultTopology};
+use cadmpeg_ir::features::geometry::FiniteVector3;
+use cadmpeg_ir::features::operation_settings::BooleanKind;
+use cadmpeg_ir::features::selections::NativeSelections;
 use cadmpeg_ir::features::FeatureId;
-use cadmpeg_ir::features::{
-    BooleanKind, FeatureResultMembers, FeatureResultTopology, FiniteVector3, NativeSelections,
-    SplitBodyTool,
-};
 use cadmpeg_ir::ids::FeatureResultTopologyId;
 use cadmpeg_ir::CadIr;
 
@@ -29,7 +30,7 @@ fn combine(tools: BodySelection) -> FeatureDefinition {
         op: BooleanKind::Cut,
         keep_tools: false,
 
-        destination: cadmpeg_ir::features::CombineDestination::default(),
+        destination: cadmpeg_ir::features::operation_settings::CombineDestination::default(),
     })
 }
 
@@ -114,7 +115,7 @@ fn split_and_body_motion_resolve_and_validate_only_complete_distinct_selections(
     let surface_split = FeatureDefinition::Operation(FeatureOperation::SplitBody {
         extend_tool: None,
         targets: BodySelection::Native("target".into()),
-        tool: SplitBodyTool::Faces(cadmpeg_ir::features::FaceSelection::Native(
+        tool: SplitBodyTool::Faces(cadmpeg_ir::features::selections::FaceSelection::Native(
             "surface".into(),
         )),
     });
@@ -526,7 +527,9 @@ fn body_selection_refuses_missing_groups_partial_motion_and_aliased_motion() {
 
 #[test]
 fn combine_target_and_producing_feature_outputs_share_the_result_wrapper_join() {
-    use cadmpeg_ir::features::{DistinctMembers, Feature, FeatureContent, FeatureEvaluation};
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::selections::DistinctMembers;
+    use cadmpeg_ir::features::{Feature, FeatureContent};
     let id = FeatureId::mint("test:model:feature#combine").expect("synthetic feature");
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
@@ -665,9 +668,10 @@ fn producing_outputs_keep_exact_joins_in_member_order_and_report_missing_wrapper
 
 #[test]
 fn trim_body_selections_resolve_distinct_bodies_and_report_native_operands() {
-    use cadmpeg_ir::features::{
-        BodyTrimSide, DistinctMembers, Feature, FeatureContent, FeatureEvaluation,
-    };
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::operation_settings::BodyTrimSide;
+    use cadmpeg_ir::features::selections::DistinctMembers;
+    use cadmpeg_ir::features::{Feature, FeatureContent};
     let source = FeatureDefinition::Operation(FeatureOperation::TrimBodies {
         operands: TrimBodyOperands::new(
             BodySelection::Native("target".into()),
@@ -898,10 +902,12 @@ fn a_composite_member_link_join_does_not_count_as_a_second_wrapper() {
 
 #[test]
 fn body_mirror_pattern_seeds_resolve_with_the_wrapper_joins_and_stay_local_without_them() {
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::geometry::{FeatureDirection3, FinitePoint3};
     use cadmpeg_ir::features::patterns::{PatternKind, PatternSeed, PatternTransform};
+    use cadmpeg_ir::features::selections::DistinctMembers;
     use cadmpeg_ir::features::FeatureOperation;
-    use cadmpeg_ir::features::{DistinctMembers, Feature, FeatureContent, FeatureEvaluation};
-    use cadmpeg_ir::features::{FeatureDirection3, FinitePoint3};
+    use cadmpeg_ir::features::{Feature, FeatureContent};
     use cadmpeg_ir::math::{Point3, Vector3};
     let plane_normal = FeatureDirection3::from(
         cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(1.0, 0.0, 0.0))
@@ -977,7 +983,9 @@ fn plain_feature(
     ordinal: u64,
     suppressed: Option<bool>,
 ) -> cadmpeg_ir::features::Feature {
-    use cadmpeg_ir::features::{DistinctMembers, Feature, FeatureContent, FeatureEvaluation};
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::selections::DistinctMembers;
+    use cadmpeg_ir::features::{Feature, FeatureContent};
     Feature {
         id: FeatureId::mint(format!("test:model:feature#{name}")).expect("synthetic feature"),
         ordinal,
@@ -1118,7 +1126,7 @@ fn plane_trim(targets: BodySelection) -> FeatureDefinition {
     FeatureDefinition::Operation(FeatureOperation::TrimBodiesAtPlane {
         targets,
         plane: FeatureId::mint("test:model:feature#plane").expect("plane"),
-        keep: cadmpeg_ir::features::BodyTrimSide::Forward,
+        keep: cadmpeg_ir::features::operation_settings::BodyTrimSide::Forward,
     })
 }
 
@@ -1180,7 +1188,9 @@ fn unjoined_plane_trim_target_stays_local_only_when_its_wrapper_is_produced_earl
 
 #[test]
 fn local_plane_trim_target_counts_in_the_unjoined_body_loss() {
-    use cadmpeg_ir::features::{DistinctMembers, Feature, FeatureContent, FeatureEvaluation};
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::selections::DistinctMembers;
+    use cadmpeg_ir::features::{Feature, FeatureContent};
     let mut actual = plane_trim(BodySelection::Native("target".into()));
     split_local(&mut actual, &["target".to_owned()].into(), true);
     let mut ir = CadIr::empty();
@@ -1233,7 +1243,7 @@ fn native_derived_producer() -> (cadmpeg_ir::features::Feature, FeatureInventory
     let wrapper = output.id();
     let mut producer = plain_feature("derived", 1, Some(false));
     producer.native_ref = Some(source.id());
-    producer.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+    producer.evaluation = cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
         FeatureDefinition::Operation(FeatureOperation::Native {
             kind: cadmpeg_ir::features::NativeFeatureKind::Other("derived".into()),
             parameters: std::collections::BTreeMap::default(),
@@ -1259,7 +1269,7 @@ fn check_derived_selection(trim: bool, ordinal: u64, suppressed: Option<bool>, j
     };
     let mut consumer = plain_feature("consumer", 6, Some(false));
     consumer.evaluation =
-        cadmpeg_ir::features::FeatureEvaluation::from_definition(original.clone());
+        cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(original.clone());
     let mut ir = CadIr::empty();
     ir.model.features = vec![producer, consumer];
     let bodies = if joined {
@@ -1337,7 +1347,9 @@ fn split_body_forms() -> Vec<FeatureDefinition> {
         SplitBodyTool::Plane {
             plane: FeatureId::mint("test:model:feature#plane").expect("plane"),
         },
-        SplitBodyTool::Faces(cadmpeg_ir::features::FaceSelection::Native("tool".into())),
+        SplitBodyTool::Faces(cadmpeg_ir::features::selections::FaceSelection::Native(
+            "tool".into(),
+        )),
     ]
     .into_iter()
     .map(|tool| {
@@ -1354,7 +1366,7 @@ fn split_body_forms() -> Vec<FeatureDefinition> {
                 BodySelection::Native("tool".into()),
             )
             .expect("distinct"),
-            keep: cadmpeg_ir::features::BodyTrimSide::Unresolved,
+            keep: cadmpeg_ir::features::operation_settings::BodyTrimSide::Unresolved,
         },
     )))
     .collect()
@@ -1432,7 +1444,8 @@ fn local_split_body_target_preserves_unjoined_loss_count() {
     for original in split_body_forms() {
         let mut ir = CadIr::empty();
         let mut feature = plain_feature("split", 2, Some(false));
-        feature.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(original);
+        feature.evaluation =
+            cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(original);
         ir.model.features.push(feature);
         let before = native_losses(&ir.model, &HashMap::new());
         ir.model.features[0].evaluation.edit(|definition, _| {
@@ -1513,7 +1526,7 @@ fn split_local_target_checks_member_count_qualification_and_body_reference() {
 #[test]
 fn split_body_projection_and_validator_share_producer_and_qualification_rules() {
     use crate::test_support::split::{plane_trim_fixture, set_slot};
-    use cadmpeg_ir::features::FeatureEvaluation;
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
     for qualified in [true, false] {
         let (mut source, properties) = plane_trim_fixture(false);
         if !qualified {
@@ -1589,7 +1602,7 @@ fn native_derived_result_makes_split_body_target_local() {
         },
     });
     consumer.evaluation =
-        cadmpeg_ir::features::FeatureEvaluation::from_definition(original.clone());
+        cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(original.clone());
     inventory.features.push(source);
     inventory.properties.extend(properties);
     let mut ir = CadIr::empty();
@@ -1624,7 +1637,7 @@ fn check_native_base_split(
     let (mut producer, mut inventory, result) = native_derived_producer();
     producer.ordinal = ordinal;
     producer.suppressed = suppressed;
-    producer.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+    producer.evaluation = cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
         FeatureDefinition::Operation(FeatureOperation::Native {
             kind: cadmpeg_ir::features::NativeFeatureKind::Other("Base".into()),
             parameters: std::collections::BTreeMap::default(),
@@ -1657,7 +1670,7 @@ fn check_native_base_split(
     let mut consumer = plain_feature("consumer", 6, Some(false));
     consumer.native_ref = Some(source.id());
     consumer.evaluation =
-        cadmpeg_ir::features::FeatureEvaluation::from_definition(original.clone());
+        cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(original.clone());
     inventory.features.push(source);
     inventory.properties.extend(properties);
     let mut ir = CadIr::empty();

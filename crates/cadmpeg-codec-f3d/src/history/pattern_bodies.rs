@@ -12,9 +12,9 @@ pub(super) fn bind_pattern_body_selections<'a>(
     inputs: &FeatureBodySelectionInputs<'a>,
     body_candidates: &mut BodyCandidates<'a>,
 ) {
-    use cadmpeg_ir::features::{
-        patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation,
-    };
+    use cadmpeg_ir::features::patterns::PatternSeed;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let scopes = inputs.scopes;
     let groups = inputs.groups;

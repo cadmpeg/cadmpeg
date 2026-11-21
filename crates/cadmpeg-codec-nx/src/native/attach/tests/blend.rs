@@ -2,8 +2,8 @@
 
 use crate::native::attach::feature_projection::body_writing_unresolved_feature_definition;
 use cadmpeg_ir::features::edge_treatments::RadiusSpec;
-use cadmpeg_ir::features::EdgeSelection;
-use cadmpeg_ir::features::FaceSelection;
+use cadmpeg_ir::features::selections::EdgeSelection;
+use cadmpeg_ir::features::selections::FaceSelection;
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
@@ -19,7 +19,7 @@ fn nx_body_writing_blend_retains_unresolved_fillet_family() {
     assert_eq!(
         definition,
         Some(FeatureDefinition::Operation(FeatureOperation::Fillet {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(
+            groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(
                 cadmpeg_ir::features::edge_treatments::FilletGroup {
                     edges: EdgeSelection::Unresolved,
                     radius: RadiusSpec::Unresolved { form: None },

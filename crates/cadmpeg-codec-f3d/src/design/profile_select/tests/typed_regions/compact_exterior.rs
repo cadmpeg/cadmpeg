@@ -85,8 +85,8 @@ fn compact_exteriors_resolve_subdivisions_and_refuse_descendant_groups() {
         })
         .unwrap()
     };
-    let Some(cadmpeg_ir::features::ProfileRef::Planar(
-        cadmpeg_ir::features::PlanarProfileRef::SketchRegions { regions, .. },
+    let Some(cadmpeg_ir::features::profiles::ProfileRef::Planar(
+        cadmpeg_ir::features::profiles::PlanarProfileRef::SketchRegions { regions, .. },
     )) = resolve(&selections)
     else {
         panic!("exact compact exterior union");

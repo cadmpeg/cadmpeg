@@ -4,7 +4,9 @@ use crate::records::topology::construction::{
     DesignConstructionOperandGroupFrameDraft, DesignConstructionOperandRole,
 };
 use crate::test_support::shell_slots::{fixture, Prefix};
-use cadmpeg_ir::features::{DistinctMembers, FeatureContent, FeatureEvaluation, FeatureId};
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::selections::DistinctMembers;
+use cadmpeg_ir::features::{FeatureContent, FeatureId};
 use std::collections::BTreeMap;
 
 fn group(record: u32, ordinal: u32, role: DesignOperandRole) -> DesignConstructionOperandGroup {

@@ -19,7 +19,8 @@ pub(super) fn project_surface_offset(
     face_operands: &[DesignFaceOperand],
     histories: &[crate::history_records::AsmHistory],
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let Some(stream) = native_stream(&scope.id) else {
         return Ok(None);
@@ -89,8 +90,9 @@ fn resolved_surface_offset_faces(
 ) -> Result<Option<Vec<cadmpeg_ir::ids::FaceId>>, CodecError> {
     let mut faces = Vec::new();
     for group in groups {
-        let Some(cadmpeg_ir::features::FaceSelection::Resolved {
-            faces: group_faces, ..
+        let Some(cadmpeg_ir::features::selections::FaceSelection::Resolved {
+            faces: group_faces,
+            ..
         }) = resolved_face_group(group, face_operands)?
         else {
             return Ok(None);
@@ -118,7 +120,7 @@ fn historical_surface_offset_faces(
     let mut state = None;
     let mut faces = Vec::new();
     for group in groups {
-        let cadmpeg_ir::features::FaceSelection::Historical {
+        let cadmpeg_ir::features::selections::FaceSelection::Historical {
             state: group_state,
             faces: group_faces,
             ..

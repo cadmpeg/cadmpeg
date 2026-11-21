@@ -20,6 +20,10 @@ use cadmpeg_ir::design::selection::{
 };
 use cadmpeg_ir::design::units::UnitSymbol;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::extents::{ExtrudeExtent, LinearTermination};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::parameters::ParameterValue as V10Value;
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::scalar::Length;
@@ -261,21 +265,20 @@ fn the_extrude_replaces_the_base_feature() {
     assert!(
         matches!(
             profile,
-            cadmpeg_ir::features::ProfileRef::Planar(
-                cadmpeg_ir::features::PlanarProfileRef::Sketch(_)
-                    | cadmpeg_ir::features::PlanarProfileRef::SketchProfiles { .. }
+            ProfileRef::Planar(
+                PlanarProfileRef::Sketch(_) | PlanarProfileRef::SketchProfiles { .. }
             )
         ),
         "{profile:?}"
     );
-    let cadmpeg_ir::features::ExtrudeExtent::OneSided { side } = extent else {
+    let ExtrudeExtent::OneSided { side } = extent else {
         panic!("one side: {extent:?}");
     };
-    let cadmpeg_ir::features::LinearTermination::Blind { length } = &side.termination else {
+    let LinearTermination::Blind { length } = &side.termination else {
         panic!("blind: {side:?}");
     };
     assert!((length.get() - SIDE).abs() <= TOLERANCE, "{length:?}");
-    assert_eq!(*op, cadmpeg_ir::features::BooleanOp::NewBody);
+    assert_eq!(*op, BooleanOp::NewBody);
     assert_ne!(*solid, Some(false));
     assert!(
         loss(&report, EVALUATION_MISSING)
@@ -384,7 +387,7 @@ fn the_distance_is_an_owned_parameter_of_the_extrude() {
         .iter()
         .find(|parameter| parameter.name == "D1")
         .unwrap_or_else(|| panic!("D1 is owned by the Extrude: {owned:#?}"));
-    let Some(cadmpeg_ir::features::ParameterValue::Length(length)) = &depth.value else {
+    let Some(V10Value::Length(length)) = &depth.value else {
         panic!("D1 is a length: {depth:#?}");
     };
     assert!((length.get() - SIDE).abs() <= TOLERANCE);
@@ -394,7 +397,7 @@ fn the_distance_is_an_owned_parameter_of_the_extrude() {
         .find(|parameter| parameter.name != "D1")
         .expect("the taper");
     assert!(
-        matches!(&taper.value, Some(cadmpeg_ir::features::ParameterValue::Angle(angle)) if angle.get() == 0.0),
+        matches!(&taper.value, Some(V10Value::Angle(angle)) if angle.get() == 0.0),
         "{taper:#?}"
     );
     assert!(decoded

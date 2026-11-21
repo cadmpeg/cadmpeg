@@ -11,13 +11,14 @@ use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::classification::NativeClassKind;
 use crate::history::classify::{feature_family, feature_input_class};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::{
-    features::{
-        BodySelection, EdgeSelection, FaceSelection, PathRef, RuledSurfaceCorner, RuledSurfaceMode,
-        ShellJoin, ShellMode, SurfaceBoundary, SurfaceExtension, ThickenSide, TrimRegion,
-    },
-    scalar::{Angle, Length},
+use cadmpeg_ir::features::direct_edit::ThickenSide;
+use cadmpeg_ir::features::operation_settings::{ShellJoin, ShellMode};
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::selections::{BodySelection, EdgeSelection, FaceSelection};
+use cadmpeg_ir::features::surface_inputs::{
+    RuledSurfaceCorner, RuledSurfaceMode, SurfaceBoundary, SurfaceExtension, TrimRegion,
 };
+use cadmpeg_ir::scalar::{Angle, Length};
 
 /// The decoded fields of one `Shell` operation, borrowed from the feature definition.
 #[derive(Clone, Copy)]
@@ -314,7 +315,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             )));
         }
         Ok({
-            use cadmpeg_ir::features::ThickenSide;
+            use cadmpeg_ir::features::direct_edit::ThickenSide;
 
             let selection = face_selection_value(faces);
             if selection.is_none()
@@ -492,7 +493,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         &self,
         boundary: &SurfaceBoundary,
         support_faces: &FaceSelection,
-        continuity: &cadmpeg_ir::features::FilledSurfaceContinuityState,
+        continuity: &cadmpeg_ir::features::surface_inputs::FilledSurfaceContinuityState,
         merge_result: Option<bool>,
         constrained_or_reversed: bool,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
@@ -505,7 +506,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            let cadmpeg_ir::features::SurfaceBoundary::Edges(boundary) = boundary else {
+            let cadmpeg_ir::features::surface_inputs::SurfaceBoundary::Edges(boundary) = boundary
+            else {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} uses a path-based filled-surface boundary",
                     feature.id
@@ -575,19 +577,19 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_draft(
         &self,
         face_selection: &FaceSelection,
-        anchor: &cadmpeg_ir::features::DraftAnchor,
+        anchor: &cadmpeg_ir::features::direct_edit::DraftAnchor,
         angle: Option<&cadmpeg_ir::scalar::SlopeAngle>,
         outward: Option<bool>,
-        second_side: Option<&cadmpeg_ir::features::DraftSecondSide>,
+        second_side: Option<&cadmpeg_ir::features::direct_edit::DraftSecondSide>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
             let (plane_selection, pull) = match anchor {
-                cadmpeg_ir::features::DraftAnchor::NeutralPlane { plane, pull } => {
+                cadmpeg_ir::features::direct_edit::DraftAnchor::NeutralPlane { plane, pull } => {
                     (plane, pull.as_ref())
                 }
-                cadmpeg_ir::features::DraftAnchor::PartingLine { .. } => {
+                cadmpeg_ir::features::direct_edit::DraftAnchor::PartingLine { .. } => {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported draft semantics",
                         feature.id
