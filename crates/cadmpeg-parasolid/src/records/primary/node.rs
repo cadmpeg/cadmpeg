@@ -270,6 +270,29 @@ impl<'r> Node<'r> {
         (0..count).map(|_| view.u16_be()).collect()
     }
 
+    /// The encoded index of every transmitted pointer element, in field
+    /// order; the null index is `1`.
+    #[must_use]
+    pub fn pointer_targets(&self) -> Option<Vec<u32>> {
+        let mut out = Vec::new();
+        for (field, range) in self
+            .record
+            .definition
+            .fields
+            .iter()
+            .zip(&self.record.fields)
+        {
+            if field.data_type != DataType::Pointer {
+                continue;
+            }
+            let mut view = View::over_retained(self.source.get(range.clone())?);
+            while view.remaining() > 0 {
+                out.push(crate::pointer::read(&mut view).filter(|value| *value != 0)?);
+            }
+        }
+        Some(out)
+    }
+
     /// The value of a scalar integer field.
     #[must_use]
     pub fn integer(&self, name: &str) -> Option<u32> {

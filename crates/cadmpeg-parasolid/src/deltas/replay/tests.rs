@@ -1,0 +1,480 @@
+// SPDX-License-Identifier: Apache-2.0
+use super::{MainLine, MainLineError, Replay, ReplayError, StateNode};
+use crate::records::node_type::{GROUP, POINT};
+use crate::records::{DeltasRecords, NodeFields, PrimaryRecords};
+use crate::test_support::replay::{partition, DeltasStream, Mark, TestNode};
+use crate::test_support::with_decode_context;
+
+const C: Mark = Mark {
+    xmt: 100,
+    preceding: 101,
+    identifier: 9,
+};
+const B: Mark = Mark {
+    xmt: 101,
+    preceding: 102,
+    identifier: 6,
+};
+const A: Mark = Mark {
+    xmt: 102,
+    preceding: 1,
+    identifier: 3,
+};
+
+/// The state at the current mark C. B held P10 with its first image and P13;
+/// the change from B to C rewrote P10, created P11, and deleted P13. The
+/// change from the empty initial mark A to B created P10, G12, and P13.
+fn current() -> [TestNode; 3] {
+    [
+        TestNode::point(10, 11, 3),
+        TestNode::point(11, 1, 1),
+        TestNode::group(12, 1),
+    ]
+}
+
+fn delta_c(stream: DeltasStream) -> DeltasStream {
+    stream.delta(
+        &[TestNode::point(13, 1, 7)],
+        &[(11, POINT)],
+        &[TestNode::point(10, 1, 1)],
+    )
+}
+
+fn delta_b(stream: DeltasStream) -> DeltasStream {
+    stream.delta(&[], &[(10, POINT), (12, GROUP), (13, POINT)], &[])
+}
+
+/// The `SolidWorks` order: the current delta, then the main line down to the
+/// initial mark, then the end of the stream.
+fn solidworks() -> Vec<u8> {
+    delta_b(delta_c(DeltasStream::new(C)).marks(&[B]))
+        .marks(&[A])
+        .terminator()
+        .finish()
+}
+
+/// NX order: the current delta, then the main line up from the initial mark,
+/// whose section also holds the next mark, then a final terminator.
+fn nx() -> Vec<u8> {
+    delta_b(delta_c(DeltasStream::new(C)).marks(&[A, B]))
+        .terminator()
+        .finish()
+}
+
+type Image = (u32, u16, u32, f64);
+
+fn images(replay: &Replay<'_, '_>) -> Vec<Image> {
+    replay
+        .state()
+        .nodes()
+        .map(|node| {
+            let value = match node.kind() {
+                POINT => node.vector("pvec").unwrap()[0],
+                _ => f64::from(node.byte("type").unwrap()),
+            };
+            (
+                node.index(),
+                node.kind(),
+                node.pointer("next").unwrap(),
+                value,
+            )
+        })
+        .collect()
+}
+
+/// The identifier and node images of every state, from the current mark.
+fn walk(partition_bytes: &[u8], deltas: &[u8]) -> Vec<(u32, Vec<Image>)> {
+    let records = DeltasRecords::read(deltas).unwrap();
+    let line = MainLine::read(&records).unwrap();
+    let partition = PrimaryRecords::read(partition_bytes).unwrap().unwrap();
+    let mut replay = line.replay(&partition).unwrap();
+    let mut out = vec![(replay.mark().identifier(), images(&replay))];
+    assert_eq!(replay.state().dangling().count(), 0);
+    while let Some(mark) = replay.step().unwrap() {
+        assert_eq!(mark, replay.mark());
+        assert_eq!(replay.state().dangling().count(), 0);
+        out.push((mark.identifier(), images(&replay)));
+    }
+    assert!(replay.state().is_empty());
+    out
+}
+
+fn expected_states() -> Vec<(u32, Vec<Image>)> {
+    vec![
+        (
+            9,
+            vec![
+                (10, POINT, 11, 3.0),
+                (11, POINT, 1, 1.0),
+                (12, GROUP, 1, 0.0),
+            ],
+        ),
+        (
+            6,
+            vec![
+                (10, POINT, 1, 1.0),
+                (12, GROUP, 1, 0.0),
+                (13, POINT, 1, 7.0),
+            ],
+        ),
+        (3, vec![]),
+    ]
+}
+
+#[test]
+fn backward_deltas_restore_older_images_and_remove_created_nodes() {
+    with_decode_context(|_ctx| {
+        assert_eq!(
+            walk(&partition(&current()), &solidworks()),
+            expected_states()
+        );
+    });
+}
+
+#[test]
+fn both_section_orders_assign_each_delta_to_its_mark() {
+    with_decode_context(|_ctx| {
+        let partition = partition(&current());
+        assert_eq!(walk(&partition, &nx()), walk(&partition, &solidworks()));
+        for stream in [solidworks(), nx()] {
+            let records = DeltasRecords::read(&stream).unwrap();
+            let line = MainLine::read(&records).unwrap();
+            let identifiers: Vec<_> = line.marks().iter().map(|mark| mark.identifier()).collect();
+            assert_eq!(identifiers, [9, 6, 3]);
+            assert_eq!(line.off_line(), 0);
+            assert_eq!(line.deltas().len(), 2);
+            assert_eq!(line.deltas()[0].mark().identifier(), 9);
+            assert_eq!(line.deltas()[0].target().identifier(), 6);
+            assert_eq!(line.deltas()[0].restored().len(), 1);
+            assert_eq!(line.deltas()[0].older().len(), 1);
+            assert_eq!(line.deltas()[1].created().len(), 3);
+        }
+    });
+}
+
+#[test]
+fn restored_and_older_images_come_from_the_deltas_stream() {
+    with_decode_context(|_ctx| {
+        let deltas = solidworks();
+        let records = DeltasRecords::read(&deltas).unwrap();
+        let line = MainLine::read(&records).unwrap();
+        let partition_bytes = partition(&current());
+        let partition = PrimaryRecords::read(&partition_bytes).unwrap().unwrap();
+        let mut replay = line.replay(&partition).unwrap();
+        assert!(replay
+            .state()
+            .nodes()
+            .all(|node| node.as_partition().is_some()));
+        replay.step().unwrap();
+        let state = replay.state();
+        for (xmt, from_deltas) in [(10, true), (12, false), (13, true)] {
+            let node = state.get(xmt).unwrap();
+            assert_eq!(node.as_delta().is_some(), from_deltas, "node {xmt}");
+            assert_eq!(matches!(node, StateNode::Partition(_)), !from_deltas);
+        }
+        assert_eq!(state.get(11).map(NodeFields::kind), None);
+        assert_eq!(state.count(POINT), 2);
+        assert!(state.is_empty_part());
+        assert_eq!(
+            state.get(10).unwrap().pointer_targets(),
+            Some(vec![1, 1, 1, 1])
+        );
+    });
+}
+
+#[test]
+fn a_group_joins_the_delta_whose_change_creates_it() {
+    with_decode_context(|_ctx| {
+        let deltas = nx();
+        let records = DeltasRecords::read(&deltas).unwrap();
+        let line = MainLine::read(&records).unwrap();
+        assert_eq!(line.deltas()[0].created_groups().count(), 0);
+        assert_eq!(line.deltas()[1].created_groups().collect::<Vec<_>>(), [12]);
+        let creating: Vec<_> = line
+            .deltas_creating(12)
+            .map(|delta| (delta.mark().identifier(), delta.target().identifier()))
+            .collect();
+        assert_eq!(creating, [(6, 3)]);
+        assert_eq!(line.deltas_creating(99).count(), 0);
+    });
+}
+
+#[test]
+fn a_merged_delta_spans_both_changes() {
+    let merged = DeltasStream::new(Mark {
+        preceding: A.xmt,
+        ..C
+    })
+    .delta(&[], &[(10, POINT), (11, POINT), (12, GROUP)], &[])
+    .marks(&[A])
+    .terminator()
+    .finish();
+    with_decode_context(|_ctx| {
+        let states = walk(&partition(&current()), &merged);
+        assert_eq!(states.len(), 2);
+        assert_eq!(states[0], expected_states()[0]);
+        assert_eq!(states[1], (3, vec![]));
+        let records = DeltasRecords::read(&merged).unwrap();
+        let line = MainLine::read(&records).unwrap();
+        assert_eq!(line.deltas()[0].created_groups().collect::<Vec<_>>(), [12]);
+    });
+}
+
+#[test]
+fn a_zero_length_delta_keeps_the_state() {
+    let d = Mark {
+        xmt: 103,
+        preceding: C.xmt,
+        identifier: 12,
+    };
+    let stream =
+        delta_b(delta_c(DeltasStream::new(d).delta(&[], &[], &[]).marks(&[C])).marks(&[B]))
+            .marks(&[A])
+            .terminator()
+            .finish();
+    with_decode_context(|_ctx| {
+        let states = walk(&partition(&current()), &stream);
+        let mut expected = expected_states();
+        expected.insert(0, (12, expected[0].1.clone()));
+        assert_eq!(states, expected);
+        let records = DeltasRecords::read(&stream).unwrap();
+        assert!(MainLine::read(&records).unwrap().deltas()[0].is_empty());
+    });
+}
+
+#[test]
+fn a_stream_at_its_initial_mark_has_one_state() {
+    let stream = DeltasStream::new(A)
+        .delta(&[], &[], &[])
+        .terminator()
+        .finish();
+    with_decode_context(|_ctx| {
+        let records = DeltasRecords::read(&stream).unwrap();
+        let line = MainLine::read(&records).unwrap();
+        assert_eq!(line.marks().len(), 1);
+        assert!(line.deltas().is_empty());
+        let partition_bytes = partition(&[]);
+        let partition = PrimaryRecords::read(&partition_bytes).unwrap().unwrap();
+        let mut replay = line.replay(&partition).unwrap();
+        assert_eq!(replay.step(), Ok(None));
+        assert_eq!(replay.mark().identifier(), 3);
+    });
+}
+
+#[test]
+fn marks_off_the_main_line_are_counted_and_not_applied() {
+    let branch = Mark {
+        xmt: 104,
+        preceding: B.xmt,
+        identifier: 7,
+    };
+    let stream = delta_b(delta_c(DeltasStream::new(C)).marks(&[B]))
+        .marks(&[branch])
+        .delta(&[TestNode::point(40, 1, 0)], &[], &[])
+        .marks(&[A])
+        .terminator()
+        .finish();
+    with_decode_context(|_ctx| {
+        assert_eq!(walk(&partition(&current()), &stream), expected_states());
+        let records = DeltasRecords::read(&stream).unwrap();
+        assert_eq!(MainLine::read(&records).unwrap().off_line(), 1);
+    });
+}
+
+/// Restored images, created entries, older images, and the refused step.
+type Case<'a> = (
+    &'a [TestNode],
+    &'a [(u32, u16)],
+    &'a [TestNode],
+    ReplayError,
+);
+
+/// B as the initial mark, for streams that end at B.
+const INITIAL_B: Mark = Mark { preceding: 1, ..B };
+
+fn first_step(stream: &[u8]) -> (Result<(), ReplayError>, usize, u32) {
+    let records = DeltasRecords::read(stream).unwrap();
+    let line = MainLine::read(&records).unwrap();
+    let partition_bytes = partition(&current());
+    let partition = PrimaryRecords::read(&partition_bytes).unwrap().unwrap();
+    let mut replay = line.replay(&partition).unwrap();
+    let result = replay.step().map(|_| ());
+    (result, replay.state().len(), replay.mark().identifier())
+}
+
+#[test]
+fn an_inconsistent_delta_is_refused_and_the_state_stays_at_its_mark() {
+    let cases: [Case<'_>; 6] = [
+        (
+            &[],
+            &[(14, POINT)],
+            &[],
+            ReplayError::RemovedAbsent { mark: 9, xmt: 14 },
+        ),
+        (
+            &[],
+            &[(11, POINT), (11, POINT)],
+            &[],
+            ReplayError::RemovedAbsent { mark: 9, xmt: 11 },
+        ),
+        (
+            &[],
+            &[(12, POINT)],
+            &[],
+            ReplayError::RemovedKind {
+                mark: 9,
+                xmt: 12,
+                expected: POINT,
+                found: GROUP,
+            },
+        ),
+        (
+            &[TestNode::point(10, 1, 0)],
+            &[],
+            &[],
+            ReplayError::RestoredPresent { mark: 9, xmt: 10 },
+        ),
+        (
+            &[],
+            &[(11, POINT)],
+            &[TestNode::point(11, 1, 0)],
+            ReplayError::OlderAbsent { mark: 9, xmt: 11 },
+        ),
+        (
+            &[],
+            &[],
+            &[TestNode::group(10, 1)],
+            ReplayError::OlderKind {
+                mark: 9,
+                xmt: 10,
+                expected: GROUP,
+                found: POINT,
+            },
+        ),
+    ];
+    with_decode_context(|_ctx| {
+        for (restored, created, older, error) in cases {
+            let stream = DeltasStream::new(C)
+                .delta(restored, created, older)
+                .marks(&[INITIAL_B])
+                .terminator()
+                .finish();
+            assert_eq!(first_step(&stream), (Err(error), 3, 9), "{error}");
+        }
+    });
+}
+
+#[test]
+fn a_node_removed_and_restored_by_one_delta_changes_type() {
+    let stream = DeltasStream::new(C)
+        .delta(&[TestNode::group(11, 1)], &[(11, POINT)], &[])
+        .marks(&[INITIAL_B])
+        .terminator()
+        .finish();
+    with_decode_context(|_ctx| {
+        assert_eq!(first_step(&stream), (Ok(()), 3, 6));
+    });
+}
+
+fn main_line_error(stream: &[u8]) -> MainLineError {
+    let records = DeltasRecords::read(stream).unwrap();
+    MainLine::read(&records).unwrap_err()
+}
+
+#[test]
+fn a_broken_main_line_is_a_typed_error() {
+    let missing = delta_c(DeltasStream::new(C)).terminator().finish();
+    let duplicate = delta_b(delta_c(DeltasStream::new(C)).marks(&[B]))
+        .marks(&[B])
+        .terminator()
+        .finish();
+    let cycle = delta_c(DeltasStream::new(C))
+        .marks(&[Mark {
+            preceding: C.xmt,
+            ..B
+        }])
+        .terminator()
+        .finish();
+    let mut incomplete = delta_c(DeltasStream::new(C))
+        .marks(&[B])
+        .terminator()
+        .finish();
+    incomplete.push(0);
+    let initial = delta_b(delta_c(DeltasStream::new(C)).marks(&[B]))
+        .marks(&[A])
+        .nodes(&[TestNode::point(20, 1, 0)])
+        .terminator()
+        .finish();
+    with_decode_context(|_ctx| {
+        assert_eq!(
+            main_line_error(&missing),
+            MainLineError::MissingMark { xmt: 101 }
+        );
+        assert_eq!(
+            main_line_error(&duplicate),
+            MainLineError::DuplicateMark { xmt: 101 }
+        );
+        assert_eq!(main_line_error(&cycle), MainLineError::Cycle { xmt: 100 });
+        assert_eq!(
+            main_line_error(&incomplete),
+            MainLineError::IncompleteDelta { identifier: 6 }
+        );
+        assert_eq!(
+            main_line_error(&initial),
+            MainLineError::InitialDelta { identifier: 3 }
+        );
+        assert_eq!(main_line_error(b"XX"), MainLineError::MissingPrefix);
+    });
+}
+
+#[test]
+fn a_partition_that_does_not_frame_whole_starts_no_replay() {
+    let mut truncated = partition(&current());
+    truncated.truncate(truncated.len() - 4);
+    let duplicate = partition(&[TestNode::point(10, 1, 0), TestNode::point(10, 1, 1)]);
+    with_decode_context(|_ctx| {
+        let stream = solidworks();
+        let records = DeltasRecords::read(&stream).unwrap();
+        let line = MainLine::read(&records).unwrap();
+        for (bytes, error) in [
+            (truncated, ReplayError::PartitionIncomplete),
+            (duplicate, ReplayError::DuplicateNode { xmt: 10 }),
+        ] {
+            let partition = PrimaryRecords::read(&bytes).unwrap().unwrap();
+            assert_eq!(line.replay(&partition).unwrap_err(), error);
+        }
+    });
+}
+
+#[test]
+fn truncated_and_corrupted_streams_end_in_a_state_or_a_typed_error() {
+    let partition_bytes = partition(&current());
+    with_decode_context(|_ctx| {
+        let partition = PrimaryRecords::read(&partition_bytes).unwrap().unwrap();
+        for stream in [solidworks(), nx()] {
+            let mut inputs: Vec<Vec<u8>> = (0..stream.len())
+                .map(|end| stream[..end].to_vec())
+                .collect();
+            for at in 0..stream.len() {
+                for flip in [0x01, 0x80, 0xff] {
+                    let mut bytes = stream.clone();
+                    bytes[at] ^= flip;
+                    inputs.push(bytes);
+                }
+            }
+            for bytes in inputs {
+                let Ok(records) = DeltasRecords::read(&bytes) else {
+                    continue;
+                };
+                let Ok(line) = MainLine::read(&records) else {
+                    continue;
+                };
+                let Ok(mut replay) = line.replay(&partition) else {
+                    continue;
+                };
+                while let Ok(Some(_)) = replay.step() {}
+                let _ = replay.state().dangling().count();
+            }
+        }
+    });
+}

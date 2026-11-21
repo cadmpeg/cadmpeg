@@ -8,6 +8,7 @@ pub mod pmark_state;
 pub mod record_family;
 pub(crate) mod record_kind;
 pub mod region;
+pub mod replay;
 pub mod section;
 pub mod transmit_state;
 

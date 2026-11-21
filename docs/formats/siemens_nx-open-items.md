@@ -18,24 +18,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Parasolid streams
 
-### PS-01. Deletion target relation
-
-**Question.** Once an enclosing deletion frame is established, which target
-relation applies when its explicit node key does not match a partition node?
-
-**Known.** `siemens_nx.md` §4.2 "**Deletion framing:** complete enclosing fields own their bytes." separates byte ownership, target identity, and change state. `siemens_nx.md` §7.2 "A deletion relation requires an established node frame, exact target key," requires the owning change. A descending reference/type-map run does not establish deletions.
-
-**Need.** Establish the deletion grammar in PS-28 and the target's partition
-and pmark scope before applying any unmatched key.
-
-**Conflict.** A six-byte deletion-shaped run can be a status/reference tuple
-inside a complete FACE. That pattern does not establish a separate deletion
-or justify an alternative target join.
-
-**Note.** Complete schema-bound BODY lengths and full enclosing-record
-ownership precede target lookup. Preserve unmatched keys without assigning a
-node or family fallback.
-
 ### PS-02. Terminal procedural-intersection branches
 
 **Question.** How does a terminal type-38 procedural intersection select a finite branch when it has no usable support-parameter lane or paired FIN-carried `SP_CURVE` witnesses?
@@ -103,9 +85,9 @@ inverse or indistinguishable corrected branches remain unassigned.
 
 **Known.** `siemens_nx.md` §4.2 defines the GROUP's five pointer roles, member-family enum 1 through 10, and separate primary and supported Deltas field framing. A primary GROUP ends after `first_member` without a status byte. Its source boundary follows the effective schema cursor.
 
-**Need.** Establish the reference-status semantics for section-owned GROUP instances. Determine whether a GROUP membership update addresses an XMT alone or a typed identity, and whether BODY revision boundaries limit its lifetime. Establish the change-state meaning of Deltas MEMBER_OF_GROUP reference statuses independently of its four-byte integer field and the primary grammar. Establish whether that integer is a label, state, or another control; its storage width does not assign its role.
+**Need.** Establish the reference-status semantics for section-owned GROUP instances. Establish the change-state meaning of Deltas MEMBER_OF_GROUP reference statuses independently of its four-byte integer field and the primary grammar. Establish whether that integer is a label, state, or another control; its storage width does not assign its role.
 
-**Conflict.** Primary GROUP and MEMBER_OF_GROUP records have schema-owned boundaries and distinct member and entity chains. Those primary relations do not establish a Deltas update's identity key or revision lifetime. All Deltas selection is unresolved. GROUP membership remains the primary relation; no numerical BODY scope or typed-key replay applies Deltas updates.
+**Conflict.** Primary GROUP and MEMBER_OF_GROUP records have schema-owned boundaries and distinct member and entity chains. Those primary relations do not establish a Deltas update's identity key or revision lifetime. A Deltas GROUP image is the GROUP node of the replayed state that holds it (`siemens_nx.md` §4.2 "**Main-line replay.**").
 
 **Note.** Valid pointer domains alone do not establish a Deltas record start
 or update lifetime. Preserve unsupported layouts and unassigned status roles
@@ -121,11 +103,11 @@ until their enclosing sequence is established.
 
 ### PS-19. Deltas reference/type maps
 
-**Question.** Which transmit context or history edge owns each deltas reference/type map, what action does each entry encode, and what field structure and meaning do its four terminal bytes have?
+**Question.** What field structure and meaning do the four terminal bytes of a deltas reference/type map have?
 
-**Known.** `siemens_nx.md` §4.2 defines map-section ownership, canonical nonnull XMT/kind pairs, the null XMT, the four terminal bytes, and transactional section closure. Section order does not assign a map's history edge or action. Terminal bytes `00 03 69 e7` and `00 00 b8 60` frame under a single big-endian u32, under two big-endian u16 fields, and under an opaque four-byte field. The reader retains the four bytes in stream order.
+**Known.** `siemens_nx.md` §4.2 defines map-section ownership, canonical nonnull XMT/kind pairs, the null XMT, the four terminal bytes, and transactional section closure. `siemens_nx.md` §4.2 "**Delta assignment.**" and the main-line replay rule assign each map to its mark's delta and its entries to the nodes the change into that mark creates. Terminal bytes `00 03 69 e7` and `00 00 b8 60` frame under a single big-endian u32, under two big-endian u16 fields, and under an opaque four-byte field. The reader retains the four bytes in stream order.
 
-**Need.** Establish whether the terminal bytes are one 32-bit value, two 16-bit fields, or another structure, and their namespace. Establish the preceding and succeeding state relation and the exact typed create/modify/delete key sets before applying a map to entities.
+**Need.** Establish whether the terminal bytes are one 32-bit value, two 16-bit fields, or another structure, and their namespace.
 
 ### PS-25. Inline type-12 `BODY` instance state
 
@@ -134,57 +116,6 @@ until their enclosing sequence is established.
 **Known.** `siemens_nx.md` §4.2 "The BODY effective field order with both lattice fields is:" defines the complete effective-field order and the 27-, 29-, 34-, 35-, and 36-field lists. The following paragraphs define pointer cardinalities, complete instance length, geometry and topology chain heads, resolution scalars, body and nominal-geometry enums, and indexed-transmit roles. Section 3.2 defines field extent and the first-instance count and index. Field names, pointer classes, XMT identities, and status bytes define the storage of the remaining fields.
 
 **Need.** We must know how the remaining links and the lower node-id field constrain the body and its referenced nodes to assign their semantic roles.
-
-### PS-28. Deletion frame and byte extent
-
-**Question.** Which enclosing grammar establishes a deletion event, its exact
-byte extent, and its target identity?
-
-**Known.** `siemens_nx.md` §4.2 "**Deletion framing:** complete enclosing fields own their bytes." excludes deletion admission from a six-byte shape alone. The map-section grammar establishes a map's physical extent but does not assign deletion actions to its entries. Opposite-aligned extended reference/type entries can form a descending apparent deletion run. A type-91 six-reference shape with a four-byte control of 2 also spans an apparent six-byte candidate; the role and admission of that control remain unestablished.
-
-**Need.** Establish complete enclosing state and a discriminator for short and
-extended deletion forms. Keep bounded rival interpretations separate from a
-certified deletion grammar. Neither six-byte nor eight-byte extent follows
-from the apparent tag and XMT alone.
-
-**Note.** Shape-only deletion admission is withheld; raw history remains
-retained in the exact suffix. This refusal does not supply the missing
-deletion grammar.
-
-### PS-29. Aggregate pmark-edge selection
-
-**Question.** How does an aggregate deltas transmit bind each change's source
-and target pmarks to the owning partition's current state?
-
-**Known.** `siemens_nx.md` §7.2 "A delta contains a unidirectional change between two adjacent pmarks." defines a delta edge separately from the aggregate. `siemens_nx.md` §7.2 "The WORLD `body` pointer identifies the head of the current BODY chain." defines the current BODY and pmark roots. `highest_node_id` bounds kernel node identifiers; physical BODY order, XMT 3, and numerical resets do not identify a revision interval. The general PMARK predecessor, following, sibling, initial, and current relations are defined in §4.2. They do not bind aggregate node sections to constituent deltas.
-
-The NIST CTC-03 current body does not depend on this selection: its one
-partition solid equals the solid of the revision C STEP export in face
-count, surface kinds, area, volume, and vertex box, and the ten plain-stream
-sheets have no counterpart in that export.
-
-**Need.** Identify each constituent delta's complete enclosing frame, delta-key
-association, direction, source pmark, target pmark, and partition ownership. Apply only edges that lead to
-the selected current state, including branches, undone changes, and multiple
-bodies. Keep an unestablished edge selection unresolved. This includes repeated type-38 intersection states: first-use and subsequent record spelling must not select their chart or carrier relations.
-
-**Conflict.** First or last BODY blocks, XMT 3, monotonic bounds, physical
-pairing, and repeated carrier spellings cannot select an aggregate change.
-In the NIST CTC-03 delta stream, four GROUP instances share XMT 2437 and
-type 90 across separate PMARK and map sections. A lookup by stream, XMT,
-and type merges those revisions. The current PMARK 5892 has delta key 2481
-and names PMARK 5898 as its predecessor; that PMARK has delta key 2429. The
-map after PMARK 5898 names GROUP 2562.
-That GROUP instance precedes the PMARK section. The map key leaves the
-instance revision and the action on its members unresolved.
-The counts of map entries and typed PMARK-section instances can differ from
-the adjacent PMARK's new-node and deleted-node counts in closed sections.
-
-**Note.** The reader withholds unselected history across topology, semantic
-residuals, GROUP updates and derived appearance or operation-result bindings.
-It preserves the saved images and raw history separately. This resolves an
-unsafe replay fallback, not the unknown constituent grammar, pmark ownership,
-or regenerated current-design selection.
 
 ### PS-33. MESH FILE chart layout
 
