@@ -2238,7 +2238,7 @@ fn a5_array_marker(
         Some([0x0c, ..]) => Some(at + 1),
         Some([0x0e, ..]) if owned && degree == 1 && distinct_count == 2 => Some(at + 1),
         Some([0x08, 0x05 | 0x09 | 0x0d | 0x11 | 0x15]) => Some(at + 2),
-        Some([0x08, code]) if owned && code % 4 == 1 => Some(at + 2),
+        Some([0x08, 0x19]) if owned => Some(at + 2),
         _ => None,
     }
 }

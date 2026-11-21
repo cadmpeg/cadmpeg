@@ -4583,6 +4583,8 @@ type = "bytes[3]"
 source = "spec"
 anchor = "27-byte coordinate selector"
 
+value = [0x41, 0x11, 0x82]
+
 [[record.field]]
 name = "coefficients"
 offset = 3

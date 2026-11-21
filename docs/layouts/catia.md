@@ -1615,7 +1615,7 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 3 | `tag` | `bytes[3]` | little | spec | 27-byte coordinate selector |
+| 0 | 3 | `tag` | `bytes[3]` | little | spec | 27-byte coordinate selector · value `[65, 17, 130]` |
 | 3 | 24 | `coefficients` | `f64[3]` | little | spec | 27-byte coordinate selector |
 
 ## `owned_pcurve_wide_channel_header`

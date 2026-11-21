@@ -626,7 +626,7 @@ The frame carries no inline persistent object id. Its byte offset in the object 
 A non-owned A5 surface tail is length-closed and has one of three forms. Each begins with `05 <u_code:4n+1> 05 <v_code:4n+1>`, eight finite f64 values `<u_min,u_max,v_min,v_max,coef_u,shift_u,coef_v,shift_v>` with `u_min<u_max`, `v_min<v_max`, and nonzero `coef_u` and `coef_v`, then three flags. The 133-byte form uses flags `01 01 01`, seven continuation f64 values that are all zero, and suffix `01 00 01 00 07 07`. The 141-byte form uses flags `01 01 01` or `05 05 01`, eight finite continuation f64 values, and suffix `01 00 01 00 07 07`, `01 00 09 00 07 07`, or `09 00 09 00 07 07`. The flag lane and suffix choice are independent. The 142-byte form uses either flag lane, eight finite continuation f64 values, and suffix `<4n+1> 00 (01|05|09|0d|11|15|19) 01 <4n+1> 07 07`. The frame ends after the suffix.
 
 In an A5 sheet-owned surface, a degree-one axis with two distinct knots also admits the one-byte array marker `0e`. Two increasing f64 knot values follow that marker, and the axis has two poles. The distinct-knot counts use compact unsigned
-integers. The four terminal patch identifiers also use compact unsigned integers. The eight parameter values follow the fourth identifier. The continuation and suffix lengths are independent of the identifier widths. Its two-byte array marker is `08 <control:4n+1>`, where the compact control occupies one byte. The 141-byte tail also admits suffixes `05 00 05 00 07 07`,
+integers. The four terminal patch identifiers also use compact unsigned integers. The eight parameter values follow the fourth identifier. The continuation and suffix lengths are independent of the identifier widths. Its two-byte array marker also admits `08 19`. The 141-byte tail also admits suffixes `05 00 05 00 07 07`,
 `05 00 09 00 07 07`, and `09 00 01 00 07 07`. In the 142-byte tail
 the second control pair can begin with `01` and the V limits can descend.
 
@@ -980,7 +980,7 @@ knot span and the scalar is measured from that span's first knot. The
 station can select a point inside the knot domain beyond the curve's active
 interval. A four-reference incidence with lead `80` stores three scalar
 lanes. The second and third scalars address its third and fourth
-references when the first tag is compact and the second tag is zero. The 28-byte four-reference form is `80 a:f64le tag0:u8 b:f64le tag1:u8 00 c:f64le`; lane 2 uses compact-tagged `b` and lane 3 uses absolute `c`.
+references when the first tag is compact and the second tag is zero. The 28-byte four-reference form is `80 a:f64le tag0:u8 b:f64le tag1:u8 00 c:f64le`; both tags have the inline compact form `4n+1`, lane 2 uses compact-tagged `b`, and lane 3 uses absolute `c`.
 An edge's class-`25` sampled relation also carries separate active ranges
 for its two curve representations. A line incidence can supply a spline
 station through an exact sample pair or a sampled identity relation.
@@ -1027,8 +1027,8 @@ The stored span equals the difference between the last two active knots.
 
 Prefixes `3a <spans:compact> <last_span:f64le>`, `3e <span:f64le>`, and
 `7e <span:f64le>` select extended degree-five splines. Prefixes `3e` and
-`7e` have one active span. The array marker is `0c` for zero leading spans
-or `08 <leading:compact>` for a leading extrapolation count. A compact
+`7e` have one active span. The array marker `0c` sets the leading count to zero;
+`08 <leading:compact>` stores a leading count, including zero. A compact
 trailing extrapolation count follows the poles. Prefix `7e` then ends with
 control `05`. The leading, active, and trailing span counts sum to one less
 than the distinct-knot count. The active interval starts at the leading
