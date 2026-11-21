@@ -1047,8 +1047,8 @@ pub(crate) enum F3dLossCode {
     /// Mesh attribute channels have no settled stored-element layout.
     MeshAttributeNotTransferred,
     MeshGuidBytesUninterpreted,
-    /// A packed-direction split component flag is read as payload-neutral.
-    MeshComponentFlagAssumed,
+    /// A packed-direction split component flag has no settled meaning.
+    MeshComponentFlagUninterpreted,
     MeshOperationRecordsNative,
     MeshFaceGroupsAssumed,
     MeshBodyWordsNative,
@@ -1943,7 +1943,7 @@ impl F3dLossCode {
         Self::MeshContainerMissing,
         Self::MeshAttributeNotTransferred,
         Self::MeshGuidBytesUninterpreted,
-        Self::MeshComponentFlagAssumed,
+        Self::MeshComponentFlagUninterpreted,
         Self::MeshOperationRecordsNative,
         Self::MeshFaceGroupsAssumed,
         Self::MeshBodyWordsNative,
@@ -3066,7 +3066,7 @@ impl F3dLossCode {
             Self::MeshContainerMissing => "mesh.container-missing",
             Self::MeshAttributeNotTransferred => "mesh.attribute-not-transferred",
             Self::MeshGuidBytesUninterpreted => "mesh.guid-bytes-uninterpreted",
-            Self::MeshComponentFlagAssumed => "mesh.component-flag-assumed",
+            Self::MeshComponentFlagUninterpreted => "mesh.component-flag-uninterpreted",
             Self::MeshOperationRecordsNative => "mesh.operation-records-native",
             Self::MeshFaceGroupsAssumed => "mesh.face-groups-assumed",
             Self::MeshBodyWordsNative => "mesh.body-words-native",
@@ -3291,6 +3291,7 @@ impl F3dLossCode {
             | Self::NurbsCurveCarrier
             | Self::MeshSurfaceSentinel
             | Self::MeshGuidBytesUninterpreted
+            | Self::MeshComponentFlagUninterpreted
             | Self::MeshBodyBytesUninterpreted
             | Self::MeshWrapperBytesUninterpreted
             | Self::MeshOwnerBytesUninterpreted
@@ -3901,7 +3902,6 @@ impl F3dLossCode {
             | Self::MeshContainerUnjoined
             | Self::MeshContainerMissing
             | Self::MeshAttributeNotTransferred
-            | Self::MeshComponentFlagAssumed
             | Self::MeshOperationRecordsNative
             | Self::MeshFaceGroupsAssumed
             | Self::MeshBodyWordsNative
@@ -4107,7 +4107,7 @@ impl F3dLossCode {
             | Self::XrefOwnedPoseDisagrees
             | Self::XrefOwnedPoseNative
             | Self::MeshGuidBytesUninterpreted
-            | Self::MeshComponentFlagAssumed
+            | Self::MeshComponentFlagUninterpreted
             | Self::MeshOperationRecordsNative
             | Self::MeshFaceGroupsAssumed
             | Self::MeshBodyWordsNative
@@ -5449,7 +5449,7 @@ mod tests {
                 "mesh.container-missing",
                 "mesh.attribute-not-transferred",
                 "mesh.guid-bytes-uninterpreted",
-                "mesh.component-flag-assumed",
+                "mesh.component-flag-uninterpreted",
                 "mesh.operation-records-native",
                 "mesh.face-groups-assumed",
                 "mesh.body-words-native",
