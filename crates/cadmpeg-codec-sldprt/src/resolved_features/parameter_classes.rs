@@ -188,9 +188,9 @@ fn token_classes(
     if redeclared {
         return HashMap::new();
     }
-    let mut assignments = Assignments::default();
-    assignments.search(&tokens, &declared, 0, &mut Vec::new());
-    match assignments.found.as_slice() {
+    let mut found = Vec::new();
+    assignments(&tokens, &declared, 0, &mut Vec::new(), &mut found);
+    match found.as_slice() {
         [assignment] => tokens
             .iter()
             .zip(assignment)
@@ -209,36 +209,28 @@ fn opening_count(payload: &[u8]) -> Option<u32> {
     resolved_features_count(payload)
 }
 
-/// The order-preserving assignments of tokens to declarations found so far,
-/// up to two.
-#[derive(Default)]
-struct Assignments {
-    found: Vec<Vec<usize>>,
-}
-
-impl Assignments {
-    /// Extend `chosen`, the declarations of the first `chosen.len()` tokens,
-    /// with declarations from `from` on.
-    fn search(
-        &mut self,
-        tokens: &[(u16, u64)],
-        declared: &[(u64, ArchiveParameterClass)],
-        from: usize,
-        chosen: &mut Vec<usize>,
-    ) {
-        if self.found.len() > 1 {
-            return;
-        }
-        let Some(&(_, first_use)) = tokens.get(chosen.len()) else {
-            self.found.push(chosen.clone());
-            return;
-        };
-        for (index, &(offset, _)) in declared.iter().enumerate().skip(from) {
-            if offset < first_use {
-                chosen.push(index);
-                self.search(tokens, declared, index + 1, chosen);
-                chosen.pop();
-            }
+/// Add to `found`, until it holds two, the order-preserving assignments of
+/// tokens to declarations that extend `chosen`, the declarations of the first
+/// `chosen.len()` tokens, with declarations from `from` on.
+fn assignments(
+    tokens: &[(u16, u64)],
+    declared: &[(u64, ArchiveParameterClass)],
+    from: usize,
+    chosen: &mut Vec<usize>,
+    found: &mut Vec<Vec<usize>>,
+) {
+    if found.len() > 1 {
+        return;
+    }
+    let Some(&(_, first_use)) = tokens.get(chosen.len()) else {
+        found.push(chosen.clone());
+        return;
+    };
+    for (index, &(offset, _)) in declared.iter().enumerate().skip(from) {
+        if offset < first_use {
+            chosen.push(index);
+            assignments(tokens, declared, index + 1, chosen, found);
+            chosen.pop();
         }
     }
 }
