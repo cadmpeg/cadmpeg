@@ -199,6 +199,8 @@ fn named_combine_rejects_incomplete_or_inconsistent_tail() {
         (259, 0),
         (270, 2),
         (271, 1),
+        // A set suppressed flag stays refused until the flags are read.
+        (258, 1),
     ] {
         let mut broken = bytes.clone();
         broken[offset] = value;
@@ -207,14 +209,9 @@ fn named_combine_rejects_incomplete_or_inconsistent_tail() {
             "offset {offset}"
         );
     }
-    for (offset, value) in [(241, 2), (258, 1)] {
-        let mut admitted = bytes.clone();
-        admitted[offset] = value;
-        assert!(
-            parse_marked_named_combine(&admitted).is_some(),
-            "offset {offset}"
-        );
-    }
+    let mut admitted = bytes.clone();
+    admitted[241] = 2;
+    assert!(parse_marked_named_combine(&admitted).is_some());
     let mut broken = bytes.clone();
     broken[196..200].copy_from_slice(&u32::MAX.to_le_bytes());
     assert!(parse_marked_named_combine(&broken).is_none());
