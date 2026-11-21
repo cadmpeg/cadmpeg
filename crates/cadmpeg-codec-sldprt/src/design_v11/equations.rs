@@ -1,0 +1,889 @@
+// SPDX-License-Identifier: Apache-2.0
+//! The equation manager's lines as parameter expressions (§5.12, §5.13).
+//!
+//! Each configuration stream `Contents/Config-N` holds a `moRelMgr_c` whose
+//! relations are the lines of the equation manager (`docs/formats/sldprt.md`).
+//! The active configuration's lines are read; a line `"D1@Sketch1" = …`
+//! states the expression of the parameter it assigns, each quoted name it
+//! reads a reference to that parameter. A line whose names all resolve and
+//! whose text the neutral grammar holds is a `Neutral` tree, read by the
+//! unit-blind rule of §5.13; a tree that holds a literal or a unit-blind
+//! reference is under Rule H1 and is stated only where the document's caches
+//! agree with its evaluation. Any other line is a `Source` expression of the
+//! `SolidWorks` dialect. A parameter's kind and value are the ones its
+//! dimension states; a line changes its definition and comment only.
+
+mod line;
+mod translate;
+
+use std::collections::{HashMap, HashSet};
+
+use cadmpeg_core::decode::View;
+use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
+use cadmpeg_ir::design::edit::{evaluate, Value};
+use cadmpeg_ir::design::expr::{
+    self as expr, Expression, ExpressionDialect, ExpressionToken, Neutral, Node,
+};
+use cadmpeg_ir::design::feature::Feature;
+use cadmpeg_ir::design::parameter::{
+    DesignParameter, ParameterDefinition, ParameterOwner, ParameterValue,
+};
+use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
+use cadmpeg_ir::document::SourceMeta;
+use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::units::Tolerances;
+
+use self::line::{Line, Parsed, Segment};
+use crate::container::{configuration_index, ContainerScan};
+use crate::loss::{NamedCount, SldprtLossCode};
+use crate::records::FeatureHistory;
+
+/// The declaration of the manager class, its relation class, and the class of
+/// a relation's first equation side: a new-class tag, schema 1, the name's
+/// length, and the name.
+const MANAGER: &[u8] = b"\xff\xff\x01\x00\x0a\x00moRelMgr_c";
+const RELATION: &[u8] = b"\xff\xff\x01\x00\x0c\x00moRelation_c";
+const SIDE: &[u8] = b"\xff\xff\x01\x00\x13\x00moRelEquationSide_c";
+/// The tag of a counted UTF-16LE string.
+const STRING: &[u8] = b"\xff\xfe\xff";
+/// The bytes between a relation's text and its first equation side.
+const AFTER_TEXT: usize = 6;
+/// A u16 class token with this bit set repeats an earlier class.
+const REPEAT: u16 = 0x8000;
+/// A later relation's side token is the relation token plus this.
+const SIDE_AFTER_RELATION: u16 = 2;
+
+/// The relative tolerance of a cache that is neither a length nor an angle
+/// (part 10, Caches).
+const RELATIVE: f64 = 1e-9;
+
+/// The equation managers of the configuration streams.
+#[derive(Debug, Default)]
+pub(crate) struct Managers(Vec<Manager>);
+
+#[derive(Debug)]
+struct Manager {
+    slot: usize,
+    lines: Walk,
+}
+
+/// A manager's relation list.
+#[derive(Debug, PartialEq)]
+enum Walk {
+    /// The relation texts, in stored order.
+    Lines(Vec<String>),
+    /// The list stops before its stated count.
+    Stopped,
+}
+
+impl Walk {
+    fn lines(&self) -> Option<&Vec<String>> {
+        match self {
+            Self::Lines(lines) => Some(lines),
+            Self::Stopped => None,
+        }
+    }
+}
+
+/// The equation managers of every `Contents/Config-N` section of `scan`.
+pub(crate) fn managers(scan: &ContainerScan) -> Managers {
+    Managers(
+        scan.sections()
+            .filter_map(|section| {
+                let name = section.name()?;
+                if !super::units::is_configuration(name) {
+                    return None;
+                }
+                let slot = configuration_index(name)?;
+                Some(Manager {
+                    slot,
+                    lines: walk(section.payload())?,
+                })
+            })
+            .collect(),
+    )
+}
+
+/// The relation list of the manager in `payload`, `None` where it holds
+/// none.
+fn walk(payload: &[u8]) -> Option<Walk> {
+    let at = find(payload, MANAGER, 0)?;
+    let count_at = at + MANAGER.len();
+    let Some(count) = View::u16_le_at(payload, count_at) else {
+        return Some(Walk::Stopped);
+    };
+    let mut lines = Vec::new();
+    let mut cursor = count_at + 2;
+    let mut token = None;
+    for index in 0..count {
+        let found = if index == 0 {
+            first_relation(payload, cursor)
+        } else {
+            later_relation(payload, cursor, &mut token)
+        };
+        let Some((text, end)) = found else {
+            return Some(Walk::Stopped);
+        };
+        lines.push(text);
+        cursor = end;
+    }
+    Some(Walk::Lines(lines))
+}
+
+/// The first relation after `from`: its class declaration, its text, the six
+/// bytes after it, and the declaration of its first side. Returns the text and
+/// the offset after the side's declaration.
+fn first_relation(payload: &[u8], from: usize) -> Option<(String, usize)> {
+    let at = find(payload, RELATION, from)?;
+    let (text, end) = counted(payload, at + RELATION.len())?;
+    let side = after_text(payload, end)?;
+    (payload.get(side..side.checked_add(SIDE.len())?) == Some(SIDE))
+        .then(|| (text, side + SIDE.len()))
+}
+
+/// The next relation after `from`: a counted string behind a repeat token
+/// `t` (the same token for every later relation), the six bytes after it,
+/// and the side token `t + 2`. Returns the text and the offset after the
+/// side token.
+fn later_relation(payload: &[u8], from: usize, token: &mut Option<u16>) -> Option<(String, usize)> {
+    let mut at = find(payload, STRING, from)?;
+    loop {
+        let candidate = at
+            .checked_sub(2)
+            .and_then(|tag| View::u16_le_at(payload, tag))
+            .filter(|tag| tag & REPEAT != 0 && token.is_none_or(|known| known == *tag));
+        if let Some(tag) = candidate {
+            if let Some((text, end)) = counted(payload, at) {
+                if let Some(side) = after_text(payload, end) {
+                    if View::u16_le_at(payload, side) == tag.checked_add(SIDE_AFTER_RELATION) {
+                        *token = Some(tag);
+                        return Some((text, side + 2));
+                    }
+                }
+            }
+        }
+        at = find(payload, STRING, at + 1)?;
+    }
+}
+
+/// The offset after the six bytes that follow a relation's text, where bytes
+/// 3 to 5 are zero.
+fn after_text(payload: &[u8], end: usize) -> Option<usize> {
+    let bytes = payload.get(end..end.checked_add(AFTER_TEXT)?)?;
+    (bytes[3..] == [0, 0, 0]).then_some(end + AFTER_TEXT)
+}
+
+/// The counted UTF-16LE string at `at`: `ff fe ff`, a u8 count (`ff` then a
+/// u16 count), the code units. Returns the text and the offset after it.
+fn counted(payload: &[u8], at: usize) -> Option<(String, usize)> {
+    if payload.get(at..at.checked_add(STRING.len())?) != Some(STRING) {
+        return None;
+    }
+    let mut cursor = at + STRING.len();
+    let mut units = usize::from(*payload.get(cursor)?);
+    cursor += 1;
+    if units == 0xff {
+        units = usize::from(View::u16_le_at(payload, cursor)?);
+        cursor += 2;
+    }
+    let end = cursor.checked_add(units.checked_mul(2)?)?;
+    let bytes = payload.get(cursor..end)?;
+    let code_units = bytes
+        .chunks_exact(2)
+        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]));
+    let text = char::decode_utf16(code_units)
+        .collect::<Result<String, _>>()
+        .ok()?;
+    Some((text, end))
+}
+
+fn find(payload: &[u8], needle: &[u8], from: usize) -> Option<usize> {
+    payload
+        .get(from..)?
+        .windows(needle.len())
+        .position(|window| window == needle)
+        .map(|position| from + position)
+}
+
+/// The slot of the active configuration's stream: its `SourceIndex`.
+pub(super) fn active_slot(
+    histories: &[FeatureHistory],
+    source: Option<&SourceMeta>,
+) -> Option<usize> {
+    let configurations = histories
+        .iter()
+        .flat_map(|history| &history.configurations)
+        .collect::<Vec<_>>();
+    let selectors = configurations
+        .iter()
+        .map(|configuration| {
+            (
+                Some(configuration.name.as_str()),
+                configuration.source_index,
+            )
+        })
+        .collect::<Vec<_>>();
+    let active = crate::decode::active_configuration_position(source, &selectors)?;
+    usize::try_from(configurations[active].source_index?).ok()
+}
+
+/// What the lines are read against.
+pub(super) struct Linking<'a> {
+    pub(super) managers: &'a Managers,
+    /// The active configuration's stream slot.
+    pub(super) active: Option<usize>,
+    /// The timeline's features, whose names qualify their dimensions.
+    pub(super) features: &'a [Feature],
+    /// The definition's length unit.
+    pub(super) length_unit: Option<UnitSymbol>,
+    pub(super) tolerances: &'a Tolerances,
+}
+
+/// Why a line is not read into its parameter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Unread {
+    NoActiveStream,
+    ManagerUnwalked,
+    Malformed,
+    AssignedTwice,
+    ConfigurationsDiffer,
+    NameUnresolved,
+    Driven,
+    Cycle,
+}
+
+impl Unread {
+    const fn reason(self) -> &'static str {
+        match self {
+            Self::NoActiveStream => "no stream of the active configuration holds the manager",
+            Self::ManagerUnwalked => "the active configuration's manager is not read",
+            Self::Malformed => "the line is not a quoted name, `=`, and an expression",
+            Self::AssignedTwice => "two lines assign the name",
+            Self::ConfigurationsDiffer => {
+                "another configuration's manager does not hold the same line"
+            }
+            Self::NameUnresolved => "the assigned name names no parameter",
+            Self::Driven => "the assigned parameter is a reference dimension",
+            Self::Cycle => "the line reads a parameter that depends on its own",
+        }
+    }
+}
+
+/// Why a line's expression is `Source`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Kept {
+    NameUnresolved,
+    Untranslated,
+    Untested,
+    Disagrees,
+    BareReference,
+}
+
+impl Kept {
+    const fn reason(self) -> &'static str {
+        match self {
+            Self::NameUnresolved => "a name it reads names no parameter",
+            Self::Untranslated => {
+                "its text is outside the neutral grammar or its kinds do not type"
+            }
+            Self::Untested => "the document holds no value to test its reading against",
+            Self::Disagrees => "its evaluation disagrees with the stored value",
+            Self::BareReference => {
+                "it is one reference to a parameter whose kind differs or is not read"
+            }
+        }
+    }
+}
+
+/// Reads the active configuration's equation-manager lines into the
+/// expressions of the parameters they assign, and returns the loss notes of
+/// the lines not read and of those stated as `Source`.
+pub(super) fn link(parameters: &mut [DesignParameter], linking: &Linking<'_>) -> Vec<LossNote> {
+    let lines = match active_lines(linking) {
+        Ok(lines) => lines,
+        Err(why) => {
+            return vec![SldprtLossCode::DesignEquationUnread.note(format!(
+                "The equation-manager lines are not read into parameter expressions, because {}.",
+                why.reason()
+            ))];
+        }
+    };
+    let mut unread = Losses::default();
+    let names = Names::new(parameters, linking.features);
+    let mut kept = Losses::default();
+    let mut stated = Vec::new();
+    for line in lines {
+        let line = match line {
+            Ok(line) => line,
+            Err((why, name)) => {
+                unread.push(why, &name);
+                continue;
+            }
+        };
+        let Some(target) = names.resolve(&line.name) else {
+            unread.push(Unread::NameUnresolved, &line.name);
+            continue;
+        };
+        if matches!(parameters[target].definition, ParameterDefinition::Driven) {
+            unread.push(Unread::Driven, &line.name);
+            continue;
+        }
+        let reads = line
+            .segments
+            .iter()
+            .filter_map(|segment| match segment {
+                Segment::Name(name) => Some(names.resolve(name)),
+                Segment::Text(_) => None,
+            })
+            .collect::<Vec<_>>();
+        if reads.is_empty() {
+            continue;
+        }
+        let (expression, why) = expression(parameters, target, &line, &names, linking);
+        stated.push(Stated {
+            target,
+            name: line.name.clone(),
+            expression,
+            why,
+            comment: line.comment.clone(),
+        });
+    }
+    let cyclic = on_cycles(parameters, &stated);
+    for stated in stated {
+        if cyclic.contains(&stated.target) {
+            unread.push(Unread::Cycle, &stated.name);
+            continue;
+        }
+        if let Some(why) = stated.why {
+            kept.push(why, parameters[stated.target].id.as_str());
+        }
+        let parameter = &mut parameters[stated.target];
+        parameter.definition = ParameterDefinition::Expression(stated.expression);
+        if stated.comment.is_some() {
+            parameter.comment = stated.comment;
+        }
+    }
+    unread.notes(&kept)
+}
+
+/// A line's expression before the cycle check.
+struct Stated {
+    target: usize,
+    name: String,
+    expression: Expression,
+    why: Option<Kept>,
+    comment: Option<String>,
+}
+
+type LineResult = Result<Line, (Unread, String)>;
+
+/// The active configuration's lines, each parsed, with the lines another
+/// configuration's manager does not confirm refused; or, where none can be
+/// read, why.
+fn active_lines(linking: &Linking<'_>) -> Result<Vec<LineResult>, Unread> {
+    let managers = &linking.managers.0;
+    let with_lines = managers
+        .iter()
+        .filter(|manager| manager.lines.lines().is_none_or(|lines| !lines.is_empty()))
+        .collect::<Vec<_>>();
+    if with_lines.is_empty() {
+        return Ok(Vec::new());
+    }
+    let active = if managers.len() == 1 {
+        &managers[0]
+    } else {
+        let mut matching = managers
+            .iter()
+            .filter(|manager| Some(manager.slot) == linking.active);
+        match (matching.next(), matching.next()) {
+            (Some(manager), None) => manager,
+            _ => return Err(Unread::NoActiveStream),
+        }
+    };
+    let Some(texts) = active.lines.lines() else {
+        return Err(Unread::ManagerUnwalked);
+    };
+    let others = managers
+        .iter()
+        .filter(|manager| !std::ptr::eq(*manager, active))
+        .filter(|manager| manager.lines.lines().is_none_or(|lines| !lines.is_empty()))
+        .map(|manager| {
+            manager.lines.lines().map(|lines| {
+                lines
+                    .iter()
+                    .filter_map(|text| match line::parse(text) {
+                        Parsed::Line(line) => Some(line),
+                        Parsed::Comment | Parsed::Malformed => None,
+                    })
+                    .collect::<Vec<_>>()
+            })
+        })
+        .collect::<Vec<_>>();
+    let parsed = texts
+        .iter()
+        .filter_map(|text| match line::parse(text) {
+            Parsed::Comment => None,
+            Parsed::Line(line) => Some(Ok(line)),
+            Parsed::Malformed => Some(Err((Unread::Malformed, text.trim().to_owned()))),
+        })
+        .collect::<Vec<_>>();
+    let mut assigned = HashMap::<&str, usize>::new();
+    for line in parsed.iter().flatten() {
+        *assigned.entry(line.name.as_str()).or_default() += 1;
+    }
+    let twice = assigned
+        .iter()
+        .filter(|(_, count)| **count > 1)
+        .map(|(name, _)| (*name).to_owned())
+        .collect::<HashSet<_>>();
+    Ok(parsed
+        .into_iter()
+        .map(|line| {
+            let line = line?;
+            if twice.contains(&line.name) {
+                return Err((Unread::AssignedTwice, line.name));
+            }
+            let confirmed = others.iter().all(|other| {
+                other.as_ref().is_some_and(|lines| {
+                    let mut same = lines.iter().filter(|other| other.name == line.name);
+                    matches!(
+                        (same.next(), same.next()),
+                        (Some(other), None) if other.expression == line.expression
+                    )
+                })
+            });
+            if confirmed {
+                Ok(line)
+            } else {
+                Err((Unread::ConfigurationsDiffer, line.name))
+            }
+        })
+        .collect())
+}
+
+/// The expression a line states for parameter `target`, and why it is
+/// `Source` where it is.
+fn expression(
+    parameters: &[DesignParameter],
+    target: usize,
+    line: &Line,
+    names: &Names,
+    linking: &Linking<'_>,
+) -> (Expression, Option<Kept>) {
+    let resolved = line
+        .segments
+        .iter()
+        .map(|segment| match segment {
+            Segment::Name(name) => names.resolve(name).map(Some),
+            Segment::Text(_) => Some(None),
+        })
+        .collect::<Option<Vec<_>>>();
+    let Some(resolved) = resolved else {
+        return (source(parameters, line, names), Some(Kept::NameUnresolved));
+    };
+    let reads = resolved.iter().flatten().copied().collect::<Vec<_>>();
+    let tree = translate::tree(
+        &line.expression,
+        &translate::Typing {
+            parameters,
+            names,
+            target: &parameters[target].kind,
+            length_unit: linking.length_unit,
+        },
+    );
+    let tree = tree.filter(|tree| {
+        expr::print(tree)
+            .ok()
+            .and_then(|wire| expr::read(&wire).ok())
+            .as_ref()
+            == Some(tree)
+    });
+    let Some(tree) = tree else {
+        let why = if matches!(line.segments.as_slice(), [Segment::Name(_)]) {
+            Kept::BareReference
+        } else {
+            Kept::Untranslated
+        };
+        return (source(parameters, line, names), Some(why));
+    };
+    let bare = matches!(&tree, Node::Reference(_));
+    match test(parameters, target, &tree, &reads, linking.tolerances) {
+        Test::Agrees => (Expression::Neutral(Neutral(tree)), None),
+        Test::Untested if bare => (Expression::Neutral(Neutral(tree)), None),
+        Test::Untested => (source(parameters, line, names), Some(Kept::Untested)),
+        Test::Disagrees => (source(parameters, line, names), Some(Kept::Disagrees)),
+    }
+}
+
+/// The line's expression as `Source` tokens, each name that resolves a
+/// reference. A token list with no text, a bare reference, is the whole text
+/// as one `Text` token: a `Source` expression holds a `Text` token (part 10).
+fn source(parameters: &[DesignParameter], line: &Line, names: &Names) -> Expression {
+    let mut tokens = Vec::new();
+    for segment in &line.segments {
+        match segment {
+            Segment::Name(name) => match names.resolve(name) {
+                Some(index) => {
+                    tokens.push(ExpressionToken::Reference(reference(&parameters[index])));
+                }
+                None => push_text(&mut tokens, &line::quoted(name)),
+            },
+            Segment::Text(text) => push_text(&mut tokens, text),
+        }
+    }
+    if !tokens
+        .iter()
+        .any(|token| matches!(token, ExpressionToken::Text(_)))
+    {
+        tokens = vec![ExpressionToken::Text(line.expression.clone())];
+    }
+    Expression::Source {
+        dialect: ExpressionDialect::SolidWorks,
+        tokens,
+    }
+}
+
+fn push_text(tokens: &mut Vec<ExpressionToken<ParameterRef>>, text: &str) {
+    if let Some(ExpressionToken::Text(last)) = tokens.last_mut() {
+        last.push_str(text);
+    } else {
+        tokens.push(ExpressionToken::Text(text.to_owned()));
+    }
+}
+
+fn reference(parameter: &DesignParameter) -> ParameterRef {
+    ParameterRef {
+        target: RefTarget::Parameter(parameter.id.clone()),
+        through: None,
+    }
+}
+
+/// The outcome of setting a tree against the document's caches.
+enum Test {
+    Agrees,
+    Disagrees,
+    /// The parameter or a parameter the tree reads has no cache.
+    Untested,
+}
+
+/// The tree's evaluation over the caches of the parameters it reads, against
+/// the cache of the parameter it defines, compared as part 10 compares a
+/// cache with its expression.
+fn test(
+    parameters: &[DesignParameter],
+    target: usize,
+    tree: &Node<ParameterRef>,
+    reads: &[usize],
+    tolerances: &Tolerances,
+) -> Test {
+    let Some(stored) = cached(&parameters[target]) else {
+        return Test::Untested;
+    };
+    if reads
+        .iter()
+        .any(|&read| cached(&parameters[read]).is_none())
+    {
+        return Test::Untested;
+    }
+    let by_id = reads
+        .iter()
+        .map(|&read| (parameters[read].id.as_str(), read))
+        .collect::<HashMap<_, _>>();
+    let mut value_of = |reference: &ParameterRef| match &reference.target {
+        RefTarget::Parameter(id) => by_id
+            .get(id.as_str())
+            .and_then(|&read| cached(&parameters[read])),
+        RefTarget::External { .. } => None,
+    };
+    match evaluate(tree, &mut value_of) {
+        Ok(evaluated) if agree(&evaluated, &stored, tolerances) => Test::Agrees,
+        Ok(_) | Err(_) => Test::Disagrees,
+    }
+}
+
+/// A parameter's cache as an expression value of its kind.
+fn cached(parameter: &DesignParameter) -> Option<Value> {
+    match (&parameter.kind, parameter.value.as_ref()?) {
+        (ValueKind::Quantity(quantity), ParameterValue::Number(value)) => Some(Value::Number {
+            value: value.get(),
+            quantity: *quantity,
+        }),
+        (ValueKind::Integer, ParameterValue::Integer(value)) => Some(Value::Number {
+            value: cadmpeg_core::convert::f64_from_i64(*value)?,
+            quantity: Quantity::REAL,
+        }),
+        _ => None,
+    }
+}
+
+/// Whether two values agree: a length within the linear tolerance, an angle
+/// within the angular tolerance, another number within a relative 1e-9.
+fn agree(left: &Value, right: &Value, tolerances: &Tolerances) -> bool {
+    let (
+        Value::Number {
+            value: a,
+            quantity: q,
+        },
+        Value::Number {
+            value: b,
+            quantity: r,
+        },
+    ) = (left, right)
+    else {
+        return false;
+    };
+    if q != r {
+        return false;
+    }
+    let allowed = match *q {
+        Quantity::LENGTH => tolerances.linear.get(),
+        Quantity::ANGLE => tolerances.angular.get(),
+        _ => RELATIVE * a.abs().max(b.abs()),
+    };
+    (a - b).abs() <= allowed
+}
+
+/// The parameters of the stated lines that lie on a dependency cycle, through
+/// the stated expressions and every other parameter's own.
+fn on_cycles(parameters: &[DesignParameter], stated: &[Stated]) -> HashSet<usize> {
+    let index = parameters
+        .iter()
+        .enumerate()
+        .map(|(position, parameter)| (parameter.id.as_str(), position))
+        .collect::<HashMap<_, _>>();
+    let replaced = stated
+        .iter()
+        .map(|stated| (stated.target, &stated.expression))
+        .collect::<HashMap<_, _>>();
+    let edges = (0..parameters.len())
+        .map(|position| {
+            let expression = match replaced.get(&position) {
+                Some(expression) => Some(*expression),
+                None => match &parameters[position].definition {
+                    ParameterDefinition::Expression(expression) => Some(expression),
+                    _ => None,
+                },
+            };
+            expression
+                .map(|expression| {
+                    references(expression)
+                        .into_iter()
+                        .filter_map(|id| index.get(id).copied())
+                        .collect()
+                })
+                .unwrap_or_default()
+        })
+        .collect::<Vec<Vec<usize>>>();
+    let cyclic = cyclic_nodes(&edges);
+    stated
+        .iter()
+        .map(|stated| stated.target)
+        .filter(|target| cyclic.contains(target))
+        .collect()
+}
+
+/// The ids of the parameters an expression references.
+fn references(expression: &Expression) -> Vec<&str> {
+    let mut ids = Vec::new();
+    match expression {
+        Expression::Source { tokens, .. } => {
+            for token in tokens {
+                if let ExpressionToken::Reference(ParameterRef {
+                    target: RefTarget::Parameter(id),
+                    ..
+                }) = token
+                {
+                    ids.push(id.as_str());
+                }
+            }
+        }
+        Expression::Neutral(Neutral(root)) => {
+            let mut pending = vec![root];
+            while let Some(node) = pending.pop() {
+                match node {
+                    Node::Reference(ParameterRef {
+                        target: RefTarget::Parameter(id),
+                        ..
+                    }) => ids.push(id.as_str()),
+                    Node::Unary { operand, .. } => pending.push(operand),
+                    Node::Binary { left, right, .. } => {
+                        pending.push(left);
+                        pending.push(right);
+                    }
+                    Node::Call { args, .. } => pending.extend(args),
+                    Node::If(branches) => pending.extend(branches.iter()),
+                    _ => {}
+                }
+            }
+        }
+    }
+    ids
+}
+
+/// The nodes of `edges` that lie on a cycle: those in a strongly connected
+/// component of two or more nodes, or with an edge to themselves (Tarjan's
+/// algorithm, walked without recursion).
+fn cyclic_nodes(edges: &[Vec<usize>]) -> HashSet<usize> {
+    const UNSEEN: usize = usize::MAX;
+    let count = edges.len();
+    let mut order = vec![UNSEEN; count];
+    let mut low = vec![0; count];
+    let mut on_stack = vec![false; count];
+    let mut stack = Vec::new();
+    let mut next = 0;
+    let mut cyclic = HashSet::new();
+    for root in 0..count {
+        if order[root] != UNSEEN {
+            continue;
+        }
+        let mut frames = vec![(root, 0usize)];
+        order[root] = next;
+        low[root] = next;
+        next += 1;
+        stack.push(root);
+        on_stack[root] = true;
+        while let Some(&mut (node, ref mut edge)) = frames.last_mut() {
+            if let Some(&child) = edges[node].get(*edge) {
+                *edge += 1;
+                if order[child] == UNSEEN {
+                    order[child] = next;
+                    low[child] = next;
+                    next += 1;
+                    stack.push(child);
+                    on_stack[child] = true;
+                    frames.push((child, 0));
+                } else if on_stack[child] {
+                    low[node] = low[node].min(order[child]);
+                }
+                continue;
+            }
+            frames.pop();
+            if let Some(&(parent, _)) = frames.last() {
+                low[parent] = low[parent].min(low[node]);
+            }
+            if low[node] == order[node] {
+                let mut component = Vec::new();
+                while let Some(member) = stack.pop() {
+                    on_stack[member] = false;
+                    component.push(member);
+                    if member == node {
+                        break;
+                    }
+                }
+                if component.len() > 1 || edges[node].contains(&node) {
+                    cyclic.extend(component);
+                }
+            }
+        }
+    }
+    cyclic
+}
+
+/// The parameters an equation name reaches: `name@feature` names the
+/// dimension `name` of the timeline feature named `feature`, a name without
+/// `@` the global variable of that name. A name reaches the one parameter it
+/// names exactly, else the one it names ignoring letter case.
+pub(super) struct Names {
+    exact: HashMap<String, Option<usize>>,
+    folded: HashMap<String, Option<usize>>,
+}
+
+impl Names {
+    fn new(parameters: &[DesignParameter], features: &[Feature]) -> Self {
+        let feature_names = features
+            .iter()
+            .filter_map(|feature| Some((feature.id.as_str(), feature.name.as_deref()?)))
+            .collect::<HashMap<_, _>>();
+        let mut names = Self {
+            exact: HashMap::new(),
+            folded: HashMap::new(),
+        };
+        for (position, parameter) in parameters.iter().enumerate() {
+            let Some(name) = parameter.name.as_ref() else {
+                continue;
+            };
+            let key = match &parameter.owner {
+                None => name.as_str().to_owned(),
+                Some(ParameterOwner::Feature(feature)) => {
+                    let Some(feature) = feature_names.get(feature.as_str()) else {
+                        continue;
+                    };
+                    format!("{}@{feature}", name.as_str())
+                }
+                Some(ParameterOwner::Container(_) | ParameterOwner::Attribute(_)) => continue,
+            };
+            insert(&mut names.folded, key.to_lowercase(), position);
+            insert(&mut names.exact, key, position);
+        }
+        names
+    }
+
+    pub(super) fn resolve(&self, name: &str) -> Option<usize> {
+        match self.exact.get(name) {
+            Some(found) => *found,
+            None => self.folded.get(&name.to_lowercase()).copied().flatten(),
+        }
+    }
+}
+
+fn insert(map: &mut HashMap<String, Option<usize>>, key: String, position: usize) {
+    map.entry(key)
+        .and_modify(|found| {
+            if *found != Some(position) {
+                *found = None;
+            }
+        })
+        .or_insert(Some(position));
+}
+
+/// The lines not read, or stated as `Source`, by reason.
+struct Losses<W> {
+    by_reason: Vec<(W, NamedCount)>,
+}
+
+impl<W> Default for Losses<W> {
+    fn default() -> Self {
+        Self {
+            by_reason: Vec::new(),
+        }
+    }
+}
+
+impl<W: Copy + PartialEq> Losses<W> {
+    fn push(&mut self, why: W, name: &str) {
+        match self.by_reason.iter_mut().find(|(reason, _)| *reason == why) {
+            Some((_, named)) => named.push(name),
+            None => {
+                let mut named = NamedCount::default();
+                named.push(name);
+                self.by_reason.push((why, named));
+            }
+        }
+    }
+}
+
+impl Losses<Unread> {
+    fn notes(&self, kept: &Losses<Kept>) -> Vec<LossNote> {
+        let mut notes = Vec::new();
+        for (why, named) in &self.by_reason {
+            notes.push(SldprtLossCode::DesignEquationUnread.note(format!(
+                "{} equation-manager lines are not read into parameter expressions, because {}: \
+                 {named}",
+                named.count(),
+                why.reason()
+            )));
+        }
+        for (why, named) in &kept.by_reason {
+            notes.push(SldprtLossCode::DesignEquationSource.note(format!(
+                "{} parameters keep their equation as SolidWorks source text, because {}; a \
+                 writer of another format writes their cached value: {named}",
+                named.count(),
+                why.reason()
+            )));
+        }
+        notes
+    }
+}
+
+#[cfg(test)]
+mod tests;

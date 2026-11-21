@@ -524,7 +524,7 @@ fn significant(value: f64) -> Option<f64> {
 }
 
 /// The tree of the literal `signed` with the unit `symbol`.
-fn number_node(signed: f64, symbol: Option<UnitSymbol>) -> Option<Node<ParameterRef>> {
+pub(super) fn number_node(signed: f64, symbol: Option<UnitSymbol>) -> Option<Node<ParameterRef>> {
     let unit = match symbol {
         Some(symbol) => Unit(vec![UnitFactor {
             symbol,
@@ -579,7 +579,7 @@ fn is_text(text: &str) -> bool {
 }
 
 /// The units a `SolidWorks` literal may carry, longest suffix first.
-const LITERAL_UNITS: [(&str, UnitSymbol); 11] = [
+pub(super) const LITERAL_UNITS: [(&str, UnitSymbol); 11] = [
     ("deg", UnitSymbol::Deg),
     ("rad", UnitSymbol::Rad),
     ("mm", UnitSymbol::Mm),
@@ -646,7 +646,7 @@ fn literal(text: &str, user: bool) -> Option<(Node<ParameterRef>, ValueKind, Par
 const MM_PER_NM: f64 = 1.0e-6;
 
 /// The quantity of a literal unit and its factor to the canonical unit.
-fn canonical(symbol: UnitSymbol) -> Option<(Quantity, f64)> {
+pub(super) fn canonical(symbol: UnitSymbol) -> Option<(Quantity, f64)> {
     Some(match symbol {
         UnitSymbol::Nm => (Quantity::LENGTH, MM_PER_NM),
         UnitSymbol::Um => (Quantity::LENGTH, 1.0e-3),

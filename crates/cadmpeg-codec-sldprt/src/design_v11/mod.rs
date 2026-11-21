@@ -13,6 +13,7 @@
 //! no history the decoder reads, states no design.
 
 mod configurations;
+mod equations;
 mod extrude;
 mod names;
 mod operation;
@@ -48,6 +49,7 @@ use crate::loss::SldprtLossCode;
 use crate::records::{FeatureHistory, FeatureInputLane};
 use crate::rollback::{Reading, Unread};
 
+pub(crate) use equations::{managers as equation_managers, Managers as EquationManagers};
 pub(crate) use names::Persistent;
 pub(crate) use units::length_unit;
 
@@ -63,6 +65,8 @@ pub(crate) struct Part<'a> {
     pub(crate) persistent: Persistent<'a>,
     /// The part's length unit.
     pub(crate) length: Option<UnitSymbol>,
+    /// The equation managers of the configuration streams.
+    pub(crate) equations: EquationManagers,
     /// What the stored marks state of the rollback position.
     pub(crate) rollback: Reading,
 }
@@ -85,6 +89,7 @@ pub(crate) fn project(
         bodies,
         persistent,
         length,
+        equations: managers,
         rollback,
     } = part;
     let mut timeline = tree::timeline(histories)?;
@@ -115,6 +120,16 @@ pub(crate) fn project(
     losses.extend(rounded);
     let sketches = typed.sketches;
     parameters.extend(sketches.driven);
+    losses.extend(equations::link(
+        &mut parameters,
+        &equations::Linking {
+            managers: &managers,
+            active: equations::active_slot(histories, ir.source.as_ref()),
+            features: &timeline.features,
+            length_unit: length,
+            tolerances: &ir.tolerances,
+        },
+    ));
     let configurations =
         configurations::configurations(histories, ir.source.as_ref(), &definition)?;
     let id = container_id(cadmpeg_ir::identity_key!("timeline"));
