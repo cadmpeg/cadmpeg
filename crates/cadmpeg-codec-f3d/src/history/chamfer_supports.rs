@@ -11,7 +11,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use cadmpeg_ir::features::edge_treatments::ChamferSpec;
-use cadmpeg_ir::features::{EdgeSelection, EdgeSupport, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::evaluation::EdgeSupport;
+use cadmpeg_ir::features::selections::EdgeSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::units::UnitVector3;
@@ -116,7 +118,7 @@ pub(super) fn attach(
     history_id: &str,
     topology: &AsmHistoricalTopology,
     prefix: &cadmpeg_ir::ids::IdentityKey,
-    geometry: &mut [cadmpeg_ir::features::HistoricalEdgeGeometry],
+    geometry: &mut [cadmpeg_ir::features::evaluation::HistoricalEdgeGeometry],
 ) {
     let slots = unequal_edges(feature);
     if slots.is_empty() {

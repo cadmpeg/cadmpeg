@@ -27,13 +27,11 @@ fn complete_open_path_retains_its_endpoints_with_reversed_edge_carriers() {
 
 #[test]
 fn whole_sketch_requires_one_complete_closed_profile_and_resolved_plane() {
-    use cadmpeg_ir::{
-        features::SketchProfileRegion,
-        math::{Point2, Vector3},
-        sketches::{
-            SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
-            SketchPlacement, SketchProfiles,
-        },
+    use cadmpeg_ir::features::profiles::SketchProfileRegion;
+    use cadmpeg_ir::math::{Point2, Vector3};
+    use cadmpeg_ir::sketches::{
+        SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchPlacement,
+        SketchProfiles,
     };
     let id = SketchId::mint("test:design:sketch#wall").expect("id");
     let corners = [

@@ -25,7 +25,7 @@ use crate::records::topology::construction::DesignConstructionOperandRole;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use crate::records::topology::face::DesignFaceOperand;
 use crate::records::topology::face::DesignFaceOperandDraft;
-use cadmpeg_ir::features::FaceSelection;
+use cadmpeg_ir::features::selections::FaceSelection;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::ids::FaceId;
@@ -34,10 +34,8 @@ use cadmpeg_ir::math::Vector3;
 
 #[test]
 fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
-    use cadmpeg_ir::features::{
-        edge_treatments::{ChamferGroup, ChamferSpec, RadiusSpec},
-        EdgeSelection,
-    };
+    use cadmpeg_ir::features::edge_treatments::{ChamferGroup, ChamferSpec, RadiusSpec};
+    use cadmpeg_ir::features::selections::EdgeSelection;
 
     let parameter = |owner_record_index,
                      record_index,
@@ -434,7 +432,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         assert_eq!(parameter.expression, expression);
         assert_eq!(parameter.owner.as_ref(), Some(&features[0].id));
         assert!(
-            matches!(parameter.value,Some(cadmpeg_ir::features::ParameterValue::Length(length)) if length.get()==value)
+            matches!(parameter.value,Some(cadmpeg_ir::features::parameters::ParameterValue::Length(length)) if length.get()==value)
         );
         assert_eq!(
             features[0]
@@ -450,7 +448,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         .unwrap();
     assert_eq!(tip.expression, "180 deg");
     assert!(
-        matches!(tip.value,Some(cadmpeg_ir::features::ParameterValue::Angle(angle)) if angle.get()==std::f64::consts::PI)
+        matches!(tip.value,Some(cadmpeg_ir::features::parameters::ParameterValue::Angle(angle)) if angle.get()==std::f64::consts::PI)
     );
     assert!(matches!(
         features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
@@ -458,7 +456,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             placements: Some(placements),
             shape,
 
-            extent: Some(cadmpeg_ir::features::LinearTermination::Blind { length: actual_length }),
+            extent: Some(cadmpeg_ir::features::extents::LinearTermination::Blind { length: actual_length }),
             bottom: Some(cadmpeg_ir::features::holes::HoleBottom::Flat),
             ..
         }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
@@ -467,8 +465,8 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             }, Some(actual_diameter),) if (faces == &vec![FaceId::mint(crate::ids::brep_entity_id(282)).expect("identity grammar")]
             && native == &scopes[2].id
             && placements == &vec![cadmpeg_ir::features::holes::HolePlacement::Directed {
-                position: cadmpeg_ir::features::FinitePoint3::new(Point3 { x: 12.5, y: -25.0, z: 37.5 }).unwrap(),
-                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3 { x: -0.0, y: -0.0, z: -1.0 }).unwrap(),
+                position: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3 { x: 12.5, y: -25.0, z: 37.5 }).unwrap(),
+                direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3 { x: -0.0, y: -0.0, z: -1.0 }).unwrap(),
             }]) && actual_diameter.get() == 4.0 && actual_length.get() == 10.0)));
 
     hole_parameters[2]

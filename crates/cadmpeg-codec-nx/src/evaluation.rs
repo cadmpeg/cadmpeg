@@ -6,10 +6,10 @@ use crate::decode::feature_completeness;
 use std::collections::BTreeSet;
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{
-    patterns::PatternSeed, BodyRetentionMode, BodySelection, BooleanOp, FeatureDefinition,
-    FeatureId, FeatureOperation, UnresolvedFamily,
-};
+use cadmpeg_ir::features::operation_settings::{BodyRetentionMode, BooleanOp};
+use cadmpeg_ir::features::patterns::PatternSeed;
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation, UnresolvedFamily};
 use cadmpeg_ir::ids::BodyId;
 
 use crate::decode::feature_completeness::{
@@ -523,9 +523,9 @@ fn rederived_body_census(
             FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => {
                 let mode = shape.mode();
                 let op = match mode {
-                    cadmpeg_ir::features::SweepMode::Solid { op } => op.into(),
-                    cadmpeg_ir::features::SweepMode::Surface {} => BooleanOp::NewBody,
-                    cadmpeg_ir::features::SweepMode::Unresolved {} => BooleanOp::Unresolved,
+                    cadmpeg_ir::features::sweeps::SweepMode::Solid { op } => op.into(),
+                    cadmpeg_ir::features::sweeps::SweepMode::Surface {} => BooleanOp::NewBody,
+                    cadmpeg_ir::features::sweeps::SweepMode::Unresolved {} => BooleanOp::Unresolved,
                 };
                 apply_complete_boolean_outputs(
                     feature,

@@ -28,7 +28,8 @@ fn saved_spline_loss_joins_lane_records() {
 
 #[test]
 fn revolved_nurbs_surface_sweeps_the_directrix_through_nine_columns() {
-    use cadmpeg_ir::features::{FeatureDirection3, FinitePoint3, RevolutionAxis};
+    use cadmpeg_ir::features::geometry::{FeatureDirection3, FinitePoint3};
+    use cadmpeg_ir::features::revolve::RevolutionAxis;
     use cadmpeg_ir::geometry::nurbs::NurbsCurve;
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -195,7 +196,8 @@ fn malformed_saved_spline_reports_transfer_loss() {
 
 #[test]
 fn numerical_followup_revolution_refuses_skew_line_specialization() {
-    use cadmpeg_ir::features::{FeatureDirection3, FinitePoint3, RevolutionAxis};
+    use cadmpeg_ir::features::geometry::{FeatureDirection3, FinitePoint3};
+    use cadmpeg_ir::features::revolve::RevolutionAxis;
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
     for radius in [2e-10, 2.] {

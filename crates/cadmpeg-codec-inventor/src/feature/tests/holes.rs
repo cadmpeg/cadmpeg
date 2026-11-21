@@ -16,11 +16,10 @@ use crate::record_identity::Located;
 use crate::test_support::test_fixtures::content;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{
-    holes::{HoleKind, HolePlacement},
-    DesignParameter, Feature, FeatureDefinition, FeatureOperation, LinearTermination,
-    ParameterValue,
-};
+use cadmpeg_ir::features::extents::LinearTermination;
+use cadmpeg_ir::features::holes::{HoleKind, HolePlacement};
+use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{Angle, Length};
 
@@ -468,7 +467,7 @@ fn hole_targets_use_plane_frames_or_native_face_selections() {
     let FeatureDefinition::Operation(FeatureOperation::Hole {
         extent:
             Some(LinearTermination::ToFace {
-                face: cadmpeg_ir::features::FaceSelection::Native(face),
+                face: cadmpeg_ir::features::selections::FaceSelection::Native(face),
                 offset: None,
             }),
         ..

@@ -4,11 +4,14 @@ use crate::test_support::root_part_ir;
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 use cadmpeg_ir::design::names::NativeNameValue;
 use cadmpeg_ir::design::selection::{Anchor, OrderedSelection, Picks};
+use cadmpeg_ir::features::datums::{DatumPointConstruction, SketchPointSelection};
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::geometry::{FeatureCoordinateFrame, FinitePoint3};
+use cadmpeg_ir::features::selections::{
+    DistinctMembers, EdgeSelection, SelectionReference, VertexSelection,
+};
 use cadmpeg_ir::features::{
-    DatumPointConstruction, DistinctMembers, EdgeSelection, Feature, FeatureContent,
-    FeatureCoordinateFrame, FeatureDefinition, FeatureEvaluation, FeatureId, FinitePoint3,
-    SelectionReference, SketchFeatureBinding, SketchPointSelection, UnresolvedFamily,
-    VertexSelection,
+    Feature, FeatureContent, FeatureDefinition, FeatureId, SketchFeatureBinding, UnresolvedFamily,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::Length;
@@ -147,7 +150,9 @@ fn offset_plane_keeps_the_support_and_signed_distance() {
 fn offset_plane_keeps_a_read_face_selection() {
     let DatumElement::Plane(value) = projected(LegacyOperation::DatumOffsetPlane {
         reference: Some(DatumPlaneReference::Face {
-            face: cadmpeg_ir::features::FaceSelection::Native("inventor:face#support".into()),
+            face: cadmpeg_ir::features::selections::FaceSelection::Native(
+                "inventor:face#support".into(),
+            ),
         }),
         distance: Length::new(8.0).expect("distance"),
     }) else {
@@ -165,7 +170,7 @@ fn offset_plane_keeps_a_read_face_selection() {
 
 #[test]
 fn offset_plane_keeps_a_read_support_frame() {
-    let support = cadmpeg_ir::features::FeatureSupportPlaneFrame::new(
+    let support = cadmpeg_ir::features::geometry::FeatureSupportPlaneFrame::new(
         Point3::new(2.0, 3.0, 4.0),
         Vector3::new(0.0, 0.0, 1.0),
         Vector3::new(1.0, 0.0, 0.0),
@@ -258,8 +263,9 @@ fn principal_planes_pick_the_definition_planes() {
 #[test]
 fn axis_keeps_its_origin_and_normalized_direction() {
     let origin = FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).expect("point");
-    let direction = cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 5.0, 0.0))
-        .expect("direction");
+    let direction =
+        cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(0.0, 5.0, 0.0))
+            .expect("direction");
     let DatumElement::Axis(value) = projected(LegacyOperation::datum_axis(origin, direction))
     else {
         panic!("axis")

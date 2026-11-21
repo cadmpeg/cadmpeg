@@ -544,14 +544,18 @@ mod tests {
 
     #[test]
     fn a_blank_selection_id_has_no_wire_spelling() {
-        assert!(serde_json::from_value::<crate::features::SelectionMember>(
-            serde_json::json!({"kind": "face", "id": "   "})
-        )
-        .is_err());
-        assert!(serde_json::from_value::<crate::features::SelectionMember>(
-            serde_json::json!({"kind": "face", "id": " a "})
-        )
-        .is_ok());
+        assert!(
+            serde_json::from_value::<crate::features::evaluation::SelectionMember>(
+                serde_json::json!({"kind": "face", "id": "   "})
+            )
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<crate::features::evaluation::SelectionMember>(
+                serde_json::json!({"kind": "face", "id": " a "})
+            )
+            .is_ok()
+        );
         let topology = |id: &str| {
             serde_json::json!({
                 "id": "test:model:feature-result#1",
@@ -560,12 +564,16 @@ mod tests {
             })
         };
         assert!(
-            serde_json::from_value::<crate::features::FeatureResultTopology>(topology("   "))
-                .is_err()
+            serde_json::from_value::<crate::features::evaluation::FeatureResultTopology>(topology(
+                "   "
+            ))
+            .is_err()
         );
         assert!(
-            serde_json::from_value::<crate::features::FeatureResultTopology>(topology(" a "))
-                .is_ok()
+            serde_json::from_value::<crate::features::evaluation::FeatureResultTopology>(topology(
+                " a "
+            ))
+            .is_ok()
         );
     }
 

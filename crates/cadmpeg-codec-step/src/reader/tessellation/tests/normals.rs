@@ -2,7 +2,7 @@
 //! Tessellation normal-row normalization.
 
 use crate::parse::Value;
-use cadmpeg_ir::features::FiniteVector3;
+use cadmpeg_ir::features::geometry::FiniteVector3;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::FiniteReal;
 

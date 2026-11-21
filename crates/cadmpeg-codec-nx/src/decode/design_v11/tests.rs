@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::parameters::DesignConfiguration as LegacyConfiguration;
+use cadmpeg_ir::features::selections::DistinctMembers;
+use cadmpeg_ir::features::tree::TreeChildren;
 use cadmpeg_ir::features::{
-    DesignConfiguration as LegacyConfiguration, DistinctMembers, FeatureContent,
-    FeatureDefinition as LegacyDefinition, FeatureEvaluation, FeatureId, SketchFeatureBinding,
-    TreeChildren,
+    FeatureContent, FeatureDefinition as LegacyDefinition, FeatureId, SketchFeatureBinding,
 };
 use cadmpeg_ir::report::check::Check;
 use cadmpeg_ir::topology::{Body, BodyKind};

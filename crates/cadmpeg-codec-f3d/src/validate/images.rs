@@ -138,7 +138,7 @@ pub(super) fn validate_decal_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Findin
                 operands: &ctx.native.design_body_recipe_operands,
             }
             .faces(scope, image.target_group_record_index)
-            .unwrap_or_else(|| cadmpeg_ir::features::FaceSelection::Native(scope.id.clone()));
+            .unwrap_or_else(|| cadmpeg_ir::features::selections::FaceSelection::Native(scope.id.clone()));
             ctx.ir
                 .model
                 .features
@@ -150,7 +150,7 @@ pub(super) fn validate_decal_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Findin
                         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Decal {
                             asset,
                             faces,
-                            mapping: cadmpeg_ir::features::DecalMapping::FitToFaces,
+                            mapping: cadmpeg_ir::features::datums::DecalMapping::FitToFaces,
                             opacity: None,
                         }) if faces == &expected_faces
                             && ctx.ir.model.assets.iter().any(|candidate| {

@@ -80,7 +80,7 @@ pub(super) fn point_at(
                 return Ok(None);
             }
             super::evaluation::nurbs_curve_point(ctx, curve, parameter)?
-                .map(cadmpeg_ir::features::FinitePoint3::get)
+                .map(cadmpeg_ir::features::geometry::FinitePoint3::get)
         }
         _ => None,
     })

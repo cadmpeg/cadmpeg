@@ -41,7 +41,7 @@ fn hem_direction_fixtures_keep_flip_separate_from_compatibility_lanes() {
         assert_eq!(operation.flipped, expected_flip);
         assert_eq!(
             operation.bend_position,
-            cadmpeg_ir::features::SheetMetalHemBendPosition::Adjacent
+            cadmpeg_ir::features::sheet_metal_forms::SheetMetalHemBendPosition::Adjacent
         );
         assert_eq!(operation.settings_record_index, 724);
         assert_eq!(operation.bend_radius.get(), 0.25);

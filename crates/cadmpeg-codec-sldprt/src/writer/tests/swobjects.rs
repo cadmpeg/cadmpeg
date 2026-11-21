@@ -184,10 +184,10 @@ fn semantic_writer_emits_face_records_deterministically() {
 
 #[test]
 fn encoder_rejects_source_less_unresolved_extrusion_profile() {
-    use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
-        FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
-    };
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.model.features.push(Feature {
@@ -196,18 +196,18 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
         ordinal: 0,
         name: Some("Extrude".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(
                     "native:missing-owner".into(),
                 )),
-                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
-                start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
+                direction: cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {},
+                start: cadmpeg_ir::features::extents::ExtrudeStart::ProfilePlane {},
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
@@ -238,19 +238,19 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
 
 #[test]
 fn encoder_writes_authored_with_retained_native_envelope_line_sketches() {
+    use cadmpeg_ir::features::extents::{
+        AngularTermination, ExtrudeExtent, ExtrudeSide, LinearTermination,
+    };
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::revolve::RevolveExtent;
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::scalar::Angle;
     use cadmpeg_ir::sketches::{
         Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
         SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
         SketchId, SketchLocus,
-    };
-    use cadmpeg_ir::{
-        features::{
-            AngularTermination, BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition,
-            FeatureId, FeatureOperation, LinearTermination, PathRef, PlanarProfileRef, ProfileRef,
-            RevolveExtent,
-        },
-        scalar::Angle,
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
@@ -386,30 +386,32 @@ fn encoder_writes_authored_with_retained_native_envelope_line_sketches() {
         ordinal: 0,
         name: Some("Profile".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
             }),
         ),
         native_ref: None,
     });
-    let profile = cadmpeg_ir::features::PlanarProfileRef::Sketch(sketch_id.clone());
+    let profile = cadmpeg_ir::features::profiles::PlanarProfileRef::Sketch(sketch_id.clone());
     let path = PathRef::Sketch(sketch_id.clone());
     let generated = [
         FeatureDefinition::Operation(FeatureOperation::Revolve {
-            construction: cadmpeg_ir::features::RevolveConstruction::Resolved {
+            construction: cadmpeg_ir::features::revolve::RevolveConstruction::Resolved {
                 profile: profile.clone(),
-                axis: cadmpeg_ir::features::RevolutionAxis {
-                    origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                        .unwrap(),
-                    direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                        0.0, 1.0, 0.0,
+                axis: cadmpeg_ir::features::revolve::RevolutionAxis {
+                    origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                        0.0, 0.0, 0.0,
                     ))
+                    .unwrap(),
+                    direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(
+                        Vector3::new(0.0, 1.0, 0.0),
+                    )
                     .unwrap(),
                     reference: None,
                 },
@@ -426,11 +428,11 @@ fn encoder_writes_authored_with_retained_native_envelope_line_sketches() {
             op: BooleanOp::NewBody,
         }),
         FeatureDefinition::Operation(FeatureOperation::Sweep {
-            shape: cadmpeg_ir::features::SweepShape::sheet_sections(
-                cadmpeg_ir::features::SweepMode::Solid {
-                    op: cadmpeg_ir::features::SolidSweepOperation::Join,
+            shape: cadmpeg_ir::features::sweeps::SweepShape::sheet_sections(
+                cadmpeg_ir::features::sweeps::SweepMode::Solid {
+                    op: cadmpeg_ir::features::sweeps::SolidSweepOperation::Join,
                 },
-                cadmpeg_ir::features::SweepSection::Profile(profile.clone()),
+                cadmpeg_ir::features::sweeps::SweepSection::Profile(profile.clone()),
                 Vec::new(),
             ),
             path: Some(path.clone()),
@@ -448,8 +450,12 @@ fn encoder_writes_authored_with_retained_native_envelope_line_sketches() {
         }),
         FeatureDefinition::Operation(FeatureOperation::Loft {
             sections: vec![
-                cadmpeg_ir::features::LoftSection::Profile(ProfileRef::Planar(profile.clone())),
-                cadmpeg_ir::features::LoftSection::Profile(ProfileRef::Planar(profile.clone())),
+                cadmpeg_ir::features::profiles::LoftSection::Profile(ProfileRef::Planar(
+                    profile.clone(),
+                )),
+                cadmpeg_ir::features::profiles::LoftSection::Profile(ProfileRef::Planar(
+                    profile.clone(),
+                )),
             ],
             guidance: cadmpeg_ir::features::LoftGuidance::Guides(vec![path]),
             op: BooleanOp::NewBody,
@@ -461,15 +467,17 @@ fn encoder_writes_authored_with_retained_native_envelope_line_sketches() {
             allow_multi_profile_faces: None,
         }),
         FeatureDefinition::Operation(FeatureOperation::Rib {
-            construction: cadmpeg_ir::features::RibConstruction {
+            construction: cadmpeg_ir::features::revolve::RibConstruction {
                 profile: Some(profile),
                 direction: Some(
-                    cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
-                        .unwrap(),
+                    cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                        0.0, 0.0, 1.0,
+                    ))
+                    .unwrap(),
                 ),
                 thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(2.5).unwrap()),
-                side: Some(cadmpeg_ir::features::RibSide::Centered),
-                draft: cadmpeg_ir::features::RibDraft::Angle(
+                side: Some(cadmpeg_ir::features::revolve::RibSide::Centered),
+                draft: cadmpeg_ir::features::revolve::RibDraft::Angle(
                     cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap(),
                 ),
             },
@@ -484,12 +492,14 @@ fn encoder_writes_authored_with_retained_native_envelope_line_sketches() {
             ordinal: cadmpeg_core::decode::u64_from_index(index) + 2,
             name: Some(format!("Profile op {index}")),
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+                definition,
+            ),
             native_ref: None,
         });
     }
@@ -501,22 +511,22 @@ fn encoder_writes_authored_with_retained_native_envelope_line_sketches() {
         ordinal: 1,
         name: Some("Boss".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(PlanarProfileRef::Sketch(sketch_id)),
-                direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
-                    vector: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                direction: cadmpeg_ir::features::extents::ExtrudeDirection::Explicit {
+                    vector: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
                         0.0, 0.0, 1.0,
                     ))
                     .unwrap(),
                     source: None,
                 },
-                start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
+                start: cadmpeg_ir::features::extents::ExtrudeStart::ProfilePlane {},
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
@@ -807,12 +817,12 @@ fn encoder_writes_authored_with_retained_native_envelope_spatial_point_and_line_
         ordinal: 0,
         name: Some("Spatial path".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch_id),
             }),

@@ -10,10 +10,11 @@ use super::{
 use crate::design::geometry::{atomic_sketch_regions, ProfileGeometryWork};
 use crate::history_records::AsmHistoricalTopology;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{
-    BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeStart, LinearTermination, PlanarProfileRef,
-    ProfileRef,
+use cadmpeg_ir::features::extents::{
+    ExtrudeDirection, ExtrudeExtent, ExtrudeStart, LinearTermination,
 };
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::HashSet;
 
@@ -113,7 +114,7 @@ pub(in crate::design::profile_select) fn selection_agrees(
             if regions.iter().any(|region| {
                 matches!(
                     region,
-                    cadmpeg_ir::features::SketchProfileRegion::Trimmed { .. }
+                    cadmpeg_ir::features::profiles::SketchProfileRegion::Trimmed { .. }
                 )
             }) =>
         {
@@ -496,13 +497,14 @@ fn split_piece(piece: &Piece, points: &[cadmpeg_ir::math::Point2], tolerance: f6
 }
 
 fn trimmed_indices(
-    regions: &[cadmpeg_ir::features::SketchProfileRegion],
+    regions: &[cadmpeg_ir::features::profiles::SketchProfileRegion],
     sampled: &[super::Sampled<'_>],
     tolerance: f64,
 ) -> Option<Vec<usize>> {
     let mut selected = Vec::new();
     for region in regions {
-        let cadmpeg_ir::features::SketchProfileRegion::Trimmed { outer_boundary, .. } = region
+        let cadmpeg_ir::features::profiles::SketchProfileRegion::Trimmed { outer_boundary, .. } =
+            region
         else {
             return None;
         };

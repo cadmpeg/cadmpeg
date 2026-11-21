@@ -7,7 +7,8 @@ use std::io::Cursor;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::features::{DesignParameter, Feature, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::parameters::DesignParameter;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 
 use crate::history::hash::{
     configuration_feature_state_hash, configuration_hash, configuration_parameter_value_hash,
