@@ -9624,6 +9624,31 @@ Unstated regions:
 - `73..163` (90 B): Scope fields before the reference table.
 - `266..378` (112 B): Scope suffix after the reference table.
 
+## `assembly_as_built_scope_381_403_prefix`
+
+Spec §Assembly operands · layout: byte offsets · size: 171 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_alignment.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 20 | 1 | `property_presence` | `u8` | little | spec | byte of one at offset 20 · value `1` |
+| 21 | 4 | `property_count` | `u32` | little | spec | zero u32 property count at offset 21 · value `0` |
+| 47 | 4 | `additional_owner_count` | `u32` | little | spec | zero u32 additional-owner count is at offset 47 · value `0` |
+| 51 | 4 | `locator_count` | `u32` | little | spec | u32 locator count is two at · value `2` |
+| 55 | 11 | `first_locator_reference` | `bytes[11]` | little | spec | two marked locator references at offsets 55 and 66 |
+| 66 | 11 | `second_locator_reference` | `bytes[11]` | little | spec | two marked locator references at offsets 55 and 66 |
+| 77 | 11 | `joint_reference` | `bytes[11]` | little | spec | marked joint reference at offset 77 |
+| 167 | 4 | `reference_count` | `u32` | little | spec | u32 reference count at offset 167 |
+
+Unstated regions:
+
+- `0..20` (20 B): Prefix before the property block.
+- `25..47` (22 B): Two marked references before the owner count.
+- `88..167` (79 B): Scope fields before the reference table.
+
 ## `assembly_as_built_scope_422`
 
 Spec §Assembly operands · layout: byte offsets · size: 422 B

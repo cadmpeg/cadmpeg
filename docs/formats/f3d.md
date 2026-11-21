@@ -2600,6 +2600,17 @@ The serialized frame length and total owner count select the lane layout in
 fixed-span generations. The class pair is an additional admission key for the
 744- and 748-byte forms and is the primary admission key for the variable-span
 class-283/264 and class-347/260 generations.
+
+The 381- and 403-byte `As-built` scopes store an empty property block. A presence
+byte of one at offset 20 precedes a zero u32 property count at offset 21. The
+zero u32 additional-owner count is at offset 47. The u32 locator count is two at
+offset 51. The two marked locator references at offsets 55 and 66 precede the
+marked joint reference at offset 77. The joint has index one less than the
+scope. The u32 reference count at offset 167 is nine in the 381-byte scope
+and eleven in the 403-byte scope. The four alignment owners appear once and
+contiguously in the reference table in `OffsetX`, `OffsetY`, `OffsetZ`, and
+`AngleZ` order.
+
 The 399-byte `As-built` form and the 627-, 633-, 637-, and 692-byte `Assemble`
 forms have exactly four owners. All four are alignment lanes in owner-local
 order: signed angle, signed local X offset, signed local Y offset, and signed

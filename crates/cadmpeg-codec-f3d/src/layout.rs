@@ -8590,6 +8590,23 @@ pub(crate) mod assembly_as_built_scope_378 {
     pub(crate) const REFERENCE_COUNT: usize = 163;
 }
 
+/// Byte offsets for the `assembly_as_built_scope_381_403_prefix` record.
+///
+/// Spec §Assembly operands. Record length 171 B.
+pub(crate) mod assembly_as_built_scope_381_403_prefix {
+    /// Offset of `property_presence` (`u8`). Spec §Assembly operands.
+    pub(crate) const PROPERTY_PRESENCE: usize = 20;
+    /// Stated value of `property_presence` (`u8`). Spec §Assembly operands.
+    pub(crate) const PROPERTY_PRESENCE_VALUE: u8 = 1;
+    /// Offset of `property_count` (`u32`, little-endian). Spec §Assembly operands.
+    #[cfg(test)]
+    pub(crate) const PROPERTY_COUNT: usize = 21;
+    /// Stated value of `property_count` (`u32`). Spec §Assembly operands.
+    pub(crate) const PROPERTY_COUNT_VALUE: u32 = 0x0000_0000;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const REFERENCE_COUNT: usize = 167;
+}
+
 /// Byte offsets for the `assembly_as_built_scope_422` record.
 ///
 /// Spec §Assembly operands. Record length 422 B.
