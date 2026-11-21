@@ -7560,6 +7560,22 @@ fn project_circular_pattern(
         count: construction.count.get(),
     })
     .ok()?;
+    if construction.symmetric.is_some()
+        && seeds.iter().any(|seed| {
+            matches!(
+                seed,
+                cadmpeg_ir::features::patterns::PatternSeed::Feature(_)
+            )
+        })
+    {
+        losses.push(
+            crate::loss::F3dLossCode::FeatureCircularPatternComputeUnresolved.note(format!(
+                "CircularPattern scope {} retains distribution control {} in its native payload; its Compute interpretation is unresolved (DR-642).",
+                scope.id,
+                crate::layout::circular_pattern_payload_distribution::FIXED_TWO_VALUE,
+            )),
+        );
+    }
     if (construction.angle.get() - std::f64::consts::TAU).abs() > EPS_CIRCULAR_PATTERN_FULL_TURN {
         match construction.symmetric.map(|symmetric| symmetric.value) {
             Some(true) => losses.push(

@@ -35,6 +35,19 @@ fn a_solved_axis_record_takes_precedence_over_an_extended_frame() {
     assert_eq!(selected(Vec::new(), vec![20]), Some(20));
     assert_eq!(selected(Vec::new(), vec![20, 30]), None);
     assert_eq!(selected(vec![10, 11], vec![20]), None);
+    let extended = super::super::inline_axis_candidates(
+        vec![candidate(20)],
+        vec![candidate(30), candidate(40)],
+    );
+    assert_eq!(
+        select_circular_pattern_axis(&extended).map(|index| extended[index].axis_record_index),
+        Some(20)
+    );
+    let extended = super::super::inline_axis_candidates(
+        vec![candidate(20), candidate(21)],
+        vec![candidate(30)],
+    );
+    assert!(select_circular_pattern_axis(&extended).is_none());
 }
 
 #[test]
@@ -67,6 +80,37 @@ fn circular_pattern_axis_reads_the_spacing_direction_frame() {
     assert!(parse(&face_kind, 221).is_none());
     let extent = rectangular_pattern_direction_frame(8, [0.0, 2.0, 0.0]);
     assert!(parse(&extent, 220).is_none());
+}
+
+#[test]
+fn circular_axis_control_seven_reads_the_unpadded_direction_frame() {
+    let mut bytes = rectangular_pattern_direction_frame(8, [0.0, 2.0, 0.0]);
+    bytes[89..93].copy_from_slice(&7u32.to_le_bytes());
+    let parse = |bytes: &[u8]| {
+        super::super::exact_extended_circular_pattern_axis(bytes, 0, 220, 20, 23, 10)
+    };
+    assert_eq!(
+        parse(&bytes),
+        Some(
+            crate::records::feature::patterns::DesignCircularPatternAxis::Inline {
+                origin: crate::test_support::reals([-2.0, 1.0, 0.5]),
+                origin_offset: 25,
+                direction: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+                direction_offset: 49,
+            }
+        )
+    );
+    assert!(
+        super::super::exact_rectangular_pattern_direction(&bytes, 0, 220, 20, 23, 10).is_none()
+    );
+    let mut wrong_scope = bytes.clone();
+    wrong_scope[210..214].copy_from_slice(&11u32.to_le_bytes());
+    assert!(parse(&wrong_scope).is_none());
+    let mut zero_axis = bytes.clone();
+    zero_axis[49..73].fill(0);
+    assert!(parse(&zero_axis).is_none());
+    bytes[89..93].copy_from_slice(&10u32.to_le_bytes());
+    assert!(parse(&bytes).is_none());
 }
 
 /// A circular-pattern payload of a pattern with three instances: the

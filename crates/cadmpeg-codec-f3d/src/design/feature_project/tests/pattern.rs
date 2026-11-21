@@ -636,6 +636,48 @@ fn compact_entity_selection_seed_names_the_seed_feature() {
 }
 
 #[test]
+fn circular_feature_seeds_keep_the_compute_interpretation_native() {
+    let mut scope = circular_scope();
+    if let crate::records::feature::scope::DesignScopePayloadMut::CPattern(Some(construction)) =
+        scope.payload_mut()
+    {
+        construction.symmetric = Some(crate::records::identity::Located {
+            value: false,
+            offset: 21,
+        });
+    }
+    let feature = seed_scope(5, Some(2));
+    let expected = PatternSeed::Feature(crate::ids::neutral_feature_id(&feature));
+    let mut losses = Vec::new();
+    let definition = project_circular_pattern(
+        &scope,
+        &[group(10, 30, DesignOperandRole::BODIES_A)],
+        &[],
+        &[compact_entity_selection(30, 31, 5)],
+        &[scope.clone(), feature],
+        &mut losses,
+    )
+    .expect("circular feature pattern");
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) = definition
+    else {
+        panic!("circular feature pattern definition");
+    };
+    assert_eq!(seeds, vec![expected]);
+    assert!(matches!(
+        pattern.definition(),
+        PatternTransform::Circular { .. }
+    ));
+    let [loss] = losses.as_slice() else {
+        panic!("one Compute interpretation loss");
+    };
+    assert_eq!(
+        loss.code,
+        crate::loss::F3dLossCode::FeatureCircularPatternComputeUnresolved.kind()
+    );
+    assert!(loss.message.contains("control 2"));
+}
+
+#[test]
 fn compact_entity_selection_seed_without_a_feature_scope_stays_native() {
     let native = PatternSeed::Faces(FaceSelection::Native(
         "f3d:Design/BulkStream.dat:design-construction-operand-group#30".into(),
