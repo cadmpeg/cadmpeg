@@ -12,6 +12,8 @@ use std::io::Cursor;
 use cadmpeg_codec_catia::CatiaCodec;
 #[cfg(feature = "creo")]
 use cadmpeg_codec_creo::CreoCodec;
+#[cfg(feature = "edrawings")]
+use cadmpeg_codec_edrawings::EdrawingsCodec;
 #[cfg(feature = "f3d")]
 use cadmpeg_codec_f3d::F3dCodec;
 #[cfg(feature = "freecad")]
@@ -22,8 +24,6 @@ use cadmpeg_codec_iges::IgesCodec;
 use cadmpeg_codec_inventor::InventorCodec;
 #[cfg(feature = "nx")]
 use cadmpeg_codec_nx::NxCodec;
-#[cfg(feature = "edrawings")]
-use cadmpeg_codec_edrawings::EdrawingsCodec;
 #[cfg(feature = "pvz")]
 use cadmpeg_codec_pvz::PvzCodec;
 #[cfg(feature = "rhino")]

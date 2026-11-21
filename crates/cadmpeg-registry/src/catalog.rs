@@ -556,7 +556,7 @@ mod tests {
         let package = archive(&[
             RawEntry::stored(
                 "eModel",
-                b";; HSF V19.10 
+                b";; HSF V19.10\x20
 synthetic",
             ),
             RawEntry::stored("scene.xml", b"<SceneData/>"),
