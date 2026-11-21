@@ -4,6 +4,7 @@
 use std::collections::BTreeSet;
 
 use cadmpeg_ir::features::{BodyMember, BodySelection, FeatureId};
+use cadmpeg_ir::report::loss::LossNote;
 
 use super::{
     bind_direct_body_recipe_body_selection, bind_operand_list_combine_bodies, body_member,
@@ -27,6 +28,7 @@ pub(super) fn bind_combine_operands<'a>(
     pattern_bodies: Option<&BTreeSet<i64>>,
     inputs: &FeatureBodySelectionInputs<'a>,
     body_candidates: &mut BodyCandidates<'a>,
+    losses: &mut Vec<LossNote>,
 ) {
     let (Some(state_id), Some(previous_state_id)) = (
         scope.history_state_id(),
@@ -51,6 +53,7 @@ pub(super) fn bind_combine_operands<'a>(
         pattern_bodies,
         inputs,
         body_candidates,
+        losses,
     );
     if scope.previous_history_state_id().is_none() {
         for operand in [target, tools] {
@@ -71,6 +74,7 @@ fn bind_historical_combine_operands<'a>(
     pattern_bodies: Option<&BTreeSet<i64>>,
     inputs: &FeatureBodySelectionInputs<'a>,
     body_candidates: &mut BodyCandidates<'a>,
+    losses: &mut Vec<LossNote>,
 ) {
     let histories = inputs.histories;
     let body_recipe_operands = inputs.body_recipe_operands;
@@ -81,13 +85,12 @@ fn bind_historical_combine_operands<'a>(
         operation.form == crate::records::feature::combine::DesignCombineForm::OperandLists
     }) {
         bind_operand_list_combine_bodies(
-            target,
-            tools,
+            (target, tools),
             scope,
             operation,
-            feature_id,
-            previous_state_id,
+            (feature_id, previous_state_id),
             (histories, inputs.scopes),
+            losses,
         );
         return;
     }

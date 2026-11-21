@@ -24,6 +24,21 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::NativeOperandField;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+/// Kind stem of an angular dimension.
+const ANGULAR_DIMENSION_KIND: &str = "Angular Dimension";
+
+/// Native property that holds a dimension's instance name.
+const DIMENSION_INSTANCE_NAME: &str = "instance_name";
+
+/// The instance name of a dimension whose `source_kind` carries an instance number.
+fn dimension_instance_properties(parameter: &DesignParameter) -> BTreeMap<String, String> {
+    let instance_name = parameter.source_kind_str();
+    if parameter.dimension_kind().as_str() == instance_name {
+        return BTreeMap::new();
+    }
+    BTreeMap::from([(DIMENSION_INSTANCE_NAME.to_owned(), instance_name.to_owned())])
+}
+
 /// A sketch constraint governed by a dimension parameter.
 fn dimension_constraint(
     id: cadmpeg_ir::sketches::SketchConstraintId,
@@ -68,6 +83,7 @@ const EPS_DIMENSIONS_OWNER_SCOPED_SPATIAL_PARALLEL_LINE_SET_DIMENSION_DEFINITION
 const EPS_DIMENSIONS_SPATIAL_COUNTED_OFFSET_DIMENSION_DEFINITION_E9: f64 = 1.0e-9;
 const EPS_DIMENSIONS_SPATIAL_POINT_DISTANCE_MATCHES_E9: f64 = 1.0e-9;
 const EPS_DIMENSIONS_SPATIAL_PARALLEL_LINE_DISTANCE_MATCHES_E9: f64 = 1.0e-9;
+const EPS_DIMENSIONS_SPATIAL_POINT_LINE_DISTANCE_MATCHES_E9: f64 = 1.0e-9;
 const EPS_DIMENSIONS_SPATIAL_PARALLEL_LINE_DISTANCE_E12: f64 = 1.0e-12;
 const EPS_DIMENSIONS_SPATIAL_PARALLEL_LINE_DISTANCE_E9: f64 = 1.0e-9;
 const EPS_DIMENSIONS_RADIAL_DIMENSION_DEFINITION_AT_TOLERANCE_E9: f64 = 1.0e-9;
@@ -426,7 +442,7 @@ fn project_all_dimension_constraints(
     };
     let native_definition =
         |scope: &str,
-         source_kind: cadmpeg_core::text::NonBlankString,
+         source: &DesignParameter,
          state: Option<u64>,
          operands: &[(cadmpeg_core::text::NonBlankString, Option<u32>, u32)],
          parameter|
@@ -441,10 +457,10 @@ fn project_all_dimension_constraints(
                 native_operands.push(operand);
             }
             Definition::Native {
-                native_kind: source_kind,
+                native_kind: source.dimension_kind(),
                 native_state: state,
                 native_flags: None,
-                native_properties: std::collections::BTreeMap::new(),
+                native_properties: dimension_instance_properties(source),
                 entities: entity_ids,
                 parameter: Some(parameter),
                 operands: native_operands,
@@ -812,7 +828,7 @@ fn project_all_dimension_constraints(
                 }
                 native_definition(
                     scope,
-                    parameter.source_kind().clone(),
+                    parameter,
                     Some(u64::from(group.state)),
                     &operands,
                     parameter_id,
@@ -870,7 +886,7 @@ fn project_all_dimension_constraints(
         } else {
             native_definition(
                 scope,
-                parameter.source_kind().clone(),
+                parameter,
                 None,
                 &[
                     (
@@ -972,10 +988,10 @@ fn project_all_dimension_constraints(
                     }
                 }
                 Definition::Native {
-                    native_kind: parameter.source_kind().clone(),
+                    native_kind: parameter.dimension_kind(),
                     native_state: None,
                     native_flags: None,
-                    native_properties: std::collections::BTreeMap::new(),
+                    native_properties: dimension_instance_properties(parameter),
                     entities: entity_ids,
                     parameter: Some(parameter_id),
                     operands,
@@ -1058,10 +1074,10 @@ fn project_all_dimension_constraints(
             }
             let Ok(definition) =
                 cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(Definition::Native {
-                    native_kind: parameter.source_kind().clone(),
+                    native_kind: parameter.dimension_kind(),
                     native_state: None,
                     native_flags: None,
-                    native_properties: std::collections::BTreeMap::new(),
+                    native_properties: dimension_instance_properties(parameter),
                     entities: entity_ids,
                     parameter: Some(parameter_id),
                     operands,
@@ -1184,10 +1200,10 @@ fn project_all_dimension_constraints(
                 });
             }
             Definition::Native {
-                native_kind: parameter.source_kind().clone(),
+                native_kind: parameter.dimension_kind(),
                 native_state: None,
                 native_flags: None,
-                native_properties: std::collections::BTreeMap::new(),
+                native_properties: dimension_instance_properties(parameter),
                 entities: recipe_dimension_candidate_entities(&linear_candidates),
                 parameter: Some(parameter_id),
                 operands,
@@ -1375,10 +1391,10 @@ fn project_all_dimension_constraints(
                 let copied = parameter_id.clone();
                 let native_ref = companion.id().to_owned();
                 Definition::Native {
-                    native_kind: parameter.source_kind().clone(),
+                    native_kind: parameter.dimension_kind(),
                     native_state: None,
                     native_flags: None,
-                    native_properties: std::collections::BTreeMap::new(),
+                    native_properties: dimension_instance_properties(parameter),
                     entities: Vec::new(),
                     parameter: Some(copied),
                     operands: vec![SketchNativeOperand {
@@ -1859,7 +1875,7 @@ fn parallel_group_axis_angle_definition(
     let [first, second] = entities else {
         return None;
     };
-    if parameter.source_kind() != "Angular Dimension-2"
+    if parameter.dimension_kind().as_str() != ANGULAR_DIMENSION_KIND
         || !design_dimension_unit(parameter)
         || parallel_line_distance(first, second).is_none()
     {
@@ -2764,6 +2780,14 @@ pub(crate) fn project_spatial_dimension_constraints(
                                     parameter: parameter.clone(),
                                 },
                             )
+                        } else if let Some([point, line]) =
+                            spatial_point_line_distance_match(first, second, expected)
+                        {
+                            Some(SpatialSketchConstraintDefinitionInput::PointLineDistance {
+                                point: point.id().clone(),
+                                line: line.id().clone(),
+                                parameter: parameter.clone(),
+                            })
                         } else {
                             None
                         }
@@ -2921,7 +2945,7 @@ pub(crate) fn project_spatial_dimension_constraints(
         let constraint_native_ref = companion.id().to_owned();
         let definition = cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::try_from(
             SpatialSketchConstraintDefinitionInput::Native {
-                native_kind: parameter.source_kind().clone(),
+                native_kind: parameter.dimension_kind(),
                 native_state: None,
                 parameter: Some(parameter_id.clone()),
                 operands: vec![SketchNativeOperand {
@@ -3521,6 +3545,46 @@ fn spatial_parallel_line_distance_matches(
             <= EPS_DIMENSIONS_SPATIAL_PARALLEL_LINE_DISTANCE_MATCHES_E9 * scale
 }
 
+/// The point and the line of a point-line pair whose point lies at the
+/// expected distance from the infinite carrier of the line.
+fn spatial_point_line_distance_match<'a>(
+    first: &'a cadmpeg_ir::sketches::SpatialSketchEntity,
+    second: &'a cadmpeg_ir::sketches::SpatialSketchEntity,
+    expected: f64,
+) -> Option<[&'a cadmpeg_ir::sketches::SpatialSketchEntity; 2]> {
+    [[first, second], [second, first]]
+        .into_iter()
+        .find(|[point, line]| {
+            spatial_point_line_distance_matches(&point.geometry, &line.geometry, expected)
+        })
+}
+
+fn spatial_point_line_distance_matches(
+    point: &cadmpeg_ir::sketches::SpatialSketchGeometry,
+    line: &cadmpeg_ir::sketches::SpatialSketchGeometry,
+    expected: f64,
+) -> bool {
+    let cadmpeg_ir::sketches::SpatialSketchGeometryDefinition::Point { position } =
+        point.definition()
+    else {
+        return false;
+    };
+    let Some([start, end]) = spatial_line_segment(line) else {
+        return false;
+    };
+    let direction = end.vector_from(start);
+    let length = direction.norm();
+    if !(length.is_finite() && length > 0.0) {
+        return false;
+    }
+    let measured = position.get().vector_from(start).cross(direction).norm() / length;
+    let scale = 1.0 + measured.max(expected.abs());
+    expected.is_finite()
+        && measured.is_finite()
+        && (measured - expected.abs()).abs()
+            <= EPS_DIMENSIONS_SPATIAL_POINT_LINE_DISTANCE_MATCHES_E9 * scale
+}
+
 fn spatial_line_segment(
     geometry: &cadmpeg_ir::sketches::SpatialSketchGeometry,
 ) -> Option<[Point3; 2]> {
@@ -3676,7 +3740,7 @@ pub(super) fn null_locus_dimension_definition(
     ) {
         return Some(definition);
     }
-    if source_kind != "Angular Dimension-2"
+    if crate::records::parameters::dimension_kind_stem(source_kind) != ANGULAR_DIMENSION_KIND
         || pair.loci()[0].role != 14
         || pair.loci()[1].role != 3
         || !matches!(

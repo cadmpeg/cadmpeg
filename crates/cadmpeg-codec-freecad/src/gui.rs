@@ -599,6 +599,7 @@ fn transfer_schema_one(
             base_color: Some(decode_color(packed_color, transparency)?),
             textures: Vec::new(),
             properties: material_properties,
+            native_ref: None,
         });
         for (index, body) in body_ids.into_iter().enumerate() {
             plan.bindings.push(AppearanceBinding {
@@ -611,6 +612,7 @@ fn transfer_schema_one(
                 object_type: Some("ViewProvider".into()),
                 visible: None,
                 channels: BTreeMap::new(),
+                native_ref: None,
             });
         }
     }
@@ -1200,6 +1202,7 @@ fn transfer_primitive_appearance(
         properties: admitted_size
             .map(|width| [(property, width)].into())
             .unwrap_or_default(),
+        native_ref: None,
     });
     for (index, target) in targets.into_iter().enumerate() {
         plan.bindings.push(AppearanceBinding {
@@ -1216,6 +1219,7 @@ fn transfer_primitive_appearance(
                 precedence.into(),
             )]
             .into(),
+            native_ref: None,
         });
     }
     Ok(())
@@ -3899,6 +3903,7 @@ fn transfer_shape_appearances(
                         object_type: Some("ViewProvider ShapeAppearance".into()),
                         visible: None,
                         channels: BTreeMap::new(),
+                        native_ref: None,
                     });
                 }
             } else {
@@ -4044,17 +4049,11 @@ pub(crate) fn select_shape_bodies<'a>(
     ir: &CadIr,
     payload_ids: impl IntoIterator<Item = &'a str>,
 ) -> Vec<cadmpeg_ir::ids::BodyId> {
+    let bodies = IdIndex::new(ir.geometry.bodies.iter().map(|body| body.id.as_str()));
     let mut body_ids = Vec::new();
     for payload_id in payload_ids {
-        let payload_key = crate::native::id_key(payload_id);
-        for body in &ir.geometry.bodies {
-            let body_key = crate::native::id_key(body.id.as_str());
-            if body_key
-                .strip_prefix(payload_key)
-                .is_some_and(|suffix| suffix.starts_with(':'))
-            {
-                body_ids.push(body.id.clone());
-            }
+        for index in bodies.under(&[payload_id]) {
+            body_ids.push(ir.geometry.bodies[index].id.clone());
         }
     }
     body_ids
@@ -4159,6 +4158,7 @@ fn material_appearance(
             ),
         ]
         .into(),
+        native_ref: None,
     })
 }
 
@@ -4195,6 +4195,7 @@ fn bind_material_faces(
                 "face_over_object".into(),
             )]
             .into(),
+            native_ref: None,
         });
     }
     Ok(())
@@ -4376,6 +4377,7 @@ fn transfer_topology_colors(
                     )),
                     textures: Vec::new(),
                     properties: inherited_properties.clone(),
+                    native_ref: None,
                 });
                 emitted_appearance = true;
             }
@@ -4396,6 +4398,7 @@ fn transfer_topology_colors(
                     kind.precedence().into(),
                 )]
                 .into(),
+                native_ref: None,
             });
         }
     }

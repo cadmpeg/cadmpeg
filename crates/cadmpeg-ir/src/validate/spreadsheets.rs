@@ -81,7 +81,7 @@ mod tests {
             }))
             .unwrap(),
         );
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut findings = Vec::new();
         check_spreadsheets(&ir, &mut findings);
         assert_eq!(

@@ -19,8 +19,10 @@ use crate::design::evaluation::{
 };
 use crate::design::ids::EvaluationId;
 use crate::design::refs::{Evaluated, Member, Position};
+use crate::document::Process;
 use crate::features::ConfigurationId;
 use crate::ids::{BodyId, ProductDefinitionId};
+use crate::process::state::{ProcessBase, ProcessContent};
 use crate::CadIr;
 
 /// What one current state exchanges.
@@ -44,6 +46,22 @@ fn namespace(id: &str) -> Option<String> {
     let (space, _) = id.split_once('#')?;
     let mut parts = space.splitn(3, ':');
     Some(format!("{}:{}:", parts.next()?, parts.next()?))
+}
+
+/// Rebases every process state based on the design state `from` onto `to`,
+/// which holds the same resolved state.
+fn rebase_process(process: &mut Process, from: &StateBase, to: &StateBase) {
+    for state in &mut process.states {
+        if let Some(ProcessContent {
+            base: ProcessBase::Design(base),
+            ..
+        }) = &mut state.content
+        {
+            if base == from {
+                base.clone_from(to);
+            }
+        }
+    }
 }
 
 fn position_key(at: &Position) -> String {
@@ -240,6 +258,11 @@ impl CadIr {
                 }
             }
         }
+        rebase_process(
+            &mut self.process,
+            &from_current,
+            &StateBase::Evaluation(id.clone()),
+        );
         self.design.evaluations.push(written);
         if exchange.incoming.is_none() {
             self.design.scopes[scope_at].current[exchange.index].status = EvaluationStatus::Stale;
@@ -327,6 +350,7 @@ impl CadIr {
                 }
             }
         }
+        rebase_process(&mut self.process, &to_current, &from_current);
         let target = &mut self.design.scopes[scope_at].current[exchange.index];
         target.bodies = bodies;
         target.poses = state.poses;

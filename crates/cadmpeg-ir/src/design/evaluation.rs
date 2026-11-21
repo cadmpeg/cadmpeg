@@ -90,7 +90,7 @@ pub enum EvaluationStatus {
 
 /// The state a delta applies to. Bases form a forest: no evaluation is its own
 /// ancestor.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",

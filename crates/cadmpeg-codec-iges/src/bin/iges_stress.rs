@@ -990,16 +990,4 @@ mod tests {
     fn fast_scale_output_matches_pinned_digests() {
         scale_matches_pins(Scale::Fast, FAST_DIGESTS);
     }
-
-    #[test]
-    fn repeated_generation_is_byte_identical() {
-        for ((first_name, first), (second_name, second)) in generate(Scale::Fast)
-            .expect("stress fixture counts fit i64")
-            .into_iter()
-            .zip(generate(Scale::Fast).expect("stress fixture counts fit i64"))
-        {
-            assert_eq!(first_name, second_name);
-            assert_eq!(first, second, "{first_name}");
-        }
-    }
 }
