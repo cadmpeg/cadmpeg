@@ -539,6 +539,7 @@ fn generated_case(
     )
 }
 
+#[derive(Clone, Copy)]
 enum GeneratedHistory<'a> {
     Split,
     Single {
