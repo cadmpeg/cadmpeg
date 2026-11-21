@@ -12,9 +12,7 @@ use cadmpeg_core::CodecError;
 
 use super::super::base_feature::{timestamp_table, DURATION, EPOCH};
 use super::super::frames::DesignRecords;
-use super::super::sketch::{
-    CurveGeometry, Entity, OriginPlane, PlannedSketch, RelationKind, TangencyEnds,
-};
+use super::super::sketch::{CurveGeometry, Entity, OriginPlane, PlannedSketch, RelationKind};
 use super::super::types;
 use super::{count, Context, AGGREGATE};
 use crate::writer::generate::presentation::TypeRow;
@@ -170,12 +168,7 @@ impl SketchRoster {
         let relations = planned
             .relations
             .iter()
-            .map(|relation| {
-                take(match relation.kind {
-                    RelationKind::Tangent(_) => types::SKETCH_TANGENCY,
-                    _ => types::SKETCH_RELATION,
-                })
-            })
+            .map(|relation| take(relation_row(relation.kind)))
             .collect::<Result<Vec<_>, _>>()?;
         let mut records = SketchRecords {
             container,
@@ -309,6 +302,16 @@ pub(in crate::writer::generate::design) fn curve_identity(
         .ok()
         .and_then(|offset| FIRST_IDENTITY.checked_add(offset))
         .ok_or_else(|| CodecError::NotImplemented("sketch identity overflow".into()))
+}
+
+/// The relation record class: only a tangency with an endpoint branch uses the
+/// tangency subclass; a tangency without one uses the shared relation class
+/// with mask `0x100` and no subclass bytes.
+const fn relation_row(kind: RelationKind) -> TypeRow {
+    match kind {
+        RelationKind::Tangent(Some(_)) => types::SKETCH_TANGENCY,
+        _ => types::SKETCH_RELATION,
+    }
 }
 
 /// The class tags of the records of a `Sketch` item.
@@ -628,14 +631,10 @@ impl Item<'_> {
             ascending.sort_unstable();
             ascending.dedup();
             let tangent = match relation.kind {
-                RelationKind::Tangent(ends) => Some(ends.map_or([0; 3], TangencyEnds::bytes)),
+                RelationKind::Tangent(Some(ends)) => Some(ends.bytes()),
                 _ => None,
             };
-            let row = if tangent.is_some() {
-                types::SKETCH_TANGENCY
-            } else {
-                types::SKETCH_RELATION
-            };
+            let row = relation_row(relation.kind);
             out.record(&self.ctx.class(row.guid)?, *record)
                 .zeros(8)
                 .byte(1)

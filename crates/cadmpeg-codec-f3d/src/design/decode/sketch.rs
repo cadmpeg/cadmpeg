@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse Design sketch placements, headers, relations, and geometry.
 
-use crate::bytes::lp_utf16_bounded;
+use crate::bytes::{lp_utf16_bounded, lp_utf16_bounded_view};
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::records::sketch_placement::{
@@ -20,6 +20,7 @@ use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::layout::sketch_container_visibility_member_prefix as visibility_member;
 use crate::layout::sketch_explicit_member_head as marked_head;
+use crate::layout::sketch_item_geometry_member_run_head as member_run_head;
 use crate::layout::sketch_null_explicit_member_head as null_head;
 use crate::layout::sketch_typed_explicit_member_head as typed_head;
 use crate::loss::F3dLossCode;
@@ -716,6 +717,17 @@ fn decode_sketch_visibility_member(
 }
 
 pub(super) fn decode_sketch_member_display_name(bytes: &[u8], member_at: usize) -> Option<String> {
+    let (name, _) = sketch_member_display_name_field(bytes, member_at)?;
+    let name = name.to_string();
+    (!name.trim().is_empty() && !name.chars().any(char::is_control)).then_some(name)
+}
+
+/// The LP-UTF16 display name of a sketch Geometry member and the offset after
+/// it. The name follows the direct-container reference.
+fn sketch_member_display_name_field(
+    bytes: &[u8],
+    member_at: usize,
+) -> Option<(crate::bytes::utf16::Utf16View<'_>, usize)> {
     let mut collection_at = member_at + visibility_member::TAIL_MARKER;
     let reference = take_reference(bytes, &mut collection_at)?;
     match reference {
@@ -726,8 +738,7 @@ pub(super) fn decode_sketch_member_display_name(bytes: &[u8], member_at: usize) 
         } if target != 0 => {}
         _ => return None,
     }
-    let (name, _) = lp_utf16_bounded(bytes, collection_at, 1..=256)?;
-    (!name.trim().is_empty() && !name.chars().any(char::is_control)).then_some(name)
+    lp_utf16_bounded_view(bytes, collection_at, 0..=256)
 }
 
 /// The Sketch scope that owns a member-run sketch entity.
@@ -1360,9 +1371,9 @@ fn lp_ascii_matches(bytes: &[u8], at: usize, expected: &[u8]) -> Option<usize> {
     (bytes.get(start..end) == Some(expected)).then_some(end)
 }
 
-/// Parse the counted member-record run of the paired same-index container
-/// record that follows an `EntityGenesis`-form sketch entity header: the u32
-/// member count at paired-record offset 52 followed by `count` entries of
+/// Parse the counted member-record run of the Geometry member paired with an
+/// `EntityGenesis`-form sketch entity header. The display name, a zero byte,
+/// and the u32 member count precede `count` entries of
 /// `0x01 + u32 record_index + six zero bytes`. The first entry references the
 /// sketch's base-point record and the others name its owned records.
 fn parse_sketch_member_run(
@@ -1380,17 +1391,24 @@ fn parse_sketch_member_run(
     if let Some(members) = parse_typed_sketch_member_run(bytes, paired) {
         return members;
     }
-    let Some(count) =
-        View::u32_le_at(bytes, paired + 52).and_then(|count| usize::try_from(count).ok())
+    let Some((_, name_end)) = sketch_member_display_name_field(bytes, paired) else {
+        return empty;
+    };
+    if bytes.get(name_end + member_run_head::ZERO_BYTE) != Some(&member_run_head::ZERO_BYTE_VALUE) {
+        return empty;
+    }
+    let Some(count) = View::u32_le_at(bytes, name_end + member_run_head::MEMBER_COUNT)
+        .and_then(|count| usize::try_from(count).ok())
     else {
         return empty;
     };
     if count == 0 {
         return empty;
     }
+    let first = name_end + member_run_head::LEN;
     let Some(run_end) = count
         .checked_mul(11)
-        .and_then(|length| paired.checked_add(56)?.checked_add(length))
+        .and_then(|length| first.checked_add(length))
     else {
         return empty;
     };
@@ -1400,7 +1418,7 @@ fn parse_sketch_member_run(
 
     let mut members = Vec::new();
     for ordinal in 0..count {
-        let marker = paired + 56 + ordinal * 11;
+        let marker = first + ordinal * 11;
         if bytes.get(marker) != Some(&1)
             || bytes.get(marker + 5..marker + 11) != Some(&[0u8; 6][..])
         {
@@ -2408,7 +2426,7 @@ struct SketchProperty<'a> {
 /// Which keys a record carries varies by record, so a caller addresses a
 /// property by name. Reading the block by fixed offset misframes every record
 /// whose key set differs from the one the offsets were taken from.
-struct SketchProperties<'a> {
+pub(crate) struct SketchProperties<'a> {
     payload: &'a [u8],
     first: usize,
     count: usize,
@@ -2463,7 +2481,10 @@ impl SketchProperties<'_> {
     }
 }
 
-fn read_property_block<'a>(payload: &'a [u8], cursor: &mut usize) -> Option<SketchProperties<'a>> {
+pub(crate) fn read_property_block<'a>(
+    payload: &'a [u8],
+    cursor: &mut usize,
+) -> Option<SketchProperties<'a>> {
     let mut count = 0;
     let mut first = *cursor;
     match payload.get(*cursor)? {

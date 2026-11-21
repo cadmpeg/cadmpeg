@@ -449,3 +449,64 @@ fn a_group_whose_first_region_is_the_union_of_its_further_regions_selects_the_fu
         assert!(outer_boundary.iter().any(|use_| use_.entity == line));
     }
 }
+
+#[test]
+fn a_holed_profile_reports_pruned_crossing_runs_and_obeys_the_assumption_policy() {
+    const LINEAR_TOLERANCE: f64 = 1.0e-7;
+    const ANGULAR_TOLERANCE: f64 = 1.0e-9;
+    let (sketch, mut entities, mut identities) = square_with_island();
+    entities.push(SketchEntity::new(
+        neutral_sketch_curve_id(&sketch.id, 9, 0),
+        sketch.id.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: Point2::new(5.0, -3.0),
+            end: Point2::new(5.0, 2.0),
+        })
+        .unwrap(),
+    ));
+    identities.push(curve(39, 9, 0));
+    let group = group();
+    let placements = [placement()];
+    let sketches = [sketch];
+    let selections = [holed_selection(10, 0, 1), holed_selection(11, 1, 1)];
+    let mut resolution =
+        planar_resolution(&[], &placements, &identities, &sketches, &entities).path_resolution();
+    resolution.profile_curves = &selections;
+    let scope_histories = HashMap::new();
+    for allow_assumptions in [false, true] {
+        let work = ProfileGeometryWork::new();
+        let profile = crate::test_support::with_decode_context(|ctx| {
+            let scoped = ExtrudeProfileResolution {
+                entities: &entities,
+                spatial_sketches: &[],
+                spatial_entities: &[],
+                histories: &[],
+                scope_histories: &scope_histories,
+                linear_tolerance: LINEAR_TOLERANCE,
+                angular_tolerance: ANGULAR_TOLERANCE,
+                profile_work: &work,
+                ctx,
+            }
+            .scoped(&[]);
+            super::super::resolve_profile_curve_arrangement_regions_with_policy(
+                &group,
+                &resolution,
+                scoped,
+                allow_assumptions,
+            )
+        })
+        .unwrap();
+        assert_eq!(profile.is_some(), allow_assumptions);
+        work.finish_selection();
+        let losses = work.losses();
+        assert_eq!(
+            losses
+                .iter()
+                .any(|loss| loss.code == F3dLossCode::FeatureProfileCrossingRunsAssumed.kind()),
+            allow_assumptions
+        );
+        if !allow_assumptions {
+            assert!(losses.is_empty());
+        }
+    }
+}

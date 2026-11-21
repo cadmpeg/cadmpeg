@@ -216,15 +216,18 @@ impl<'m> BodyNames<'m> {
 pub(super) type AttributeNameParts = (NameFamily, Vec<(i64, i64)>, Vec<i64>);
 
 /// The family, pairs, and tail of a generated-name attribute.
-pub(super) fn attribute_name(name: &str, values: &[AttributeValue]) -> Option<AttributeNameParts> {
+pub(super) fn attribute_name(
+    name: &str,
+    values: &[Option<AttributeValue>],
+) -> Option<AttributeNameParts> {
     let fields = values.get(5..)?;
     let (family, counted) = match fields {
-        [AttributeValue::String(family), AttributeValue::Integer(1), AttributeValue::Integer(44), rest @ ..]
+        [Some(AttributeValue::String(family)), Some(AttributeValue::Integer(1)), Some(AttributeValue::Integer(44)), rest @ ..]
             if name.starts_with("ATTRIB_CUSTOM") =>
         {
             (NameFamily::attribute(family)?, rest)
         }
-        [AttributeValue::Integer(_), rest @ ..] => {
+        [Some(AttributeValue::Integer(_)), rest @ ..] => {
             (NameFamily::attribute(name.split('-').next()?)?, rest)
         }
         _ => return None,
@@ -232,7 +235,7 @@ pub(super) fn attribute_name(name: &str, values: &[AttributeValue]) -> Option<At
     let integers = counted
         .iter()
         .map(|value| match value {
-            AttributeValue::Integer(value) => Some(*value),
+            Some(AttributeValue::Integer(value)) => Some(*value),
             _ => None,
         })
         .collect::<Option<Vec<_>>>()?;
