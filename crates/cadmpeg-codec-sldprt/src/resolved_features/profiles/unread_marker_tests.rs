@@ -5,18 +5,20 @@ use std::collections::BTreeMap;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
-    SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+    Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
 };
 
 use super::{
     finalize_unread_marker_entities, project_marker_backed_sketches, ChordConflict,
-    HeldMarkerGeometry,
+    HeldMarkerGeometry, ListedEntity,
 };
 use crate::loss::SldprtLossCode;
-use crate::test_support::sketch_records::{framed_line_sketch, sketch_record_head};
 use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputLane, FeatureSource, SketchInputEntity,
-    SketchInputKind, SketchInputLink, SketchInputLinks,
+    SketchInputKind, SketchInputLink, SketchInputLinks, SketchRelationKind,
+};
+use crate::test_support::sketch_records::{
+    framed_line_sketch, framed_line_sketch_with_states, sketch_record_head,
 };
 
 fn input_marker(
@@ -69,6 +71,17 @@ fn projected_entities(
     markers: Vec<SketchInputEntity>,
     payload: Vec<u8>,
 ) -> (Vec<SketchEntity>, HeldMarkerGeometry) {
+    let (_, entities, held) = projection(markers, payload);
+    (entities, held)
+}
+
+/// The sketches, entities and held marker geometry
+/// `project_marker_backed_sketches` emits for `markers` of one sketch feature
+/// whose lane holds `payload`.
+fn projection(
+    markers: Vec<SketchInputEntity>,
+    payload: Vec<u8>,
+) -> (Vec<Sketch>, Vec<SketchEntity>, HeldMarkerGeometry) {
     let histories = vec![FeatureHistory {
         id: "history".into(),
         part_name: None,
@@ -147,7 +160,7 @@ fn projected_entities(
         &lanes,
     )
     .expect("marker profile projection fits service policy");
-    (entities, held)
+    (sketches, entities, held)
 }
 
 #[test]
@@ -331,8 +344,8 @@ fn an_inline_arc_whose_read_points_define_no_minor_arc_keeps_its_handle() {
 }
 
 /// A placeholder whose marker has held `sgSketch` record geometry in its
-/// sketch takes that geometry and charges no loss; the same marker in another
-/// sketch keeps its role and its loss.
+/// sketch takes that geometry and the record's construction mark and charges
+/// no loss; the same marker in another sketch keeps its role and its loss.
 #[test]
 fn a_placeholder_with_held_record_geometry_takes_it_without_a_loss() {
     let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
@@ -346,12 +359,18 @@ fn a_placeholder_with_held_record_geometry_takes_it_without_a_loss() {
     let mut held = HeldMarkerGeometry::default();
     held.listed.insert(
         (read.sketch.clone(), "marker-read".to_owned()),
-        line.clone(),
+        ListedEntity {
+            geometry: line.clone(),
+            endpoints: None,
+            construction: true,
+            outside_profile: false,
+        },
     );
     let mut entities = vec![read, other_sketch];
     let mut losses = Vec::new();
     finalize_unread_marker_entities(&mut entities, held, &mut losses);
     assert_eq!(entities[0].geometry, line);
+    assert!(entities[0].construction);
     assert_eq!(
         native_kind(&entities[1]),
         Some("sldprt:line-or-circle-handle")
@@ -389,6 +408,8 @@ fn sensed_arc_sketch() -> (Vec<u8>, [u64; 3], u64) {
     payload.extend_from_slice(&0u32.to_le_bytes());
     let arc = offset(&payload);
     sketch_record_head(&mut payload);
+    let state = usize::try_from(arc).unwrap() + 29;
+    payload[state..state + 2].copy_from_slice(&1u16.to_le_bytes());
     payload.extend_from_slice(&1u16.to_le_bytes());
     payload.extend_from_slice(&2u16.to_le_bytes());
     payload.extend_from_slice(&1u32.to_le_bytes());
@@ -603,4 +624,119 @@ fn a_later_line_on_a_marker_whose_record_is_not_a_line_charges_the_conflict() {
     assert_eq!(loss.code, SldprtLossCode::SketchArcRecordConflict.kind());
     assert!(loss.message.contains(entities[1].id().as_str()));
     assert!(loss.message.contains("does not compare the record"));
+}
+
+/// The corners, in metres, of a 10 mm square.
+const SQUARE: [[f64; 2]; 4] = [[0.0, 0.0], [0.01, 0.0], [0.01, 0.01], [0.0, 0.01]];
+
+/// Point markers `corner0` to `corner3` on the point records at `points`.
+fn corner_markers(points: &[u64]) -> Vec<SketchInputEntity> {
+    points
+        .iter()
+        .zip(SQUARE)
+        .enumerate()
+        .map(|(index, (offset, coordinates))| {
+            marker_at(
+                &format!("corner{index}"),
+                u32::try_from(index).unwrap(),
+                *offset,
+                SketchInputKind::Point,
+                Some(coordinates),
+            )
+        })
+        .collect()
+}
+
+/// The entity read from the unmarked curve record at `offset`.
+fn record_entity(entities: &[SketchEntity], offset: u64) -> &SketchEntity {
+    entities
+        .iter()
+        .find(|entity| entity.id().as_str().ends_with(&format!(":record:{offset}")))
+        .unwrap_or_else(|| panic!("the record at {offset} is read"))
+}
+
+/// A square of profile lines (state `1`) and a diagonal of state `0` with
+/// the profile selector `4`: the diagonal is read as a line of the sketch,
+/// not construction, and the profile is the square alone.
+#[test]
+fn a_line_of_state_zero_is_read_and_joins_no_profile() {
+    let (payload, points, lines) = framed_line_sketch_with_states(
+        &SQUARE,
+        &[
+            (0, 1, 4, 1),
+            (1, 2, 4, 1),
+            (2, 3, 4, 1),
+            (3, 0, 4, 1),
+            (0, 2, 4, 0),
+        ],
+    );
+    let (sketches, entities, _) = projection(corner_markers(&points), payload);
+    let [sketch] = sketches.as_slice() else {
+        panic!("one sketch: {sketches:?}");
+    };
+    let diagonal = record_entity(&entities, lines[4]);
+    assert!(matches!(
+        diagonal.geometry.definition(),
+        SketchGeometryDefinition::Line { .. }
+    ));
+    assert!(!diagonal.construction);
+    let profiles = sketch.profiles.iter().collect::<Vec<_>>();
+    let [profile] = profiles.as_slice() else {
+        panic!("one profile: {profiles:?}");
+    };
+    let mut members = profile
+        .iter()
+        .map(|entity_use| entity_use.entity.clone())
+        .collect::<Vec<_>>();
+    members.sort();
+    let mut sides = lines[..4]
+        .iter()
+        .map(|&offset| record_entity(&entities, offset).id().clone())
+        .collect::<Vec<_>>();
+    sides.sort();
+    assert_eq!(members, sides);
+}
+
+/// A marker that the marker layouts skip, here one whose u32 at +17 holds a
+/// relation code, is admitted when its record is a curve record that reads,
+/// and takes the record's line.
+#[test]
+fn a_skipped_marker_whose_curve_record_reads_takes_the_record_line() {
+    let (payload, points, lines) =
+        framed_line_sketch(&SQUARE, &[(0, 1, 4), (1, 2, 4), (2, 3, 4), (3, 0, 4)]);
+    let mut markers = corner_markers(&points);
+    markers.push(marker_at(
+        "side",
+        4,
+        lines[1],
+        SketchInputKind::Relation(SketchRelationKind::Vertical),
+        None,
+    ));
+    let (entities, _) = projected_entities(markers, payload);
+    let side = marker_entity(&entities, "side");
+    let SketchGeometryDefinition::Line { start, end } = *side.geometry.definition() else {
+        panic!("the side is a line: {:?}", side.geometry);
+    };
+    let (start, end) = (start.get(), end.get());
+    assert!((start.u - end.u).abs() < EPS_TEST_MM);
+    assert!(((start.v - end.v).abs() - 10.0).abs() < EPS_TEST_MM);
+    assert_eq!(side.endpoint_refs, ["corner1", "corner2"]);
+}
+
+/// Each compact-record sketch that a marker-record sketch superseded charges
+/// one loss naming both sketches.
+#[test]
+fn a_superseded_compact_sketch_is_named() {
+    let compact = SketchId::mint("synthetic:test:id#compact").unwrap();
+    let markers = SketchId::mint("synthetic:test:id#markers").unwrap();
+    let mut held = HeldMarkerGeometry::default();
+    held.superseded.push((compact.clone(), markers.clone()));
+    let mut losses = Vec::new();
+    finalize_unread_marker_entities(&mut Vec::new(), held, &mut losses);
+    let [loss] = losses.as_slice() else {
+        panic!("one loss: {losses:?}");
+    };
+    assert_eq!(loss.code, SldprtLossCode::SketchReadingSuperseded.kind());
+    assert!(loss.message.contains(compact.as_str()));
+    assert!(loss.message.contains(markers.as_str()));
 }

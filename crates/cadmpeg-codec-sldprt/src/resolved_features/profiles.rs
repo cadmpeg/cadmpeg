@@ -48,7 +48,7 @@ use super::relation_geometry::{declared_entity_handle_circular_marker, owned_rel
 use super::relation_loci::same_dimension_length;
 use super::scalars::FeatureObjectNames;
 use super::sketch_lists::{
-    listed_entity, unchecked_record_conflict, ChordConflict, SketchRecordLists,
+    listed_entity, unchecked_record_conflict, ChordConflict, ListedEntity, SketchRecordLists,
 };
 use super::transforms::{record_top_marker_coordinates, sketch_frame_marker_transform};
 use super::typed_relations::{
@@ -708,10 +708,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 .id
                 .rsplit_once('#')
                 .map_or(lane.id.as_str(), |(_, key)| key);
-            let Ok(sketch_id) = SketchId::mint(format!(
-                "sldprt:model:sketch#compact:{lane_key}:{}",
-                native_feature.ordinal
-            )) else {
+            let Some(sketch_id) = compact_sketch_id(lane_key, native_feature.ordinal) else {
                 continue;
             };
             if sketches.iter().any(|sketch| sketch.id == sketch_id) {
@@ -1086,11 +1083,11 @@ const ARC_POINTS_PLACEHOLDER: &str = "sldprt:marker-geometry:arc-points";
 pub(crate) struct HeldMarkerGeometry {
     /// Arc handles whose inline points define no minor arc.
     handles: Vec<SketchEntity>,
-    /// The geometry the `sgSketch` record of a marker gives by point-record
-    /// position when the marker reading leaves the marker unread and the
-    /// record indexes point records of another feature object, by sketch and
-    /// marker reference.
-    listed: HashMap<(SketchId, String), SketchGeometry>,
+    /// The entity the `sgSketch` record of a marker gives by point-record
+    /// position when the marker reading leaves the marker unread and a point
+    /// record the record indexes is no marker of the marker's feature object,
+    /// by sketch and marker reference.
+    listed: HashMap<(SketchId, String), ListedEntity>,
     /// Why the `sgSketch` curve record of a line's marker gives no entity
     /// although it states another form, by sketch and marker reference.
     chord_conflicts: HashMap<(SketchId, String), ChordConflict>,
@@ -1099,6 +1096,9 @@ pub(crate) struct HeldMarkerGeometry {
     unchecked: HashMap<String, ChordConflict>,
     /// The lines an earlier finalize pass examined.
     finalized: HashSet<SketchEntityId>,
+    /// Each sketch read from a feature's compact records whose feature now
+    /// binds the sketch read from its marker records, with that sketch.
+    superseded: Vec<(SketchId, SketchId)>,
 }
 
 impl HeldMarkerGeometry {
@@ -1123,10 +1123,11 @@ impl HeldMarkerGeometry {
 }
 
 /// Adds the held arc handles, gives every marker entity that no recovery
-/// pass resolved its held `sgSketch` record geometry where it has one, and
-/// otherwise the marker role as its native kind with one loss per entity,
-/// and charges one loss for each line whose curve record states another
-/// form.
+/// pass resolved its held `sgSketch` record geometry and construction mark
+/// where it has them, and otherwise the marker role as its native kind with
+/// one loss per entity, charges one loss for each line whose curve record
+/// states another form, and one for each compact-record sketch that a
+/// marker-record sketch superseded.
 pub(crate) fn finalize_unread_marker_entities(
     sketch_entities: &mut Vec<SketchEntity>,
     held: HeldMarkerGeometry,
@@ -1139,6 +1140,7 @@ pub(crate) fn finalize_unread_marker_entities(
         chord_conflicts,
         unchecked,
         finalized,
+        superseded,
     } = held;
     sketch_entities.extend(handles);
     for entity in sketch_entities.iter_mut() {
@@ -1151,12 +1153,13 @@ pub(crate) fn finalize_unread_marker_entities(
         else {
             continue;
         };
-        if let Some(geometry) = entity
+        if let Some(read) = entity
             .native_ref
             .clone()
             .and_then(|marker| listed.remove(&(entity.sketch.clone(), marker)))
         {
-            entity.geometry = geometry;
+            entity.geometry = read.geometry;
+            entity.construction = read.construction;
             continue;
         }
         let (role, code) = match placeholder {
@@ -1207,6 +1210,11 @@ pub(crate) fn finalize_unread_marker_entities(
             "sketch {} entity {}: the sgSketch curve record of marker {marker} {conflict}; the entity keeps the line its marker reading gives",
             entity.sketch,
             entity.id(),
+        )));
+    }
+    for (compact, markers) in superseded {
+        losses.push(SldprtLossCode::SketchReadingSuperseded.note(format!(
+            "sketch {compact}, read from its feature's compact records, stays in the model; the feature binds sketch {markers}, read from its marker records"
         )));
     }
 }
@@ -1606,6 +1614,7 @@ pub(crate) fn project_marker_backed_sketches(
             let mut chord_conflicts = Vec::new();
             let mut listed_elsewhere = Vec::new();
             let mut listed_entities = HashMap::new();
+            let mut outside_profile = HashSet::new();
             let project_coordinates = |[u, v]: [f64; 2]| {
                 let point = transform.apply(quantize(
                     Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR),
@@ -2297,7 +2306,7 @@ pub(crate) fn project_marker_backed_sketches(
                                 &project_coordinates,
                             )
                         }) {
-                            listed_elsewhere.push((marker.id().to_owned(), read.geometry));
+                            listed_elsewhere.push((marker.id().to_owned(), read));
                         }
                     }
                     let construction = index_from_u64(marker.offset()).is_some_and(|offset| {
@@ -2355,7 +2364,10 @@ pub(crate) fn project_marker_backed_sketches(
                         .with_construction(construction)
                         .with_native_ref(Some(marker.id().to_owned()))
                         .with_endpoint_refs(endpoint_refs);
-                    if listed.is_some() {
+                    if let Some(listed) = &listed {
+                        if listed.outside_profile {
+                            outside_profile.insert(entity.id().clone());
+                        }
                         listed_entities.insert(
                             entity.id().clone(),
                             (entity.geometry.clone(), entity.endpoint_refs.clone()),
@@ -2397,6 +2409,9 @@ pub(crate) fn project_marker_backed_sketches(
                 let entity = SketchEntity::new(entity_id, sketch_id.clone(), listed.geometry)
                     .with_construction(listed.construction)
                     .with_endpoint_refs(endpoint_refs);
+                if listed.outside_profile {
+                    outside_profile.insert(entity.id().clone());
+                }
                 listed_entities.insert(
                     entity.id().clone(),
                     (entity.geometry.clone(), entity.endpoint_refs.clone()),
@@ -2594,17 +2609,11 @@ pub(crate) fn project_marker_backed_sketches(
                     entity.endpoint_refs = endpoint_refs.clone();
                 }
             }
-            let mut closed = closed_marker_profiles(&projected);
-            if listed_curves {
-                let read = projected
-                    .iter()
-                    .filter(|entity| listed_entities.contains_key(entity.id()))
-                    .collect::<Vec<_>>();
-                let read = closed_marker_profiles(&read);
-                if read.len() > closed.len() {
-                    closed = read;
-                }
-            }
+            let closed = marker_sketch_profiles(
+                &projected,
+                |id| listed_entities.contains_key(id),
+                &outside_profile,
+            );
             let Ok(profiles) = cadmpeg_ir::sketches::SketchProfiles::try_from(closed) else {
                 continue;
             };
@@ -2615,6 +2624,11 @@ pub(crate) fn project_marker_backed_sketches(
             if let Some(bound_sketch) = &bound_sketch {
                 sketch_entities.retain(|entity| entity.sketch != *bound_sketch);
                 sketches.retain(|sketch| sketch.id != *bound_sketch);
+            }
+            if let Some(compact) = compact_sketch_id(lane_key, native_feature.ordinal) {
+                if sketches.iter().any(|sketch| sketch.id == compact) {
+                    held_geometry.superseded.push((compact, sketch_id.clone()));
+                }
             }
             sketch_entities.extend(projected);
             held_geometry.handles.extend(held);
@@ -2650,6 +2664,40 @@ pub(crate) fn project_marker_backed_sketches(
         }
     }
     Ok(())
+}
+
+/// The id of the sketch read from the compact records of feature `ordinal`
+/// in the lane keyed `lane_key`.
+fn compact_sketch_id(lane_key: &str, ordinal: u32) -> Option<SketchId> {
+    SketchId::mint(format!("sldprt:model:sketch#compact:{lane_key}:{ordinal}")).ok()
+}
+
+/// The closed profiles of a marker sketch's `projected` entities. A curve in
+/// `outside_profile`, read from a curve record of state `0`, joins no
+/// profile. When the curves that `record_read` names close more profiles
+/// alone than together with the curves of the other marker readings, the
+/// profiles are theirs.
+fn marker_sketch_profiles(
+    projected: &[SketchEntity],
+    record_read: impl Fn(&SketchEntityId) -> bool,
+    outside_profile: &HashSet<SketchEntityId>,
+) -> Vec<Vec<SketchEntityUse>> {
+    let curves = projected
+        .iter()
+        .filter(|entity| !outside_profile.contains(entity.id()))
+        .collect::<Vec<_>>();
+    let closed = closed_marker_profiles(&curves);
+    let read = curves
+        .iter()
+        .copied()
+        .filter(|entity| record_read(entity.id()))
+        .collect::<Vec<_>>();
+    let read = closed_marker_profiles(&read);
+    if read.len() > closed.len() {
+        read
+    } else {
+        closed
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -5192,6 +5240,9 @@ mod exact_tests;
 
 #[cfg(test)]
 mod index_tests;
+
+#[cfg(test)]
+mod record_profile_tests;
 
 #[cfg(test)]
 mod unread_marker_tests;

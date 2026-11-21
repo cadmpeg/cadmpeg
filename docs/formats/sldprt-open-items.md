@@ -1090,6 +1090,14 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Need.** For each curve-type-2 record, its point records and fields against the B-rep edges of the feature that consumes the sketch.
 
+### EV-31. Arc records of a sketch whose marker transform is not a similarity
+
+**Question.** Which placement of a sketch's point records makes its arc records end on their endpoint point records when the marker transform of the sketch scales one sketch axis more than the other?
+
+**Known.** The decoder places the point records of a framed `sgSketch` object through the marker transform of its sketch (`sldprt.md` §2, "A marker whose record is a point record or a curve record"). When that transform scales the two sketch axes differently, an arc record's arc, placed through it, ends off one of its endpoint point records by more than the linear resolution. The decoder gives such a record no geometry, keeps the line or handle that the other §2 rules give its marker, and charges `sketch.arc-record-conflict`. A profile that runs through the arc stays open.
+
+**Need.** The frame of such a sketch's point records, checked against the circular edges and side faces of the feature that consumes the sketch.
+
 ### EV-24. Bytes after the last top-level object
 
 **Question.** What owns the four zero bytes some `ResolvedFeatures` streams write after their last top-level object, and the two zero bytes an in-context part writes after a top-level `moProfileFeature_c` whose sketch plane is written in place?

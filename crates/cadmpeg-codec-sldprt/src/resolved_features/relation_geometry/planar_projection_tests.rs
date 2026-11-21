@@ -812,4 +812,6 @@ mod address_markers;
 
 mod axis_markers;
 
+mod curve_records;
+
 mod native_markers;
