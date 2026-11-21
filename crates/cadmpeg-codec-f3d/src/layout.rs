@@ -11427,3 +11427,19 @@ pub(crate) mod sketch_item_geometry_member_run_head {
     /// Offset of `member_count` (`u32`, little-endian). Spec §Records of a Sketch item.
     pub(crate) const MEMBER_COUNT: usize = 1;
 }
+
+/// Byte offsets for the `manifest_reference_extension_prefix` record.
+///
+/// Spec §1.4. Record length 9 B.
+///
+/// ```text
+/// Offsets are relative to the generation extension after the capability registry.
+/// ```
+pub(crate) mod manifest_reference_extension_prefix {
+    /// Record length in bytes. Spec §1.4.
+    pub(crate) const LEN: usize = 9;
+    /// Offset of `reference_flag` (`u8`). Spec §1.4.
+    pub(crate) const REFERENCE_FLAG: usize = 4;
+    /// Stated value of `reference_flag` (`u8`). Spec §1.4.
+    pub(crate) const REFERENCE_FLAG_VALUE: u8 = 1;
+}

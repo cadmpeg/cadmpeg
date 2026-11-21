@@ -3904,13 +3904,3 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 **Need.** Paired containers of one mesh saved with and without the flag, or decoded corner normals of a flagged stream compared with the triangle normals.
 
 **Note.** The decoder reads the flagged payload with the `{T: 3}` layout, retains the flag on the native split-stream record, and reports `mesh.component-flag-assumed`.
-
-### DR-919. Linked-document identity in API-exported containers
-
-**Question.** A field report describes an F3D exported through Fusion's API Export Manager with an absent `RedirectionsStream.dat`. The top-level `Manifest.dat` contains UTF-16LE lineage and version URNs for linked children. A Design `MetaStream.dat` can contain the document's own version URN. A file with broken links can retain child version URNs after the parts become embedded. Which manifest fields identify each linked child and the containing document, and which fields distinguish a linked part from an embedded part?
-
-**Known.** `f3d.md` §1.3 defines revision-10 linked-document entries as u32 `2`, an LP-UTF16 composite locator containing a version URN, and two LP-UTF16 GUIDs. The public inputs establish the Redirections and F3Z design-object identity layouts in §1.4 and §1.5.
-
-**Need.** A CC0 two-part linked assembly exported through the API, with one export that retains the links and one export with the links broken. Both exports must retain the complete manifests and Design streams. The pair must identify the documents' lineage and version URNs and the two GUIDs in each linked-document entry.
-
-**Note.** The decoder retains manifest and MetaStream records. Neutral external-document identity uses Redirections design entries and F3Z design objects.

@@ -214,3 +214,91 @@ fn archive_merge_keeps_redirections_member_identity() {
         .unwrap();
     assert_identity(document, "RootKey");
 }
+
+fn api_export_with_placements(linked: bool) -> Vec<u8> {
+    use std::io::Read;
+    let bytes = f3d_with_identity_xrefs("assembly-design", "root.f3d", &[("child.f3d", XREF_ROLE)]);
+    let mut source = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    for index in 0..source.len() {
+        let mut entry = source.by_index(index).unwrap();
+        let name = entry.name().unwrap().into_owned();
+        if name == "RedirectionsStream.dat" {
+            continue;
+        }
+        let mut bytes = Vec::new();
+        entry.read_to_end(&mut bytes).unwrap();
+        if name == "Manifest.dat" {
+            let manifest = crate::manifest::parse_top_level(&bytes).unwrap();
+            let extension =
+                crate::test_support::manifest_test::api_reference_extension(if linked {
+                    &[(XREF_ROLE, "ChildKey", "child.f3d")]
+                } else {
+                    &[]
+                });
+            bytes.splice(manifest.reference_extension, extension);
+        }
+        zip.start_file(name, options).unwrap();
+        zip.write_all(&bytes).unwrap();
+    }
+    zip.finish().unwrap().into_inner()
+}
+
+#[test]
+fn api_export_manifest_binds_child_identity_without_assigning_it_to_file_root() {
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(api_export_with_placements(true)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let definitions = &decoded.ir().model.product_definitions;
+    let child = definitions
+        .iter()
+        .find_map(|row| match &row.storage {
+            Storage::External(document) => Some(document),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(child.path.as_ref().unwrap().as_str(), "child.f3d");
+    assert_eq!(
+        child.document_id.as_ref().unwrap().as_str(),
+        "urn:adsk.wipprod:dm.lineage:ChildKey"
+    );
+    assert_eq!(
+        child.version.as_ref().unwrap().as_str(),
+        "urn:adsk.wipprod:fs.file:vf.ChildKey?version=7"
+    );
+    let Storage::File { document, .. } = &definitions
+        .iter()
+        .find(|row| row.is_root())
+        .unwrap()
+        .storage
+    else {
+        panic!("file root")
+    };
+    assert_eq!(document.path.as_ref().unwrap().as_str(), "root.f3d");
+    assert!(document.document_id.is_none());
+    assert!(document.version.is_none());
+    assert_eq!(decoded.ir().model.occurrences.len(), 1);
+    assert_eq!(f3d_native(decoded.ir()).xref_references.len(), 1);
+    assert!(f3d_native(decoded.ir()).xref_designs.is_empty());
+}
+
+#[test]
+fn api_export_empty_reference_extension_has_no_external_documents() {
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(api_export_with_placements(false)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(decoded
+        .ir()
+        .model
+        .product_definitions
+        .iter()
+        .all(|row| !matches!(row.storage, Storage::External(_))));
+    assert!(f3d_native(decoded.ir()).xref_references.is_empty());
+}

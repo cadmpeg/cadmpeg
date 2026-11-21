@@ -51202,3 +51202,34 @@ offset = 685
 type = "bytes[11]"
 source = "spec"
 anchor = "`base_feature_browser_root_prefix`"
+
+[[record]]
+name = "manifest_reference_extension_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/xref/api_export.rs"
+kind = "byte"
+section = "1.4"
+anchor = "The reference-bearing prefix has flag"
+size = 9
+note = "Offsets are relative to the generation extension after the capability registry."
+
+[[record.field]]
+name = "zero_run"
+offset = 0
+type = "bytes[4]"
+source = "spec"
+anchor = "starts with four zero bytes and a u8 reference flag"
+
+[[record.field]]
+name = "reference_flag"
+offset = 4
+type = "u8"
+value = 1
+source = "spec"
+anchor = "The reference-bearing prefix has flag `1`"
+
+[[record.field]]
+name = "reference_count"
+offset = 5
+type = "u32"
+source = "spec"
+anchor = "followed by a nonzero u32 reference count"
