@@ -13,7 +13,7 @@ use super::super::frames::DesignRecords;
 use super::super::history::{HEAD_STATE, ROOT_STATE};
 use super::super::sketch::{CurveGeometry, PlannedSketch};
 use super::super::types;
-use super::owned::{Owned, Trailer, DISCRIMINATOR};
+use super::owned::{Form, Owned, DISCRIMINATOR};
 use super::sketches::{curve_identity, item_companion, SketchRecords, COMPONENT, OWNER_COLLECTION};
 use super::{count, Context};
 use crate::records::references::DesignClassTag;
@@ -277,7 +277,7 @@ pub(super) fn write(
                 scope: records.scope,
                 local,
                 kind,
-                trailer: Trailer::Flagged,
+                form: Form::Flagged,
                 value,
             },
         )?;

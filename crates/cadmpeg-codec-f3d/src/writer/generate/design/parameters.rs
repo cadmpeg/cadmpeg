@@ -51,7 +51,23 @@ pub(in crate::writer::generate) struct ParameterPlan {
     claimed: Vec<PlannedParameter>,
     /// The names of the new parameters written features own.
     owned: Vec<String>,
+    /// The driven parameters, which only the dimension that binds them can
+    /// write.
+    driven: Vec<DrivenParameter>,
+    /// Every parameter of the design.
+    stated: BTreeSet<ParameterId>,
     losses: Vec<LossNote>,
+}
+
+/// A `Driven` parameter (the parameter of a driven dimension).
+struct DrivenParameter {
+    source: ParameterId,
+    name: String,
+    form: Form,
+    /// The cached value in Fusion's database units.
+    evaluated: Option<f64>,
+    /// Whether a written dimension owns it.
+    taken: bool,
 }
 
 /// A parameter a written feature owns, as its record holds it.
@@ -146,6 +162,14 @@ impl Form {
             Self::Angle | Self::Real => database,
         }
     }
+
+    fn quantity(self) -> Quantity {
+        match self {
+            Self::Length => Quantity::LENGTH,
+            Self::Angle => Quantity::ANGLE,
+            Self::Real => Quantity::REAL,
+        }
+    }
 }
 
 /// The plan for the parameters of the scope of `definition`.
@@ -159,19 +183,42 @@ pub(in crate::writer::generate) fn plan(
         .iter()
         .filter(|parameter| parameter.scope == *definition)
         .collect::<Vec<_>>();
+    let stated = target
+        .design
+        .parameters
+        .iter()
+        .map(|parameter| parameter.id.clone())
+        .collect();
     let mut omitted_kind = Vec::new();
-    let mut omitted_driven = Vec::new();
+    let mut driven_candidates = Vec::new();
     let mut candidates = Vec::new();
     for parameter in parameters {
         match (Form::of(&parameter.kind), &parameter.definition) {
             (None, _) => omitted_kind.push(parameter.id.to_string()),
-            (Some(_), ParameterDefinition::Driven) => {
-                omitted_driven.push(parameter.id.to_string());
-            }
+            (Some(form), ParameterDefinition::Driven) => driven_candidates.push((parameter, form)),
             (Some(form), _) => candidates.push((parameter, form)),
         }
     }
-    let names = Names::new(&candidates);
+    // The driven parameters are named after the others, so that their names
+    // change none of those.
+    let names = Names::new(
+        &candidates
+            .iter()
+            .chain(&driven_candidates)
+            .copied()
+            .collect::<Vec<_>>(),
+    );
+    let driven = driven_candidates
+        .iter()
+        .enumerate()
+        .map(|(position, (parameter, form))| DrivenParameter {
+            source: parameter.id.clone(),
+            name: names.of(candidates.len() + position).to_owned(),
+            form: *form,
+            evaluated: cached(parameter).map(|value| form.database(value)),
+            taken: false,
+        })
+        .collect();
     let (order, forced) = dependency_order(&candidates);
     let mut written_names: HashMap<&ParameterId, &str> = HashMap::new();
     let mut written_values: HashMap<&ParameterId, f64> = HashMap::new();
@@ -268,12 +315,6 @@ pub(in crate::writer::generate) fn plan(
         "a Fusion user parameter holds only a length, an angle or a number",
         omitted_kind,
     ));
-    losses.extend(named_loss(
-        F3dLossCode::WriterParameterOmitted,
-        "parameter",
-        "a Fusion user parameter is never driven by the geometry",
-        omitted_driven,
-    ));
     losses.extend(parameter_flattened(
         "F3D",
         "states these parameters by their cached values: Fusion has no established form for their expressions",
@@ -311,6 +352,8 @@ pub(in crate::writer::generate) fn plan(
         written,
         claimed: Vec::new(),
         owned: Vec::new(),
+        driven,
+        stated,
         losses,
     }
 }
@@ -330,6 +373,8 @@ pub(in crate::writer::generate) fn native_or_neutral(
             written: Vec::new(),
             claimed: Vec::new(),
             owned: Vec::new(),
+            driven: Vec::new(),
+            stated: BTreeSet::new(),
             losses: Vec::new(),
         },
         |scope| plan(target, &scope.definition),
@@ -481,16 +526,64 @@ impl ParameterPlan {
     }
 
     pub(in crate::writer::generate) fn into_losses(self) -> Vec<LossNote> {
-        self.losses
+        let mut losses = self.losses;
+        losses.extend(named_loss(
+            F3dLossCode::WriterParameterOmitted,
+            "parameter",
+            "a Fusion user parameter is never driven by the geometry",
+            self.driven
+                .iter()
+                .filter(|parameter| !parameter.taken)
+                .map(|parameter| parameter.source.to_string()),
+        ));
+        losses
     }
 
-    /// The names of the written parameters, user and owned.
+    /// The names of the written parameters, user, owned and driven.
     pub(super) fn names(&self) -> impl Iterator<Item = &str> {
         self.written
             .iter()
             .chain(&self.claimed)
             .map(|parameter| parameter.name.as_str())
             .chain(self.owned.iter().map(String::as_str))
+            .chain(self.driven.iter().map(|parameter| parameter.name.as_str()))
+    }
+
+    /// The cached value of the driven parameter `id` in Fusion's database
+    /// units, where it holds one; `None` where `id` is no driven parameter,
+    /// and the reason where a dimension of `quantity` cannot own it.
+    pub(super) fn driven(
+        &self,
+        id: &ParameterId,
+        quantity: Quantity,
+    ) -> Option<Result<Option<f64>, &'static str>> {
+        let parameter = self
+            .driven
+            .iter()
+            .find(|parameter| &parameter.source == id)?;
+        Some(if parameter.taken {
+            Err("an earlier dimension owns its driven parameter")
+        } else if parameter.form.quantity() != quantity {
+            Err("its driven parameter is of another quantity")
+        } else {
+            Ok(parameter.evaluated)
+        })
+    }
+
+    /// The written name of the driven parameter `id`, which the dimension
+    /// that binds it now owns.
+    pub(super) fn take_driven(&mut self, id: &ParameterId) -> Option<String> {
+        let parameter = self
+            .driven
+            .iter_mut()
+            .find(|parameter| &parameter.source == id && !parameter.taken)?;
+        parameter.taken = true;
+        Some(parameter.name.clone())
+    }
+
+    /// Whether `id` is a parameter of the design.
+    pub(super) fn states(&self, id: &ParameterId) -> bool {
+        self.stated.contains(id)
     }
 
     /// The written parameter `id`, user or claimed.
