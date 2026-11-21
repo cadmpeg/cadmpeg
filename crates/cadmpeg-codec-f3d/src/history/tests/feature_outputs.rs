@@ -1113,6 +1113,7 @@ fn historical_partial_and_native_edge_selections_test() {
         edge: 10,
         interior: Point3::new(1.0, 0.0, 0.0),
         tangent: None,
+        carrier: None,
     });
 
     let history = crate::test_support::history::history(
