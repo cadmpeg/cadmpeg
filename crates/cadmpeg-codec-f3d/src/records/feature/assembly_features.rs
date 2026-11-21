@@ -856,6 +856,12 @@ impl DesignComponentOccurrence {
         matches!(&self.frame, DesignComponentOccurrenceFrame::Attributed(frame) if !frame.property_names.is_empty() && frame.guid_marker.is_none())
     }
 
+    /// Whether the stored body frame follows an object prelude and a source
+    /// marker, a form placed from its closing matrix without a proof.
+    pub(crate) fn has_marked_object_prelude(&self) -> bool {
+        matches!(&self.frame, DesignComponentOccurrenceFrame::Attributed(frame) if !frame.property_names.is_empty() && frame.guid_marker.is_some())
+    }
+
     /// Attributed-frame members on the wire, for an attributed frame.
     fn attributed_wire(&self) -> Option<DesignAttributedOccurrenceWire> {
         match &self.frame {

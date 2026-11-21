@@ -1288,6 +1288,10 @@ fn an_object_snapshot_with_an_explicit_source_frame_uses_its_closing_local_pose(
             assert_close(world(&projection, &id), world(&expected, &id));
         }
         assert!(!has(&projection, F3dLossCode::LocalOccurrenceUnplaced));
+        assert!(has(
+            &projection,
+            F3dLossCode::LocalOccurrenceMarkedPreludeAssumed
+        ));
     }
 }
 
