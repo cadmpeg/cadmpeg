@@ -293,3 +293,20 @@ fn a_validation_error_in_the_written_document_is_record_invalid() {
     let losses = plan_losses(&ir);
     assert!(loss(&losses, "record.invalid").is_some(), "{losses:#?}");
 }
+
+#[test]
+fn a_generated_units_member_is_named() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+    let mut ir = written_cube();
+    ir.model.attributes.push(SourceAttribute {
+        id: cadmpeg_ir::ids::AttributeId::mint("sldprt:metadata:source_linear_unit_code#0:10")
+            .unwrap(),
+        target: AttributeTarget::Document.into(),
+        name: "source_linear_unit_code".into(),
+        values: vec![Some(AttributeValue::Integer(0))],
+        native_ref: None,
+    });
+    let losses = plan_losses(&ir);
+    let note = loss(&losses, "writer.units-member-generated").unwrap();
+    assert!(note.message.contains("no SolidWorks file is known to hold"));
+}

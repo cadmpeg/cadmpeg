@@ -305,6 +305,9 @@ pub(crate) enum SldprtLossCode {
     WriterTessellationMetadataOmitted,
     /// Semantic regeneration omits native cache or directory-padding bytes.
     WriterNativeEnvelopeAuxiliaryOmitted,
+    /// Export writes the unit code in a generated `Units` member that no
+    /// `SolidWorks` file is known to hold.
+    WriterUnitsMemberGenerated,
     /// Export writes the named configurations with a name or partition index it assigned.
     WriterConfigurationIdentityAssigned,
     /// Export omits the named bodies.
@@ -494,6 +497,7 @@ impl SldprtLossCode {
         Self::WriterMaterialsOmitted,
         Self::WriterTessellationMetadataOmitted,
         Self::WriterNativeEnvelopeAuxiliaryOmitted,
+        Self::WriterUnitsMemberGenerated,
         Self::WriterConfigurationIdentityAssigned,
         Self::WriterBodiesOmitted,
         Self::WriterFaceNamesOmitted,
@@ -650,6 +654,7 @@ impl SldprtLossCode {
             Self::WriterNativeEnvelopeAuxiliaryOmitted => {
                 "writer.native-envelope-auxiliary-omitted"
             }
+            Self::WriterUnitsMemberGenerated => "writer.units-member-generated",
             Self::WriterConfigurationIdentityAssigned => "writer.configuration-identity-assigned",
             Self::WriterBodiesOmitted => "writer.bodies-omitted",
             Self::WriterFaceNamesOmitted => "writer.face-names-omitted",
@@ -704,6 +709,7 @@ impl SldprtLossCode {
         match self {
             Self::WriterTessellationMetadataOmitted => Severity::Warning,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => Severity::Warning,
+            Self::WriterUnitsMemberGenerated => Severity::Warning,
             Self::WriterConfigurationIdentityAssigned => Severity::Warning,
             Self::WriterBodiesOmitted => Severity::Warning,
             Self::WriterFaceNamesOmitted => Severity::Warning,
@@ -857,6 +863,7 @@ impl SldprtLossCode {
         match self {
             Self::WriterTessellationMetadataOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterUnitsMemberGenerated => LossTaxonomy::MetadataNotTransferred,
             Self::WriterConfigurationIdentityAssigned => LossTaxonomy::MetadataNotTransferred,
             Self::WriterBodiesOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::WriterFaceNamesOmitted => LossTaxonomy::AttributesNotTransferred,
@@ -1299,6 +1306,7 @@ mod tests {
                 "writer.materials-omitted",
                 "writer.tessellation-metadata-omitted",
                 "writer.native-envelope-auxiliary-omitted",
+                "writer.units-member-generated",
                 "writer.configuration-identity-assigned",
                 "writer.bodies-omitted",
                 "writer.face-names-omitted",

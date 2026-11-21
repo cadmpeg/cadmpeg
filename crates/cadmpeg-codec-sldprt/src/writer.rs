@@ -309,6 +309,11 @@ pub(crate) fn write_semantic_with_records(
         }
     }
     if let Some(units) = units {
+        losses.push(crate::loss::SldprtLossCode::WriterUnitsMemberGenerated.note(
+            "the document's linear unit code is written as SW_UnitsLinear in a generated Units \
+             member, a member no SolidWorks file is known to hold; SolidWorks files state it as \
+             SW_UnitsLinear of the default saved-property carrier",
+        ));
         members.push(&mut sections, &mut unwritten, "Units".into(), units);
     }
     if !ir.model.tessellations.is_empty() {

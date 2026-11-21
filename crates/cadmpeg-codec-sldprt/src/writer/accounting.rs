@@ -169,7 +169,8 @@ pub(crate) enum Unwritten {
     NoSerializer,
     /// The attribute's retained source position does not hold its record.
     RetainedMismatch,
-    /// A saved-property edit; the property carrier is written as stored.
+    /// A saved property the exporter cannot serialize; its carrier is
+    /// written as stored, or no carrier row is written.
     SavedProperty,
     /// A retained record the document no longer states; its bytes are kept.
     Removed,
@@ -216,7 +217,7 @@ impl Unwritten {
                 "name a retained source position that does not hold their SLDPRT record"
             }
             Self::SavedProperty => {
-                "are saved-property edits the SLDPRT semantic exporter cannot serialize"
+                "are saved properties the SLDPRT semantic exporter cannot serialize"
             }
             Self::Removed => "are no longer stated by the document",
             Self::OwnerCarried => {
