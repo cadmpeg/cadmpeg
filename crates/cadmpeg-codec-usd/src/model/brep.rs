@@ -1078,6 +1078,7 @@ impl super::Builder<'_, '_, '_, '_> {
                         object_type: None,
                         visible: None,
                         channels: BTreeMap::new(),
+                        native_ref: None,
                     });
                 self.admit("usd_appearance")?;
             }
@@ -1109,6 +1110,7 @@ impl super::Builder<'_, '_, '_, '_> {
                 object_type: None,
                 visible: None,
                 channels: BTreeMap::new(),
+                native_ref: None,
             });
         self.admit("usd_appearance")
     }

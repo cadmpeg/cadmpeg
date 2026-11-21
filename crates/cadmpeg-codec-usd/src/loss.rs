@@ -143,6 +143,11 @@ pub(crate) enum UsdLossCode {
     ExportJointNotWritten,
     /// A solver property has no prim, attribute, or target to write.
     ExportSolverPropertyNotWritten,
+    /// The rigid body, mass, or velocity of a body with a transform of its
+    /// own, written as a group of prims, was not written.
+    ExportPhysicsNotWritten,
+    /// The face that a triangle group names was not written.
+    ExportGroupFaceNotWritten,
 }
 
 impl UsdLossCode {
@@ -201,6 +206,8 @@ impl UsdLossCode {
         Self::ExportCarrierNotWritten,
         Self::ExportJointNotWritten,
         Self::ExportSolverPropertyNotWritten,
+        Self::ExportPhysicsNotWritten,
+        Self::ExportGroupFaceNotWritten,
     ];
 
     /// The stable string identifier, severity, and shared category.
@@ -421,10 +428,20 @@ impl UsdLossCode {
                 Warning,
                 T::AssemblyPlacementsNotTransferred,
             ),
+            Self::ExportPhysicsNotWritten => (
+                "export.physics-not-written",
+                Warning,
+                T::PhysicsNotTransferred,
+            ),
             Self::ExportSolverPropertyNotWritten => (
                 "export.solver-property-not-written",
                 Warning,
                 T::PhysicsNotTransferred,
+            ),
+            Self::ExportGroupFaceNotWritten => (
+                "export.group-face-not-written",
+                Info,
+                T::TopologyNotTransferred,
             ),
         }
     }

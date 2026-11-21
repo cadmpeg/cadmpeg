@@ -485,6 +485,7 @@ pub(crate) fn display_geometry(
                         object_type: None,
                         visible: None,
                         channels: BTreeMap::new(),
+                        native_ref: None,
                     });
                 }
             }
@@ -563,9 +564,8 @@ fn tessellation(
     let groups = mesh
         .patches
         .iter()
-        .map(|(patch, triangles)| TessellationTriangleGroup {
-            source_id: Some(format!("patch {patch}")),
-            triangles: triangles.clone(),
+        .map(|(patch, triangles)| {
+            TessellationTriangleGroup::new(Some(format!("patch {patch}")), triangles.clone())
         })
         .collect();
     Tessellation::from_parts(id, lanes, Vec::new())
@@ -624,6 +624,7 @@ fn appearance(member: &str, base: u32, defined: &crate::ol::Appearance) -> (Appe
         base_color,
         properties,
         textures: Vec::new(),
+        native_ref: None,
     };
     (appearance, rejected)
 }

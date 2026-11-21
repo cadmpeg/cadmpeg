@@ -77,3 +77,13 @@ This document uses ASD-STE100 Simplified Technical English. Attribute names and 
 **Known.** `usd.md` §17.4 gives the proposal examples, which bind materials through subsets with `elementType = "face"` and `elementType = "brep"`. `UsdGeomSubset` registers neither token for a `BrepArray`. The decoder binds the material of such a subset to the faces or bodies it selects, and the encoder writes a `face` subset for each material bound to faces of a body.
 
 **Need.** We must read face and B-rep appearances.
+
+## 3. Mesh
+
+### USD-09. Face appearance on a triangle group
+
+**Question.** When a triangle group of a tessellation names a B-rep face, does the encoder bind an appearance of that face to the `GeomSubset` of the group?
+
+**Known.** `usd.md` §15.1 "A prim binds a material" gives the binding of a `materialBind` subset. A CADIR triangle group can name the face whose triangles it holds. The encoder writes a `materialBind` subset only for a group that has a source identity and a binding to that triangle group. It does not map a `Face` binding to the group that names the face, and it writes no subset for a group with no source identity. The `usd/export.appearance-reduced` note for bindings to faces counts such a `Face` binding. No `GeomSubset` property states the face of a group, and the `usd/export.group-face-not-written` note counts each group that names a face. No decoder sets the face of a triangle group now.
+
+**Need.** We must write the face appearances of a body whose mesh the encoder writes without its B-rep, so that the subset of each face shows the material of its face.
