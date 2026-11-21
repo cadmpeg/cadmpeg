@@ -218,7 +218,8 @@ impl Allocations {
         let slot = match reference.encoding {
             AllocationReferenceEncoding::OwnedChild
             | AllocationReferenceEncoding::TaggedU8
-            | AllocationReferenceEncoding::TaggedU16 => self.after(index).checked_add(value)?,
+            | AllocationReferenceEncoding::TaggedU16
+            | AllocationReferenceEncoding::TaggedU24 => self.after(index).checked_add(value)?,
             AllocationReferenceEncoding::BackwardDistance
             | AllocationReferenceEncoding::WidthCoded
                 if value != 0 =>
@@ -828,6 +829,38 @@ pub(super) fn patches(
 mod tests {
     use super::*;
     use crate::wire::records::parse_consolidated_record;
+
+    #[test]
+    fn wide_vertex_roster_crosses_weighted_allocations_and_stays_in_source() {
+        let mut bytes = vec![0xb2, 3, 0x5d, 5, 5, 0x0e, 0, 0, 1, 0];
+        bytes.extend([0xa8, 3, 0x32, 0, 0, 0, 0, 0x0c, 0, 0, 1]);
+        let roster_at = bytes.len();
+        bytes.extend([0xb2, 3, 0x05, 2, 5, 0x81, 3]);
+        bytes.extend([0xb2, 3, 0x06, 12, 5, 0x82, 5, 3, 0x80]);
+        bytes.extend(0.5_f64.to_le_bytes());
+        bytes.extend([0xb2, 3, 0x18, 0, 5]);
+        let domain = super::super::stations::Domain {
+            range: [0.0, 1.0],
+            knots: None,
+            line: true,
+        };
+        let resolve_station = |bytes: &[u8], end| {
+            let alloc = Allocations::read(bytes, 0, end);
+            super::super::stations::wide_parameter(
+                bytes,
+                &alloc.records,
+                0,
+                4,
+                domain,
+                &|i, r| alloc.resolve(i, r, true),
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+        };
+        assert_eq!(resolve_station(&bytes, Some(bytes.len())), Some(0.5));
+        assert_eq!(resolve_station(&bytes, Some(roster_at)), None);
+        bytes[roster_at + 2] = 0x06;
+        assert_eq!(resolve_station(&bytes, Some(bytes.len())), None);
+    }
 
     #[test]
     fn visible_body_addresses_select_allocation_ends_and_require_body_types() {

@@ -6,6 +6,7 @@ mod scan;
 mod extrude_direction;
 mod mesh_bodies;
 mod profile_data;
+mod root_definition;
 mod scalar_relation_values;
 mod swift_nominal;
 
