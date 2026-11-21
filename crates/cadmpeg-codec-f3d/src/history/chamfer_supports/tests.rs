@@ -10,7 +10,7 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::ids::{HistoricalEdgeId, IdentityKey};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::scalar::PositiveReal;
+use cadmpeg_ir::scalar::{InteriorAngle, PositiveLength};
 
 use super::{attach, clear, supports_for, FaceSense, SENSES};
 use crate::history_records::{
@@ -19,8 +19,12 @@ use crate::history_records::{
     AsmHistoricalTopology,
 };
 
+fn feature_id() -> FeatureId {
+    "f3d:model:feature#chamfer".to_owned().try_into().unwrap()
+}
+
 fn test_prefix() -> IdentityKey {
-    IdentityKey::mint("f3d:test:input#1").unwrap()
+    crate::ids::feature_input_prefix(&feature_id(), 4)
 }
 
 fn record_sense(history: &str, edge: i64, face: i64, with_edge: bool, face_forward: bool) {
@@ -95,8 +99,7 @@ fn plane_plane_topology() -> AsmHistoricalTopology {
             edge: 1,
             interior: Point3::new(0.0, 5.0, 0.0),
             tangent: Some(Vector3::new(0.0, 1.0, 0.0)),
-            start: None,
-            end: None,
+            bounds: None,
         }],
         ..AsmHistoricalTopology::default()
     }
@@ -121,6 +124,16 @@ fn plane_cylinder_topology(with_other_cylinder_vertex: bool) -> AsmHistoricalTop
             AsmHistoricalRelation {
                 owner_ref: 20,
                 member_refs: vec![200],
+            },
+        ],
+        loop_coedges: vec![
+            AsmHistoricalRelation {
+                owner_ref: 100,
+                member_refs: vec![101],
+            },
+            AsmHistoricalRelation {
+                owner_ref: 200,
+                member_refs: vec![201],
             },
         ],
         coedge_topology: vec![
@@ -166,8 +179,7 @@ fn plane_cylinder_topology(with_other_cylinder_vertex: bool) -> AsmHistoricalTop
             edge: 1,
             interior: Point3::new(5.0, 0.0, 10.0),
             tangent: Some(Vector3::new(0.0, 1.0, 0.0)),
-            start: None,
-            end: None,
+            bounds: None,
         }],
         edge_vertices: vec![AsmHistoricalEdge {
             edge: 1,
@@ -197,6 +209,7 @@ fn plane_cylinder_topology(with_other_cylinder_vertex: bool) -> AsmHistoricalTop
         ..AsmHistoricalTopology::default()
     };
     if with_other_cylinder_vertex {
+        topology.loop_coedges[1].member_refs.push(202);
         topology.coedge_topology.push(AsmHistoricalCoedge {
             coedge: 202,
             owner_loop: 200,
@@ -222,9 +235,9 @@ fn plane_cylinder_topology(with_other_cylinder_vertex: bool) -> AsmHistoricalTop
     topology
 }
 
-fn chamfer_feature(spec: ChamferSpec, edge_id: HistoricalEdgeId) -> Feature {
+fn chamfer_feature(spec: ChamferSpec, prefix: &IdentityKey, edge_id: HistoricalEdgeId) -> Feature {
     Feature {
-        id: FeatureId::mint("test:model:feature#chamfer").unwrap(),
+        id: feature_id(),
         ordinal: 0,
         name: None,
         suppressed: None,
@@ -233,19 +246,20 @@ fn chamfer_feature(spec: ChamferSpec, edge_id: HistoricalEdgeId) -> Feature {
         source_tag: Some("Chamfer".into()),
         source_text: None,
         source_content: Default::default(),
-        evaluation: FeatureEvaluation::new(
-            FeatureDefinition::Operation(FeatureOperation::Chamfer {
+        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::Chamfer {
                 groups: NonEmptyMembers::one(ChamferGroup {
-                    edges: EdgeSelection::Historical {
-                        edges: NonEmptyMembers::one(edge_id),
-                        unresolved_native_refs: Vec::new(),
-                    },
+                    edges: EdgeSelection::historical(
+                        crate::ids::history_input_state_id(prefix),
+                        vec![edge_id],
+                        "f3d:test:chamfer-group".to_owned(),
+                    )
+                    .unwrap(),
                     spec,
                 }),
                 flip_direction: false,
-            }),
-            DistinctMembers::try_from(vec![]).unwrap(),
-        ),
+            },
+        )),
         native_ref: None,
         product_definition: None,
     }
@@ -363,7 +377,7 @@ fn attach_filters_out_equal_distance_and_non_two_distances_chamfers() {
     record_sense(history, 1, 20, false, true);
 
     let run = |spec: ChamferSpec| {
-        let feature = chamfer_feature(spec, edge_id.clone());
+        let feature = chamfer_feature(spec, &prefix, edge_id.clone());
         let mut geometry = vec![HistoricalEdgeGeometry {
             edge: edge_id.clone(),
             interior: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 5.0, 0.0)).unwrap(),
@@ -379,28 +393,28 @@ fn attach_filters_out_equal_distance_and_non_two_distances_chamfers() {
 
     assert_eq!(
         run(ChamferSpec::TwoDistances {
-            first: PositiveReal::new(1.0).unwrap(),
-            second: PositiveReal::new(2.0).unwrap(),
+            first: PositiveLength::new(1.0).unwrap(),
+            second: PositiveLength::new(2.0).unwrap(),
         }),
         2
     );
     assert_eq!(
         run(ChamferSpec::TwoDistances {
-            first: PositiveReal::new(2.0).unwrap(),
-            second: PositiveReal::new(2.0).unwrap(),
+            first: PositiveLength::new(2.0).unwrap(),
+            second: PositiveLength::new(2.0).unwrap(),
         }),
         0
     );
     assert_eq!(
-        run(ChamferSpec::EqualDistance {
-            distance: PositiveReal::new(2.0).unwrap(),
+        run(ChamferSpec::Distance {
+            distance: PositiveLength::new(2.0).unwrap(),
         }),
         0
     );
     assert_eq!(
         run(ChamferSpec::DistanceAngle {
-            distance: PositiveReal::new(2.0).unwrap(),
-            angle: PositiveReal::new(0.5).unwrap(),
+            distance: PositiveLength::new(2.0).unwrap(),
+            angle: InteriorAngle::new(0.5).unwrap(),
         }),
         0
     );
