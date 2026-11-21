@@ -11,13 +11,14 @@ use std::collections::{HashMap, HashSet};
 /// Re-express body selections of ASM body slots as bodies of the features
 /// that generate them.
 ///
-/// A body pattern seed resolved in its input state, a body deletion whose
-/// operands resolved through their recipe identity, and a Reverse Normal
-/// resolved in its input state name ASM body slots. When every selected slot
+/// A body pattern seed and a body move resolved in their input states, a body
+/// deletion whose operands resolved through their recipe identity, and a
+/// Reverse Normal resolved in its input state name ASM body slots. When every selected slot
 /// is absent from the model bodies, the one feature whose history transition
 /// inserts that slot generates the body, and the selection names it there.
-/// A Reverse Normal reads its slots in its bound history: see
-/// [`reverse_normal_binding`]. The generating feature becomes a dependency of
+/// A body move reads its slots in its bound history. A Reverse Normal reads
+/// its slots in its bound history: see [`reverse_normal_binding`]. The
+/// generating feature becomes a dependency of
 /// the selecting feature. Returns the result states of the producers of
 /// generated bodies, each listing every body slot that the producer's
 /// transition inserts.
@@ -47,20 +48,25 @@ pub(crate) fn bind_generated_body_selections(
             ))
         })
         .collect::<HashMap<_, _>>();
-    let producer = |slot: i64| -> Option<Producer> {
+    let producer = |slot: i64, history: Option<&AsmHistory>| -> Option<Producer> {
+        let in_history =
+            |candidate: &AsmHistory| history.is_none_or(|history| std::ptr::eq(candidate, history));
         let mut inserting = inputs
             .histories
             .iter()
+            .filter(|candidate| in_history(candidate))
             .flat_map(AsmHistory::states)
             .filter(|state| inserts_body(state, slot));
         let state = inserting.next()?;
         if inserting.next().is_some() {
             return None;
         }
-        let mut scopes = inputs
-            .scopes
-            .iter()
-            .filter(|scope| scope.history_state_id() == Some(state.state_id));
+        let mut scopes = inputs.scopes.iter().filter(|scope| {
+            scope.history_state_id() == Some(state.state_id)
+                && (history.is_none()
+                    || scope_history(scope, scope_histories, inputs.histories)
+                        .is_some_and(in_history))
+        });
         let scope = scopes.next()?;
         if scopes.next().is_some() {
             return None;
@@ -85,6 +91,13 @@ pub(crate) fn bind_generated_body_selections(
             .native_ref
             .as_deref()
             .and_then(|native| inputs.scopes.iter().find(|scope| scope.id == native));
+        if matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Combine { .. })
+        ) {
+            bind_combine_producers(&reverse_context, feature, scope, &mut results, losses);
+            continue;
+        }
         let selected = match feature.evaluation.definition() {
             FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) => {
                 let [PatternSeed::Bodies(BodySelection::Historical { bodies, native, .. })] =
@@ -98,6 +111,14 @@ pub(crate) fn bind_generated_body_selections(
                     .collect::<Option<Vec<_>>>()
                     .map(|slots| (slots, native.as_str().to_owned()))
             }
+            FeatureDefinition::Operation(FeatureOperation::MoveBody {
+                bodies: BodySelection::Historical { bodies, native, .. },
+                ..
+            }) => bodies
+                .iter()
+                .map(|body| historical_body_slot(body.as_str()))
+                .collect::<Option<Vec<_>>>()
+                .map(|slots| (slots, native.as_str().to_owned())),
             FeatureDefinition::Operation(FeatureOperation::DeleteBody {
                 bodies: BodySelection::Native(group_id),
                 ..
@@ -163,9 +184,22 @@ pub(crate) fn bind_generated_body_selections(
             if slots.iter().any(|slot| live.contains(slot)) {
                 continue;
             }
+            let history = if matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::MoveBody { .. })
+            ) {
+                let Some(history) =
+                    scope.and_then(|scope| scope_history(scope, scope_histories, inputs.histories))
+                else {
+                    continue;
+                };
+                Some(history)
+            } else {
+                None
+            };
             let Some(producers) = slots
                 .iter()
-                .map(|slot| producer(*slot))
+                .map(|slot| producer(*slot, history))
                 .collect::<Option<Vec<_>>>()
             else {
                 continue;
@@ -197,6 +231,7 @@ pub(crate) fn bind_generated_body_selections(
             }
             FeatureDefinition::Operation(
                 FeatureOperation::DeleteBody { bodies, .. }
+                | FeatureOperation::MoveBody { bodies, .. }
                 | FeatureOperation::ReverseShape { source: bodies },
             ) => {
                 *bodies = generated;
@@ -240,6 +275,289 @@ pub(crate) fn bind_generated_body_selections(
 /// A generating feature, the identity of the history state whose transition
 /// inserts the body, and every body slot that transition inserts.
 type Producer = (cadmpeg_ir::features::FeatureId, i64, Vec<i64>);
+
+/// The input-state body slots of one Combine operand and the native member
+/// of each slot.
+struct CombineSide {
+    slots: Vec<i64>,
+    natives: Vec<String>,
+    /// The operand stores one native expression for all its slots.
+    single_native: bool,
+}
+
+fn combine_side(selection: &cadmpeg_ir::features::BodySelection) -> Option<CombineSide> {
+    use cadmpeg_ir::features::BodySelection;
+    match selection {
+        BodySelection::Historical { bodies, native, .. } => Some(CombineSide {
+            slots: bodies
+                .iter()
+                .map(|body| historical_body_slot(body.as_str()))
+                .collect::<Option<_>>()?,
+            natives: vec![native.as_str().to_owned()],
+            single_native: true,
+        }),
+        BodySelection::HistoricalSet { members, .. } => {
+            let mut slots = Vec::new();
+            let mut natives = Vec::new();
+            for (body, native) in members.iter().map(|row| row.clone().into_parts()) {
+                slots.push(historical_body_slot(body.as_str())?);
+                natives.push(native);
+            }
+            Some(CombineSide {
+                slots,
+                natives,
+                single_native: false,
+            })
+        }
+        _ => None,
+    }
+}
+
+/// A Combine operand named by model bodies or by the features that generate
+/// them, the producers of generated bodies, and the features that become
+/// dependencies.
+type CombineSideBinding = (
+    cadmpeg_ir::features::BodySelection,
+    Vec<Producer>,
+    Vec<cadmpeg_ir::features::FeatureId>,
+);
+
+/// Bind the target and the tools of a Combine resolved in its input state to
+/// their producers, each side on its own. A slot that the bound history's
+/// BREP source keeps, and that no transition after the Combine's result state
+/// updates or deletes, names its model body. A slot that the source omits
+/// names the body that its generating feature produces. A side keeps its
+/// input-state bodies when its slots mix both readings or name neither.
+fn bind_combine_producers(
+    context: &ReverseContext<'_>,
+    feature: &mut cadmpeg_ir::features::Feature,
+    scope: Option<&crate::records::feature::scope::DesignParameterScope>,
+    results: &mut Vec<Producer>,
+    losses: &mut Vec<LossNote>,
+) {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) =
+        feature.evaluation.definition()
+    else {
+        return;
+    };
+    let sides = [
+        ("target", combine_side(operands.target())),
+        ("tools", combine_side(operands.tools())),
+    ];
+    if sides.iter().all(|(_, side)| side.is_none()) {
+        return;
+    }
+    let mut bound: [Option<CombineSideBinding>; 2] = [None, None];
+    for ((name, side), slot) in sides.into_iter().zip(&mut bound) {
+        let Some(side) = side else { continue };
+        match combine_side_binding(context, feature, scope, &side) {
+            Ok(binding) => *slot = Some(binding),
+            Err(reason) => losses.push(F3dLossCode::FeatureCombineBodyProducerUnresolved.note(
+                format!(
+                    "Combine {} keeps the input-state bodies of its {name}, slots {:?}: {reason}.",
+                    feature.id, side.slots
+                ),
+            )),
+        }
+    }
+    let [target, tools] = bound;
+    if target.is_none() && tools.is_none() {
+        return;
+    }
+    let mut producers = Vec::new();
+    let mut dependencies = Vec::new();
+    let mut edited = false;
+    feature.evaluation.edit(|definition, _| {
+        if let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) = definition
+        {
+            edited = operands
+                .try_edit(|stored_target, stored_tools| {
+                    for (stored, binding) in [(stored_target, target), (stored_tools, tools)] {
+                        if let Some((selection, side_producers, side_dependencies)) = binding {
+                            *stored = selection;
+                            producers.extend(side_producers);
+                            dependencies.extend(side_dependencies);
+                        }
+                    }
+                })
+                .is_ok();
+        }
+    });
+    if !edited {
+        losses.push(F3dLossCode::FeatureCombineBodyProducerUnresolved.note(format!(
+            "Combine {} keeps its input-state bodies: the producer bodies of its target and tools overlap.",
+            feature.id
+        )));
+        return;
+    }
+    for dependency in dependencies {
+        feature.dependencies.insert(dependency);
+    }
+    for (producer, state_id, inserted) in producers {
+        feature.dependencies.insert(producer.clone());
+        if !results
+            .iter()
+            .any(|(known, state, _)| *known == producer && *state == state_id)
+        {
+            results.push((producer, state_id, inserted));
+        }
+    }
+}
+
+fn combine_side_binding(
+    context: &ReverseContext<'_>,
+    feature: &cadmpeg_ir::features::Feature,
+    scope: Option<&crate::records::feature::scope::DesignParameterScope>,
+    side: &CombineSide,
+) -> Result<CombineSideBinding, String> {
+    use cadmpeg_ir::features::{BodyMembers, BodySelection, GeneratedBodyRef};
+    let inputs = context.inputs;
+    let scope = scope.ok_or("the Combine has no scope")?;
+    let history = scope_state_history(scope, context.scope_histories, inputs.histories)
+        .ok_or("no one bound history holds its input and result states")?;
+    let source = super::historical_brep_source(&history.id)
+        .ok_or_else(|| format!("its bound history {} names no BREP source", history.id))?;
+    let producer = |slot: i64| -> Option<Producer> {
+        let mut inserting = history
+            .states()
+            .iter()
+            .filter(|state| inserts_body(state, slot));
+        let state = inserting.next()?;
+        if inserting.next().is_some() {
+            return None;
+        }
+        let mut scopes = inputs.scopes.iter().filter(|candidate| {
+            candidate.history_state_id() == Some(state.state_id)
+                && scope_history(candidate, context.scope_histories, inputs.histories)
+                    .is_some_and(|candidate_history| std::ptr::eq(candidate_history, history))
+        });
+        let candidate = scopes.next()?;
+        if scopes.next().is_some() {
+            return None;
+        }
+        let (producer, ordinal) = context.feature_by_scope.get(&candidate.id)?;
+        if *ordinal >= feature.ordinal {
+            return None;
+        }
+        let inserted = state.transition.as_ref()?.topology.bodies.inserted.clone();
+        Some((producer.clone(), state.state_id, inserted))
+    };
+    let later = later_body_changes(history, scope)
+        .ok_or("its result state has no unique place in the history's state order")?;
+    let live = side
+        .slots
+        .iter()
+        .filter(|slot| context.active.contains_in_source(**slot, Some(source)))
+        .count();
+    let natives = |count: usize| -> Vec<String> {
+        if side.single_native {
+            std::iter::repeat_n(side.natives[0].clone(), count).collect()
+        } else {
+            side.natives.clone()
+        }
+    };
+    if live == side.slots.len() {
+        if let Some(slot) = side.slots.iter().find(|slot| later.contains(slot)) {
+            return Err(format!(
+                "a later transition changes slot {slot}, so the model body is not the operand"
+            ));
+        }
+        let bodies = context
+            .active
+            .resolve(&side.slots, Some(source))
+            .ok_or_else(|| format!("a slot names no unique result body of BREP source {source}"))?;
+        let dependencies = side
+            .slots
+            .iter()
+            .filter_map(|slot| producer(*slot))
+            .map(|(producer, _, _)| producer)
+            .collect::<Vec<_>>();
+        let selection = if side.single_native {
+            BodySelection::Resolved {
+                bodies,
+                native: side.natives[0].clone(),
+            }
+        } else {
+            let rows = bodies
+                .iter()
+                .cloned()
+                .zip(natives(side.slots.len()))
+                .map(|(body, native)| super::body_member(body, native))
+                .collect::<Option<Vec<_>>>()
+                .ok_or("a native member is blank")?;
+            BodySelection::ResolvedSet {
+                members: BodyMembers::try_from_rows(rows)
+                    .map_err(|error| format!("the model bodies form no body set: {error}"))?,
+            }
+        };
+        return Ok((selection, Vec::new(), dependencies));
+    }
+    if live != 0 {
+        return Err(format!(
+            "BREP source {source} keeps some of the slots and omits the others"
+        ));
+    }
+    let producers = side
+        .slots
+        .iter()
+        .map(|slot| producer(*slot))
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| {
+            format!(
+                "a slot has no unique inserting state of {} with one earlier scope",
+                history.id
+            )
+        })?;
+    let mut natives = side.natives.iter();
+    let native = natives.next().ok_or("the operand has no native member")?;
+    if natives.any(|other| other != native) {
+        return Err(
+            "its native members name several records, and a generated selection keeps one".into(),
+        );
+    }
+    let refs = producers
+        .iter()
+        .zip(&side.slots)
+        .map(|((producer, _, _), slot)| {
+            GeneratedBodyRef::new(producer.clone(), slot.to_string()).ok()
+        })
+        .collect::<Option<Vec<_>>>()
+        .ok_or("a generated body identity is malformed")?;
+    let selection = BodySelection::generated(refs, native.clone())
+        .map_err(|error| format!("the generated bodies form no body set: {error}"))?;
+    Ok((selection, producers, Vec::new()))
+}
+
+/// The body slots that a transition after the result state of `scope`
+/// updates or deletes in `history`.
+fn later_body_changes(
+    history: &AsmHistory,
+    scope: &crate::records::feature::scope::DesignParameterScope,
+) -> Option<HashSet<i64>> {
+    let state_id = scope.history_state_id()?;
+    let order = history.states_oldest_first()?;
+    let states = history.states();
+    let mut positions = order.iter().enumerate().filter(|(_, index)| {
+        states
+            .get(**index)
+            .is_some_and(|state| state.state_id == state_id)
+    });
+    let (position, _) = positions.next()?;
+    if positions.next().is_some() {
+        return None;
+    }
+    Some(
+        order[position + 1..]
+            .iter()
+            .filter_map(|index| states.get(*index)?.transition.as_ref())
+            .flat_map(|transition| {
+                let bodies = &transition.topology.bodies;
+                bodies.updated.iter().chain(&bodies.deleted).copied()
+            })
+            .collect(),
+    )
+}
 
 struct ReverseContext<'a> {
     inputs: &'a FeatureBodySelectionInputs<'a>,

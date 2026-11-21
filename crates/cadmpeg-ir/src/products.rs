@@ -15,7 +15,7 @@ use crate::design::selection::OccurrencePath;
 use crate::design::units::UnitSystem;
 use crate::document::SourceMeta;
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
-use crate::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
+use crate::scalar::{FiniteReal, NonNegativeReal, NonZeroReal, PositiveReal};
 use crate::sketches::SketchId;
 use crate::tessellation::TessellationId;
 use crate::transform::Transform;
@@ -254,7 +254,7 @@ pub struct GeneratedFrom {
 }
 
 /// Where a product definition is stored.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Storage {
@@ -702,7 +702,7 @@ mod tests {
 }
 
 /// Container that owns a joint operand object.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum OperandContainer {
@@ -869,7 +869,7 @@ impl JointLimits {
 }
 
 /// The wire spelling of [`JointLimits`], before the ordered-pair mint.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -950,7 +950,7 @@ pub struct JointConnector {
 }
 
 /// Structurally complete operands and frames for an assembly joint.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -1027,7 +1027,7 @@ pub enum TangentContact {
 /// identity for an aligned frame sense and a half-turn about the local X axis
 /// for an opposed one. The offset and angle therefore apply on the second
 /// connector.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PairedJointKind {
@@ -1176,14 +1176,15 @@ pub enum PairedJointKind {
             deserialize_with = "deserialize_distance2"
         )]
         distance2: Option<FiniteReal>,
-        /// Pinion rotation in radians per millimetre of rack translation, as a
-        /// magnitude: the sign follows the connector frames.
+        /// Pinion rotation in radians per millimetre of rack translation:
+        /// positive when the rack moves along its slider axis as the pinion
+        /// turns positively about its revolute axis.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
             deserialize_with = "deserialize_ratio"
         )]
-        ratio: Option<PositiveReal>,
+        ratio: Option<NonZeroReal>,
         /// The revolute joint of the pinion and the slider joint of the rack that
         /// the coupling acts on, in that order. Empty when the coupling acts on
         /// the connectors directly.
@@ -1215,15 +1216,16 @@ pub enum PairedJointKind {
             deserialize_with = "deserialize_distance2"
         )]
         distance2: Option<FiniteReal>,
-        /// Rotation of the second connector per rotation of the first, as a
-        /// magnitude: the sign follows the connector frames. For gears with
-        /// `N0` and `N1` teeth it is `N0 / N1`.
+        /// Rotation of the second gear per rotation of the first, each about its
+        /// own revolute axis: negative when the gears turn opposite ways. For
+        /// external gears with `N0` and `N1` teeth it is `-N0 / N1`, and for an
+        /// internal gear `N0 / N1`.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
             deserialize_with = "deserialize_ratio"
         )]
-        ratio: Option<PositiveReal>,
+        ratio: Option<NonZeroReal>,
         /// The revolute joints of the first and the second gear that the
         /// coupling acts on, in that order. Empty when the coupling acts on the
         /// connectors directly.
@@ -1391,7 +1393,7 @@ pub enum FrameAxis {
 
 /// The degree of freedom that a drive acts on, along or about an axis of
 /// the first connector frame.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum DriveAxis {
@@ -1626,7 +1628,7 @@ cadmpeg_core::named_optional_field!(deserialize_angular_limits, JointLimits, "an
 cadmpeg_core::named_optional_field!(deserialize_linear_limits, JointLimits, "linear_limits");
 cadmpeg_core::named_optional_field!(deserialize_distance, FiniteReal, "distance");
 cadmpeg_core::named_optional_field!(deserialize_distance2, FiniteReal, "distance2");
-cadmpeg_core::named_optional_field!(deserialize_ratio, PositiveReal, "ratio");
+cadmpeg_core::named_optional_field!(deserialize_ratio, NonZeroReal, "ratio");
 cadmpeg_core::named_optional_field!(deserialize_offset, FiniteReal, "offset");
 cadmpeg_core::named_optional_field!(deserialize_frame_sense, PlaneSense, "frame_sense");
 cadmpeg_core::named_optional_field!(deserialize_target_position, FiniteReal, "target_position");

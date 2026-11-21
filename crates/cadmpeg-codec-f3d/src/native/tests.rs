@@ -718,6 +718,7 @@ fn stamped_law_intcurve_round_trips_byte_exactly() {
         &crate::writer::generate::native_geometry::ProceduralOwners::new(decoded.ir()),
         owner,
         &solved,
+        false,
     )
     .expect("regenerate stamped law curve");
     let inner = regenerated.iter().position(|&b| b == 0x0f).unwrap();
@@ -794,6 +795,7 @@ fn legacy_law_intcurve_round_trips_byte_exactly() {
         &crate::writer::generate::native_geometry::ProceduralOwners::new(decoded.ir()),
         owner,
         &solved,
+        false,
     )
     .expect("regenerate legacy law curve");
     let inner = regenerated.iter().position(|&b| b == 0x0f).unwrap();

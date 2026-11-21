@@ -79,6 +79,9 @@ with Compute Optimized unless stated.
 - `optimized_symmetric_pattern.f3d`: quantity 3 at 10 mm, Symmetric. The copies
   are at −10, 0 and +10 mm; the −10 mm copy cuts the plate edge. 7842.92 mm³,
   10 faces.
+- `optimized_symmetric_extent_pattern.f3d`: quantity 3, Extent 20 mm,
+  Symmetric. The copies are at −20, 0 and +20 mm; the −20 mm copy lies outside
+  the plate. 7874.34 mm³, 8 faces.
 - `two_target_pattern.f3d`: two plates at x 0–40 and 41–81 mm and one 21 × 4 mm
   slot cut through both, patterned along Y with quantity 3 at 10 mm, Compute
   Adjust. 2 bodies, 14800 mm³, 36 faces.
@@ -162,3 +165,58 @@ each component. Every normal turns from (0, −1, 0) to (0, +1, 0).
 - `reverse_normal_three_components.f3d`: one surface body in each of the
   components C1, C2 and C3, at y = 0, 30 and 60 mm.
 - `reverse_normal_two_plus_one.f3d`: two surface bodies in C1 and one in C2.
+
+# Fusion API fixtures: symmetric pattern directions
+
+These files are CC0. Each was written through the Fusion API in Autodesk Fusion
+2704.1.53 from a new design. A 60 × 40 × 4 mm plate has a 1 × 6 mm slot cut 1 mm
+deep at x = 0..1 mm, y = −3..3 mm. One rectangular pattern repeats the cut along
++x at 5 mm spacing and along +y at 10 mm spacing. The API reported each copy's
+translation, and the body count, volume and face count after the pattern.
+
+- `sym_q3_dir1only.f3d`: 3 × 3, direction one symmetric. x = −5, 0, 5;
+  y = 0, 10, 20. 1 body, 9555 mm³, 48 faces.
+- `sym_q3_dir2only.f3d`: 3 × 3, direction two symmetric. x = 0, 5, 10;
+  y = −10, 0, 10. 1 body, 9546 mm³, 51 faces.
+- `sym_q3_both.f3d`: 3 × 3, both symmetric. x = −5, 0, 5; y = −10, 0, 10.
+  1 body, 9546 mm³, 51 faces.
+- `sym_q4_dir2only.f3d`: 2 × 4, direction two symmetric. x = 0, 5;
+  y = −10, 0, 10, 20. 1 body, 9558 mm³, 44 faces.
+
+# Fusion API fixtures: symmetric extent pattern directions
+
+These files are CC0. Each was written through the Fusion API in Autodesk Fusion
+2706.1.17 from a new design. A 100 × 100 × 4 mm plate at x, y = −50..50 mm has
+a 1 × 6 mm slot cut 1 mm deep at x = −0.5..0.5 mm, y = −3..3 mm. One
+rectangular pattern of the cut feature uses distance type Extent 20 mm and
+Symmetric. Direction one is the X construction axis and direction two the Y
+construction axis; an unused direction has quantity 1. The API reported each
+copy's translation and the face count after the pattern.
+
+- `sym_extent_q2.f3d`: quantity 2 along x. x = 0, 20. 16 faces.
+- `sym_extent_q4.f3d`: quantity 4 along x. x = −10, 0, 10, 20. 26 faces.
+- `sym_extent_q6.f3d`: quantity 6 along x. x = −40/3, −20/3, 0, 20/3, 40/3,
+  20. 36 faces.
+- `sym_extent_q7.f3d`: quantity 7 along x. x = −20, −40/3, −20/3, 0, 20/3,
+  40/3, 20. 41 faces.
+- `sym_extent_q8.f3d`: quantity 8 along x. x = −15 … 20 in steps of 5.
+  46 faces.
+- `sym_extent_q4_negative.f3d`: quantity 4 along x at Extent −20 mm.
+  x = 10, 0, −10, −20. 26 faces.
+- `sym_extent_q5_dir2only.f3d`: quantity 5 along y in direction two; direction
+  one has quantity 1. y = −20, −10, 0, 10, 20. 31 faces.
+- `sym_extent_q4x5.f3d`: 4 along x by 5 along y, both symmetric.
+  x = −10, 0, 10, 20; y = −20, −10, 0, 10, 20. 106 faces.
+
+# Fusion API fixtures: surface Loft
+
+These files are CC0. Each was written through the Fusion API in Autodesk Fusion
+2706.1.17 from a new design. Sketch1 has a circle of radius 10 mm on the XY
+plane, and Sketch2 has a circle of radius 6 mm on a plane offset 20 mm from XY.
+Loft1 is a new-body Loft of the two profiles with isSolid false. The API
+reported the body count, volume, area and face count after each timeline item.
+
+- `reverse_normal_loft_control.f3d`: Loft1 gives 1 surface body, 0 mm³,
+  1025.2187 mm², 1 cone face.
+- `reverse_normal_loft.f3d`: Loft1, then Reverse Normal of the Loft body.
+  1 surface body, 0 mm³, 1025.2187 mm², 1 cone face.

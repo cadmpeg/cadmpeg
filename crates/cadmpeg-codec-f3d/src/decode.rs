@@ -2158,7 +2158,7 @@ fn report_parameter_trailer_flags(
             &mut report.losses,
             F3dLossCode::ParameterTrailerFlagUninterpreted,
             format_args!(
-                "{} decoded parameter(s) in {} set an uninterpreted flag in the compact expression trailer.",
+                "{} decoded parameter(s) in {} set an uninterpreted flag in the expression trailer.",
                 parameters.count, parameters.stream
             ),
         );
@@ -2332,7 +2332,8 @@ fn report_design_projection_gaps(
         if matches!(
             prologue.extent(),
             Some(
-                crate::records::feature::extrude::DesignExtrudeExtent::TwoSidedDistanceThroughAll
+                crate::records::feature::extrude::DesignExtrudeExtent::OneSidedDistance
+                    | crate::records::feature::extrude::DesignExtrudeExtent::TwoSidedDistanceThroughAll
                     | crate::records::feature::extrude::DesignExtrudeExtent::TwoSidedThroughAllToFace
             )
         ) && crate::ids::native_stream(&scope.id).is_some_and(|stream| {
@@ -3151,6 +3152,7 @@ struct DecodeSessionState {
 
 struct DeferredBodylessInputs {
     model_body_maps_empty: bool,
+    model_body_maps_explicitly_empty: bool,
     has_appearance: bool,
     mesh_projection: MeshProjection,
 }
@@ -3166,6 +3168,7 @@ enum SessionPath {
     Bodyless {
         mesh_projection: MeshProjection,
         model_body_maps_empty: bool,
+        model_body_maps_explicitly_empty: bool,
     },
 }
 
@@ -3394,7 +3397,14 @@ impl<'a> F3dDecodeSession<'a> {
             },
             SessionPath::Bodyless {
                 mesh_projection,
-                model_body_maps_empty: matches!(brep_outcome, ModelBrepOutcome::NoPhysicalModel),
+                model_body_maps_empty: matches!(
+                    brep_outcome,
+                    ModelBrepOutcome::NoPhysicalModel | ModelBrepOutcome::ExplicitlyEmpty
+                ),
+                model_body_maps_explicitly_empty: matches!(
+                    brep_outcome,
+                    ModelBrepOutcome::ExplicitlyEmpty
+                ),
             },
         ))
     }
@@ -3730,6 +3740,7 @@ impl<'a> F3dDecodeSession<'a> {
             SessionPath::Bodyless {
                 mesh_projection,
                 model_body_maps_empty,
+                model_body_maps_explicitly_empty,
             } => {
                 let decoded_materials = materials::decode(self.ctx, scan)?;
                 if decoded_materials.untyped_distance_properties != 0 {
@@ -3749,6 +3760,7 @@ impl<'a> F3dDecodeSession<'a> {
                 }
                 FinalizePath::Bodyless(DeferredBodylessInputs {
                     model_body_maps_empty,
+                    model_body_maps_explicitly_empty,
                     has_appearance: decoded_materials.has_topology_assignments,
                     mesh_projection,
                 })
@@ -3816,6 +3828,20 @@ impl<'a> F3dDecodeSession<'a> {
             external,
         );
         self.report.losses.extend(external_losses);
+        let mesh_projection = match &finalize_path {
+            FinalizePath::Geometry(index) => &index.mesh_projection,
+            FinalizePath::Bodyless(inputs) => &inputs.mesh_projection,
+        };
+        if matches!(
+            self.report_scope,
+            crate::report::ReportScope::ArchiveMember(_)
+        ) {
+            list_member_scopeless_tessellations(
+                self.ctx,
+                &mut self.ir.model,
+                &mesh_projection.scopeless_tessellations,
+            )?;
+        }
         let parents = crate::tree::parent_ids(
             &self.ir.model.product_definitions,
             &self.ir.model.occurrences,
@@ -4020,6 +4046,7 @@ impl<'a> F3dDecodeSession<'a> {
                         } else {
                             brep_streams
                         },
+                        model_body_maps_explicitly_empty: inputs.model_body_maps_explicitly_empty,
                         text_brep_streams: container::text_brep_names(scan).count(),
                         declared_bodies: self.native.design_body_bindings.len()
                             + self.native.design_body_members.len(),
@@ -4282,7 +4309,7 @@ fn decode_scanned_document<'a>(
             .iter()
             .all(|binding| binding.history_only);
     let mut brep_outcome = if model_selection.explicitly_empty {
-        ModelBrepOutcome::NoPhysicalModel
+        ModelBrepOutcome::ExplicitlyEmpty
     } else {
         ModelBrepOutcome::NotAttempted
     };
@@ -4467,6 +4494,8 @@ struct MeshProjection {
     unjoined: usize,
     /// Tessellation identities grouped by their Design stream and feature scope record.
     tessellations_by_scope: std::collections::HashMap<(String, u32), Vec<String>>,
+    /// Tessellation identities of mesh bodies that name no feature scope.
+    scopeless_tessellations: Vec<String>,
 }
 
 fn extend_unique_assets(
@@ -4633,6 +4662,7 @@ fn project_mesh_bodies(
                 count: 0,
                 unjoined: 0,
                 tessellations_by_scope: std::collections::HashMap::new(),
+                scopeless_tessellations: Vec::new(),
             });
         }
     };
@@ -4644,17 +4674,7 @@ fn project_mesh_bodies(
         ));
     report
         .losses
-        .extend(crate::design::decode::mesh::mesh_split_stream_losses(
-            &native.design_mesh_features,
-        ));
-    report
-        .losses
         .extend(crate::design::decode::mesh::mesh_component_flag_losses(
-            &native.design_mesh_features,
-        ));
-    report
-        .losses
-        .extend(crate::design::decode::mesh::mesh_history_window_losses(
             &native.design_mesh_features,
         ));
     report
@@ -4753,6 +4773,7 @@ fn project_mesh_bodies(
         count: bodies.len(),
         unjoined,
         tessellations_by_scope: std::collections::HashMap::new(),
+        scopeless_tessellations: Vec::new(),
     };
     for mut body in bodies {
         let texture_table = texture_tables.remove(&body.id).ok_or_else(|| {
@@ -4821,7 +4842,7 @@ fn project_mesh_bodies(
             let mut bodies = feature
                 .bodies()
                 .iter()
-                .filter(|body| body.scope_record_index == scope.record().record_index())
+                .filter(|body| body.scope_record_index == Some(scope.record().record_index()))
                 .collect::<Vec<_>>();
             bodies.sort_by_key(|body| body.scope_body_ordinal);
             insert_mesh_scope_tessellations(
@@ -4833,9 +4854,45 @@ fn project_mesh_bodies(
                     .filter_map(|body| body.tessellation_id.as_deref()),
             )?;
         }
+        projection.scopeless_tessellations.extend(
+            feature
+                .bodies()
+                .iter()
+                .filter(|body| body.scope_record_index.is_none())
+                .filter_map(|body| body.tessellation_id.clone()),
+        );
     }
     report_unresolved_mesh_attributes(report, &unresolved);
     Ok(projection)
+}
+
+/// List the meshes of scope-less mesh bodies among the tessellations of an
+/// F3Z member's file root, which `define_member` makes the member definition.
+/// They represent no body and no mesh feature.
+fn list_member_scopeless_tessellations(
+    ctx: &DecodeContext<'_>,
+    model: &mut cadmpeg_ir::document::Model,
+    tessellations: &[String],
+) -> Result<(), CodecError> {
+    if tessellations.is_empty() {
+        return Ok(());
+    }
+    let root_id = crate::tree::file_root_id();
+    if model
+        .product_definitions
+        .iter()
+        .all(|definition| definition.id != root_id)
+    {
+        ctx.charge_entities(1, "F3D member file root")?;
+    }
+    let root = crate::tree::file_root(model);
+    for tessellation in tessellations {
+        root.tessellations.push(
+            cadmpeg_ir::tessellation::TessellationId::mint(tessellation.clone())
+                .map_err(CodecError::malformed)?,
+        );
+    }
+    Ok(())
 }
 
 /// Resolve one-based `tid` values through a Design texture table. Zero leaves
@@ -5143,6 +5200,8 @@ pub(crate) struct DesignCarriers {
     pub(crate) brep_streams: usize,
     /// BREP streams that the model-body maps select.
     pub(crate) selected_brep_streams: usize,
+    /// Every selected modern model-body map has zero pairs and no basename.
+    pub(crate) model_body_maps_explicitly_empty: bool,
     pub(crate) text_brep_streams: usize,
     pub(crate) declared_bodies: usize,
     pub(crate) sketch_entities: usize,
@@ -5180,6 +5239,8 @@ pub(crate) fn apply_carrier_classification(
                 carriers.declared_bodies,
                 carriers.sketch_entities,
                 carriers.reference_images,
+                carriers.model_body_maps_explicitly_empty
+                    && untransferred_mesh_containers.is_none(),
             );
         }
     }
@@ -5213,9 +5274,10 @@ fn apply_mesh_body_classification(report: &mut DecodeBody, brep_streams: usize, 
 
 /// Classify a bodyless design whose transferred content requires no BREP.
 ///
-/// The container has zero BREP streams and the Design segment has zero bodies.
+/// The Design segment selects no BREP stream and declares zero bodies.
 /// Sketch entities can supply the complete geometry. Reference-image timeline
-/// objects are presentation content and require no geometry carrier.
+/// objects are presentation content and require no geometry carrier. Empty
+/// modern model-body maps with none of these carriers make an empty design.
 fn apply_bodyless_design_classification(
     report: &mut DecodeBody,
     brep_streams: usize,
@@ -5223,11 +5285,13 @@ fn apply_bodyless_design_classification(
     declared_bodies: usize,
     sketch_entities: usize,
     reference_images: usize,
+    model_body_maps_explicitly_empty: bool,
 ) {
+    let empty_design = sketch_entities == 0 && reference_images == 0;
     if brep_streams != 0
         || text_brep_streams != 0
         || declared_bodies != 0
-        || (sketch_entities == 0 && reference_images == 0)
+        || (empty_design && !model_body_maps_explicitly_empty)
     {
         return;
     }
@@ -5240,6 +5304,12 @@ fn apply_bodyless_design_classification(
         )
     });
     report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::at(report.transfer.depth(), true);
+    if empty_design {
+        report.losses.push(F3dLossCode::EmptyDesign.note(
+            "empty design: the modern model-body maps select no body, and the document declares no body, sketch entity, or reference image",
+        ));
+        return;
+    }
     let message = match (sketch_entities, reference_images) {
         (0, _) => format!(
             "presentation-only design: the document declares no body, and its {reference_images} reference-image timeline object(s) require no BREP geometry"
@@ -6241,6 +6311,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<MetadataIr, CodecError> {
 
 enum ModelBrepOutcome {
     NotAttempted,
+    ExplicitlyEmpty,
     NoPhysicalModel,
     Failed { stream: String },
     Empty { stream: String },
@@ -6256,7 +6327,7 @@ fn container_losses(
     let text_count = container::text_brep_names(scan).count();
 
     let (geometry, topology) = match outcome {
-        ModelBrepOutcome::NoPhysicalModel => (
+        ModelBrepOutcome::ExplicitlyEmpty | ModelBrepOutcome::NoPhysicalModel => (
             "No physical model BREP was selected: the modern model-body maps are explicitly empty or name only bodies outside the current model. Snapshot streams contain no selected physical model bodies.".to_owned(),
             "No physical B-rep topology was selected by the model-body maps.".to_owned(),
         ),
@@ -6428,7 +6499,7 @@ pub(crate) fn resolve_face_appearance_bindings(
         };
         let strings = || {
             attribute.values.iter().filter_map(|value| match value {
-                AttributeValue::String(value) => Some(value.as_str()),
+                Some(AttributeValue::String(value)) => Some(value.as_str()),
                 _ => None,
             })
         };
@@ -6554,6 +6625,7 @@ pub(crate) fn resolve_face_appearance_bindings(
                 object_type: None,
                 visible: None,
                 channels: std::collections::BTreeMap::new(),
+                native_ref: None,
             });
         }
     }
