@@ -275,7 +275,7 @@ fn a_definition_override_names_a_definition_the_scope_spans() {
         document: ExternalDocument::document_id("other"),
         source: None,
     };
-    assert_no_design_finding(&ir);
+    assert_finding(&ir, "which is no definition the scope spans");
 }
 
 #[test]

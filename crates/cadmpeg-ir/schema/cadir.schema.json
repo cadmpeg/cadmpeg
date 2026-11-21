@@ -17242,6 +17242,7 @@
         "unproduced": {
           "description": "Bodies owned by definitions the scope spans that no member produces.",
           "type": "array",
+          "default": [],
           "items": {
             "$ref": "#/$defs/BodyId"
           },

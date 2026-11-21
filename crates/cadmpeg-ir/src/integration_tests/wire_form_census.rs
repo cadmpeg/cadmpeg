@@ -6,7 +6,7 @@
 //! that derives `Serialize` or `Deserialize` and computes the one tag form the
 //! spec gives it from its variants. It finds each field, named or in a newtype,
 //! and checks that an `Option` is omitted for `None` and refuses `null`, and
-//! that each other field is present, except an empty `DesignScope.unproduced`.
+//! that each other field is written.
 //! Test files and `#[cfg(test)]` items are not wire types.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -18,10 +18,6 @@ use syn::spanned::Spanned;
 use syn::{Attribute, Fields, Item, Variant};
 
 const WIRE_CRATES: [&str; 2] = ["crates/cadmpeg-ir/src", "crates/cadmpeg-core/src"];
-
-const COLLECTIONS: [&str; 8] = [
-    "Vec", "VecDeque", "BTreeMap", "HashMap", "BTreeSet", "HashSet", "IndexMap", "Map",
-];
 
 const MAPS: [&str; 3] = ["BTreeMap", "HashMap", "IndexMap"];
 
@@ -756,32 +752,6 @@ impl Index {
         ty
     }
 
-    fn is_collection(&self, ty: &syn::Type, depth: usize) -> bool {
-        let Some((ident, arguments)) = last_segment(ty) else {
-            return matches!(ty, syn::Type::Slice(_));
-        };
-        let name = ident.to_string();
-        if COLLECTIONS.contains(&name.as_str()) {
-            return true;
-        }
-        if name == "Box" {
-            return first_type_argument(arguments)
-                .is_some_and(|inner| self.is_collection(inner, depth));
-        }
-        if depth > 4 {
-            return false;
-        }
-        let Some(decl) = self.unique(&name) else {
-            return false;
-        };
-        match &decl.body {
-            Body::Struct(Fields::Unnamed(fields)) if fields.unnamed.len() == 1 => {
-                self.is_collection(&fields.unnamed[0].ty, depth + 1)
-            }
-            _ => false,
-        }
-    }
-
     /// Whether `ty` is a newtype struct over an `Option`, which writes `null`
     /// for `None` as the `Option` does.
     fn is_optional_newtype(&self, ty: &syn::Type) -> bool {
@@ -1058,12 +1028,6 @@ fn check_fields(
         if has(&metas, "skip") {
             continue;
         }
-        let unproduced = at.ends_with(" DesignScope")
-            && field
-                .ident
-                .as_ref()
-                .is_some_and(|ident| ident == "unproduced")
-            && last_segment(ty).is_some_and(|(ident, _)| ident == "BTreeSet");
         let at = match &field.ident {
             Some(ident) => format!("{at}.{ident}@{}", ident.span().start().line),
             None => format!("{at}.{position}@{}", field.ty.span().start().line),
@@ -1116,13 +1080,8 @@ fn check_fields(
                 ));
             }
         } else {
-            if let Some(skip) = skip.filter(|skip| !(unproduced && *skip == "BTreeSet::is_empty")) {
+            if let Some(skip) = skip {
                 problems.push(format!("{at}: field is left out by {skip}"));
-            }
-            if reads && has(&metas, "default") && index.is_collection(ty, 0) && !unproduced {
-                problems.push(format!(
-                    "{at}: collection field reads its omission as empty"
-                ));
             }
             let is_map = last_segment(ty)
                 .is_some_and(|(ident, _)| MAPS.contains(&ident.to_string().as_str()));
@@ -1583,24 +1542,22 @@ fn every_wire_type_states_the_v11_wire_form() {
 }
 
 #[test]
-fn the_census_allows_an_empty_unproduced_set_on_a_design_scope() {
+fn the_census_requires_defaulted_collections_to_be_written() {
     let source = r#"#[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct DesignScope {
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty", with = "cadmpeg_core::distinct_keys::set")]
-    unproduced: BTreeSet<BodyId>,
+struct Holder {
+    #[serde(default, with = "cadmpeg_core::distinct_keys::set")]
+    bodies: BTreeSet<BodyId>,
 }"#;
     assert!(probe_problems(source).is_empty());
-    assert_eq!(
-        probe_problems(&source.replace("DesignScope", "Other")).len(),
-        2
+    let omitted = source.replace(
+        "default, with",
+        "default, skip_serializing_if = \"BTreeSet::is_empty\", with",
     );
     assert_eq!(
-        probe_problems(&source.replace("unproduced", "other")).len(),
-        2
-    );
-    assert_eq!(
-        probe_problems(&source.replace("BTreeSet::is_empty", "always")).len(),
-        1
+        probe_problems(&omitted),
+        vec![format!(
+            "{PROBE}:3 Holder.bodies@5: field is left out by BTreeSet::is_empty"
+        )]
     );
 }

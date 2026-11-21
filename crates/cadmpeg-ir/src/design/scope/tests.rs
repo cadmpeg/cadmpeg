@@ -18,11 +18,11 @@ fn scope() -> DesignScope {
 }
 
 #[test]
-fn unproduced_defaults_to_empty_and_omits_the_empty_set() {
+fn unproduced_defaults_to_empty_and_writes_the_empty_array() {
     let scope = scope();
     assert!(scope.unproduced.is_empty());
     let json = serde_json::to_value(&scope).unwrap();
-    assert!(json.get("unproduced").is_none());
+    assert_eq!(json["unproduced"], json!([]));
     let back: DesignScope = read::from_str(&json.to_string(), &ResourceLimits::desktop()).unwrap();
     assert_eq!(back, scope);
 }

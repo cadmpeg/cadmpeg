@@ -332,12 +332,23 @@ impl<'a> DesignRecords<'a> {
             .collect()
     }
 
-    /// The scope's definition and the embedded definitions it spans (§5.1).
+    fn holds_several_definitions(&self, scope: &str) -> bool {
+        self.features.iter().any(|(&id, feature)| {
+            feature
+                .component
+                .as_ref()
+                .is_some_and(|component| component.as_str() != scope)
+                && self.scope_of(MemberKey::Feature(id)) == Some(scope)
+        })
+    }
+
+    /// The scope's definition and the definitions it spans (§5.1).
     pub(in crate::validate) fn spanned_definitions(&self, scope: &str) -> BTreeSet<&'a str> {
         let Some((&scope, root)) = self.definitions.get_key_value(scope) else {
             return BTreeSet::new();
         };
         let mut spanned = BTreeSet::from([scope]);
+        let several = self.holds_several_definitions(scope);
         let mut pending = vec![scope];
         if matches!(root.storage, Storage::File { .. }) {
             let key = scope.split_once('#').map(|(_, key)| key);
@@ -378,7 +389,8 @@ impl<'a> DesignRecords<'a> {
                 else {
                     continue;
                 };
-                if !matches!(placed.storage, Storage::External(_))
+                if (matches!(placed.storage, Storage::Embedded)
+                    || (several && matches!(placed.storage, Storage::File { .. })))
                     && !self.scopes.contains_key(prototype)
                     && spanned.insert(prototype)
                 {
