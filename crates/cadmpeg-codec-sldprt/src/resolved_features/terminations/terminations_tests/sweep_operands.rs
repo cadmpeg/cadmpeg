@@ -469,3 +469,27 @@ fn authored_operands_survive_unrelated_represented_sketches() {
     );
     assert!(input.features[2].dependencies.is_empty());
 }
+
+#[test]
+fn general_curve_after_wire_contact_supplies_no_cross_section() {
+    let mut input = input(true, false, false);
+    input.lane.native_payload.copy_within(100..300, 400);
+    input.lane.native_payload[100..400].fill(0);
+    input.lane.classes[0].offset = 400;
+    let body = class(&mut input.lane.native_payload, 100, "moWireContact_c");
+    input.lane.native_payload[body + 16..body + 24].copy_from_slice(&1.0f64.to_le_bytes());
+    input.lane.native_payload[body + 28..body + 32].copy_from_slice(&1u32.to_le_bytes());
+    input.lane.native_payload[body + 32..body + 36].copy_from_slice(&(-1i32).to_le_bytes());
+    input.lane.native_payload[body + 36..body + 38].copy_from_slice(&2u16.to_le_bytes());
+    input.lane.native_payload[body + 54..body + 62].copy_from_slice(&(-1.0f64).to_le_bytes());
+    let mut contact = input.lane.classes[0].clone();
+    contact.id = "contact".into();
+    contact.offset = 100;
+    contact.name = "moWireContact_c".into();
+    input.lane.classes.push(contact);
+    enrich_history_sweep_profiles(
+        std::slice::from_mut(&mut input.history),
+        std::slice::from_ref(&input.lane),
+    );
+    assert!(!input.history.features[2].properties.contains_key("Profile"));
+}

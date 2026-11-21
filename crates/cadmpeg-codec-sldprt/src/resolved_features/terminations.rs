@@ -779,6 +779,14 @@ pub(crate) fn enrich_history_sweep_profiles(
             let Some(end) = sweep_object_end(lane, start, feature) else {
                 continue;
             };
+            let end = lane
+                .classes
+                .iter()
+                .filter(|class| class.name == "moWireContact_c")
+                .filter_map(|class| usize::try_from(class.offset).ok())
+                .filter(|offset| (start..end).contains(offset))
+                .min()
+                .unwrap_or(end);
             let mut profile_offset = None;
             let mut ambiguous_offset = false;
             let mut source = None;
