@@ -1296,6 +1296,12 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             angular_tolerance: geometry.tolerances.angular.get(),
         },
     ));
+    design.history_body_consumers.tails = crate::history::body_history_tail::collect(
+        &model.features,
+        &design.design_parameter_scopes,
+        &design.asm_histories,
+        geometry.primary_brep,
+    );
     if matches!(geometry.path, DesignPath::Geometry) {
         crate::history::discard_projection_caches(&mut design.asm_histories);
     }

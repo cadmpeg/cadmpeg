@@ -18,6 +18,7 @@ mod blend_spine;
 mod chamfer_supports;
 
 mod body_candidates;
+pub(crate) mod body_history_tail;
 mod body_index;
 pub(crate) mod body_recipe_operands;
 mod cache;
