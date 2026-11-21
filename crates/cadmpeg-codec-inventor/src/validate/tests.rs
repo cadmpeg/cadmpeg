@@ -5,6 +5,7 @@ mod coil;
 mod delete_face;
 mod edge_selections;
 mod revolve_axis;
+mod spatial;
 mod split_face;
 mod tagging;
 
@@ -222,6 +223,7 @@ fn empty_data() -> super::NativeData {
         pm_dc_model_roots: Vec::new(),
         design_record_issues: Vec::new(),
         pm_dc_sketches: Vec::new(),
+        pm_dc_spatial_sketches: Vec::new(),
         pm_dc_sketch_entities: Vec::new(),
         pm_dc_sketch_constraints: Vec::new(),
         pm_dc_transforms: Vec::new(),

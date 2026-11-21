@@ -32,6 +32,7 @@ pub(crate) mod box_member;
 pub(crate) mod circle_parameter;
 pub(crate) mod curve;
 pub(crate) mod point_tail;
+pub(crate) mod spatial;
 pub(crate) mod text;
 
 use point_tail::PointPairedAssociation;
