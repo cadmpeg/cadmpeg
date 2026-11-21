@@ -94,6 +94,7 @@ pub(crate) struct ProfileGeometryWork {
     region_hole_inferred_selections: Cell<usize>,
     crossing_runs_assumed: Cell<bool>,
     crossing_runs_assumed_selections: Cell<usize>,
+    body_circle_rings_assumed_selections: Cell<usize>,
     sampled_regions: RefCell<Vec<RegionSampleEntry>>,
     arrangement_reuse: RefCell<Option<ArrangementReuse>>,
 }
@@ -175,6 +176,7 @@ impl ProfileGeometryWork {
             region_hole_inferred_selections: Cell::new(0),
             crossing_runs_assumed: Cell::new(false),
             crossing_runs_assumed_selections: Cell::new(0),
+            body_circle_rings_assumed_selections: Cell::new(0),
             sampled_regions: RefCell::new(Vec::new()),
             arrangement_reuse: RefCell::new(None),
         }
@@ -318,6 +320,11 @@ impl ProfileGeometryWork {
     pub(crate) fn record_region_hole_profile_inferred(&self) {
         self.region_hole_inferred_selections
             .set(self.region_hole_inferred_selections.get() + 1);
+    }
+
+    pub(crate) fn record_body_circle_rings_assumed(&self) {
+        self.body_circle_rings_assumed_selections
+            .set(self.body_circle_rings_assumed_selections.get() + 1);
     }
 
     pub(crate) fn inferred_counts(&self) -> (usize, usize) {
@@ -606,6 +613,12 @@ impl ProfileGeometryWork {
         if crossing_runs != 0 {
             losses.push(F3dLossCode::FeatureProfileCrossingRunsAssumed.note(format!(
                 "{crossing_runs} profile selection(s) count consecutive pieces of a curve across a pruned interior crossing as one member use. The reading assumes that this crossing preserves the stored member multiplicity."
+            )));
+        }
+        let body_circle_rings_assumed = self.body_circle_rings_assumed_selections.get();
+        if body_circle_rings_assumed != 0 {
+            losses.push(F3dLossCode::FeatureProfileBodyCircleRingsAssumed.note(format!(
+                "{body_circle_rings_assumed} extrude profile selection(s) assume the smallest concentric sketch-circle ring set covering a cap bounded by a preceding body cylinder."
             )));
         }
         losses

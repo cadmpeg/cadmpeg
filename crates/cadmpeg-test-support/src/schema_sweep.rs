@@ -77,8 +77,10 @@ pub struct SchemaSweepReport {
 ///
 /// Returns the serde error when the empty document does not serialize.
 pub fn sweep(schema: &Value, documents: &[Value]) -> Result<SchemaSweepReport, serde_json::Error> {
-    let empty = serde_json::to_value(CadIr::empty())?;
-    let read = |text: &str| serde_json::to_value(serde_json::from_str::<CadIr>(text)?);
+    let empty = cadmpeg_ir::hash::finite_json::to_json_value(&CadIr::empty())?;
+    let read = |text: &str| {
+        cadmpeg_ir::hash::finite_json::to_json_value(&serde_json::from_str::<CadIr>(text)?)
+    };
     Ok(sweep_with(schema, documents, &empty, &read))
 }
 
