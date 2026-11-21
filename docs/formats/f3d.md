@@ -4076,6 +4076,8 @@ The type table also lists the base type of the `WorkPlane` scope with an empty e
 | item-tail companions of the scope, the placement, and the placement path | `5FBE538E-139B-46D4-BCAF-CC796D1E1F78` | 0 | 33 each |
 | tracked-results table | `B7F34D7B-DAC4-41A5-B67D-D672537C3BFA` | 2 | 53 |
 
+The item adds no record to the Browser segment, and no Browser record names its scope or its plane entity.
+
 **WorkPlane scope frame.** The `WorkPlane` scope record stores, in order: the indexed header, nine zero bytes, the property-block presence byte `0`, `u8 1`, the u32 construction word, the `ExtraOffset` owner reference, `u8 1`, the plane entity reference, the placement reference, `u8 1`, the zero GUID, three zero bytes, the u32 reference count `4`, and the ordered reference table. The ordered reference table holds the `AlongDistance` owner, the placement path, the placement, and the `ExtraOffset` owner. The current history-state identity `0xffffffff`, the LP-UTF16 family name `WorkPlane`, the 78-byte feature item tail, and the paired scope record end the scope ([`workplane_item_scope`](../layouts/f3d.md#workplane_item_scope)). The zero GUID is an LP-UTF16 string of 36 code units, `00000000-0000-0000-0000-000000000000`.
 
 The construction word is a function of the placement `refType`. An offset plane stores `refType` `2` and construction word `0`.
