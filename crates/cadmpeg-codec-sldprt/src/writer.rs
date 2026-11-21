@@ -384,15 +384,18 @@ pub(crate) fn write_semantic_with_records(
         );
     }
     for lane in native.iter().flat_map(|native| &native.feature_input_lanes) {
-        let section = lane.configuration.as_ref().map_or_else(
-            || {
-                annotations.provenance.get(&lane.id).map_or_else(
-                    || "Contents/ResolvedFeatures".into(),
-                    |provenance| provenance.stream().to_owned(),
-                )
-            },
-            |configuration| format!("Contents/Config-{configuration}-ResolvedFeatures"),
-        );
+        let section = match &lane.configuration {
+            Some(configuration)
+                if crate::resolved_features::assembly::is_supplemental_config_lane(lane) =>
+            {
+                format!("Contents/Config-{configuration}")
+            }
+            Some(configuration) => format!("Contents/Config-{configuration}-ResolvedFeatures"),
+            None => annotations.provenance.get(&lane.id).map_or_else(
+                || "Contents/ResolvedFeatures".into(),
+                |provenance| provenance.stream().to_owned(),
+            ),
+        };
         let histories = native
             .as_ref()
             .map_or(&[][..], |native| native.feature_histories.as_slice());
