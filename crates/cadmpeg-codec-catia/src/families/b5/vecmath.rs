@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `[f64; 3]` vector helpers shared by the b5 parse graph and IR transfer.
 
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::units::UnitVector3;
 

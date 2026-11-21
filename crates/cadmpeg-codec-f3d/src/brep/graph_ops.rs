@@ -373,7 +373,7 @@ mod tests {
     use cadmpeg_asm::brep::AsmBrep;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
-    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::ids::{BodyId, PointId};
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::topology::{Body, BodyKind, Point};

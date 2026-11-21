@@ -251,7 +251,8 @@ fn add_face(ir: &mut CadIr, name: &str, geometry: SurfaceGeometry, corners: [Poi
             .expect("identity grammar");
         ir.geometry.points.push(Point::new(
             point_id.clone(),
-            cadmpeg_ir::features::FinitePoint3::new(corner).expect("a finite position is a point"),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(corner)
+                .expect("a finite position is a point"),
             None,
         ));
         ir.geometry.vertices.push(Vertex {
@@ -407,7 +408,7 @@ fn flat_test_nurbs_surface() -> NurbsSurface {
         .try_map_control_points(|_, point| {
             let mut point = point.get();
             point.z = 0.0;
-            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+            cadmpeg_ir::features::geometry::FinitePoint3::new(point).ok_or_else(|| {
                 cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                     "control_points contains a non-finite point".into(),
                 )
@@ -485,7 +486,7 @@ fn add_cylindrical_patch_face(ir: &mut CadIr, name: &str, min_z: f64, max_z: f64
                 .expect("identity grammar");
             ir.geometry.points.push(Point::new(
                 point_id.clone(),
-                cadmpeg_ir::features::FinitePoint3::new(*point)
+                cadmpeg_ir::features::geometry::FinitePoint3::new(*point)
                     .expect("a finite position is a point"),
                 None,
             ));
@@ -1407,7 +1408,7 @@ fn coincident_nurbs_and_analytic_supports_do_not_fall_through_to_analytic_fit() 
 fn circular_hole_excludes_crossing_triangles_but_allows_boundary_chords() {
     let trim = PlanarTrim {
         frame: PlaneFrame::new(
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
@@ -1452,7 +1453,7 @@ fn circular_hole_excludes_crossing_triangles_but_allows_boundary_chords() {
 fn polygonal_planar_hole_excludes_inner_face_mesh() {
     let trim = PlanarTrim {
         frame: PlaneFrame::new(
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
         )

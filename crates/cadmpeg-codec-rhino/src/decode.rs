@@ -6,7 +6,7 @@ use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{DraftAccounting, ModelCheckpoint, ModelDraft};
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve,
     pcurve::{Pcurve, PcurveGeometry, PcurveNurbs, PcurveNurbsPoles, WeightedPole2},
@@ -676,7 +676,7 @@ impl<'a> DecodeContext<'a> {
                 "rhino:test:point#duplicate"
                     .try_into()
                     .expect("valid identity"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
                     .expect("a finite position is a point"),
                 None,
             ));
@@ -685,7 +685,7 @@ impl<'a> DecodeContext<'a> {
                 "rhino:test:point#duplicate"
                     .try_into()
                     .expect("valid identity"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                     .expect("a finite position is a point"),
                 None,
             );
@@ -1253,13 +1253,13 @@ impl<'a> DecodeContext<'a> {
             ordinal: cadmpeg_core::decode::u64_from_index(hatch.source_range.start),
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: Some("RhinoHatch".to_string()),
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "hatch".into(),
                     parameters,
@@ -1380,13 +1380,13 @@ impl<'a> DecodeContext<'a> {
             ordinal: cadmpeg_core::decode::u64_from_index(source_order),
             name,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties,
             source_tag: Some("RhinoPolyEdgeReference".to_string()),
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "polyedge_reference".into(),
                     parameters,
@@ -1486,13 +1486,13 @@ impl<'a> DecodeContext<'a> {
             ordinal: cadmpeg_core::decode::u64_from_index(detail.source_range.start),
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties,
             source_tag: Some("RhinoDetailView".to_string()),
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "detail_view".into(),
                     parameters,
@@ -1634,13 +1634,13 @@ impl<'a> DecodeContext<'a> {
             ordinal: cadmpeg_core::decode::u64_from_index(cage.source_range.start),
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: properties,
             source_tag: Some("RhinoNurbsCage".to_string()),
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "nurbs_cage".into(),
                     parameters,
@@ -1838,13 +1838,13 @@ impl<'a> DecodeContext<'a> {
             ordinal: cadmpeg_core::decode::u64_from_index(construction.source_range.start),
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties,
             source_tag: Some("RhinoCurveOnSurface".to_string()),
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "curve_on_surface".into(),
                     parameters,
@@ -3170,7 +3170,10 @@ impl<'a> DecodeContext<'a> {
                 if vertices.is_empty() {
                     self.scan_warning(
                         source_order,
-                        format_args!("{}", cadmpeg_ir::features::BodySelectionError::Empty),
+                        format_args!(
+                            "{}",
+                            cadmpeg_ir::features::selections::BodySelectionError::Empty
+                        ),
                     );
                     return Ok(false);
                 }
@@ -4044,7 +4047,7 @@ fn stage_extrusion_caps(
             "extrusion cap staging: PlaneSurface.normal/u_axis must form an orthonormal frame"
                 .to_string()
         })?;
-        let origin = cadmpeg_ir::features::FinitePoint3::new(extrusion.cap_origins[cap])
+        let origin = cadmpeg_ir::features::geometry::FinitePoint3::new(extrusion.cap_origins[cap])
             .ok_or_else(|| {
                 "extrusion cap staging: PlaneSurface.origin must be finite".to_string()
             })?;
@@ -5042,7 +5045,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         };
         if shell_faces.is_empty() && shell_free_vertices.is_empty() {
             return Err(crate::curves::GeometryError::unpositioned(
-                cadmpeg_ir::features::BodySelectionError::Empty.to_string(),
+                cadmpeg_ir::features::selections::BodySelectionError::Empty.to_string(),
             ));
         }
         staged.draft.geometry_mut().shells.push(Shell::with_members(

@@ -10,7 +10,7 @@ use crate::design::container::Container;
 use crate::design::feature::{Feature, FeatureOperation, Link, OperationFamily};
 use crate::design::ops::datum::{Datum, DatumElement};
 use crate::design::refs::Member;
-use crate::features::FinitePoint3;
+use crate::features::geometry::FinitePoint3;
 use crate::ids::Identity;
 use crate::math::Point3;
 use crate::units::UnitVector3;

@@ -457,7 +457,7 @@ fn decode_retains_topology_owned_point_at_origin() {
         graph
             .get(NodeKind::Point, 11)
             .and_then(crate::topology::Node::point_position)
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))
     );
     let mut input = Cursor::new(prt_with_partition(&stream));

@@ -65,7 +65,8 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
             entity_selection::DesignEntitySelectionOperand,
         },
     };
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let stream = "f3d:test/Design/BulkStream.dat";
     let mut scope = DesignParameterScope::empty(
@@ -217,7 +218,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         matches!(
             features[0].evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Draft {
-                anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                anchor: cadmpeg_ir::features::direct_edit::DraftAnchor::NeutralPlane {
                     plane: FaceSelection::Native(_),
                     pull: None
                 },
@@ -233,7 +234,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         project(&selection);
     let FeatureDefinition::Operation(FeatureOperation::Draft {
         anchor:
-            cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+            cadmpeg_ir::features::direct_edit::DraftAnchor::NeutralPlane {
                 plane: neutral_plane,
                 pull,
             },
@@ -281,7 +282,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Draft {
-            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+            anchor: cadmpeg_ir::features::direct_edit::DraftAnchor::NeutralPlane {
                 plane: FaceSelection::Native(_),
                 pull: None
             },
@@ -1197,7 +1198,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     assert!(matches!(
         &groups[0],
         cadmpeg_ir::features::edge_treatments::FilletGroup {
-            edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
+            edges: cadmpeg_ir::features::selections::EdgeSelection::Unresolved,
             radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Constant {
                 radius: actual_radius,
             },
@@ -1207,7 +1208,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     assert!(matches!(
         &groups[1],
         cadmpeg_ir::features::edge_treatments::FilletGroup {
-            edges: cadmpeg_ir::features::EdgeSelection::Native(selection),
+            edges: cadmpeg_ir::features::selections::EdgeSelection::Native(selection),
             radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Constant {
                 radius: actual_radius,
             },
@@ -1245,17 +1246,17 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     assert!(matches!(
         crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::surface_patch::project_surface_patch(decode_ctx, &patch_scope, std::slice::from_ref(&patch_group), &[], &[], &[], &mut Vec::new())).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
-            boundary: cadmpeg_ir::features::SurfaceBoundary::Path(
-                cadmpeg_ir::features::PathRef::Native(ref native)
+            boundary: cadmpeg_ir::features::surface_inputs::SurfaceBoundary::Path(
+                cadmpeg_ir::features::profiles::PathRef::Native(ref native)
             ),
-            support_faces: cadmpeg_ir::features::FaceSelection::Faces(ref faces),
+            support_faces: cadmpeg_ir::features::selections::FaceSelection::Faces(ref faces),
             ref continuity,
             merge_result: Some(false),
             ref interior_constraints,
             reverse_normal: None,
         })) if interior_constraints.is_empty()
             && continuity.resolved().map(|resolved| resolved.conditions.as_slice())
-            == Some(&[cadmpeg_ir::features::FilledSurfaceBoundaryCondition::Contact {}][..])
+            == Some(&[cadmpeg_ir::features::surface_inputs::FilledSurfaceBoundaryCondition::Contact {}][..])
             && native == &patch_group.id
             && faces.is_empty()
     ));
@@ -1330,8 +1331,8 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     assert!(matches!(
         crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::surface_patch::project_surface_patch(decode_ctx, &patch_scope, &[patch_group.clone(), second_patch_group.clone()], &[], &[], &[], &mut Vec::new())).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
-            boundary: cadmpeg_ir::features::SurfaceBoundary::Path(
-                cadmpeg_ir::features::PathRef::Native(ref native)
+            boundary: cadmpeg_ir::features::surface_inputs::SurfaceBoundary::Path(
+                cadmpeg_ir::features::profiles::PathRef::Native(ref native)
             ),
             ..
         })) if native == &patch_scope.id
@@ -1389,8 +1390,8 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     .expect("resolved multi-group SurfacePatch path");
     let FeatureDefinition::Operation(FeatureOperation::FilledSurface {
         boundary:
-            cadmpeg_ir::features::SurfaceBoundary::Path(
-                cadmpeg_ir::features::PathRef::HistoricalEdges { edges, native, .. },
+            cadmpeg_ir::features::surface_inputs::SurfaceBoundary::Path(
+                cadmpeg_ir::features::profiles::PathRef::HistoricalEdges { edges, native, .. },
             ),
         ..
     }) = resolved
@@ -1417,10 +1418,10 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     assert!(matches!(
         crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::surface_patch::project_surface_patch(decode_ctx, &patch_scope, std::slice::from_ref(&patch_group), &[], &[], &[], &mut Vec::new())).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
-            boundary: cadmpeg_ir::features::SurfaceBoundary::Path(
-                cadmpeg_ir::features::PathRef::Native(ref native)
+            boundary: cadmpeg_ir::features::surface_inputs::SurfaceBoundary::Path(
+                cadmpeg_ir::features::profiles::PathRef::Native(ref native)
             ),
-            support_faces: cadmpeg_ir::features::FaceSelection::Faces(ref faces),
+            support_faces: cadmpeg_ir::features::selections::FaceSelection::Faces(ref faces),
             ref continuity,
             merge_result: Some(false),
             ref interior_constraints,
@@ -1507,8 +1508,8 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             crate::design::feature_project::surface_patch::project_surface_patch(ctx, &two_profiles_scope, &[patch_group.clone(), second_profile], &[], &[], &[], &mut Vec::new())
         }).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
-            boundary: cadmpeg_ir::features::SurfaceBoundary::Path(
-                cadmpeg_ir::features::PathRef::Native(ref native)
+            boundary: cadmpeg_ir::features::surface_inputs::SurfaceBoundary::Path(
+                cadmpeg_ir::features::profiles::PathRef::Native(ref native)
             ),
             ref continuity,
             merge_result: Some(false),
@@ -1659,13 +1660,13 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     assert!(matches!(
         grouped_projection,
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
-            boundary: cadmpeg_ir::features::SurfaceBoundary::Path(
-                cadmpeg_ir::features::PathRef::Native(ref native)
+            boundary: cadmpeg_ir::features::surface_inputs::SurfaceBoundary::Path(
+                cadmpeg_ir::features::profiles::PathRef::Native(ref native)
             ),
             ref continuity,
             ..
         })) if continuity.uniform_value()
-            == Some(cadmpeg_ir::features::SurfaceContinuity::Contact)
+            == Some(cadmpeg_ir::features::surface_inputs::SurfaceContinuity::Contact)
             && native == &patch_group.id
     ));
 }
@@ -1724,7 +1725,7 @@ fn assigned_and_unassigned_variable_fillet_groups_project_identical_radius_contr
     assert_eq!(groups.len(), 1);
     assert_eq!(
         groups[0].edges,
-        cadmpeg_ir::features::EdgeSelection::Native(variable_assignments[0].id.clone())
+        cadmpeg_ir::features::selections::EdgeSelection::Native(variable_assignments[0].id.clone())
     );
     assert_eq!(
         groups[0]
@@ -1776,7 +1777,7 @@ fn assigned_and_unassigned_variable_fillet_groups_project_identical_radius_contr
     assert_eq!(unassigned_groups.len(), 1);
     assert_eq!(
         unassigned_groups[0].edges,
-        cadmpeg_ir::features::EdgeSelection::Native(operand_groups[1].id.clone())
+        cadmpeg_ir::features::selections::EdgeSelection::Native(operand_groups[1].id.clone())
     );
     assert_eq!(unassigned_groups[0].radius, groups[0].radius);
     assert_eq!(

@@ -2,7 +2,10 @@
 use super::*;
 use crate::feature::{PmDcFeaturePropertyKind as Kind, PmDcFeatureReferenceFamily as Family};
 use crate::test_support::sheet_metal::{list, property, reference, Fixture};
-use cadmpeg_ir::features::{FeatureContent, FeatureEvaluation, GeneratedEdgeRef, PlanarProfileRef};
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::profiles::PlanarProfileRef;
+use cadmpeg_ir::features::selections::GeneratedEdgeRef;
+use cadmpeg_ir::features::FeatureContent;
 
 #[test]
 fn paired_inputs_select_their_own_complete_independent_rows() {
@@ -58,7 +61,7 @@ fn paired_inputs_select_their_own_complete_independent_rows() {
         vec![GeneratedEdgeRef {
             feature: cadmpeg_ir::features::FeatureId::mint("test:design:feature#base")
                 .expect("producer"),
-            local_id: cadmpeg_ir::features::SelectionReference::new("cap".to_owned())
+            local_id: cadmpeg_ir::features::selections::SelectionReference::new("cap".to_owned())
                 .expect("name"),
         }],
         fixture.property(reference(11)).expect("selection").id(),
@@ -106,13 +109,15 @@ fn paired_inputs_select_their_own_complete_independent_rows() {
         },
     );
     let sample = crate::feature::edge_selection::geometry::EdgeGeometry {
-        start: cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        start: cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             0.0, 0.0, 0.0,
         ))
         .expect("start"),
-        end: cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(8.0, 0.0, 0.0))
-            .expect("end"),
-        interior: cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        end: cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            8.0, 0.0, 0.0,
+        ))
+        .expect("end"),
+        interior: cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             4.0, 0.0, 0.0,
         ))
         .expect("middle"),

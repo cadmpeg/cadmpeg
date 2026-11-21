@@ -12,7 +12,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::design::refs::StateRef;
-use crate::features::FinitePoint3;
+use crate::features::geometry::FinitePoint3;
 use crate::ids::{BodyId, DeclaredMeasureId, ProductDefinitionId};
 use crate::scalar::{FiniteReal, NonNegativeReal};
 

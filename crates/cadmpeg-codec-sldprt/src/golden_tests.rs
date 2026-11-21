@@ -13,7 +13,8 @@ use std::io::Cursor;
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult};
-use cadmpeg_ir::features::{ExtrudeExtent, FeatureDefinition, FeatureOperation, LinearTermination};
+use cadmpeg_ir::features::extents::{ExtrudeExtent, LinearTermination};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::export::WritePath;
 use cadmpeg_measure::test_support::round_trip::{measures_agree_with, measures_decide};
 use cadmpeg_test_support::golden::{

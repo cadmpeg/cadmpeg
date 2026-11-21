@@ -10,7 +10,7 @@ fn gripped_cage() -> SubdCage {
     let grip = |source_index| {
         Some(SubdSecondaryGrip {
             source_index,
-            point: crate::features::FinitePoint3::ZERO,
+            point: crate::features::geometry::FinitePoint3::ZERO,
             weight: PositiveReal::new(1.0).unwrap(),
         })
     };

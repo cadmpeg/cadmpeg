@@ -6,9 +6,8 @@ use super::{
 };
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{
-    FaceSelection, Feature, FeatureDefinition, FeatureOperation, GeneratedFaceRef,
-};
+use cadmpeg_ir::features::selections::{FaceSelection, GeneratedFaceRef};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::ids::{BodyId, CoedgeId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId};
 use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Face, Loop as IrLoop, Region, Sense, Shell};
 use std::collections::BTreeMap;
@@ -169,12 +168,12 @@ fn generated_face_outputs_follow_producer_history_after_feature_insertion() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::thicken(
                 FaceSelection::generated(
                     vec![GeneratedFaceRef::new(
@@ -281,12 +280,12 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::thicken(
                 FaceSelection::generated(
                     vec![GeneratedFaceRef::new(

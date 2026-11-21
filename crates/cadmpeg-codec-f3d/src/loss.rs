@@ -444,6 +444,8 @@ pub(crate) enum F3dLossCode {
     /// A Mirror plane is read from the `WorkPlane` scope after its plane
     /// selection identity.
     FeatureMirrorPlaneWorkPlaneAssumed,
+    /// A compact feature seed uses its group selection after scope resolution fails.
+    FeaturePatternFeatureSeedSubstituted,
     /// A Revolve plane target is read from the `WorkPlane` scope at the record after its selection identity.
     FeatureRevolvePlaneWorkPlaneAssumed,
     /// A circular pattern's symmetric distribution has no circular pattern field.
@@ -827,6 +829,10 @@ pub(crate) enum F3dLossCode {
     FeatureWorkAxisCandidatesUnresolved,
     /// Feature body selections retain native identities; no unique body.
     FeatureBodySelectionNative,
+    /// A pattern seed or `RemoveBody` selection of omitted bodies has no
+    /// resolved ASM history: its producer is the one inserting state of any
+    /// history, or the selection keeps its native slots.
+    FeatureGeneratedBodyHistoryUnresolved,
     /// Reverse Normal body-group members lack the whole-body record type.
     FeatureReverseNormalBodyUnverified,
     /// A Reverse Normal selection stays in its input state: its bound
@@ -894,11 +900,16 @@ pub(crate) enum F3dLossCode {
     /// builds, and the generating feature is not proven.
     FeatureCombineToolBodyUnbound,
     /// The browser node of an operand-list Combine operand names no distinct
-    /// body of the preceding history state, so that operand does not bind
-    /// through its node.
+    /// body of the preceding history state, and the body recipes of the scope
+    /// bind no body for it, so that operand stays native.
     FeatureCombineOperandBodyUnbound,
+    /// The body recipe of an operand-list Combine names model bodies for its
+    /// tools, and these bodies replace the tools that the browser-node slots
+    /// bind.
+    FeatureCombineToolRecipeReplacementAssumed,
     /// A Combine frame that matches the fixed fields of the operand-list
-    /// prologue is read in the standard prologue.
+    /// prologue, and whose lists do not complete that prologue, is read in the
+    /// standard prologue.
     FeatureCombinePrologueAssumed,
     FeatureCombineKeptToolsCutAssumed,
     /// A Combine whose lists name its operands, whose other fields contradict
@@ -907,7 +918,7 @@ pub(crate) enum F3dLossCode {
     FeatureCombineOperandListRefused,
     /// A Combine with a companion `RemoveBody` scope reads every tool as
     /// removed, though the companion body selections do not name exactly the
-    /// tools.
+    /// tools that its consumed-body list omits.
     FeatureCombineToolConsumptionAssumed,
     FeatureSplitFaceMethodUnresolved,
     FeatureSplitFaceDirectionUnresolved,
@@ -1576,6 +1587,7 @@ impl F3dLossCode {
         Self::FeatureTimelineOwnerUnpaired,
         Self::FeaturePasteCopyPlacementAssumed,
         Self::FeatureMirrorPlaneWorkPlaneAssumed,
+        Self::FeaturePatternFeatureSeedSubstituted,
         Self::FeatureRevolvePlaneWorkPlaneAssumed,
         Self::FeatureCircularPatternPlacementNotTransferred,
         Self::FeatureCircularPatternControlsAssumed,
@@ -1804,6 +1816,7 @@ impl F3dLossCode {
         Self::FeatureWorkAxisLegacyLayoutAssumed,
         Self::FeatureWorkAxisCandidatesUnresolved,
         Self::FeatureBodySelectionNative,
+        Self::FeatureGeneratedBodyHistoryUnresolved,
         Self::FeatureReverseNormalBodyUnverified,
         Self::FeatureReverseNormalBodyProducerUnresolved,
         Self::FeatureReverseNormalLinkUnplaced,
@@ -1855,6 +1868,7 @@ impl F3dLossCode {
         Self::FeatureCombineNamedTailPrologueAssumed,
         Self::FeatureCombineToolBodyUnbound,
         Self::FeatureCombineOperandBodyUnbound,
+        Self::FeatureCombineToolRecipeReplacementAssumed,
         Self::FeatureCombinePrologueAssumed,
         Self::FeatureCombineKeptToolsCutAssumed,
         Self::FeatureCombineOperandListRefused,
@@ -2363,6 +2377,9 @@ impl F3dLossCode {
             Self::FeatureTimelineOwnerUnpaired => "feature.timeline-owner-unpaired",
             Self::FeaturePasteCopyPlacementAssumed => "feature.paste-copy-placement-assumed",
             Self::FeatureMirrorPlaneWorkPlaneAssumed => "feature.mirror-plane-work-plane-assumed",
+            Self::FeaturePatternFeatureSeedSubstituted => {
+                "feature.pattern-feature-seed-substituted"
+            }
             Self::FeatureRevolvePlaneWorkPlaneAssumed => "feature.revolve-plane-work-plane-assumed",
             Self::FeatureCircularPatternPlacementNotTransferred => {
                 "feature.circular-pattern-placement-not-transferred"
@@ -2844,6 +2861,9 @@ impl F3dLossCode {
                 "feature.work-axis-endpoint-tolerance-assumed"
             }
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
+            Self::FeatureGeneratedBodyHistoryUnresolved => {
+                "feature.generated-body-history-unresolved"
+            }
             Self::FeatureReverseNormalBodyUnverified => "feature.reverse-normal-body-unverified",
             Self::FeatureReverseNormalBodyProducerUnresolved => {
                 "feature.reverse-normal-body-producer-unresolved"
@@ -2949,6 +2969,9 @@ impl F3dLossCode {
             }
             Self::FeatureCombineToolBodyUnbound => "feature.combine-tool-body-unbound",
             Self::FeatureCombineOperandBodyUnbound => "feature.combine-operand-body-unbound",
+            Self::FeatureCombineToolRecipeReplacementAssumed => {
+                "feature.combine-tool-recipe-replacement-assumed"
+            }
             Self::FeatureCombinePrologueAssumed => "feature.combine-prologue-assumed",
             Self::FeatureCombineKeptToolsCutAssumed => "feature.combine-kept-tools-cut-assumed",
             Self::FeatureCombineOperandListRefused => "feature.combine-operand-list-refused",
@@ -3481,6 +3504,7 @@ impl F3dLossCode {
             | Self::FeatureTimelineOwnerUnpaired
             | Self::FeaturePasteCopyPlacementAssumed
             | Self::FeatureMirrorPlaneWorkPlaneAssumed
+            | Self::FeaturePatternFeatureSeedSubstituted
             | Self::FeatureRevolvePlaneWorkPlaneAssumed
             | Self::FeatureCircularPatternPlacementNotTransferred
             | Self::FeatureCircularPatternControlsAssumed
@@ -3780,6 +3804,7 @@ impl F3dLossCode {
             | Self::FeatureWorkAxisLegacyLayoutAssumed
             | Self::FeatureWorkAxisCandidatesUnresolved
             | Self::FeatureBodySelectionNative
+            | Self::FeatureGeneratedBodyHistoryUnresolved
             | Self::FeatureReverseNormalBodyUnverified
             | Self::FeatureReverseNormalBodyProducerUnresolved
             | Self::FeatureReverseNormalLinkUnplaced
@@ -3831,6 +3856,7 @@ impl F3dLossCode {
             | Self::FeatureCombineNamedTailPrologueAssumed
             | Self::FeatureCombineToolBodyUnbound
             | Self::FeatureCombineOperandBodyUnbound
+            | Self::FeatureCombineToolRecipeReplacementAssumed
             | Self::FeatureCombinePrologueAssumed
             | Self::FeatureCombineKeptToolsCutAssumed
             | Self::FeatureCombineOperandListRefused
@@ -4195,6 +4221,7 @@ impl F3dLossCode {
             | Self::FeatureTimelineOwnerUnpaired
             | Self::FeaturePasteCopyPlacementAssumed
             | Self::FeatureMirrorPlaneWorkPlaneAssumed
+            | Self::FeaturePatternFeatureSeedSubstituted
             | Self::FeatureRevolvePlaneWorkPlaneAssumed
             | Self::FeatureCircularPatternPlacementNotTransferred
             | Self::FeatureCircularPatternControlsAssumed
@@ -4501,6 +4528,7 @@ impl F3dLossCode {
             | Self::FeatureWorkAxisLegacyLayoutAssumed
             | Self::FeatureWorkAxisCandidatesUnresolved
             | Self::FeatureBodySelectionNative
+            | Self::FeatureGeneratedBodyHistoryUnresolved
             | Self::FeatureReverseNormalBodyUnverified
             | Self::FeatureReverseNormalBodyProducerUnresolved
             | Self::FeatureReverseNormalLinkUnplaced
@@ -4552,6 +4580,7 @@ impl F3dLossCode {
             | Self::FeatureCombineNamedTailPrologueAssumed
             | Self::FeatureCombineToolBodyUnbound
             | Self::FeatureCombineOperandBodyUnbound
+            | Self::FeatureCombineToolRecipeReplacementAssumed
             | Self::FeatureCombinePrologueAssumed
             | Self::FeatureCombineKeptToolsCutAssumed
             | Self::FeatureCombineOperandListRefused
@@ -5108,6 +5137,7 @@ mod tests {
                 "feature.timeline-owner-unpaired",
                 "feature.paste-copy-placement-assumed",
                 "feature.mirror-plane-work-plane-assumed",
+                "feature.pattern-feature-seed-substituted",
                 "feature.revolve-plane-work-plane-assumed",
                 "feature.circular-pattern-placement-not-transferred",
                 "feature.circular-pattern-controls-assumed",
@@ -5336,6 +5366,7 @@ mod tests {
                 "feature.work-axis-legacy-layout-assumed",
                 "feature.work-axis-candidates-unresolved",
                 "feature.body-selection-native",
+                "feature.generated-body-history-unresolved",
                 "feature.reverse-normal-body-unverified",
                 "feature.reverse-normal-body-producer-unresolved",
                 "feature.reverse-normal-link-unplaced",
@@ -5387,6 +5418,7 @@ mod tests {
                 "feature.combine-named-tail-prologue-assumed",
                 "feature.combine-tool-body-unbound",
                 "feature.combine-operand-body-unbound",
+                "feature.combine-tool-recipe-replacement-assumed",
                 "feature.combine-prologue-assumed",
                 "feature.combine-kept-tools-cut-assumed",
                 "feature.combine-operand-list-refused",

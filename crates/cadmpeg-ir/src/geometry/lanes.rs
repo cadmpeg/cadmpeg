@@ -31,7 +31,7 @@ use super::{
     VertexBlendBoundaryGeometry, VertexBlendConstruction, VertexBlendTwists,
     LAW_EXPRESSION_DEPTH_LIMIT,
 };
-use crate::features::{FinitePoint3, FiniteVector3};
+use crate::features::geometry::{FinitePoint3, FiniteVector3};
 use crate::math::{Point3, Vector3};
 use crate::scalar::FiniteReal;
 use crate::topology::ParameterInterval;

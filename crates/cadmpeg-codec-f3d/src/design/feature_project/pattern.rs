@@ -11,6 +11,7 @@ use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::face::DesignFaceOperand;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
+use std::collections::HashMap;
 
 /// Largest difference, in radians, between a circular pattern's total angle
 /// and a full turn for which the pattern still spans the full turn.
@@ -26,6 +27,7 @@ pub(super) fn project_circular_pattern(
     face_operands: &[DesignFaceOperand],
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     scopes: &[DesignParameterScope],
+    authored_ordinals: &HashMap<(&str, u32), u64>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
@@ -49,9 +51,11 @@ pub(super) fn project_circular_pattern(
         face_operands,
         entity_selection_operands,
         scopes,
+        authored_ordinals,
+        losses,
     );
-    let axis_origin = cadmpeg_ir::features::FinitePoint3::new(axis_origin)?;
-    let axis_dir = cadmpeg_ir::features::FeatureDirection3::new(axis_dir)?;
+    let axis_origin = cadmpeg_ir::features::geometry::FinitePoint3::new(axis_origin)?;
+    let axis_dir = cadmpeg_ir::features::geometry::FeatureDirection3::new(axis_dir)?;
     let pattern = PatternKind::new(PatternTransform::Circular {
         axis_origin,
         axis_dir,
@@ -139,6 +143,7 @@ pub(super) fn project_rectangular_pattern_scalars(
     face_operands: &[DesignFaceOperand],
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     scopes: &[DesignParameterScope],
+    authored_ordinals: &HashMap<(&str, u32), u64>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
@@ -167,18 +172,21 @@ pub(super) fn project_rectangular_pattern_scalars(
                 .ok()?,
             )),
         });
-    let group_seed = pattern_seed_group(scope, groups).map(|group| {
-        pattern_group_seeds(
-            scope,
-            group,
-            face_operands,
-            entity_selection_operands,
-            scopes,
-        )
-    });
     let seeds = component_seed
         .map(|seed| vec![seed])
-        .or(group_seed)
+        .or_else(|| {
+            pattern_seed_group(scope, groups).map(|group| {
+                pattern_group_seeds(
+                    scope,
+                    group,
+                    face_operands,
+                    entity_selection_operands,
+                    scopes,
+                    authored_ordinals,
+                    losses,
+                )
+            })
+        })
         .unwrap_or_default();
     if let Some(note) = distribution.and_then(|distribution| {
         pattern_seeds::distribution_seed_conflict(scope, distribution, &seeds)
@@ -321,7 +329,9 @@ pub(super) fn project_rectangular_pattern_scalars(
                 *direction,
                 *symmetric,
                 Some(cadmpeg_ir::features::patterns::LinearPatternDirection {
-                    direction: cadmpeg_ir::features::FeatureDirection3::from(*second_direction),
+                    direction: cadmpeg_ir::features::geometry::FeatureDirection3::from(
+                        *second_direction,
+                    ),
                     spacing: *second_spacing,
                     count: *second_count,
                     symmetric: *second_symmetric,
@@ -331,7 +341,7 @@ pub(super) fn project_rectangular_pattern_scalars(
         _ => return None,
     };
     let pattern = PatternKind::new(PatternTransform::Linear {
-        direction: direction.map(cadmpeg_ir::features::FeatureDirection3::from),
+        direction: direction.map(cadmpeg_ir::features::geometry::FeatureDirection3::from),
         spacing,
         count,
         second,
