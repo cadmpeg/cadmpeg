@@ -72,7 +72,11 @@ The file starts with an 8-byte header: `file_id` (u32), then `version` (u32 **bi
 
 Native compressed members use ZIP local-file-header fields with a substituted
 four-byte signature token and nibble-swapped member names. The signature token
-is retained as opaque bytes. The archive coordinate zero is absolute file offset
+is retained as opaque bytes. Every local header of one file carries one local
+token, every central header carries one central token (§1.3), and the
+end-of-directory root carries a third (§1.4). The three tokens are nonzero and
+pairwise distinct. `file_id` is nonzero, and files with the same `file_id`
+carry the same three tokens. The archive coordinate zero is absolute file offset
 8. The field marker begins four bytes after the local signature. In the native
 DEFLATE profile, the marker is `14 00 06 00 08 00`: version needed 20,
 general-purpose flags 6, and compression method 8.
@@ -129,7 +133,8 @@ and modification date in the high half. It does not identify a payload type.
 The time encodes seconds divided by two in bits 0..4, minutes in bits 5..10,
 and hours in bits 11..15. The date encodes day in bits 0..4, month in bits
 5..8, and year minus 1980 in bits 9..15. Preserve the raw bits even when they
-do not form a valid calendar date or clock time. Local and central fields for
+do not form a valid calendar date or clock time. Several members of one file
+can carry the same word. Local and central fields for
 one member carry the same raw time/date, CRC, sizes, name length, and name.
 
 ### 1.2 Cache-cell section-index grid
@@ -226,8 +231,8 @@ of a central header, beginning at central signature +32:
 on which the local member begins. `internal_attrs` bit 0 is the ZIP producer's
 apparently-text hint; zero indicates apparently binary data. It does not
 identify XML or a SolidWorks payload family. `external_attrs` uses the host
-system interpretation selected by `version_made_by`. These are fields, even
-when their values are zero.
+system interpretation selected by `version_made_by`. `version_made_by`,
+`comment_len`, `disk_start` and `external_attrs` are zero.
 
 `local_offset` is relative to archive coordinate zero at absolute file offset
 8. Thus the local signature is at `local_offset + 8` and its field marker is

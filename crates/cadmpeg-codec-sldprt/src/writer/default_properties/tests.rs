@@ -4,8 +4,19 @@ use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::AttributeId;
 
-use super::{edited_properties, is_property, requires_guard, same_attribute};
+use super::{edited_properties, is_property, requires_guard, same_attribute, Carrier};
 use crate::test_support::container::{make_block, outer_header, scan};
+
+/// The one saved-property owner of `scan` and what the write emits for it.
+fn carrier(
+    scan: &crate::container::ContainerScan<'_>,
+    records: &[crate::SourceRecord<'_>],
+    notes: &cadmpeg_ir::Annotations,
+) -> Carrier {
+    let carriers = super::carriers(scan, records, notes);
+    assert_eq!(carriers.len(), 1);
+    *carriers.values().next().unwrap()
+}
 
 fn property(id: &str, name: &str, value: AttributeValue) -> SourceAttribute {
     SourceAttribute {
@@ -174,7 +185,7 @@ fn only_exact_default_carrier_owns_the_unit_mirror_guard() {
 }
 
 #[test]
-fn a_default_carrier_is_carried_only_with_its_complete_source_owner() {
+fn a_default_carrier_is_emitted_as_stored_only_with_its_complete_source_owner() {
     let mut bytes = outer_header();
     bytes.extend(make_block(
         0x43,
@@ -201,30 +212,38 @@ fn a_default_carrier_is_carried_only_with_its_complete_source_owner() {
         id: id.clone(),
         data: Some(owner.payload()),
     };
-    assert!(super::carried(&scan, &[record()], &notes));
-    assert!(!super::carried(&scan, &[], &notes));
-    assert!(!super::carried(&scan, &[record(), record()], &notes));
-    assert!(!super::carried(
-        &scan,
-        &[crate::SourceRecord {
-            id: id.clone(),
-            data: Some(b"<changed/>")
-        }],
-        &notes
-    ));
-    assert!(!super::carried(
-        &scan,
-        &[crate::SourceRecord {
-            id: id.clone(),
-            data: None
-        }],
-        &notes
-    ));
-    assert!(!super::carried(
-        &scan,
-        &[record()],
-        &cadmpeg_ir::Annotations::default()
-    ));
+    assert_eq!(carrier(&scan, &[record()], &notes), Carrier::AsStored);
+    assert_eq!(carrier(&scan, &[], &notes), Carrier::Absent);
+    assert_eq!(
+        carrier(&scan, &[record(), record()], &notes),
+        Carrier::Retained
+    );
+    assert_eq!(
+        carrier(
+            &scan,
+            &[crate::SourceRecord {
+                id: id.clone(),
+                data: Some(b"<changed/>")
+            }],
+            &notes
+        ),
+        Carrier::Retained
+    );
+    assert_eq!(
+        carrier(
+            &scan,
+            &[crate::SourceRecord {
+                id: id.clone(),
+                data: None
+            }],
+            &notes
+        ),
+        Carrier::Absent
+    );
+    assert_eq!(
+        carrier(&scan, &[record()], &cadmpeg_ir::Annotations::default()),
+        Carrier::Absent
+    );
     let mut rehomed = cadmpeg_ir::Annotations::default();
     crate::annotations::note(
         &mut rehomed,
@@ -235,10 +254,10 @@ fn a_default_carrier_is_carried_only_with_its_complete_source_owner() {
         cadmpeg_ir::Exactness::ByteExact,
     )
     .unwrap();
-    assert!(!super::carried(&scan, &[record()], &rehomed));
+    assert_eq!(carrier(&scan, &[record()], &rehomed), Carrier::Retained);
 }
 #[test]
-fn compound_default_streams_are_not_carried() {
+fn compound_default_streams_are_absent() {
     let bytes = outer_header();
     let mut scan = scan(&bytes);
     scan.compound_streams
@@ -252,15 +271,14 @@ fn compound_default_streams_are_not_carried() {
             ps_probe_capped: false,
             ps_auxiliary_refusal: None,
         });
-    assert!(!super::carried(
-        &scan,
-        &[],
-        &cadmpeg_ir::annotations::Annotations::default()
-    ));
+    assert_eq!(
+        carrier(&scan, &[], &cadmpeg_ir::annotations::Annotations::default()),
+        Carrier::Absent
+    );
 }
 
 #[test]
-fn legacy_compound_configuration_carriers_are_not_carried() {
+fn legacy_compound_configuration_carriers_are_absent() {
     let bytes = outer_header();
     let mut scan = scan(&bytes);
     scan.compound_streams
@@ -275,9 +293,77 @@ fn legacy_compound_configuration_carriers_are_not_carried() {
             ps_auxiliary_refusal: None,
         });
     assert!(requires_guard(&CadIr::empty(), Some(&scan)));
-    assert!(!super::carried(
-        &scan,
-        &[],
-        &cadmpeg_ir::Annotations::default()
+    assert_eq!(
+        carrier(&scan, &[], &cadmpeg_ir::Annotations::default()),
+        Carrier::Absent
+    );
+}
+
+#[test]
+fn each_carrier_charges_only_its_own_properties() {
+    let mut bytes = outer_header();
+    bytes.extend(make_block(
+        0x43,
+        "docProps/ISolidWorksInformation.xml",
+        b"<authored/>",
     ));
+    bytes.extend(make_block(
+        0x44,
+        "docProps/Config-0-Properties.xml",
+        b"<config/>",
+    ));
+    let scan = scan(&bytes);
+    let owners = scan
+        .sections()
+        .filter(|section| super::is_owner(*section))
+        .collect::<Vec<_>>();
+    assert_eq!(owners.len(), 2);
+    let (stored, absent) = (owners[0], owners[1]);
+    let mut notes = cadmpeg_ir::Annotations::default();
+    crate::annotations::note(
+        &mut notes,
+        stored.native_id().as_str(),
+        stored.source_stream(),
+        0,
+        "xml",
+        cadmpeg_ir::Exactness::ByteExact,
+    )
+    .unwrap();
+    let records = [crate::SourceRecord {
+        id: stored.native_id(),
+        data: Some(stored.payload()),
+    }];
+    let default_row = format!(
+        "sldprt:metadata:default_property#{}:5:Name",
+        stored.ordinal()
+    );
+    let configuration_row = format!(
+        "sldprt:metadata:configuration_property#{}:3",
+        absent.ordinal()
+    );
+    let mut source = CadIr::empty();
+    source.model.attributes.extend([
+        property(&default_row, "Name", AttributeValue::String("saved".into())),
+        property(
+            &configuration_row,
+            "saved_configuration_property",
+            AttributeValue::String("stored".into()),
+        ),
+    ]);
+    let charged = super::unwritten(&source, Some(&source), Some(&scan), &records, &notes);
+    assert_eq!(
+        charged.into_iter().collect::<Vec<_>>(),
+        [(configuration_row.clone(), super::Held::Nothing)],
+        "an unedited property of the emitted carrier is written"
+    );
+    let mut edited = source.clone();
+    edited.model.attributes[0].values = vec![Some(AttributeValue::String("edited".into()))];
+    let charged = super::unwritten(&edited, Some(&source), Some(&scan), &records, &notes);
+    assert_eq!(
+        charged.into_iter().collect::<Vec<_>>(),
+        [
+            (configuration_row, super::Held::Nothing),
+            (default_row, super::Held::Source),
+        ]
+    );
 }

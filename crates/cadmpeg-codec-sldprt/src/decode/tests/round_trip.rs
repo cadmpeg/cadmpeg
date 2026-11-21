@@ -273,7 +273,8 @@ fn source_less_cube_writes_a_synthesized_native_envelope() {
     }
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
-    assert_eq!(&written[..8], &[0, 0, 0, 0, 0, 0, 0, 4]);
+    assert_ne!(&written[..4], &[0; 4], "file_id is nonzero");
+    assert_eq!(&written[4..8], &[0, 0, 0, 4]);
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();

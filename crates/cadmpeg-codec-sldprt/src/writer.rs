@@ -141,14 +141,13 @@ pub(crate) fn write_semantic_with_records(
         let baseline = retained_source_baseline(&mut source_baseline, source_context.as_ref())?;
         // No serializer writes a saved property: an edited one is charged and
         // its carrier is emitted as the source stored it, or not at all.
-        let edited = match (source_scan.as_ref(), baseline) {
-            (Some(scan), Some(baseline))
-                if default_properties::carried(scan, retained_records, annotations) =>
-            {
-                default_properties::edited_properties(&normalized, &baseline.ir, scan)
-            }
-            _ => default_properties::stated_properties(&normalized),
-        };
+        let edited = default_properties::unwritten(
+            &normalized,
+            baseline.map(|baseline| &baseline.ir),
+            source_scan.as_ref(),
+            retained_records,
+            annotations,
+        );
         for (id, held) in edited {
             unwritten.record(&id, Unwritten::SavedProperty, held);
         }
@@ -288,6 +287,20 @@ pub(crate) fn write_semantic_with_records(
                 &mut unwritten,
             );
         }
+        for attribute in metadata_attributes(ir) {
+            if attribute.name != "source_linear_unit_code"
+                && annotations
+                    .provenance
+                    .get(attribute.id.as_str())
+                    .is_some_and(|provenance| owners.unavailable.contains(provenance.stream()))
+            {
+                unwritten.record(
+                    attribute.id.as_str(),
+                    Unwritten::OwnerUnavailable,
+                    Held::Nothing,
+                );
+            }
+        }
         true
     } else {
         false
@@ -388,7 +401,7 @@ pub(crate) fn write_semantic_with_records(
     for (name, _) in &sections {
         *emitted_sections.entry(name.clone()).or_default() += 1;
     }
-    let (opaque, replaced_blocks) = opaque_blocks(
+    let opaque = opaque_blocks(
         ir,
         retained_records,
         annotations,
@@ -398,7 +411,7 @@ pub(crate) fn write_semantic_with_records(
         patch_active_configuration,
     )?;
     let document_envelope = crate::container::first_solidworks_envelope(
-        opaque.iter().map(|(_, payload)| payload.as_slice()),
+        opaque.blocks.iter().map(|(_, payload)| payload.as_slice()),
     );
     if let Some(active) = ir.model.configurations.iter().find(|value| value.active) {
         let active_name = active.name.as_deref().ok_or_else(|| {
@@ -413,14 +426,14 @@ pub(crate) fn write_semantic_with_records(
             );
         }
     }
-    for (section, payload) in opaque {
+    for (section, payload) in opaque.blocks {
         members.push(&mut sections, &mut unwritten, section, payload);
     }
     let written_declaration = document_envelope.and_then(|envelope| envelope.sw_version);
     let written_dialect =
         crate::dialect::SldprtDialect::from_declaration(written_declaration.as_deref()).id();
 
-    let type_ids = section_type_ids(source_scan.as_ref(), &sections)?;
+    let type_ids = section_type_ids(source_scan.as_ref(), &sections);
     let envelope = envelope::build(&sections, &type_ids, source_scan.as_ref())?;
     writer.write_all(&envelope.bytes)?;
     losses.extend(envelope.losses());
@@ -456,7 +469,12 @@ pub(crate) fn write_semantic_with_records(
     losses.extend(cadmpeg_ir::codec::write::native_records_omitted(
         "SLDPRT",
         "because the write generates fewer members of their stream than the source stores",
-        replaced_blocks,
+        opaque.replaced,
+    ));
+    losses.extend(cadmpeg_ir::codec::write::native_records_omitted(
+        "SLDPRT",
+        "because the source fidelity holds no bytes of them",
+        opaque.unavailable,
     ));
     Ok(SemanticOutput {
         dialect: written_dialect,
@@ -731,10 +749,12 @@ fn remapped_partition_section(ir: &CadIr, native: &SldprtNative, section: &str) 
     Some(format!("Contents/Config-{new_index}-Partition"))
 }
 
+/// Each section's time/date word: the next one the source stores for a
+/// member of its name, `None` past them.
 fn section_type_ids(
     source_scan: Option<&crate::container::ContainerScan<'_>>,
     sections: &[(String, Vec<u8>)],
-) -> Result<Vec<u32>, CodecError> {
+) -> Vec<Option<u32>> {
     let mut source_ids: HashMap<String, VecDeque<u32>> = HashMap::new();
     if let Some(scan) = source_scan {
         for block in &scan.blocks {
@@ -748,26 +768,7 @@ fn section_type_ids(
     }
     sections
         .iter()
-        .enumerate()
-        .map(|(index, (section, _))| {
-            source_ids
-                .get_mut(section)
-                .and_then(VecDeque::pop_front)
-                .map_or_else(
-                    || {
-                        0x20u32
-                            .checked_add(u32::try_from(index).map_err(|_| {
-                                CodecError::NotImplemented(
-                                    "SLDPRT section count exceeds type-id space".into(),
-                                )
-                            })?)
-                            .ok_or_else(|| {
-                                CodecError::NotImplemented("SLDPRT type-id overflow".into())
-                            })
-                    },
-                    Ok,
-                )
-        })
+        .map(|(section, _)| source_ids.get_mut(section).and_then(VecDeque::pop_front))
         .collect()
 }
 
@@ -1132,9 +1133,8 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
     Ok(subset)
 }
 
-/// The retained blocks the output holds as stored, with their streams, and
-/// the ids of retained blocks of a generated stream past the number of
-/// members the write generates for it, in source order.
+/// The retained blocks the output holds as stored, and the retained blocks it
+/// omits.
 fn opaque_blocks(
     ir: &CadIr,
     records: &[SourceRecord<'_>],
@@ -1163,6 +1163,7 @@ fn opaque_blocks(
     };
     let mut seen = HashSet::new();
     let mut blocks = Vec::new();
+    let mut unavailable = Vec::new();
     let mut replaced = HashMap::<&str, Vec<&str>>::new();
     for record in records
         .iter()
@@ -1195,6 +1196,7 @@ fn opaque_blocks(
             continue;
         }
         let Some(data) = record.data else {
+            unavailable.push(format!("{section} ({})", record.id.as_str()));
             continue;
         };
         let mut payload = data.to_vec();
@@ -1213,19 +1215,31 @@ fn opaque_blocks(
         }
         blocks.push((section.to_string(), payload));
     }
-    let excess = replaced
+    let replaced = replaced
         .into_iter()
         .flat_map(|(section, ids)| {
             let written = emitted_sections.get(section).copied().unwrap_or_default();
             ids.into_iter().skip(written).map(str::to_owned)
         })
         .collect();
-    Ok((blocks, excess))
+    Ok(OpaqueBlocks {
+        blocks,
+        replaced,
+        unavailable,
+    })
 }
 
-/// [`opaque_blocks`]: the blocks written as stored and the ids of replaced
-/// blocks past the generated member count.
-type OpaqueBlocks = (Vec<(String, Vec<u8>)>, Vec<String>);
+/// [`opaque_blocks`]'s result.
+struct OpaqueBlocks {
+    /// The blocks written as stored, with their streams.
+    blocks: Vec<(String, Vec<u8>)>,
+    /// The ids of retained blocks of a generated stream past the number of
+    /// members the write generates for it.
+    replaced: Vec<String>,
+    /// Each retained block whose bytes the source fidelity does not hold,
+    /// as its stream and id.
+    unavailable: Vec<String>,
+}
 
 /// The patchable metadata members of one write, as the source stores them,
 /// and the attribute ids the patch wrote into each.

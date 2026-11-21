@@ -129,7 +129,8 @@ fn explicit_cross_dialect_transcode_synthesizes_without_consuming_present_image(
         .any(|loss| loss.code.local_code() == "record.residual-unavailable"));
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
-    assert_eq!(&written[..8], &[0, 0, 0, 0, 0, 0, 0, 4]);
+    assert_ne!(&written[..4], &[0; 4], "file_id is nonzero");
+    assert_eq!(&written[4..8], &[0, 0, 0, 4]);
 }
 
 #[test]

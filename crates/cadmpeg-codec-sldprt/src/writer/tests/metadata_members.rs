@@ -448,7 +448,7 @@ fn duplicate_physical_metadata_owners_are_carried_and_their_excess_named() {
         owners.unpatched(MEMBER),
         Some((Unwritten::OwnerCarried, crate::writer::Held::Source))
     );
-    let (blocks, excess) = crate::writer::opaque_blocks(
+    let opaque = crate::writer::opaque_blocks(
         decoded.ir(),
         &records,
         &annotations,
@@ -458,8 +458,8 @@ fn duplicate_physical_metadata_owners_are_carried_and_their_excess_named() {
         false,
     )
     .unwrap();
-    assert!(blocks.iter().all(|(name, _)| name != MEMBER));
-    assert_eq!(excess, ["sldprt:file:block#999_999"]);
+    assert!(opaque.blocks.iter().all(|(name, _)| name != MEMBER));
+    assert_eq!(opaque.replaced, ["sldprt:file:block#999_999"]);
 }
 
 #[test]
@@ -996,4 +996,94 @@ fn duplicate_feature_owned_names_write_each_retained_member() {
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     assert_eq!(sldprt_native(rewritten.ir()).feature_input_lanes.len(), 3);
+}
+
+#[test]
+fn digest_only_owner_beside_a_patchable_owner_is_named_without_an_edit() {
+    use cadmpeg_ir::codec::write::Encoder as _;
+    const EXTRA: &str = "Contents/Extra";
+    let mut extra = b"moBBoxCenterData_c".to_vec();
+    extra.extend(1u32.to_le_bytes());
+    for value in [0.05f64, 0.06, -0.07, 0.08] {
+        extra.extend(value.to_le_bytes());
+    }
+    let (mut decoded, _) =
+        shared_member_with_sections(resolved_features_payload(&[0]), &[(EXTRA, &extra)]);
+    let extra_attributes: Vec<String> = decoded
+        .source_fidelity()
+        .annotations
+        .provenance
+        .iter()
+        .filter(|(id, provenance)| {
+            id.starts_with("sldprt:metadata:") && provenance.stream() == EXTRA
+        })
+        .map(|(id, _)| id.clone())
+        .collect();
+    assert!(
+        !extra_attributes.is_empty(),
+        "EXTRA owns no metadata attribute"
+    );
+    let block = decoded
+        .source_fidelity()
+        .annotations
+        .provenance
+        .iter()
+        .find(|(id, provenance)| {
+            id.starts_with("sldprt:file:block#") && provenance.stream() == EXTRA
+        })
+        .map(|(id, _)| id.clone())
+        .unwrap();
+    crate::test_support::make_source_image_unavailable(decoded.source_fidelity_mut());
+    crate::test_support::make_retained_record_unavailable(decoded.source_fidelity_mut(), &block);
+    let plan = SldprtCodec
+        .plan(
+            cadmpeg_ir::codec::write::EncodeInput::new(
+                decoded.ir(),
+                Some(decoded.source_fidelity()),
+            ),
+            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+        )
+        .unwrap();
+    let losses: Vec<String> = plan
+        .report()
+        .losses
+        .iter()
+        .map(|loss| {
+            format!(
+                "{}:{} {}",
+                loss.code.namespace(),
+                loss.code.local_code(),
+                loss.message
+            )
+        })
+        .collect();
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    let scan = crate::test_support::container::scan(&written);
+    let members: Vec<String> = scan
+        .blocks
+        .iter()
+        .filter_map(|block| block.section.name().map(str::to_owned))
+        .collect();
+    assert!(members.iter().any(|member| member == MEMBER));
+    assert!(
+        members.iter().all(|member| member != EXTRA),
+        "EXTRA was written"
+    );
+    let omitted = format!("{EXTRA} ({block})");
+    assert!(
+        losses.iter().any(
+            |loss| loss.starts_with("export:native.records-omitted") && loss.contains(&omitted)
+        ),
+        "no loss names the dropped member: {losses:?}"
+    );
+    for id in &extra_attributes {
+        assert!(
+            losses
+                .iter()
+                .any(|loss| loss.starts_with("sldprt:writer.attributes-omitted")
+                    && loss.contains(id.as_str())),
+            "no loss names {id}: {losses:?}"
+        );
+    }
 }

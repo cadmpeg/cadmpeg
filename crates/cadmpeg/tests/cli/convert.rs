@@ -548,7 +548,9 @@ fn source_less_sldprt_writes_a_synthesized_native_envelope() {
         ])
         .assert()
         .success();
-    assert_eq!(&fs::read(&output).unwrap()[..8], &[0, 0, 0, 0, 0, 0, 0, 4]);
+    let written = fs::read(&output).unwrap();
+    assert_ne!(&written[..4], &[0; 4], "file_id is nonzero");
+    assert_eq!(&written[4..8], &[0, 0, 0, 4]);
 }
 
 #[cfg(feature = "rhino")]
