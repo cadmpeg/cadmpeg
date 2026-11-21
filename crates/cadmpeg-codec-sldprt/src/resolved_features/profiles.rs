@@ -1379,18 +1379,20 @@ impl<'a> TerminalRelationCarriers<'a> {
 
 /// Whether the sketch marker or record at `offset` with `geometry` is
 /// construction geometry, and whether that reading is the selector-bit-3
-/// assumption for a list line with profile role `1` (DI-77). Construction is
-/// a selected construction line, a selected compact roster axis, or a list
-/// curve with selector bit 3, except a full circle with profile role `1`.
-/// `record_construction` is the selector-bit-3 reading of a curve record that
-/// gave the geometry ([`listed_entity`]). Every marker and record projection
-/// path uses this one predicate.
+/// assumption for a list line with profile role `1` (DI-77).
+/// `record_construction` is the selector-bit-3 reading of the `sgSketch`
+/// record that gave the geometry ([`listed_entity`]), `None` when another
+/// reading gave it. A record's geometry is construction when its selector
+/// has bit 3 set. Another reading's geometry is construction when the marker
+/// is a selected construction line, a selected compact roster axis, or a list
+/// curve with selector bit 3. A full circle with profile role `1` is never
+/// construction.
 fn marker_is_construction(
     payload: &[u8],
     record_lists: &SketchRecordLists,
     offset: usize,
     geometry: &SketchGeometry,
-    record_construction: bool,
+    record_construction: Option<bool>,
 ) -> (bool, bool) {
     let listed_kind = record_lists.listed_curve_kind(payload, offset);
     let role_one = marker_profile_curve_role(payload, offset) == Some(1);
@@ -1399,14 +1401,19 @@ fn marker_is_construction(
             geometry.definition(),
             SketchGeometryDefinition::Circle { .. }
         ) || listed_kind == Some(FramedCurve::Circle));
-    let listed_construction =
-        record_construction || (listed_kind.is_some() && construction_record(payload, offset));
-    let construction = !role_one_circle
-        && (marker_is_selected_construction_line(payload, offset)
-            || current_compact_roster_selected_axis(payload, offset)
-            || listed_construction);
+    let (construction, listed_construction) = match record_construction {
+        Some(bit) => (bit && !role_one_circle, bit),
+        None => {
+            let listed = listed_kind.is_some() && construction_record(payload, offset);
+            let construction = !role_one_circle
+                && (marker_is_selected_construction_line(payload, offset)
+                    || current_compact_roster_selected_axis(payload, offset)
+                    || listed);
+            (construction, listed)
+        }
+    };
     let line = listed_kind == Some(FramedCurve::Line)
-        || (record_construction
+        || (record_construction.is_some()
             && matches!(geometry.definition(), SketchGeometryDefinition::Line { .. }));
     let assumed = construction && listed_construction && line && role_one;
     (construction, assumed)
@@ -1791,7 +1798,7 @@ pub(crate) fn project_marker_backed_sketches(
                                     &record_lists,
                                     offset,
                                     &listed.geometry,
-                                    listed.construction,
+                                    Some(listed.construction),
                                 )
                             },
                         );
@@ -2462,7 +2469,7 @@ pub(crate) fn project_marker_backed_sketches(
                                 &record_lists,
                                 offset,
                                 &geometry,
-                                false,
+                                None,
                             )
                         });
                     Ok((geometry, construction))
@@ -2566,7 +2573,7 @@ pub(crate) fn project_marker_backed_sketches(
                     &record_lists,
                     offset,
                     &listed.geometry,
-                    listed.construction,
+                    Some(listed.construction),
                 );
                 if assumed {
                     losses.push(
