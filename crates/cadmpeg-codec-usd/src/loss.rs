@@ -136,6 +136,9 @@ pub(crate) enum UsdLossCode {
     ExportBrepNotWritten,
     /// A `BrepArray` prim has no trim curves.
     ExportBrepUntrimmed,
+    /// A pole of a `BrepArray` loop has no trim curve; the pole and its
+    /// parameter-space side are not written.
+    ExportBrepPoleNotWritten,
     /// Points, curves, or surfaces that no topology uses were not written.
     ExportCarrierNotWritten,
     /// An assembly joint or a joint drive with no `UsdPhysics` form was not
@@ -203,6 +206,7 @@ impl UsdLossCode {
         Self::ExportTopologyTessellated,
         Self::ExportBrepNotWritten,
         Self::ExportBrepUntrimmed,
+        Self::ExportBrepPoleNotWritten,
         Self::ExportCarrierNotWritten,
         Self::ExportJointNotWritten,
         Self::ExportSolverPropertyNotWritten,
@@ -418,6 +422,9 @@ impl UsdLossCode {
                 T::TopologyNotTransferred,
             ),
             Self::ExportBrepUntrimmed => ("export.brep-untrimmed", Info, T::GeometryNotTransferred),
+            Self::ExportBrepPoleNotWritten => {
+                ("export.brep-pole-not-written", Info, T::PcurveOmitted)
+            }
             Self::ExportCarrierNotWritten => (
                 "export.carrier-not-written",
                 Warning,

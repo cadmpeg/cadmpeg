@@ -621,6 +621,8 @@ pub(super) struct Unwritten {
     pub(super) edges: usize,
     /// Oriented edges on non-planar faces with no pcurve.
     pub(super) pcurves: usize,
+    /// Poles of ring loops with no trim curve, which are not written.
+    pub(super) pole_uses: usize,
     /// Faces with no mesh, with the reason.
     pub(super) unmeshed: Vec<String>,
 }
@@ -938,10 +940,28 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
 
     /// The oriented edge of pole `pole` (spec §17.2): a use of an edge whose
     /// ends are the pole vertex and whose curve stays there, with the
-    /// collapsed side of the face domain as its trim curve.
+    /// collapsed side of the face domain as its trim curve. A pole with no
+    /// trim curve, such as one with no pcurve or a line pcurve with no range,
+    /// has none and pushes no record.
     fn pole_edgeuse(&mut self, pole: &AnchoredVertexUse, chart: Chart) -> Option<usize> {
+        let [use_] = pole.pcurves.as_slice() else {
+            return None;
+        };
+        let pcurve = self.index.pcurves(use_.pcurve.as_str(), StandardIndex)?;
+        let range = use_
+            .parameter_range
+            .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints);
+        let curve = pcurve_nurbs(&pcurve.geometry, range)?.map(|point| chart.apply(point));
         let vertex = self.vertex(&pole.vertex)?;
         let position = *self.brep.vertices.get(vertex)?;
+        self.brep.nurbs_pcurves.push(NurbsCurveRecord {
+            order: curve.degree + 1,
+            points: curve.points,
+            weights: curve.weights,
+            knots: curve.knots,
+            form: Form::Open,
+        });
+        let pcurve = (Catalog::Nurbs, self.brep.nurbs_pcurves.len() - 1);
         self.brep.nurbs_curves.push(NurbsCurveRecord {
             order: 2,
             points: vec![position, position],
@@ -956,26 +976,10 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
             same_sense: true,
             tolerance: None,
         });
-        let edge = self.brep.edges.len() - 1;
-        let pcurve = pole.pcurves.first().and_then(|use_| {
-            let pcurve = self.index.pcurves(use_.pcurve.as_str(), StandardIndex)?;
-            let range = use_
-                .parameter_range
-                .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints);
-            let curve = pcurve_nurbs(&pcurve.geometry, range)?.map(|point| chart.apply(point));
-            self.brep.nurbs_pcurves.push(NurbsCurveRecord {
-                order: curve.degree + 1,
-                points: curve.points,
-                weights: curve.weights,
-                knots: curve.knots,
-                form: Form::Open,
-            });
-            Some((Catalog::Nurbs, self.brep.nurbs_pcurves.len() - 1))
-        });
         self.brep.oriented_edges.push(OrientedEdgeRecord {
-            edge,
+            edge: self.brep.edges.len() - 1,
             orientation: true,
-            pcurve,
+            pcurve: Some(pcurve),
         });
         Some(self.brep.oriented_edges.len() - 1)
     }
@@ -1102,8 +1106,9 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
                             .iter()
                             .filter(|pole| &pole.after == coedge_id)
                         {
-                            if let Some(edgeuse) = self.pole_edgeuse(pole, chart) {
-                                oriented.push(edgeuse);
+                            match self.pole_edgeuse(pole, chart) {
+                                Some(edgeuse) => oriented.push(edgeuse),
+                                None => self.unwritten.pole_uses += 1,
                             }
                         }
                     }

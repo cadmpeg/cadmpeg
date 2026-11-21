@@ -3,7 +3,9 @@
 //! seams, poles, and their round trip through the writer.
 
 use cadmpeg_ir::codec::DecodeResult;
+use cadmpeg_ir::geometry::pcurve::{LinePcurve, PcurveGeometry};
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::topology::{LoopBoundary, Sense};
 use cadmpeg_ir::CadIr;
 
@@ -563,6 +565,58 @@ fn bounded_patches_round_trip_through_a_brep_array() {
                 );
             }
         }
+    }
+}
+
+#[test]
+fn a_pole_with_no_trim_curve_leaves_the_other_trims_of_its_brep_array() {
+    // A pole with no pcurve, and a pole whose pcurve is a line with no range,
+    // have no trim curve to write.
+    for line in [false, true] {
+        let (mut ir, _, _) = decode(&pole_patch()).into_parts();
+        let mut poles = 0;
+        for index in 0..ir.geometry.loops.len() {
+            let LoopBoundary::Ring(ring) = &ir.geometry.loops[index].boundary else {
+                continue;
+            };
+            let coedges = ring.coedges().to_vec();
+            let mut uses = ring.vertex_uses().to_vec();
+            for pole in &mut uses {
+                poles += 1;
+                if line {
+                    let use_ = pole.pcurves.first_mut().expect("the pole has a pcurve");
+                    use_.parameter_range = None;
+                    let pcurve = ir
+                        .geometry
+                        .pcurves
+                        .iter_mut()
+                        .find(|pcurve| pcurve.id == use_.pcurve)
+                        .expect("the pole pcurve is in the arena");
+                    pcurve.geometry = PcurveGeometry::Line(
+                        LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
+                            .expect("a line"),
+                    );
+                } else {
+                    pole.pcurves.clear();
+                }
+            }
+            ir.geometry.loops[index]
+                .replace_ring(coedges, uses)
+                .expect("the same ring");
+        }
+        assert!(poles > 0);
+        let (written, report) = encode(&ir);
+        assert!(written.contains("def BrepArray"), "{written}");
+        assert!(written.contains("brep:curveUv:nurb"), "{written}");
+        let reported =
+            |code: UsdLossCode| report.losses.iter().any(|loss| loss.code == code.kind());
+        assert!(!reported(UsdLossCode::ExportBrepUntrimmed), "{written}");
+        assert!(reported(UsdLossCode::ExportBrepPoleNotWritten), "{written}");
+        let second = decode(&written);
+        assert_valid(&second);
+        let (faces, rings, edges) = shape(&ir);
+        let unpoled = rings.iter().map(|(coedges, _)| (*coedges, 0)).collect();
+        assert_eq!(shape(second.ir()), (faces, unpoled, edges), "{written}");
     }
 }
 

@@ -100,6 +100,9 @@ impl Writer<'_> {
         if !converted.trimmed {
             self.unwritten.untrimmed_breps.push(name.clone());
         }
+        if exported.unwritten.pole_uses > 0 {
+            self.unwritten.pole_breps.push(name.clone());
+        }
         let mut packed = Packed::default();
         if let Err(reason) = packed.push(&converted.brep, converted.trimmed) {
             self.unwritten.breps.push(format!("{name}: {reason}"));
