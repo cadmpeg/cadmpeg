@@ -4407,22 +4407,13 @@ fn parse_extrude_selection_group(
         {
             return None;
         }
-        // The plain form stores `01 + u8 variant + 00` after the first nested
-        // reference; the typed form stores two zero bytes and no variant.
+        // Two zero bytes or, in the plain form, `01 + u8 variant + 00`
+        // follow the first nested reference.
         let after_first = position + 16 + width;
-        let (variant, second_at) = if typed {
-            if bytes.get(after_first..after_first + 2)? != [0; 2] {
-                return None;
-            }
-            (None, after_first + 2)
-        } else {
-            if bytes.get(after_first) != Some(&1)
-                || !matches!(bytes.get(after_first + 1), Some(0 | 1))
-                || bytes.get(after_first + 2) != Some(&0)
-            {
-                return None;
-            }
-            (Some(bytes[after_first + 1] != 0), after_first + 3)
+        let (variant, second_at) = match bytes.get(after_first..after_first + 3)? {
+            [0, 0, _] => (None, after_first + 2),
+            [1, variant @ (0 | 1), 0] if !typed => (Some(*variant != 0), after_first + 3),
+            _ => return None,
         };
         let scope_at = second_at + width + 1;
         if reference(second_at)? != header.record_index.checked_add(1)?
