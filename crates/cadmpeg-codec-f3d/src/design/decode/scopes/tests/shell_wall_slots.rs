@@ -254,8 +254,12 @@ fn unequal_decoded_wall_slots_project_without_a_symmetric_thickness() {
         removed_faces,
         join,
         ..
-    })) = crate::design::feature_project::project_shell(&scope, &[], std::slice::from_ref(&group))
-        .unwrap()
+    })) = crate::design::feature_project::direct_face::project_shell(
+        &scope,
+        &[],
+        std::slice::from_ref(&group),
+    )
+    .unwrap()
     else {
         panic!("expected a neutral Shell");
     };
@@ -274,7 +278,7 @@ fn unequal_decoded_wall_slots_project_without_a_symmetric_thickness() {
         removed_faces,
         bodies,
         ..
-    })) = crate::design::feature_project::project_shell(&scope, &[], &[]).unwrap()
+    })) = crate::design::feature_project::direct_face::project_shell(&scope, &[], &[]).unwrap()
     else {
         panic!("expected an unresolved Shell");
     };

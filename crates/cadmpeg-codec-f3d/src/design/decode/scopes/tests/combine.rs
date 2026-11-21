@@ -6,7 +6,7 @@ use crate::design::decode::scopes::combine::{
 use crate::design::decode::scopes::parameter_scope::{
     parse_parameter_scope, parse_parameter_scope_with_type_guid,
 };
-use crate::design::feature_project::project_combine;
+use crate::design::feature_project::body_ops::project_combine;
 use crate::loss::F3dLossCode;
 use crate::records::decal::DesignRecordHeader;
 use crate::records::feature::combine::{

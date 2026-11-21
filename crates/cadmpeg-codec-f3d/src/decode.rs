@@ -1343,7 +1343,7 @@ fn design_projection_gaps(
         .collect::<std::collections::HashMap<_, _>>();
     let mut unprojected_history_dependencies = 0;
     let mut ambiguous_history_dependencies = 0;
-    let scope_history = crate::design::feature_project::ScopeHistoryGraph::new(
+    let scope_history = crate::design::feature_project::scope_order::ScopeHistoryGraph::new(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
@@ -1362,15 +1362,16 @@ fn design_projection_gaps(
         let predecessor_scope = match scope_history.predecessor(scope, |candidate| {
             projected_features.contains_key(candidate.id.as_str())
         }) {
-            Ok(crate::design::feature_project::ScopeHistoryPredecessor::Scope(predecessor)) => {
-                predecessor
-            }
+            Ok(crate::design::feature_project::scope_order::ScopeHistoryPredecessor::Scope(
+                predecessor,
+            )) => predecessor,
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-            Ok(crate::design::feature_project::ScopeHistoryPredecessor::Ambiguous) | Err(_) => {
+            Ok(crate::design::feature_project::scope_order::ScopeHistoryPredecessor::Ambiguous)
+            | Err(_) => {
                 ambiguous_history_dependencies += 1;
                 continue;
             }
-            Ok(crate::design::feature_project::ScopeHistoryPredecessor::None) => {
+            Ok(crate::design::feature_project::scope_order::ScopeHistoryPredecessor::None) => {
                 continue;
             }
         };
@@ -1474,14 +1475,15 @@ fn design_projection_gaps(
         }
     }
 
-    let authored_scopes = match crate::design::feature_project::authored_scope_ordinals_per_stream(
-        &native.design_parameter_scopes,
-        &native.design_feature_timelines,
-    ) {
-        Ok(scopes) => Some(scopes),
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => None,
-    };
+    let authored_scopes =
+        match crate::design::feature_project::scope_order::authored_scope_ordinals_per_stream(
+            &native.design_parameter_scopes,
+            &native.design_feature_timelines,
+        ) {
+            Ok(scopes) => Some(scopes),
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(_) => None,
+        };
     let unplaced_linked_scopes = authored_scopes
         .as_ref()
         .map(|ordinals| {

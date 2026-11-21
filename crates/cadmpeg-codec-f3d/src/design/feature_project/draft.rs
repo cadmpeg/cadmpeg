@@ -1,24 +1,26 @@
-use super::{
-    draft_outward, draft_pull_vector, draft_sides, group_has_entity_selection,
-    project_draft_face_selection, scope_stream_has_one_component,
-    selected_historical_face_selection, selected_origin_plane, selected_work_plane,
-    single_operand_group, ProjectInputs,
-};
+use crate::design::feature_project::draft_outward;
+
+use crate::design::feature_project::project_face_selection;
+use crate::design::feature_project::selected_origin_class;
+use crate::design::feature_project::selected_work_planes;
+use crate::design::feature_project::single_operand_group;
+use crate::design::feature_project::ProjectInputs;
+
 use crate::ids::native_stream;
 use crate::loss::F3dLossCode;
-use crate::records::feature::direct_face::{
-    DesignDraftFlags, DesignDraftOperation, DesignDraftParting,
-};
-use crate::records::{
-    feature::scope::DesignParameterScope,
-    topology::{
-        construction::DesignConstructionOperandGroup, extrude_selection::DesignOperandRole,
-    },
-};
+use crate::records::feature::direct_face::DesignDraftFlags;
+use crate::records::feature::direct_face::DesignDraftOperation;
+use crate::records::feature::direct_face::DesignDraftParting;
+use crate::records::feature::scope::DesignParameterScope;
+use crate::records::topology::construction::DesignConstructionOperandGroup;
+use crate::records::topology::extrude_selection::DesignOperandRole;
+use crate::records::topology::face::DesignFaceOperand;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::direct_edit::{DraftAnchor, DraftPull};
+use cadmpeg_ir::features::direct_edit::DraftAnchor;
+use cadmpeg_ir::features::direct_edit::DraftPull;
 use cadmpeg_ir::features::selections::FaceSelection;
-use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::FeatureDefinition;
+use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::SlopeAngle;
@@ -447,4 +449,211 @@ pub(super) fn exact(
         }
         _ => None,
     })
+}
+
+/// Neutral first angle and second side of a Draft scope. The first source
+/// lane drafts the portion on the neutral-plane normal side, and the neutral
+/// first side lies in the pull direction, so a flipped two-sided scope swaps
+/// its lanes and negates both.
+pub(super) fn draft_sides(
+    construction: &crate::records::feature::direct_face::DesignDraftOperation,
+    flipped: bool,
+) -> Option<(
+    cadmpeg_ir::scalar::SlopeAngle,
+    Option<cadmpeg_ir::features::direct_edit::DraftSecondSide>,
+)> {
+    use crate::records::feature::direct_face::DesignDraftTwoSided;
+    use cadmpeg_ir::features::direct_edit::DraftSecondSide;
+    use cadmpeg_ir::scalar::SlopeAngle;
+
+    let first = construction.angle.get();
+    let Some(two_sided) = construction.flags.and_then(|flags| flags.two_sided) else {
+        return Some((SlopeAngle::new(first)?, None));
+    };
+    let second = construction.opposite_angle?.get();
+    Some(match (two_sided, flipped) {
+        (DesignDraftTwoSided::Symmetric, false) => {
+            (SlopeAngle::new(first)?, Some(DraftSecondSide::Symmetric {}))
+        }
+        (DesignDraftTwoSided::Symmetric, true) => (
+            SlopeAngle::new(0.0 - first)?,
+            Some(DraftSecondSide::Symmetric {}),
+        ),
+        (DesignDraftTwoSided::TwoAngles, false) => (
+            SlopeAngle::new(first)?,
+            Some(DraftSecondSide::Angle {
+                angle: SlopeAngle::new(second)?,
+            }),
+        ),
+        (DesignDraftTwoSided::TwoAngles, true) => (
+            SlopeAngle::new(0.0 - second)?,
+            Some(DraftSecondSide::Angle {
+                angle: SlopeAngle::new(0.0 - first)?,
+            }),
+        ),
+    })
+}
+
+pub(super) fn draft_pull_vector(normal: Vector3, flipped: bool) -> Vector3 {
+    if flipped {
+        Vector3::new(0.0 - normal.x, 0.0 - normal.y, 0.0 - normal.z)
+    } else {
+        normal
+    }
+}
+
+/// Ordinal and normal of the Design Geometry origin plane that a group member names.
+///
+/// The type table identifies the origin plane. An ASM entity can share its
+/// number, and such historical candidates describe unrelated topology.
+pub(super) fn selected_origin_plane(
+    scope: &DesignParameterScope,
+    group: &DesignConstructionOperandGroup,
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
+    design_types: &[crate::records::entity_header::SegmentType],
+) -> Option<(usize, Vector3)> {
+    let crate::design::decode::meta::OriginClassification::Origin(
+        crate::design::decode::meta::OriginEntity::Plane(ordinal),
+    ) = selected_origin_class(scope, group, entity_selection_operands, design_types)?
+    else {
+        return None;
+    };
+    crate::history::selection::design_geometry_origin_plane(ordinal)
+        .map(|plane| (ordinal, plane.normal))
+}
+
+/// Return whether a scope's Design stream binds exactly one component, so the
+/// component's origin planes lie in the design's frame.
+pub(super) fn scope_stream_has_one_component(
+    scope: &DesignParameterScope,
+    component_naming_spaces: &[crate::records::recipes::DesignComponentNamingSpace],
+) -> bool {
+    let Some(stream) = native_stream(&scope.id) else {
+        return false;
+    };
+    component_naming_spaces
+        .iter()
+        .filter(|space| native_stream(&space.id) == Some(stream))
+        .take(2)
+        .count()
+        == 1
+}
+
+pub(super) fn selected_historical_face_selection(
+    scope: &DesignParameterScope,
+    group: &DesignConstructionOperandGroup,
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
+    histories: &[crate::history_records::AsmHistory],
+    design_types: &[crate::records::entity_header::SegmentType],
+) -> Option<cadmpeg_ir::features::selections::FaceSelection> {
+    let previous_state_id =
+        crate::history::effective_scope_previous_history_state_id(scope, histories)?;
+    let stream = native_stream(&scope.id)?;
+    let [crate::records::identity::Located { value: member, .. }] = group.members() else {
+        return None;
+    };
+    let mut selections = entity_selection_operands.iter().filter(|operand| {
+        native_stream(&operand.id) == Some(stream)
+            && operand.scope_record_index == scope.record_index
+            && operand.group_record_index == group.record_index
+            && operand.group_member_ordinal == 0
+            && operand.record_index() == *member
+    });
+    let selection = selections.next()?;
+    if selections.next().is_some() || selection.secondary().is_some() {
+        return None;
+    }
+    if crate::design::decode::meta::classify_origin_entity(
+        design_types,
+        stream,
+        selection.primary_identity,
+    ) != crate::design::decode::meta::OriginClassification::NotOrigin
+    {
+        return None;
+    }
+    let mut face_slots = selection
+        .historical_face_candidates
+        .iter()
+        .filter(|candidate| candidate.historical.state_ids.contains(&previous_state_id))
+        .map(|candidate| candidate.face_slot);
+    let face_slot = face_slots.next()?;
+    if face_slots.any(|candidate| candidate != face_slot) {
+        return None;
+    }
+    let feature = crate::ids::neutral_feature_id(scope);
+    let prefix = crate::ids::feature_input_prefix(&feature, previous_state_id);
+    Some(
+        match cadmpeg_ir::features::selections::FaceSelection::historical(
+            crate::ids::feature_input_topology_id(&feature, previous_state_id),
+            vec![crate::ids::history_input_face_id(&prefix, face_slot)],
+            group.id.clone(),
+        ) {
+            Ok(selection) => selection,
+            Err(_) => cadmpeg_ir::features::selections::FaceSelection::Native(group.id.clone()),
+        },
+    )
+}
+
+pub(super) fn project_draft_face_selection(
+    scope: &DesignParameterScope,
+    group: &DesignConstructionOperandGroup,
+    face_operands: &[DesignFaceOperand],
+    histories: &[crate::history_records::AsmHistory],
+) -> Result<cadmpeg_ir::features::selections::FaceSelection, CodecError> {
+    let selection = project_face_selection(scope, group, face_operands, histories)?;
+    if matches!(
+        &selection,
+        cadmpeg_ir::features::selections::FaceSelection::Native(_)
+    ) {
+        Ok(
+            crate::design::face_resolve::resolved_explicit_bounded_face_group(
+                group,
+                face_operands,
+            )?
+            .unwrap_or(selection),
+        )
+    } else {
+        Ok(selection)
+    }
+}
+
+pub(super) fn group_has_entity_selection(
+    scope: &DesignParameterScope,
+    group: &DesignConstructionOperandGroup,
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
+) -> bool {
+    let Some(stream) = native_stream(&scope.id) else {
+        return false;
+    };
+    group
+        .members()
+        .iter()
+        .map(|member| &member.value)
+        .enumerate()
+        .any(|(ordinal, record_index)| {
+            let Ok(ordinal) = u32::try_from(ordinal) else {
+                return false;
+            };
+            entity_selection_operands.iter().any(|operand| {
+                native_stream(&operand.id) == Some(stream)
+                    && operand.scope_record_index == scope.record_index
+                    && operand.group_record_index == group.record_index
+                    && operand.group_member_ordinal == ordinal
+                    && operand.record_index() == *record_index
+            })
+        })
+}
+
+pub(super) fn selected_work_plane<'a>(
+    scope: &DesignParameterScope,
+    group: &DesignConstructionOperandGroup,
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
+    scopes: &'a [DesignParameterScope],
+) -> Option<&'a DesignParameterScope> {
+    let planes = selected_work_planes(scope, group, entity_selection_operands, scopes);
+    let planes = planes?;
+    let [plane] = planes.as_slice() else {
+        return None;
+    };
+    Some(*plane)
 }

@@ -3577,10 +3577,13 @@ fn build_geometry_ir(
         ctx,
         &mut ir.model.features,
         &mut sketches,
-        &mut sketch_entities,
-        &mut held_handles,
+        crate::resolved_features::profiles::MarkerSketchEntities {
+            projected: &mut sketch_entities,
+            held: &mut held_handles,
+        },
         &histories,
         sketch_lanes,
+        &mut pmi_losses,
     )?;
     crate::resolved_features::profiles::project_sketch_block_profiles(
         &mut ir.model.features,
@@ -4898,10 +4901,13 @@ fn build_metadata_ir(
         ctx,
         &mut ir.model.features,
         &mut ir.model.sketches,
-        &mut ir.model.sketch_entities,
-        &mut held_handles,
+        crate::resolved_features::profiles::MarkerSketchEntities {
+            projected: &mut ir.model.sketch_entities,
+            held: &mut held_handles,
+        },
         &histories,
         sketch_lanes,
+        &mut pmi_losses,
     )?;
     crate::resolved_features::profiles::project_sketch_block_profiles(
         &mut ir.model.features,

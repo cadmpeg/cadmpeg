@@ -41,9 +41,10 @@ fn cube_with_unranged_edge(end: Point3) -> CadIr {
     ir
 }
 
-/// The geometric-consistency Errors of `ir` about its edge 0 or a coedge of it.
-fn edge_errors(ir: &CadIr) -> Vec<String> {
-    let edge = &ir.geometry.edges[0].id;
+/// The geometric-consistency Errors of `ir` about its edge `index` or a
+/// coedge of it.
+fn edge_errors(ir: &CadIr, index: usize) -> Vec<String> {
+    let edge = &ir.geometry.edges[index].id;
     let mut named = ir
         .geometry
         .coedges
@@ -76,6 +77,16 @@ fn widened() -> String {
     F3dLossCode::VertexToleranceWidened.kind().to_string()
 }
 
+/// Whether `report` charges `writer.edge-range-assumed` for `edge` running
+/// over one of two arcs of its curve.
+fn arc_assumed_for(report: &cadmpeg_ir::report::export::ExportReport, edge: &str) -> bool {
+    report.losses.iter().any(|loss| {
+        loss.code.to_string() == F3dLossCode::WriterEdgeRangeAssumed.kind().to_string()
+            && loss.message.contains(&format!("edge {edge}:"))
+            && loss.message.contains("on two arcs")
+    })
+}
+
 fn record_invalid_names(report: &cadmpeg_ir::report::export::ExportReport, edge: &str) -> bool {
     report
         .losses
@@ -102,7 +113,7 @@ fn an_open_edge_within_the_coincidence_allowance_takes_its_exact_range() {
         .get();
     assert!(start.abs() < EPS_PARAMETER && (end - 10.0).abs() < EPS_PARAMETER);
     assert_eq!(decoded.geometry.vertices[1].tolerance, None);
-    assert_eq!(edge_errors(&decoded), Vec::<String>::new());
+    assert_eq!(edge_errors(&decoded, 0), Vec::<String>::new());
 }
 
 #[test]
@@ -123,7 +134,7 @@ fn an_open_edge_just_beyond_the_allowance_keeps_the_feet_and_both_charges() {
         .get();
     assert!(start.abs() < EPS_PARAMETER && (end - 10.0).abs() < EPS_PARAMETER);
     // The charge is true: the output's own validation reports the edge.
-    assert_ne!(edge_errors(&decoded), Vec::<String>::new());
+    assert_ne!(edge_errors(&decoded, 0), Vec::<String>::new());
 }
 
 #[test]
@@ -163,7 +174,7 @@ fn a_vertex_beyond_its_own_allowance_is_raised_with_a_loss_naming_it() {
         .expect("the raised vertex is written tolerant")
         .get();
     assert!((tolerance - 0.03).abs() < 1.0e-9, "{tolerance}");
-    assert_eq!(edge_errors(&decoded), Vec::<String>::new());
+    assert_eq!(edge_errors(&decoded, 0), Vec::<String>::new());
 }
 
 #[test]
@@ -290,28 +301,19 @@ fn plane_pcurve(
     }
 }
 
-#[test]
-fn an_open_line_edge_against_its_line_is_written_with_its_ends_exchanged() {
-    let mut ir = cube_with_unranged_edge(Point3::new(10.0, 0.0, 0.0));
-    let against =
-        LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(-1.0, 0.0, 0.0)).unwrap();
-    let curve = ir.geometry.edges[0].curve().cloned().expect("edge curve");
-    ir.geometry
-        .curves
-        .iter_mut()
-        .find(|row| row.id == curve)
-        .expect("edge curve row")
-        .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(against));
+/// Each coedge of edge 0 takes the straight pcurve from `(10,0,0)` at
+/// `domain[0]` to `(0,0,0)` at `domain[1]` on its face's plane.
+fn put_plane_pcurves(ir: &mut CadIr, domain: [f64; 2]) {
     let edge = ir.geometry.edges[0].id.clone();
     for ordinal in 0..ir.geometry.coedges.len() {
         if ir.geometry.coedges[ordinal].edge != edge {
             continue;
         }
         let geometry = plane_pcurve(
-            &ir,
+            ir,
             &ir.geometry.coedges[ordinal],
             [Point3::new(10.0, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0)],
-            [-10.0, 0.0],
+            domain,
         );
         let id = PcurveId::mint(format!("generated:test:against-pcurve#{ordinal}")).unwrap();
         ir.geometry.pcurves.push(Pcurve {
@@ -326,6 +328,21 @@ fn an_open_line_edge_against_its_line_is_written_with_its_ends_exchanged() {
             parameter_range: None,
         }];
     }
+}
+
+#[test]
+fn an_open_line_edge_against_its_line_is_written_with_its_ends_exchanged() {
+    let mut ir = cube_with_unranged_edge(Point3::new(10.0, 0.0, 0.0));
+    let against =
+        LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(-1.0, 0.0, 0.0)).unwrap();
+    let curve = ir.geometry.edges[0].curve().cloned().expect("edge curve");
+    ir.geometry
+        .curves
+        .iter_mut()
+        .find(|row| row.id == curve)
+        .expect("edge curve row")
+        .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(against));
+    put_plane_pcurves(&mut ir, [-10.0, 0.0]);
     let (report, decoded) = write(&ir);
     assert!(
         !charges(&report, &geometry_omitted()),
@@ -340,26 +357,354 @@ fn an_open_line_edge_against_its_line_is_written_with_its_ends_exchanged() {
         "{:#?}",
         report.losses
     );
-    let written = &decoded.geometry.edges[0];
-    let [start, end] = written.param_range().expect("the edge is written").get();
+    let [start, end] = decoded.geometry.edges[0]
+        .param_range()
+        .expect("the edge is written")
+        .get();
     assert!((start + 10.0).abs() < EPS_PARAMETER && end.abs() < EPS_PARAMETER);
-    let first = written.ends.as_ref().expect("edge ends").start.clone();
-    let point = &decoded
+    assert!(start_position(&decoded, 0).distance(Point3::new(10.0, 0.0, 0.0)) < EPS_PARAMETER);
+}
+
+/// The position of the start vertex of `ir`'s edge `index`.
+fn start_position(ir: &CadIr, index: usize) -> Point3 {
+    let first = &ir.geometry.edges[index]
+        .ends
+        .as_ref()
+        .expect("edge ends")
+        .start;
+    let point = &ir
         .geometry
         .vertices
         .iter()
-        .find(|vertex| vertex.id == first)
+        .find(|vertex| vertex.id == *first)
         .expect("start vertex")
         .point;
-    let position = decoded
-        .geometry
+    ir.geometry
         .points
         .iter()
         .find(|row| row.id == *point)
         .expect("start point")
         .position()
+        .get()
+}
+
+/// The unit cube with edge 0, `(0,0,0)` to `(10,0,0)`, stated without a range
+/// on a degree-1 NURBS through `poles` at the parameters `knots` interpolates.
+fn cube_with_unranged_nurbs_edge(knots: Vec<f64>, poles: Vec<Point3>, periodic: bool) -> CadIr {
+    let mut ir = cube_with_unranged_edge(Point3::new(10.0, 0.0, 0.0));
+    let curve = ir.geometry.edges[0].curve().cloned().expect("edge curve");
+    ir.geometry
+        .curves
+        .iter_mut()
+        .find(|row| row.id == curve)
+        .expect("edge curve row")
+        .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        NurbsCurve::from_lanes(1, knots, poles, None, periodic).expect("a polyline NURBS"),
+    ));
+    ir
+}
+
+#[test]
+fn an_open_edge_against_its_nurbs_curve_is_written_with_its_ends_exchanged() {
+    // The curve runs from (10,0,0) at 0 to (0,0,0) at 2: the edge runs from 2
+    // to 0. Its coedges' pcurves are stated on the curve's parameter.
+    let mut ir = cube_with_unranged_nurbs_edge(
+        vec![0.0, 0.0, 2.0, 2.0],
+        vec![Point3::new(10.0, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0)],
+        false,
+    );
+    put_plane_pcurves(&mut ir, [0.0, 2.0]);
+    let edge = ir.geometry.edges[0].id.clone();
+    let (report, decoded) = write(&ir);
+    for code in [
+        geometry_omitted(),
+        F3dLossCode::WriterPcurveOmitted.kind().to_string(),
+    ] {
+        assert!(!charges(&report, &code), "{code}: {:#?}", report.losses);
+    }
+    assert!(
+        !record_invalid_names(&report, edge.as_str()),
+        "{:#?}",
+        report.losses
+    );
+    let [start, end] = decoded.geometry.edges[0]
+        .param_range()
+        .expect("the edge is written with a range")
         .get();
-    assert!(position.distance(Point3::new(10.0, 0.0, 0.0)) < EPS_PARAMETER);
+    assert!(start.abs() < EPS_PARAMETER && (end - 2.0).abs() < EPS_PARAMETER);
+    assert!(start_position(&decoded, 0).distance(Point3::new(10.0, 0.0, 0.0)) < EPS_PARAMETER);
+    assert_eq!(edge_errors(&decoded, 0), Vec::<String>::new());
+}
+
+#[test]
+fn edges_with_and_against_one_nurbs_curve_both_take_ranges_on_it() {
+    // Edge 0 runs from 10 to 0 on the curve and the edge from (0,0,0) to
+    // (0,0,10) from 10 to 20: the curve is shared, so only the edge against it
+    // changes. The arena is in id order, so that edge is found by its id.
+    let mut ir = cube_with_unranged_nurbs_edge(
+        vec![0.0, 0.0, 10.0, 20.0, 20.0],
+        vec![
+            Point3::new(10.0, 0.0, 0.0),
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(0.0, 0.0, 10.0),
+        ],
+        false,
+    );
+    let with = ir
+        .geometry
+        .edges
+        .iter()
+        .position(|edge| edge.id.as_str() == "synthetic:cube:edge#8")
+        .expect("the cube's edge from corner 0 to corner 4");
+    let curve = ir.geometry.edges[0].curve().cloned();
+    ir.geometry.edges[with].carrier =
+        EdgeCarrier::new(curve, None).expect("a curve without a range");
+    let edges = [0, with].map(|index| ir.geometry.edges[index].id.to_string());
+    let (report, decoded) = write(&ir);
+    for edge in &edges {
+        assert!(!record_invalid_names(&report, edge), "{:#?}", report.losses);
+    }
+    assert_eq!(
+        decoded.geometry.edges[0].curve(),
+        decoded.geometry.edges[with].curve()
+    );
+    for (index, expected, start) in [
+        (0, [0.0, 10.0], Point3::new(10.0, 0.0, 0.0)),
+        (with, [10.0, 20.0], Point3::new(0.0, 0.0, 0.0)),
+    ] {
+        let range = decoded.geometry.edges[index]
+            .param_range()
+            .expect("the edge is written with a range")
+            .get();
+        assert!(
+            (range[0] - expected[0]).abs() < EPS_PARAMETER
+                && (range[1] - expected[1]).abs() < EPS_PARAMETER,
+            "edge {index}: {range:?}"
+        );
+        assert!(start_position(&decoded, index).distance(start) < EPS_PARAMETER);
+        assert_eq!(edge_errors(&decoded, index), Vec::<String>::new());
+    }
+}
+
+#[test]
+fn an_open_edge_against_a_periodic_nurbs_curve_keeps_its_stand_in_and_is_named() {
+    // On a periodic curve an end before the start may cross the seam, so the
+    // writer does not exchange the edge's ends.
+    let ir = cube_with_unranged_nurbs_edge(
+        vec![0.0, 0.0, 2.0, 2.0],
+        vec![Point3::new(10.0, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0)],
+        true,
+    );
+    let edge = ir.geometry.edges[0].id.to_string();
+    let (report, decoded) = write(&ir);
+    assert!(record_invalid_names(&report, &edge), "{:#?}", report.losses);
+    assert!(start_position(&decoded, 0).distance(Point3::new(0.0, 0.0, 0.0)) < EPS_PARAMETER);
+}
+
+#[test]
+fn an_open_edge_ending_where_its_nurbs_curve_crosses_itself_takes_the_inner_arc_and_is_named() {
+    // The curve passes (10,0,0) at 0.5 and again at 2.5, and ends at (0,0,0)
+    // at 3. The edge runs against the curve from 3 to 2.5 or to 0.5; the arc
+    // [0.5, 3] passes the edge's end vertex again at 2.5, so the edge takes
+    // [2.5, 3] with its ends exchanged.
+    let ir = cube_with_self_crossing_nurbs_edge();
+    let edge = ir.geometry.edges[0].id.to_string();
+    let (report, decoded) = write(&ir);
+    assert_inner_arc(&report, &decoded, &edge);
+}
+
+/// The unit cube with edge 0 on a degree-1 NURBS that passes `(10,0,0)` at
+/// 0.5 and 2.5 and ends at `(0,0,0)` at 3.
+fn cube_with_self_crossing_nurbs_edge() -> CadIr {
+    cube_with_unranged_nurbs_edge(
+        vec![0.0, 0.0, 1.0, 2.0, 3.0, 3.0],
+        vec![
+            Point3::new(10.0, -10.0, 0.0),
+            Point3::new(10.0, 10.0, 0.0),
+            Point3::new(20.0, 0.0, 0.0),
+            Point3::new(0.0, 0.0, 0.0),
+        ],
+        false,
+    )
+}
+
+#[test]
+fn an_inner_arc_edge_of_a_body_left_unwritten_is_not_named() {
+    // Every face of the cube is on a carrier F3D has no form for, so the body
+    // is not written and the edge, ranged over its inner arc, goes with it.
+    let mut ir = cube_with_self_crossing_nurbs_edge();
+    for surface in &mut ir.geometry.surfaces {
+        surface.geometry = cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+            cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { record: None },
+        );
+    }
+    let edge = ir.geometry.edges[0].id.to_string();
+    let body = ir.geometry.bodies[0].id.to_string();
+    let (report, _) = write(&ir);
+    assert!(
+        report.losses.iter().any(|loss| {
+            loss.code.to_string() == F3dLossCode::WriterBodyOmitted.kind().to_string()
+                && loss.message.contains(&body)
+        }),
+        "{:#?}",
+        report.losses
+    );
+    assert!(!arc_assumed_for(&report, &edge), "{:#?}", report.losses);
+}
+
+#[test]
+fn an_open_edge_on_a_periodic_nurbs_curve_takes_the_forward_inner_arc() {
+    // The curve passes (0,0,0) at 0 and 3 and (10,0,0) at 2. The arc [2, 3]
+    // is the shorter, but it runs against the curve, and on a periodic curve
+    // the writer does not exchange the edge's ends: the edge takes [0, 2].
+    let ir = cube_with_unranged_nurbs_edge(
+        vec![0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 4.0],
+        vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(5.0, -10.0, 0.0),
+            Point3::new(10.0, 0.0, 0.0),
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(-10.0, -10.0, 0.0),
+        ],
+        true,
+    );
+    let edge = ir.geometry.edges[0].id.to_string();
+    let (report, decoded) = write(&ir);
+    assert!(
+        !record_invalid_names(&report, &edge),
+        "{:#?}",
+        report.losses
+    );
+    assert!(arc_assumed_for(&report, &edge), "{:#?}", report.losses);
+    let [start, end] = decoded.geometry.edges[0]
+        .param_range()
+        .expect("the edge is written with a range")
+        .get();
+    assert!(
+        start.abs() < EPS_PARAMETER && (end - 2.0).abs() < EPS_PARAMETER,
+        "[{start}, {end}]"
+    );
+    assert!(start_position(&decoded, 0).distance(Point3::new(0.0, 0.0, 0.0)) < EPS_PARAMETER);
+    assert_eq!(edge_errors(&decoded, 0), Vec::<String>::new());
+}
+
+/// `edge`, edge 0, is written over `[2.5, 3]` from `(10,0,0)`, with the loss
+/// naming the arc assumption.
+fn assert_inner_arc(
+    report: &cadmpeg_ir::report::export::ExportReport,
+    decoded: &CadIr,
+    edge: &str,
+) {
+    assert!(!record_invalid_names(report, edge), "{:#?}", report.losses);
+    assert!(arc_assumed_for(report, edge), "{:#?}", report.losses);
+    let [start, end] = decoded.geometry.edges[0]
+        .param_range()
+        .expect("the edge is written with a range")
+        .get();
+    assert!(
+        (start - 2.5).abs() < EPS_PARAMETER && (end - 3.0).abs() < EPS_PARAMETER,
+        "[{start}, {end}]"
+    );
+    assert!(start_position(decoded, 0).distance(Point3::new(10.0, 0.0, 0.0)) < EPS_PARAMETER);
+    assert_eq!(edge_errors(decoded, 0), Vec::<String>::new());
+}
+
+#[test]
+fn an_open_edge_starting_where_its_nurbs_curve_crosses_itself_takes_the_inner_arc_and_is_named() {
+    // Edge 0 is reversed to run from (10,0,0) to (0,0,0) on the self-crossing
+    // curve. Its start inverts to 0.5 and to 2.5; the arc [0.5, 3] passes
+    // the start vertex again at 2.5, so the edge takes [2.5, 3] as it runs.
+    let mut ir = cube_with_self_crossing_nurbs_edge();
+    let edge = ir.geometry.edges[0].id.clone();
+    let ends = ir.geometry.edges[0].ends.take().expect("edge ends");
+    ir.geometry.edges[0].ends = Some(EdgeEnds::new(ends.end, ends.start));
+    for coedge in ir
+        .geometry
+        .coedges
+        .iter_mut()
+        .filter(|row| row.edge == edge)
+    {
+        coedge.sense = match coedge.sense {
+            Sense::Forward => Sense::Reversed,
+            Sense::Reversed => Sense::Forward,
+        };
+    }
+    let (report, decoded) = write(&ir);
+    assert_inner_arc(&report, &decoded, edge.as_str());
+}
+
+#[test]
+fn an_open_edge_far_along_a_long_nurbs_curve_takes_its_range() {
+    // A degree-1 curve of 600 spans zigzags 1 mm either side of the x axis
+    // and crosses it at each half parameter, through (0,0,0) at 0.5 and
+    // (10,0,0) at 599.5. Each vertex lies more spans from the far end of the
+    // curve than the inversion searches from that seed: the second inversion
+    // finds nothing, and the edge still takes its range.
+    const SPANS: u32 = 600;
+    let step = 10.0 / f64::from(SPANS - 1);
+    let mut knots = vec![0.0];
+    knots.extend((0..=SPANS).map(f64::from));
+    knots.push(f64::from(SPANS));
+    let poles = (0..=SPANS)
+        .map(|index| {
+            let side = if index % 2 == 0 { 1.0 } else { -1.0 };
+            Point3::new((f64::from(index) - 0.5) * step, side, 0.0)
+        })
+        .collect();
+    let ir = cube_with_unranged_nurbs_edge(knots, poles, false);
+    let edge = ir.geometry.edges[0].id.to_string();
+    let (report, decoded) = write(&ir);
+    assert!(
+        !record_invalid_names(&report, &edge),
+        "{:#?}",
+        report.losses
+    );
+    assert!(!arc_assumed_for(&report, &edge), "{:#?}", report.losses);
+    let [start, end] = decoded.geometry.edges[0]
+        .param_range()
+        .expect("the edge is written with a range")
+        .get();
+    let last = f64::from(SPANS) - 0.5;
+    assert!(
+        (start - 0.5).abs() < EPS_PARAMETER && (end - last).abs() < EPS_PARAMETER,
+        "[{start}, {end}]"
+    );
+    assert!(start_position(&decoded, 0).distance(Point3::new(0.0, 0.0, 0.0)) < EPS_PARAMETER);
+}
+
+#[test]
+fn an_open_edge_from_where_its_closed_nurbs_curve_closes_takes_its_range() {
+    // The curve starts and ends at (0,0,0) and passes (10,0,0) at 1. The
+    // edge's start inverts to 0 from the curve's start and to 3 from its end:
+    // the two ends of a closed curve's domain are one place, so the edge runs
+    // over [0, 1] as a sibling edge from (10,0,0) back to the closure would
+    // run over [1, 3].
+    let ir = cube_with_unranged_nurbs_edge(
+        vec![0.0, 0.0, 1.0, 2.0, 3.0, 3.0],
+        vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(10.0, 0.0, 0.0),
+            Point3::new(10.0, 10.0, 0.0),
+            Point3::new(0.0, 0.0, 0.0),
+        ],
+        false,
+    );
+    let edge = ir.geometry.edges[0].id.to_string();
+    let (report, decoded) = write(&ir);
+    assert!(
+        !record_invalid_names(&report, &edge),
+        "{:#?}",
+        report.losses
+    );
+    let [start, end] = decoded.geometry.edges[0]
+        .param_range()
+        .expect("the edge is written with a range")
+        .get();
+    assert!(
+        start.abs() < EPS_PARAMETER && (end - 1.0).abs() < EPS_PARAMETER,
+        "[{start}, {end}]"
+    );
+    assert!(start_position(&decoded, 0).distance(Point3::new(0.0, 0.0, 0.0)) < EPS_PARAMETER);
 }
 
 #[test]
@@ -565,5 +910,5 @@ fn a_vertex_raised_by_one_edge_prevents_false_record_invalid_on_a_sibling_edge()
         "E2 should not charge record.invalid: {:#?}",
         report.losses
     );
-    assert_eq!(edge_errors(&decoded), Vec::<String>::new());
+    assert_eq!(edge_errors(&decoded, 0), Vec::<String>::new());
 }

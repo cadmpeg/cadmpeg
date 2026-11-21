@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::u64_from_index;
 
-use crate::design::feature_project::{
-    bind_hole_sketch_point_profiles, bind_sketch_feature_geometry,
-};
+use crate::design::feature_project::hole::bind_hole_sketch_point_profiles;
+use crate::design::feature_project::sketch_geometry::bind_sketch_feature_geometry;
 use crate::layout::work_point_sketch_point_identity as layout;
 use crate::records::feature::hole::DesignHoleLocation;
 use crate::records::feature::scope::{

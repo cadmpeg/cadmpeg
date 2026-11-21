@@ -11,7 +11,8 @@ use cadmpeg_ir::{
     document::Model, ids::ProductDefinitionId, report::loss::LossNote, sketches::SketchId,
 };
 
-use super::feature_project::{ComponentHistoryNamespace, ScopeHistoryGraph};
+use super::feature_project::ComponentHistoryNamespace;
+use crate::design::feature_project::scope_order::ScopeHistoryGraph;
 use crate::{ids::native_stream, loss::F3dLossCode, native::F3dNative};
 
 /// Loss reason when a sketch collection names another product definition.

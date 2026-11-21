@@ -96,6 +96,10 @@ pub(crate) enum F3dLossCode {
     SceneOverrideUnbound,
     /// A direct operation-table pose is applied uniformly to its definition.
     OperationPoseApplied,
+    /// A version-four operation table is applied with its path-ordinal value read as leaving the pose unchanged.
+    OperationPosePathOrdinalAssumed,
+    /// A version-two or version-three operation table is applied with the pose semantics of version one.
+    OperationPoseVersionAssumed,
     /// A scope namespace has no unique neutral product definition.
     ScopeOwnerUnresolved,
     /// A history output body belongs to another product definition.
@@ -838,6 +842,9 @@ pub(crate) enum F3dLossCode {
     /// A linked Reverse Normal scope takes its timeline position by record
     /// order among the other linked scopes of its timeline item.
     FeatureReverseNormalLinkOrderAssumed,
+    /// A Combine operand resolved in its input state names no model body and
+    /// no generating feature, so it keeps its input-state bodies.
+    FeatureCombineBodyProducerUnresolved,
     FeatureSilhouetteSplitPrefixUnparsed,
     FeatureSilhouetteSplitModeUnresolved,
     FeatureSilhouetteSplitDirectionUnresolved,
@@ -966,6 +973,8 @@ pub(crate) enum F3dLossCode {
     FeatureLoftGroupsUnassigned,
     /// A `Loft` projects the one role-`0x7` group of its rail list as a centerline.
     FeatureLoftCenterlineAssumed,
+    /// A new-body `Loft` takes its solid setting from the kinds of its output bodies.
+    FeatureLoftSolidInferred,
     /// A `SurfaceExtend` scope projects with an unresolved extension method.
     FeatureSurfaceExtendMethodUnresolved,
     FeatureSplitToolExtensionAssumed,
@@ -1230,6 +1239,9 @@ pub(crate) enum F3dLossCode {
     WriterFaceOmitted,
     /// Geometry was not written as the source states it.
     WriterGeometryOmitted,
+    /// An open edge whose source states no range was written over one arc of
+    /// a curve that passes one of its vertices twice.
+    WriterEdgeRangeAssumed,
     /// An appearance was not written.
     WriterAppearanceOmitted,
     /// The retained source could not carry an edit; the file was regenerated.
@@ -1342,6 +1354,8 @@ impl F3dLossCode {
         Self::SceneOverrideAmbiguous,
         Self::SceneOverrideUnbound,
         Self::OperationPoseApplied,
+        Self::OperationPosePathOrdinalAssumed,
+        Self::OperationPoseVersionAssumed,
         Self::ScopeOwnerUnresolved,
         Self::ScopeOutputOwnerMismatch,
         Self::ScopeOutputOwnerUnresolved,
@@ -1795,6 +1809,7 @@ impl F3dLossCode {
         Self::FeatureReverseNormalLinkUnplaced,
         Self::FeatureReverseNormalLinkShared,
         Self::FeatureReverseNormalLinkOrderAssumed,
+        Self::FeatureCombineBodyProducerUnresolved,
         Self::FeatureSilhouetteSplitPrefixUnparsed,
         Self::FeatureSilhouetteSplitModeUnresolved,
         Self::FeatureSilhouetteSplitDirectionUnresolved,
@@ -1888,6 +1903,7 @@ impl F3dLossCode {
         Self::FeatureLoftListsUnresolved,
         Self::FeatureLoftGroupsUnassigned,
         Self::FeatureLoftCenterlineAssumed,
+        Self::FeatureLoftSolidInferred,
         Self::FeatureSurfaceExtendMethodUnresolved,
         Self::FeatureSplitToolExtensionAssumed,
         Self::FeatureSplitToolExtensionUnresolved,
@@ -2027,6 +2043,7 @@ impl F3dLossCode {
         Self::WriterBodyOmitted,
         Self::WriterFaceOmitted,
         Self::WriterGeometryOmitted,
+        Self::WriterEdgeRangeAssumed,
         Self::WriterAppearanceOmitted,
         Self::WriterPatchDeclined,
         Self::WriterAppearanceGuidAllocated,
@@ -2154,6 +2171,10 @@ impl F3dLossCode {
             Self::ScopeOutputOwnerUnresolved => "scope.output-owner-unresolved",
             Self::ScopeSketchOwnerMismatch => "scope.sketch-owner-mismatch",
             Self::OperationPoseApplied => "assembly.operation-table-pose",
+            Self::OperationPosePathOrdinalAssumed => {
+                "assembly.operation-table-path-ordinal-assumed"
+            }
+            Self::OperationPoseVersionAssumed => "assembly.operation-table-version-assumed",
             Self::OperationPoseDisagrees => "assembly.operation-table-pose-disagrees",
             Self::OperationPoseNative => "assembly.operation-table-pose-native",
             Self::DimensionCompanionUntyped => "dimension.companion-untyped",
@@ -2832,6 +2853,9 @@ impl F3dLossCode {
             Self::FeatureReverseNormalLinkOrderAssumed => {
                 "feature.reverse-normal-link-order-assumed"
             }
+            Self::FeatureCombineBodyProducerUnresolved => {
+                "feature.combine-body-producer-unresolved"
+            }
             Self::FeatureSilhouetteSplitPrefixUnparsed => {
                 "feature.silhouette-split-prefix-unparsed"
             }
@@ -2985,6 +3009,7 @@ impl F3dLossCode {
             Self::FeatureLoftListsUnresolved => "feature.loft-lists-unresolved",
             Self::FeatureLoftGroupsUnassigned => "feature.loft-groups-unassigned",
             Self::FeatureLoftCenterlineAssumed => "feature.loft-centerline-assumed",
+            Self::FeatureLoftSolidInferred => "feature.loft-solid-inferred",
             Self::FeatureSplitBodyFaceToolGroupAssumed => {
                 "feature.split-body-face-tool-group-assumed"
             }
@@ -3160,6 +3185,7 @@ impl F3dLossCode {
             Self::WriterBodyOmitted => "writer.body-omitted",
             Self::WriterFaceOmitted => "writer.face-omitted",
             Self::WriterGeometryOmitted => "writer.geometry-omitted",
+            Self::WriterEdgeRangeAssumed => "writer.edge-range-assumed",
             Self::WriterAppearanceOmitted => "writer.appearance-omitted",
             Self::WriterPatchDeclined => "writer.patch-declined",
             Self::WriterIntegerAsReal => "writer.integer-as-real",
@@ -3266,6 +3292,7 @@ impl F3dLossCode {
             Self::WriterBodyOmitted => Severity::Error,
             Self::WriterFaceOmitted => Severity::Error,
             Self::WriterGeometryOmitted => Severity::Warning,
+            Self::WriterEdgeRangeAssumed => Severity::Warning,
             Self::WriterAppearanceOmitted => Severity::Warning,
             Self::WriterPatchDeclined => Severity::Warning,
             Self::WriterIntegerAsReal => Severity::Info,
@@ -3274,6 +3301,8 @@ impl F3dLossCode {
             Self::ScopeOwnerUnresolved
             | Self::ScopeOutputOwnerUnresolved
             | Self::OperationPoseApplied
+            | Self::OperationPosePathOrdinalAssumed
+            | Self::OperationPoseVersionAssumed
             | Self::OperationPoseNative
             | Self::BodylessDesignCarrier
             | Self::EmptyDesign
@@ -3756,6 +3785,7 @@ impl F3dLossCode {
             | Self::FeatureReverseNormalLinkUnplaced
             | Self::FeatureReverseNormalLinkShared
             | Self::FeatureReverseNormalLinkOrderAssumed
+            | Self::FeatureCombineBodyProducerUnresolved
             | Self::FeatureSilhouetteSplitPrefixUnparsed
             | Self::FeatureSilhouetteSplitModeUnresolved
             | Self::FeatureSilhouetteSplitDirectionUnresolved
@@ -3849,6 +3879,7 @@ impl F3dLossCode {
             | Self::FeatureLoftListsUnresolved
             | Self::FeatureLoftGroupsUnassigned
             | Self::FeatureLoftCenterlineAssumed
+            | Self::FeatureLoftSolidInferred
             | Self::FeatureSurfaceExtendMethodUnresolved
             | Self::FeatureSplitToolExtensionAssumed
             | Self::FeatureSplitToolExtensionUnresolved
@@ -4043,6 +4074,7 @@ impl F3dLossCode {
             Self::WriterBodyOmitted => LossTaxonomy::TopologyNotTransferred,
             Self::WriterFaceOmitted => LossTaxonomy::TopologyNotTransferred,
             Self::WriterGeometryOmitted => LossTaxonomy::GeometryNotTransferred,
+            Self::WriterEdgeRangeAssumed => LossTaxonomy::TopologyGaugeSubstituted,
             Self::WriterAppearanceOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::WriterPatchDeclined => LossTaxonomy::PreservedSourceUnavailable,
             Self::WriterIntegerAsReal => LossTaxonomy::ParametricRecordOmitted,
@@ -4078,6 +4110,8 @@ impl F3dLossCode {
             | Self::CoilShortControlsAssumed
             | Self::CoilTargetUnresolved
             | Self::OperationPoseApplied
+            | Self::OperationPosePathOrdinalAssumed
+            | Self::OperationPoseVersionAssumed
             | Self::OperationPoseDisagrees
             | Self::OperationPoseNative
             | Self::ConfigurationMemberUnassigned
@@ -4472,6 +4506,7 @@ impl F3dLossCode {
             | Self::FeatureReverseNormalLinkUnplaced
             | Self::FeatureReverseNormalLinkShared
             | Self::FeatureReverseNormalLinkOrderAssumed
+            | Self::FeatureCombineBodyProducerUnresolved
             | Self::FeatureSilhouetteSplitPrefixUnparsed
             | Self::FeatureSilhouetteSplitModeUnresolved
             | Self::FeatureSilhouetteSplitDirectionUnresolved
@@ -4565,6 +4600,7 @@ impl F3dLossCode {
             | Self::FeatureLoftListsUnresolved
             | Self::FeatureLoftGroupsUnassigned
             | Self::FeatureLoftCenterlineAssumed
+            | Self::FeatureLoftSolidInferred
             | Self::FeatureSurfaceExtendMethodUnresolved
             | Self::FeatureSplitToolExtensionAssumed
             | Self::FeatureSplitToolExtensionUnresolved
@@ -4738,10 +4774,12 @@ impl F3dLossCode {
     ///
     /// Defaults to the taxonomy floor. `DesignIntentUndecoded` pins Warning
     /// above its tolerable `DecodeDiagnostic` taxonomy: strict mode refuses a
-    /// document whose design intent was dropped.
+    /// document whose design intent was dropped. `WriterEdgeRangeAssumed`
+    /// pins Warning above `TopologyGaugeSubstituted`: strict mode refuses an
+    /// edge written over an arc the source does not state.
     const fn strict_floor(self) -> Option<Severity> {
         match self {
-            Self::DesignIntentUndecoded => Some(Severity::Warning),
+            Self::DesignIntentUndecoded | Self::WriterEdgeRangeAssumed => Some(Severity::Warning),
             other => other.shared_taxonomy().strict_floor(),
         }
     }
@@ -4848,6 +4886,8 @@ mod tests {
                 "scene.override-ambiguous",
                 "scene.override-unbound",
                 "assembly.operation-table-pose",
+                "assembly.operation-table-path-ordinal-assumed",
+                "assembly.operation-table-version-assumed",
                 "scope.owner-unresolved",
                 "scope.output-owner-mismatch",
                 "scope.output-owner-unresolved",
@@ -5301,6 +5341,7 @@ mod tests {
                 "feature.reverse-normal-link-unplaced",
                 "feature.reverse-normal-link-shared",
                 "feature.reverse-normal-link-order-assumed",
+                "feature.combine-body-producer-unresolved",
                 "feature.silhouette-split-prefix-unparsed",
                 "feature.silhouette-split-mode-unresolved",
                 "feature.silhouette-split-direction-unresolved",
@@ -5394,6 +5435,7 @@ mod tests {
                 "feature.loft-lists-unresolved",
                 "feature.loft-groups-unassigned",
                 "feature.loft-centerline-assumed",
+                "feature.loft-solid-inferred",
                 "feature.surface-extend-method-unresolved",
                 "feature.split-tool-extension-assumed",
                 "feature.split-tool-extension-unresolved",
@@ -5533,6 +5575,7 @@ mod tests {
                 "writer.body-omitted",
                 "writer.face-omitted",
                 "writer.geometry-omitted",
+                "writer.edge-range-assumed",
                 "writer.appearance-omitted",
                 "writer.patch-declined",
                 "writer.appearance-guid-allocated",

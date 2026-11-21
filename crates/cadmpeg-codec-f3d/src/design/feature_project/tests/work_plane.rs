@@ -16,7 +16,7 @@ fn work_plane_projects_solved_frame_in_millimetres() {
     ];
     plane.with_work_plane_transform(matrix.try_into().unwrap());
     let FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) =
-        super::super::project_work_plane(&plane, matrix)
+        crate::design::feature_project::work_points::project_work_plane(&plane, matrix)
     else {
         panic!("expected solved datum plane");
     };
@@ -82,7 +82,7 @@ fn work_plane_projects_three_point_vertex_recipes() {
     }
     let transform = crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.into();
     let FeatureDefinition::Operation(FeatureOperation::DatumThreePointPlane { points, .. }) =
-        super::super::project_work_plane(&plane, transform)
+        crate::design::feature_project::work_points::project_work_plane(&plane, transform)
     else {
         panic!("expected a three-point datum plane");
     };
@@ -114,7 +114,10 @@ fn work_plane_modern_solved_frames_project_without_a_construction_inference() {
             .is_empty()
         );
         let FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) =
-            super::super::project_work_plane(&scope, scope.work_plane_transform().unwrap().rows())
+            crate::design::feature_project::work_points::project_work_plane(
+                &scope,
+                scope.work_plane_transform().unwrap().rows(),
+            )
         else {
             panic!("expected solved datum plane");
         };

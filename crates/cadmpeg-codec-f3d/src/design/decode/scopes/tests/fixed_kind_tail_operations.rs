@@ -671,7 +671,7 @@ pub(super) fn fixed_kind_tail_operations(
             DesignOperandRole::ROLE_0X10,
         );
     assert!(matches!(
-        crate::design::feature_project::project_shell(&shell_scope, &[], std::slice::from_ref(&shell_group)).unwrap(),
+        crate::design::feature_project::direct_face::project_shell(&shell_scope, &[], std::slice::from_ref(&shell_group)).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Shell {
             removed_faces: cadmpeg_ir::features::selections::FaceSelection::Native(native),
             thickness: Some(actual_thickness),
@@ -707,7 +707,7 @@ pub(super) fn fixed_kind_tail_operations(
             DesignOperandRole::BODIES_A,
         );
     assert!(matches!(
-        crate::design::feature_project::project_shell(&compact_shell_scope, &[], std::slice::from_ref(&shell_group)).unwrap(),
+        crate::design::feature_project::direct_face::project_shell(&compact_shell_scope, &[], std::slice::from_ref(&shell_group)).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Shell {
             bodies: Some(cadmpeg_ir::features::selections::BodySelection::Native(body)),
             removed_faces: cadmpeg_ir::features::selections::FaceSelection::Faces(removed),
@@ -751,7 +751,7 @@ pub(super) fn fixed_kind_tail_operations(
             DesignOperandRole::ROLE_0X10,
         );
     assert!(matches!(
-        crate::design::feature_project::project_offset_faces(&offset_scope, &[], &[], std::slice::from_ref(&offset_group)).unwrap(),
+        crate::design::feature_project::direct_face::project_offset_faces(&offset_scope, &[], &[], std::slice::from_ref(&offset_group)).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::MoveFace {
             faces: cadmpeg_ir::features::selections::FaceSelection::Native(native),
             motion: cadmpeg_ir::features::direct_edit::FaceMotion::Offset {

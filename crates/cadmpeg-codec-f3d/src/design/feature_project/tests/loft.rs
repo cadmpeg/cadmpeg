@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::extrude_fallbacks::{profile_group, profile_group_with_members, scope};
-use crate::design::feature_project::project_fixed_loft;
+use crate::design::feature_project::sweep_loft::project_fixed_loft;
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use crate::records::feature::path_features::DesignLoftConstruction;
 use crate::records::feature::scope::DesignScopePayload;
@@ -314,7 +314,10 @@ fn bound_point_section(
     sources: &crate::design::feature_project::LoftPointSources<'_>,
 ) -> cadmpeg_ir::features::profiles::LoftPointSection {
     let mut features = [feature];
-    crate::design::feature_project::bind_loft_sketch_point_sections(&mut features, sources);
+    crate::design::feature_project::sweep_loft::bind_loft_sketch_point_sections(
+        &mut features,
+        sources,
+    );
     let FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. }) =
         features[0].evaluation.definition()
     else {
@@ -770,7 +773,7 @@ fn loft_groups_reject_lists_that_do_not_partition_the_groups() {
     ]);
     let groups = groups.iter().collect::<Vec<_>>();
     let assign = |operation, section_records: Vec<u32>, rail_groups: Vec<u32>| {
-        crate::design::feature_project::loft_groups(
+        crate::design::feature_project::sweep_loft::loft_groups(
             &DesignLoftConstruction {
                 operation,
                 operation_offset: 128,

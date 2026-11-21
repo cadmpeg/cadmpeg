@@ -2,7 +2,8 @@
 use crate::design::feature_project::replace_face::project_replace_face;
 use cadmpeg_test_support::wire;
 
-use crate::design::feature_project::{bind_surface_trim_cell_selections, project_surface_trim};
+use crate::design::feature_project::bind_surface_trim_cell_selections;
+use crate::design::feature_project::surface_edit::project_surface_trim;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::topology::body_recipe::DesignBodyRecipeOperand;
 use crate::records::topology::construction::DesignConstructionOperandGroup;

@@ -1,5 +1,6 @@
 use crate::design::decode::parameters::parse_design_parameter_record;
-use crate::design::feature_project::{project_emboss, scope_properties};
+use crate::design::feature_project::emboss::project_emboss;
+use crate::design::feature_project::scope_properties::scope_properties;
 use crate::design::test_support::parameter_record;
 use crate::records::feature::emboss::{DesignEmbossConstruction, DesignEmbossControlWords};
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};

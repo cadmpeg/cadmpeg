@@ -127,7 +127,7 @@ fn construction_with(
     ];
     let cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::Revolve { construction, .. },
-    ) = super::super::project_fixed_revolve_with_entities(
+    ) = crate::design::feature_project::revolve::project_fixed_revolve_with_entities(
         &scope(),
         &groups,
         &[],

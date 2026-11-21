@@ -2243,8 +2243,10 @@ impl ComponentInserts {
             return inserts;
         }
         let authored =
-            crate::design::feature_project::authored_scope_ordinals_per_stream(scopes, timelines)
-                .ok();
+            crate::design::feature_project::scope_order::authored_scope_ordinals_per_stream(
+                scopes, timelines,
+            )
+            .ok();
         for scope in scopes {
             let construction = scope.component_insert_construction();
             let partial = scope.component_insert_placement();

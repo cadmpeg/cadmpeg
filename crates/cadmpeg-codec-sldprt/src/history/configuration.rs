@@ -733,10 +733,13 @@ pub(crate) fn project_configuration_sketch_states(
                 ctx,
                 &mut features,
                 &mut ir.model.sketches,
-                &mut ir.model.sketch_entities,
-                &mut held_handles,
+                crate::resolved_features::profiles::MarkerSketchEntities {
+                    projected: &mut ir.model.sketch_entities,
+                    held: &mut held_handles,
+                },
                 histories,
                 scoped_lanes,
+                &mut losses,
             )?;
             crate::resolved_features::profiles::project_sketch_block_profiles(
                 &mut features,

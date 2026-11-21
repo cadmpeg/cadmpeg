@@ -14,7 +14,9 @@ use crate::resolved_features::curves::closed_marker_profiles;
 use crate::resolved_features::curves::fitted_marker_circle;
 use crate::resolved_features::curves::resolve_connected_marker_arcs;
 use crate::resolved_features::dimensions::project_marker_dimensioned_circles;
-use crate::resolved_features::profiles::{project_marker_backed_sketches, HeldMarkerGeometry};
+use crate::resolved_features::profiles::{
+    project_marker_backed_sketches, HeldMarkerGeometry, MarkerSketchEntities,
+};
 use crate::resolved_features::projections::project_compact_edge_selections;
 use crate::resolved_features::relation_loci::doubled_profile_distance_loci;
 use crate::resolved_features::relation_loci::relation_operand_marker;
@@ -581,10 +583,13 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         &ctx,
         &mut features,
         &mut sketches,
-        &mut entities,
-        &mut HeldMarkerGeometry::default(),
+        MarkerSketchEntities {
+            projected: &mut entities,
+            held: &mut HeldMarkerGeometry::default(),
+        },
         &histories,
         &lanes,
+        &mut Vec::new(),
     )
     .expect("marker profile projection fits service policy");
 
@@ -632,10 +637,13 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         &ctx,
         &mut configured_features,
         &mut sketches,
-        &mut entities,
-        &mut HeldMarkerGeometry::default(),
+        MarkerSketchEntities {
+            projected: &mut entities,
+            held: &mut HeldMarkerGeometry::default(),
+        },
         &histories,
         &lanes,
+        &mut Vec::new(),
     )
     .expect("configured marker profile projection fits service policy");
     assert_eq!(sketches.len(), 1);
@@ -673,10 +681,13 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         &ctx,
         &mut replacement_features,
         &mut replacement_sketches,
-        &mut replacement_entities,
-        &mut HeldMarkerGeometry::default(),
+        MarkerSketchEntities {
+            projected: &mut replacement_entities,
+            held: &mut HeldMarkerGeometry::default(),
+        },
         &histories,
         &lanes,
+        &mut Vec::new(),
     )
     .expect("replacement marker profile projection fits service policy");
     assert_eq!(replacement_sketches.len(), 1);
@@ -762,10 +773,13 @@ fn marker_backed_sketch_preserves_geometry_when_placement_is_unresolved() {
         &ctx,
         &mut features,
         &mut sketches,
-        &mut entities,
-        &mut HeldMarkerGeometry::default(),
+        MarkerSketchEntities {
+            projected: &mut entities,
+            held: &mut HeldMarkerGeometry::default(),
+        },
         &histories,
         &lanes,
+        &mut Vec::new(),
     )
     .expect("marker profile projection fits service policy");
 

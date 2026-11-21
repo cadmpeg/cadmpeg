@@ -1,8 +1,11 @@
-use super::{
-    project_face_selection, resolved_split_face_path, selected_historical_face_selection,
-    selected_work_planes, DesignConstructionOperandGroup, DesignFaceOperand, DesignOperandRole,
-    DesignParameterScope,
-};
+use super::project_face_selection;
+use super::selected_work_planes;
+use super::DesignConstructionOperandGroup;
+use super::DesignFaceOperand;
+use super::DesignOperandRole;
+use super::DesignParameterScope;
+use crate::design::feature_project::direct_face::resolved_split_face_path;
+use crate::design::feature_project::draft::selected_historical_face_selection;
 use cadmpeg_ir::features::surfaces::SplitFaceMethod;
 
 pub(super) struct ProjectedSplitFace {

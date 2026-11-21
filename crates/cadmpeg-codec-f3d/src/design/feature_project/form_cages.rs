@@ -35,7 +35,10 @@ pub(super) fn unresolved(
     parameters: &[(u32, &crate::records::parameters::DesignParameter)],
 ) -> Result<FeatureDefinition, CodecError> {
     let mut inputs = form_inputs(scope)?;
-    inputs.parameters = super::scope_parameter_expressions(scope, parameters)?;
+    inputs.parameters =
+        crate::design::feature_project::scope_properties::scope_parameter_expressions(
+            scope, parameters,
+        )?;
     FormConstruction::try_new(
         inputs,
         Vec::new(),

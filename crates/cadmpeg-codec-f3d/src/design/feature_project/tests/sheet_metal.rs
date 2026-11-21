@@ -183,7 +183,9 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         ..Default::default()
     };
     let definition = crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::feature_project::project_edge_flange(&scope, &inputs, decode_ctx)
+        crate::design::feature_project::sheet_metal::project_edge_flange(
+            &scope, &inputs, decode_ctx,
+        )
     })
     .unwrap()
     .expect("typed EdgeFlange definition");
@@ -202,7 +204,11 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         ..Default::default()
     };
     assert!(crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::feature_project::project_edge_flange(&scope, &mismatched_inputs, decode_ctx)
+        crate::design::feature_project::sheet_metal::project_edge_flange(
+            &scope,
+            &mismatched_inputs,
+            decode_ctx,
+        )
     })
     .unwrap()
     .is_none());
@@ -293,7 +299,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         ..Default::default()
     };
     let offset_definition = crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::feature_project::project_edge_flange(
+        crate::design::feature_project::sheet_metal::project_edge_flange(
             &offset_scope,
             &offset_inputs,
             decode_ctx,
@@ -364,7 +370,11 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         ..Default::default()
     };
     let multi_definition = crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::feature_project::project_edge_flange(&multi_scope, &multi_inputs, decode_ctx)
+        crate::design::feature_project::sheet_metal::project_edge_flange(
+            &multi_scope,
+            &multi_inputs,
+            decode_ctx,
+        )
     })
     .unwrap()
     .expect("typed multi-edge EdgeFlange definition");
@@ -439,7 +449,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         ..Default::default()
     };
     let per_edge_definition = crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::feature_project::project_edge_flange(
+        crate::design::feature_project::sheet_metal::project_edge_flange(
             &multi_scope,
             &per_edge_inputs,
             decode_ctx,
@@ -469,7 +479,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     };
     assert!(
         crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::feature_project::project_edge_flange(
+            crate::design::feature_project::sheet_metal::project_edge_flange(
                 &multi_scope,
                 &distinct_inputs,
                 decode_ctx,
@@ -525,7 +535,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         ..Default::default()
     };
     let two_sided_definition = crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::feature_project::project_edge_flange(
+        crate::design::feature_project::sheet_metal::project_edge_flange(
             &multi_scope,
             &two_sided_inputs,
             decode_ctx,
@@ -822,7 +832,8 @@ fn edge_flange_to_object_fixture(
         entity_selection_operands: &target_selections,
         ..Default::default()
     };
-    let definition = crate::design::feature_project::project_edge_flange(&scope, &inputs, ctx)?;
+    let definition =
+        crate::design::feature_project::sheet_metal::project_edge_flange(&scope, &inputs, ctx)?;
     Ok(definition.map(|definition| (definition, target_scope)))
 }
 
@@ -981,7 +992,9 @@ fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
         ..Default::default()
     };
     assert!(crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::feature_project::project_edge_flange(&scope, &inputs, decode_ctx)
+        crate::design::feature_project::sheet_metal::project_edge_flange(
+            &scope, &inputs, decode_ctx,
+        )
     })
     .unwrap()
     .is_none());
@@ -1500,7 +1513,7 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             ..Default::default()
         };
         crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::feature_project::project_hem(&scope, &inputs, decode_ctx)
+            crate::design::feature_project::sheet_metal::project_hem(&scope, &inputs, decode_ctx)
         })
         .unwrap()
         .expect("typed Hem definition")

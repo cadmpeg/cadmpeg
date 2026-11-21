@@ -196,7 +196,9 @@ pub(super) fn project(
     } else {
         None
     };
-    if let Some(mut definition) = super::project_edge_flange(scope, inputs, ctx)? {
+    if let Some(mut definition) =
+        crate::design::feature_project::sheet_metal::project_edge_flange(scope, inputs, ctx)?
+    {
         if let (
             Some(radius),
             FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange(construction)),

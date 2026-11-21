@@ -877,7 +877,27 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             }
         }
     }
+    let loft_result_kinds = crate::history::history_bodies::loft_result_kinds(
+        ctx,
+        scan,
+        crate::history::history_bodies::Inputs {
+            features: &model.features,
+            scopes: &design.design_parameter_scopes,
+            histories: &design.asm_histories,
+            bindings: &scope_histories,
+            primary_brep: geometry.primary_brep,
+            groups: &design.design_construction_operand_groups,
+            operands: &design.design_body_recipe_operands,
+            recipes: &prereqs.construction_recipes,
+        },
+        &mut losses,
+    );
     crate::history::bind_sweep_result_modes(&mut model.features, geometry.bodies);
+    losses.extend(crate::history::loft_solid::bind(
+        &mut model.features,
+        &loft_result_kinds,
+        geometry.bodies,
+    ));
     losses.extend(crate::design::feature_project::sweep_fallback::project(
         &mut model.features,
         &crate::design::feature_project::sweep_fallback::Inputs {
@@ -999,7 +1019,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_construction_operand_groups,
         &design.design_entity_selection_operands,
     );
-    crate::design::feature_project::bind_revolve_face_axes(
+    crate::design::feature_project::revolve::bind_revolve_face_axes(
         &mut model.features,
         &design.design_parameter_scopes,
         &design.design_construction_operand_groups,
@@ -1039,13 +1059,13 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     model.spatial_sketches = spatial.sketches;
     model.spatial_sketch_entities = spatial.entities;
     losses.extend(spatial.losses);
-    crate::design::feature_project::bind_work_point_sketch_point_constructions(
+    crate::design::feature_project::work_points::bind_work_point_sketch_point_constructions(
         &mut model.features,
         &design.design_parameter_scopes,
         &model.sketch_entities,
         &model.spatial_sketch_entities,
     );
-    crate::design::feature_project::bind_hole_sketch_point_profiles(
+    crate::design::feature_project::hole::bind_hole_sketch_point_profiles(
         &mut model.features,
         &design.design_parameter_scopes,
         &model.sketch_entities,
@@ -1058,7 +1078,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &model.sketch_entities,
         ),
     );
-    crate::design::feature_project::bind_loft_sketch_point_sections(
+    crate::design::feature_project::sweep_loft::bind_loft_sketch_point_sections(
         &mut model.features,
         &crate::design::feature_project::LoftPointSources {
             groups: &design.design_construction_operand_groups,
@@ -1152,7 +1172,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &mut model.features,
         )?,
     );
-    crate::design::feature_project::orient_revolve_axes(
+    crate::design::feature_project::revolve::orient_revolve_axes(
         &mut model.features,
         &design.design_parameter_scopes,
         &model.sketches,
@@ -1162,7 +1182,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             geometry.tolerances.angular.get(),
         ),
     );
-    crate::design::feature_project::bind_sketch_feature_geometry(
+    crate::design::feature_project::sketch_geometry::bind_sketch_feature_geometry(
         &mut model.features,
         &design.design_parameter_scopes,
         &design.design_sketch_placements,
