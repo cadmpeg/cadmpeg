@@ -263,6 +263,10 @@ pub(super) fn historical_selections_note(ir: &CadIr) -> Option<LossNote> {
 /// holds (§3.4):
 /// - a fillet's tangency weight, for which the record has no field, is not
 ///   written;
+/// - a feature or parameter property whose name a Keywords attribute cannot
+///   hold is not written: a name with a namespace prefix, which the reader's
+///   XML parser refuses with the whole history, or a name the element writes
+///   itself;
 /// - each owned parameter whose value is a construction value the record
 ///   reads from a positional dimension (`sldprt.md`, Keywords history) is
 ///   written under that name, when every such value of the feature has
@@ -279,6 +283,13 @@ pub(super) fn foreign_records_as_keywords(ir: &mut CadIr) -> KeywordsRewrites {
     let mut roles = Vec::new();
     for feature in &mut ir.model.features {
         let id = feature.id.as_str().to_owned();
+        let left_out = unwritable_attributes(
+            &mut feature.source_properties,
+            &["id", "Name", "Type", "Suppressed"],
+        );
+        if !left_out.is_empty() {
+            rewrites.properties.push((id.clone(), left_out));
+        }
         feature.evaluation.edit(|definition, _| {
             if let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) = definition {
                 for group in groups.iter_mut() {
@@ -292,6 +303,14 @@ pub(super) fn foreign_records_as_keywords(ir: &mut CadIr) -> KeywordsRewrites {
                 roles.push((id.clone(), lengths));
             }
         });
+    }
+    for parameter in &mut ir.model.parameters {
+        let left_out = unwritable_attributes(&mut parameter.properties, &["Name"]);
+        if !left_out.is_empty() {
+            rewrites
+                .properties
+                .push((parameter.id.as_str().to_owned(), left_out));
+        }
     }
     for (feature, lengths) in roles {
         let owned = |parameter: &&mut cadmpeg_ir::features::DesignParameter| {
@@ -341,6 +360,29 @@ pub(super) fn foreign_records_as_keywords(ir: &mut CadIr) -> KeywordsRewrites {
     rewrites
 }
 
+/// Remove from `properties` each entry whose name a Keywords element whose
+/// own attributes are `reserved` cannot hold as an attribute, and return the
+/// removed names.
+fn unwritable_attributes(
+    properties: &mut std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    reserved: &[&str],
+) -> Vec<String> {
+    let left_out = properties
+        .keys()
+        .map(cadmpeg_core::text::NonBlankString::as_str)
+        .filter(|name| {
+            !crate::history::write::xml::valid_xml_name(name)
+                || name.contains(':')
+                || reserved.contains(name)
+        })
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    for name in &left_out {
+        properties.remove(name.as_str());
+    }
+    left_out
+}
+
 /// The positional dimensions a Keywords record of `definition` reads a
 /// construction value from, each with the value the definition states: a
 /// constant fillet radius, a blind extrusion depth and a shell thickness from
@@ -387,11 +429,13 @@ fn positional_lengths(definition: &FeatureDefinition) -> Vec<(&'static str, f64)
 }
 
 /// The records [`foreign_records_as_keywords`] rewrote: the fillets whose
-/// tangency weight is left out, and each renamed parameter's id and the text
+/// tangency weight is left out, each feature or parameter id with the names
+/// of the properties left out, and each renamed parameter's id and the text
 /// that names it.
 #[derive(Default)]
 pub(super) struct KeywordsRewrites {
     weights: BTreeSet<String>,
+    properties: Vec<(String, Vec<String>)>,
     renamed: Vec<(String, String)>,
 }
 
@@ -416,6 +460,12 @@ impl KeywordsRewrites {
             .into_iter()
             .filter(|id| features.contains(id.as_str()))
             .collect::<Vec<_>>();
+        let properties = self
+            .properties
+            .into_iter()
+            .filter(|(id, _)| features.contains(id.as_str()) || parameters.contains(id.as_str()))
+            .map(|(id, names)| format!("{id} ({})", names.join(", ")))
+            .collect::<Vec<_>>();
         let renamed = self
             .renamed
             .into_iter()
@@ -429,6 +479,14 @@ impl KeywordsRewrites {
                  which the SLDPRT fillet record has no field for: {}",
                 weights.len(),
                 weights.join(", ")
+            )));
+        }
+        if !properties.is_empty() {
+            notes.push(SldprtLossCode::WriterFeatureFieldsOmitted.note(format!(
+                "the SLDPRT history writer writes {} record(s) without the source properties \
+                 whose names a Keywords attribute cannot hold: {}",
+                properties.len(),
+                properties.join("; ")
             )));
         }
         if !renamed.is_empty() {

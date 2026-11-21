@@ -546,8 +546,8 @@ fn push_parameter(
 }
 
 /// `cube_with_foreign_history` plus a fillet of the boss whose edges are stated
-/// in its input topology, with a tangency weight and an owned radius parameter
-/// `d7`.
+/// in its input topology, with a tangency weight, a source property whose name
+/// has a namespace prefix, and an owned radius parameter `d7`.
 fn cube_with_foreign_fillet() -> cadmpeg_ir::CadIr {
     use cadmpeg_ir::features::edge_treatments::{FilletGroup, RadiusSpec};
     use cadmpeg_ir::features::{
@@ -573,8 +573,11 @@ fn cube_with_foreign_fillet() -> cadmpeg_ir::CadIr {
     });
     push_length_parameter(&mut ir, &id, "d7", 2.0);
     let boss = cadmpeg_ir::features::FeatureId::mint("other:model:feature#boss").unwrap();
-    ir.model.features.last_mut().unwrap().dependencies =
-        cadmpeg_ir::features::DistinctMembers::try_from(vec![boss]).unwrap();
+    let fillet = ir.model.features.last_mut().unwrap();
+    fillet.dependencies = cadmpeg_ir::features::DistinctMembers::try_from(vec![boss]).unwrap();
+    fillet
+        .source_properties
+        .insert(cadmpeg_core::nonblank_literal!("other:sets"), "{}".into());
     ir
 }
 
@@ -600,6 +603,12 @@ fn a_fillet_on_input_topology_edges_is_written_with_its_radius_and_named() {
         let note = loss(&losses, code).unwrap_or_else(|| panic!("{code}: {losses:#?}"));
         assert!(note.message.contains(named), "{}", note.message);
     }
+    assert!(
+        losses.iter().any(|note| note
+            .message
+            .contains("other:model:feature#round (other:sets)")),
+        "{losses:#?}"
+    );
 
     let decoded = crate::test_support::ir::encode_decode(&ir);
     let fillet = decoded
