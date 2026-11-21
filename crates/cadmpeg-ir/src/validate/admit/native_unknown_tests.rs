@@ -31,7 +31,7 @@ fn native_unknown_admission_matches_product_projection_without_mutation() {
     let raw = vec![UnknownRecord::retained(
         new_id.try_into().unwrap(),
         72,
-        vec![23; 65536],
+        vec![23; 16],
         vec![ir.geometry.points[0].id.as_str().to_owned()],
     )];
     let pointer = raw[0].data().unwrap().as_ptr();
@@ -131,7 +131,7 @@ fn native_unknown_admission_preserves_outer_depth_refusal() {
     let raw = [UnknownRecord::retained(
         "test:source:unknown#0".try_into().unwrap(),
         0,
-        vec![42; 8192],
+        vec![42; 16],
         Vec::new(),
     )];
     let arena = DecodeArena::new();
@@ -153,7 +153,7 @@ fn native_unknown_admission_preserves_outer_depth_refusal() {
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
     );
     assert!(ir.native.0.is_empty());
-    assert_eq!(raw[0].data().unwrap(), &[42; 8192]);
+    assert_eq!(raw[0].data().unwrap(), &[42; 16]);
 }
 
 #[test]

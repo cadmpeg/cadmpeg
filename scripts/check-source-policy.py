@@ -2285,7 +2285,7 @@ def scan_native_byte_fields(sources: dict[Path, str]) -> list[Finding]:
                 ))
             serialize = (bool(re.search(r"\bSerialize\b", derives))
                          and not re.search(r"\binto\s*=", conversions)) or name in serialize_impls
-            deserialize = (bool(re.search(r"\bDeserialize\b", derives))
+            deserialize = (bool(re.search(r"\bDeserialize(?:Tagged)?\b", derives))
                            and not re.search(r"\b(?:from|try_from)\s*=", conversions)) or name in deserialize_impls
             if not (serialize or deserialize):
                 continue

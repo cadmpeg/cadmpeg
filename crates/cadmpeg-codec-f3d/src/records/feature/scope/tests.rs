@@ -663,6 +663,7 @@ fn native_profile_wire_round_trips_and_rejects_null() {
             std::slice::from_mut(&mut scope),
             &headers,
             &entities,
+            &mut Vec::new(),
         )
         .unwrap();
         let wire = serde_json::to_value(&scope).unwrap();

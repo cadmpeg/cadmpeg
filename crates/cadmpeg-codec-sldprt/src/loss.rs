@@ -102,6 +102,11 @@ pub(crate) enum SldprtLossCode {
     PmiSwiftFaceDocumentTailAssumed,
     /// Feature history record has duplicate identity or unresolved references.
     HistoryIncompleteReferences,
+    /// The stored marks do not fix the rollback position of the feature tree.
+    HistoryRollbackUnread,
+    /// The `moPMarkRecord_c` class index of a configuration is the class
+    /// token whose records name the most main-line marks.
+    HistoryRollbackMarkClassInferred,
     /// Feature record has missing, repeated, or non-preceding tree edges.
     FeatureIncoherentEdges,
     /// Feature record has inconsistent source-content references.
@@ -120,6 +125,14 @@ pub(crate) enum SldprtLossCode {
     /// A sketch line handle keeps its marker role because its two read
     /// endpoints coincide.
     SketchLineDegenerate,
+    /// A sketch line keeps the chord its marker reading gives although its
+    /// `sgSketch` curve record states an arc or another form.
+    SketchArcRecordConflict,
+    /// A sketch handle takes its `sgSketch` curve record's geometry by
+    /// point-record position, a reading the format does not establish for a
+    /// line with an identifier trailer and that the handle's own read
+    /// endpoints contradict when they coincide.
+    SketchHandleReadingAssumed,
     /// A compact sketch profile failed neutral profile admission.
     SketchProfileRejected,
     /// Native sketch relation has no projected neutral constraint.
@@ -159,6 +172,8 @@ pub(crate) enum SldprtLossCode {
     GeometryOffsetValidityUnresolved,
     /// Stored spun-profile bounds are ignored and the whole profile is revolved.
     GeometrySpunProfileIntervalIgnored,
+    /// A rolling-ball blend face has no solved cache; it keeps its construction.
+    GeometryBlendCacheUnsolved,
     /// Edge references an untyped support curve carried opaque.
     GeometryEdgeSupportCurveUntyped,
     /// Tolerant edge has no curve because its fin geometry is not read.
@@ -315,6 +330,18 @@ pub(crate) enum SldprtLossCode {
     AssemblyEmbeddedDocumentsNotTransferred,
     /// An occurrence's exclusion from the bill of materials is not transferred.
     AssemblyBomExclusionNotTransferred,
+    /// Design features whose operation the decoder typed in its own records
+    /// state their family without operands.
+    DesignFeatureUnresolved,
+    /// A feature folder whose members regeneration order does not keep in
+    /// one run is not stated.
+    DesignFolderDropped,
+    /// Parameters whose literal and value are their dimension's displayed
+    /// number, which Keywords rounds to the display precision.
+    DesignParameterDisplayRounded,
+    /// Extrudes whose blind depth is bound to their record's only dimension,
+    /// whose name is neither `Depth` nor `D1`.
+    DesignExtrudeDepthAssumed,
 }
 
 impl SldprtLossCode {
@@ -358,6 +385,8 @@ impl SldprtLossCode {
         Self::PmiSwiftFaceDocumentLayoutAssumed,
         Self::PmiSwiftFaceDocumentTailAssumed,
         Self::HistoryIncompleteReferences,
+        Self::HistoryRollbackUnread,
+        Self::HistoryRollbackMarkClassInferred,
         Self::FeatureIncoherentEdges,
         Self::FeatureIncoherentContent,
         Self::FeatureUnresolvedOutputScope,
@@ -366,6 +395,8 @@ impl SldprtLossCode {
         Self::SketchNativeGeometry,
         Self::SketchHandleUnresolved,
         Self::SketchLineDegenerate,
+        Self::SketchArcRecordConflict,
+        Self::SketchHandleReadingAssumed,
         Self::SketchProfileRejected,
         Self::SketchRelationUnprojected,
         Self::SketchRelationMultiplyProjected,
@@ -385,6 +416,7 @@ impl SldprtLossCode {
         Self::GeometrySurfaceCarrierAmbiguous,
         Self::GeometryOffsetValidityUnresolved,
         Self::GeometrySpunProfileIntervalIgnored,
+        Self::GeometryBlendCacheUnsolved,
         Self::GeometryEdgeSupportCurveUntyped,
         Self::GeometryTolerantEdgeCurveUnread,
         Self::GeometryPointRecordAmbiguous,
@@ -449,6 +481,10 @@ impl SldprtLossCode {
         Self::AssemblyConfigurationsNotTransferred,
         Self::AssemblyEmbeddedDocumentsNotTransferred,
         Self::AssemblyBomExclusionNotTransferred,
+        Self::DesignFeatureUnresolved,
+        Self::DesignFolderDropped,
+        Self::DesignParameterDisplayRounded,
+        Self::DesignExtrudeDepthAssumed,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -488,6 +524,8 @@ impl SldprtLossCode {
             Self::PmiSwiftFaceDocumentLayoutAssumed => "pmi.swift-face-document-layout-assumed",
             Self::PmiSwiftFaceDocumentTailAssumed => "pmi.swift-face-document-tail-assumed",
             Self::HistoryIncompleteReferences => "history.incomplete-references",
+            Self::HistoryRollbackUnread => "history.rollback-unread",
+            Self::HistoryRollbackMarkClassInferred => "history.rollback-mark-class-inferred",
             Self::FeatureIncoherentEdges => "feature.incoherent-edges",
             Self::FeatureIncoherentContent => "feature.incoherent-content",
             Self::FeatureUnresolvedOutputScope => "feature.unresolved-output-scope",
@@ -497,6 +535,8 @@ impl SldprtLossCode {
             Self::SketchProfileRejected => "sketch.profile-rejected",
             Self::SketchHandleUnresolved => "sketch.handle-unresolved",
             Self::SketchLineDegenerate => "sketch.line-degenerate",
+            Self::SketchArcRecordConflict => "sketch.arc-record-conflict",
+            Self::SketchHandleReadingAssumed => "sketch.handle-reading-assumed",
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
             Self::SketchRelationMultiplyProjected => "sketch.relation-multiply-projected",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
@@ -515,6 +555,7 @@ impl SldprtLossCode {
             Self::GeometrySurfaceCarrierAmbiguous => "geometry.surface-carrier-ambiguous",
             Self::GeometryOffsetValidityUnresolved => "geometry.offset-validity-unresolved",
             Self::GeometrySpunProfileIntervalIgnored => "geometry.spun-profile-interval-ignored",
+            Self::GeometryBlendCacheUnsolved => "geometry.blend-cache-unsolved",
             Self::GeometryEdgeSupportCurveUntyped => "geometry.edge-support-curve-untyped",
             Self::GeometryTolerantEdgeCurveUnread => "geometry.tolerant-edge-curve-unread",
             Self::GeometryPointRecordAmbiguous => "geometry.point-record-ambiguous",
@@ -605,6 +646,10 @@ impl SldprtLossCode {
                 "assembly.embedded-documents-not-transferred"
             }
             Self::AssemblyBomExclusionNotTransferred => "assembly.bom-exclusion-not-transferred",
+            Self::DesignFeatureUnresolved => "design.feature-unresolved",
+            Self::DesignFolderDropped => "design.folder-dropped",
+            Self::DesignParameterDisplayRounded => "design.parameter-display-rounded",
+            Self::DesignExtrudeDepthAssumed => "design.extrude-depth-assumed",
         }
     }
 
@@ -653,6 +698,7 @@ impl SldprtLossCode {
             | Self::PmiSwiftFaceDocumentLayoutAssumed
             | Self::PmiSwiftFaceDocumentTailAssumed
             | Self::HistoryIncompleteReferences
+            | Self::HistoryRollbackUnread
             | Self::FeatureIncoherentEdges
             | Self::FeatureIncoherentContent
             | Self::FeatureUnresolvedOutputScope
@@ -661,6 +707,8 @@ impl SldprtLossCode {
             | Self::SketchNativeGeometry
             | Self::SketchHandleUnresolved
             | Self::SketchLineDegenerate
+            | Self::SketchArcRecordConflict
+            | Self::SketchHandleReadingAssumed
             | Self::SketchProfileRejected
             | Self::SketchRelationUnprojected
             | Self::SketchRelationMultiplyProjected
@@ -679,6 +727,7 @@ impl SldprtLossCode {
             | Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometrySurfaceCarrierAmbiguous
             | Self::GeometrySpunProfileIntervalIgnored
+            | Self::GeometryBlendCacheUnsolved
             | Self::GeometryOffsetValidityUnresolved
             | Self::GeometryEdgeSupportCurveUntyped
             | Self::GeometryTolerantEdgeCurveUnread
@@ -733,13 +782,18 @@ impl SldprtLossCode {
             Self::MetadataMassPropertiesNotCompared => Severity::Warning,
             Self::AssemblyMatesNotTransferred
             | Self::AssemblyVirtualComponentsNotTransferred
-            | Self::AssemblyEmbeddedDocumentsNotTransferred => Severity::Warning,
+            | Self::AssemblyEmbeddedDocumentsNotTransferred
+            | Self::DesignFolderDropped
+            | Self::DesignParameterDisplayRounded
+            | Self::DesignExtrudeDepthAssumed => Severity::Warning,
             Self::AssemblyStructureNotTransferred => Severity::Blocking,
             Self::AssemblyPlacementUnresolved => Severity::Error,
             Self::AssemblyComponentsExternal
             | Self::AssemblySuppressedComponentsOmitted
             | Self::AssemblyConfigurationsNotTransferred
-            | Self::AssemblyBomExclusionNotTransferred => Severity::Info,
+            | Self::AssemblyBomExclusionNotTransferred
+            | Self::DesignFeatureUnresolved
+            | Self::HistoryRollbackMarkClassInferred => Severity::Info,
         }
     }
 
@@ -784,6 +838,11 @@ impl SldprtLossCode {
             | Self::AssemblyBomExclusionNotTransferred => {
                 LossTaxonomy::AssemblyPlacementsNotTransferred
             }
+            Self::DesignFeatureUnresolved => LossTaxonomy::RecordNotTyped,
+            Self::DesignFolderDropped => LossTaxonomy::MetadataNotTransferred,
+            Self::DesignParameterDisplayRounded | Self::DesignExtrudeDepthAssumed => {
+                LossTaxonomy::DecodeDiagnostic
+            }
             Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
             Self::TopologyFaceUnclaimed
             | Self::TopologyOwnershipWithheld
@@ -798,6 +857,7 @@ impl SldprtLossCode {
             | Self::TopologyVertexRecordUnresolved => LossTaxonomy::TopologyNotTransferred,
             Self::TopologyPcurveCarrierOffSurface => LossTaxonomy::PcurveOmitted,
             Self::GeometryCarrierApproximated => LossTaxonomy::ProceduralReduced,
+            Self::GeometryBlendCacheUnsolved => LossTaxonomy::DecodeDiagnostic,
             Self::TopologyGraphNotTransferred => LossTaxonomy::TopologyNotTransferred,
             Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometrySurfaceCarrierAmbiguous
@@ -837,7 +897,8 @@ impl SldprtLossCode {
             | Self::PmiSwiftInternalFlatnessSymbolAssumed
             | Self::PmiSwiftPresentationUnframed
             | Self::PmiSwiftFaceDocumentLayoutAssumed
-            | Self::PmiSwiftFaceDocumentTailAssumed => LossTaxonomy::DecodeDiagnostic,
+            | Self::PmiSwiftFaceDocumentTailAssumed
+            | Self::HistoryRollbackMarkClassInferred => LossTaxonomy::DecodeDiagnostic,
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
             | Self::ConfigInferredWithoutNative
@@ -856,6 +917,7 @@ impl SldprtLossCode {
             | Self::PmiSwiftAnnotationUnsupported
             | Self::PmiSwiftFeatureWalkCapped
             | Self::HistoryIncompleteReferences
+            | Self::HistoryRollbackUnread
             | Self::FeatureIncoherentEdges
             | Self::FeatureIncoherentContent
             | Self::FeatureUnresolvedOutputScope
@@ -864,6 +926,8 @@ impl SldprtLossCode {
             | Self::SketchNativeGeometry
             | Self::SketchHandleUnresolved
             | Self::SketchLineDegenerate
+            | Self::SketchArcRecordConflict
+            | Self::SketchHandleReadingAssumed
             | Self::SketchProfileRejected
             | Self::SketchRelationUnprojected
             | Self::SketchRelationMultiplyProjected
@@ -1082,6 +1146,8 @@ mod tests {
                 "pmi.swift-face-document-layout-assumed",
                 "pmi.swift-face-document-tail-assumed",
                 "history.incomplete-references",
+                "history.rollback-unread",
+                "history.rollback-mark-class-inferred",
                 "feature.incoherent-edges",
                 "feature.incoherent-content",
                 "feature.unresolved-output-scope",
@@ -1090,6 +1156,8 @@ mod tests {
                 "sketch.native-geometry",
                 "sketch.handle-unresolved",
                 "sketch.line-degenerate",
+                "sketch.arc-record-conflict",
+                "sketch.handle-reading-assumed",
                 "sketch.profile-rejected",
                 "sketch.relation-unprojected",
                 "sketch.relation-multiply-projected",
@@ -1109,6 +1177,7 @@ mod tests {
                 "geometry.surface-carrier-ambiguous",
                 "geometry.offset-validity-unresolved",
                 "geometry.spun-profile-interval-ignored",
+                "geometry.blend-cache-unsolved",
                 "geometry.edge-support-curve-untyped",
                 "geometry.tolerant-edge-curve-unread",
                 "geometry.point-record-ambiguous",
@@ -1173,6 +1242,10 @@ mod tests {
                 "assembly.configurations-not-transferred",
                 "assembly.embedded-documents-not-transferred",
                 "assembly.bom-exclusion-not-transferred",
+                "design.feature-unresolved",
+                "design.folder-dropped",
+                "design.parameter-display-rounded",
+                "design.extrude-depth-assumed",
             ]
         );
     }

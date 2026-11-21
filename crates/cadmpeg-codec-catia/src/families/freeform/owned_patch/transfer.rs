@@ -161,6 +161,9 @@ pub(super) fn append(
                         }
                     }
                     for patch in &patches {
+                        if let Some(bounds) = patch.recovery.untransferred_plane_bounds {
+                            refusal.push_plane_bounds_not_transferred(patch.face, bounds);
+                        }
                         let accuracy_gap = patch
                             .sides
                             .iter()

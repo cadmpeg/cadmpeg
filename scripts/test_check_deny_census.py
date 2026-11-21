@@ -497,6 +497,20 @@ print(json.dumps([(name, optional) for _, _, name, optional in runs]))
         self.assertEqual(status, 1, output)
         self.assertIn("Reader", output)
 
+    def test_a_tagged_reader_derive_is_checked_as_a_deserialize_derive(self) -> None:
+        open_reader = '''
+            #[derive(cadmpeg_derive::DeserializeTagged)]
+            #[serde(tag = "kind")]
+            enum Reader { Value { value: u8 } }
+        '''
+        status, output = self.run_census({"lib.rs": open_reader})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader", output)
+        status, output = self.run_census({"lib.rs": open_reader.replace(
+            '#[serde(tag = "kind")]', '#[serde(tag = "kind", deny_unknown_fields)]'
+        )})
+        self.assertEqual(status, 0, output)
+
     def test_raw_type_literals_follow_the_actual_reader(self) -> None:
         for target, status in [("Closed", 0), ("Open", 1)]:
             with self.subTest(target=target):
