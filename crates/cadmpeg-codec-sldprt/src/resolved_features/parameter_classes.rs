@@ -23,6 +23,10 @@ const DECLARATION_PREFIX: u64 = 6;
 /// The bytes of a count's i32 cell.
 const COUNT_LEN: usize = 4;
 
+/// The offset of the scalar object identifier in a scalar's trailer, after
+/// three zero bytes.
+const TRAILER_OBJECT_ID: usize = 3;
+
 /// The bound below which a count trailer's scalar object identifier lies.
 const COUNT_OBJECT_ID_BOUND: u32 = 1 << 24;
 
@@ -156,9 +160,11 @@ fn count_cell(payload: &[u8], value: usize) -> Option<usize> {
 /// Whether a count's trailer begins at `at`: three zero bytes, then the
 /// nonzero scalar object identifier, below 2^24.
 fn count_trailer(payload: &[u8], at: usize) -> bool {
-    payload.get(at..at.saturating_add(3)) == Some(&[0, 0, 0])
-        && View::u32_le_at(payload, at.saturating_add(3))
-            .is_some_and(|id| id != 0 && id < COUNT_OBJECT_ID_BOUND)
+    let Some(id_at) = at.checked_add(TRAILER_OBJECT_ID) else {
+        return false;
+    };
+    payload.get(at..id_at) == Some(&[0, 0, 0])
+        && View::u32_le_at(payload, id_at).is_some_and(|id| id != 0 && id < COUNT_OBJECT_ID_BOUND)
 }
 
 /// The parameter class each class-token index of the lane's parameter slots
