@@ -68,6 +68,16 @@ impl BodyBox {
     }
 }
 
+/// Why a design's unit system fell back to `MmMKS`.
+#[derive(Clone, Copy)]
+pub(super) enum UnitFallback {
+    /// The document declares no length unit.
+    Undeclared,
+    /// The document's length unit is outside Fusion's five custom unit
+    /// systems.
+    Unmodeled(UnitSymbol),
+}
+
 /// The values of one written design.
 pub(in crate::writer::generate) struct Values {
     pub(in crate::writer::generate) stamps: Timestamps,
@@ -75,9 +85,8 @@ pub(in crate::writer::generate) struct Values {
     seed: String,
     /// The unit-system record `AssetSettings` names.
     pub(super) unit_system: u32,
-    /// When the document's length unit was absent or outside Fusion's five
-    /// custom unit systems and fell back to `MmMKS` (record 67).
-    pub(super) unit_system_fallback: Option<Option<UnitSymbol>>,
+    /// Why the unit system fell back to `MmMKS` (record 67), where it did.
+    pub(super) unit_system_fallback: Option<UnitFallback>,
     pub(super) name: String,
     /// The vertex box of each result body, in body order; `None` where the
     /// body's vertices span no extent.
@@ -105,7 +114,10 @@ impl Values {
             .to_owned();
         let (unit_system, unit_system_fallback) = match unit_system(length) {
             Some(record) => (record, None),
-            None => (67, Some(length)),
+            None => (
+                67,
+                Some(length.map_or(UnitFallback::Undeclared, UnitFallback::Unmodeled)),
+            ),
         };
         Self {
             stamps: Timestamps::FIXED,

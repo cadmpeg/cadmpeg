@@ -327,10 +327,10 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
             "record 214 (Base Feature result record-timestamp table)".to_owned(),
         ],
     ));
-    if let Some(length) = ctx.values.unit_system_fallback {
-        let label = match length {
-            Some(unit) => format!("length unit {unit:?}"),
-            None => "no declared length unit".to_owned(),
+    if let Some(fallback) = ctx.values.unit_system_fallback {
+        let label = match fallback {
+            values::UnitFallback::Unmodeled(unit) => format!("length unit {unit:?}"),
+            values::UnitFallback::Undeclared => "no declared length unit".to_owned(),
         };
         notes.extend(record_residual_unavailable(
             "F3D",
