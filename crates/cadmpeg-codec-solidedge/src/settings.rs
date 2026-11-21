@@ -188,6 +188,7 @@ fn resolve(
 }
 
 /// A unit code read from a unit record.
+#[derive(Clone, Copy)]
 enum Code {
     /// A unit with a neutral symbol.
     Unit(UnitSymbol),

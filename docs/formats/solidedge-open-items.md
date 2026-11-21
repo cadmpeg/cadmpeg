@@ -24,10 +24,10 @@
 
 **Need.** Establish the outer version declarations and the relationship between document display units and kernel coordinates.
 
-### DR-1012. Remaining unit codes
+### DR-1012. Base of the decimal length options
 
-**Question.** Which `DefaultDistancePrimary` and `DefaultAnglePrimary` codes name the length and angle units outside the settled tables?
+**Question.** Which length unit do the tenth, hundredth and thousandth options (length codes 68, 69 and 70) divide?
 
-**Known.** Codes 59, 61, 62 and 64 name metre, millimetre, centimetre and inch. Codes 77 and 357 name radian and degree.
+**Known.** The three options are length unit options and store codes 68, 69 and 70 in `DefaultDistancePrimary`.
 
-**Need.** One document per remaining length-unit and angle-unit setting, each differing from a millimetre and degree document only in that setting.
+**Need.** A part with a known edge length saved under each option, with the displayed value of that length.

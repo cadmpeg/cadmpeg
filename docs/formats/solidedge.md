@@ -66,9 +66,16 @@ record identifiers do not.
 | Record name | Setting |
 | --- | --- |
 | `DefaultDistancePrimary` | Length unit code |
+| `DefaultDistanceSecondary` | Second length unit code of a compound display |
+| `DefaultDistanceTertiary` | Third length unit code of a compound display |
 | `DefaultDistancePrecision` | Displayed decimal places of a length |
 | `DefaultAnglePrimary` | Angle unit code |
+| `DefaultAngleSecondary` | Second angle unit code of a compound display |
+| `DefaultAngleTertiary` | Third angle unit code of a compound display |
 | `DefaultAnglePrecision` | Displayed decimal places of an angle |
+
+The primary code is the document unit. A secondary or tertiary code of
+`345` selects no unit.
 
 The length unit codes are below. An option that has abbreviated and full
 display forms has one code for each form.
@@ -107,8 +114,11 @@ The angle unit codes are:
 | 358 | minute of arc, abbreviated |
 | 359 | second of arc, abbreviated |
 
-The foot-and-inch length display stores the foot code. The
-degree-minute-second angle display stores the degree code.
+A compound display adds smaller units to the primary unit. The
+foot-and-inch display stores the foot code as primary and the inch code as
+secondary, each in the same display form. The degree-minute-second display
+stores the degree code as primary, the minute code as secondary, and the
+second code as tertiary.
 
 The document units are display settings. They do not change Parasolid
 coordinates, which are in metres for every unit setting.
