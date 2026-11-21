@@ -29,6 +29,7 @@ fn sample_segment(topology: &mut AsmHistoricalTopology, edge: i64, start: Point3
             ),
             tangent: None,
             bounds: Some([start, end]),
+            carrier: None,
         });
     topology.edge_samples.sort_by_key(|sample| sample.edge);
 }

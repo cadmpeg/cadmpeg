@@ -174,6 +174,7 @@ fn square_with_unproven_edge(bulge: Option<f64>) -> AsmHistoricalTopology {
             edge: 402,
             interior: Point3::new(0.5, 1.0 + bulge, 2.0),
             tangent: None,
+            carrier: None,
         });
     }
     topology
@@ -253,6 +254,7 @@ fn rows_that_contradict_an_edge_reading_read_no_cap() {
         edge: 402,
         interior: Point3::new(0.5, 1.25, 2.0),
         tangent: None,
+        carrier: None,
     });
     assert!(face_cap(&xy_frame(), &topology, CAP, TOLERANCE).is_none());
 
@@ -325,6 +327,7 @@ fn circle_topology(center: (f64, f64), radius: f64, axis: Vector3) -> AsmHistori
         edge: 400,
         interior: Point3::new(center.0 - radius, center.1, 2.0),
         tangent: None,
+        carrier: None,
     });
     topology
 }
@@ -906,6 +909,7 @@ fn a_curve_that_is_not_a_line_or_arc_agrees_with_its_cap_at_samples() {
         edge: 400,
         interior: Point3::new(0.0, 1.0, 2.0),
         tangent: None,
+        carrier: None,
     });
     let cap = face_cap_reading(&xy_frame(), &topology, CAP, TOLERANCE).unwrap();
     assert!(cap.assumed());

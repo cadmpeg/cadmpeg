@@ -176,8 +176,19 @@ fn input_edge_geometry_carries_samples_endpoints_and_faces() {
         AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalEdge,
         AsmHistoricalEdgeSample, AsmHistoricalPoint, AsmHistoricalRelation, AsmHistoricalTopology,
     };
+    use cadmpeg_ir::features::evaluation::{HistoricalEdgeCarrier, HistoricalEdgeCurve};
     use cadmpeg_ir::math::{Point3, Vector3};
 
+    let carrier = HistoricalEdgeCarrier {
+        curve: HistoricalEdgeCurve::Line(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap(),
+        ),
+        range: cadmpeg_ir::topology::ParameterInterval::new([0.0, 10.0]).unwrap(),
+    };
     let topology = AsmHistoricalTopology {
         faces: vec![10, 11],
         loops: vec![20, 21],
@@ -243,6 +254,7 @@ fn input_edge_geometry_carries_samples_endpoints_and_faces() {
             edge: 40,
             interior: Point3::new(0.0, 0.0, 5.0),
             tangent: Some(Vector3::new(0.0, 0.0, 1.0)),
+            carrier: Some(carrier.clone()),
         }],
         ..AsmHistoricalTopology::default()
     };
@@ -274,6 +286,7 @@ fn input_edge_geometry_carries_samples_endpoints_and_faces() {
             crate::ids::history_input_face_id(&prefix, 11),
         ]
     );
+    assert_eq!(edge.carrier, Some(carrier));
 }
 
 #[test]
@@ -312,6 +325,7 @@ fn input_edge_geometry_keeps_only_selected_edges() {
         start: None,
         end: None,
         faces: Default::default(),
+        carrier: None,
         supports: Vec::new(),
     };
     let mut topologies = vec![cadmpeg_ir::features::evaluation::FeatureInputTopology {
@@ -379,6 +393,7 @@ fn input_edge_geometry_keeps_the_edges_that_bound_a_selected_face() {
                 .to_vec(),
         )
         .unwrap(),
+        carrier: None,
         supports: Vec::new(),
     };
     let mut topologies = vec![cadmpeg_ir::features::evaluation::FeatureInputTopology {

@@ -2705,11 +2705,20 @@ fn combine_recipe_family_tool_slots(
     Some(selected.into_iter().collect::<Vec<_>>())
 }
 
+/// The operand of a `Combine` that a binding refusal concerns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum CombineOperandSide {
+    Target,
+    Tools,
+}
+
 /// Bind an operand-list `Combine` through the browser node of each operand.
 ///
 /// The target binds when its node names a body of the preceding history
 /// state. The tools bind when every tool node names a distinct body of that
-/// state. A body that both sides name leaves both selections native.
+/// state. A body that both sides name leaves both selections native, and the
+/// result is `Some(true)`. Each refusal names the operand side that it
+/// concerns.
 fn bind_operand_list_combine_bodies(
     (target, tools): (
         &mut cadmpeg_ir::features::selections::BodySelection,
@@ -2722,8 +2731,8 @@ fn bind_operand_list_combine_bodies(
         &[AsmHistory],
         &[crate::records::feature::scope::DesignParameterScope],
     ),
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Option<()> {
+    refusals: &mut Vec<(CombineOperandSide, cadmpeg_ir::report::loss::LossNote)>,
+) -> Option<bool> {
     use crate::records::feature::combine::DesignCombineBodyNode;
     use cadmpeg_ir::features::selections::{BodyMembers, BodySelection};
 
@@ -2762,9 +2771,17 @@ fn bind_operand_list_combine_bodies(
         }
     };
     let mut refuse = |operand: &str, record_index: u32, reason: &str| {
-        losses.push(crate::loss::F3dLossCode::FeatureCombineOperandBodyUnbound.note(format!(
-            "feature {feature_id} does not bind Combine {operand} {stream}:design-record#{record_index} through its browser node: {reason}"
-        )));
+        let side = if operand == "target" {
+            CombineOperandSide::Target
+        } else {
+            CombineOperandSide::Tools
+        };
+        refusals.push((
+            side,
+            crate::loss::F3dLossCode::FeatureCombineOperandBodyUnbound.note(format!(
+                "feature {feature_id} does not bind Combine {operand} {stream}:design-record#{record_index} through its browser node: {reason}"
+            )),
+        ));
     };
     let target_slot = match body_slot(operation.target_body_node) {
         Ok(slot) => Some(slot),
@@ -2782,7 +2799,7 @@ fn bind_operand_list_combine_bodies(
                     tool.record_index,
                     "its body is also the target body",
                 );
-                return None;
+                return Some(true);
             }
             Ok(slot) => {
                 if let Some(slots) = tool_slots.as_mut() {
@@ -2824,7 +2841,7 @@ fn bind_operand_list_combine_bodies(
         state: crate::ids::history_input_state_id(&prefix),
         members,
     };
-    Some(())
+    Some(false)
 }
 
 fn combine_external_local_tools(
@@ -4555,6 +4572,7 @@ fn project_input_edge_geometry(
                 faces: project_input_members(&faces, |face| {
                     crate::ids::history_input_face_id(prefix, face)
                 })?,
+                carrier: sample.carrier.clone(),
                 supports: Vec::new(),
             })
         })

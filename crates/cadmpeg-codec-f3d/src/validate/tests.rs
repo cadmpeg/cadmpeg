@@ -628,6 +628,8 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
                 },
 
                 destination: Default::default(),
+                created_body_nodes: Vec::new(),
+                consumed_body_nodes: Vec::new(),
             });
         }
         scopes.push(scope);

@@ -51,6 +51,7 @@ fn two_along(span_17: [f64; 2], span_18: [f64; 2]) -> AsmHistoricalTopology {
         edge: 18,
         interior: Point3::new(0.0, 0.0, 0.0),
         tangent: Some(z()),
+        carrier: None,
     });
     two.curve_axes.push(AsmHistoricalCurveAxis {
         curve: 118,
@@ -72,6 +73,7 @@ fn spanned_output() -> AsmHistoricalTopology {
             edge,
             interior: Point3::new(0.0, 0.0, height),
             tangent: Some(x()),
+            carrier: None,
         });
     }
     output
@@ -358,6 +360,7 @@ fn torus(shared_18: bool) -> (AsmHistoricalTopology, AsmHistoricalTopology) {
             edge,
             interior: Point3::new(1.0, 0.0, 0.0),
             tangent: Some(y()),
+            carrier: None,
         });
     }
     ends(&mut input, 17, [0.0, 4.0]);

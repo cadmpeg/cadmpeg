@@ -99,6 +99,7 @@ fn plane_plane_topology() -> AsmHistoricalTopology {
             interior: Point3::new(0.0, 5.0, 0.0),
             tangent: Some(Vector3::new(0.0, 1.0, 0.0)),
             bounds: None,
+            carrier: None,
         }],
         ..AsmHistoricalTopology::default()
     }
@@ -179,6 +180,7 @@ fn plane_cylinder_topology(with_other_cylinder_vertex: bool) -> AsmHistoricalTop
             interior: Point3::new(5.0, 0.0, 10.0),
             tangent: Some(Vector3::new(0.0, 1.0, 0.0)),
             bounds: None,
+            carrier: None,
         }],
         edge_vertices: vec![AsmHistoricalEdge {
             edge: 1,
@@ -385,6 +387,7 @@ fn attach_filters_out_equal_distance_and_non_two_distances_chamfers() {
             start: None,
             end: None,
             faces: DistinctMembers::try_from(vec![]).unwrap(),
+            carrier: None,
             supports: Vec::new(),
         }];
         attach(&feature, history, &topology, &prefix, &mut geometry);

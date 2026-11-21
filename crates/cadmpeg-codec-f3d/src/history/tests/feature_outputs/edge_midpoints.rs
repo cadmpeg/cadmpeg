@@ -39,6 +39,7 @@ fn midpoint_history(id: &str, x: f64) -> crate::history_records::AsmHistory {
             edge: 10,
             interior: cadmpeg_ir::math::Point3::new(x, 0.0, 0.0),
             tangent: None,
+            carrier: None,
         }],
         ..Default::default()
     };
@@ -361,6 +362,7 @@ fn edge_midpoints_preserve_explicit_edge_selections_without_deleted_edge_fallbac
             edge: 99,
             interior: cadmpeg_ir::math::Point3::new(5.0, 0.0, 0.0),
             tangent: None,
+            carrier: None,
         }];
     });
     let mut feature = midpoint_fillet(&scope);
