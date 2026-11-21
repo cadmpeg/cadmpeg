@@ -505,7 +505,8 @@ impl<'a> Faces<'a> {
 
     /// Row 10: the start cap, the end cap at `distance` mm and one side face
     /// per loop entry of the sketch on its origin plane, each the one face
-    /// of its shape; `None` where a face is missing, ambiguous or left over.
+    /// of its shape (a plane for a line, a cylinder for a circle or an
+    /// arc); `None` where a face is missing, ambiguous or left over.
     fn matched(
         &self,
         sketch: &PlannedSketch<'_>,
@@ -547,7 +548,8 @@ impl<'a> Faces<'a> {
                         Shape::Cylinder { .. } | Shape::Other => false,
                     })?
                 }
-                CurveGeometry::Circle { center, radius } => {
+                CurveGeometry::Circle { center, radius }
+                | CurveGeometry::Arc { center, radius, .. } => {
                     let c = model(center)?;
                     let radius = radius * MM_PER_CM;
                     self.one(|shape| match shape {
@@ -563,7 +565,6 @@ impl<'a> Faces<'a> {
                         Shape::Plane { .. } | Shape::Other => false,
                     })?
                 }
-                CurveGeometry::Arc { .. } => return None,
             };
             sides.push(side);
         }

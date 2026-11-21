@@ -37,7 +37,7 @@ use super::{
 };
 
 /// `lines` (see [`planned`]) then one circle per `(center, radius)`, in cm.
-fn with_circles<'a>(
+pub(super) fn with_circles<'a>(
     id: &'a cadmpeg_ir::features::FeatureId,
     sketch: &'a cadmpeg_ir::sketches::SketchId,
     lines: &[([f64; 2], [f64; 2])],
@@ -131,7 +131,7 @@ fn a_circle_with_two_holes_stores_the_holes_in_curve_order() {
 }
 
 #[test]
-fn profiles_outside_one_region_with_circular_holes_are_refused() {
+fn profiles_outside_one_region_are_refused() {
     let id = feature_id("refused");
     let sketch = sketch_id("refused");
     let (a, b, c, d) = ([-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]);
@@ -151,10 +151,6 @@ fn profiles_outside_one_region_with_circular_holes_are_refused() {
             "its profile has a loop inside a hole",
         ),
         (
-            with_circles(&id, &sketch, &square, &[([0.0, 0.0], 5.0)]),
-            "a hole of its profile is not one circle",
-        ),
-        (
             with_circles(&id, &sketch, &square[..3], &[]),
             "its profile is not closed",
         ),
@@ -166,22 +162,6 @@ fn profiles_outside_one_region_with_circular_holes_are_refused() {
     for (sketch, reason) in &cases {
         assert_eq!(profile(sketch, TOLERANCE), Err(*reason));
     }
-    let mut arc = with_circles(&id, &sketch, &[], &[([0.0, 0.0], 3.0)]);
-    arc.points.extend([[1.0, 0.0], [0.0, 1.0]]);
-    arc.curves.push(PlannedCurve {
-        geometry: CurveGeometry::Arc {
-            center: 0,
-            start: 1,
-            end: 2,
-            radius: 1.0,
-            angles: [0.0, std::f64::consts::FRAC_PI_2],
-        },
-        construction: false,
-    });
-    assert_eq!(
-        profile(&arc, TOLERANCE),
-        Err("a loop of its profile has an arc")
-    );
 }
 
 /// Two loops whose boundaries cross or touch bound a region whose boundary
@@ -267,7 +247,7 @@ fn loops_that_cross_or_touch_are_refused() {
     );
 }
 
-fn mint<T>(mint: fn(String) -> Result<T, IdentityError>, kind: &str, key: &str) -> T {
+pub(super) fn mint<T>(mint: fn(String) -> Result<T, IdentityError>, kind: &str, key: &str) -> T {
     mint(format!("test:model:{kind}#{key}")).expect("identity grammar")
 }
 
@@ -556,7 +536,7 @@ fn disc() -> CadIr {
 }
 
 /// The decoded Extrude's one-sided blind depth, in mm.
-fn depth(decoded: &CadIr) -> f64 {
+pub(super) fn depth(decoded: &CadIr) -> f64 {
     let cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::Extrude {
             profile, extent, ..
@@ -586,7 +566,7 @@ fn depth(decoded: &CadIr) -> f64 {
 }
 
 /// The decoded face of each side token, with its surface.
-fn named_faces(decoded: &CadIr) -> Vec<(String, SolvedSurfaceGeometry)> {
+pub(super) fn named_faces(decoded: &CadIr) -> Vec<(String, SolvedSurfaceGeometry)> {
     let native = crate::test_support::native_test::f3d_native(decoded);
     native
         .persistent_subentity_tags
@@ -623,7 +603,7 @@ fn cylinder_radius(faces: &[(String, SolvedSurfaceGeometry)], token: &str) -> f6
 
 /// The token of the face that owns each sketch link's coedge, with the
 /// link's curve and sense.
-fn links(decoded: &CadIr) -> Vec<(String, i64, Option<i64>)> {
+pub(super) fn links(decoded: &CadIr) -> Vec<(String, i64, Option<i64>)> {
     let native = crate::test_support::native_test::f3d_native(decoded);
     let mut links = native
         .sketch_curve_links
@@ -706,7 +686,7 @@ fn a_square_with_a_round_hole_is_written_as_an_extrude() {
 
 /// Each side entry of the tracked-results table of the `Extrude` scope
 /// `scope`: its key and its curve record.
-fn tracked_sides(
+pub(super) fn tracked_sides(
     design: &super::super::roster::Segment,
     scope: u64,
     sides: usize,

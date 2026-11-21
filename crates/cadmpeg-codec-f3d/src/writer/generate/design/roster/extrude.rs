@@ -43,8 +43,9 @@ const PROFILE_ROLE: u64 = 0x0000_0041_0000_0000;
 const CURVE_ENTRY: u32 = 3;
 /// The sense word of the curve-record entry of an exterior loop entry.
 const FORWARD_SENSE: u32 = 1;
-/// The sense word of the curve-record entry of a hole circle (f3d.md §3.1,
-/// "Tracked results of a profile with circular holes").
+/// The sense word of the curve-record entry of a hole loop entry (f3d.md
+/// §3.1, "Tracked results of a profile with circular holes" and the curve
+/// record of a side face).
 const HOLE_SENSE: u32 = u32::MAX;
 /// The source kinds of the two owned parameters.
 const ALONG_DISTANCE: &str = "AlongDistance";
@@ -632,8 +633,10 @@ impl Item<'_> {
     }
 
     /// The curve identities that meet the side curve of entry `position` of
-    /// `profile_loop` at the start and at the end of its stored line; a
-    /// circle meets none.
+    /// `profile_loop` at its first and at its second end: for an exterior
+    /// entry the first end is the curve's start point, for a hole entry the
+    /// point where the ring starts its run of the curve. A circle meets
+    /// none.
     fn neighbours(
         &self,
         profile_loop: &ProfileLoop,
@@ -645,15 +648,13 @@ impl Item<'_> {
             self.sketch.curves.get(entry.curve).ok_or_else(|| {
                 CodecError::malformed(format_args!("sketch curve {}", entry.curve))
             })?;
-        if !matches!(curve.geometry, CurveGeometry::Line { .. }) {
+        if matches!(curve.geometry, CurveGeometry::Circle { .. }) {
             return Ok([Vec::new(), Vec::new()]);
         }
         let before = ring[(position + ring.len() - 1) % ring.len()].curve;
         let after = ring[(position + 1) % ring.len()].curve;
         let (before, after) = (self.curve_identity(before)?, self.curve_identity(after)?);
-        // The ring reaches a line's stored start from the entry before it,
-        // unless it runs the line from its end.
-        Ok(if entry.reversed {
+        Ok(if profile_loop.exterior && entry.reversed {
             [vec![after], vec![before]]
         } else {
             [vec![before], vec![after]]
@@ -699,7 +700,21 @@ pub(super) fn losses(
     if let Some(plan) = ctx.extrude {
         if plan.profile.iter().filter(|hole| !hole.exterior).count() > 1 {
             entries.push(format!(
-                "record {} and the side tokens of its hole loops (the holes stored in the order of their curves' primary identities, their side tokens in stored order, f3d-open-items.md DR-883)",
+                "record {} and the side tokens of its hole loops (the holes stored in the order of their curves' primary identities, a hole of several curves by its smallest, their side tokens in stored order, f3d-open-items.md DR-883)",
+                records.selection + 3
+            ));
+        }
+        if plan.profile.iter().any(|profile_loop| {
+            profile_loop.entries.len() > 1
+                && profile_loop.entries.iter().any(|entry| {
+                    ctx.sketches
+                        .get(plan.sketch)
+                        .and_then(|sketch| sketch.curves.get(entry.curve))
+                        .is_some_and(|curve| matches!(curve.geometry, CurveGeometry::Arc { .. }))
+                })
+        }) {
+            entries.push(format!(
+                "record {} and the side tokens of each loop that holds an arc (the walk of a loop of lines, with C the loop curve of the largest record index, gives the entry order and the curve of the loop's lowest token, f3d-open-items.md DR-883)",
                 records.selection + 3
             ));
         }

@@ -35,6 +35,7 @@ use super::{
     loss, neutral, number, parameter_id, scoped_cube, write, write_bytes, EXTRUDE, SKETCH,
 };
 
+mod arcs;
 mod holes;
 
 const TOLERANCE: f64 = 1e-9;
