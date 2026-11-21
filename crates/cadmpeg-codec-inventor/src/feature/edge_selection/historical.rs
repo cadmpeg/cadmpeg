@@ -422,6 +422,7 @@ pub(crate) fn project(
                         interior: edge.geometry.interior,
                         tangent: Some(edge.geometry.tangent),
                         faces: DistinctMembers::default(),
+                        supports: Vec::new(),
                     });
                 }
                 edges.push(id);
