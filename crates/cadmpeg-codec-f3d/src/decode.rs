@@ -1974,7 +1974,7 @@ fn design_projection_gaps(
             }) => {
                 match boundary {
                     cadmpeg_ir::features::surface_inputs::SurfaceBoundary::Edges(edges) => {
-                        edge_selection(edges)
+                        edge_selection(edges);
                     }
                     cadmpeg_ir::features::surface_inputs::SurfaceBoundary::Path(path) => {
                         gaps.path_selections += usize::from(!loft_path_is_resolved(path));
