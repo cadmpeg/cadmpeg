@@ -129,8 +129,12 @@ pub(crate) enum SldprtLossCode {
     /// `sgSketch` curve record states an arc or another form that gives no
     /// entity.
     SketchArcRecordConflict,
-    /// A sketch takes the retained Front fallback frame because the
-    /// principal component records of its profile select no single plane.
+    /// A sketch keeps the retained Front fallback frame although its profile
+    /// holds principal component records, because `sldprt.md` §3.3 does not
+    /// place the profile: its Front declaration is the feature-input lane's
+    /// default, another declaration or a custom component record lies beside
+    /// the records, or the records name more than one plane. The note states
+    /// which.
     SketchPlaneAssumed,
     /// A compact sketch profile failed neutral profile admission.
     SketchProfileRejected,

@@ -13,6 +13,28 @@ const COMPACT_COMPONENT_PLANE_RECORD_LEN: usize = 138;
 
 type PlaneFrame = (Point3, Vector3, Vector3);
 
+/// Why a profile with principal component records takes the retained Front
+/// fallback frame (`sldprt.md` §3.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlaneAssumedCause {
+    /// Neither the profile nor its context declares a plane; the Front
+    /// source is the feature-input lane's default declaration. `named` is
+    /// the plane every principal record names, where they name one.
+    LaneDefault {
+        named: Option<cadmpeg_ir::features::PrincipalPlane>,
+    },
+    /// The plane declarations of the profile and its context do not name the
+    /// Front source alone.
+    OtherDeclaration,
+    /// A custom component record lies in the profile or its context.
+    CustomComponent,
+    /// The principal records name more than one plane.
+    MixedPrincipal,
+    /// §3.3 places the profile on this plane, but the reading that built the
+    /// sketch takes its frame without the placement rule.
+    Unapplied(cadmpeg_ir::features::PrincipalPlane),
+}
+
 pub(super) struct CompactReferencePlaneIndex {
     payload_len: usize,
     class_offsets: Vec<usize>,
@@ -86,13 +108,42 @@ impl CompactReferencePlaneIndex {
         start: usize,
         end: usize,
     ) -> Option<cadmpeg_ir::features::PrincipalPlane> {
-        if self.profile_source(context_start, start, end) != Some(FRONT_SOURCE)
-            || self.profile_declared_source(context_start, start, end) != Some(FRONT_SOURCE)
-            || self.has_component_frame(context_start.min(start), end)
-        {
+        if self.profile_source(context_start, start, end) != Some(FRONT_SOURCE) {
             return None;
         }
+        self.front_profile_principal_component(context_start, start, end)
+            .ok()
+    }
+
+    /// The principal plane that §3.3 places a profile on whose reference
+    /// source is Front, or the reason it places none.
+    pub(super) fn front_profile_principal_component(
+        &self,
+        context_start: usize,
+        start: usize,
+        end: usize,
+    ) -> Result<cadmpeg_ir::features::PrincipalPlane, PlaneAssumedCause> {
+        if self.profile_declared_source(context_start, start, end) != Some(FRONT_SOURCE) {
+            let declared = records_in_range(
+                &self.declared,
+                context_start.min(start),
+                end,
+                COMPACT_REFERENCE_PLANE_RECORD_LEN,
+                |(offset, _)| *offset,
+            );
+            return Err(if declared.is_empty() {
+                PlaneAssumedCause::LaneDefault {
+                    named: self.principal_component_plane(start, end),
+                }
+            } else {
+                PlaneAssumedCause::OtherDeclaration
+            });
+        }
+        if self.has_component_frame(context_start.min(start), end) {
+            return Err(PlaneAssumedCause::CustomComponent);
+        }
         self.principal_component_plane(start, end)
+            .ok_or(PlaneAssumedCause::MixedPrincipal)
     }
 
     /// The principal plane that every complete principal component record in

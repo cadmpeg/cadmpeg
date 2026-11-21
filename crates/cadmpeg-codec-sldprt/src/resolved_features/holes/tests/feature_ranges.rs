@@ -34,7 +34,7 @@ fn feature_object_ranges_preserve_equal_offset_history_order() {
 fn scoped_principal_component_selects_its_plane_and_lane_front_keeps_the_fallback() {
     use crate::resolved_features::compact_reference_planes::{
         principal_component_frame, principal_sketch_frame, principal_source,
-        CompactReferencePlaneIndex,
+        CompactReferencePlaneIndex, PlaneAssumedCause,
     };
     use crate::resolved_features::curves::{SketchPlaneFrame, SketchPlaneUAxisSource};
     use crate::resolved_features::holes::{
@@ -115,7 +115,13 @@ fn scoped_principal_component_selects_its_plane_and_lane_front_keeps_the_fallbac
                 &index,
                 [context, start, payload.len()]
             )
-            .is_some_and(|frame| frame.frame == expected && frame.assumed));
+            .is_some_and(|frame| frame.frame == expected
+                && frame.assumed
+                    == Some(if context == 0 {
+                        PlaneAssumedCause::Unapplied(plane)
+                    } else {
+                        PlaneAssumedCause::LaneDefault { named: Some(plane) }
+                    })));
             let frame = expected_top.unwrap_or(expected);
             let sketch = cadmpeg_ir::sketches::Sketch {
                 id: cadmpeg_ir::sketches::SketchId::mint("sldprt:model:sketch#synthetic-principal")
@@ -302,7 +308,7 @@ fn serialized_offset_component_uses_model_plane_and_local_markers() {
 #[test]
 fn enclosing_custom_component_retains_its_profile_frame() {
     use crate::resolved_features::compact_reference_planes::{
-        principal_sketch_frame, CompactReferencePlaneIndex,
+        principal_sketch_frame, CompactReferencePlaneIndex, PlaneAssumedCause,
     };
     use crate::resolved_features::curves::{SketchPlaneFrame, SketchPlaneUAxisSource};
     use crate::resolved_features::holes::{
@@ -354,6 +360,10 @@ fn enclosing_custom_component_retains_its_profile_frame() {
     );
     assert!(
         profile_sketch_frame(&payload, &frames, &index, [0, start, payload.len()])
-            .is_some_and(|frame| !frame.assumed)
+            .is_some_and(|frame| frame.assumed.is_none())
+    );
+    assert_eq!(
+        index.front_profile_principal_component(0, start, payload.len()),
+        Err(PlaneAssumedCause::CustomComponent)
     );
 }

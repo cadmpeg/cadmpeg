@@ -10,7 +10,7 @@ use cadmpeg_ir::sketches::{
 
 use super::{
     finalize_unread_marker_entities, project_marker_backed_sketches, ChordConflict,
-    HeldMarkerGeometry,
+    HeldMarkerGeometry, PlaneAssumedCause,
 };
 use crate::loss::SldprtLossCode;
 use crate::records::{
@@ -672,7 +672,16 @@ fn each_remaining_sketch_on_the_retained_front_fallback_charges_one_assumed_plan
     let sketch = SketchId::mint("sldprt:model:sketch#markers:lane:4").unwrap();
     let replaced = SketchId::mint("sldprt:model:sketch#compact:lane:4").unwrap();
     let held = HeldMarkerGeometry {
-        assumed_planes: vec![replaced, sketch.clone(), sketch.clone()],
+        assumed_planes: vec![
+            (replaced, PlaneAssumedCause::MixedPrincipal),
+            (
+                sketch.clone(),
+                PlaneAssumedCause::LaneDefault {
+                    named: Some(cadmpeg_ir::features::PrincipalPlane::Right),
+                },
+            ),
+            (sketch.clone(), PlaneAssumedCause::MixedPrincipal),
+        ],
         ..HeldMarkerGeometry::default()
     };
     let sketches = [cadmpeg_ir::sketches::Sketch {
@@ -694,5 +703,12 @@ fn each_remaining_sketch_on_the_retained_front_fallback_charges_one_assumed_plan
             .collect::<Vec<_>>(),
         vec![SldprtLossCode::SketchPlaneAssumed.kind()]
     );
-    assert!(losses[0].message.contains(sketch.as_str()));
+    let message = &losses[0].message;
+    assert!(message.contains(sketch.as_str()));
+    assert!(message.contains("name the Right plane"), "{message}");
+    assert!(
+        message.contains("the Front declaration is the feature-input lane's default"),
+        "{message}"
+    );
+    assert!(!message.contains("more than one plane"), "{message}");
 }

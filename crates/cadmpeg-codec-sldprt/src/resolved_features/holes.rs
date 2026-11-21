@@ -1,6 +1,6 @@
 //! Hole construction, bore topology and hole axis projection.
 
-use super::compact_reference_planes::CompactReferencePlaneIndex;
+use super::compact_reference_planes::{CompactReferencePlaneIndex, PlaneAssumedCause};
 use super::curves::{lane_sketch_plane_frames, SketchPlaneFrame, SketchPlaneUAxisSource};
 use super::grid::{quantize, GridCoordinate};
 use super::helix::fit_helix_polyline;
@@ -4306,9 +4306,10 @@ pub(super) fn feature_input_sketch_frame(
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct ProfileSketchFrame {
     pub(super) frame: (Point3, Vector3, Vector3),
-    /// The frame is the retained Front fallback of a profile whose principal
-    /// component records the profile placement rule does not read.
-    pub(super) assumed: bool,
+    /// Why the frame is the retained Front fallback of a profile whose
+    /// principal component records the profile placement rule does not
+    /// place; `None` for any other frame.
+    pub(super) assumed: Option<PlaneAssumedCause>,
 }
 
 impl ProfileSketchFrame {
@@ -4316,7 +4317,7 @@ impl ProfileSketchFrame {
     pub(super) fn stored(frame: (Point3, Vector3, Vector3)) -> Self {
         Self {
             frame,
-            assumed: false,
+            assumed: None,
         }
     }
 }
@@ -4399,7 +4400,11 @@ pub(super) fn profile_sketch_frame(
                 Some(component.map_or(
                     ProfileSketchFrame {
                         frame: reference.as_tuple(),
-                        assumed: fallback,
+                        assumed: fallback.then(|| {
+                            plane_index
+                                .front_profile_principal_component(context_start, start, end)
+                                .map_or_else(|cause| cause, PlaneAssumedCause::Unapplied)
+                        }),
                     },
                     stored,
                 ))
