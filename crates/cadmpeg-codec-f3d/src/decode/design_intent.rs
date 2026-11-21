@@ -181,6 +181,8 @@ pub(super) struct DesignNative {
     design_surface_trim_operations: Vec<DesignSurfaceTrimOperation>,
     design_sheet_metal_settings:
         Vec<crate::records::sheet_metal_settings::DesignSheetMetalSettings>,
+    sketch_text_extrude_candidates:
+        Vec<crate::design::sketch_text_extrude::SketchTextExtrudeCandidate>,
 }
 
 impl DesignNative {
@@ -232,6 +234,7 @@ impl DesignNative {
             design_record_headers,
             design_surface_trim_operations,
             design_sheet_metal_settings,
+            sketch_text_extrude_candidates: _,
         } = self;
         native.asm_histories = asm_histories;
         native.asm_face_boundaries = asm_face_boundaries;
@@ -1042,6 +1045,14 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_parameter_scopes,
         &model.sketch_entities,
     );
+    losses.extend(
+        crate::design::sketch_text_extrude::bind_sketch_text_extrude_profiles(
+            &mut model.features,
+            &design.sketch_text_extrude_candidates,
+            &design.sketch_texts,
+            &model.sketch_entities,
+        ),
+    );
     crate::design::feature_project::bind_loft_sketch_point_sections(
         &mut model.features,
         &crate::design::feature_project::LoftPointSources {
@@ -1714,6 +1725,7 @@ fn extend_related_design_records(
         &mut design.design_parameter_scopes,
         &design.design_record_headers,
         &prereqs.design_entity_headers,
+        &mut design.sketch_text_extrude_candidates,
     )?;
     design.design_construction_operand_groups =
         crate::design::decode::operands::decode_construction_operand_groups(
