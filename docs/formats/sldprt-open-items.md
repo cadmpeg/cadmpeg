@@ -229,6 +229,14 @@ image in field data can therefore be classified as a new stream.
 
 **Conflict.** The specification records a fixed value; the decoder admits every value.
 
+### CM-17. Keywords lead byte
+
+**Question.** What does the lead byte `85` or `86` before the Keywords XML text record?
+
+**Known.** `sldprt.md` §2 "An XML payload stores its text as UTF-8" defines both lead bytes; the decoder reads the text after either. Both forms declare UTF-8 and give the `Keywords` root the attributes `Name` and `id`. Every document with lead byte `85` holds an `Application` element with `Keyword` children. One document with lead byte `86` also holds an `Application` element, so that element does not select the byte. Both bytes occur in documents of the same `swVersion`.
+
+**Need.** The producer rule that selects the byte, before a writer generates a Keywords member with a lead byte.
+
 ## 4. Auxiliary lanes
 
 ### AL-01. DisplayLists face ranges
