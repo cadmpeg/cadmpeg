@@ -23,9 +23,6 @@ pub(super) const MATERIAL_LIBRARY: &str = "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C"
 pub(super) const MATERIAL: &str = "PrismMaterial-022";
 /// The component colour: one value of the 0.01 grid Fusion's components use.
 const COLOUR: [f32; 4] = [1.0, 0.69, 0.7, 1.0];
-/// The next value of the persistent-identity counter: one above the
-/// `Base Feature`'s identity `300`.
-const NEXT_IDENTITY: u64 = 301;
 /// The ACT instance root.
 pub(super) const ACT_INSTANCE_ROOT: u32 = 6;
 
@@ -161,7 +158,12 @@ fn aggregate(
             reference(p::ORIGIN_CONTAINER, ORIGIN),
             reference(p::RECORD_64435F6E, 32),
             reference(p::RECORD_BF7A6B8B, 33),
-            (p::NEXT_PERSISTENT_IDENTITY, Bind::U64(NEXT_IDENTITY)),
+            (
+                p::NEXT_PERSISTENT_IDENTITY,
+                Bind::U64(super::super::base_feature::next_identity(
+                    ctx.roster.sketches.items.len(),
+                )?),
+            ),
             reference(p::RECORD_AD3F9695, 37),
             reference(p::PARAMETER_BODY_OWNER, PARAMETER_OWNER),
             reference(p::RECORD_91461D14, 39),
