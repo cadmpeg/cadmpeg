@@ -8518,8 +8518,8 @@ pub(crate) mod rectangular_pattern_payload_prefix {
     pub(crate) const V_DISTANCE: usize = 98;
     /// Offset of `symmetric` (`u8`). Spec §Assembly operands.
     pub(crate) const SYMMETRIC: usize = 109;
-    /// Offset of `zero_after_symmetric` (`u8`). Spec §Assembly operands.
-    pub(crate) const ZERO_AFTER_SYMMETRIC: usize = 110;
+    /// Offset of `symmetric_two` (`u8`). Spec §Assembly operands.
+    pub(crate) const SYMMETRIC_TWO: usize = 110;
     /// Offset of `v_count_repeat` (`bytes[11]`). Spec §Assembly operands.
     pub(crate) const V_COUNT_REPEAT: usize = 111;
     /// Offset of `u_direction` (`bytes[11]`). Spec §Assembly operands.
