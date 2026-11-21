@@ -812,9 +812,9 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         },
         &mut scope_histories,
     );
-    let fillet_bindings = crate::history::fillet_blends::bind_fillet_blend_edges(
+    let fillet_bindings = crate::history::fillet_blends::bind_treatment_edges(
         &mut model.features,
-        crate::history::fillet_blends::FilletBlendInputs {
+        crate::history::fillet_blends::TreatmentBlendInputs {
             scopes: &design.design_parameter_scopes,
             groups: &design.design_construction_operand_groups,
             histories: &mut design.asm_histories,
@@ -822,8 +822,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         },
     );
     losses.extend(fillet_bindings.notes);
-    // A fillet that took the one history in which its edges resolve reads
-    // its input topology and outputs from that history.
+    // A fillet or chamfer that took the one history in which its edges
+    // resolve reads its input topology and outputs from that history.
     scope_histories.extend(fillet_bindings.inferred_scope_histories);
     crate::design::edge_resolve::fragment_fallback::apply_features(
         &mut model.features,
