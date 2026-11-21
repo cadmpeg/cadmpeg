@@ -169,14 +169,12 @@ fn fixtures_survive_the_semantic_write_path() {
         }
         if name == "body_history" {
             assert_legacy_history_preconditions(&bytes);
-            semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| {
-                match outcome {
+            semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| match outcome {
                 SemanticOutcome::Refused { error } => assert!(
-                    matches!(error, CodecError::Malformed(detail) if detail == "SLDPRT writing requires exactly one active configuration"),
-                    "legacy history must refuse exactly the unresolved active-configuration contract"
+                    matches!(error, CodecError::NotImplemented(detail) if detail == "semantic SLDPRT writing requires a B-rep"),
+                    "legacy history holds no face"
                 ),
-                SemanticOutcome::Written { .. } => panic!("legacy history lacks a supported active configuration"),
-            }
+                SemanticOutcome::Written { .. } => panic!("legacy history holds no face"),
             });
             continue;
         }

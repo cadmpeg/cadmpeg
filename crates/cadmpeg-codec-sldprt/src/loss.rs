@@ -305,6 +305,22 @@ pub(crate) enum SldprtLossCode {
     WriterTessellationMetadataOmitted,
     /// Semantic regeneration omits native cache or directory-padding bytes.
     WriterNativeEnvelopeAuxiliaryOmitted,
+    /// Export writes the named faces without their name.
+    WriterFaceNamesOmitted,
+    /// Export writes the named bodies without their name.
+    WriterBodyNamesOmitted,
+    /// Export writes the named appearances with their name and base colour only.
+    WriterAppearanceFieldsOmitted,
+    /// Export omits the named subdivision surfaces.
+    WriterSubdOmitted,
+    /// Export writes the named configuration active, where the document states none or several.
+    WriterActiveConfigurationAssumed,
+    /// Export writes no history record for the named design records.
+    WriterFeaturesOmitted,
+    /// Export writes the sketches without the named constraints.
+    WriterSketchConstraintsOmitted,
+    /// Export bounds the named edges by their vertices, without their range.
+    WriterEdgeRangesOmitted,
     SourceDialectDisplaced,
     /// A source record states a property whose key holds no non-whitespace
     /// character, so the property cannot be keyed and is not transferred.
@@ -474,6 +490,14 @@ impl SldprtLossCode {
         Self::WriterMaterialsOmitted,
         Self::WriterTessellationMetadataOmitted,
         Self::WriterNativeEnvelopeAuxiliaryOmitted,
+        Self::WriterFaceNamesOmitted,
+        Self::WriterBodyNamesOmitted,
+        Self::WriterAppearanceFieldsOmitted,
+        Self::WriterSubdOmitted,
+        Self::WriterActiveConfigurationAssumed,
+        Self::WriterFeaturesOmitted,
+        Self::WriterSketchConstraintsOmitted,
+        Self::WriterEdgeRangesOmitted,
         Self::SourceDialectDisplaced,
         Self::SourcePropertyKeyBlank,
         Self::AssemblyStructureNotTransferred,
@@ -620,6 +644,14 @@ impl SldprtLossCode {
             Self::WriterNativeEnvelopeAuxiliaryOmitted => {
                 "writer.native-envelope-auxiliary-omitted"
             }
+            Self::WriterFaceNamesOmitted => "writer.face-names-omitted",
+            Self::WriterBodyNamesOmitted => "writer.body-names-omitted",
+            Self::WriterAppearanceFieldsOmitted => "writer.appearance-fields-omitted",
+            Self::WriterSubdOmitted => "writer.subd-omitted",
+            Self::WriterActiveConfigurationAssumed => "writer.active-configuration-assumed",
+            Self::WriterFeaturesOmitted => "writer.features-omitted",
+            Self::WriterSketchConstraintsOmitted => "writer.sketch-constraints-omitted",
+            Self::WriterEdgeRangesOmitted => "writer.edge-ranges-omitted",
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::SourcePropertyKeyBlank => "source.property-key-blank",
             Self::MetadataPartRootUnsupported => "metadata.part-root-unsupported",
@@ -664,6 +696,14 @@ impl SldprtLossCode {
         match self {
             Self::WriterTessellationMetadataOmitted => Severity::Warning,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => Severity::Warning,
+            Self::WriterFaceNamesOmitted => Severity::Warning,
+            Self::WriterBodyNamesOmitted => Severity::Warning,
+            Self::WriterAppearanceFieldsOmitted => Severity::Warning,
+            Self::WriterSubdOmitted => Severity::Warning,
+            Self::WriterActiveConfigurationAssumed => Severity::Warning,
+            Self::WriterFeaturesOmitted => Severity::Warning,
+            Self::WriterSketchConstraintsOmitted => Severity::Warning,
+            Self::WriterEdgeRangesOmitted => Severity::Warning,
             Self::WriterUnboundAppearancesOmitted => Severity::Warning,
             Self::WriterMaterialsOmitted => Severity::Warning,
             Self::WriterAttributesOmitted => Severity::Warning,
@@ -807,6 +847,14 @@ impl SldprtLossCode {
         match self {
             Self::WriterTessellationMetadataOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterFaceNamesOmitted => LossTaxonomy::AttributesNotTransferred,
+            Self::WriterBodyNamesOmitted => LossTaxonomy::AttributesNotTransferred,
+            Self::WriterAppearanceFieldsOmitted => LossTaxonomy::AppearanceReduced,
+            Self::WriterSubdOmitted => LossTaxonomy::SubdOmitted,
+            Self::WriterActiveConfigurationAssumed => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterFeaturesOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterSketchConstraintsOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterEdgeRangesOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::WriterUnboundAppearancesOmitted => LossTaxonomy::AppearanceReduced,
             Self::WriterMaterialsOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
@@ -1239,6 +1287,14 @@ mod tests {
                 "writer.materials-omitted",
                 "writer.tessellation-metadata-omitted",
                 "writer.native-envelope-auxiliary-omitted",
+                "writer.face-names-omitted",
+                "writer.body-names-omitted",
+                "writer.appearance-fields-omitted",
+                "writer.subd-omitted",
+                "writer.active-configuration-assumed",
+                "writer.features-omitted",
+                "writer.sketch-constraints-omitted",
+                "writer.edge-ranges-omitted",
                 "target.source-dialect-displaced",
                 "source.property-key-blank",
                 "assembly.structure-not-transferred",

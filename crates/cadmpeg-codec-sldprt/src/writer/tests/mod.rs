@@ -14,6 +14,7 @@ mod normalization;
 mod parameters_extrude;
 mod patterns_history;
 mod record_losses;
+mod reductions;
 mod reemitted_lanes;
 mod replace_face;
 mod round_trip;

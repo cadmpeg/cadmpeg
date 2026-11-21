@@ -14,7 +14,7 @@ use cadmpeg_core::container::ContainerRole;
 
 use std::io::Cursor;
 
-use crate::writer::tests::configuration_carriers::semantic_writer_rejects_subds;
+use crate::writer::tests::configuration_carriers::semantic_writer_omits_subds_and_names_them;
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::write::Encoder;
@@ -289,8 +289,7 @@ fn retained_writer_pipeline_regenerates_geometry_and_preserves_unedited_sections
 }
 
 #[test]
-fn authored_with_retained_native_envelope_writer_pipeline_round_trips_a_cube_and_rejects_unrepresentable_ir(
-) {
+fn authored_with_retained_native_envelope_writer_pipeline_round_trips_a_cube_and_omits_subds() {
     let first = EditableDecodeResult::from(encode_decode_result(&source_less_cube()));
     assert_eq!(first.ir().geometry.faces.len(), 6);
     assert_eq!(first.ir().geometry.edges.len(), 12);
@@ -304,7 +303,7 @@ fn authored_with_retained_native_envelope_writer_pipeline_round_trips_a_cube_and
         crate::decode::document_local_sha256(first.ir()).unwrap(),
         crate::decode::document_local_sha256(second.ir()).unwrap()
     );
-    semantic_writer_rejects_subds();
+    semantic_writer_omits_subds_and_names_them();
 }
 
 // --------------------------------------------------------------------------

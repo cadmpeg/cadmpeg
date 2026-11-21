@@ -304,10 +304,15 @@ where
 
 /// `export:edit.dropped`: the output holds these records of `kind` as the
 /// source file stores them, without the document's edit (§3.4, Paths item 4).
-/// The message names each record.
+/// Each entry names a record, or the file where the writer's digests do not
+/// isolate the record.
 #[must_use]
-pub fn edit_dropped(kind: EntityKind, message: impl Into<String>) -> LossNote {
-    ExportLossCode::EditDropped(kind).note(message)
+pub fn edit_dropped<I, S>(kind: EntityKind, format: &str, reason: &str, ids: I) -> Option<LossNote>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    listed(ExportLossCode::EditDropped(kind), format, reason, ids)
 }
 
 /// `export:output.empty`: the written file holds no geometry (§3.5).

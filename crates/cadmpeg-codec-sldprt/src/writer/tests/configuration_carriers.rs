@@ -5,7 +5,7 @@
 use cadmpeg_test_support::EditableDecodeResult;
 
 use cadmpeg_ir::codec::write::target::TargetRequest;
-use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -353,11 +353,22 @@ fn encoder_writes_authored_with_retained_native_envelope_neutral_configurations(
         .configurations
         .iter_mut()
         .for_each(|configuration| configuration.active = false);
-    let error = crate::test_support::plan_inherited_write(&inactive, &fidelity, &mut Vec::new())
-        .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("requires exactly one active configuration"));
+    let report = SldprtCodec
+        .plan(
+            EncodeInput::new(&inactive, Some(&fidelity)),
+            TargetRequest::Inherit,
+        )
+        .unwrap()
+        .report()
+        .clone();
+    let assumed = report
+        .losses
+        .iter()
+        .find(|loss| loss.code.local_code() == "writer.active-configuration-assumed")
+        .unwrap();
+    assert!(assumed
+        .message
+        .contains(inactive.model.configurations[0].id.as_str()));
 }
 
 #[test]
@@ -1170,32 +1181,7 @@ fn semantic_writer_rejects_invalid_ir_without_panicking() {
 }
 
 #[test]
-fn semantic_writer_rejects_unrepresented_typed_fields() {
-    let decoded = SldprtCodec
-        .decode(
-            &mut Cursor::new(sldprt_with_body(&triangle_body())),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let mut decoded = EditableDecodeResult::from(decoded);
-    {
-        let mut ir = decoded.ir_mut();
-        let edge = &mut ir.geometry.edges[0];
-        edge.carrier =
-            cadmpeg_ir::topology::EdgeCarrier::new(edge.curve().cloned(), Some([0.0, 1.0]))
-                .unwrap();
-    }
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
-}
-
-#[test]
-pub(crate) fn semantic_writer_rejects_subds() {
+pub(crate) fn semantic_writer_omits_subds_and_names_them() {
     let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&triangle_body())),
@@ -1215,17 +1201,18 @@ pub(crate) fn semantic_writer_rejects_subds() {
             native_ref: None,
         });
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::NotImplemented(message)
-            if message.contains("does not support SubD surfaces")
-    ));
+    let report = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap()
+        .report()
+        .clone();
+    assert!(report.losses.iter().any(|loss| {
+        loss.code.local_code() == "writer.subd-omitted"
+            && loss.message.contains("test:sldprt:subd#0")
+    }));
 }
 
 #[test]

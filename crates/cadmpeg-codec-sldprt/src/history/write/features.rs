@@ -356,16 +356,6 @@ pub(in crate::history) fn sync_neutral_features(
         .map(|body| (body.id.clone(), body.id.as_str().to_owned()))
         .collect::<HashMap<_, _>>();
     for feature in features {
-        if feature
-            .source_tag
-            .as_deref()
-            .is_some_and(|tag| !valid_xml_name(tag))
-        {
-            return Err(CodecError::malformed(format_args!(
-                "SLDPRT feature {} has an invalid source tag",
-                feature.id
-            )));
-        }
         let mut existing = native
             .feature_histories
             .iter_mut()
@@ -437,7 +427,11 @@ pub(in crate::history) fn sync_neutral_features(
             }
         });
         if let Some(existing) = existing.as_mut() {
-            if let Some(tag) = &feature.source_tag {
+            if let Some(tag) = feature
+                .source_tag
+                .as_ref()
+                .filter(|tag| valid_xml_name(tag))
+            {
                 existing.xml_tag.clone_from(tag);
             }
             existing.ordinal = ordinal;

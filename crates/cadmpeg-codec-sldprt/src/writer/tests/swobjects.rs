@@ -194,7 +194,7 @@ fn semantic_writer_emits_face_records_deterministically() {
 }
 
 #[test]
-fn encoder_rejects_source_less_unresolved_extrusion_profile() {
+fn encoder_drops_a_source_less_extrusion_with_an_unresolved_profile() {
     use cadmpeg_ir::features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
         FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
@@ -238,13 +238,18 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
         native_ref: None,
     });
 
-    let error = SldprtCodec
+    let report = SldprtCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("requires retained extrusion profile data"));
+        .unwrap()
+        .report()
+        .clone();
+    assert!(report.losses.iter().any(|loss| {
+        loss.code.local_code() == "writer.features-omitted"
+            && loss
+                .message
+                .contains("requires retained extrusion profile data")
+            && loss.message.contains("synthetic:test:feature#extrude")
+    }));
 }
 
 #[test]
@@ -916,7 +921,7 @@ fn encoder_writes_authored_with_retained_native_envelope_spatial_point_and_line_
 }
 
 #[test]
-fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
+fn encoder_drops_a_source_less_sketch_constraint_it_cannot_write() {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
         Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
@@ -973,14 +978,18 @@ fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
         native_ref: None,
     });
 
-    let error = SldprtCodec
+    let report = SldprtCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
-    assert!(error
-        .to_string()
-        .contains("requires an owning sketch feature"));
+        .unwrap()
+        .report()
+        .clone();
+    assert!(report.losses.iter().any(|loss| {
+        loss.code.local_code() == "writer.sketch-constraints-omitted"
+            && loss.message.contains("requires an owning sketch feature")
+            && loss
+                .message
+                .contains("synthetic:test:constraint#horizontal")
+    }));
 }
 
 /// A finite millimetre length whose product with the length scale is not
@@ -1390,8 +1399,9 @@ fn a_null_metadata_value_keeps_the_retained_record_and_charges_a_loss() {
         .unwrap();
     assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Error);
     assert!(
-        loss.message
-            .starts_with("2 sldprt metadata attribute record(s) state a null value"),
+        loss.message.starts_with(
+            "the SLDPRT write names sldprt metadata attribute records that state a null value"
+        ) && loss.message.contains(" (2): "),
         "{}",
         loss.message
     );
@@ -1669,4 +1679,29 @@ fn an_edited_configuration_manager_keeps_its_retained_tuple_and_charges_a_loss()
     let (written, losses) = written_metadata(&ir, &fidelity);
     assert_eq!(written, original);
     losses.assert_charged(Held::Source, "cannot add, regenerate or edit in place", &id);
+}
+
+/// A part-record word wider than 32 bits is a value the record cannot hold:
+/// `export:value.unwritable` names the attribute (§3.4).
+#[test]
+fn a_part_record_word_wider_than_32_bits_is_a_value_unwritable() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+    let id = "sldprt:metadata:part_record#0:6";
+    let attribute = SourceAttribute {
+        id: cadmpeg_ir::ids::AttributeId::mint(id).unwrap(),
+        target: AttributeTarget::Document.into(),
+        name: "part_record".into(),
+        values: vec![Some(AttributeValue::Integer(1 << 32))],
+        native_ref: None,
+    };
+    assert!(matches!(
+        crate::writer::MetadataRecord::project(&attribute, 1.0, |_| Ok(())),
+        Err(Unwritten::TooWide)
+    ));
+    let mut unwritten = UnwrittenAttributes::default();
+    unwritten.record(id, Unwritten::TooWide, crate::writer::Held::Source);
+    let notes = unwritten.notes();
+    assert_eq!(notes.len(), 1);
+    assert_eq!(notes[0].code.local_code(), "value.unwritable");
+    assert!(notes[0].message.contains(id), "{}", notes[0].message);
 }
