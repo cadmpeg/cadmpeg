@@ -3052,14 +3052,14 @@ pub(crate) fn brep_body(
 }
 
 /// The first node index of a stream (`parasolid.md` §1).
-const FIRST_NODE_INDEX: u16 = 2;
+const FIRST_NODE_INDEX: u32 = 2;
 
 /// The partition body with its attributes allocated from `first`.
 pub(crate) fn brep_body_from(
     ir: &CadIr,
     length_scale: f64,
     schema_32001: bool,
-    first: u16,
+    first: u32,
 ) -> Result<Vec<u8>, CodecError> {
     if let Some(body) = ir
         .geometry
@@ -3189,7 +3189,7 @@ pub(crate) fn brep_body_from(
             surfaces[&surface.id],
             surface_marker(solved),
             &values,
-        );
+        )?;
     }
     for curve in &ir.geometry.curves {
         if derived_sphere_seam_curves.contains(&curve.id) {
@@ -3224,7 +3224,7 @@ pub(crate) fn brep_body_from(
                 CURVE_ALONG_EDGES_MARKER
             },
             &values,
-        );
+        )?;
     }
     let face_owners = ir
         .geometry
@@ -3248,7 +3248,7 @@ pub(crate) fn brep_body_from(
     };
     for point in &ir.geometry.points {
         tag(&mut out, 0x1d);
-        be16(&mut out, points[&point.id]);
+        pointer(&mut out, points[&point.id])?;
         be32(&mut out, 0);
         out.extend_from_slice(&[0; 8]);
         for value in [
@@ -3261,10 +3261,10 @@ pub(crate) fn brep_body_from(
     }
     for vertex in &ir.geometry.vertices {
         tag(&mut out, 0x12);
-        be16(&mut out, vertices[&vertex.id]);
+        pointer(&mut out, vertices[&vertex.id])?;
         be32(&mut out, 0);
         for value in [0, 0, 0, 0, points[&vertex.point]] {
-            be16(&mut out, value);
+            pointer(&mut out, value)?;
         }
         if let Some(tolerance) = vertex.tolerance {
             let value = tolerance.get() * length_scale;
@@ -3278,7 +3278,7 @@ pub(crate) fn brep_body_from(
         } else {
             out.extend_from_slice(&MAGIC);
         }
-        be16(&mut out, vertex_owners[&vertex.id]);
+        pointer(&mut out, vertex_owners[&vertex.id])?;
     }
     let mut canonical_fins = HashMap::new();
     for coedge in &ir.geometry.coedges {
@@ -3303,9 +3303,9 @@ pub(crate) fn brep_body_from(
             )));
         }
         tag(&mut out, 0x10);
-        be16(&mut out, edges[&edge.id]);
+        pointer(&mut out, edges[&edge.id])?;
         be32(&mut out, 0);
-        be16(&mut out, 0);
+        pointer(&mut out, 0)?;
         out.extend_from_slice(&MAGIC);
         // The canonical forward FIN, stated so that an edge with several
         // forward FINs still names one (§4).
@@ -3321,9 +3321,9 @@ pub(crate) fn brep_body_from(
             0,
             0,
         ] {
-            be16(&mut out, value);
+            pointer(&mut out, value)?;
         }
-        be16(&mut out, *owner);
+        pointer(&mut out, *owner)?;
     }
     let mut edges_by_id = HashMap::new();
     for edge in &ir.geometry.edges {
@@ -3339,7 +3339,7 @@ pub(crate) fn brep_body_from(
     }
     for coedge in &ir.geometry.coedges {
         tag(&mut out, 0x11);
-        be16(&mut out, coedges[&coedge.id]);
+        pointer(&mut out, coedges[&coedge.id])?;
         let edge = edges_by_id.get(&coedge.edge).copied().ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "coedge references missing edge: {}",
@@ -3374,7 +3374,7 @@ pub(crate) fn brep_body_from(
             0,
             0,
         ] {
-            be16(&mut out, value);
+            pointer(&mut out, value)?;
         }
         out.push(
             if reversed_edges.stored_sense(&coedge.edge, coedge.sense) == Sense::Forward {
@@ -3395,9 +3395,9 @@ pub(crate) fn brep_body_from(
             ))
         })?;
         tag(&mut out, 0x11);
-        be16(&mut out, *fin);
+        pointer(&mut out, *fin)?;
         for value in [0, loops[&lp.id], *fin, *fin, vertex, 0, 0, 0, 0] {
-            be16(&mut out, value);
+            pointer(&mut out, value)?;
         }
         out.push(0x3f);
     }
@@ -3427,24 +3427,24 @@ pub(crate) fn brep_body_from(
             }
         };
         tag(&mut out, 0x0f);
-        be16(&mut out, loops[&lp.id]);
+        pointer(&mut out, loops[&lp.id])?;
         be32(&mut out, 0);
         for value in [0, first_fin, faces[&lp.face], next_loop] {
-            be16(&mut out, value);
+            pointer(&mut out, value)?;
         }
     }
     for face in &ir.geometry.faces {
         tag(&mut out, 0x0e);
-        be16(&mut out, faces[&face.id]);
+        pointer(&mut out, faces[&face.id])?;
         be32(&mut out, 0);
-        be16(&mut out, face_owners[&face.id]);
+        pointer(&mut out, face_owners[&face.id])?;
         out.extend_from_slice(&MAGIC);
         let first =
             face.loops.iter().next().ok_or_else(|| {
                 CodecError::malformed(format_args!("face has no loop: {}", face.id))
             })?;
         for value in [0, 0, loops[first], 0, surfaces[&face.surface]] {
-            be16(&mut out, value);
+            pointer(&mut out, value)?;
         }
         out.push(if face.sense == Sense::Forward {
             0x2b
@@ -3470,7 +3470,7 @@ pub(crate) fn brep_body_from(
     let mut colored_faces = face_colors.into_iter().collect::<Vec<_>>();
     colored_faces.sort_by(|(left, _), (right, _)| left.cmp(right));
     for (face, color) in colored_faces {
-        entity53(&mut out, color_attrs[&face], color);
+        entity53(&mut out, color_attrs[&face], color)?;
     }
     Ok(out)
 }
@@ -3479,19 +3479,19 @@ pub(crate) fn brep_body_from(
 /// hierarchy writers share.
 #[derive(Clone, Copy)]
 struct HierarchyIdentities<'a> {
-    body_attrs: &'a HashMap<cadmpeg_ir::ids::BodyId, u16>,
-    faces: &'a HashMap<cadmpeg_ir::ids::FaceId, u16>,
-    surfaces: &'a HashMap<cadmpeg_ir::ids::SurfaceId, u16>,
-    face_owners: &'a HashMap<cadmpeg_ir::ids::FaceId, u16>,
-    color_attrs: &'a HashMap<cadmpeg_ir::ids::FaceId, u16>,
-    face_color_definition: Option<(u16, u16)>,
+    body_attrs: &'a HashMap<cadmpeg_ir::ids::BodyId, u32>,
+    faces: &'a HashMap<cadmpeg_ir::ids::FaceId, u32>,
+    surfaces: &'a HashMap<cadmpeg_ir::ids::SurfaceId, u32>,
+    face_owners: &'a HashMap<cadmpeg_ir::ids::FaceId, u32>,
+    color_attrs: &'a HashMap<cadmpeg_ir::ids::FaceId, u32>,
+    face_color_definition: Option<(u32, u32)>,
     schema_32001: bool,
 }
 
 fn write_body_hierarchy(
     ir: &CadIr,
     identities: &HierarchyIdentities<'_>,
-    next: &mut u16,
+    next: &mut u32,
     out: &mut Vec<u8>,
 ) -> Result<(), CodecError> {
     let HierarchyIdentities {
@@ -3626,10 +3626,10 @@ fn write_body_hierarchy(
 /// without a second identity map.
 fn write_typed_body_hierarchy(
     ir: &CadIr,
-    faces: &HashMap<cadmpeg_ir::ids::FaceId, u16>,
-    surfaces: &HashMap<cadmpeg_ir::ids::SurfaceId, u16>,
-    body_attrs: &HashMap<cadmpeg_ir::ids::BodyId, u16>,
-    next: &mut u16,
+    faces: &HashMap<cadmpeg_ir::ids::FaceId, u32>,
+    surfaces: &HashMap<cadmpeg_ir::ids::SurfaceId, u32>,
+    body_attrs: &HashMap<cadmpeg_ir::ids::BodyId, u32>,
+    next: &mut u32,
     out: &mut Vec<u8>,
 ) -> Result<(), CodecError> {
     let region_attrs = ir
@@ -3676,17 +3676,17 @@ fn write_typed_body_hierarchy(
                         "SLDPRT typed topology node index exceeds the 32-bit range".into(),
                     )
                 })?,
-        );
+        )?;
         for value in [5_u32, 6, 1, 1, 1, 1] {
-            typed_ref(out, value)?;
+            pointer(out, value)?;
         }
         bef64(out, 1000.0);
         bef64(out, TYPED_BODY_LINEAR_RESOLUTION);
         for value in [1_u32, 1, 1] {
-            typed_ref(out, value)?;
+            pointer(out, value)?;
         }
         out.push(1);
-        typed_ref(out, 2_u32)?;
+        pointer(out, 2_u32)?;
         out.push(match body.kind {
             BodyKind::Solid => 1,
             BodyKind::Wire => 2,
@@ -3695,10 +3695,10 @@ fn write_typed_body_hierarchy(
         });
         out.push(1);
         for value in [first_shell, 1, 1, 1, 1, 1, 1] {
-            typed_ref(out, value)?;
+            pointer(out, value)?;
         }
         for value in [first_region, 1, 1, 1] {
-            typed_ref(out, value)?;
+            pointer(out, value)?;
         }
     }
 
@@ -3728,7 +3728,7 @@ fn write_typed_body_hierarchy(
                         "SLDPRT typed topology node index exceeds the 32-bit range".into(),
                     )
                 })?,
-        );
+        )?;
         let next_shell = region
             .shells
             .iter()
@@ -3745,7 +3745,7 @@ fn write_typed_body_hierarchy(
             region_attrs[&region.id],
             1,
         ] {
-            typed_ref(out, value)?;
+            pointer(out, value)?;
         }
     }
 
@@ -3784,9 +3784,9 @@ fn write_typed_body_hierarchy(
                         "SLDPRT typed topology node index exceeds the 32-bit range".into(),
                     )
                 })?,
-        );
+        )?;
         for value in [1, body, next_region, previous_region, shell_head] {
-            typed_ref(out, value)?;
+            pointer(out, value)?;
         }
         out.push(b'S');
     }
@@ -3808,11 +3808,11 @@ fn write_typed_body_hierarchy(
                         "SLDPRT typed topology node index exceeds the 32-bit range".into(),
                     )
                 })?,
-        );
-        typed_ref(out, 1_u32)?;
+        )?;
+        pointer(out, 1_u32)?;
         out.extend_from_slice(&MAGIC);
         for value in [1, 1, 0, shell, surfaces[&face.surface]] {
-            typed_ref(out, value)?;
+            pointer(out, value)?;
         }
         out.push(match face.sense {
             Sense::Forward => 0x2b,
@@ -3822,21 +3822,23 @@ fn write_typed_body_hierarchy(
     Ok(())
 }
 
-fn typed_prefix(out: &mut Vec<u8>, kind: u8, attr: u16, node_id: u32) {
+fn typed_prefix(out: &mut Vec<u8>, kind: u8, attr: u32, node_id: u32) -> Result<(), CodecError> {
     tag(out, kind);
     out.push(0xff);
-    be16(out, attr);
+    pointer(out, attr)?;
     be32(out, node_id);
+    Ok(())
 }
 
-/// Emit one Parasolid XT pointer in its shortest encoded form (`parasolid.md` §1).
-fn typed_ref(out: &mut Vec<u8>, value: impl Into<u32>) -> Result<(), CodecError> {
-    cadmpeg_parasolid::pointer::write(out, value.into()).ok_or_else(|| {
-        CodecError::NotImplemented("SLDPRT typed reference exceeds the XT pointer range".into())
+/// Emit one node index or node pointer in its shortest XMT form
+/// (`parasolid.md` §1): one word through `0x7fff`, two words past it.
+fn pointer(out: &mut Vec<u8>, value: u32) -> Result<(), CodecError> {
+    cadmpeg_parasolid::pointer::write(out, value).ok_or_else(|| {
+        CodecError::NotImplemented("SLDPRT pointer exceeds the XT pointer range".into())
     })
 }
 
-fn fixed_refs(values: &[u16], message: &str) -> Result<[u16; 6], CodecError> {
+fn fixed_refs(values: &[u32], message: &str) -> Result<[u32; 6], CodecError> {
     if values.len() > 6 {
         return Err(CodecError::NotImplemented(message.into()));
     }
@@ -3888,19 +3890,20 @@ pub(super) fn face_colors_and_unwritten_bindings(
     (colors, unwritten)
 }
 
-fn entity53(out: &mut Vec<u8>, attr: u16, color: Color) {
+fn entity53(out: &mut Vec<u8>, attr: u32, color: Color) -> Result<(), CodecError> {
     tag(out, 0x53);
     be32(out, 3);
-    be16(out, attr);
+    pointer(out, attr)?;
     for value in [color.r(), color.g(), color.b()] {
         bef64(out, value);
     }
+    Ok(())
 }
 
 fn attribute_definition(
     out: &mut Vec<u8>,
-    key_node: u16,
-    definition_node: u16,
+    key_node: u32,
+    definition_node: u32,
 ) -> Result<(), CodecError> {
     const FAMILY: &[u8] = b"SDL/TYSA_COLOUR";
     tag(out, 0x4f);
@@ -3910,16 +3913,16 @@ fn attribute_definition(
             CodecError::NotImplemented("SLDPRT attribute family name is too long".into())
         })?,
     );
-    be16(out, key_node);
+    pointer(out, key_node)?;
     out.extend_from_slice(FAMILY);
     tag(out, 0x50);
     be32(out, 1);
-    be16(out, definition_node);
-    be16(out, 1);
-    be16(out, key_node);
+    pointer(out, definition_node)?;
+    pointer(out, 1)?;
+    pointer(out, key_node)?;
     be32(out, 8001);
     out.extend([0; 8]);
-    be16(out, 1);
+    pointer(out, 1)?;
     let mut legal_owners = [0; 14];
     legal_owners[4] = 1;
     out.extend(legal_owners);
@@ -3929,10 +3932,10 @@ fn attribute_definition(
 
 fn write_face_list(
     out: &mut Vec<u8>,
-    owners: &[u16],
-    next: &mut u16,
-    disc: u16,
-) -> Result<u16, CodecError> {
+    owners: &[u32],
+    next: &mut u32,
+    disc: u32,
+) -> Result<u32, CodecError> {
     let chunks = owners.chunks(5).collect::<Vec<_>>();
     // The list always states a head node: an empty owner run writes the one
     // node that names no face. The head is a value, so the answer is not an
@@ -3942,7 +3945,7 @@ fn write_face_list(
         .chain((1..chunks.len()).map(|_| take_attr(next)))
         .collect::<Result<Vec<_>, CodecError>>()?;
     for (index, attr) in attrs.iter().enumerate() {
-        let mut refs = [0u16; 6];
+        let mut refs = [0u32; 6];
         refs[0] = attrs.get(index + 1).copied().unwrap_or(0);
         if let Some(chunk) = chunks.get(index) {
             refs[1..=chunk.len()].copy_from_slice(chunk);
@@ -3955,9 +3958,9 @@ fn write_face_list(
 fn entity51(
     out: &mut Vec<u8>,
     flags: u8,
-    attr: u16,
-    disc: u16,
-    refs: &[u16; 6],
+    attr: u32,
+    disc: u32,
+    refs: &[u32; 6],
 ) -> Result<(), CodecError> {
     if !(1..=0x20).contains(&flags) {
         return Err(CodecError::NotImplemented(
@@ -3966,14 +3969,14 @@ fn entity51(
     }
     tag(out, 0x51);
     be32(out, u32::from(flags));
-    be16(out, attr);
+    pointer(out, attr)?;
     be32(out, 1);
-    be16(out, disc);
+    pointer(out, disc)?;
     for reference in refs {
-        be16(out, *reference);
+        pointer(out, *reference)?;
     }
     for _ in 1..flags {
-        be16(out, 1);
+        pointer(out, 1)?;
     }
     Ok(())
 }
@@ -4129,9 +4132,9 @@ pub(super) fn surface_values(
 
 fn write_nurbs_curve(
     out: &mut Vec<u8>,
-    wrapper: u16,
+    wrapper: u32,
     nurbs: &NurbsCurve,
-    next: &mut u16,
+    next: &mut u32,
     length_scale: f64,
     entity: &str,
 ) -> Result<(), CodecError> {
@@ -4158,11 +4161,14 @@ fn write_nurbs_curve(
     })?;
     let rational = nurbs.weights().is_some();
     tag(out, 0x86);
-    be16(out, wrapper);
-    be16(out, descriptor);
-    out.extend_from_slice(&[0; 8]);
+    pointer(out, wrapper)?;
+    be32(out, 0);
+    out.extend_from_slice(&[0; 10]);
+    out.push(b'+');
+    pointer(out, descriptor)?;
+    pointer(out, 0)?;
     tag(out, 0x88);
-    be16(out, descriptor);
+    pointer(out, descriptor)?;
     be16(out, degree);
     be32(out, control_count);
     be16(out, if rational { 4 } else { 3 });
@@ -4170,7 +4176,7 @@ fn write_nurbs_curve(
     out.push(0);
     out.extend_from_slice(&[u8::from(nurbs.periodic()), 0, u8::from(rational), 0]);
     for attr in [control, multiplicity, knots] {
-        be16(out, attr);
+        pointer(out, attr)?;
     }
     let poles = homogeneous_poles(nurbs.pole_rows(), length_scale)?;
     f64_array(out, 0x2d, control, poles.into_iter(), entity)?;
@@ -4192,9 +4198,9 @@ fn write_nurbs_curve(
 
 fn write_nurbs_surface(
     out: &mut Vec<u8>,
-    wrapper: u16,
+    wrapper: u32,
     nurbs: &NurbsSurface,
-    next: &mut u16,
+    next: &mut u32,
     length_scale: f64,
     entity: &str,
 ) -> Result<(), CodecError> {
@@ -4244,14 +4250,14 @@ fn write_nurbs_surface(
     let u_knots = take_attr(next)?;
     let v_knots = take_attr(next)?;
     tag(out, 0x7c);
-    be16(out, wrapper);
+    pointer(out, wrapper)?;
     be32(out, 1);
     out.extend_from_slice(&[0; 10]);
     out.push(if nurbs.normal_reversed() { b'-' } else { b'+' });
-    be16(out, descriptor);
-    be16(out, 0);
+    pointer(out, descriptor)?;
+    pointer(out, 0)?;
     tag(out, 0x7e);
-    be16(out, descriptor);
+    pointer(out, descriptor)?;
     out.extend_from_slice(&[u8::from(nurbs.u_periodic()), u8::from(nurbs.v_periodic())]);
     be16(out, u_degree);
     be16(out, v_degree);
@@ -4265,7 +4271,7 @@ fn write_nurbs_surface(
     out.push(0x0c);
     be16(out, dimension);
     for attr in [control, u_multiplicity, v_multiplicity, u_knots, v_knots] {
-        be16(out, attr);
+        pointer(out, attr)?;
     }
     f64_array(out, 0x2d, control, poles.into_iter(), entity)?;
     u16_array(
@@ -4297,17 +4303,14 @@ fn write_nurbs_surface(
     Ok(())
 }
 
-fn take_attr(next: &mut u16) -> Result<u16, CodecError> {
+fn take_attr(next: &mut u32) -> Result<u32, CodecError> {
     let attr = *next;
-    // Bare records receive each attr and reference as a one-word cell.
-    if attr > 0x7fff {
+    if attr > cadmpeg_parasolid::pointer::MAX_VALUE {
         return Err(CodecError::NotImplemented(
-            "SLDPRT attribute space exhausted".into(),
+            "SLDPRT attribute space exhausted: the XT pointer range ends at 1073709056".into(),
         ));
     }
-    *next = next
-        .checked_add(1)
-        .ok_or_else(|| CodecError::NotImplemented("SLDPRT attribute space exhausted".into()))?;
+    *next = attr + 1;
     Ok(attr)
 }
 
@@ -4413,7 +4416,7 @@ fn unique_knots(knots: &[f64], entity: &str) -> Result<Vec<(f64, NonZeroU16)>, C
 fn f64_array(
     out: &mut Vec<u8>,
     kind: u8,
-    attr: u16,
+    attr: u32,
     values: impl ExactSizeIterator<Item = f64>,
     entity: &str,
 ) -> Result<(), CodecError> {
@@ -4425,7 +4428,7 @@ fn f64_array(
     tag(out, kind);
     out.push(0x2b);
     be32(out, count);
-    be16(out, attr);
+    pointer(out, attr)?;
     for value in values {
         bef64(out, value);
     }
@@ -4434,7 +4437,7 @@ fn f64_array(
 
 fn u16_array(
     out: &mut Vec<u8>,
-    attr: u16,
+    attr: u32,
     values: impl ExactSizeIterator<Item = u16>,
     entity: &str,
 ) -> Result<(), CodecError> {
@@ -4446,7 +4449,7 @@ fn u16_array(
     tag(out, 0x7f);
     out.push(0x2b);
     be32(out, count);
-    be16(out, attr);
+    pointer(out, attr)?;
     for value in values {
         be16(out, value);
     }
@@ -4632,15 +4635,22 @@ const CURVE_ALONG_EDGES_MARKER: u8 = 0x2b;
 /// its parameter.
 const CURVE_AGAINST_EDGES_MARKER: u8 = 0x2d;
 
-fn compact(out: &mut Vec<u8>, kind: u8, attr: u16, marker: u8, values: &[f64]) {
+fn compact(
+    out: &mut Vec<u8>,
+    kind: u8,
+    attr: u32,
+    marker: u8,
+    values: &[f64],
+) -> Result<(), CodecError> {
     tag(out, kind);
-    be16(out, attr);
+    pointer(out, attr)?;
     be32(out, 0);
     out.extend_from_slice(&[0; 10]);
     out.push(marker);
     for value in values {
         bef64(out, *value);
     }
+    Ok(())
 }
 fn parasolid_stream(body: &[u8], schema: &str) -> Result<Vec<u8>, CodecError> {
     parasolid_stream_named(body, schema, "partition body")
@@ -4714,7 +4724,7 @@ fn bef64(out: &mut Vec<u8>, value: f64) {
 #[cfg(test)]
 mod nurbs_write_tests {
     use super::{
-        pmi_local_sha256, take_attr, typed_ref, unique_knots, write_nurbs_surface,
+        pmi_local_sha256, pointer, take_attr, unique_knots, write_nurbs_surface,
         PMI_LOCAL_DIGEST_ATTRIBUTE,
     };
     use cadmpeg_core::CodecError;
@@ -4885,21 +4895,27 @@ mod nurbs_write_tests {
             (32_768 * 32_767_u32, vec![0x80, 0x01, 0x7f, 0xff]),
         ] {
             let mut bytes = Vec::new();
-            typed_ref(&mut bytes, value).expect("reference is representable");
+            pointer(&mut bytes, value).expect("reference is representable");
             assert_eq!(bytes, expected, "encoded reference {value:#x}");
         }
 
         assert!(matches!(
-            typed_ref(&mut Vec::new(), cadmpeg_parasolid::pointer::MAX_VALUE + 1),
+            pointer(&mut Vec::new(), cadmpeg_parasolid::pointer::MAX_VALUE + 1),
             Err(CodecError::NotImplemented(message))
                 if message.contains("XT pointer range")
         ));
     }
 
     #[test]
-    fn attribute_space_ends_at_the_one_word_cell_range() {
+    fn attribute_space_ends_at_the_xt_pointer_range() {
         let mut next = 0x7fff;
         assert_eq!(take_attr(&mut next).expect("one-word attr"), 0x7fff);
+        assert_eq!(take_attr(&mut next).expect("two-word attr"), 0x8000);
+        let mut next = cadmpeg_parasolid::pointer::MAX_VALUE;
+        assert_eq!(
+            take_attr(&mut next).expect("largest attr"),
+            cadmpeg_parasolid::pointer::MAX_VALUE
+        );
         assert!(matches!(
             take_attr(&mut next),
             Err(CodecError::NotImplemented(message)) if message.contains("attribute space")

@@ -110,27 +110,61 @@ fn short_index(buf: &[u8], at: usize) -> Option<u32> {
     super::word_at(buf, at).filter(|node| *node > 1 && *node <= u32::from(i16::MAX.unsigned_abs()))
 }
 
-fn definition_frame(buf: &[u8], p: usize) -> Option<(u32, Vec<u8>)> {
-    let identifier = short_index(buf, p + attr_def::IDENTIFIER)?;
-    if [attr_def::NEXT_DEFINITION, attr_def::FIELD_NAMES]
-        .into_iter()
-        .any(|offset| {
-            super::word_at(buf, p + offset)
-                .is_none_or(|index| index > u32::from(i16::MAX.unsigned_abs()))
-        })
-    {
-        return None;
-    }
+/// The pointer at layout offset `offset` of the body at `p`, after earlier
+/// wide pointers moved it by `shift` bytes; `shift` grows by two when this one
+/// is wide (§5).
+fn shifted_pointer(buf: &[u8], p: usize, offset: usize, shift: &mut usize) -> Option<u32> {
+    let start = p.checked_add(offset)?.checked_add(*shift)?;
+    let mut at = start;
+    let value = cadmpeg_parasolid::pointer::read_at(buf, &mut at)?;
+    *shift += at - start - std::mem::size_of::<u16>();
+    Some(value)
+}
+
+/// The head of the `00 50` body at `p`: its node index, identifier and field
+/// count, after a complete next-definition pointer, and the bytes its wide
+/// pointers add.
+struct DefinitionHead {
+    node: u32,
+    identifier: u32,
+    count: u32,
+    shift: usize,
+}
+
+fn definition_head(buf: &[u8], p: usize) -> Option<DefinitionHead> {
     let count = View::u32_be_at(buf, p + attr_def::FIELD_COUNT)?;
-    let fields_start = p.checked_add(attr_def::LEN)?;
+    let mut shift = 0;
+    let node = shifted_pointer(buf, p, attr_def::NODE_INDEX, &mut shift)?;
+    shifted_pointer(buf, p, attr_def::NEXT_DEFINITION, &mut shift)?;
+    let identifier = shifted_pointer(buf, p, attr_def::IDENTIFIER, &mut shift)?;
+    Some(DefinitionHead {
+        node,
+        identifier,
+        count,
+        shift,
+    })
+}
+
+/// The identifier, the record bytes and the offset of the field types in
+/// them, for a complete definition whose head is `head`.
+fn definition_frame(buf: &[u8], p: usize, head: &DefinitionHead) -> Option<(u32, Vec<u8>, usize)> {
+    (head.identifier > 1).then_some(())?;
+    let mut shift = head.shift;
+    shifted_pointer(buf, p, attr_def::FIELD_NAMES, &mut shift)?;
+    let owners = p + attr_def::LEGAL_OWNERS + shift;
+    let fields_start = p + attr_def::LEN + shift;
     let available = buf.len().checked_sub(fields_start)?;
-    let count = cadmpeg_core::decode::bounded_len(u64::from(count), 1, available)?;
-    let owners = buf.get(p + attr_def::LEGAL_OWNERS..fields_start)?;
+    let count = cadmpeg_core::decode::bounded_len(u64::from(head.count), 1, available)?;
+    let owners = buf.get(owners..fields_start)?;
     let fields = &buf[fields_start..fields_start + count];
     if owners.iter().any(|value| *value > 1) || fields.iter().any(|value| *value > 10) {
         return None;
     }
-    Some((identifier, buf[p..fields_start + count].to_vec()))
+    Some((
+        head.identifier,
+        buf[p..fields_start + count].to_vec(),
+        fields_start - p,
+    ))
 }
 
 struct NamedDefinition {
@@ -147,10 +181,10 @@ fn definition_candidates(buf: &[u8]) -> HashMap<u32, Option<NamedDefinition>> {
         let Some(len) = View::u32_be_at(buf, p) else {
             continue;
         };
-        let Some(node) = short_index(buf, p + 4) else {
-            continue;
-        };
-        let Some(data) = p.checked_add(6) else {
+        let mut data = p + 4;
+        let Some(node) =
+            cadmpeg_parasolid::pointer::read_at(buf, &mut data).filter(|node| *node > 1)
+        else {
             continue;
         };
         let Some(available) = buf.len().checked_sub(data) else {
@@ -172,32 +206,28 @@ fn definition_candidates(buf: &[u8]) -> HashMap<u32, Option<NamedDefinition>> {
         let Some(p) = record_body(buf, off, 0x50) else {
             continue;
         };
-        let Some(node) = short_index(buf, p + attr_def::NODE_INDEX) else {
+        let Some(head) = definition_head(buf, p).filter(|head| head.node > 1) else {
             continue;
         };
-        if let Some(frame) = definition_frame(buf, p) {
-            consistent_insert(&mut definitions, node, frame);
-        } else if short_index(buf, p + attr_def::IDENTIFIER)
-            .is_some_and(|identifier| names.contains_key(&identifier))
-            && super::word_at(buf, p + attr_def::NEXT_DEFINITION)
-                .is_some_and(|next| next <= u32::from(i16::MAX.unsigned_abs()))
-            && View::u32_be_at(buf, p + attr_def::FIELD_COUNT).is_some_and(|count| {
-                u64::from(count) <= cadmpeg_core::decode::u64_from_index(buf.len() - p)
-            })
+        if let Some(frame) = definition_frame(buf, p, &head) {
+            consistent_insert(&mut definitions, head.node, frame);
+        } else if head.identifier > 1
+            && names.contains_key(&head.identifier)
+            && u64::from(head.count) <= cadmpeg_core::decode::u64_from_index(buf.len() - p)
             && buf
-                .get(p + attr_def::ACTIONS..p + attr_def::FIELD_NAMES)
+                .get(p + attr_def::ACTIONS + head.shift..p + attr_def::FIELD_NAMES + head.shift)
                 .is_some_and(|actions| actions.iter().all(|action| *action <= 6))
         {
-            definitions.insert(node, None);
+            definitions.insert(head.node, None);
         }
     }
     definitions
         .into_iter()
         .map(|(node, schema)| {
-            let definition = schema.and_then(|(identifier, body)| {
+            let definition = schema.and_then(|(identifier, body, fields)| {
                 Some(NamedDefinition {
                     name: String::from_utf8(names.get(&identifier)?.clone()?).ok()?,
-                    fields: body[attr_def::LEN..].to_vec(),
+                    fields: body[fields..].to_vec(),
                 })
             });
             (node, definition)
@@ -805,6 +835,32 @@ mod tests {
     }
 
     #[test]
+    fn wide_key_and_definition_indices_name_their_family() {
+        // parasolid.md §1: 0x8000 = 1 * 32767 + 1, 36 225 = 1 * 32767 + 3458.
+        let definition = [0xff, 0xff, 0x00, 0x01];
+        let name = [0xf2, 0x7e, 0x00, 0x01];
+        let mut bytes = vec![0x00, 0x4f];
+        bytes.extend(
+            u32::try_from(FACE_ID.len())
+                .expect("family length fits u32")
+                .to_be_bytes(),
+        );
+        bytes.extend(name);
+        bytes.extend(FACE_ID.as_bytes());
+        bytes.extend([0x00, 0x50]);
+        bytes.extend(4_u32.to_be_bytes());
+        bytes.extend(definition);
+        bytes.extend(1_u16.to_be_bytes());
+        bytes.extend(name);
+        bytes.extend(9000_u32.to_be_bytes());
+        bytes.extend([0; 8]);
+        bytes.extend(1_u16.to_be_bytes());
+        bytes.extend([0; 14]);
+        bytes.extend([9, 9, 1, 1]);
+        assert_eq!(definitions(&bytes).get(&0x8000), Some(&FACE_ID));
+    }
+
+    #[test]
     fn definition_names_follow_identifier_pointers_across_record_order() {
         let mut first = Vec::new();
         append_definition(&mut first, FACE_ID, 41, 91);
@@ -889,14 +945,12 @@ mod tests {
     }
 
     #[test]
-    fn extended_field_name_references_do_not_use_short_header_offsets() {
+    fn a_wide_field_names_pointer_moves_the_owner_and_field_type_bytes() {
         let mut bytes = Vec::new();
         append_definition(&mut bytes, FACE_ID, 41, 91);
         let field_names = 8 + FACE_ID.len() + 24;
         bytes.splice(field_names..field_names + 2, [0xff, 0xff, 0, 1]);
-        assert!(definition_table(&bytes)
-            .get(&91)
-            .is_some_and(Option::is_none));
+        assert_eq!(definitions(&bytes).get(&91), Some(&FACE_ID));
     }
 
     #[test]

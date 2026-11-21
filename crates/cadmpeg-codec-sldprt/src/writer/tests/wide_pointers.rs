@@ -32,7 +32,7 @@ fn nurbs_triangle() -> CadIr {
         .clone()
 }
 
-fn read_back(ir: &CadIr, first: u16) -> CadIr {
+fn read_back(ir: &CadIr, first: u32) -> CadIr {
     let body = crate::writer::brep_body_from(ir, 0.001, false, first)
         .unwrap_or_else(|error| panic!("partition from attr {first:#x}: {error}"));
     let native = crate::test_support::container::sldprt_with_body(&body);
