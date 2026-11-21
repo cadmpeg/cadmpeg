@@ -5,19 +5,23 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
-use cadmpeg_ir::design::expr::{self as expr, Expression, ExpressionToken};
+use cadmpeg_ir::design::expr::{self as expr, Expression, ExpressionDialect, ExpressionToken};
 use cadmpeg_ir::design::options::NativeOptions;
 use cadmpeg_ir::design::parameter::{DesignParameter, ParameterDefinition, ParameterValue};
 use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::ParameterId;
-use cadmpeg_ir::report::check::Check;
+use cadmpeg_ir::report::check::{Check, Finding};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::scalar::FiniteReal;
 
 use super::line::{self, Line, Parsed, Segment};
 use super::translate::{self, Typing};
-use super::{walk, Names, Walk, MANAGER, RELATION, SIDE};
+use super::{
+    active_lines, link, walk, Linking, Manager, Managers, Names, Unread, Walk, MANAGER, RELATION,
+    SIDE,
+};
 use crate::loss::SldprtLossCode;
 use crate::test_support::container::{make_block, native_envelope_fixture, sldprt_with_body};
 use crate::test_support::history::resolved_feature_classes_with_ids;
@@ -336,13 +340,17 @@ fn messages(losses: &[LossNote], code: SldprtLossCode) -> Vec<&str> {
         .collect()
 }
 
-fn assert_no_design_findings(ir: &CadIr) {
-    let report = cadmpeg_ir::validate_neutral(ir, Vec::new()).unwrap();
-    let design = report
+fn design_findings(ir: &CadIr) -> Vec<Finding> {
+    cadmpeg_ir::validate_neutral(ir, Vec::new())
+        .unwrap()
         .findings
-        .iter()
+        .into_iter()
         .filter(|finding| finding.check == Check::Design)
-        .collect::<Vec<_>>();
+        .collect()
+}
+
+fn assert_no_design_findings(ir: &CadIr) {
+    let design = design_findings(ir);
     assert!(design.is_empty(), "{design:#?}");
 }
 
@@ -437,7 +445,7 @@ fn equation_manager_lines_link_the_parameters_they_assign() {
 }
 
 #[test]
-fn lines_that_form_a_cycle_or_assign_twice_are_not_read() {
+fn lines_on_a_cycle_are_stated_and_lines_that_assign_twice_are_not_read() {
     let (ir, losses) = decode_with(&[(
         "Contents/Config-0",
         manager(&[
@@ -448,20 +456,253 @@ fn lines_that_form_a_cycle_or_assign_twice_are_not_read() {
             "\"D6@Boss\" = \"D1@Boss\" * 3",
         ]),
     )]);
-    for name in ["D2", "D3", "D4", "D6"] {
-        assert!(
-            matches!(
-                &parameter(&ir, name).definition,
-                ParameterDefinition::Expression(Expression::Neutral(neutral))
-                    if expr::print(&neutral.0).unwrap().refs.is_empty()
-            ),
-            "{name}: {:?}",
-            parameter(&ir, name).definition
-        );
-    }
+    let (d2, d3, d4) = (
+        parameter(&ir, "D2"),
+        parameter(&ir, "D3"),
+        parameter(&ir, "D4"),
+    );
+    assert_eq!(
+        neutral_text(d2),
+        ("$0 * 2".to_owned(), vec![reference_to(d3)])
+    );
+    assert_eq!(
+        neutral_text(d3),
+        ("$0 / 2".to_owned(), vec![reference_to(d2)])
+    );
+    assert_eq!(
+        neutral_text(d4),
+        ("$0 * 1".to_owned(), vec![reference_to(d4)])
+    );
+    assert!(neutral_text(parameter(&ir, "D6")).1.is_empty());
     let unread = messages(&losses, SldprtLossCode::DesignEquationUnread);
-    assert_eq!(unread.len(), 2, "{unread:?}");
-    assert_no_design_findings(&ir);
+    assert!(
+        unread.len() == 1 && unread[0].contains("D6@Boss"),
+        "{unread:?}"
+    );
+    let design = design_findings(&ir);
+    assert!(
+        design.len() == 2
+            && design
+                .iter()
+                .all(|finding| finding.severity == Severity::Warning
+                    && finding.message.contains("cycle")),
+        "{design:#?}"
+    );
+}
+
+#[test]
+fn a_bare_link_whose_caches_disagree_is_neutral() {
+    let (ir, losses) =
+        decode_with(&[("Contents/Config-0", manager(&["\"D4@Boss\" = \"D1@Boss\""]))]);
+    let d4 = parameter(&ir, "D4");
+    assert_eq!(
+        neutral_text(d4),
+        ("$0".to_owned(), vec![reference_to(parameter(&ir, "D1"))])
+    );
+    assert!(losses
+        .iter()
+        .all(|loss| loss.code != SldprtLossCode::DesignEquationSource.kind()));
+    let design = design_findings(&ir);
+    assert!(
+        !design.is_empty()
+            && design
+                .iter()
+                .all(|finding| finding.severity == Severity::Warning
+                    && finding.entity.as_deref() == Some(d4.id.as_str())),
+        "{design:#?}"
+    );
+}
+
+/// A parameter of the scope with a cache and an unread definition.
+fn valued(name: &str, kind: ValueKind, value: ParameterValue) -> DesignParameter {
+    DesignParameter {
+        definition: ParameterDefinition::Expression(Expression::Source {
+            dialect: ExpressionDialect::SolidWorks,
+            tokens: Vec::new(),
+        }),
+        value: Some(value),
+        ..global(name, kind)
+    }
+}
+
+fn number(value: f64) -> ParameterValue {
+    ParameterValue::Number(FiniteReal::new(value).unwrap())
+}
+
+/// `lines`, the one manager's, read into `parameters`.
+fn linked(parameters: &mut Vec<DesignParameter>, lines: &[&str]) -> Vec<LossNote> {
+    let managers = Managers(vec![Manager {
+        slot: 0,
+        lines: Walk::Lines(lines.iter().map(|line| (*line).to_owned()).collect()),
+    }]);
+    link(
+        parameters,
+        &Linking {
+            managers: &managers,
+            scope: &super::super::root_definition(),
+            active: None,
+            features: &[],
+            length_unit: None,
+            tolerances: &CadIr::empty().tolerances,
+        },
+    )
+}
+
+#[test]
+fn an_integer_parameter_takes_the_rounded_line_unless_it_links_an_integer() {
+    let real = ValueKind::Quantity(Quantity::REAL);
+    let mut parameters = vec![
+        valued("n", ValueKind::Integer, ParameterValue::Integer(8)),
+        valued("k", ValueKind::Integer, ParameterValue::Integer(2)),
+        valued("c", ValueKind::Integer, ParameterValue::Integer(5)),
+        valued("m", ValueKind::Integer, ParameterValue::Integer(5)),
+        valued("W", real.clone(), number(2.5)),
+        valued("r", real, number(4.0)),
+    ];
+    let losses = linked(
+        &mut parameters,
+        &[
+            "\"n\" = \"W\" * 3",
+            "\"k\" = \"W\"",
+            "\"c\" = \"m\"",
+            "\"r\" = \"m\"",
+        ],
+    );
+    let [rounded, disagreeing, count_link, count, width, real_link] = &parameters[..] else {
+        panic!("{parameters:#?}");
+    };
+    assert_eq!(
+        neutral_text(rounded),
+        ("round($0 * 3)".to_owned(), vec![reference_to(width)])
+    );
+    assert_eq!(
+        source_tokens(disagreeing),
+        [ExpressionToken::Text("\"W\"".into())],
+        "round(2.5) is 3, not the stored 2"
+    );
+    assert_eq!(
+        neutral_text(count_link),
+        ("$0".to_owned(), vec![reference_to(count)])
+    );
+    assert_eq!(
+        neutral_text(real_link),
+        ("$0".to_owned(), vec![reference_to(count)])
+    );
+    let kept = messages(&losses, SldprtLossCode::DesignEquationSource);
+    assert!(
+        kept.len() == 1 && kept[0].contains(disagreeing.id.as_str()),
+        "{kept:?}"
+    );
+}
+
+fn managers(stored: &[(usize, Option<&[&str]>)]) -> Managers {
+    Managers(
+        stored
+            .iter()
+            .map(|(slot, lines)| Manager {
+                slot: *slot,
+                lines: lines.map_or(Walk::Stopped, |lines| {
+                    Walk::Lines(lines.iter().map(|line| (*line).to_owned()).collect())
+                }),
+            })
+            .collect(),
+    )
+}
+
+fn outcome(
+    managers: &Managers,
+    active: Option<usize>,
+) -> Result<Vec<Result<String, Unread>>, Unread> {
+    active_lines(managers, active).map(|lines| {
+        lines
+            .into_iter()
+            .map(|line| line.map(|line| line.name).map_err(|(why, _)| why))
+            .collect()
+    })
+}
+
+#[test]
+fn the_active_manager_is_read_where_every_other_manager_with_lines_holds_its_line() {
+    let active: &[&str] = &[
+        "'a comment",
+        "\"A\" = \"D1@Boss\" * 2",
+        "\"B\" = 3",
+        "\"C\" = 4",
+    ];
+    let other: &[&str] = &["\"C\" = 4", "\"A\" = \"D1@Boss\" * 2", "\"B\" = 5"];
+    let empty: &[&str] = &[];
+    let stored = managers(&[(0, Some(other)), (2, Some(active)), (3, Some(empty))]);
+    assert_eq!(
+        outcome(&stored, Some(2)),
+        Ok(vec![
+            Ok("A".to_owned()),
+            Err(Unread::ConfigurationsDiffer),
+            Ok("C".to_owned()),
+        ])
+    );
+    let only_a: &[&str] = &["\"A\" = \"D1@Boss\" * 2"];
+    let lacking = managers(&[(0, Some(only_a)), (2, Some(active))]);
+    assert_eq!(
+        outcome(&lacking, Some(2)),
+        Ok(vec![
+            Ok("A".to_owned()),
+            Err(Unread::ConfigurationsDiffer),
+            Err(Unread::ConfigurationsDiffer),
+        ])
+    );
+}
+
+#[test]
+fn several_managers_read_no_line_where_one_of_them_is_not_read_or_none_is_active() {
+    let lines: &[&str] = &["\"A\" = 1", "\"B\" = 2"];
+    assert_eq!(
+        outcome(&managers(&[(0, None), (1, Some(lines))]), Some(1)),
+        Ok(vec![
+            Err(Unread::OtherManagerUnwalked),
+            Err(Unread::OtherManagerUnwalked),
+        ])
+    );
+    assert_eq!(
+        outcome(&managers(&[(0, Some(lines)), (1, None)]), Some(1)),
+        Err(Unread::ManagerUnwalked)
+    );
+    let both = managers(&[(0, Some(lines)), (1, Some(lines))]);
+    assert_eq!(outcome(&both, Some(4)), Err(Unread::NoActiveStream));
+    assert_eq!(outcome(&both, None), Err(Unread::NoActiveStream));
+    let empty: &[&str] = &[];
+    assert_eq!(
+        outcome(&managers(&[(0, Some(empty)), (1, Some(empty))]), None),
+        Ok(Vec::new())
+    );
+}
+
+#[test]
+fn a_part_that_states_no_design_names_its_equation_lines() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0",
+        &manager(&["'a comment", "\"D1@Boss\" = 2", "\"width\" = 4"]),
+    ));
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(native_envelope_fixture(&source)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(result.ir().design.parameters.is_empty());
+    let unread = messages(
+        &result.report().losses,
+        SldprtLossCode::DesignEquationUnread,
+    );
+    assert!(
+        unread.len() == 1
+            && unread[0].starts_with("2 equation-manager lines")
+            && unread[0].contains("the part states no design")
+            && unread[0].contains("D1@Boss")
+            && unread[0].contains("width"),
+        "{unread:?}"
+    );
 }
 
 #[test]

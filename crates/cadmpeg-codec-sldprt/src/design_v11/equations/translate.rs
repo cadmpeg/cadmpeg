@@ -9,9 +9,13 @@
 //! in the definition's length unit, an angle in degrees. A global variable so
 //! used becomes `$i * 1[u]`. Every other bare number is dimensionless.
 //! A non-blind operand's quantity follows from its own operands alone.
+//!
+//! The manager rounds a count's result to the nearest whole number, ties
+//! away from zero: an integer parameter's tree is `round` of the real tree,
+//! unless it is one reference to an integer parameter.
 
 use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
-use cadmpeg_ir::design::expr::{BinaryOp, Node, UnaryOp};
+use cadmpeg_ir::design::expr::{BinaryOp, Function, Node, UnaryOp};
 use cadmpeg_ir::design::parameter::DesignParameter;
 use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
 
@@ -34,7 +38,8 @@ pub(super) struct Typing<'a> {
 }
 
 /// The neutral tree of `expression`, where every construct translates and the
-/// tree's quantity is the target's.
+/// tree's quantity is the target's: dimensionless, rounded at the root, for
+/// an integer target.
 pub(super) fn tree(expression: &str, typing: &Typing<'_>) -> Option<Node<ParameterRef>> {
     let tokens = tokens(expression, typing.names)?;
     if tokens.len() > MAX_TOKENS {
@@ -47,7 +52,20 @@ pub(super) fn tree(expression: &str, typing: &Typing<'_>) -> Option<Node<Paramet
     }
     let quantity = kind_quantity(typing.target)?;
     let (node, found) = typing.node(&ast, Some(quantity), true)?;
-    (found == quantity).then_some(node)
+    if found != quantity {
+        return None;
+    }
+    let integer_reference = matches!(
+        ast,
+        Ast::Name(index) if typing.parameters[index].kind == ValueKind::Integer
+    );
+    Some(match typing.target {
+        ValueKind::Integer if !integer_reference => Node::Call {
+            function: Function::Round,
+            args: vec![node],
+        },
+        _ => node,
+    })
 }
 
 /// The tree, quantity, and canonical value of an expression that is one

@@ -7,15 +7,17 @@
 //! states the expression of the parameter it assigns, each quoted name it
 //! reads a reference to that parameter. A line whose names all resolve and
 //! whose text the neutral grammar holds is a `Neutral` tree, read by the
-//! unit-blind rule of §5.13; a tree that holds a literal or a unit-blind
-//! reference is under Rule H1 and is stated only where the document's caches
-//! agree with its evaluation. Any other line is a `Source` expression of the
-//! `SolidWorks` dialect. A parameter's kind and value are the ones its
-//! dimension states; a line changes its definition and comment only. A
-//! global variable that a line assigns and that names no parameter is a
-//! user parameter of the scope (§5.12): dimensionless, or of the quantity
-//! its literal's unit states, with the literal's value where the line is
-//! one literal.
+//! unit-blind rule of §5.13. A tree that is one reference translates exactly
+//! and is stated whatever the caches hold; any other tree holds a literal, a
+//! unit-blind reference or a rounding, is under Rule H1, and is stated only
+//! where the document's caches agree with its evaluation. Any other line is a
+//! `Source` expression of the `SolidWorks` dialect. A line on a dependency
+//! cycle is stated like any other; the cycle is the document's. A
+//! parameter's kind and value are the ones its dimension states; a line
+//! changes its definition and comment only. A global variable that a line
+//! assigns and that names no parameter is a user parameter of the scope
+//! (§5.12): dimensionless, or of the quantity its literal's unit states, with
+//! the literal's value where the line is one literal.
 
 mod line;
 mod translate;
@@ -252,12 +254,13 @@ pub(super) struct Linking<'a> {
 enum Unread {
     NoActiveStream,
     ManagerUnwalked,
+    OtherManagerUnwalked,
+    NoDesign,
     Malformed,
     AssignedTwice,
     ConfigurationsDiffer,
     NameUnresolved,
     Driven,
-    Cycle,
 }
 
 impl Unread {
@@ -265,6 +268,8 @@ impl Unread {
         match self {
             Self::NoActiveStream => "no stream of the active configuration holds the manager",
             Self::ManagerUnwalked => "the active configuration's manager is not read",
+            Self::OtherManagerUnwalked => "another configuration's manager is not read",
+            Self::NoDesign => "the part states no design",
             Self::Malformed => "the line is not a quoted name, `=`, and an expression",
             Self::AssignedTwice => "two lines assign the name",
             Self::ConfigurationsDiffer => {
@@ -272,7 +277,6 @@ impl Unread {
             }
             Self::NameUnresolved => "the assigned name names no parameter",
             Self::Driven => "the assigned parameter is a reference dimension",
-            Self::Cycle => "the line reads a parameter that depends on its own",
         }
     }
 }
@@ -307,14 +311,9 @@ impl Kept {
 /// expressions of the parameters they assign, and returns the loss notes of
 /// the lines not read and of those stated as `Source`.
 pub(super) fn link(parameters: &mut Vec<DesignParameter>, linking: &Linking<'_>) -> Vec<LossNote> {
-    let lines = match active_lines(linking) {
+    let lines = match active_lines(linking.managers, linking.active) {
         Ok(lines) => lines,
-        Err(why) => {
-            return vec![SldprtLossCode::DesignEquationUnread.note(format!(
-                "The equation-manager lines are not read into parameter expressions, because {}.",
-                why.reason()
-            ))];
-        }
+        Err(why) => return vec![manager_unread(why)],
     };
     let mut unread = Losses::default();
     let mut kept = Losses::default();
@@ -322,7 +321,6 @@ pub(super) fn link(parameters: &mut Vec<DesignParameter>, linking: &Linking<'_>)
         kept.push(Kept::Untranslated, parameters[minted].id.as_str());
     }
     let names = Names::new(parameters, linking.features);
-    let mut stated = Vec::new();
     for line in lines {
         let line = match line {
             Ok(line) => line,
@@ -351,30 +349,40 @@ pub(super) fn link(parameters: &mut Vec<DesignParameter>, linking: &Linking<'_>)
             continue;
         }
         let (expression, why) = expression(parameters, target, &line, &names, linking);
-        stated.push(Stated {
-            target,
-            name: line.name.clone(),
-            expression,
-            why,
-            comment: line.comment.clone(),
-        });
-    }
-    let cyclic = on_cycles(parameters, &stated);
-    for stated in stated {
-        if cyclic.contains(&stated.target) {
-            unread.push(Unread::Cycle, &stated.name);
-            continue;
+        if let Some(why) = why {
+            kept.push(why, parameters[target].id.as_str());
         }
-        if let Some(why) = stated.why {
-            kept.push(why, parameters[stated.target].id.as_str());
-        }
-        let parameter = &mut parameters[stated.target];
-        parameter.definition = ParameterDefinition::Expression(stated.expression);
-        if stated.comment.is_some() {
-            parameter.comment = stated.comment;
+        let parameter = &mut parameters[target];
+        parameter.definition = ParameterDefinition::Expression(expression);
+        if line.comment.is_some() {
+            parameter.comment = line.comment;
         }
     }
     unread.notes(&kept)
+}
+
+/// The loss note of the active configuration's lines, for a part that states
+/// no design.
+pub(super) fn without_design(managers: &Managers, active: Option<usize>) -> Vec<LossNote> {
+    let Ok(lines) = active_lines(managers, active) else {
+        return vec![manager_unread(Unread::NoDesign)];
+    };
+    let mut unread = Losses::default();
+    for line in &lines {
+        let name = match line {
+            Ok(line) => &line.name,
+            Err((_, name)) => name,
+        };
+        unread.push(Unread::NoDesign, name);
+    }
+    unread.notes(&Losses::default())
+}
+
+fn manager_unread(why: Unread) -> LossNote {
+    SldprtLossCode::DesignEquationUnread.note(format!(
+        "The equation-manager lines are not read into parameter expressions, because {}.",
+        why.reason()
+    ))
 }
 
 /// Mints a user parameter for each global variable a line assigns that no
@@ -451,22 +459,13 @@ fn mint(
     textual
 }
 
-/// A line's expression before the cycle check.
-struct Stated {
-    target: usize,
-    name: String,
-    expression: Expression,
-    why: Option<Kept>,
-    comment: Option<String>,
-}
-
 type LineResult = Result<Line, (Unread, String)>;
 
 /// The active configuration's lines, each parsed, with the lines another
 /// configuration's manager does not confirm refused; or, where none can be
 /// read, why.
-fn active_lines(linking: &Linking<'_>) -> Result<Vec<LineResult>, Unread> {
-    let managers = &linking.managers.0;
+fn active_lines(managers: &Managers, active: Option<usize>) -> Result<Vec<LineResult>, Unread> {
+    let managers = &managers.0;
     let holds_lines =
         |manager: &&Manager| manager.lines.lines().is_none_or(|lines| !lines.is_empty());
     if !managers.iter().any(|manager| holds_lines(&manager)) {
@@ -477,7 +476,7 @@ fn active_lines(linking: &Linking<'_>) -> Result<Vec<LineResult>, Unread> {
     } else {
         let mut matching = managers
             .iter()
-            .filter(|manager| Some(manager.slot) == linking.active);
+            .filter(|manager| Some(manager.slot) == active);
         match (matching.next(), matching.next()) {
             (Some(manager), None) => manager,
             _ => return Err(Unread::NoActiveStream),
@@ -526,14 +525,15 @@ fn active_lines(linking: &Linking<'_>) -> Result<Vec<LineResult>, Unread> {
             if twice.contains(&line.name) {
                 return Err((Unread::AssignedTwice, line.name));
             }
-            let confirmed = others.iter().all(|other| {
-                other.as_ref().is_some_and(|lines| {
-                    let mut same = lines.iter().filter(|other| other.name == line.name);
-                    matches!(
-                        (same.next(), same.next()),
-                        (Some(other), None) if other.expression == line.expression
-                    )
-                })
+            if others.iter().any(Option::is_none) {
+                return Err((Unread::OtherManagerUnwalked, line.name));
+            }
+            let confirmed = others.iter().flatten().all(|lines| {
+                let mut same = lines.iter().filter(|other| other.name == line.name);
+                matches!(
+                    (same.next(), same.next()),
+                    (Some(other), None) if other.expression == line.expression
+                )
             });
             if confirmed {
                 Ok(line)
@@ -589,10 +589,11 @@ fn expression(
         };
         return (source(parameters, line, names), Some(why));
     };
-    let bare = matches!(&tree, Node::Reference(_));
+    if matches!(&tree, Node::Reference(_)) {
+        return (Expression::Neutral(Neutral(tree)), None);
+    }
     match test(parameters, target, &tree, &reads, linking.tolerances) {
         Test::Agrees => (Expression::Neutral(Neutral(tree)), None),
-        Test::Untested if bare => (Expression::Neutral(Neutral(tree)), None),
         Test::Untested => (source(parameters, line, names), Some(Kept::Untested)),
         Test::Disagrees => (source(parameters, line, names), Some(Kept::Disagrees)),
     }
@@ -724,141 +725,6 @@ fn agree(left: &Value, right: &Value, tolerances: &Tolerances) -> bool {
         _ => RELATIVE * a.abs().max(b.abs()),
     };
     (a - b).abs() <= allowed
-}
-
-/// The parameters of the stated lines that lie on a dependency cycle, through
-/// the stated expressions and every other parameter's own.
-fn on_cycles(parameters: &[DesignParameter], stated: &[Stated]) -> HashSet<usize> {
-    let index = parameters
-        .iter()
-        .enumerate()
-        .map(|(position, parameter)| (parameter.id.as_str(), position))
-        .collect::<HashMap<_, _>>();
-    let replaced = stated
-        .iter()
-        .map(|stated| (stated.target, &stated.expression))
-        .collect::<HashMap<_, _>>();
-    let edges = (0..parameters.len())
-        .map(|position| {
-            let expression = match replaced.get(&position) {
-                Some(expression) => Some(*expression),
-                None => match &parameters[position].definition {
-                    ParameterDefinition::Expression(expression) => Some(expression),
-                    _ => None,
-                },
-            };
-            expression
-                .map(|expression| {
-                    references(expression)
-                        .into_iter()
-                        .filter_map(|id| index.get(id).copied())
-                        .collect()
-                })
-                .unwrap_or_default()
-        })
-        .collect::<Vec<Vec<usize>>>();
-    let cyclic = cyclic_nodes(&edges);
-    stated
-        .iter()
-        .map(|stated| stated.target)
-        .filter(|target| cyclic.contains(target))
-        .collect()
-}
-
-/// The ids of the parameters an expression references.
-fn references(expression: &Expression) -> Vec<&str> {
-    let mut ids = Vec::new();
-    match expression {
-        Expression::Source { tokens, .. } => {
-            for token in tokens {
-                if let ExpressionToken::Reference(ParameterRef {
-                    target: RefTarget::Parameter(id),
-                    ..
-                }) = token
-                {
-                    ids.push(id.as_str());
-                }
-            }
-        }
-        Expression::Neutral(Neutral(root)) => {
-            let mut pending = vec![root];
-            while let Some(node) = pending.pop() {
-                match node {
-                    Node::Reference(ParameterRef {
-                        target: RefTarget::Parameter(id),
-                        ..
-                    }) => ids.push(id.as_str()),
-                    Node::Unary { operand, .. } => pending.push(operand),
-                    Node::Binary { left, right, .. } => {
-                        pending.push(left);
-                        pending.push(right);
-                    }
-                    Node::Call { args, .. } => pending.extend(args),
-                    Node::If(branches) => pending.extend(branches.iter()),
-                    _ => {}
-                }
-            }
-        }
-    }
-    ids
-}
-
-/// The nodes of `edges` that lie on a cycle: those in a strongly connected
-/// component of two or more nodes, or with an edge to themselves (Tarjan's
-/// algorithm, walked without recursion).
-fn cyclic_nodes(edges: &[Vec<usize>]) -> HashSet<usize> {
-    const UNSEEN: usize = usize::MAX;
-    let mut order = vec![UNSEEN; edges.len()];
-    let mut low = vec![0; edges.len()];
-    let mut on_stack = vec![false; edges.len()];
-    let mut stack = Vec::new();
-    let mut next = 0;
-    let mut cyclic = HashSet::new();
-    for root in 0..edges.len() {
-        if order[root] != UNSEEN {
-            continue;
-        }
-        let mut frames = vec![(root, 0usize)];
-        order[root] = next;
-        low[root] = next;
-        next += 1;
-        stack.push(root);
-        on_stack[root] = true;
-        while let Some(&mut (node, ref mut edge)) = frames.last_mut() {
-            if let Some(&child) = edges[node].get(*edge) {
-                *edge += 1;
-                if order[child] == UNSEEN {
-                    order[child] = next;
-                    low[child] = next;
-                    next += 1;
-                    stack.push(child);
-                    on_stack[child] = true;
-                    frames.push((child, 0));
-                } else if on_stack[child] {
-                    low[node] = low[node].min(order[child]);
-                }
-                continue;
-            }
-            frames.pop();
-            if let Some(&(parent, _)) = frames.last() {
-                low[parent] = low[parent].min(low[node]);
-            }
-            if low[node] == order[node] {
-                let mut component = Vec::new();
-                while let Some(member) = stack.pop() {
-                    on_stack[member] = false;
-                    component.push(member);
-                    if member == node {
-                        break;
-                    }
-                }
-                if component.len() > 1 || edges[node].contains(&node) {
-                    cyclic.extend(component);
-                }
-            }
-        }
-    }
-    cyclic
 }
 
 /// The parameters an equation name reaches: `name@feature` names the

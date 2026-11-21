@@ -75,8 +75,9 @@ pub(crate) struct Part<'a> {
 /// records, and state the part's root definition. A rollback reading that
 /// does not fix the position, a configuration whose state cannot be stated, a
 /// sketch or extrude that cannot be typed, and a parameter whose literal is a
-/// rounded display add their reasons to `losses`. Returns the number of
-/// records added.
+/// rounded display add their reasons to `losses`. A part whose timeline is
+/// empty states no design, and its equation-manager lines go to `losses`.
+/// Returns the number of records added.
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -92,8 +93,10 @@ pub(crate) fn project(
         equations: managers,
         rollback,
     } = part;
+    let active = equations::active_slot(histories, ir.source.as_ref());
     let mut timeline = tree::timeline(histories)?;
     if timeline.features.is_empty() {
+        losses.extend(equations::without_design(&managers, active));
         return Ok(0);
     }
     losses.extend(order::regeneration_order(&mut timeline, &ir.model));
@@ -125,7 +128,7 @@ pub(crate) fn project(
         &equations::Linking {
             managers: &managers,
             scope: &definition,
-            active: equations::active_slot(histories, ir.source.as_ref()),
+            active,
             features: &timeline.features,
             length_unit: length,
             tolerances: &ir.tolerances,
