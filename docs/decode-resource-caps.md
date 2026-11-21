@@ -481,6 +481,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-catia` | `src/families/freeform/rolling_ball_patch.rs` | `MAX_FIT_ERROR_MM` | `0.001` | N | Maximum sampled surface fit residual in mm. Excess rejects the fit. |
 | `cadmpeg-codec-catia` | `src/families/freeform/rolling_ball_patch.rs` | `MAX_NATIVE_FIT_STATIONS` | `64` | 4 | Interior native stations used to fit one rolling-ball patch axis. Excess rejects the fit. |
 | `cadmpeg-codec-catia` | `src/families/freeform/rolling_ball_patch.rs` | `MAX_PCURVE_CANDIDATES` | `256` | 4 | Pcurve candidates admitted to the rolling-ball boundary search. Excess rejects the search. |
+| `cadmpeg-codec-catia` | `src/pmi/geometric_tolerance.rs` | `MAX_INLINE_VALUES` | `79` | 4 | Inline PMI schema/value arrays sized for one geometric tolerance's field roster. An over-cap field count or group in the tolerance's field body, or an over-cap `TolBloc` declaration, withholds the tolerance with `attributes.pmi-tolerance-untransferred`. An over-cap `TolWiDRF` declaration withholds the secondary value with `attributes.pmi-secondary-tolerance-untransferred`. An over-cap field body or declaration in the reference frame or a datum withholds the datum system: the tolerance and its secondary value transfer with `attributes.pmi-datum-system-unresolved`. |
 | `cadmpeg-codec-catia`    | `src/families/zero_entity/topology_transfer.rs`             | `MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS`     | `1_000_000`                                             | 4    | Floor of the local comparison budget for source-bound zero-entity vertex contributors. Exhaustion skips topology and reports `topology.zero-entity-candidates-bounded`. |
 | `cadmpeg-codec-catia`    | `src/families/zero_entity/topology_transfer.rs`             | `MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS_PER_SUPPORT` | `256`                                                   | 4    | Operations allowed per support occurrence above the `MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS` floor; same exhaustion and loss.                                                                                                                                                   |
 | `cadmpeg-codec-catia`    | `src/families/standard/decode.rs`                  | `MAX_BEZIER_SEARCH_NODES`                 | `1 << 16`                                               | 4    | Best-first subdivision nodes for one quintic span. A limit curve whose search reaches it binds no edge and reports `topology.standard-search-bounded`.                                                                                                                       |
@@ -569,16 +570,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 347.
+Production `MAX_*` constants: 348.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 42    |
 | 2    | Per-input bound            | 78    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 172   |
+| 4    | Local work cap             | 173   |
 | N    | Not a decode bound         | 55    |
-|      | Total                      | 347   |
+|      | Total                      | 348   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -588,7 +589,7 @@ By crate: `cadmpeg-core` 3, `cadmpeg-ir` 19, `cadmpeg-parasolid` 1, `cadmpeg-mea
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 8,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 28,
 `cadmpeg-codec-nx` 27, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 38,
-`cadmpeg-codec-catia` 79, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
+`cadmpeg-codec-catia` 80, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
 `cadmpeg-tessellate` 4.
 
 ## Routing
