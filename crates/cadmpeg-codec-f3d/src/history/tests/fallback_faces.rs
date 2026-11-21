@@ -267,11 +267,19 @@ fn bind_selected_start(
     context: &[i64],
     role: crate::records::topology::extrude_selection::DesignExtrudeFaceRole,
 ) -> (DesignFaceOperand, Vec<LossNote>) {
-    use crate::records::topology::construction::DesignConstructionOperandRole;
     use crate::records::topology::extrude_selection::DesignExtrudeFaceEncoding;
+    bind_start_encoding(context, role, DesignExtrudeFaceEncoding::SelectedStart)
+}
+
+fn bind_start_encoding(
+    context: &[i64],
+    role: crate::records::topology::extrude_selection::DesignExtrudeFaceRole,
+    encoding: crate::records::topology::extrude_selection::DesignExtrudeFaceEncoding,
+) -> (DesignFaceOperand, Vec<LossNote>) {
+    use crate::records::topology::construction::DesignConstructionOperandRole;
     let mut group = selected_start_group();
     group.operand_role = DesignConstructionOperandRole::ExtrudeFaces {
-        encoding: DesignExtrudeFaceEncoding::SelectedStart,
+        encoding,
         usage: role,
     };
     let lanes = [context, &[10]];
@@ -341,4 +349,19 @@ fn selected_start_keeps_a_face_already_bound_by_history() {
     assert!(losses.is_empty());
     assert!(start.alternate_selector_candidate_faces.is_empty());
     assert_eq!(start.resolved_face_slots, [20]);
+}
+
+#[test]
+fn standard_face_group_start_stays_native() {
+    use crate::records::topology::extrude_selection::{
+        DesignExtrudeFaceEncoding, DesignExtrudeFaceRole,
+    };
+    let (start, losses) = bind_start_encoding(
+        &[10, 20],
+        DesignExtrudeFaceRole::Start,
+        DesignExtrudeFaceEncoding::Faces,
+    );
+    assert!(losses.is_empty());
+    assert!(start.alternate_selector_candidate_faces.is_empty());
+    assert!(start.resolved_face_slots.is_empty());
 }

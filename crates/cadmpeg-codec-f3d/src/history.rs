@@ -5809,8 +5809,6 @@ fn bind_historical_face_operand_candidates<'a>(
     caches: &mut FaceOperandCaches<'a>,
     withdrawals: &mut fallback_face::Withdrawals,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use crate::records::topology::construction::DesignConstructionOperandGroup;
-
     let &FaceOperandTransition {
         scope,
         history,
@@ -5827,28 +5825,35 @@ fn bind_historical_face_operand_candidates<'a>(
     } = caches;
     let stream = crate::ids::native_stream(&operand.id);
     let feature_family = crate::design::design_feature_family(&scope.kind());
-    let extrude_face_role = if feature_family == Some(crate::design::DesignFeatureFamily::Extrude) {
-        let mut extrude_face_groups = operand_groups.iter().filter(|group| {
-            crate::ids::native_stream(&group.id) == stream
-                && group.scope_record_index == scope.record_index
-                && Some(group.record_index) == operand.group_record_index()
-                && group.extrude_face_role().is_some()
-                && operand
-                    .group_member_ordinal()
-                    .and_then(|ordinal| usize::try_from(ordinal).ok())
-                    .and_then(|ordinal| group.members().get(ordinal))
-                    .is_some_and(|member| member.value == operand.record_index())
-        });
-        extrude_face_groups
-            .next()
-            .filter(|_| extrude_face_groups.next().is_none())
-            .and_then(DesignConstructionOperandGroup::extrude_face_role)
-    } else {
-        None
-    };
+    let (extrude_face_role, selected_start_group) =
+        if feature_family == Some(crate::design::DesignFeatureFamily::Extrude) {
+            let mut extrude_face_groups = operand_groups.iter().filter(|group| {
+                crate::ids::native_stream(&group.id) == stream
+                    && group.scope_record_index == scope.record_index
+                    && Some(group.record_index) == operand.group_record_index()
+                    && group.extrude_face_role().is_some()
+                    && operand
+                        .group_member_ordinal()
+                        .and_then(|ordinal| usize::try_from(ordinal).ok())
+                        .and_then(|ordinal| group.members().get(ordinal))
+                        .is_some_and(|member| member.value == operand.record_index())
+            });
+            extrude_face_groups
+                .next()
+                .filter(|_| extrude_face_groups.next().is_none())
+                .map_or((None, false), |group| {
+                    (
+                        group.extrude_face_role(),
+                        group.role() == DesignOperandRole::ROLE_0X5,
+                    )
+                })
+        } else {
+            (None, false)
+        };
     let has_extrude_face_group = extrude_face_role.is_some();
-    let alternate_start_face = if extrude_face_role
-        == Some(crate::records::topology::extrude_selection::DesignExtrudeFaceRole::Start)
+    let alternate_start_face = if selected_start_group
+        && extrude_face_role
+            == Some(crate::records::topology::extrude_selection::DesignExtrudeFaceRole::Start)
         && operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::BoundedFace
     {
         recipe_record_indices
