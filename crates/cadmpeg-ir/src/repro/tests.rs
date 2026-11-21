@@ -2,6 +2,48 @@
 use super::*;
 use crate::report::{check::Check, Severity};
 
+#[derive(Serialize)]
+struct Spellings {
+    text: String,
+    floats: Vec<f64>,
+    single: f32,
+    nested: Vec<Vec<u8>>,
+    empty: BTreeMap<String, u8>,
+    keyed: BTreeMap<String, Option<bool>>,
+    unit: (),
+}
+
+fn spellings() -> Spellings {
+    Spellings {
+        text: "a \"quoted\" \\ text\nwith  spaces\t".into(),
+        floats: vec![f64::NAN, f64::INFINITY, -0.0, 1.5e300, 0.1],
+        single: 1.1,
+        nested: vec![Vec::new(), vec![1, 2]],
+        empty: BTreeMap::new(),
+        keyed: BTreeMap::from([("k e y".into(), None), ("x".into(), Some(true))]),
+        unit: (),
+    }
+}
+
+#[test]
+fn compact_projection_writes_the_bytes_serde_json_writes() {
+    let value = spellings();
+    let expected = serde_json::to_vec(&value).unwrap();
+    assert_eq!(compact_json(&value, usize::MAX).unwrap(), expected);
+}
+
+#[test]
+fn compact_projection_refuses_one_byte_past_its_limit() {
+    let value = spellings();
+    let length = serde_json::to_vec(&value).unwrap().len();
+    assert_eq!(compact_json(&value, length).unwrap().len(), length);
+    let error = compact_json(&value, length - 1).unwrap_err();
+    assert!(
+        matches!(&error, CodecError::Malformed(message) if message == "fragment byte limit exceeded"),
+        "{error}"
+    );
+}
+
 #[test]
 fn repro_signature_ignores_identity_numbers_and_value_for_hash() {
     let mut finding = Finding {
