@@ -7,6 +7,7 @@ use cadmpeg_ir::features::{
     SplitBodyTool,
 };
 use cadmpeg_ir::ids::FeatureResultTopologyId;
+use cadmpeg_ir::CadIr;
 
 pub(crate) fn body(value: &str) -> BodyId {
     BodyId::mint(format!("test:model:body#{value}")).expect("synthetic body id")
@@ -99,6 +100,7 @@ fn partial_tools_and_aliased_tools_keep_the_whole_tool_selection_native() {
 fn split_and_body_motion_resolve_and_validate_only_complete_distinct_selections() {
     let plane = FeatureId::mint("test:model:feature#plane").expect("synthetic plane");
     let split = FeatureDefinition::Operation(FeatureOperation::SplitBody {
+        extend_tool: None,
         targets: BodySelection::Native("target".into()),
         tool: SplitBodyTool::Plane { plane },
     });
@@ -110,6 +112,7 @@ fn split_and_body_motion_resolve_and_validate_only_complete_distinct_selections(
         copies: 0,
     });
     let surface_split = FeatureDefinition::Operation(FeatureOperation::SplitBody {
+        extend_tool: None,
         targets: BodySelection::Native("target".into()),
         tool: SplitBodyTool::Faces(cadmpeg_ir::features::FaceSelection::Native(
             "surface".into(),
@@ -133,8 +136,8 @@ fn split_and_body_motion_resolve_and_validate_only_complete_distinct_selections(
 
 #[test]
 fn unresolved_result_wrappers_emit_the_pinned_loss() {
-    let mut model = Model::default();
-    model
+    let mut ir = CadIr::empty();
+    ir.model
         .feature_result_topologies
         .push(FeatureResultTopology::new(
             FeatureResultTopologyId::mint("test:model:feature-result#result")
@@ -149,30 +152,32 @@ fn unresolved_result_wrappers_emit_the_pinned_loss() {
             .expect("members"),
             Some("selection".into()),
         ));
-    let losses = native_losses(&model, &HashMap::new());
+    let losses = native_losses(&ir.model, &HashMap::new());
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].code.local_code(), "feature.body-selection-native");
     assert_eq!(
         losses[0].code,
         crate::loss::InventorLossCode::FeatureBodySelectionNative.kind()
     );
-    assert!(native_losses(&model, &joins()).is_empty());
-    let feature = model.feature_result_topologies[0].output_of.clone();
-    assert!(
-        outputs(&feature, &model.feature_result_topologies, &HashMap::new())
-            .expect("one result")
-            .is_empty()
-    );
+    assert!(native_losses(&ir.model, &joins()).is_empty());
+    let feature = ir.model.feature_result_topologies[0].output_of.clone();
+    assert!(outputs(
+        &feature,
+        &ir.model.feature_result_topologies,
+        &HashMap::new()
+    )
+    .expect("one result")
+    .is_empty());
     assert_eq!(
-        &*outputs(&feature, &model.feature_result_topologies, &joins()).expect("one result"),
+        &*outputs(&feature, &ir.model.feature_result_topologies, &joins()).expect("one result"),
         &[body("body:target")]
     );
     assert!(outputs(&feature, &[], &joins()).is_none());
-    model
+    ir.model
         .feature_result_topologies
-        .push(model.feature_result_topologies[0].clone());
-    assert!(outputs(&feature, &model.feature_result_topologies, &joins()).is_none());
-    assert_eq!(native_losses(&model, &joins()).len(), 1);
+        .push(ir.model.feature_result_topologies[0].clone());
+    assert!(outputs(&feature, &ir.model.feature_result_topologies, &joins()).is_none());
+    assert_eq!(native_losses(&ir.model, &joins()).len(), 1);
 }
 
 pub(crate) fn metadata() -> crate::native::SegmentMetaRecord {
@@ -322,15 +327,15 @@ fn shared_body_join_requires_one_wrapper_link_key_and_document_body() {
         link: link.id(),
         reference: crate::pmdc::PmDcReference::from_packed(1),
     };
-    let mut model = Model::default();
-    model.bodies.push(cadmpeg_ir::topology::Body {
+    let mut geometry = Topology::default();
+    geometry.bodies.push(cadmpeg_ir::topology::Body {
         id: key.body.clone(),
         kind: cadmpeg_ir::topology::BodyKind::default(),
-        regions: vec![],
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     let metadata = [metadata()];
     let roots = [root()];
@@ -342,8 +347,8 @@ fn shared_body_join_requires_one_wrapper_link_key_and_document_body() {
                links: &[PmDcKernelEntityLink],
                joins: &[WrapperLink],
                keys: &[BodyNativeKey],
-               model: &Model| {
-        body_map(wrappers, links, joins, &carrier(), keys, model, &scope)
+               geometry: &Topology| {
+        body_map(wrappers, links, joins, &carrier(), keys, geometry, &scope)
     };
     assert_eq!(
         map(
@@ -351,7 +356,7 @@ fn shared_body_join_requires_one_wrapper_link_key_and_document_body() {
             std::slice::from_ref(&link),
             std::slice::from_ref(&join),
             std::slice::from_ref(&key),
-            &model
+            &geometry
         )
         .get(&wrapper.id()),
         Some(&key.body)
@@ -363,7 +368,7 @@ fn shared_body_join_requires_one_wrapper_link_key_and_document_body() {
         std::slice::from_ref(&link),
         &[wrong_reference],
         std::slice::from_ref(&key),
-        &model
+        &geometry
     )
     .is_empty());
     let mut wrong_type = wrapper.clone();
@@ -373,7 +378,7 @@ fn shared_body_join_requires_one_wrapper_link_key_and_document_body() {
         std::slice::from_ref(&link),
         std::slice::from_ref(&join),
         std::slice::from_ref(&key),
-        &model
+        &geometry
     )
     .is_empty());
     let mut wrong_payloads = vec![(*link).clone(); 5];
@@ -407,7 +412,7 @@ fn shared_body_join_requires_one_wrapper_link_key_and_document_body() {
             &[wrong],
             &[relation],
             std::slice::from_ref(&key),
-            &model
+            &geometry
         )
         .is_empty());
     }
@@ -429,69 +434,69 @@ fn shared_body_join_requires_one_wrapper_link_key_and_document_body() {
             std::slice::from_ref(&link),
             &[relation],
             std::slice::from_ref(&key),
-            &model
+            &geometry
         )
         .is_empty());
     }
-    for (wrappers, links, joins, keys, model) in [
+    for (wrappers, links, joins, keys, geometry) in [
         (
             vec![],
             vec![link.clone()],
             vec![join.clone()],
             vec![key.clone()],
-            model.clone(),
+            geometry.clone(),
         ),
         (
             vec![wrapper.clone(), wrapper.clone()],
             vec![link.clone()],
             vec![join.clone()],
             vec![key.clone()],
-            model.clone(),
+            geometry.clone(),
         ),
         (
             vec![wrapper.clone()],
             vec![],
             vec![join.clone()],
             vec![key.clone()],
-            model.clone(),
+            geometry.clone(),
         ),
         (
             vec![wrapper.clone()],
             vec![link.clone(), link.clone()],
             vec![join.clone()],
             vec![key.clone()],
-            model.clone(),
+            geometry.clone(),
         ),
         (
             vec![wrapper.clone()],
             vec![link.clone()],
             vec![join.clone(), join.clone()],
             vec![key.clone()],
-            model.clone(),
+            geometry.clone(),
         ),
         (
             vec![wrapper.clone()],
             vec![link.clone()],
             vec![join.clone()],
             vec![],
-            model.clone(),
+            geometry.clone(),
         ),
         (
             vec![wrapper.clone()],
             vec![link.clone()],
             vec![join.clone()],
             vec![key.clone(), key.clone()],
-            model.clone(),
+            geometry.clone(),
         ),
         (
             vec![wrapper.clone()],
             vec![link.clone()],
             vec![join.clone()],
             vec![key.clone()],
-            Model::default(),
+            Topology::default(),
         ),
     ] {
-        assert!(map(&wrappers, &links, &joins, &keys, &model).is_empty());
+        assert!(map(&wrappers, &links, &joins, &keys, &geometry).is_empty());
     }
 }
 
@@ -523,8 +528,8 @@ fn body_selection_refuses_missing_groups_partial_motion_and_aliased_motion() {
 fn combine_target_and_producing_feature_outputs_share_the_result_wrapper_join() {
     use cadmpeg_ir::features::{DistinctMembers, Feature, FeatureContent, FeatureEvaluation};
     let id = FeatureId::mint("test:model:feature#combine").expect("synthetic feature");
-    let mut model = Model::default();
-    model.features.push(Feature {
+    let mut ir = CadIr::empty();
+    ir.model.features.push(Feature {
         id: id.clone(),
         ordinal: 0,
         name: None,
@@ -540,7 +545,7 @@ fn combine_target_and_producing_feature_outputs_share_the_result_wrapper_join() 
         native_ref: None,
         product_definition: None,
     });
-    model
+    ir.model
         .feature_result_topologies
         .push(FeatureResultTopology::new(
             FeatureResultTopologyId::mint("test:model:feature-result#result")
@@ -555,18 +560,18 @@ fn combine_target_and_producing_feature_outputs_share_the_result_wrapper_join() 
             .expect("members"),
             Some("selector".into()),
         ));
-    project(&mut model, &joins(), &FeatureInventory::default());
-    let feature = &model.features[0];
+    project(&mut ir, &joins(), &FeatureInventory::default());
+    let feature = &ir.model.features[0];
     assert_eq!(feature.evaluation.outputs(), &[body("body:target")]);
     assert!(outputs_match(
         feature,
-        &model.feature_result_topologies,
+        &ir.model.feature_result_topologies,
         &joins()
     ));
     assert!(!outputs_match(feature, &[], &joins()));
     assert!(!outputs_match(
         feature,
-        &model.feature_result_topologies,
+        &ir.model.feature_result_topologies,
         &HashMap::new()
     ));
     let mut wrong = feature.clone();
@@ -575,12 +580,12 @@ fn combine_target_and_producing_feature_outputs_share_the_result_wrapper_join() 
         .set_outputs(vec![body("body:tool")].try_into().expect("one body"));
     assert!(!outputs_match(
         &wrong,
-        &model.feature_result_topologies,
+        &ir.model.feature_result_topologies,
         &joins()
     ));
     let duplicate = [
-        model.feature_result_topologies[0].clone(),
-        model.feature_result_topologies[0].clone(),
+        ir.model.feature_result_topologies[0].clone(),
+        ir.model.feature_result_topologies[0].clone(),
     ];
     assert!(!outputs_match(feature, &duplicate, &joins()));
     wrong.evaluation.set_outputs(DistinctMembers::default());
@@ -602,14 +607,14 @@ fn combine_target_and_producing_feature_outputs_share_the_result_wrapper_join() 
     );
     assert_eq!(
         feature.evaluation.outputs().as_slice(),
-        &*outputs(&id, &model.feature_result_topologies, &joins()).expect("one result")
+        &*outputs(&id, &ir.model.feature_result_topologies, &joins()).expect("one result")
     );
     assert_ne!(
         feature.evaluation.outputs().as_slice(),
         &[body("body:tool")]
     );
     assert_eq!(
-        model.feature_result_topologies[0].bodies()[0].as_str(),
+        ir.model.feature_result_topologies[0].bodies()[0].as_str(),
         "target"
     );
 }
@@ -628,8 +633,8 @@ fn combine_keeps_native_operands_when_current_body_identities_overlap() {
 #[test]
 fn producing_outputs_keep_exact_joins_in_member_order_and_report_missing_wrappers() {
     let feature = FeatureId::mint("test:model:feature#producer").expect("synthetic feature");
-    let mut model = Model::default();
-    model
+    let mut ir = CadIr::empty();
+    ir.model
         .feature_result_topologies
         .push(FeatureResultTopology::new(
             FeatureResultTopologyId::mint("test:model:feature-result#ordered")
@@ -648,14 +653,14 @@ fn producing_outputs_keep_exact_joins_in_member_order_and_report_missing_wrapper
             Some("result".into()),
         ));
     assert_eq!(
-        &*outputs(&feature, &model.feature_result_topologies, &joins()).expect("one result"),
+        &*outputs(&feature, &ir.model.feature_result_topologies, &joins()).expect("one result"),
         &[body("body:other"), body("body:target")]
     );
     assert_eq!(
-        native_losses(&model, &joins())[0].code,
+        native_losses(&ir.model, &joins())[0].code,
         crate::loss::InventorLossCode::FeatureBodySelectionNative.kind()
     );
-    assert_eq!(model.feature_result_topologies[0].bodies().len(), 3);
+    assert_eq!(ir.model.feature_result_topologies[0].bodies().len(), 3);
 }
 
 #[test]
@@ -689,8 +694,8 @@ fn trim_body_selections_resolve_distinct_bodies_and_report_native_operands() {
             missing
         );
         assert!(matches(source.clone(), &actual, &bodies, None));
-        let mut model = Model::default();
-        model.features.push(Feature {
+        let mut ir = CadIr::empty();
+        ir.model.features.push(Feature {
             id: FeatureId::mint("test:model:feature#trim").expect("feature"),
             ordinal: 0,
             name: None,
@@ -704,7 +709,7 @@ fn trim_body_selections_resolve_distinct_bodies_and_report_native_operands() {
             native_ref: None,
             product_definition: None,
         });
-        let losses = native_losses(&model, &bodies);
+        let losses = native_losses(&ir.model, &bodies);
         assert_eq!(losses.len(), usize::from(missing));
         if missing {
             assert_eq!(losses[0].code.local_code(), "feature.body-selection-native");
@@ -729,24 +734,24 @@ fn wrapper_at(ordinal: u32) -> PmDcFeatureProperty {
     property
 }
 
-fn model_with_bodies(names: &[(&str, Option<&str>)]) -> Model {
-    let mut model = Model::default();
+fn model_with_bodies(names: &[(&str, Option<&str>)]) -> CadIr {
+    let mut ir = CadIr::empty();
     for (id, name) in names {
-        model.bodies.push(cadmpeg_ir::topology::Body {
+        ir.geometry.bodies.push(cadmpeg_ir::topology::Body {
             id: body(id),
             kind: cadmpeg_ir::topology::BodyKind::default(),
-            regions: vec![],
             transform: None,
             name: name.map(str::to_owned),
             color: None,
             visible: None,
+            native_ref: None,
         });
     }
-    model
+    ir
 }
 
-fn names(model: &Model) -> Vec<Option<&str>> {
-    model
+fn names(ir: &CadIr) -> Vec<Option<&str>> {
+    ir.geometry
         .bodies
         .iter()
         .map(|body| body.name.as_deref())
@@ -760,7 +765,7 @@ fn name_label(owner: u32, index: u32) -> crate::feature::PmDcFeatureLabel {
 }
 
 fn named(
-    model: &mut Model,
+    ir: &mut CadIr,
     wrappers: Vec<PmDcFeatureProperty>,
     labels: Vec<crate::feature::PmDcFeatureLabel>,
     joined: &[(&PmDcFeatureProperty, &str)],
@@ -774,107 +779,107 @@ fn named(
         labels,
         ..FeatureInventory::default()
     };
-    project(model, &joins, &inventory);
+    project(ir, &joins, &inventory);
 }
 
 #[test]
 fn body_takes_the_stored_name_of_the_label_that_owns_its_wrapper() {
     let (first, second) = (wrapper_at(7), wrapper_at(9));
-    let mut model = model_with_bodies(&[("body:a", None), ("body:b", None)]);
+    let mut ir = model_with_bodies(&[("body:a", None), ("body:b", None)]);
     named(
-        &mut model,
+        &mut ir,
         vec![first.clone(), second.clone()],
         vec![name_label(7, 3), name_label(9, 4)],
         &[(&first, "body:a"), (&second, "body:b")],
     );
-    assert_eq!(names(&model), [Some("Feature 3"), Some("Feature 4")]);
+    assert_eq!(names(&ir), [Some("Feature 3"), Some("Feature 4")]);
 }
 
 #[test]
 fn a_label_names_only_the_body_of_its_own_wrapper() {
     let (first, second) = (wrapper_at(7), wrapper_at(9));
-    let mut model = model_with_bodies(&[("body:a", None), ("body:b", None)]);
+    let mut ir = model_with_bodies(&[("body:a", None), ("body:b", None)]);
     named(
-        &mut model,
+        &mut ir,
         vec![first.clone(), second.clone()],
         vec![name_label(7, 3)],
         &[(&first, "body:a"), (&second, "body:b")],
     );
-    assert_eq!(names(&model), [Some("Feature 3"), None]);
+    assert_eq!(names(&ir), [Some("Feature 3"), None]);
 }
 
 #[test]
 fn a_body_without_a_label_or_join_keeps_no_name() {
     let wrapper = wrapper_at(7);
     // No label owns the wrapper.
-    let mut model = model_with_bodies(&[("body:a", None)]);
+    let mut ir = model_with_bodies(&[("body:a", None)]);
     named(
-        &mut model,
+        &mut ir,
         vec![wrapper.clone()],
         vec![name_label(8, 3)],
         &[(&wrapper, "body:a")],
     );
-    assert_eq!(names(&model), [None]);
+    assert_eq!(names(&ir), [None]);
     // The label owns the wrapper but the wrapper joins no body.
-    let mut model = model_with_bodies(&[("body:a", None)]);
-    named(&mut model, vec![wrapper], vec![name_label(7, 3)], &[]);
-    assert_eq!(names(&model), [None]);
+    let mut ir = model_with_bodies(&[("body:a", None)]);
+    named(&mut ir, vec![wrapper], vec![name_label(7, 3)], &[]);
+    assert_eq!(names(&ir), [None]);
 }
 
 #[test]
 fn ambiguous_label_or_wrapper_joins_leave_the_body_unnamed() {
     let (first, second) = (wrapper_at(7), wrapper_at(9));
     // Two labels own one wrapper.
-    let mut model = model_with_bodies(&[("body:a", None)]);
+    let mut ir = model_with_bodies(&[("body:a", None)]);
     named(
-        &mut model,
+        &mut ir,
         vec![first.clone()],
         vec![name_label(7, 3), name_label(7, 4)],
         &[(&first, "body:a")],
     );
-    assert_eq!(names(&model), [None]);
+    assert_eq!(names(&ir), [None]);
     // Two wrappers join one body.
-    let mut model = model_with_bodies(&[("body:a", None)]);
+    let mut ir = model_with_bodies(&[("body:a", None)]);
     named(
-        &mut model,
+        &mut ir,
         vec![first.clone(), second.clone()],
         vec![name_label(7, 3), name_label(9, 4)],
         &[(&first, "body:a"), (&second, "body:a")],
     );
-    assert_eq!(names(&model), [None]);
+    assert_eq!(names(&ir), [None]);
 }
 
 #[test]
 fn only_a_surface_body_wrapper_supplies_a_body_name() {
     let mut other = wrapper_at(7);
     other.identity.type_id = crate::record_identity::RecordTypeId::from_bytes([1; 16]);
-    let mut model = model_with_bodies(&[("body:a", None)]);
+    let mut ir = model_with_bodies(&[("body:a", None)]);
     named(
-        &mut model,
+        &mut ir,
         vec![other.clone()],
         vec![name_label(7, 3)],
         &[(&other, "body:a")],
     );
-    assert_eq!(names(&model), [None]);
+    assert_eq!(names(&ir), [None]);
 }
 
 #[test]
 fn an_existing_body_name_is_not_replaced() {
     let wrapper = wrapper_at(7);
-    let mut model = model_with_bodies(&[("body:a", Some("stored"))]);
+    let mut ir = model_with_bodies(&[("body:a", Some("stored"))]);
     named(
-        &mut model,
+        &mut ir,
         vec![wrapper.clone()],
         vec![name_label(7, 3)],
         &[(&wrapper, "body:a")],
     );
-    assert_eq!(names(&model), [Some("stored")]);
+    assert_eq!(names(&ir), [Some("stored")]);
 }
 
 #[test]
 fn a_composite_member_link_join_does_not_count_as_a_second_wrapper() {
     let wrapper = wrapper_at(7);
-    let mut model = model_with_bodies(&[("body:a", None)]);
+    let mut ir = model_with_bodies(&[("body:a", None)]);
     let joins = HashMap::from([
         (wrapper.id(), body("body:a")),
         (
@@ -887,8 +892,8 @@ fn a_composite_member_link_join_does_not_count_as_a_second_wrapper() {
         labels: vec![name_label(7, 3)],
         ..FeatureInventory::default()
     };
-    project(&mut model, &joins, &inventory);
-    assert_eq!(names(&model), [Some("Feature 3")]);
+    project(&mut ir, &joins, &inventory);
+    assert_eq!(names(&ir), [Some("Feature 3")]);
 }
 
 #[test]
@@ -943,8 +948,8 @@ fn body_mirror_pattern_seeds_resolve_with_the_wrapper_joins_and_stay_local_witho
         .expect("mirror"),
     });
     let model_of = |definition: FeatureDefinition| {
-        let mut model = Model::default();
-        model.features.push(Feature {
+        let mut ir = CadIr::empty();
+        ir.model.features.push(Feature {
             id: FeatureId::mint("test:model:feature#pattern").expect("feature"),
             ordinal: 0,
             name: None,
@@ -958,7 +963,7 @@ fn body_mirror_pattern_seeds_resolve_with_the_wrapper_joins_and_stay_local_witho
             native_ref: None,
             product_definition: None,
         });
-        model
+        ir.model
     };
     assert!(native_losses(&model_of(actual), &joins()).is_empty());
     let losses = native_losses(&model_of(unresolved), &missing);
@@ -1178,8 +1183,8 @@ fn local_plane_trim_target_counts_in_the_unjoined_body_loss() {
     use cadmpeg_ir::features::{DistinctMembers, Feature, FeatureContent, FeatureEvaluation};
     let mut actual = plane_trim(BodySelection::Native("target".into()));
     split_local(&mut actual, &["target".to_owned()].into(), true);
-    let mut model = Model::default();
-    model.features.push(Feature {
+    let mut ir = CadIr::empty();
+    ir.model.features.push(Feature {
         id: FeatureId::mint("test:model:feature#trim").expect("feature"),
         ordinal: 1,
         name: None,
@@ -1193,17 +1198,13 @@ fn local_plane_trim_target_counts_in_the_unjoined_body_loss() {
         native_ref: None,
         product_definition: None,
     });
-    let losses = native_losses(&model, &HashMap::new());
+    let losses = native_losses(&ir.model, &HashMap::new());
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].code.local_code(), "feature.body-selection-native");
 }
 
 fn empty_producer_records() -> ProducerRecords<'static> {
-    ProducerRecords {
-        features: &[],
-        labels: &[],
-        properties: &[],
-    }
+    ProducerRecords::new(&[], &[], &[])
 }
 
 fn native_derived_producer() -> (cadmpeg_ir::features::Feature, FeatureInventory, String) {
@@ -1259,16 +1260,16 @@ fn check_derived_selection(trim: bool, ordinal: u64, suppressed: Option<bool>, j
     let mut consumer = plain_feature("consumer", 6, Some(false));
     consumer.evaluation =
         cadmpeg_ir::features::FeatureEvaluation::from_definition(original.clone());
-    let mut model = Model::default();
-    model.features = vec![producer, consumer];
+    let mut ir = CadIr::empty();
+    ir.model.features = vec![producer, consumer];
     let bodies = if joined {
         HashMap::from([(wrapper.clone(), body("derived"))])
     } else {
         HashMap::new()
     };
-    project(&mut model, &bodies, &inventory);
-    assert!(model.feature_result_topologies.is_empty());
-    let actual = model.features[1].evaluation.definition();
+    project(&mut ir, &bodies, &inventory);
+    assert!(ir.model.feature_result_topologies.is_empty());
+    let actual = ir.model.features[1].evaluation.definition();
     let expected = if joined {
         BodySelection::Resolved {
             bodies: vec![body("derived")].try_into().expect("body"),
@@ -1289,14 +1290,14 @@ fn check_derived_selection(trim: bool, ordinal: u64, suppressed: Option<bool>, j
         assert_eq!(operands.clone().into_parts().1, expected);
     }
     let earlier = produced_before(
-        &model.features,
-        &model.feature_result_topologies,
-        &model.features[1],
-        &ProducerRecords {
-            features: &inventory.features,
-            labels: &inventory.labels,
-            properties: &inventory.properties,
-        },
+        &ir.model.features,
+        &ir.model.feature_result_topologies,
+        &ir.model.features[1],
+        &ProducerRecords::new(
+            &inventory.features,
+            &inventory.labels,
+            &inventory.properties,
+        ),
     );
     if trim {
         assert!(split_matches(original, actual, &bodies, &earlier, true));
@@ -1341,6 +1342,7 @@ fn split_body_forms() -> Vec<FeatureDefinition> {
     .into_iter()
     .map(|tool| {
         FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            extend_tool: None,
             targets: BodySelection::Native("target".into()),
             tool,
         })
@@ -1428,15 +1430,15 @@ fn split_body_complete_join_wins_over_local_producer() {
 fn local_split_body_target_preserves_unjoined_loss_count() {
     let earlier = HashSet::from(["target".to_owned()]);
     for original in split_body_forms() {
-        let mut model = Model::default();
+        let mut ir = CadIr::empty();
         let mut feature = plain_feature("split", 2, Some(false));
         feature.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(original);
-        model.features.push(feature);
-        let before = native_losses(&model, &HashMap::new());
-        model.features[0].evaluation.edit(|definition, _| {
+        ir.model.features.push(feature);
+        let before = native_losses(&ir.model, &HashMap::new());
+        ir.model.features[0].evaluation.edit(|definition, _| {
             split_local(definition, &earlier, true);
         });
-        let after = native_losses(&model, &HashMap::new());
+        let after = native_losses(&ir.model, &HashMap::new());
         assert_eq!(before.len(), 1);
         assert_eq!(after.len(), 1);
         assert_eq!(before[0].code, after[0].code);
@@ -1524,6 +1526,7 @@ fn split_body_projection_and_validator_share_producer_and_qualification_rules() 
         }
         let wrapper = properties[7].id();
         let original = FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            extend_tool: None,
             targets: BodySelection::Native(wrapper.clone()),
             tool: SplitBodyTool::Plane {
                 plane: FeatureId::mint("test:model:feature#plane").expect("plane"),
@@ -1534,21 +1537,21 @@ fn split_body_projection_and_validator_share_producer_and_qualification_rules() 
         let mut consumer = plain_feature("consumer", 2, Some(false));
         consumer.native_ref = Some(source.id());
         consumer.evaluation = FeatureEvaluation::from_definition(original.clone());
-        let mut model = Model::default();
-        model.features = vec![producer, consumer];
-        model.feature_result_topologies.push(result);
+        let mut ir = CadIr::empty();
+        ir.model.features = vec![producer, consumer];
+        ir.model.feature_result_topologies.push(result);
         let inventory = FeatureInventory {
             features: vec![source],
             properties,
             ..FeatureInventory::default()
         };
-        project(&mut model, &HashMap::new(), &inventory);
+        project(&mut ir, &HashMap::new(), &inventory);
         let expected = if qualified {
             BodySelection::local(vec![wrapper.clone()], wrapper.clone()).expect("local")
         } else {
             BodySelection::Native(wrapper.clone())
         };
-        let actual = model.features[1].evaluation.definition();
+        let actual = ir.model.features[1].evaluation.definition();
         assert_eq!(split_targets(actual), &expected);
         assert!(split_matches(
             original,
@@ -1579,6 +1582,7 @@ fn native_derived_result_makes_split_body_target_local() {
     let mut consumer = plain_feature("consumer", 6, Some(false));
     consumer.native_ref = Some(source.id());
     let original = FeatureDefinition::Operation(FeatureOperation::SplitBody {
+        extend_tool: None,
         targets: BodySelection::Native(wrapper.clone()),
         tool: SplitBodyTool::Plane {
             plane: FeatureId::mint("test:model:feature#plane").expect("plane"),
@@ -1588,10 +1592,10 @@ fn native_derived_result_makes_split_body_target_local() {
         cadmpeg_ir::features::FeatureEvaluation::from_definition(original.clone());
     inventory.features.push(source);
     inventory.properties.extend(properties);
-    let mut model = Model::default();
-    model.features = vec![producer, consumer];
-    project(&mut model, &HashMap::new(), &inventory);
-    let actual = model.features[1].evaluation.definition();
+    let mut ir = CadIr::empty();
+    ir.model.features = vec![producer, consumer];
+    project(&mut ir, &HashMap::new(), &inventory);
+    let actual = ir.model.features[1].evaluation.definition();
     assert_eq!(
         split_targets(actual),
         &BodySelection::local(vec![wrapper.clone()], wrapper.clone()).expect("local")
@@ -1603,7 +1607,7 @@ fn native_derived_result_makes_split_body_target_local() {
         &HashSet::from([wrapper]),
         true
     ));
-    assert!(model.feature_result_topologies.is_empty());
+    assert!(ir.model.feature_result_topologies.is_empty());
 }
 
 fn check_native_base_split(
@@ -1644,6 +1648,7 @@ fn check_native_base_split(
         },
     );
     let original = FeatureDefinition::Operation(FeatureOperation::SplitBody {
+        extend_tool: None,
         targets: BodySelection::Native(wrapper.clone()),
         tool: SplitBodyTool::Plane {
             plane: FeatureId::mint("test:model:feature#plane").expect("plane"),
@@ -1655,22 +1660,22 @@ fn check_native_base_split(
         cadmpeg_ir::features::FeatureEvaluation::from_definition(original.clone());
     inventory.features.push(source);
     inventory.properties.extend(properties);
-    let mut model = Model::default();
-    model.features = vec![producer, consumer];
+    let mut ir = CadIr::empty();
+    ir.model.features = vec![producer, consumer];
     let bodies = if joined {
         HashMap::from([(result.clone(), body("base"))])
     } else {
         HashMap::new()
     };
     let earlier = produced_before(
-        &model.features,
-        &model.feature_result_topologies,
-        &model.features[1],
-        &ProducerRecords {
-            features: &inventory.features,
-            labels: &inventory.labels,
-            properties: &inventory.properties,
-        },
+        &ir.model.features,
+        &ir.model.feature_result_topologies,
+        &ir.model.features[1],
+        &ProducerRecords::new(
+            &inventory.features,
+            &inventory.labels,
+            &inventory.properties,
+        ),
     );
     let eligible = ordinal < 6 && suppressed == Some(false);
     assert_eq!(
@@ -1681,7 +1686,7 @@ fn check_native_base_split(
             HashSet::new()
         }
     );
-    project(&mut model, &bodies, &inventory);
+    project(&mut ir, &bodies, &inventory);
     let expected = if joined {
         BodySelection::Resolved {
             bodies: vec![body("base")].try_into().expect("body"),
@@ -1692,10 +1697,10 @@ fn check_native_base_split(
     } else {
         BodySelection::Native(wrapper)
     };
-    let actual = model.features[1].evaluation.definition();
+    let actual = ir.model.features[1].evaluation.definition();
     assert_eq!(split_targets(actual), &expected);
     assert!(split_matches(original, actual, &bodies, &earlier, true));
-    assert!(model.feature_result_topologies.is_empty());
+    assert!(ir.model.feature_result_topologies.is_empty());
 }
 
 #[test]

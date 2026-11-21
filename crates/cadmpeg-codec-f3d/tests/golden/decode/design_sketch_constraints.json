@@ -1,17 +1,24 @@
 {
   "ir": {
-    "ir_version": "10",
-    "decode_depth": "full",
+    "ir_version": "11",
+    "fragment": false,
+    "scope": {
+      "model": true,
+      "design": true,
+      "process": true
+    },
     "source": {
       "identity": {
-        "classification": "classified",
+        "kind": "classified",
         "dialects": {
           "primary": {
             "dialect": "f3d:manifest-3-2-0-0",
             "declared": {
               "top_level_manifest_version": "3-2-0-0"
             },
-            "admission": "admitted"
+            "admission": {
+              "kind": "admitted"
+            }
           },
           "extra": [
             {
@@ -22,38 +29,37 @@
                 "save_format_major": "231",
                 "save_format_minor": "0"
               },
-              "admission": "admitted"
+              "admission": {
+                "kind": "admitted"
+              }
             }
           ]
         }
       },
       "attributes": {
         "active_brep": "FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
-        "active_brep_sha256": "38630ab6494f356459e0ee34e122e2a86685f44db32f30456c5b4fbb02a7cf6c",
         "asset_folder": "FusionAssetName[Active]",
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "product_family": "Autodesk Neutron",
         "product_version": "ASM 231.6.3.65535 OSX",
-        "save_date": "Tue Mar 31 16:16:19 2026",
-        "solved_record_len": "1597",
-        "zip_entry_count": "8"
+        "save_date": "Tue Mar 31 16:16:19 2026"
       }
     },
     "units": {
-      "length": "millimeter"
+      "length": "millimeter",
+      "angle": "radian",
+      "mass": "kilogram",
+      "time": "second"
     },
     "tolerances": {
       "linear": 9.999999999999999e-6,
       "angular": 1e-10
     },
-    "model": {
+    "geometry": {
       "bodies": [
         {
           "id": "f3d:brep:entity#1",
           "kind": "sheet",
-          "regions": [
-            "f3d:brep:entity#2"
-          ],
           "color": {
             "r": 0.1,
             "g": 0.2,
@@ -76,12 +82,7 @@
         {
           "id": "f3d:brep:entity#3",
           "region": "f3d:brep:entity#2",
-          "members": [
-            {
-              "kind": "face",
-              "id": "f3d:brep:entity#4"
-            }
-          ]
+          "members": []
         }
       ],
       "faces": [
@@ -91,7 +92,7 @@
           "surface": "f3d:brep:entity#6",
           "sense": "forward",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "f3d:brep:entity#5"
             ]
@@ -108,7 +109,8 @@
               "f3d:brep:entity#7",
               "f3d:brep:entity#8",
               "f3d:brep:entity#9"
-            ]
+            ],
+            "vertex_uses": []
           }
         }
       ],
@@ -118,21 +120,24 @@
           "owner_loop": "f3d:brep:entity#5",
           "edge": "f3d:brep:entity#10",
           "radial_next": "f3d:brep:entity#7",
-          "sense": "forward"
+          "sense": "forward",
+          "pcurves": []
         },
         {
           "id": "f3d:brep:entity#8",
           "owner_loop": "f3d:brep:entity#5",
           "edge": "f3d:brep:entity#11",
           "radial_next": "f3d:brep:entity#8",
-          "sense": "forward"
+          "sense": "forward",
+          "pcurves": []
         },
         {
           "id": "f3d:brep:entity#9",
           "owner_loop": "f3d:brep:entity#5",
           "edge": "f3d:brep:entity#12",
           "radial_next": "f3d:brep:entity#9",
-          "sense": "forward"
+          "sense": "forward",
+          "pcurves": []
         }
       ],
       "edges": [
@@ -144,8 +149,10 @@
               1.0
             ]
           },
-          "start": "f3d:brep:entity#13",
-          "end": "f3d:brep:entity#14"
+          "ends": {
+            "start": "f3d:brep:entity#13",
+            "end": "f3d:brep:entity#14"
+          }
         },
         {
           "id": "f3d:brep:entity#11",
@@ -155,8 +162,10 @@
               1.0
             ]
           },
-          "start": "f3d:brep:entity#14",
-          "end": "f3d:brep:entity#15"
+          "ends": {
+            "start": "f3d:brep:entity#14",
+            "end": "f3d:brep:entity#15"
+          }
         },
         {
           "id": "f3d:brep:entity#12",
@@ -166,8 +175,10 @@
               1.0
             ]
           },
-          "start": "f3d:brep:entity#15",
-          "end": "f3d:brep:entity#13"
+          "ends": {
+            "start": "f3d:brep:entity#15",
+            "end": "f3d:brep:entity#13"
+          }
         }
       ],
       "vertices": [
@@ -214,21 +225,24 @@
         {
           "id": "f3d:brep:entity#6",
           "geometry": {
-            "kind": "plane",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           }
         }
@@ -237,24 +251,38 @@
       "subds": [],
       "pcurves": [],
       "procedural_surfaces": [],
-      "procedural_curves": [],
+      "procedural_curves": []
+    },
+    "model": {
+      "assets": [],
       "features": [
         {
           "id": "f3d:model:feature#52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat6:Sketch1:1100",
           "ordinal": 0,
           "name": "Sketch 1",
           "suppressed": false,
+          "dependencies": [],
+          "source_properties": {},
           "source_tag": "Sketch",
+          "source_content": [],
+          "outputs": [],
           "definition": {
-            "definition": "sketch",
-            "sketch": {
-              "space": "planar",
-              "sketch": "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@277"
+            "kind": "operation",
+            "value": {
+              "kind": "sketch",
+              "value": {
+                "sketch": {
+                  "kind": "planar",
+                  "sketch": "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@277"
+                }
+              }
             }
           },
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#3026"
         }
       ],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
       "configurations": [],
       "parameters": [
         {
@@ -267,6 +295,7 @@
             "kind": "length",
             "value": 10.0
           },
+          "dependencies": [],
           "properties": {
             "source_kind": "Linear Dimension-1"
           },
@@ -282,6 +311,7 @@
             "kind": "length",
             "value": 10.0
           },
+          "dependencies": [],
           "properties": {
             "source_kind": "Linear Dimension-2"
           },
@@ -312,6 +342,7 @@
               }
             }
           },
+          "profiles": [],
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-sketch-placement#3182"
         }
       ],
@@ -321,6 +352,7 @@
           "sketch": "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@277",
           "construction": false,
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-curve-identity#1830",
+          "endpoint_refs": [],
           "geometry": {
             "kind": "arc",
             "center": {
@@ -337,6 +369,7 @@
           "sketch": "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@277",
           "construction": false,
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1006",
+          "endpoint_refs": [],
           "geometry": {
             "kind": "point",
             "position": {
@@ -350,6 +383,7 @@
           "sketch": "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@277",
           "construction": false,
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1212",
+          "endpoint_refs": [],
           "geometry": {
             "kind": "point",
             "position": {
@@ -363,6 +397,7 @@
           "sketch": "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@277",
           "construction": false,
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1418",
+          "endpoint_refs": [],
           "geometry": {
             "kind": "point",
             "position": {
@@ -376,6 +411,7 @@
           "sketch": "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@277",
           "construction": false,
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1624",
+          "endpoint_refs": [],
           "geometry": {
             "kind": "point",
             "position": {
@@ -389,6 +425,7 @@
           "sketch": "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@277",
           "construction": false,
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#2070",
+          "endpoint_refs": [],
           "geometry": {
             "kind": "point",
             "position": {
@@ -402,6 +439,7 @@
           "sketch": "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@277",
           "construction": false,
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#3394",
+          "endpoint_refs": [],
           "geometry": {
             "kind": "point",
             "position": {
@@ -415,6 +453,7 @@
           "sketch": "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@277",
           "construction": false,
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#3600",
+          "endpoint_refs": [],
           "geometry": {
             "kind": "point",
             "position": {
@@ -430,7 +469,10 @@
           "sketch": "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@277",
           "definition": {
             "kind": "native",
-            "native_kind": "Linear Dimension-1",
+            "native_kind": "Linear Dimension",
+            "native_properties": {
+              "instance_name": "Linear Dimension-1"
+            },
             "entities": [
               "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p501",
               "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p503",
@@ -460,11 +502,11 @@
             "kind": "horizontal_distance",
             "first": {
               "kind": "entity",
-              "entity": "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p800"
+              "value": "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p800"
             },
             "second": {
               "kind": "entity",
-              "entity": "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p801"
+              "value": "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p801"
             },
             "parameter": "f3d:model:parameter#52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat1204"
           },
@@ -477,6 +519,7 @@
             "kind": "native",
             "native_kind": "parallel",
             "native_state": 16,
+            "native_properties": {},
             "entities": [
               "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p500",
               "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p501",
@@ -523,6 +566,7 @@
             "kind": "native",
             "native_kind": "concentric",
             "native_state": 4,
+            "native_properties": {},
             "entities": [
               "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p502",
               "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p503",
@@ -565,8 +609,26 @@
       ],
       "spatial_sketches": [],
       "spatial_sketch_entities": [],
+      "spatial_sketch_constraints": [],
       "spreadsheets": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "id": "f3d:model:product-definition#root",
+          "bom_properties": {},
+          "storage": {
+            "kind": "file",
+            "document": {}
+          },
+          "bodies": [
+            "f3d:brep:entity#1"
+          ],
+          "tessellations": [],
+          "occurrences": [],
+          "instance_bodies": [],
+          "representations": [],
+          "sketches": []
+        }
+      ],
       "occurrences": [],
       "assembly_joints": [],
       "drawings": [],
@@ -593,15 +655,18 @@
           "properties": {
             "reflectivity_at_0deg": 0.25,
             "refraction_index": 1.5
-          }
+          },
+          "textures": []
         }
       ],
       "appearance_bindings": [
         {
           "id": "f3d:appearance:binding#0_985:11111111-2222-3333-4444-555555555555",
           "target": {
-            "kind": "body",
-            "id": "f3d:brep:entity#1"
+            "entity": {
+              "kind": "body",
+              "value": "f3d:brep:entity#1"
+            }
           },
           "appearance": "f3d:design:appearance#11111111-2222-3333-4444-555555555555",
           "source_entity_id": "0_985",
@@ -614,7 +679,50 @@
       ],
       "attributes": [],
       "pmi": [],
-      "presentation_layers": []
+      "presentation_layers": [],
+      "physical_materials": [],
+      "mass_properties": [],
+      "rigid_bodies": [],
+      "colliders": [],
+      "articulations": [],
+      "physics_scenes": [],
+      "solver_settings": [],
+      "declared_measures": [],
+      "point_clouds": [],
+      "history_bodies": []
+    },
+    "design": {
+      "scopes": [],
+      "containers": [],
+      "features": [],
+      "sketches": [],
+      "sketch_entities": [],
+      "sketch_constraints": [],
+      "spatial_sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketch_constraints": [],
+      "parameters": [],
+      "spreadsheets": [],
+      "sheet_metal_rules": [],
+      "programs": [],
+      "configurations": [],
+      "arrangements": [],
+      "publications": [],
+      "evaluations": [],
+      "names": []
+    },
+    "process": {
+      "setups": [],
+      "operations": [],
+      "features": [],
+      "groups": [],
+      "tools": [],
+      "presets": [],
+      "machines": [],
+      "programs": [],
+      "parameters": [],
+      "toolpaths": [],
+      "states": []
     },
     "native": {
       "f3d": {
@@ -2098,14 +2206,16 @@
   },
   "report": {
     "identity": {
-      "classification": "classified",
+      "kind": "classified",
       "dialects": {
         "primary": {
           "dialect": "f3d:manifest-3-2-0-0",
           "declared": {
             "top_level_manifest_version": "3-2-0-0"
           },
-          "admission": "admitted"
+          "admission": {
+            "kind": "admitted"
+          }
         },
         "extra": [
           {
@@ -2116,72 +2226,87 @@
               "save_format_major": "231",
               "save_format_minor": "0"
             },
-            "admission": "admitted"
+            "admission": {
+              "kind": "admitted"
+            }
           }
         ]
       }
     },
     "transfer": {
-      "transfer": "full",
+      "kind": "full",
       "geometry_transferred": true
     },
+    "coverage": {},
     "losses": [
       {
         "code": {
-          "scope": "namespaced",
-          "namespace": "f3d",
-          "code": "feature.output-state-chain-unbound",
-          "kind": "feature_history_retained"
+          "kind": "namespaced",
+          "value": {
+            "namespace": "f3d",
+            "code": "feature.output-state-chain-unbound",
+            "kind": "feature_history_retained"
+          }
         },
         "severity": "warning",
         "message": "f3d:model:feature#52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat6:Sketch1:1100 has no complete unique output transition chain from state 16777215 to state 1."
       },
       {
         "code": {
-          "scope": "namespaced",
-          "namespace": "f3d",
-          "code": "sketch.curve-unprofiled",
-          "kind": "feature_history_retained"
+          "kind": "namespaced",
+          "value": {
+            "namespace": "f3d",
+            "code": "sketch.curve-unprofiled",
+            "kind": "feature_history_retained"
+          }
         },
         "severity": "warning",
         "message": "sketch entity f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277c440:0: curve is not part of any closed profile loop"
       },
       {
         "code": {
-          "scope": "namespaced",
-          "namespace": "f3d",
-          "code": "sketch.name-composed-from-feature-ordinal",
-          "kind": "attributes_not_transferred"
+          "kind": "namespaced",
+          "value": {
+            "namespace": "f3d",
+            "code": "sketch.name-composed-from-feature-ordinal",
+            "kind": "attributes_not_transferred"
+          }
         },
         "severity": "warning",
         "message": "1 sketch name(s) use the projected Feature name composed from the stored scope kind spelling and feature ordinal; this assumes the default timeline name."
       },
       {
         "code": {
-          "scope": "namespaced",
-          "namespace": "f3d",
-          "code": "feature.edge-reference-lost",
-          "kind": "attributes_not_transferred"
+          "kind": "namespaced",
+          "value": {
+            "namespace": "f3d",
+            "code": "feature.edge-reference-lost",
+            "kind": "attributes_not_transferred"
+          }
         },
         "severity": "warning",
         "message": "1 source parametric edge reference(s) were marked EDGE_REFERENCE_LOST and have no independent complete selection proof."
       },
       {
         "code": {
-          "scope": "namespaced",
-          "namespace": "f3d",
-          "code": "sketch.relation-native",
-          "kind": "feature_history_retained"
+          "kind": "namespaced",
+          "value": {
+            "namespace": "f3d",
+            "code": "sketch.relation-native",
+            "kind": "feature_history_retained"
+          }
         },
         "severity": "warning",
         "message": "2 sketch relation(s) retain native operands because no unique neutral relation was resolved."
       },
       {
         "code": {
-          "scope": "namespaced",
-          "namespace": "f3d",
-          "code": "sketch.dimension-native",
-          "kind": "feature_history_retained"
+          "kind": "namespaced",
+          "value": {
+            "namespace": "f3d",
+            "code": "sketch.dimension-native",
+            "kind": "feature_history_retained"
+          }
         },
         "severity": "warning",
         "message": "1 sketch dimension(s) retain native operands because no unique neutral dimension was resolved."
@@ -2191,9 +2316,15 @@
       "Design asset folder (from manifests): FusionAssetName[Active]",
       "1 ASM BREP stream(s); Design body-to-blob bindings select model geometry",
       "history-bearing BREP: FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh (1610 bytes uncompressed)"
-    ]
+    ],
+    "transfer_ledger": {
+      "entries": []
+    }
   },
   "source_fidelity": {
+    "decode_digest": "9a37e0d3423b38c5af498252068e5221f5be8f238ad8b556977f7900a88f74dd",
+    "file_digests": {},
+    "unrepresented": [],
     "annotations": {
       "provenance": {
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:construction-recipe#2866": {
@@ -2749,7 +2880,7 @@
       },
       "exactness": {
         "f3d:brep:entity#6": {
-          "scope": "fields",
+          "kind": "fields",
           "fields": {
             "geometry.normal": "derived",
             "geometry.u_axis": "derived"
@@ -2762,9 +2893,10 @@
         "stream": "f3d",
         "offset": 0,
         "bytes": {
-          "retention": "inline",
+          "kind": "inline",
           "data": "UEsDBAoAAAAAAAAAIQCgv7HrOwIAADsCAAAMAAAATWFuaWZlc3QuZGF0BwAAADMtMi0wLTANAAAARnVzaW9uRG9jVHlwZQQAAAAuAGYAMwBkAA8AAABGAHUAcwBpAG8AbgAgAEQAbwBjAHUAbQBlAG4AdAARAAAAQQAgAEYAdQBzAGkAbwBuACAARABvAGMAdQBtAGUAbgB0ACQAAAAwADAAMAAwADAAMAAwADAALQAwADAAMAAwAC0ANAAwADAAMAAtADgAMAAwADAALQAwADAAMAAwADAAMAAwADAAMAAwADAAMQAkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADIA0gQAABQAAAAkAAAAQABAKgcAAAALAAAAQXBwbGljYXRpb24BAAAAAwAAAENBTQQAAAAIAAAAUGFyYU1lc2gIAAAACQAAAFNpbUNvbW1vbjV1AAAPAAAAU2ltRkVBQ1NPYmplY3RzAgAAABAAAABTaW1GbHVpZER5bmFtaWNzAgAAABcAAABTaW1TdHJ1Y3R1cmFsQXR0cmlidXRlcxInAAAAAAAAACQAAAAwADAAMAAwADAAMAAwADAALQAwADAAMAAwAC0ANAAwADAAMAAtADgAMAAwADAALQAwADAAMAAwADAAMAAwADAAMAAwADAAMwABAAAADwAAAEYAdQBzAGkAbwBuAEEAcwBzAGUAdABOAGEAbQBlAAAAAAABCQAAAE4AQQBfAEUAWABQAE8AUgBUAFBLAwQKAAAAAAAAACEAfc3VPU0CAABNAgAAJAAAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL01hbmlmZXN0LmRhdA8AAABGAHUAcwBpAG8AbgBBAHMAcwBlAHQATgBhAG0AZQAkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADMAJAAAADAAMAAwADAAMAAwADAAMAAtADAAMAAwADAALQA0ADAAMAAwAC0AOAAwADAAMAAtADAAMAAwADAAMAAwADAAMAAwADAAMAA0AA8AAABGdXNpb25Bc3NldFR5cGUUAAAABAAAAAsAAABBcHBsaWNhdGlvbosAAAAIAAAAUGFyYU1lc2gNAAAABgAAAFNlcnZlciQAAAAIAAAAVm9sRmllbGQEAAAAEgAAAE5ldXRyb24zREFzc2V0VHlwZQAAAAAAAQAAABIAAABwaHlzaWNhbENoYW5nZUd1aWQkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADUAAAAAAAcAAAADAAAAAAAAABcAAABGdXNpb25EZXNpZ25TZWdtZW50VHlwZRcAAABGdXNpb25EZXNpZ25TZWdtZW50VHlwZQEAAAAUAAAARnVzaW9uQUNUU2VnbWVudFR5cGUUAAAARnVzaW9uQUNUU2VnbWVudFR5cGUCAAAAGAAAAEZ1c2lvbkJyb3dzZXJTZWdtZW50VHlwZRgAAABGdXNpb25Ccm93c2VyU2VnbWVudFR5cGVQSwMECgAAAAAAAAAhAD13T15KBgAASgYAADsAAABGdXNpb25Bc3NldE5hbWVbQWN0aXZlXS9CcmVwcy5CbG9iUGFydHMvQlJFUC5zeW50aGV0aWMuc21iaEFTTSBCaW5hcnlGaWxlODxaAAAAAAAAAAAAAAAAAAAFAAAAAAAAAAMAAAAAAAAABxBBdXRvZGVzayBOZXV0cm9uBxVBU00gMjMxLjYuMy42NTUzNSBPU1gHGFR1ZSBNYXIgMzEgMTY6MTY6MTkgMjAyNgYAAAAAAABOQAaN7bWg98awPga7vdfZ33zbPQ0JYXNtaGVhZGVyBw0yMzEuNi4zLjY1NTM1EQ0EYm9keQz//////////wQqAAAAAAAAAAz//////////wwCAAAAAAAAAAz//////////wz//////////xENBnJlZ2lvbgz//////////wT//////////wz//////////wz//////////wwDAAAAAAAAAAwBAAAAAAAAABENBXNoZWxsDP//////////BP//////////DP//////////DP//////////DP//////////DAQAAAAAAAAADP//////////DAIAAAAAAAAAEQ0EZmFjZQz//////////wT//////////wz//////////wz//////////wwFAAAAAAAAAAwDAAAAAAAAAAz//////////wwGAAAAAAAAAAsLEQ0EbG9vcAz//////////wT//////////wz//////////wz//////////wwHAAAAAAAAAAwEAAAAAAAAABEOBXBsYW5lDQdzdXJmYWNlDP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABQAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8UAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAACxENBmNvZWRnZQz//////////wT//////////wz//////////wwIAAAAAAAAAAwJAAAAAAAAAAz//////////wwKAAAAAAAAAAsMBQAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MCQAAAAAAAAAMBwAAAAAAAAAM//////////8MCwAAAAAAAAALDAUAAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DAcAAAAAAAAADAgAAAAAAAAADP//////////DAwAAAAAAAAACwwFAAAAAAAAAAQAAAAAAAAAAAz//////////xENBGVkZ2UM//////////8E//////////8M//////////8MDQAAAAAAAAAGAAAAAAAAAAAMDgAAAAAAAAAGAAAAAAAA8D8M//////////8M//////////8LBwd1bmtub3duEQ0EZWRnZQz//////////wT//////////wz//////////wwOAAAAAAAAAAYAAAAAAAAAAAwPAAAAAAAAAAYAAAAAAADwPwz//////////wz//////////wsHB3Vua25vd24RDQRlZGdlDP//////////BP//////////DP//////////DA8AAAAAAAAABgAAAAAAAAAADA0AAAAAAAAABgAAAAAAAPA/DP//////////DP//////////CwcHdW5rbm93bhENBnZlcnRleAz//////////wT//////////wz//////////wwKAAAAAAAAAAQAAAAAAAAAAAwQAAAAAAAAABENBnZlcnRleAz//////////wT//////////wz//////////wwKAAAAAAAAAAQBAAAAAAAAAAwRAAAAAAAAABENBnZlcnRleAz//////////wT//////////wz//////////wwMAAAAAAAAAAQAAAAAAAAAAAwSAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAABENC2RlbHRhX3N0YXRlUEsDBAoAAAAAAAAAIQCesfQ0ggMAAIIDAABGAAAARnVzaW9uQXNzZXROYW1lW0FjdGl2ZV0vUHJvdGVpbkFzc2V0cy5CbG9iUGFydHMvUHJvdGVpbkFzc2V0LjAucHJvdGVpblBLAwQKAAAAAAAAACEAdljpDqgBAACoAQAAIAAAAEFzc2V0RGF0YS9JbnN0YW5jZVByb3BlcnRpZXMuYmluiAAAAP//////////AAAAAAAAAACAAAEADQAAAEdlbmVyaWNTY2hlbWEkAAAAMTExMTExMTEtMjIyMi0zMzMzLTQ0NDQtNTU1NTU1NTU1NTU1CQAAAFByaXNtLTAwMSQAAABhYWFhYWFhYS1iYmJiLWNjY2MtZGRkZC1lZWVlZWVlZWVlZWUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACamZmZmZm5P5qZmZmZmck/MzMzMzMz0z8AAAAAAADwPwAA/////z8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAAAAAAAAAAAANA/AAAAAAAAAAAAAAAAAAAMAAAAAAAAAAAA+D8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFBLAwQKAAAAAAAAACEAmndgp5gAAACYAAAAKgAAAEFzc2V0RGF0YS9EZWZpbml0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ODFBLUY5NEMyMDZFOEYyRCQAAABhYWFhYWFhYS1iYmJiLWNjY2MtZGRkZC1lZWVlZWVlZWVlZWUEAAAABwAAAE1Ta2V0Y2gBAAAAFQEAAAAAAAAkAAAAMzMzMzMzMzMtNDQ0NC01NTU1LTY2NjYtNzc3Nzc3Nzc3Nzc3AAAAAAUAAAAJAAAARGltZW5zaW9uAgAAAA4BAAAAAAAADwEAAAAAAAAkAAAANjA0MDNENDctMEM0OS00OUIwLUJERTgtMTY3OTYwODE2NEEyJAAAAGFhYWFhYWFhLWJiYmItY2NjYy1kZGRkLWVlZWVlZWVlZWVlZQEAAAAHAAAATVNrZXRjaAIAAAAhAAAAAAAAACwAAAAAAAAAJAAAAEQyNjM1MUYwLTU5NDAtNEQyMy1BQTIwLTJDMzU0NzVBNkQ5RSQAAABDQjg0NEFCNi0yNDBELTRmYzktOUM5Ri0zNjc5REM4OTZENkYCAAAABgAAAEZ1c2lvbgEAAACEAwAAAAAAACQAAABDRDU3QkM0OC01MEVDLTQ3REMtOTc1QS1GQjZERUE3MkY0REEkAAAAYWFhYWFhYWEtYmJiYi1jY2NjLWRkZGQtZWVlZWVlZWVlZWVlBAAAAAQAAABCb2R5AQAAAAcAAAAAAAAAJAAAADcwMmI5Y2QyLTUzN2MtNDI5ZS04Y2M0LTIyYmVlZWI5OGMzNyQAAABhYWFhYWFhYS1iYmJiLWNjY2MtZGRkZC1lZWVlZWVlZWVlZWUBAAAABQAAAFNjZW5lAQAAANoDAAAAAAAAJAAAADc0Q0E0NTYyLTU5RjgtNEM5Ny04QUQxLUY4Mjk3QzIxRjlBQSQAAABFOERDQjA0MC02QTBFLTRBRDEtQkNGMy0xRTFBRUREMzVFRTQAAAAABAAAAEJvZHkBAAAAgwMAAAAAAAAkAAAARjAxMzA0MjQtOEI3RS00MDkyLTkzQzktMUNBODA3NDgyNTM0JAAAAGFhYWFhYWFhLWJiYmItY2NjYy1kZGRkLWVlZWVlZWVlZWVlZQAAAAAIAAAAR2VvbWV0cnkBAAAAWAIAAAAAAAAkAAAARDgyRTAxMkYtNkRERC00QUVELUJERTEtQzBGN0Y5MTAwQjlCJAAAAGFhYWFhYWFhLWJiYmItY2NjYy1kZGRkLWVlZWVlZWVlZWVlZQMAAAAHAAAATVNrZXRj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AAAAAAAApIGXCwAARnVzaW9uQXNzZXROYW1lW0FjdGl2ZV0vUHJvdGVpbkFzc2V0cy5CbG9iUGFydHMvUHJvdGVpbkFzc2V0LjAucHJvdGVpblBLAQIKAwoAAAAAAAAAIQCM+CTi+BEAAPgRAAAuAAAAAAAAAAAAAACkgX0PAABGdXNpb25Bc3NldE5hbWVbQWN0aXZlXS9EZXNpZ24xL0J1bGtTdHJlYW0uZGF0UEsBAgoDCgAAAAAAAAAhAAfyldwVCgAAFQoAAC4AAAAAAAAAAAAAAKSBwSEAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL0Rlc2lnbjEvTWV0YVN0cmVhbS5kYXRQSwECCgMKAAAAAAAAACEA/W0jp64CAACuAgAAPAAAAAAAAAAAAAAApIEiLAAARnVzaW9uQXNzZXROYW1lW0FjdGl2ZV0vRnVzaW9uQUNUU2VnbWVudFR5cGUxL0J1bGtTdHJlYW0uZGF0UEsBAgoDCgAAAAAAAAAhAByaJHEhBAAAIQQAADwAAAAAAAAAAAAAAKSBKi8AAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL0Z1c2lvbkFDVFNlZ21lbnRUeXBlMS9NZXRhU3RyZWFtLmRhdFBLBQYAAAAACAAIAPUCAAClMwAAAAA="
-        }
+        },
+        "untyped": []
       }
     }
   }

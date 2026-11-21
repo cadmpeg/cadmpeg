@@ -1,41 +1,58 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "10",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "assembly_joints": [],
-      "attributes": [],
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
+    "fragment": false,
+    "geometry": {
       "bodies": [],
       "coedges": [],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              1.0,
-              1.0
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 0.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 0.0,
-                  "y": 1.0,
-                  "z": 0.0
-                }
-              ]
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 0.0,
+                    "y": 1.0,
+                    "z": 0.0
+                  }
+                ]
+              }
             }
           },
           "id": "iges:model:curve#D13",
@@ -46,6 +63,7 @@
           "source_object": {
             "format": "iges",
             "geometry_role": "support",
+            "instance_path": [],
             "layer": "0",
             "name": "SEAMUV0",
             "object_id": "D13",
@@ -54,16 +72,19 @@
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "iges:model:curve#D7",
@@ -74,6 +95,7 @@
           "source_object": {
             "format": "iges",
             "geometry_role": "support",
+            "instance_path": [],
             "layer": "0",
             "name": "SEAMEDGE",
             "object_id": "D7",
@@ -81,56 +103,45 @@
           }
         }
       ],
-      "drawings": [],
       "edges": [],
       "faces": [],
-      "features": [],
       "loops": [],
-      "occurrences": [],
-      "parameters": [],
       "pcurves": [],
-      "pmi": [],
       "points": [],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [],
       "regions": [],
-      "semantic_annotations": [],
       "shells": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "cylinder",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "radius": 1.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "cylinder",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "radius": 1.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "iges:model:surface#D5",
           "source_object": {
             "format": "iges",
             "geometry_role": "support",
+            "instance_path": [],
             "layer": "0",
             "name": "CYLINDER",
             "object_id": "D5",
@@ -138,8 +149,60 @@
           }
         }
       ],
+      "vertices": []
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "iges:model:product-definition#root",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
       "tessellations": [],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {
@@ -1749,22 +1812,49 @@
         "views": []
       }
     },
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
+        "author": "author",
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "drafting_standard": "0",
+        "iges_version_flag": "11",
+        "model_scale": "1",
         "native_file_name": "part.igs",
+        "native_system_id": "cadmpeg",
         "native_units": "MM",
+        "organization": "org",
         "parameter_delimiter": ",",
+        "preprocessor_version": "0.1",
         "record_delimiter": ";",
         "representation": "fixed-ascii",
-        "sender_product": "product"
+        "sender_product": "product",
+        "units_flag": "2"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "effective_version": "5.3",
               "representation": "fixed-ascii",
@@ -1772,7 +1862,8 @@
             },
             "dialect": "iges:5.3-fixed-ascii"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -1780,16 +1871,21 @@
       "linear": 0.001
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "effective_version": "5.3",
             "representation": "fixed-ascii",
@@ -1797,16 +1893,19 @@
           },
           "dialect": "iges:5.3-fixed-ascii"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "geometry.not-projected",
-          "kind": "geometry_not_transferred",
-          "namespace": "iges",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "geometry.not-projected",
+            "kind": "geometry_not_transferred",
+            "namespace": "iges",
+            "strict_floor": "warning"
+          }
         },
         "message": "IGES entity type 508 form 1 geometry was not projected: loop edge-use tuple is invalid",
         "provenance": {
@@ -1819,11 +1918,13 @@
       },
       {
         "code": {
-          "code": "geometry.not-projected",
-          "kind": "geometry_not_transferred",
-          "namespace": "iges",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "geometry.not-projected",
+            "kind": "geometry_not_transferred",
+            "namespace": "iges",
+            "strict_floor": "warning"
+          }
         },
         "message": "IGES entity type 510 form 1 geometry was not projected: face loop is missing",
         "provenance": {
@@ -1836,11 +1937,13 @@
       },
       {
         "code": {
-          "code": "geometry.not-projected",
-          "kind": "geometry_not_transferred",
-          "namespace": "iges",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "geometry.not-projected",
+            "kind": "geometry_not_transferred",
+            "namespace": "iges",
+            "strict_floor": "warning"
+          }
         },
         "message": "IGES entity type 514 form 2 geometry was not projected: shell face-use tuple is invalid",
         "provenance": {
@@ -1853,11 +1956,13 @@
       },
       {
         "code": {
-          "code": "parameter.data-quarantined",
-          "kind": "noncanonical_source_syntax",
-          "namespace": "iges",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "parameter.data-quarantined",
+            "kind": "noncanonical_source_syntax",
+            "namespace": "iges",
+            "strict_floor": "warning"
+          }
         },
         "message": "IGES Parameter Data of D15 (P8 through P9) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted",
         "provenance": {
@@ -1870,10 +1975,12 @@
       },
       {
         "code": {
-          "code": "entity.retained-unprojected",
-          "kind": "record_not_typed",
-          "namespace": "iges",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "entity.retained-unprojected",
+            "kind": "record_not_typed",
+            "namespace": "iges"
+          }
         },
         "message": "IGES entity type 502 form 1 retained without neutral projection",
         "provenance": {
@@ -1886,10 +1993,12 @@
       },
       {
         "code": {
-          "code": "entity.retained-unprojected",
-          "kind": "record_not_typed",
-          "namespace": "iges",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "entity.retained-unprojected",
+            "kind": "record_not_typed",
+            "namespace": "iges"
+          }
         },
         "message": "IGES entity type 504 form 1 retained without neutral projection",
         "provenance": {
@@ -1919,13 +2028,13 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
     },
     "transfer_ledger": {
       "entries": [
         {
           "outcome": {
-            "disposition": "retained",
+            "kind": "retained",
             "note": "native record retained; semantic projection emitted",
             "target": "iges:entity:directory#1"
           },
@@ -1933,7 +2042,7 @@
         },
         {
           "outcome": {
-            "disposition": "retained",
+            "kind": "retained",
             "note": "native record retained; record was consumed as construction support",
             "target": "iges:entity:directory#3"
           },
@@ -1941,7 +2050,7 @@
         },
         {
           "outcome": {
-            "disposition": "retained",
+            "kind": "retained",
             "note": "native record retained; semantic projection emitted",
             "target": "iges:entity:directory#5"
           },
@@ -1949,7 +2058,7 @@
         },
         {
           "outcome": {
-            "disposition": "retained",
+            "kind": "retained",
             "note": "native record retained; semantic projection emitted",
             "target": "iges:entity:directory#7"
           },
@@ -1957,7 +2066,7 @@
         },
         {
           "outcome": {
-            "disposition": "retained",
+            "kind": "retained",
             "note": "native record retained; semantic projection omitted with an attributed loss",
             "target": "iges:entity:directory#9"
           },
@@ -1965,7 +2074,7 @@
         },
         {
           "outcome": {
-            "disposition": "retained",
+            "kind": "retained",
             "note": "native record retained; semantic projection omitted with an attributed loss",
             "target": "iges:entity:directory#11"
           },
@@ -1973,7 +2082,7 @@
         },
         {
           "outcome": {
-            "disposition": "retained",
+            "kind": "retained",
             "note": "native record retained; semantic projection emitted",
             "target": "iges:entity:directory#13"
           },
@@ -1981,7 +2090,7 @@
         },
         {
           "outcome": {
-            "disposition": "retained",
+            "kind": "retained",
             "note": "native record retained; semantic projection omitted with an attributed loss",
             "target": "iges:entity:directory#15"
           },
@@ -1989,7 +2098,7 @@
         },
         {
           "outcome": {
-            "disposition": "retained",
+            "kind": "retained",
             "note": "native record retained; semantic projection omitted with an attributed loss",
             "target": "iges:entity:directory#17"
           },
@@ -1997,7 +2106,7 @@
         },
         {
           "outcome": {
-            "disposition": "retained",
+            "kind": "retained",
             "note": "native record retained; semantic projection omitted with an attributed loss",
             "target": "iges:entity:directory#19"
           },
@@ -2005,7 +2114,7 @@
         },
         {
           "outcome": {
-            "disposition": "retained",
+            "kind": "retained",
             "note": "native record retained; semantic projection omitted with an attributed loss",
             "target": "iges:entity:directory#21"
           },
@@ -2013,7 +2122,7 @@
         },
         {
           "outcome": {
-            "disposition": "retained",
+            "kind": "retained",
             "note": "quarantined parameter data retained; tokens were not recovered",
             "target": "iges:quarantine:parameter#15"
           },
@@ -2023,16 +2132,27 @@
     }
   },
   "source_fidelity": {
-    "annotations": {},
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "decode_digest": "396faaae4f1c999329bf7bd97ffb9359d773bc289cc97c6c8010c73e9a814662",
+    "file_digests": {},
     "retained_records": {
       "iges:file:source-image#0": {
         "bytes": {
           "data": "b3JpZ2luYWwgZml4dHVyZSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgUyAgICAgIDEKMUgsLDFIOyw3SHByb2R1Y3QsOEhwYXJ0Lmlncyw3SGNhZG1wZWcsM0gwLjEsMzIsMzgsNiwzMDgsMTUsMEgsMS4wLDIsMkhNRyAgICAgIDEKTSwxLDEuMCwxNUgyMDI2MDcxNC4wMDAwMDAsMC4wMDEsMTAwMC4wLDZIYXV0aG9yLDNIb3JnLDExLDAsMEgsMEg7ICAgICAgRyAgICAgIDIKICAgICAxMTYgICAgICAgMSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDEKICAgICAxMTYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgIE9SSUdJTiAgICAgICAwRCAgICAgIDIKICAgICAxMjMgICAgICAgMiAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDMKICAgICAxMjMgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgICAgQVhJUyAgICAgICAwRCAgICAgIDQKICAgICAxOTIgICAgICAgMyAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDUKICAgICAxOTIgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICBDWUxJTkRFUiAgICAgICAwRCAgICAgIDYKICAgICAxMTAgICAgICAgNCAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDcKICAgICAxMTAgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICBTRUFNRURHRSAgICAgICAwRCAgICAgIDgKICAgICA1MDIgICAgICAgNSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDkKICAgICA1MDIgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMSAgICAgICAgICAgICAgICBWRVJUSUNFUyAgICAgICAwRCAgICAgMTAKICAgICA1MDQgICAgICAgNiAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAxRCAgICAgMTEKICAgICA1MDQgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMSAgICAgICAgICAgICAgICAgICBFREdFUyAgICAgICAwRCAgICAgMTIKICAgICAxMjYgICAgICAgNyAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwNTAwRCAgICAgMTMKICAgICAxMjYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMSAgICAgICAgICAgICAgICAgU0VBTVVWMCAgICAgICAwRCAgICAgMTQKICAgICAxMjYgICAgICAgOCAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwNTAwRCAgICAgMTUKICAgICAxMjYgICAgICAgMCAgICAgICAwICAgICAgIDIgICAgICAgMSAgICAgICAgICAgICAgICAgU0VBTVVWMSAgICAgICAwRCAgICAgMTYKICAgICA1MDggICAgICAxMCAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgMTcKICAgICA1MDggICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMSAgICAgICAgICAgICAgICBTRUFNTE9PUCAgICAgICAwRCAgICAgMTgKICAgICA1MTAgICAgICAxMSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgMTkKICAgICA1MTAgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMSAgICAgICAgICAgICAgICBTRUFNRkFDRSAgICAgICAwRCAgICAgMjAKICAgICA1MTQgICAgICAxMiAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMDAwRCAgICAgMjEKICAgICA1MTQgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMiAgICAgICAgICAgICAgICBTRUFNU0hFTCAgICAgICAwRCAgICAgMjIKMTE2LDAsMCwwLDA7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAxUCAgICAgIDEKMTIzLDAsMCwxOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAzUCAgICAgIDIKMTkyLDEsMywxOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA1UCAgICAgIDMKMTEwLDEsMCwwLDEsMCwxOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA3UCAgICAgIDQKNTAyLDIsMSwwLDAsMSwwLDE7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA5UCAgICAgIDUKNTA0LDEsNyw5LDEsOSwyOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDExUCAgICAgIDYKMTI2LDEsMSwxLDAsMSwwLDAsMCwxLDEsMSwxLDAsMCwwLDAsMSwwLDAsMSwwLDAsMTsgICAgICAgICAgICAgICAgICAgIDEzUCAgICAgIDcKMTI2LDEsMSwxLDAsMSwwLDAsMCwxLDEsMSwxLDYuMjgzMTg1MzA3MTc5NTg2LDEsMCw2LjI4MzE4NTMwNzE3OSAgICAgIDE1UCAgICAgIDgKNTg2LDAsMCwwLDEsMCwwLDE7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDE1UCAgICAgIDkKNTA4LDIsMCwxMSwxLDEsMSwxLDEzLDAsMTEsMSwwLDEsMSwxNTsgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDE3UCAgICAgMTAKNTEwLDUsMSwxLDE3OyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDE5UCAgICAgMTEKNTE0LDEsMTksMTsgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDIxUCAgICAgMTIKUzAwMDAwMDFHMDAwMDAwMkQwMDAwMDIyUDAwMDAwMTIgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgVCAgICAgIDEK",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 0,
-        "stream": "iges"
+        "stream": "iges",
+        "untyped": [
+          "model"
+        ]
       }
-    }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

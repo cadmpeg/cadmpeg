@@ -76,6 +76,37 @@ fn global_field_categories_apply_defaults_and_require_no_default_fields() {
     }
 }
 
+/// A field 24 inside the unreadable suffix falls back to 0 and is charged
+/// as a malformed field, as the Global field matrix states.
+#[test]
+fn an_unreadable_drafting_standard_is_charged_with_its_fallback() {
+    let mut fields = valid_global_fields();
+    fields.truncate(24);
+    fields[22] = "11".to_owned();
+    fields[23] = "1H0x".to_owned();
+
+    let (parsed, losses) = resolve_global_fields(&fields);
+
+    assert_eq!(parsed.drafting_standard(), 0);
+    assert_eq!(
+        code_count(&losses, IgesLossCode::GlobalNoncanonicalFraming),
+        1,
+        "{losses:#?}"
+    );
+    assert_eq!(
+        code_count(&losses, IgesLossCode::GlobalMetadataFieldUnusable),
+        1,
+        "{losses:#?}"
+    );
+    assert!(
+        losses.iter().any(|loss| {
+            loss.code == IgesLossCode::GlobalMetadataFieldUnusable.kind()
+                && loss.message.contains("field 24")
+        }),
+        "{losses:#?}"
+    );
+}
+
 #[test]
 fn omitted_sender_product_is_retained_as_null_for_reader_compatibility() {
     let mut fields = valid_global_fields();
@@ -274,7 +305,7 @@ fn an_absent_maximum_line_width_decodes_in_salvage_and_strict_modes() {
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     assert_eq!(result.report().losses.len(), 1, "{:#?}", result.report());
     assert_eq!(
         report_code_count(result.report(), IgesLossCode::LineWeightScaleUnavailable),
@@ -307,7 +338,7 @@ fn a_malformed_single_precision_significance_decodes_and_strict_refuses() {
         let result = IgesCodec
             .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
             .unwrap();
-        assert_eq!(result.ir().model.points.len(), 1, "{value}");
+        assert_eq!(result.ir().geometry.points.len(), 1, "{value}");
         assert_eq!(
             report_code_count(
                 result.report(),
@@ -344,7 +375,7 @@ fn a_negative_minimum_resolution_decodes_with_the_semantic_context_loss() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     assert_eq!(
         result.ir().tolerances.linear,
         cadmpeg_ir::units::Tolerances::default().linear
@@ -366,7 +397,7 @@ fn a_malformed_generation_date_decodes_in_salvage_and_strict_modes() {
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     assert_eq!(result.report().losses.len(), 1, "{:#?}", result.report());
     assert_eq!(
         report_code_count(result.report(), IgesLossCode::GlobalMetadataFieldUnusable),

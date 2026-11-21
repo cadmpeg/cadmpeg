@@ -119,12 +119,12 @@ fn decode_zero_entity_transfers_framed_cylinder() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
     assert!(result.report().geometry_transferred());
-    assert_eq!(result.ir().model.surfaces.len(), 1);
-    assert!(result.ir().model.points.is_empty());
-    assert!(result.ir().model.vertices.is_empty());
-    assert!(result.ir().model.bodies.is_empty());
-    assert!(result.ir().model.shells.is_empty());
-    match &result.ir().model.surfaces[0].geometry {
+    assert_eq!(result.ir().geometry.surfaces.len(), 1);
+    assert!(result.ir().geometry.points.is_empty());
+    assert!(result.ir().geometry.vertices.is_empty());
+    assert!(result.ir().geometry.bodies.is_empty());
+    assert!(result.ir().geometry.shells.is_empty());
+    match &result.ir().geometry.surfaces[0].geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.frame().axis().as_raw();
@@ -185,10 +185,10 @@ fn decode_zero_entity_transfers_parametric_surface_curve_without_a_cache() {
         ),
         1
     );
-    let [curve] = result.ir().model.curves.as_slice() else {
+    let [curve] = result.ir().geometry.curves.as_slice() else {
         panic!("one transferred support curve")
     };
-    let [construction] = result.ir().model.procedural_curves.as_slice() else {
+    let [construction] = result.ir().geometry.procedural_curves.as_slice() else {
         panic!("one cacheless support construction")
     };
     assert!(matches!(
@@ -199,7 +199,10 @@ fn decode_zero_entity_transfers_parametric_surface_curve_without_a_cache() {
         } if id == &construction.id
     ));
     assert_eq!(
-        result.ir().model.procedural_curve_owner(&construction.id),
+        result
+            .ir()
+            .geometry
+            .procedural_curve_owner(&construction.id),
         Some(&curve.id)
     );
     assert_eq!(construction.cache_fit_tolerance(), None);
@@ -216,7 +219,7 @@ fn decode_zero_entity_transfers_parametric_surface_curve_without_a_cache() {
     assert_eq!(context.parameter_range().endpoints(), [0.0, 1.0]);
     assert_eq!(
         context.sides()[0].surface.as_ref(),
-        Some(&result.ir().model.surfaces[0].id)
+        Some(&result.ir().geometry.surfaces[0].id)
     );
     assert!(context.sides()[0].pcurve.is_some());
     assert_eq!(context.sides()[1].surface, None);
@@ -251,13 +254,13 @@ fn decode_zero_entity_transfers_exact_model_curve_directly() {
         0
     );
     assert!(matches!(
-        result.ir().model.curves.as_slice(),
+        result.ir().geometry.curves.as_slice(),
         [cadmpeg_ir::geometry::Curve {
             geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_)),
             ..
         }]
     ));
-    assert!(result.ir().model.procedural_curves.is_empty());
+    assert!(result.ir().geometry.procedural_curves.is_empty());
 
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
         .expect("validate the neutral model");
@@ -270,8 +273,8 @@ fn decode_zero_entity_transfers_inline_nurbs_surface() {
     let result = CatiaCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.surfaces.len(), 1);
-    match &result.ir().model.surfaces[0].geometry {
+    assert_eq!(result.ir().geometry.surfaces.len(), 1);
+    match &result.ir().geometry.surfaces[0].geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
             assert_eq!((surface.u_degree(), surface.v_degree()), (3, 3));
             assert_eq!((surface.u_count(), surface.v_count()), (7, 7));

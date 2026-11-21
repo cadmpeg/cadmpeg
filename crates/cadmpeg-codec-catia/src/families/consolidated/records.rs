@@ -1052,7 +1052,8 @@ pub(crate) fn consolidated_compact_edge_endpoints_from_records(
                 }
                 AllocationReferenceEncoding::Selector2
                 | AllocationReferenceEncoding::TaggedU8
-                | AllocationReferenceEncoding::TaggedU16 => return None,
+                | AllocationReferenceEncoding::TaggedU16
+                | AllocationReferenceEncoding::TaggedU24 => return None,
             };
             let target_record = self.records.get(target)?;
             if target_record.family() != ConsolidatedFamily::B {
@@ -1488,6 +1489,16 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
     records: &[ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<ResolvedConsolidatedEdgeBlock>, cadmpeg_core::CodecError> {
+    resolve_selected_consolidated_edge_blocks(ctx, data, records, |_| true, refusal)
+}
+
+pub(crate) fn resolve_selected_consolidated_edge_blocks(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+    include: impl Fn(&ConsolidatedEdgeBlock) -> bool,
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Result<Vec<ResolvedConsolidatedEdgeBlock>, cadmpeg_core::CodecError> {
     let surfaces = a5_surfaces_from_records(data, records, refusal)?;
     let points = object_stream_vertices_from_records(data, records);
     let standalone = (b2_cylinders_from_records(data, records)).collect::<Vec<_>>();
@@ -1506,7 +1517,10 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
         nurbs_surfaces: &surfaces,
     };
     let mut resolved = Vec::new();
-    for block in consolidated_edge_blocks_from_records(data, records) {
+    for block in consolidated_edge_blocks_from_records(data, records)
+        .into_iter()
+        .filter(include)
+    {
         let mut supports = [None, None];
         for side in [0, 1] {
             supports[side] = resolve_side_support(ctx, &block.pcurves[side], &points, &carriers)?;
@@ -1614,9 +1628,13 @@ fn resolve_side_support(
     }
     for sphere in carriers.spheres {
         let geometry = b2_sphere_geometry(sphere);
+        let radius = sphere.radius.get();
         if pcurve_endpoints_match(pcurve, points, |[u, v]| {
             match cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(
-                ctx, &geometry, u, v,
+                ctx,
+                &geometry,
+                u / radius,
+                v / radius,
             ))? {
                 Ok(point) => Ok(Some(point.get())),
                 Err(failure) => failure.non_finite(),
@@ -1786,12 +1804,13 @@ fn support_points(
             };
             (pcurve.sites.iter().map(|site| {
                 let [u, v] = site.point.get();
+                let radius = carrier.radius.get();
                 match cadmpeg_ir::eval::decode::outer_refusal(
                     cadmpeg_ir::eval::decode::surface_point(
                         ctx,
                         &b2_sphere_geometry(carrier),
-                        u,
-                        v,
+                        u / radius,
+                        v / radius,
                     ),
                 )? {
                     Ok(point) => Ok(Some(point.get())),
@@ -1893,12 +1912,13 @@ fn support_points_at(
                 .iter()
                 .map(|site| {
                     let [u, v] = site.point.get();
+                    let radius = carrier.radius.get();
                     match cadmpeg_ir::eval::decode::outer_refusal(
                         cadmpeg_ir::eval::decode::surface_point(
                             ctx,
                             &b2_sphere_geometry(carrier),
-                            u,
-                            v,
+                            u / radius,
+                            v / radius,
                         ),
                     )? {
                         Ok(point) => Ok(Some(point.get())),
@@ -2196,7 +2216,7 @@ mod tests {
         ));
         let tiny = 1e-200;
         let offset = nurbs_carrier_offset(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &surface,
             &[[0.25, 0.25], [0.75, 0.75]],
             &[Point3::new(0.25, 0.25, tiny), Point3::new(0.75, 0.75, tiny)],
@@ -2207,7 +2227,7 @@ mod tests {
 
         assert_eq!(
             nurbs_carrier_offset(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &surface,
                 &[[0.25, 0.25], [0.75, 0.75]],
                 &[
@@ -2220,7 +2240,7 @@ mod tests {
         );
         assert_eq!(
             nurbs_carrier_offset(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &surface,
                 &[[0.0, 0.0]],
                 &[Point3::new(tiny, 0.0, tiny)],
@@ -2231,7 +2251,7 @@ mod tests {
         for invalid in [f64::NAN, f64::INFINITY] {
             assert_eq!(
                 nurbs_carrier_offset(
-                    &cadmpeg_test_support::service_decode_context(),
+                    &cadmpeg_core::decode::test_support::service_decode_context(),
                     &surface,
                     &[[0.25, 0.25], [0.75, 0.75]],
                     &[

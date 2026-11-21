@@ -265,7 +265,7 @@ fn project_default_bindings(
                 &cadmpeg_ir::identity_namespace!("inventor", "presentation", "body-default"),
                 short_digest_key(body.as_str().as_bytes()),
             ),
-            target: AppearanceTarget::Body(body.clone()),
+            target: AppearanceTarget::Body(body.clone()).into(),
             appearance: appearance.clone(),
             source_entity_id: Some(format!(
                 "inventor:presentation:rendering-style#{}-{}",
@@ -274,6 +274,7 @@ fn project_default_bindings(
             object_type: Some("Body".into()),
             visible: None,
             channels: BTreeMap::default(),
+            native_ref: None,
         });
     }
     Ok(PresentationProjection {
@@ -377,7 +378,7 @@ fn project_face_bindings(
         }
         let style = color_styles[0];
         let [r, g, b, a] = style.colors[1].map(cadmpeg_ir::scalar::FiniteBinary32::get);
-        let Some(color) = Color::new(r, g, b, a) else {
+        let Some(color) = Color::new(f64::from(r), f64::from(g), f64::from(b), f64::from(a)) else {
             count_unresolved(
                 &mut projection.unresolved_face_overrides,
                 UnresolvedCause::Color,
@@ -408,6 +409,7 @@ fn project_face_bindings(
                 base_color: Some(color),
                 properties: BTreeMap::new(),
                 textures: Vec::new(),
+                native_ref: None,
             });
             appearance_ids.insert(appearance_key, id.clone());
             id
@@ -418,7 +420,7 @@ fn project_face_bindings(
                 &cadmpeg_ir::identity_namespace!("inventor", "presentation", "face-override"),
                 short_digest_key(face_id.as_str().as_bytes()),
             ),
-            target: AppearanceTarget::Face(face_id.clone()),
+            target: AppearanceTarget::Face(face_id.clone()).into(),
             appearance: appearance_id,
             source_entity_id: Some(format!(
                 "inventor:presentation:graphics-face#{}-{}",
@@ -430,6 +432,7 @@ fn project_face_bindings(
                 cadmpeg_core::nonblank_literal!("precedence"),
                 "face_over_body".into(),
             )]),
+            native_ref: None,
         });
     }
     Ok(())
@@ -1242,6 +1245,7 @@ mod tests {
             base_color: None,
             properties: BTreeMap::new(),
             textures: Vec::new(),
+            native_ref: None,
         };
         let body = BodyId::mint("inventor:test:body#1").expect("body id");
         (inventory, appearance, body)
@@ -1477,6 +1481,7 @@ mod tests {
             base_color: None,
             properties: BTreeMap::new(),
             textures: Vec::new(),
+            native_ref: None,
         };
 
         let arena = DecodeArena::new();
@@ -1501,6 +1506,7 @@ mod tests {
         assert_eq!(
             binding.target,
             AppearanceTarget::Body(BodyId::mint("inventor:test:body#1").expect("identity grammar"))
+                .into()
         );
     }
 
@@ -1735,12 +1741,20 @@ mod tests {
         };
         assert_eq!(
             appearance.base_color,
-            Some(Color::new(0.2, 0.4, 0.6, 0.8).expect("valid color"))
+            Some(
+                Color::new(
+                    f64::from(0.2_f32),
+                    f64::from(0.4_f32),
+                    f64::from(0.6_f32),
+                    f64::from(0.8_f32)
+                )
+                .expect("valid color")
+            )
         );
         let [binding] = projection.bindings.as_slice() else {
             panic!("one face binding must be projected");
         };
-        assert_eq!(binding.target, AppearanceTarget::Face(face_id));
+        assert_eq!(binding.target, AppearanceTarget::Face(face_id).into());
         assert_eq!(binding.appearance, appearance.id);
         assert_eq!(
             binding.channels.get("precedence").map(String::as_str),

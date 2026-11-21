@@ -23,7 +23,7 @@ use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::configuration_table::{project, set_active_row};
-use crate::test_support::native_test::{f3d_native, f3d_native_mut, update_f3d_native, TestEncode};
+use crate::test_support::native_test::{f3d_native, f3d_native_mut, update_f3d_native};
 use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::zip_test::{f3d_with_configuration, f3d_with_smbh};
 use crate::F3dCodec;
@@ -56,7 +56,7 @@ fn assert_invalid_configuration_is_contained(name: &str, payload: &[u8], expecte
     );
     assert!(f3d_native(contained.ir()).design_configurations.is_empty());
     assert!(contained.ir().model.configurations.is_empty());
-    assert!(!contained.ir().model.bodies.is_empty());
+    assert!(!contained.ir().geometry.bodies.is_empty());
 
     let mut strict = DecodeOptions::default();
     strict.policy.mode = cadmpeg_core::decode::DecodeMode::Strict;
@@ -200,22 +200,24 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
 
     let mut root_edit = decoded.ir().clone();
     set_active_row(&mut root_edit, "medium");
-    let error = crate::test_support::plan_inherited_write(
+    crate::test_support::assert_written_with_loss(
         &root_edit,
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .expect_err("an active-row edit has no Design record to patch");
-    assert!(
-        error.to_string().contains("changes the Design root record"),
-        "{error}"
+        Some(decoded.source_fidelity()),
+        &crate::loss::F3dLossCode::WriterPatchDeclined
+            .kind()
+            .to_string(),
+        "changes the Design root record",
     );
 
     let expected_projected = decoded.ir().model.configurations.clone();
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
@@ -230,27 +232,19 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         .find(|configuration| configuration.name.as_deref() == Some("Medium"))
         .expect("medium configuration")
         .active = true;
-    let error = F3dCodec
-        .plan(
-            EncodeInput::new(&inconsistent, None),
-            TargetRequest::Inherit,
-        )
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("neutral/native configuration divergence must be rejected");
-    assert!(error
-        .to_string()
-        .contains("must equal the projection of native configuration tables"));
+    crate::test_support::assert_written_with_loss(
+        &inconsistent,
+        None,
+        "export/native.records-omitted",
+        "must equal the projection of native configuration tables",
+    );
     let mut rooted = source_less.clone();
     set_active_row(&mut rooted, "medium");
-    let error = F3dCodec
-        .plan(EncodeInput::new(&rooted, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("source-less generation writes no root record");
-    assert!(
-        error
-            .to_string()
-            .contains("does not write the Design configuration root record"),
-        "{error}"
+    crate::test_support::assert_written_with_loss(
+        &rooted,
+        None,
+        "export/native.records-omitted",
+        "does not write the Design configuration root record",
     );
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -316,7 +310,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
 }
 
 #[test]
-fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
+fn generated_f3d_replays_byte_exactly_and_regenerates_on_semantic_edits() {
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let decoded = EditableDecodeResult::from(
         F3dCodec
@@ -334,8 +328,8 @@ fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
     assert_eq!(replayed, source);
 
     let mut point_edited = decoded.ir().clone();
-    let moved = point_edited.model.points[0].position().get();
-    point_edited.model.points[0].set_position(
+    let moved = point_edited.geometry.points[0].position().get();
+    point_edited.geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 12.5,
             moved.y,
@@ -344,7 +338,7 @@ fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
         .expect("a finite position is a point"),
     );
     let cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
-        &mut point_edited.model.surfaces[0].geometry
+        &mut point_edited.geometry.surfaces[0].geometry
     else {
         panic!("generated carrier must be a plane")
     };
@@ -368,19 +362,24 @@ fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
-        round_trip.ir().model.points[0].position().get(),
-        point_edited.model.points[0].position().get()
+        round_trip.ir().geometry.points[0].position().get(),
+        point_edited.geometry.points[0].position().get()
     );
     assert_eq!(
-        round_trip.ir().model.surfaces[0].geometry,
-        point_edited.model.surfaces[0].geometry
+        round_trip.ir().geometry.surfaces[0].geometry,
+        point_edited.geometry.surfaces[0].geometry
     );
 
     let (mut modified, _, fidelity) = decoded.into_parts();
-    modified.model.bodies[0].name = Some("edited".into());
-    let error = crate::test_support::plan_inherited_write(&modified, &fidelity, &mut Vec::new())
-        .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    modified.geometry.bodies[0].name = Some("edited".into());
+    crate::test_support::assert_written_with_loss(
+        &modified,
+        Some(&fidelity),
+        &crate::loss::F3dLossCode::WriterPatchDeclined
+            .kind()
+            .to_string(),
+        "",
+    );
 }
 
 #[test]
@@ -392,19 +391,23 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
-    source_less.model.bodies[0].visible = Some(false);
-    source_less.model.vertices[0].tolerance =
+    source_less.geometry.bodies[0].visible = Some(false);
+    source_less.geometry.vertices[0].tolerance =
         Some(cadmpeg_ir::scalar::PositiveReal::new(0.025).expect("positive finite tolerance"));
-    source_less.model.edges[0].tolerance =
+    source_less.geometry.edges[0].tolerance =
         Some(cadmpeg_ir::scalar::PositiveReal::new(0.035).expect("positive finite tolerance"));
-    let tangent_edge = source_less.model.edges[0].id.clone();
-    let visible_body = source_less.model.bodies[0].id.clone();
-    let tolerant_vertex = source_less.model.vertices[0].id.clone();
-    let tolerant_edge = source_less.model.edges[0].id.clone();
-    let owner_coedge = source_less.model.coedges[0].id.clone();
-    let tolerant_coedge = source_less.model.coedges[1].id.clone();
+    let tangent_edge = source_less.geometry.edges[0].id.clone();
+    let visible_body = source_less.geometry.bodies[0].id.clone();
+    let tolerant_vertex = source_less.geometry.vertices[0].id.clone();
+    let tolerant_edge = source_less.geometry.edges[0].id.clone();
+    let owner_coedge = source_less.geometry.coedges[0].id.clone();
+    let tolerant_coedge = source_less.geometry.coedges[1].id.clone();
     {
         let mut native = f3d_native_mut(&mut source_less);
         let metadata = native
@@ -530,21 +533,20 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
             wire.asm_body_key = 43;
             *visibility = crate::records::bodies::BodyVisibility::try_from(wire).unwrap();
         }
-        let error = F3dCodec
-            .plan(EncodeInput::new(&invalid, None), TargetRequest::Inherit)
-            .and_then(|plan| plan.write_to(&mut Vec::new()))
-            .expect_err("visibility must rejoin the emitted ASM body");
-        assert!(error
-            .to_string()
-            .contains("uses an ASM key different from body"));
+        crate::test_support::assert_written_with_loss(
+            &invalid,
+            None,
+            "export/native.records-omitted",
+            "uses an ASM key different from body",
+        );
     }
 
-    assert_eq!(round_trip.ir().model.bodies.len(), 1);
+    assert_eq!(round_trip.ir().geometry.bodies.len(), 1);
     assert_eq!(
         f3d_native(round_trip.ir()).body_native_keys[0].asm_body_key,
         Some(42)
     );
-    assert_eq!(round_trip.ir().model.bodies[0].visible, Some(false));
+    assert_eq!(round_trip.ir().geometry.bodies[0].visible, Some(false));
     assert_eq!(f3d_native(round_trip.ir()).body_visibilities.len(), 1);
     assert!(!f3d_native(round_trip.ir()).body_visibilities[0].visible);
     assert_eq!(
@@ -552,22 +554,22 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh:body-visibility#42"
     );
     assert_eq!(
-        round_trip.ir().model.bodies[0].kind,
+        round_trip.ir().geometry.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Sheet
     );
-    assert_eq!(round_trip.ir().model.faces.len(), 1);
-    assert_eq!(round_trip.ir().model.loops.len(), 1);
-    assert_eq!(round_trip.ir().model.coedges.len(), 3);
-    assert_eq!(round_trip.ir().model.edges.len(), 3);
-    assert_eq!(round_trip.ir().model.vertices.len(), 3);
+    assert_eq!(round_trip.ir().geometry.faces.len(), 1);
+    assert_eq!(round_trip.ir().geometry.loops.len(), 1);
+    assert_eq!(round_trip.ir().geometry.coedges.len(), 3);
+    assert_eq!(round_trip.ir().geometry.edges.len(), 3);
+    assert_eq!(round_trip.ir().geometry.vertices.len(), 3);
     assert_eq!(
-        round_trip.ir().model.vertices[0]
+        round_trip.ir().geometry.vertices[0]
             .tolerance
             .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(0.025)
     );
     assert_eq!(
-        round_trip.ir().model.edges[0]
+        round_trip.ir().geometry.edges[0]
             .tolerance
             .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(0.035)
@@ -607,7 +609,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     assert_eq!(continuities[0].sense, cadmpeg_ir::topology::Sense::Reversed);
     assert_eq!(
         f3d_native(round_trip.ir()).edge_ownerships[0].owner_coedge,
-        Some(round_trip.ir().model.coedges[0].id.clone())
+        Some(round_trip.ir().geometry.coedges[0].id.clone())
     );
     assert!(continuities[1..]
         .iter()
@@ -616,14 +618,17 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         f3d_native(round_trip.ir()).face_sidedness[0].containment,
         Some(cadmpeg_asm::brep::records::FaceContainment::In)
     );
-    assert_eq!(round_trip.ir().model.points, source_less.model.points);
-    assert_eq!(round_trip.ir().model.surfaces, source_less.model.surfaces);
+    assert_eq!(round_trip.ir().geometry.points, source_less.geometry.points);
+    assert_eq!(
+        round_trip.ir().geometry.surfaces,
+        source_less.geometry.surfaces
+    );
 
     let (mut edited, _, fidelity) = round_trip.into_parts();
-    edited.model.bodies[0].visible = Some(true);
-    edited.model.vertices[0].tolerance =
+    edited.geometry.bodies[0].visible = Some(true);
+    edited.geometry.vertices[0].tolerance =
         Some(cadmpeg_ir::scalar::PositiveReal::new(0.05).expect("positive finite tolerance"));
-    edited.model.edges[0].tolerance =
+    edited.geometry.edges[0].tolerance =
         Some(cadmpeg_ir::scalar::PositiveReal::new(0.06).expect("positive finite tolerance"));
     {
         let mut native = f3d_native_mut(&mut edited);
@@ -643,13 +648,13 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         Some(cadmpeg_asm::brep::records::FaceContainment::Out)
     );
     assert_eq!(
-        retained.ir().model.vertices[0]
+        retained.ir().geometry.vertices[0]
             .tolerance
             .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(0.05)
     );
     assert_eq!(
-        retained.ir().model.edges[0]
+        retained.ir().geometry.edges[0]
             .tolerance
             .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(0.06)
@@ -662,7 +667,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         f3d_native(retained.ir()).tolerant_edge_tails[0].trailing_field,
         Some(1)
     );
-    assert_eq!(retained.ir().model.bodies[0].visible, Some(true));
+    assert_eq!(retained.ir().geometry.bodies[0].visible, Some(true));
     assert_eq!(
         f3d_native(retained.ir()).body_native_keys[0].asm_body_key,
         Some(84)
@@ -681,203 +686,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
 }
 
 #[test]
-fn tolerant_edge_and_vertex_tails_round_trip_all_trailing_forms() {
-    // The tedge tail carries the serializer revision stamp, then a trailing
-    // LONG present only in newer streams and taking the values 0, 1, and 2.
-    // The tvertex trailing LONG shares the gate and the value set. Each form
-    // must survive a write/decode cycle byte-for-byte.
-    for (edge_trailing, vertex_trailing) in [
-        (Some(0), Some(0)),
-        (Some(1), Some(1)),
-        (Some(2), Some(2)),
-        (None, None),
-    ] {
-        let source = f3d_with_smbh(&synthetic_geometry_smbh());
-        let decoded = F3dCodec
-            .decode(&mut Cursor::new(source), &DecodeOptions::default())
-            .expect("generated planar triangle decode");
-        let (mut source_less, _, _) = decoded.into_parts();
-        source_less.source = None;
-        source_less
-            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
-            .unwrap();
-        source_less.model.vertices[0].tolerance =
-            Some(cadmpeg_ir::scalar::PositiveReal::new(0.025).expect("positive finite tolerance"));
-        source_less.model.edges[0].tolerance =
-            Some(cadmpeg_ir::scalar::PositiveReal::new(0.035).expect("positive finite tolerance"));
-        let tolerant_vertex = source_less.model.vertices[0].id.clone();
-        let tolerant_edge = source_less.model.edges[0].id.clone();
-        {
-            let mut native = f3d_native_mut(&mut source_less);
-            native.tolerant_vertex_tails = vec![cadmpeg_asm::brep::records::TolerantVertexTail {
-                source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
-                    crate::ids::ID_FORMAT,
-                ),
-                vertex: tolerant_vertex,
-                record_index: 0,
-                leading_tolerances: finite_tolerance_pair([-1.0, -1.0]),
-                evaluated_slot: cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Evaluated {
-                    trailing: vertex_trailing,
-                },
-            }];
-            native.tolerant_edge_tails = vec![cadmpeg_asm::brep::records::TolerantEdgeTail {
-                source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
-                    crate::ids::ID_FORMAT,
-                ),
-                edge: tolerant_edge,
-                record_index: 0,
-                entity_revision: 22800,
-                trailing_field: edge_trailing,
-            }];
-        }
-        let mut encoded = Vec::new();
-        F3dCodec
-            .encode(&source_less, &mut encoded)
-            .expect("tolerant tail encode");
-        let round_trip = F3dCodec
-            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-            .expect("tolerant tail round trip");
-        assert_eq!(
-            f3d_native(round_trip.ir()).tolerant_edge_tails[0].entity_revision,
-            22800
-        );
-        assert_eq!(
-            f3d_native(round_trip.ir()).tolerant_edge_tails[0].trailing_field,
-            edge_trailing
-        );
-        assert_eq!(
-            f3d_native(round_trip.ir()).tolerant_vertex_tails[0]
-                .evaluated_slot
-                .trailing(),
-            vertex_trailing
-        );
-    }
-}
-
-#[test]
-fn an_unset_tolerant_vertex_sentinel_round_trips_without_a_neutral_tolerance() {
-    // The `-1` unset evaluated slot is a marker rather than a length: the
-    // neutral vertex carries no tolerance, the native tail keeps the unset
-    // fact, and generation writes the sentinel back into a tvertex record.
-    let source = f3d_with_smbh(&synthetic_geometry_smbh());
-    let decoded = F3dCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .expect("generated planar triangle decode");
-    let (mut source_less, _, _) = decoded.into_parts();
-    source_less.source = None;
-    source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
-        .unwrap();
-    let tolerant_vertex = source_less.model.vertices[0].id.clone();
-    assert_eq!(source_less.model.vertices[0].tolerance, None);
-    {
-        let mut native = f3d_native_mut(&mut source_less);
-        native.tolerant_vertex_tails = vec![cadmpeg_asm::brep::records::TolerantVertexTail {
-            source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
-                crate::ids::ID_FORMAT,
-            ),
-            vertex: tolerant_vertex,
-            record_index: 0,
-            leading_tolerances: finite_tolerance_pair([-1.0, -1.0]),
-            evaluated_slot: cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Unset {
-                trailing: Some(0),
-            },
-        }];
-    }
-    let mut encoded = Vec::new();
-    F3dCodec
-        .encode(&source_less, &mut encoded)
-        .expect("unset tolerant vertex encode");
-    let round_trip = F3dCodec
-        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-        .expect("unset tolerant vertex round trip");
-    let vertex = round_trip
-        .ir()
-        .model
-        .vertices
-        .iter()
-        .find(|vertex| {
-            f3d_native(round_trip.ir())
-                .tolerant_vertex_tails
-                .iter()
-                .any(|tail| tail.vertex == vertex.id)
-        })
-        .expect("tolerant vertex survives");
-    assert_eq!(vertex.tolerance, None);
-    let tail = &f3d_native(round_trip.ir()).tolerant_vertex_tails[0];
-    assert_eq!(
-        tail.evaluated_slot,
-        cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Unset { trailing: Some(0) }
-    );
-    assert_eq!(
-        tail.leading_tolerances
-            .map(cadmpeg_ir::scalar::FiniteReal::get),
-        [-1.0, -1.0]
-    );
-}
-#[test]
-fn an_absent_tolerant_vertex_slot_round_trips_without_a_neutral_tolerance() {
-    // A tvertex record that ends before the evaluated slot has no neutral
-    // tolerance; the native tail keeps the absent fact and generation writes
-    // only the leading slots back.
-    let source = f3d_with_smbh(&synthetic_geometry_smbh());
-    let decoded = F3dCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .expect("generated planar triangle decode");
-    let (mut source_less, _, _) = decoded.into_parts();
-    source_less.source = None;
-    source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
-        .unwrap();
-    let tolerant_vertex = source_less.model.vertices[0].id.clone();
-    assert_eq!(source_less.model.vertices[0].tolerance, None);
-    {
-        let mut native = f3d_native_mut(&mut source_less);
-        native.tolerant_vertex_tails = vec![cadmpeg_asm::brep::records::TolerantVertexTail {
-            source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
-                crate::ids::ID_FORMAT,
-            ),
-            vertex: tolerant_vertex,
-            record_index: 0,
-            leading_tolerances: finite_tolerance_pair([-1.0, -1.0]),
-            evaluated_slot: cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Absent {},
-        }];
-    }
-    let mut encoded = Vec::new();
-    F3dCodec
-        .encode(&source_less, &mut encoded)
-        .expect("absent tolerant vertex encode");
-    let round_trip = F3dCodec
-        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-        .expect("absent tolerant vertex round trip");
-    let vertex = round_trip
-        .ir()
-        .model
-        .vertices
-        .iter()
-        .find(|vertex| {
-            f3d_native(round_trip.ir())
-                .tolerant_vertex_tails
-                .iter()
-                .any(|tail| tail.vertex == vertex.id)
-        })
-        .expect("tolerant vertex survives");
-    assert_eq!(vertex.tolerance, None);
-    let tail = &f3d_native(round_trip.ir()).tolerant_vertex_tails[0];
-    assert_eq!(
-        tail.evaluated_slot,
-        cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Absent {}
-    );
-    assert_eq!(tail.evaluated_slot.trailing(), None);
-    assert_eq!(
-        tail.leading_tolerances
-            .map(cadmpeg_ir::scalar::FiniteReal::get),
-        [-1.0, -1.0]
-    );
-}
-
-#[test]
-fn generated_source_less_f3d_rejects_subds() {
+fn generated_source_less_f3d_drops_subds() {
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -885,28 +694,32 @@ fn generated_source_less_f3d_rejects_subds() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
-    source_less.model.subds.push(cadmpeg_ir::SubdSurface {
+    source_less.geometry.subds.push(cadmpeg_ir::SubdSurface {
         id: cadmpeg_ir::ids::SubdId::mint("test:f3d:subd#0").expect("identity grammar"),
         scheme: cadmpeg_ir::SubdScheme::CatmullClark,
         source_object: None,
         cage: cadmpeg_ir::subd::SubdCage::default(),
+        native_ref: None,
     });
 
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .unwrap_err();
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::NotImplemented(message)
-            if message.contains("does not support SubD surfaces")
-    ));
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        &crate::loss::F3dLossCode::WriterSubdOmitted
+            .kind()
+            .to_string(),
+        "test:f3d:subd#0",
+    );
 }
 
 #[test]
-fn generated_source_less_f3d_rejects_unbacked_design_parameters() {
+fn generated_source_less_f3d_drops_unbacked_design_parameters() {
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -914,7 +727,11 @@ fn generated_source_less_f3d_rejects_unbacked_design_parameters() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     source_less
         .model
@@ -937,15 +754,14 @@ fn generated_source_less_f3d_rejects_unbacked_design_parameters() {
             native_ref: None,
         });
 
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .unwrap_err();
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::Malformed(message)
-            if message.contains("must equal the projection")
-    ));
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        &crate::loss::F3dLossCode::WriterParameterOmitted
+            .kind()
+            .to_string(),
+        "test:f3d:parameter#0",
+    );
 }
 
 #[test]
@@ -1077,7 +893,11 @@ fn generated_source_less_writes_document_tolerance_contract() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     source_less.tolerances.linear =
         cadmpeg_ir::scalar::PositiveLength::new(2.5e-7).expect("positive finite tolerance");
@@ -1096,7 +916,7 @@ fn generated_source_less_writes_document_tolerance_contract() {
 }
 
 #[test]
-fn generated_source_less_preserves_supported_topology_tolerances_or_refuses_loss() {
+fn generated_source_less_preserves_supported_topology_tolerances_or_reports_loss() {
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -1104,22 +924,26 @@ fn generated_source_less_preserves_supported_topology_tolerances_or_refuses_loss
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
 
-    source_less.model.faces[0].tolerance =
+    source_less.geometry.faces[0].tolerance =
         Some(cadmpeg_ir::scalar::PositiveReal::new(0.02).expect("positive finite tolerance"));
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("face tolerance must not disappear");
-    assert!(
-        error.to_string().contains("cannot serialize face")
-            && error.to_string().contains("tolerance losslessly")
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        &crate::loss::F3dLossCode::WriterGeometryOmitted
+            .kind()
+            .to_string(),
+        "face tolerance",
     );
 
-    source_less.model.faces[0].tolerance = None;
-    source_less.model.edges[0].tolerance =
+    source_less.geometry.faces[0].tolerance = None;
+    source_less.geometry.edges[0].tolerance =
         Some(cadmpeg_ir::scalar::PositiveReal::new(0.03).expect("positive finite tolerance"));
     let mut encoded = Vec::new();
     F3dCodec
@@ -1130,14 +954,14 @@ fn generated_source_less_preserves_supported_topology_tolerances_or_refuses_loss
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("supported tolerant edge round trip");
     assert_eq!(
-        round_trip.ir().model.edges[0]
+        round_trip.ir().geometry.edges[0]
             .tolerance
             .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(0.03)
     );
 
-    source_less.model.edges[0].tolerance = None;
-    source_less.model.vertices[0].tolerance =
+    source_less.geometry.edges[0].tolerance = None;
+    source_less.geometry.vertices[0].tolerance =
         Some(cadmpeg_ir::scalar::PositiveReal::new(0.04).expect("positive finite tolerance"));
     let mut encoded = Vec::new();
     F3dCodec
@@ -1148,7 +972,7 @@ fn generated_source_less_preserves_supported_topology_tolerances_or_refuses_loss
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("supported tolerant vertex round trip");
     assert_eq!(
-        round_trip.ir().model.vertices[0]
+        round_trip.ir().geometry.vertices[0]
             .tolerance
             .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(0.04)
@@ -1156,7 +980,7 @@ fn generated_source_less_preserves_supported_topology_tolerances_or_refuses_loss
 }
 
 #[test]
-fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
+fn generated_source_less_reports_auxiliary_geometry_and_source_identity_it_drops() {
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::tessellation::Tessellation;
     use cadmpeg_ir::SourceObjectAssociation;
@@ -1168,7 +992,11 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let association = SourceObjectAssociation {
         geometry_role: None,
@@ -1182,39 +1010,45 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
         instance_path: Vec::new(),
     };
 
-    source_less.model.surfaces[0].source_object = Some(association.clone());
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("surface source identity must not disappear");
-    assert!(error
-        .to_string()
-        .contains("source-object association on surface"));
+    source_less.geometry.surfaces[0].source_object = Some(association.clone());
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        &crate::loss::F3dLossCode::WriterSourceAssociationOmitted
+            .kind()
+            .to_string(),
+        "source-object association",
+    );
 
-    source_less.model.surfaces[0].source_object = None;
-    source_less.model.curves.push(cadmpeg_ir::geometry::Curve {
-        parameter_range: None,
-        id: "generated:test:associated-curve#0"
-            .try_into()
-            .expect("valid identity"),
-        geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            )
-            .unwrap(),
-        )),
-        source_object: Some(association),
-    });
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("curve source identity must not disappear");
-    assert!(error
-        .to_string()
-        .contains("source-object association on curve"));
+    source_less.geometry.surfaces[0].source_object = None;
+    source_less
+        .geometry
+        .curves
+        .push(cadmpeg_ir::geometry::Curve {
+            parameter_range: None,
+            id: "generated:test:associated-curve#0"
+                .try_into()
+                .expect("valid identity"),
+            geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            source_object: Some(association),
+            native_ref: None,
+        });
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        &crate::loss::F3dLossCode::WriterSourceAssociationOmitted
+            .kind()
+            .to_string(),
+        "generated:test:associated-curve#0",
+    );
 
-    source_less.model.curves.pop();
+    source_less.geometry.curves.pop();
     source_less.model.tessellations.push(
         Tessellation::new(
             cadmpeg_ir::tessellation::TessellationId::mint("generated:test:tessellation#0")
@@ -1231,17 +1065,18 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
         )
         .expect("valid tessellation"),
     );
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("neutral tessellation must not disappear");
-    assert!(error
-        .to_string()
-        .contains("cannot serialize neutral tessellation"));
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        &crate::loss::F3dLossCode::WriterTessellationOmitted
+            .kind()
+            .to_string(),
+        "generated:test:tessellation#0",
+    );
 }
 
 #[test]
-fn generated_source_less_rejects_body_kind_that_conflicts_with_incidence() {
+fn generated_source_less_drops_body_kind_that_conflicts_with_incidence() {
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -1249,19 +1084,26 @@ fn generated_source_less_rejects_body_kind_that_conflicts_with_incidence() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     assert_eq!(
-        source_less.model.bodies[0].kind,
+        source_less.geometry.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Sheet
     );
-    source_less.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Solid;
+    source_less.geometry.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Solid;
 
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("open face cannot be emitted as a solid body");
-    assert!(matches!(error, cadmpeg_core::CodecError::InvalidInput(_)));
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        &crate::loss::F3dLossCode::WriterBodyOmitted
+            .kind()
+            .to_string(),
+        "declares Solid",
+    );
 }
 
 #[test]
@@ -1275,12 +1117,16 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
 
     let point_id = PointId::mint("generated:test:point#3").expect("identity grammar");
     source_less
-        .model
+        .geometry
         .points
         .push(cadmpeg_ir::topology::Point::new(
             point_id.clone(),
@@ -1290,27 +1136,33 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
         ));
     let vertex_id = VertexId::mint("generated:test:vertex#3").expect("identity grammar");
     source_less
-        .model
+        .geometry
         .vertices
         .push(cadmpeg_ir::topology::Vertex {
             id: vertex_id.clone(),
             point: point_id,
             tolerance: None,
+            native_ref: None,
         });
-    let first_vertex = source_less.model.edges[0].start.clone();
-    source_less.model.edges[2].end = vertex_id.clone();
+    let first_vertex = source_less.geometry.edges[0]
+        .ends
+        .as_ref()
+        .unwrap()
+        .start
+        .clone();
+    source_less.geometry.edges[2].ends.as_mut().unwrap().end = vertex_id.clone();
     let edge_id = EdgeId::mint("generated:test:edge#3").expect("identity grammar");
-    source_less.model.edges.push(cadmpeg_ir::topology::Edge {
+    source_less.geometry.edges.push(cadmpeg_ir::topology::Edge {
         id: edge_id.clone(),
         carrier: cadmpeg_ir::topology::EdgeCarrier::new(None, Some([0.0, 1.0])).unwrap(),
-        start: vertex_id,
-        end: first_vertex,
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(vertex_id, first_vertex)),
         tolerance: None,
+        native_ref: None,
     });
     let coedge_id = CoedgeId::mint("generated:test:coedge#3").expect("identity grammar");
-    let loop_id = source_less.model.loops[0].id.clone();
+    let loop_id = source_less.geometry.loops[0].id.clone();
     source_less
-        .model
+        .geometry
         .coedges
         .push(cadmpeg_ir::topology::Coedge {
             id: coedge_id.clone(),
@@ -1320,11 +1172,14 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
             sense: cadmpeg_ir::topology::Sense::Forward,
             pcurves: Vec::new(),
             use_curve: None,
+            native_ref: None,
         });
-    let mut coedges = source_less.model.loops[0].coedges().to_vec();
+    let mut coedges = source_less.geometry.loops[0].coedges().to_vec();
     coedges.push(coedge_id);
-    let vertex_uses = source_less.model.loops[0].anchored_vertex_uses().to_vec();
-    source_less.model.loops[0]
+    let vertex_uses = source_less.geometry.loops[0]
+        .anchored_vertex_uses()
+        .to_vec();
+    source_less.geometry.loops[0]
         .replace_ring(coedges, vertex_uses)
         .expect("source-less fixture loop remains a valid ring");
 
@@ -1337,20 +1192,20 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less polygon round trip");
 
-    assert_eq!(round_trip.ir().model.coedges.len(), 4);
-    assert_eq!(round_trip.ir().model.edges.len(), 4);
-    assert_eq!(round_trip.ir().model.vertices.len(), 4);
-    assert_eq!(round_trip.ir().model.points.len(), 4);
+    assert_eq!(round_trip.ir().geometry.coedges.len(), 4);
+    assert_eq!(round_trip.ir().geometry.edges.len(), 4);
+    assert_eq!(round_trip.ir().geometry.vertices.len(), 4);
+    assert_eq!(round_trip.ir().geometry.points.len(), 4);
     assert_eq!(
         round_trip
             .ir()
-            .model
+            .geometry
             .points
             .iter()
             .map(|point| point.position().get())
             .collect::<Vec<_>>(),
         source_less
-            .model
+            .geometry
             .points
             .iter()
             .map(|point| point.position().get())
@@ -1370,19 +1225,23 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
 
-    for index in 0..source_less.model.edges.len() {
-        let edge = &source_less.model.edges[index];
+    for index in 0..source_less.geometry.edges.len() {
+        let edge = &source_less.geometry.edges[index];
         let start = source_less
-            .model
+            .geometry
             .vertices
             .iter()
-            .find(|vertex| vertex.id == edge.start)
+            .find(|vertex| vertex.id == edge.ends.as_ref().unwrap().start)
             .and_then(|vertex| {
                 source_less
-                    .model
+                    .geometry
                     .points
                     .iter()
                     .find(|point| point.id == vertex.point)
@@ -1391,13 +1250,13 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
             .position()
             .get();
         let end = source_less
-            .model
+            .geometry
             .vertices
             .iter()
-            .find(|vertex| vertex.id == edge.end)
+            .find(|vertex| vertex.id == edge.ends.as_ref().unwrap().end)
             .and_then(|vertex| {
                 source_less
-                    .model
+                    .geometry
                     .points
                     .iter()
                     .find(|point| point.id == vertex.point)
@@ -1411,24 +1270,27 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
         let direction =
             cadmpeg_ir::math::Vector3::new(delta.x / length, delta.y / length, delta.z / length);
         let id = CurveId::mint(format!("generated:test:curve#{index}")).expect("identity grammar");
-        source_less.model.curves.push(Curve {
+        source_less.geometry.curves.push(Curve {
             parameter_range: None,
             id: id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(start, direction).unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
-        source_less.model.edges[index].set_curve(Some(id)).unwrap();
-        source_less.model.edges[index].carrier = cadmpeg_ir::topology::EdgeCarrier::new(
-            source_less.model.edges[index].curve().cloned(),
+        source_less.geometry.edges[index]
+            .set_curve(Some(id))
+            .unwrap();
+        source_less.geometry.edges[index].carrier = cadmpeg_ir::topology::EdgeCarrier::new(
+            source_less.geometry.edges[index].curve().cloned(),
             Some([0.0, length]),
         )
         .unwrap();
     }
 
     let expected = source_less
-        .model
+        .geometry
         .curves
         .iter()
         .map(|curve| curve.geometry.clone())
@@ -1441,8 +1303,8 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less line-carrier round trip");
-    assert_eq!(round_trip.ir().model.curves.len(), expected.len());
-    for (actual, expected) in round_trip.ir().model.curves.iter().zip(expected) {
+    assert_eq!(round_trip.ir().geometry.curves.len(), expected.len());
+    for (actual, expected) in round_trip.ir().geometry.curves.iter().zip(expected) {
         let (
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)),
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve_2)),
@@ -1461,7 +1323,7 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
     }
     assert!(round_trip
         .ir()
-        .model
+        .geometry
         .edges
         .iter()
         .all(|edge| edge.curve().is_some()));
@@ -1479,7 +1341,11 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let curve_id = CurveId::mint("generated:test:circle#0").expect("identity grammar");
     let expected = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -1491,17 +1357,18 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
         )
         .unwrap(),
     ));
-    source_less.model.curves.push(Curve {
+    source_less.geometry.curves.push(Curve {
         parameter_range: None,
         id: curve_id.clone(),
         geometry: expected.clone(),
         source_object: None,
+        native_ref: None,
     });
-    source_less.model.edges[0]
+    source_less.geometry.edges[0]
         .set_curve(Some(curve_id))
         .unwrap();
-    source_less.model.edges[0].carrier = cadmpeg_ir::topology::EdgeCarrier::new(
-        source_less.model.edges[0].curve().cloned(),
+    source_less.geometry.edges[0].carrier = cadmpeg_ir::topology::EdgeCarrier::new(
+        source_less.geometry.edges[0].curve().cloned(),
         Some([0.25, 1.75]),
     )
     .unwrap();
@@ -1515,14 +1382,14 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less circle-carrier round trip");
     let mut round_trip = EditableDecodeResult::from(round_trip);
-    assert_eq!(round_trip.ir().model.curves[0].geometry, expected);
+    assert_eq!(round_trip.ir().geometry.curves[0].geometry, expected);
     assert_eq!(
-        round_trip.ir().model.edges[0]
+        round_trip.ir().geometry.edges[0]
             .param_range()
             .map(cadmpeg_ir::units::FiniteVector::get),
         Some([0.25, 1.75])
     );
-    assert!(round_trip.ir().model.edges[0].curve().is_some());
+    assert!(round_trip.ir().geometry.edges[0].curve().is_some());
     assert!(
         !cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
             .expect("validate the neutral model")
@@ -1530,7 +1397,7 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
             .iter()
             .any(|finding| finding.check == cadmpeg_ir::report::check::Check::Annotations)
     );
-    round_trip.ir_mut().model.curves[0].geometry =
+    round_trip.ir_mut().geometry.curves[0].geometry =
         CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
@@ -1538,15 +1405,14 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
             )
             .unwrap(),
         ));
-    let error = crate::test_support::plan_inherited_write(
+    crate::test_support::assert_written_with_loss(
         round_trip.ir(),
-        round_trip.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .expect_err("native ellipse record cannot silently retain a line edit");
-    assert!(error
-        .to_string()
-        .contains("does not support edits to curve"));
+        Some(round_trip.source_fidelity()),
+        &crate::loss::F3dLossCode::WriterPatchDeclined
+            .kind()
+            .to_string(),
+        "does not support edits to curve",
+    );
 }
 
 #[test]
@@ -1561,7 +1427,11 @@ fn generated_source_less_planar_face_writes_ellipse_edge_carrier() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let curve_id = CurveId::mint("generated:test:ellipse#0").expect("identity grammar");
     let expected = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
@@ -1574,17 +1444,18 @@ fn generated_source_less_planar_face_writes_ellipse_edge_carrier() {
         )
         .unwrap(),
     ));
-    source_less.model.curves.push(Curve {
+    source_less.geometry.curves.push(Curve {
         parameter_range: None,
         id: curve_id.clone(),
         geometry: expected.clone(),
         source_object: None,
+        native_ref: None,
     });
-    source_less.model.edges[0]
+    source_less.geometry.edges[0]
         .set_curve(Some(curve_id))
         .unwrap();
-    source_less.model.edges[0].carrier = cadmpeg_ir::topology::EdgeCarrier::new(
-        source_less.model.edges[0].curve().cloned(),
+    source_less.geometry.edges[0].carrier = cadmpeg_ir::topology::EdgeCarrier::new(
+        source_less.geometry.edges[0].curve().cloned(),
         Some([0.5, 2.0]),
     )
     .unwrap();
@@ -1597,9 +1468,9 @@ fn generated_source_less_planar_face_writes_ellipse_edge_carrier() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less ellipse-carrier round trip");
-    assert_eq!(round_trip.ir().model.curves[0].geometry, expected);
+    assert_eq!(round_trip.ir().geometry.curves[0].geometry, expected);
     assert_eq!(
-        round_trip.ir().model.edges[0]
+        round_trip.ir().geometry.edges[0]
             .param_range()
             .map(cadmpeg_ir::units::FiniteVector::get),
         Some([0.5, 2.0])
@@ -1624,7 +1495,11 @@ fn generated_source_less_face_writes_cylinder_surface_carrier() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let expected = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
         cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -1635,7 +1510,7 @@ fn generated_source_less_face_writes_cylinder_surface_carrier() {
         )
         .unwrap(),
     ));
-    source_less.model.surfaces[0].geometry = expected.clone();
+    source_less.geometry.surfaces[0].geometry = expected.clone();
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -1645,7 +1520,7 @@ fn generated_source_less_face_writes_cylinder_surface_carrier() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less cylinder round trip");
-    assert_eq!(round_trip.ir().model.surfaces[0].geometry, expected);
+    assert_eq!(round_trip.ir().geometry.surfaces[0].geometry, expected);
 }
 
 #[test]
@@ -1694,25 +1569,26 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
         PointId::mint("synthetic:cylinder-band:point#top").expect("identity grammar"),
     ];
 
-    source_less.model.bodies.push(Body {
+    source_less.geometry.bodies.push(Body {
         id: body.clone(),
         kind: BodyKind::Sheet,
-        regions: vec![region.clone()],
         transform: None,
         name: Some("closed cylinder band".into()),
         color: None,
         visible: None,
+        native_ref: None,
     });
-    source_less.model.regions.push(Region {
+    source_less.geometry.regions.push(Region {
         id: region.clone(),
         body,
         shells: vec![shell.clone()],
+        native_ref: None,
     });
     source_less
-        .model
+        .geometry
         .shells
-        .push(Shell::with_face(shell.clone(), region, face.clone()));
-    source_less.model.faces.push(Face {
+        .push(Shell::new(shell.clone(), region));
+    source_less.geometry.faces.push(Face {
         id: face.clone(),
         shell,
         surface: surface.clone(),
@@ -1721,8 +1597,9 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
-    source_less.model.surfaces.push(Surface {
+    source_less.geometry.surfaces.push(Surface {
         id: surface,
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -1734,18 +1611,20 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     for index in 0..2 {
         let z = f64_from_index(index).expect("fixture index is exact in f64") * 10.0;
-        source_less.model.loops.push(Loop {
+        source_less.geometry.loops.push(Loop {
             id: loops[index].clone(),
             face: face.clone(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                 cadmpeg_ir::topology::LoopRing::new(vec![coedges[index].clone()], Vec::new())
                     .expect("fixture ring admission"),
             ),
+            native_ref: None,
         });
-        source_less.model.coedges.push(Coedge {
+        source_less.geometry.coedges.push(Coedge {
             id: coedges[index].clone(),
             owner_loop: loops[index].clone(),
             edge: edges[index].clone(),
@@ -1757,19 +1636,23 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
             },
             pcurves: Vec::new(),
             use_curve: None,
+            native_ref: None,
         });
-        source_less.model.edges.push(Edge {
+        source_less.geometry.edges.push(Edge {
             id: edges[index].clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 Some(curves[index].clone()),
                 Some([-std::f64::consts::PI, std::f64::consts::PI]),
             )
             .unwrap(),
-            start: vertices[index].clone(),
-            end: vertices[index].clone(),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                vertices[index].clone(),
+                vertices[index].clone(),
+            )),
             tolerance: None,
+            native_ref: None,
         });
-        source_less.model.curves.push(Curve {
+        source_less.geometry.curves.push(Curve {
             parameter_range: None,
             id: curves[index].clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -1782,13 +1665,15 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
-        source_less.model.vertices.push(Vertex {
+        source_less.geometry.vertices.push(Vertex {
             id: vertices[index].clone(),
             point: points[index].clone(),
             tolerance: None,
+            native_ref: None,
         });
-        source_less.model.points.push(Point::new(
+        source_less.geometry.points.push(Point::new(
             points[index].clone(),
             cadmpeg_ir::features::FinitePoint3::new(Point3::new(-5.0, 0.0, z))
                 .expect("a finite position is a point"),
@@ -1806,26 +1691,26 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less closed cylinder band round trip");
 
-    assert_eq!(round_trip.ir().model.faces.len(), 1);
-    assert_eq!(round_trip.ir().model.loops.len(), 2);
-    assert_eq!(round_trip.ir().model.coedges.len(), 2);
-    assert_eq!(round_trip.ir().model.edges.len(), 2);
+    assert_eq!(round_trip.ir().geometry.faces.len(), 1);
+    assert_eq!(round_trip.ir().geometry.loops.len(), 2);
+    assert_eq!(round_trip.ir().geometry.coedges.len(), 2);
+    assert_eq!(round_trip.ir().geometry.edges.len(), 2);
     assert!(
-        round_trip.ir().model.edges.iter().all(|edge| {
-            edge.start == edge.end
+        round_trip.ir().geometry.edges.iter().all(|edge| {
+            edge.ends.as_ref().unwrap().start == edge.ends.as_ref().unwrap().end
                 && edge.param_range().is_some_and(|range| {
                     (range[0] + std::f64::consts::PI).abs() < 1.0e-12
                         && (range[1] - std::f64::consts::PI).abs() < 1.0e-12
                 })
         }),
         "{:?}",
-        round_trip.ir().model.edges
+        round_trip.ir().geometry.edges
     );
-    assert!(round_trip.ir().model.loops.iter().all(|loop_| {
+    assert!(round_trip.ir().geometry.loops.iter().all(|loop_| {
         loop_.coedges().len() == 1
             && round_trip
                 .ir()
-                .model
+                .geometry
                 .coedges
                 .iter()
                 .find(|coedge| coedge.id == loop_.coedges()[0])
@@ -1844,7 +1729,11 @@ fn generated_source_less_face_writes_signed_sphere_surface_carrier() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let expected = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
         cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
@@ -1855,7 +1744,7 @@ fn generated_source_less_face_writes_signed_sphere_surface_carrier() {
         )
         .unwrap(),
     ));
-    source_less.model.surfaces[0].geometry = expected.clone();
+    source_less.geometry.surfaces[0].geometry = expected.clone();
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -1865,7 +1754,7 @@ fn generated_source_less_face_writes_signed_sphere_surface_carrier() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less sphere round trip");
-    assert_eq!(round_trip.ir().model.surfaces[0].geometry, expected);
+    assert_eq!(round_trip.ir().geometry.surfaces[0].geometry, expected);
 }
 
 #[test]
@@ -1879,7 +1768,11 @@ fn generated_source_less_face_writes_cone_surface_carrier() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let expected = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
         cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
@@ -1892,7 +1785,7 @@ fn generated_source_less_face_writes_cone_surface_carrier() {
         )
         .unwrap(),
     ));
-    source_less.model.surfaces[0].geometry = expected.clone();
+    source_less.geometry.surfaces[0].geometry = expected.clone();
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -1902,7 +1795,7 @@ fn generated_source_less_face_writes_cone_surface_carrier() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less cone round trip");
-    assert_eq!(round_trip.ir().model.surfaces[0].geometry, expected);
+    assert_eq!(round_trip.ir().geometry.surfaces[0].geometry, expected);
 }
 
 #[test]
@@ -1918,19 +1811,24 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
-        .unwrap();
-    source_less.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-            cadmpeg_ir::math::Point3::new(1.0, 3.0, -5.0),
-            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            9.0,
-            0.6,
-            0.5,
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
         )
-        .unwrap(),
-    ));
+        .unwrap();
+    source_less.geometry.surfaces[0].geometry =
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+            cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+                cadmpeg_ir::math::Point3::new(1.0, 3.0, -5.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                9.0,
+                0.6,
+                0.5,
+            )
+            .unwrap(),
+        ));
 
     let mut initial = Vec::new();
     F3dCodec
@@ -1942,7 +1840,7 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
         .expect("generated cone decode");
     let (mut retained, _, fidelity) = retained_decode.into_parts();
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) =
-        &mut retained.model.surfaces[0].geometry
+        &mut retained.geometry.surfaces[0].geometry
     else {
         panic!("expected cone")
     };
@@ -1970,7 +1868,7 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated cone decode");
     assert!(
-        matches!(round_trip.ir().model.surfaces[0].geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
+        matches!(round_trip.ir().geometry.surfaces[0].geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
         if {
             let half_angle = cone_surface.half_angle().get();
             (cone_surface.ratio().get() == 0.4) && ((half_angle - 0.35).abs() < EPS_CONE_ANGLE)
@@ -1980,3 +1878,5 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
 
 mod closed_edges;
 mod family_changes;
+mod reversed_edges;
+mod tolerant_tails;

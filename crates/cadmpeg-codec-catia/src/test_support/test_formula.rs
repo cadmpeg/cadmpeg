@@ -852,10 +852,13 @@ pub(crate) enum FormulaChainCase {
     DuplicateIntermediate,
     IncompatibleDownstream,
     AmbiguousIntermediateWithIncompatibleDownstream,
+    /// The intermediate and final parameters store `E7` literals.
+    LiteralOutputs,
 }
 
 pub(crate) fn standard_catpart_with_formula_chain(case: FormulaChainCase) -> Vec<u8> {
     let cyclic = matches!(case, FormulaChainCase::Cyclic);
+    let literal_outputs = matches!(case, FormulaChainCase::LiteralOutputs);
     let duplicate_terminal = matches!(case, FormulaChainCase::DuplicateTerminal);
     let duplicate_intermediate = matches!(
         case,
@@ -883,7 +886,7 @@ pub(crate) fn standard_catpart_with_formula_chain(case: FormulaChainCase) -> Vec
         bytes.push(0xfe);
         bytes
     };
-    let parameter = |entity_id: u32, name: u32, binding: u32, value: f64| {
+    let parameter = |entity_id: u32, name: u32, binding: u32, value: Option<f64>| {
         let mut payload = vec![0x32];
         payload.extend_from_slice(&name.to_le_bytes());
         payload.push(0x32);
@@ -892,8 +895,14 @@ pub(crate) fn standard_catpart_with_formula_chain(case: FormulaChainCase) -> Vec
         let mut entity =
             entity_table_record_with_definition_and_value(entity_id, &[0x01], &payload);
         entity[6] = 2;
-        entity.extend_from_slice(&[0x85, 0x96, 0x82, 0x6a, 0xe6]);
-        entity.extend_from_slice(&value.to_bits().to_le_bytes());
+        entity.extend_from_slice(&[0x85, 0x96, 0x82, 0x6a]);
+        match value {
+            Some(value) => {
+                entity.push(0xe6);
+                entity.extend_from_slice(&value.to_bits().to_le_bytes());
+            }
+            None => entity.push(0xe7),
+        }
         entity.extend_from_slice(&[0x81, 0x52]);
         let len = u32::try_from(entity.len()).expect("bounded parameter entity");
         entity[2..6].copy_from_slice(&len.to_le_bytes());
@@ -925,8 +934,13 @@ pub(crate) fn standard_catpart_with_formula_chain(case: FormulaChainCase) -> Vec
         &definition(5),
         &expression_value([6, 7, 8, 9, 10, 11]),
     ));
-    stream.extend(parameter(3, 12, 13, 1.0));
-    stream.extend(parameter(4, 14, 15, if cyclic { 3.0 } else { 2.0 }));
+    stream.extend(parameter(3, 12, 13, Some(1.0)));
+    stream.extend(parameter(
+        4,
+        14,
+        15,
+        (!literal_outputs).then_some(if cyclic { 3.0 } else { 2.0 }),
+    ));
     stream.extend(entity_table_record_with_definition_and_value(
         5,
         &definition(4),
@@ -941,7 +955,7 @@ pub(crate) fn standard_catpart_with_formula_chain(case: FormulaChainCase) -> Vec
             [16, 17, 8, 18, 10, 11]
         }),
     ));
-    stream.extend(parameter(7, 19, 20, 3.0));
+    stream.extend(parameter(7, 19, 20, (!literal_outputs).then_some(3.0)));
     if duplicate_intermediate {
         stream.extend(entity_table_record_with_definition_and_value(
             8,

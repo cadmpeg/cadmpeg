@@ -108,90 +108,89 @@ fn requests_over_the_cap_are_counted_as_bounded() {
 
 // Extraction of one body from a decoded state.
 
-fn cube() -> cadmpeg_ir::document::Model {
-    cadmpeg_ir::examples::unit_cube().expect("cube").model
+fn cube() -> cadmpeg_ir::document::Topology {
+    cadmpeg_ir::examples::unit_cube().expect("cube").geometry
 }
 
-fn extract_cube(model: &cadmpeg_ir::document::Model) -> Extract {
-    let ctx = cadmpeg_test_support::service_decode_context();
-    let body = model.bodies[0].id.as_str().to_owned();
-    extract(&ctx, model, &body).expect("extraction runs")
+fn extract_cube(geometry: &cadmpeg_ir::document::Topology) -> Extract {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let body = geometry.bodies[0].id.as_str().to_owned();
+    extract(&ctx, geometry, &body).expect("extraction runs")
 }
 
 #[test]
 fn a_closed_solid_extracts_with_every_record_it_reaches() {
-    let model = cube();
-    let Extract::Nest(nest) = extract_cube(&model) else {
+    let geometry = cube();
+    let Extract::Nest(nest) = extract_cube(&geometry) else {
         panic!("a closed cube must extract");
     };
-    assert_eq!(nest.body.id, model.bodies[0].id);
-    assert_eq!(nest.faces.len(), model.faces.len());
-    assert_eq!(nest.edges.len(), model.edges.len());
-    assert_eq!(nest.coedges.len(), model.coedges.len());
-    assert_eq!(nest.surfaces.len(), model.surfaces.len());
-    assert_eq!(nest.vertices.len(), model.vertices.len());
-    assert_eq!(nest.points.len(), model.points.len());
+    assert_eq!(nest.body.id, geometry.bodies[0].id);
+    assert_eq!(nest.faces.len(), geometry.faces.len());
+    assert_eq!(nest.edges.len(), geometry.edges.len());
+    assert_eq!(nest.coedges.len(), geometry.coedges.len());
+    assert_eq!(nest.surfaces.len(), geometry.surfaces.len());
+    assert_eq!(nest.vertices.len(), geometry.vertices.len());
+    assert_eq!(nest.points.len(), geometry.points.len());
 }
 
 #[test]
 fn a_reference_that_names_no_record_is_not_closed() {
-    let mut model = cube();
-    model.surfaces.remove(0);
+    let mut geometry = cube();
+    geometry.surfaces.remove(0);
     assert!(matches!(
-        extract_cube(&model),
+        extract_cube(&geometry),
         Extract::NotClosed(Open::Reference)
     ));
 }
 
 #[test]
 fn a_sheet_is_not_closed() {
-    let mut model = cube();
-    model.bodies[0].kind = BodyKind::Sheet;
+    let mut geometry = cube();
+    geometry.bodies[0].kind = BodyKind::Sheet;
     assert!(matches!(
-        extract_cube(&model),
+        extract_cube(&geometry),
         Extract::NotClosed(Open::Kind)
     ));
 }
 
 #[test]
 fn an_edge_that_joins_one_coedge_is_not_closed() {
-    let mut model = cube();
-    let other = model.coedges[1].edge.clone();
-    assert_ne!(model.coedges[0].edge, other);
-    model.coedges[0].edge = other;
+    let mut geometry = cube();
+    let other = geometry.coedges[1].edge.clone();
+    assert_ne!(geometry.coedges[0].edge, other);
+    geometry.coedges[0].edge = other;
     assert!(matches!(
-        extract_cube(&model),
+        extract_cube(&geometry),
         Extract::NotClosed(Open::Edge)
     ));
 }
 
 #[test]
 fn records_of_other_bodies_stay_out_of_the_nest() {
-    let mut model = cube();
-    let mut other = model.bodies[0].clone();
+    let mut geometry = cube();
+    let mut other = geometry.bodies[0].clone();
     other.id = "inventor:brep:entity#other".try_into().expect("identity");
-    other.regions.clear();
-    model.bodies.push(other);
-    let Extract::Nest(nest) = extract_cube(&model) else {
+    geometry.bodies.push(other);
+    let Extract::Nest(nest) = extract_cube(&geometry) else {
         panic!("a closed cube must extract");
     };
-    assert_eq!(nest.regions.len(), model.regions.len());
+    assert_eq!(nest.regions.len(), geometry.regions.len());
 }
 
 #[test]
 fn a_procedural_carrier_keeps_its_solved_cache() {
-    let mut model = cube();
-    let solved = model.surfaces[0].geometry.clone();
+    let mut geometry = cube();
+    let solved = geometry.surfaces[0].geometry.clone();
     let SurfaceGeometry::Solved(cache) = solved else {
         panic!("the cube states solved surfaces");
     };
-    model.surfaces[0].geometry = SurfaceGeometry::Procedural {
+    geometry.surfaces[0].geometry = SurfaceGeometry::Procedural {
         construction: "inventor:brep:procedural-surface#1"
             .try_into()
             .expect("identity"),
         cache: Some(cache.clone()),
     };
-    let Extract::Nest(nest) = extract_cube(&model) else {
+    let Extract::Nest(nest) = extract_cube(&geometry) else {
         panic!("a procedural carrier with a cache must extract");
     };
     assert!(matches!(
@@ -202,41 +201,41 @@ fn a_procedural_carrier_keeps_its_solved_cache() {
 
 #[test]
 fn a_procedural_carrier_without_a_cache_is_absent() {
-    let mut model = cube();
-    model.surfaces[0].geometry = SurfaceGeometry::Procedural {
+    let mut geometry = cube();
+    geometry.surfaces[0].geometry = SurfaceGeometry::Procedural {
         construction: "inventor:brep:procedural-surface#1"
             .try_into()
             .expect("identity"),
         cache: None,
     };
-    assert!(matches!(extract_cube(&model), Extract::Absent));
+    assert!(matches!(extract_cube(&geometry), Extract::Absent));
 }
 
 #[test]
 fn a_carrier_of_unknown_shape_is_absent() {
-    let mut model = cube();
-    model.surfaces[0].geometry =
+    let mut geometry = cube();
+    geometry.surfaces[0].geometry =
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
-    assert!(matches!(extract_cube(&model), Extract::Absent));
+    assert!(matches!(extract_cube(&geometry), Extract::Absent));
 }
 
 #[test]
 fn a_body_that_the_state_lacks_is_absent() {
-    let model = cube();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let geometry = cube();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert!(matches!(
-        extract(&ctx, &model, "inventor:brep:entity#missing").expect("extraction runs"),
+        extract(&ctx, &geometry, "inventor:brep:entity#missing").expect("extraction runs"),
         Extract::Absent
     ));
 }
 
 #[test]
 fn a_nest_moves_into_its_own_scope_and_validates_as_a_document() {
-    let model = cube();
-    let Extract::Nest(topology) = extract_cube(&model) else {
+    let geometry = cube();
+    let Extract::Nest(topology) = extract_cube(&geometry) else {
         panic!("a closed cube must extract");
     };
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let want = Want {
         record: 0,
         ordinal: 2,
@@ -253,23 +252,23 @@ fn a_nest_moves_into_its_own_scope_and_validates_as_a_document() {
     let nest_records = body.topology.record_count();
     assert_eq!(
         nest_records,
-        model.bodies.len()
-            + model.regions.len()
-            + model.shells.len()
-            + model.faces.len()
-            + model.loops.len()
-            + model.coedges.len()
-            + model.edges.len()
-            + model.vertices.len()
-            + model.surfaces.len()
-            + model.curves.len()
-            + model.pcurves.len()
-            + model.points.len()
+        geometry.bodies.len()
+            + geometry.regions.len()
+            + geometry.shells.len()
+            + geometry.faces.len()
+            + geometry.loops.len()
+            + geometry.coedges.len()
+            + geometry.edges.len()
+            + geometry.vertices.len()
+            + geometry.surfaces.len()
+            + geometry.curves.len()
+            + geometry.pcurves.len()
+            + geometry.points.len()
     );
     let mut ir = CadIr::empty();
     ir.model.features.push(consumer);
     ir.model.history_bodies.push(body);
-    let in_scope = ir.model.history_bodies[0].topology.to_model();
+    let in_scope = ir.model.history_bodies[0].topology.to_topology();
     for id in in_scope.bodies.iter().map(|record| record.id.as_str()) {
         assert_eq!(id.split(':').nth(1), Some("history-body"), "{id}");
         assert!(id.contains("#h0003-"), "{id}");
@@ -283,7 +282,7 @@ fn a_nest_moves_into_its_own_scope_and_validates_as_a_document() {
         "{:?}",
         report.findings
     );
-    assert!(ir.model.bodies.is_empty());
+    assert!(ir.geometry.bodies.is_empty());
 }
 
 // Materialization of a history state from bytes.
@@ -661,9 +660,9 @@ fn two_requests_give_nests_in_distinct_scopes() {
     assert_eq!(built.bodies.len(), 2);
     let mut ids = std::collections::BTreeSet::new();
     for body in &built.bodies {
-        let model = body.topology.to_model();
+        let geometry = body.topology.to_topology();
         assert!(ids.insert(body.id.as_str().to_owned()));
-        assert!(ids.insert(model.bodies[0].id.as_str().to_owned()));
+        assert!(ids.insert(geometry.bodies[0].id.as_str().to_owned()));
     }
 }
 

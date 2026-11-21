@@ -49,11 +49,10 @@ fn surface_untrim_requires_resolved_faces_loops_and_distance() {
             extension,
         });
         ir.model.features.push(serde_json::from_value(serde_json::json!({
-            "id": "synthetic:test:feature#untrim", "ordinal": 0, "suppressed": false, "definition": definition
-        })).unwrap());
+            "id": "synthetic:test:feature#untrim", "ordinal": 0, "suppressed": false, "definition": definition, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []})).unwrap());
         let mut report = super::empty_report(true);
         append_design_losses(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &ir,
             &mut report,
         )
@@ -129,7 +128,7 @@ fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -281,7 +280,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -320,8 +319,8 @@ fn design_completeness_audits_typed_construction_families() {
         }),
         FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
             profile: cadmpeg_ir::features::PlanarProfileRef::Sketch(sketch),
-            thickness: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
-            side: cadmpeg_ir::features::SheetMetalThicknessSide::Symmetric,
+            thickness: cadmpeg_ir::scalar::PositiveLength::new(1.0),
+            side: Some(cadmpeg_ir::features::SheetMetalThicknessSide::Symmetric),
         }),
         FeatureDefinition::Operation(FeatureOperation::Block {
             dimensions: None,
@@ -381,7 +380,14 @@ fn design_completeness_audits_typed_construction_families() {
                 cadmpeg_ir::features::DistinctMembers::try_from(vec![body])
                     .expect("distinct bodies"),
             ),
-            cells: cadmpeg_ir::features::NonEmptyMembers::one(BodySelection::Unresolved),
+            cells: cadmpeg_ir::features::NonEmptyMembers::one(
+                cadmpeg_ir::features::boundary_fill::BoundaryFillCell::BodyRegion(
+                    BodySelection::Unresolved,
+                ),
+            ),
+            plane_tools: Vec::new(),
+            operation: None,
+            remove_tools: None,
         }),
     ];
     for (ordinal, definition) in definitions.into_iter().enumerate() {
@@ -404,7 +410,7 @@ fn design_completeness_audits_typed_construction_families() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -497,7 +503,7 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -561,7 +567,7 @@ fn post_process_completeness_delegates_to_the_wrapped_operation() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -662,7 +668,7 @@ fn design_completeness_recurses_through_pattern_operands() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -755,7 +761,7 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -885,7 +891,7 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -1018,7 +1024,7 @@ fn empty_required_operands_are_incomplete_design_semantics() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -1096,7 +1102,7 @@ fn hole_completeness_checks_optional_operands_when_present() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -1287,7 +1293,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -1355,7 +1361,7 @@ fn incoherent_feature_graph_is_reported_as_design_loss() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -1376,7 +1382,7 @@ fn missing_feature_outputs_are_reported_as_design_loss() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.model.features.clear();
     ir.model.parameters.clear();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     let repeated = vec![body.clone(), body.clone()];
     assert!(cadmpeg_ir::features::DistinctMembers::try_from(repeated,).is_err());
     let feature = |id: &str, ordinal: u64, outputs: Vec<BodyId>| Feature {
@@ -1411,7 +1417,7 @@ fn missing_feature_outputs_are_reported_as_design_loss() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -1525,7 +1531,7 @@ fn thin_operation_ambiguity_has_a_stable_loss() {
 
         let mut ir = CadIr::empty();
         ir.model.features = features.to_vec();
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut native_lanes = lanes.to_vec();
         for lane in &mut native_lanes {
             let mut payload = vec![0; 64];

@@ -1,94 +1,158 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "10",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "assembly_joints": [],
-      "attributes": [],
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
+    "fragment": false,
+    "geometry": {
       "bodies": [
         {
           "id": "step:data:body#13",
-          "kind": "sheet",
-          "regions": [
-            "step:data:region#13"
-          ]
+          "kind": "sheet"
         }
       ],
-      "coedges": [],
-      "configurations": [],
+      "coedges": [
+        {
+          "edge": "step:data:edge#10-face-11-geometric-set-13-0",
+          "id": "step:data:coedge#10-face-11-geometric-set-13-0",
+          "owner_loop": "step:data:loop#10-face-11-geometric-set-13",
+          "pcurves": [],
+          "radial_next": "step:data:coedge#10-face-11-geometric-set-13-0",
+          "sense": "forward"
+        }
+      ],
       "curves": [
         {
           "geometry": {
-            "kind": "composite",
-            "segments": [
-              {
-                "curve": "step:data:curve#7",
-                "same_sense": true,
-                "transition": "continuous"
-              }
-            ],
-            "self_intersect": false
+            "kind": "solved",
+            "value": {
+              "kind": "composite",
+              "segments": [
+                {
+                  "curve": "step:data:curve#7",
+                  "same_sense": true,
+                  "transition": "continuous"
+                }
+              ],
+              "self_intersect": false
+            }
           },
           "id": "step:data:curve#10",
           "source_object": {
             "format": "step",
             "geometry_role": "support",
+            "instance_path": [],
             "object_id": "#10"
           }
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "circle",
-            "radius": 5.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "circle",
+              "radius": 5.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "step:data:curve#7",
           "source_object": {
             "format": "step",
             "geometry_role": "support",
+            "instance_path": [],
             "object_id": "#7"
           }
         }
       ],
-      "drawings": [],
-      "edges": [],
+      "edges": [
+        {
+          "carrier": {
+            "curve": "step:data:curve#7",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
+          },
+          "ends": {
+            "end": "step:data:vertex#10-face-11-geometric-set-13-0",
+            "start": "step:data:vertex#10-face-11-geometric-set-13-0"
+          },
+          "id": "step:data:edge#10-face-11-geometric-set-13-0"
+        }
+      ],
       "faces": [
         {
           "id": "step:data:face#11-geometric-set-13",
           "loops": {
-            "classification": "unspecified",
-            "loops": []
+            "inner": [],
+            "kind": "classified",
+            "outer": "step:data:loop#10-face-11-geometric-set-13"
           },
           "sense": "forward",
           "shell": "step:data:shell#geometric-set-13",
           "surface": "step:data:surface#11"
         }
       ],
-      "features": [],
-      "loops": [],
-      "occurrences": [],
-      "parameters": [],
+      "loops": [
+        {
+          "boundary": {
+            "coedges": [
+              "step:data:coedge#10-face-11-geometric-set-13-0"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "step:data:face#11-geometric-set-13",
+          "id": "step:data:loop#10-face-11-geometric-set-13"
+        }
+      ],
       "pcurves": [],
-      "pmi": [],
-      "points": [],
-      "presentation_documents": [],
-      "presentation_layers": [],
+      "points": [
+        {
+          "id": "step:data:point#10-face-11-geometric-set-13-0",
+          "position": {
+            "x": 5.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "instance_path": [],
+            "object_id": "#10"
+          }
+        }
+      ],
       "procedural_curves": [],
       "procedural_surfaces": [
         {
@@ -96,6 +160,7 @@
             "boundaries": [
               "step:data:curve#10"
             ],
+            "boundary_pcurves": [],
             "implicit_outer": false,
             "kind": "curve_bounded",
             "support": "step:data:surface#8"
@@ -104,7 +169,6 @@
           "surface": "step:data:surface#11"
         }
       ],
-      "product_definitions": [],
       "regions": [
         {
           "body": "step:data:body#13",
@@ -114,103 +178,179 @@
           ]
         }
       ],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "step:data:shell#geometric-set-13",
-          "members": [
-            {
-              "id": "step:data:face#11-geometric-set-13",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "step:data:region#13"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "step:data:surface#11"
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "step:data:surface#8",
           "source_object": {
             "format": "step",
             "geometry_role": "support",
+            "instance_path": [],
             "object_id": "#8"
           }
         }
       ],
+      "vertices": [
+        {
+          "id": "step:data:vertex#10-face-11-geometric-set-13-0",
+          "point": "step:data:point#10-face-11-geometric-set-13-0"
+        }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [
+        {
+          "bodies": [
+            "step:data:body#13"
+          ],
+          "bom_properties": {},
+          "id": "step:product:product#document",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
       "tessellations": [],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
-        "bytes_named_opaque": "0",
-        "bytes_structural": "283",
-        "bytes_typed": "695",
-        "bytes_unclassified": "0",
-        "data_sections": "1",
-        "entity_instances": "13",
+        "file_description.description.0": "bounded surface set",
+        "file_description.implementation_level": "2;1",
+        "file_name.author.0": "cadmpeg",
+        "file_name.name": "surface-set",
+        "file_name.organization.0": "cadmpeg",
+        "file_name.preprocessor_version": "cadmpeg-step",
+        "file_name.time_stamp": "2026-07-14T00:00:00",
+        "file_schema.schema_identifiers.0": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
         "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
               "implementation_level": "2;1"
             },
             "dialect": "step:ap242"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -218,32 +358,47 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {
+      "bytes_named_opaque": 0,
+      "bytes_structural": 283,
+      "bytes_typed": 695,
+      "bytes_unclassified": 0,
+      "data_sections": 1,
+      "entity_instances": 13
+    },
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
             "implementation_level": "2;1"
           },
           "dialect": "step:ap242"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "geometry.document-angle-unit-unresolved",
-          "kind": "geometry_not_transferred",
-          "namespace": "step",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "geometry.document-angle-unit-unresolved",
+            "kind": "geometry_not_transferred",
+            "namespace": "step",
+            "strict_floor": "warning"
+          }
         },
         "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
         "severity": "error"
@@ -254,10 +409,20 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "decode_digest": "c8f472b387fc89c6fd081a5eed1f3a4ad9e8800a39f7668d2c1bfa988f997c7b",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

@@ -30,11 +30,21 @@ mod carried;
 mod coverage;
 pub mod edge_recovery;
 mod loss;
+pub use loss::{
+    evaluation_missing, evaluation_stale, native_records_omitted, output_empty,
+    parameter_flattened, parameter_renamed, record_invalid, record_residual_unavailable,
+    value_unwritable,
+};
+mod scene;
 pub mod subset_lowering;
 pub mod target;
 
 use carried::{EntityLocation, FindingLocator};
-pub use coverage::{ArenaCoverage, ArenaDisposition, ArenaDispositions};
+pub use coverage::{
+    ArenaCoverage, ArenaDisposition, ArenaDispositions, DesignArenaDispositions,
+    ProcessArenaDispositions,
+};
+pub use scene::{SceneOptions, UpAxis};
 use target::{DialectFree, TargetDomain, TargetRequest, TargetResolution};
 
 /// How much of its source a document must record for an encoder to plan it.
@@ -148,7 +158,7 @@ impl<E: EncoderBackend> Encoder for E {
         input: EncodeInput<'_>,
         request: TargetRequest<'_>,
     ) -> Result<ExportPlan, CodecError> {
-        let recorded = input.ir.decode_depth();
+        let recorded = input.ir.scope().depth();
         if !E::NEEDS.admits(recorded) {
             return Err(CodecError::InsufficientDepth {
                 format: E::FORMAT.as_str(),
@@ -158,6 +168,7 @@ impl<E: EncoderBackend> Encoder for E {
         }
         let target = E::TARGET.resolve(input.ir, request, E::FORMAT)?;
         let identity = target.export_target().cloned();
+        let synthesized_identity = target.synthesized_target().cloned();
         let body = self.plan_resolved(input, target)?;
         let ExportBody {
             bytes,
@@ -167,7 +178,11 @@ impl<E: EncoderBackend> Encoder for E {
             mut losses,
             notes,
         } = body;
-        losses.extend(coverage.omission_losses(&input.ir.model, E::FORMAT.as_str()));
+        losses.extend(coverage.omission_losses(input.ir, E::FORMAT.as_str()));
+        let identity = match write_path {
+            WritePath::Synthesized { .. } => synthesized_identity,
+            WritePath::Patched { .. } | WritePath::VerbatimReplay => identity,
+        };
         let write_path = write_path.into_report(input.fidelity.is_some());
         let report = match identity {
             None => ExportReport::cadir(census, write_path, losses, notes),
@@ -192,6 +207,8 @@ pub struct EncodeInput<'a> {
     /// The source of the files that external assets of the document name,
     /// for an encoder that writes their content into its output.
     pub assets: Option<&'a dyn Companions>,
+    /// Scene settings for an encoder of a scene format.
+    pub scene: SceneOptions,
 }
 
 impl<'a> EncodeInput<'a> {
@@ -202,6 +219,7 @@ impl<'a> EncodeInput<'a> {
             ir,
             fidelity,
             assets: None,
+            scene: SceneOptions::DEFAULT,
         }
     }
 
@@ -209,6 +227,13 @@ impl<'a> EncodeInput<'a> {
     #[must_use]
     pub const fn with_assets(mut self, assets: &'a dyn Companions) -> Self {
         self.assets = Some(assets);
+        self
+    }
+
+    /// Selects the scene settings of the export.
+    #[must_use]
+    pub const fn with_scene(mut self, scene: SceneOptions) -> Self {
+        self.scene = scene;
         self
     }
 }

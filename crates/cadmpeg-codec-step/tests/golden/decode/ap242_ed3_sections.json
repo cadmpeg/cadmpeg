@@ -1,53 +1,100 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "10",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "assembly_joints": [],
-      "attributes": [],
-      "bodies": [],
-      "coedges": [],
+    "design": {
+      "arrangements": [],
       "configurations": [],
-      "curves": [],
-      "drawings": [],
-      "edges": [],
-      "faces": [],
+      "containers": [],
+      "evaluations": [],
       "features": [],
-      "loops": [],
-      "occurrences": [],
+      "names": [],
       "parameters": [],
-      "pcurves": [],
-      "pmi": [],
-      "points": [],
-      "presentation_documents": [],
-      "presentation_layers": [],
-      "procedural_curves": [],
-      "procedural_surfaces": [],
-      "product_definitions": [
-        {
-          "id": "step:product:product#1",
-          "kind": "part",
-          "label": "Part",
-          "native_ref": "#1",
-          "part_number": "P1",
-          "source_name": "Part"
-        }
-      ],
-      "regions": [],
-      "semantic_annotations": [],
-      "shells": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
+    "fragment": false,
+    "geometry": {
+      "bodies": [],
+      "coedges": [],
+      "curves": [],
+      "edges": [],
+      "faces": [],
+      "loops": [],
+      "pcurves": [],
+      "points": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [],
+      "shells": [],
+      "subds": [],
+      "surfaces": [],
+      "vertices": []
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "step:product:product#1",
+          "instance_bodies": [],
+          "kind": "part",
+          "label": "Part",
+          "native_ref": "#1",
+          "occurrences": [],
+          "part_number": "P1",
+          "representations": [],
+          "sketches": [],
+          "source_name": "Part",
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
-      "subds": [],
-      "surfaces": [],
       "tessellations": [],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {
@@ -60,30 +107,49 @@
             ]
           },
           {
-            "id": "step:file:signature#0"
+            "id": "step:file:signature#0",
+            "links": []
           }
         ]
       }
     },
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
-        "bytes_named_opaque": "28",
-        "bytes_structural": "539",
-        "bytes_typed": "30",
-        "bytes_unclassified": "0",
-        "data_sections": "2",
-        "entity_instances": "2",
+        "file_description.description.0": "edition 3 sections",
+        "file_description.implementation_level": "4;2",
+        "file_name.author.0": "cadmpeg",
+        "file_name.name": "sections",
+        "file_name.organization.0": "cadmpeg",
+        "file_name.preprocessor_version": "cadmpeg-step",
+        "file_name.time_stamp": "2026-07-14T00:00:00",
+        "file_schema.schema_identifiers.0": "AP242",
         "schema": "AP242"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
             "admission": {
-              "unverified": {
-                "using": "ap242-e3"
-              }
+              "kind": "unverified",
+              "using": "ap242-e3"
             },
             "declared": {
               "file_schema_identifier": "AP242",
@@ -91,7 +157,8 @@
             },
             "dialect": "step:unknown"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -99,19 +166,28 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {
+      "bytes_named_opaque": 28,
+      "bytes_structural": 539,
+      "bytes_typed": 30,
+      "bytes_unclassified": 0,
+      "data_sections": 2,
+      "entity_instances": 2
+    },
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
           "admission": {
-            "unverified": {
-              "using": "ap242-e3"
-            }
+            "kind": "unverified",
+            "using": "ap242-e3"
           },
           "declared": {
             "file_schema_identifier": "AP242",
@@ -119,60 +195,83 @@
           },
           "dialect": "step:unknown"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "source.dialect-unverified",
-          "kind": "source_dialect_unverified",
-          "namespace": "step",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "source.dialect-unverified",
+            "kind": "source_dialect_unverified",
+            "namespace": "step",
+            "strict_floor": "warning"
+          }
         },
         "message": "FILE_SCHEMA identifier AP242; it satisfies no declared STEP dialect, so this decode read the exchange with the entity vocabulary verified for step:ap242-e3",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "geometry.document-length-unit-unresolved",
-          "kind": "geometry_not_transferred",
-          "namespace": "step",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "geometry.document-length-unit-unresolved",
+            "kind": "geometry_not_transferred",
+            "namespace": "step",
+            "strict_floor": "warning"
+          }
         },
         "message": "the document length unit did not resolve; coordinates are unscaled and reported as millimetres",
         "severity": "error"
       },
       {
         "code": {
-          "code": "geometry.document-angle-unit-unresolved",
-          "kind": "geometry_not_transferred",
-          "namespace": "step",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "geometry.document-angle-unit-unresolved",
+            "kind": "geometry_not_transferred",
+            "namespace": "step",
+            "strict_floor": "warning"
+          }
         },
         "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
         "severity": "error"
       },
       {
         "code": {
-          "code": "decode.opaque-record-preserved",
-          "kind": "record_not_typed",
-          "namespace": "step",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "decode.opaque-record-preserved",
+            "kind": "record_not_typed",
+            "namespace": "step"
+          }
         },
+        "count": 1,
         "message": "preserved 1 EXAMPLE_RECORD instance(s) as named opaque STEP records",
+        "provenance": {
+          "format": "step",
+          "offset": 398,
+          "tag": "EXAMPLE_RECORD"
+        },
         "severity": "warning"
       },
       {
         "code": {
-          "code": "decode.opaque-record-preserved",
-          "kind": "record_not_typed",
-          "namespace": "step",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "decode.opaque-record-preserved",
+            "kind": "record_not_typed",
+            "namespace": "step"
+          }
         },
+        "count": 1,
         "message": "preserved 1 SIGNATURE instance(s) as named opaque STEP records",
+        "provenance": {
+          "format": "step",
+          "offset": 453,
+          "tag": "SIGNATURE"
+        },
         "severity": "warning"
       }
     ],
@@ -182,28 +281,43 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
-    "annotations": {},
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "decode_digest": "46c8315eb30763649e852f221f917853175810cd936be52cee921ed4e864fdd4",
+    "file_digests": {},
     "retained_records": {
       "step:data:example_record#2": {
         "bytes": {
           "data": "IzI9RVhBTVBMRV9SRUNPUkQoPCNhbGlhcz4pOw==",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 398,
-        "stream": ""
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
       },
       "step:file:signature#0": {
         "bytes": {
           "data": "U0lHTkFUVVJFOwpNRm9HQ1NxR1NJYjNEUUVIQXFCTk1Fc0NBUUV4RFRBTEJnbGdoa2dCWlFNRUFnRXdDd1lKS29aSWh2Y05BUWNCTVNvd0tBSUJBVEFGTUFBQ0FRRXdDd1lKWUlaSUFXVURCQUlCTUEwR0NTcUdTSWIzRFFFQkFRVUFCQUE9CkVORFNFQzs=",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 453,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

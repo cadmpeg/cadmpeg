@@ -1164,16 +1164,12 @@ fn unresolved_explicit_region_rejects_conflicting_group_and_accepts_agreeing_gro
                 "ordinal": 0,
                 "suppressed": false,
                 "native_ref": scope.id,
-                "definition": {
-                    "definition": "extrude",
-                    "profile": {"kind": "sketch", "value": sketch.id},
+                "definition": {"kind": "operation", "value": {"kind": "extrude", "value": {"profile": {"kind": "planar", "value": {"kind": "sketch", "value": sketch.id}},
                     "direction": {"kind": "profile_normal"},
                     "start": {"kind": "profile_plane"},
                     "extent": {"kind": "one_sided", "side": {"termination": {"kind": "blind", "length": 1.0}}},
                     "op": "new_body",
-                    "solid": true
-                }
-            }))
+                    "solid": true}}}, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []}))
             .unwrap();
             let sketches = [sketch.clone()];
             let scopes = [scope.clone()];
@@ -1253,16 +1249,12 @@ fn unresolved_explicit_region_rejects_conflicting_transition_and_accepts_agreein
                 "ordinal": 0,
                 "suppressed": false,
                 "native_ref": scope.id,
-                "definition": {
-                    "definition": "extrude",
-                    "profile": {"kind": "sketch", "value": sketch.id},
+                "definition": {"kind": "operation", "value": {"kind": "extrude", "value": {"profile": {"kind": "planar", "value": {"kind": "sketch", "value": sketch.id}},
                     "direction": {"kind": "profile_normal"},
                     "start": {"kind": "profile_plane"},
                     "extent": {"kind": "one_sided", "side": {"termination": {"kind": "blind", "length": 1.0}}},
                     "op": "new_body",
-                    "solid": true
-                }
-            }))
+                    "solid": true}}}, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []}))
             .unwrap();
             let sketches = [sketch.clone()];
             let scopes = [scope.clone()];
@@ -1516,16 +1508,12 @@ fn explicit_region_with_extended_incidence_refuses_fallback_for_trimmed_curve_po
                 "ordinal": 0,
                 "suppressed": false,
                 "native_ref": scope.id,
-                "definition": {
-                    "definition": "extrude",
-                    "profile": {"kind": "sketch", "value": sketch.id},
+                "definition": {"kind": "operation", "value": {"kind": "extrude", "value": {"profile": {"kind": "planar", "value": {"kind": "sketch", "value": sketch.id}},
                     "direction": {"kind": "profile_normal"},
                     "start": {"kind": "profile_plane"},
                     "extent": {"kind": "one_sided", "side": {"termination": {"kind": "blind", "length": 1.0}}},
                     "op": "new_body",
-                    "solid": true
-                }
-            }))
+                    "solid": true}}}, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []}))
             .unwrap();
             let sketches = [sketch.clone()];
             let scopes = [scope];
@@ -1798,16 +1786,12 @@ fn resolved_explicit_profiles_reject_partial_or_hole_candidates() {
             "ordinal": 0,
             "suppressed": false,
             "native_ref": scope.id,
-            "definition": {
-                "definition": "extrude",
-                "profile": {"kind": "sketch", "value": sketch.id},
+            "definition": {"kind": "operation", "value": {"kind": "extrude", "value": {"profile": {"kind": "planar", "value": {"kind": "sketch", "value": sketch.id}},
                 "direction": {"kind": "profile_normal"},
                 "start": {"kind": "profile_plane"},
                 "extent": {"kind": "one_sided", "side": {"termination": {"kind": "blind", "length": 1.0}}},
                 "op": "new_body",
-                "solid": true
-            }
-        }))
+                "solid": true}}}, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []}))
         .unwrap();
         let sketches = [sketch.clone()];
         let scopes = [scope];
@@ -1857,4 +1841,73 @@ fn resolved_explicit_profiles_reject_partial_or_hole_candidates() {
             ProfileRef::Planar(PlanarProfileRef::sketch_profiles(sketch.id, vec![0, 1]).unwrap())
         );
     });
+}
+
+/// A one-face topology whose face 10 is bound to surface 50 with the given
+/// carrier row.
+fn face_member_topology(curved: bool) -> AsmHistoricalTopology {
+    let mut topo = AsmHistoricalTopology::default();
+    topo.faces.push(10);
+    topo.loops.push(11);
+    topo.surfaces.push(50);
+    topo.face_loops.push(AsmHistoricalRelation {
+        owner_ref: 10,
+        member_refs: vec![11],
+    });
+    topo.face_surfaces.push(AsmHistoricalCarrierBinding {
+        entity: 10,
+        carrier: 50,
+    });
+    if curved {
+        topo.surface_cylinders.push(AsmHistoricalCylinder {
+            surface: 50,
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            radius: 2.0,
+        });
+    } else {
+        topo.surface_planes
+            .push(crate::history_records::AsmHistoricalPlane {
+                surface: 50,
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+            });
+    }
+    topo
+}
+
+fn historical_face_profile_of(curved: bool) -> Option<PlanarProfileRef> {
+    let topo = face_member_topology(curved);
+    let history = history_with_topologies(&[topo]);
+    let group = extrude_group(vec![21]);
+    let mut member = make_member(group.record_index, 0, 21, None);
+    member.historical = Some(crate::records::topology::fillet::HistoricalBinding {
+        kind: crate::records::topology::body_recipe::AsmHistoricalEntityKind::Loop,
+        entity_ref: 11,
+        state_ids: Vec::new(),
+    });
+    let mut note = None;
+    let profile = super::super::historical_face_profile_selection(
+        &[&group],
+        &[member],
+        Some(0),
+        &cadmpeg_ir::features::FeatureId::mint("test:model:feature#extrude").unwrap(),
+        std::slice::from_ref(&history),
+        &mut note,
+    )
+    .unwrap();
+    assert_eq!(
+        note.map(|note| note.code),
+        curved.then(|| crate::loss::F3dLossCode::FeatureExtrudeProfileFaceCurved.kind()),
+    );
+    profile
+}
+
+#[test]
+fn historical_face_profile_requires_a_face_off_curved_carriers() {
+    assert!(matches!(
+        historical_face_profile_of(false),
+        Some(PlanarProfileRef::HistoricalFaces { .. })
+    ));
+    assert_eq!(historical_face_profile_of(true), None);
 }

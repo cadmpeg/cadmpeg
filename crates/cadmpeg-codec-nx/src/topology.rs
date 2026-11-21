@@ -16,12 +16,13 @@ use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::Sense;
 use cadmpeg_parasolid::pointer;
+use cadmpeg_parasolid::topology::fin::{FinForm, FinLinks};
 use cadmpeg_parasolid::xmt::{NonNullXmt, XmtTarget};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::framing::{
     fixed_record_boundary, fixed_record_candidates as framed_record_candidates, read_sequence_at,
-    read_xmt, skip_sequence_at,
+    read_xmt, scanned_record_end, skip_sequence_at,
 };
 use crate::vec3_at::vec3_be_at;
 pub(crate) mod trimmed_curve_state;
@@ -35,6 +36,8 @@ use surface_curve_state::SurfaceCurveState;
 
 mod primary_edges;
 use primary_edges::PrimaryFrames;
+
+const MAX_MASKED_ATTRIBUTE_RECORD_BYTES: usize = 16_384;
 
 /// Type-38 first-use edit adding the support-UV `intersection_data` pointer.
 /// The terminal ASCII `Z` ends the declaration; index data follows it.
@@ -50,6 +53,13 @@ pub(crate) fn intersection_data_schema_header_at(stream: &[u8], offset: usize) -
         .checked_add(TYPE_38_SCHEMA_HEADER.len())
         .and_then(|end| stream.get(offset..end))
         == Some(TYPE_38_SCHEMA_HEADER)
+}
+
+/// Return the offset of the first complete type-38 schema header in `stream`.
+pub(crate) fn intersection_data_declaration(stream: &[u8]) -> Option<usize> {
+    stream
+        .windows(TYPE_38_SCHEMA_HEADER.len())
+        .position(|window| window == TYPE_38_SCHEMA_HEADER)
 }
 
 /// A supported fixed-record node with its XMT identifier and source offset.
@@ -76,7 +86,7 @@ pub(crate) struct FaceFields {
     /// Next face in the owning shell, or the null reference.
     next_face: Option<XmtTarget>,
     /// First loop reference.
-    loop_xmt: Option<XmtTarget>,
+    pub(crate) loop_xmt: Option<XmtTarget>,
     /// Owning shell reference.
     pub(crate) shell: Option<XmtTarget>,
     /// Surface-carrier reference.
@@ -162,6 +172,27 @@ pub(crate) struct FinFields {
     pub(crate) curve_xmt: Option<XmtTarget>,
     /// Decoded orientation.
     pub(crate) sense: Sense,
+}
+
+/// Sequentially decoded references of the single FIN of a vertex loop.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct VertexLoopFinFields {
+    /// Owning loop.
+    pub(crate) loop_xmt: Option<XmtTarget>,
+    /// The vertex that the loop bounds the face at.
+    pub(crate) vertex: Option<XmtTarget>,
+}
+
+/// One validated LOOP of a face's loop chain.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum FaceLoop {
+    /// A closed ring of edge FINs.
+    Ring(Vec<u32>),
+    /// A vertex loop: its single FIN and that FIN's vertex reference.
+    Vertex {
+        fin_xmt: u32,
+        vertex: Option<XmtTarget>,
+    },
 }
 
 /// Why a face's linked loop boundary cannot be admitted.
@@ -396,15 +427,12 @@ impl Node {
         })
     }
 
-    /// Decode FIN references with cumulative large-index shifts.
+    /// Decode the references of an edge FIN with cumulative large-index shifts.
     pub(crate) fn fin_fields(&self) -> Option<FinFields> {
         (self.kind == NodeKind::Fin).then_some(())?;
-        let mut at = 4 + self.shift;
-        let refs = read_sequence_at::<9>(&self.bytes, &mut at)?;
-        let sense = match self.bytes.get(at) {
-            Some(b'+') => Sense::Forward,
-            Some(b'-') => Sense::Reversed,
-            _ => return None,
+        let (form, refs) = fin_record_at(&self.bytes, 4 + self.shift, self.xmt())?;
+        let FinForm::Edge(sense) = form else {
+            return None;
         };
         Some(FinFields {
             attributes: XmtTarget::from_wire(refs[0]),
@@ -416,6 +444,16 @@ impl Node {
             edge: XmtTarget::from_wire(refs[6]),
             curve_xmt: XmtTarget::from_wire(refs[7]),
             sense,
+        })
+    }
+
+    /// Decode the references of a vertex-loop FIN with cumulative large-index shifts.
+    pub(crate) fn vertex_loop_fin_fields(&self) -> Option<VertexLoopFinFields> {
+        (self.kind == NodeKind::Fin).then_some(())?;
+        let (form, refs) = fin_record_at(&self.bytes, 4 + self.shift, self.xmt())?;
+        (form == FinForm::VertexLoop).then_some(VertexLoopFinFields {
+            loop_xmt: XmtTarget::from_wire(refs[1]),
+            vertex: XmtTarget::from_wire(refs[4]),
         })
     }
 
@@ -511,7 +549,7 @@ impl Node {
                 let Some((_, mut at)) = self.common_header() else {
                     return Vec::new();
                 };
-                if self.bytes.get(at) != Some(&b'R') {
+                if !matches!(self.bytes.get(at), Some(b'R' | b'E')) {
                     return Vec::new();
                 }
                 at += 1;
@@ -537,7 +575,7 @@ impl Node {
                     vec![(ReferenceRole::Surface, XmtTarget::from_wire(reference))]
                 })
             }
-            NodeKind::TrimmedCurve => {
+            NodeKind::TrimmedCurve | NodeKind::SweptSurface => {
                 let Some((_, mut at)) = self.common_header() else {
                     return Vec::new();
                 };
@@ -658,6 +696,19 @@ pub(crate) struct OffsetSurface {
     pub(crate) true_offset: bool,
     /// Checked support reference and signed model distance.
     pub(crate) state: OffsetSurfaceState,
+    /// Record type-tag offset in the inflated stream.
+    pub(crate) pos: usize,
+}
+
+/// A type-67 surface swept along a straight line from a section curve.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct SweptSurface {
+    /// Cross-reference index of the swept surface record.
+    pub(crate) xmt: u32,
+    /// Reference to the section curve.
+    pub(crate) section: u32,
+    /// Sweep vector in millimetres: the unit `sweep` field multiplied by `scale`.
+    pub(crate) direction: [f64; 3],
     /// Record type-tag offset in the inflated stream.
     pub(crate) pos: usize,
 }
@@ -795,7 +846,7 @@ impl Graph {
         self.of_kind(NodeKind::BlendSurface)
             .filter_map(|node| {
                 let mut at = node.common_header()?.1;
-                (*node.bytes.get(at)? == b'R').then_some(())?;
+                matches!(node.bytes.get(at), Some(b'R' | b'E')).then_some(())?;
                 at += 1;
                 let refs = read_sequence_at::<3>(&node.bytes, &mut at)?;
                 let values = [
@@ -814,6 +865,40 @@ impl Graph {
                         [values[2], values[3]],
                     )
                     .ok()?,
+                    pos: node.pos(),
+                })
+            })
+            .collect()
+    }
+}
+
+/// A type-56 rolling-ball record with zero offsets. It has collapsed onto its spine, which is the
+/// cliff edge a cliff-edge blend passes through.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ZeroRadiusBlend {
+    /// Cross-reference index of the blend record.
+    pub(crate) xmt: u32,
+    /// Reference to the curve the blend collapsed onto.
+    pub(crate) spine: u32,
+    /// Record type-tag offset in the inflated stream.
+    pub(crate) pos: usize,
+}
+
+impl Graph {
+    pub(crate) fn zero_radius_blends(&self) -> Vec<ZeroRadiusBlend> {
+        self.of_kind(NodeKind::BlendSurface)
+            .filter_map(|node| {
+                let mut at = node.common_header()?.1;
+                (node.bytes.get(at) == Some(&b'R')).then_some(())?;
+                at += 1;
+                let refs = read_sequence_at::<3>(&node.bytes, &mut at)?;
+                let offsets = [
+                    View::f64_be_at(&node.bytes, at)?,
+                    View::f64_be_at(&node.bytes, at + 8)?,
+                ];
+                (offsets == [0.0, 0.0] && refs[2] > 1).then_some(ZeroRadiusBlend {
+                    xmt: node.xmt(),
+                    spine: refs[2],
                     pos: node.pos(),
                 })
             })
@@ -848,6 +933,25 @@ impl Graph {
                     discriminator,
                     true_offset,
                     state: OffsetSurfaceState::new(support, distance).ok()?,
+                    pos: node.pos(),
+                })
+            })
+            .collect()
+    }
+}
+
+impl Graph {
+    pub(crate) fn swept_surfaces(&self) -> Vec<SweptSurface> {
+        self.of_kind(NodeKind::SweptSurface)
+            .filter_map(|node| {
+                let mut at = node.common_header()?.1;
+                let section = pointer::read_at(&node.bytes, &mut at)?;
+                let sweep = crate::vec3_at::vec3_be_at(&node.bytes, at)?;
+                let scale = View::f64_be_at(&node.bytes, at + 24)?;
+                Some(SweptSurface {
+                    xmt: node.xmt(),
+                    section,
+                    direction: sweep.map(|component| component * scale * 1000.0),
                     pos: node.pos(),
                 })
             })
@@ -913,8 +1017,9 @@ impl Graph {
     }
 
     fn parse_fixed(stream: &[u8], frames: Option<&PrimaryFrames>) -> Graph {
-        let baseline_records = Self::select_fixed_records(stream, false, frames);
-        let full_records = Self::select_fixed_records(stream, true, frames);
+        let declaration = intersection_data_declaration(stream);
+        let baseline_records = Self::select_fixed_records(stream, false, frames, declaration);
+        let full_records = Self::select_fixed_records(stream, true, frames, declaration);
         if full_records.matches_selection(&baseline_records) {
             return baseline_records.materialize(stream);
         }
@@ -1019,10 +1124,56 @@ impl Graph {
         }
     }
 
+    /// Mark the bytes inside complete numeric attribute records (types 81, 82
+    /// and 83) that end at a record boundary. Their references, counts and
+    /// values can read as node tags, and a tag match there can otherwise take
+    /// the bytes of the node that follows or duplicate a real node's identity.
+    fn attribute_record_interiors(stream: &[u8], declaration: Option<usize>) -> Vec<bool> {
+        let mut interior = vec![false; stream.len()];
+        for pos in 0..stream.len() {
+            if stream[pos] != 0 || !matches!(stream.get(pos + 1), Some(0x51..=0x53)) {
+                continue;
+            }
+            // The index of a complete node can have the same bytes as the tag.
+            let is_node_index = pos.checked_sub(2).is_some_and(|start| {
+                stream[start] == 0
+                    && !interior[start]
+                    && NodeKind::try_from(stream[start + 1]).is_ok_and(|kind| {
+                        framed_record_candidates(stream, start, kind)
+                            .into_iter()
+                            .flatten()
+                            .any(|frame| {
+                                let end =
+                                    scanned_record_end(stream, start, kind, frame, declaration);
+                                fixed_record_boundary(stream, end)
+                            })
+                    })
+            });
+            if is_node_index {
+                continue;
+            }
+            let Some(end) = crate::parasolid::attribute_record_end(stream, pos) else {
+                continue;
+            };
+            // Schema text and node fields can read as a tag with a huge count. Masking that span
+            // would hide every real node inside it, which costs far more than one stray tag match.
+            if end - pos > MAX_MASKED_ATTRIBUTE_RECORD_BYTES {
+                continue;
+            }
+            if fixed_record_boundary(stream, end) {
+                if let Some(bytes) = interior.get_mut(pos + 1..end) {
+                    bytes.fill(true);
+                }
+            }
+        }
+        interior
+    }
+
     fn select_fixed_records(
         stream: &[u8],
         full_node_id_domain: bool,
         frames: Option<&PrimaryFrames>,
+        declaration: Option<usize>,
     ) -> FixedRecordSelection {
         let mut candidates = Vec::new();
         let mut ownership_candidates = Vec::new();
@@ -1036,9 +1187,10 @@ impl Graph {
             if frames.is_some() && kind == NodeKind::Edge {
                 return;
             }
-            for candidate in Self::fixed_record_candidates(stream, pos, kind, full_node_id_domain)
-                .into_iter()
-                .flatten()
+            for candidate in
+                Self::fixed_record_candidates(stream, pos, kind, full_node_id_domain, declaration)
+                    .into_iter()
+                    .flatten()
             {
                 if end.is_some_and(|end| candidate.end() > end)
                     || frames.is_some_and(|frames| frames.exclude(&candidate))
@@ -1059,12 +1211,16 @@ impl Graph {
                 }
             }
             None => {
+                let attribute_interiors = Self::attribute_record_interiors(stream, declaration);
                 for pos in stream
                     .len()
                     .checked_sub(3)
                     .into_iter()
                     .flat_map(|last| 0..last)
                 {
+                    if attribute_interiors[pos] {
+                        continue;
+                    }
                     admit(pos, None);
                 }
                 // Counted lane values can spell a BODY or REGION type and identity.
@@ -1078,7 +1234,8 @@ impl Graph {
         // a second serialized node. Counting it first can invalidate the real
         // node and make otherwise stable identities depend on unrelated bytes.
         let non_overlapping = Self::select_non_overlapping_candidates(stream, candidates);
-        let mut selected = Self::select_unique_candidates(non_overlapping);
+        let resolved = Self::without_unbounded_duplicates(stream, non_overlapping);
+        let mut selected = Self::select_unique_candidates(resolved);
         if let Some(frames) = frames {
             selected.extend(
                 frames
@@ -1101,6 +1258,33 @@ impl Graph {
             typed: selected,
             ownership: admitted_ownership,
         }
+    }
+
+    /// Keep the one candidate of a duplicated identity that ends at a record boundary. Bytes
+    /// inside another record can read as a node with the identity of a real one, and treating
+    /// the identity as ambiguous would then remove the real node with them.
+    fn without_unbounded_duplicates(
+        stream: &[u8],
+        candidates: Vec<NodeCandidate>,
+    ) -> Vec<NodeCandidate> {
+        let mut bounded = BTreeMap::<(NodeKind, u32), (usize, usize)>::new();
+        for node in &candidates {
+            let (total, at_boundary) = bounded.entry((node.kind, node.xmt())).or_default();
+            *total += 1;
+            if fixed_record_boundary(stream, node.end()) {
+                *at_boundary += 1;
+            }
+        }
+        candidates
+            .into_iter()
+            .filter(|node| {
+                bounded
+                    .get(&(node.kind, node.xmt()))
+                    .is_none_or(|&(total, at_boundary)| {
+                        total == 1 || at_boundary != 1 || fixed_record_boundary(stream, node.end())
+                    })
+            })
+            .collect()
     }
 
     fn admit_disjoint_ownership(
@@ -1138,6 +1322,7 @@ impl Graph {
         pos: usize,
         kind: NodeKind,
         full_node_id_domain: bool,
+        declaration: Option<usize>,
     ) -> [Option<NodeCandidate>; 2] {
         let mut candidates = [None; 2];
         let mut count = 0;
@@ -1145,12 +1330,14 @@ impl Graph {
             .into_iter()
             .flatten()
         {
+            let end = scanned_record_end(stream, pos, kind, frame, declaration);
             let Some(()) = candidate_has_valid_family_framing(
                 stream,
                 pos,
                 kind,
+                frame.xmt(),
                 frame.shift(),
-                frame.end(),
+                end,
                 full_node_id_domain,
             ) else {
                 continue;
@@ -1160,7 +1347,7 @@ impl Graph {
                 xmt: frame.xmt(),
                 pos,
                 shift: frame.shift(),
-                end: frame.end(),
+                end,
             });
             count += 1;
         }
@@ -1185,10 +1372,10 @@ impl Graph {
 
     /// Keep one complete physical record for each serialized identity.
     ///
-    /// A second record with the same `(kind, xmt)` is not a recoverable choice:
-    /// the fixed-record grammar provides no discriminator that can make one
-    /// authoritative. Invalidate the identity instead of ranking candidates
-    /// by topology shape, reference counts, or scan position.
+    /// Ending at a record boundary is the one discriminator, and
+    /// `without_unbounded_duplicates` has applied it. Invalidate an identity
+    /// that still has a second record instead of ranking candidates by
+    /// topology shape, reference counts, or scan position.
     fn select_unique_candidates(mut candidates: Vec<NodeCandidate>) -> Vec<NodeCandidate> {
         let mut by_key = BTreeMap::<(NodeKind, u32), Option<NodeCandidate>>::new();
         for &node in &candidates {
@@ -1337,7 +1524,7 @@ impl Graph {
             let Some((_, mut at)) = node.common_header() else {
                 continue;
             };
-            if node.bytes.get(at) != Some(&b'R') {
+            if !matches!(node.bytes.get(at), Some(b'R' | b'E')) {
                 continue;
             }
             at += 1;
@@ -1367,6 +1554,14 @@ impl Graph {
             }
         }
         references
+    }
+
+    /// The fields and POINT xmt of a VERTEX whose POINT has a decoded position.
+    pub(crate) fn resolved_vertex(&self, vertex_xmt: u32) -> Option<(VertexFields, u32)> {
+        let fields = self.get(NodeKind::Vertex, vertex_xmt)?.vertex_fields()?;
+        let point = self.get_target(NodeKind::Point, fields.point)?;
+        point.point_position()?;
+        Some((fields, point.xmt()))
     }
 
     /// Resolve the exact witnesses of the unique edge carrying a curve.
@@ -1415,15 +1610,17 @@ impl Graph {
                 return false;
             };
             for face_xmt in face_xmts {
-                let Ok(rings) = self.face_loop_rings(face_xmt) else {
+                let Ok(loops) = self.face_loops(face_xmt) else {
                     return false;
                 };
-                if rings.is_empty() {
+                if loops.is_empty() {
                     return false;
                 }
-                for (_, ring) in rings {
-                    for xmt in ring {
-                        reachable_fins.insert(xmt);
+                for (_, face_loop) in loops {
+                    if let FaceLoop::Ring(ring) = face_loop {
+                        for xmt in ring {
+                            reachable_fins.insert(xmt);
+                        }
                     }
                 }
             }
@@ -1446,16 +1643,17 @@ impl Graph {
             .sum()
     }
 
-    /// Return the validated loop-to-FIN rings owned by a face.
+    /// Return the validated loops owned by a face, in loop-chain order.
     ///
     /// The face's loop chain must terminate at the null reference. Each loop
-    /// points back to the face. Each FIN cycle closes at its first FIN, stays in
-    /// the loop, and has reciprocal forward/backward links. Every FIN resolves
-    /// its edge and vertex.
-    pub(crate) fn face_loop_rings(
+    /// points back to the face. A loop whose first FIN is a vertex-loop FIN
+    /// of that loop is a vertex loop. Every other FIN cycle closes at its
+    /// first FIN, stays in the loop, and has reciprocal forward/backward
+    /// links, and every FIN resolves its edge and vertex.
+    pub(crate) fn face_loops(
         &self,
         face_xmt: u32,
-    ) -> Result<Vec<(u32, Vec<u32>)>, FaceLoopFailure> {
+    ) -> Result<Vec<(u32, FaceLoop)>, FaceLoopFailure> {
         let face = self
             .get(NodeKind::Face, face_xmt)
             .and_then(Node::face_fields)
@@ -1479,9 +1677,18 @@ impl Graph {
             let first_fin = fields
                 .fin
                 .ok_or(FaceLoopFailure::InvalidLoopChain { loop_xmt: current })?;
-            let ring = self.fin_ring(current, first_fin)?;
-
-            rings.push((current, ring));
+            let vertex_loop = self
+                .get_target(NodeKind::Fin, Some(first_fin))
+                .and_then(Node::vertex_loop_fin_fields)
+                .filter(|fields| fields.loop_xmt.map(u32::from) == Some(current));
+            let face_loop = match vertex_loop {
+                Some(fields) => FaceLoop::Vertex {
+                    fin_xmt: u32::from(first_fin),
+                    vertex: fields.vertex,
+                },
+                None => FaceLoop::Ring(self.fin_ring(current, first_fin)?),
+            };
+            rings.push((current, face_loop));
             loop_xmt = fields.next_loop;
         }
         Ok(rings)
@@ -1653,6 +1860,7 @@ impl ReferenceRole {
             | NodeKind::Torus
             | NodeKind::BlendSurface
             | NodeKind::OffsetSurface
+            | NodeKind::SweptSurface
             | NodeKind::BSurface => Some(Self::Surface),
             _ => None,
         }
@@ -1734,10 +1942,24 @@ impl NodeCandidate {
     }
 }
 
+/// The form and nine references of the FIN `fin_xmt` whose references begin at `at`.
+fn fin_record_at(bytes: &[u8], mut at: usize, fin_xmt: u32) -> Option<(FinForm, [u32; 9])> {
+    let refs = read_sequence_at::<9>(bytes, &mut at)?;
+    let links = FinLinks {
+        fin: fin_xmt,
+        forward_fin: refs[2],
+        backward_fin: refs[3],
+        other_fin: XmtTarget::from_wire(refs[5]).map(u32::from),
+        edge: XmtTarget::from_wire(refs[6]).map(u32::from),
+    };
+    Some((FinForm::classify(&links, *bytes.get(at)?)?, refs))
+}
+
 fn candidate_has_valid_family_framing(
     stream: &[u8],
     pos: usize,
     kind: NodeKind,
+    xmt: NonNullXmt,
     shift: usize,
     end: usize,
     full_node_id_domain: bool,
@@ -1766,6 +1988,7 @@ fn candidate_has_valid_family_framing(
             | NodeKind::Torus
             | NodeKind::BlendSurface
             | NodeKind::OffsetSurface
+            | NodeKind::SweptSurface
             | NodeKind::BSurface
             | NodeKind::TrimmedCurve
             | NodeKind::BCurve
@@ -1800,9 +2023,7 @@ fn candidate_has_valid_family_framing(
             skip_sequence_at(bytes, &mut at, 7)?;
         }
         NodeKind::Fin => {
-            let mut at = 4 + shift;
-            skip_sequence_at(bytes, &mut at, 9)?;
-            matches!(bytes.get(at), Some(b'+' | b'-')).then_some(())?;
+            fin_record_at(bytes, 4 + shift, u32::from(xmt))?;
         }
         NodeKind::Vertex => {
             let mut at = 8 + shift;

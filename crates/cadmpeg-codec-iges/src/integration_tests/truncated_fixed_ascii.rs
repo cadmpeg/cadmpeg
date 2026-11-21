@@ -220,7 +220,7 @@ fn directory_count(ir: &CadIr) -> usize {
 }
 
 fn point_ids(ir: &CadIr) -> BTreeSet<String> {
-    ir.model
+    ir.geometry
         .points
         .iter()
         .map(|point| {
@@ -240,9 +240,9 @@ fn outcome_of(decoded: &DecodeResult) -> Outcome {
     Outcome {
         directory: directory_count(ir),
         point_ids: point_ids(ir),
-        points: ir.model.points.len(),
-        curves: ir.model.curves.len(),
-        vertices: ir.model.vertices.len(),
+        points: ir.geometry.points.len(),
+        curves: ir.geometry.curves.len(),
+        vertices: ir.geometry.vertices.len(),
         framing: loss_count(&decoded.report().losses, IgesLossCode::CardFramingRecovered),
         dialect_unverified: loss_count(
             &decoded.report().losses,
@@ -700,8 +700,8 @@ fn a_file_that_ends_inside_global_publishes_no_global_value() {
     bytes.extend_from_slice(&file.cards[last_global].bytes[..semicolon]);
     let decoded = decode(&bytes).expect("a cut Global record decodes");
     assert_dialect(&decoded, false);
-    assert!(decoded.ir().model.points.is_empty());
-    assert!(decoded.ir().model.curves.is_empty());
+    assert!(decoded.ir().geometry.points.is_empty());
+    assert!(decoded.ir().geometry.curves.is_empty());
     assert_eq!(
         decoded.ir().tolerances,
         cadmpeg_ir::units::Tolerances::default()

@@ -44,9 +44,8 @@ fn data(fixture: &Fixture) -> NativeData {
 }
 
 fn projected(fixture: &Fixture, ctx: &DecodeContext<'_>) -> cadmpeg_ir::CadIr {
-    let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model = fixture.model(ctx);
-    fixture.project(ctx, &mut ir.model);
+    let mut ir = fixture.model(ctx);
+    fixture.project(ctx, &mut ir);
     ir
 }
 
@@ -81,12 +80,12 @@ fn composite_validation_accepts_the_decoder_projection_and_its_outputs() {
         assert!(valid(&ir, &data, &ir.model.features[0], &fixture.feature));
         let (_, bodies) = evaluate(&ir, &data, &fixture.feature).expect("join");
         let joined = bodies.into_iter().collect();
-        let mut with_outputs = ir.model.clone();
+        let mut with_outputs = ir.clone();
         crate::feature::body_selection::project(&mut with_outputs, &joined, &fixture.inventory());
-        assert_eq!(with_outputs.features[0].evaluation.outputs().len(), 2);
+        assert_eq!(with_outputs.model.features[0].evaluation.outputs().len(), 2);
         assert!(crate::feature::body_selection::outputs_match(
-            &with_outputs.features[0],
-            &with_outputs.feature_result_topologies,
+            &with_outputs.model.features[0],
+            &with_outputs.model.feature_result_topologies,
             &joined
         ));
         assert!(!crate::feature::body_selection::outputs_match(
@@ -156,9 +155,7 @@ fn composite_validation_requires_stored_geometry_exactly_when_the_join_resolves(
     with_context(|ctx| {
         let fixture = fixture();
         let data = data(&fixture);
-        let native = fixture.model(ctx);
-        let mut ir = cadmpeg_ir::CadIr::empty();
-        ir.model = native;
+        let ir = fixture.model(ctx);
         assert!(
             !valid(&ir, &data, &ir.model.features[0], &fixture.feature),
             "a resolved join needs stored geometry"
@@ -178,8 +175,7 @@ fn composite_validation_requires_stored_geometry_exactly_when_the_join_resolves(
         let mut broken = fixture;
         broken.links[2].edit(|link| link.state = 0);
         let broken_data = self::data(&broken);
-        let mut native_ir = cadmpeg_ir::CadIr::empty();
-        native_ir.model = broken.model(ctx);
+        let mut native_ir = broken.model(ctx);
         assert!(valid(
             &native_ir,
             &broken_data,
@@ -206,8 +202,7 @@ fn composite_validation_rejects_a_native_composite_that_keeps_a_result() {
         let mut broken = fixture();
         broken.links[2].edit(|link| link.state = 0);
         let data = data(&broken);
-        let mut ir = cadmpeg_ir::CadIr::empty();
-        ir.model = broken.model(ctx);
+        let mut ir = broken.model(ctx);
         let links = vec![broken.links[2].id(), broken.links[3].id()];
         ir.model.feature_result_topologies = vec![topology(&ir, links, None)];
         assert!(!valid(&ir, &data, &ir.model.features[0], &broken.feature));

@@ -432,6 +432,7 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
         base_color: None,
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     };
     let assignment = crate::records::references::DesignMaterialAssignment {
         id: owner,
@@ -463,7 +464,7 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
     };
     assert_eq!(
         binding.target,
-        cadmpeg_ir::appearance::AppearanceTarget::Body(second_body)
+        cadmpeg_ir::appearance::AppearanceTarget::Body(second_body).into()
     );
 }
 
@@ -483,6 +484,7 @@ fn presetless_assignment_matches_only_its_visual_guid() {
         base_color: None,
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     };
     let mut assignment = crate::records::references::DesignMaterialAssignment {
         id: "f3d:design:material-assignment#1".into(),
@@ -549,6 +551,7 @@ fn complete_visual_token_selects_one_revision_record() {
         base_color: None,
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     };
     let appearances = [
         appearance("f3d:test:appearance#base", base_token),
@@ -593,6 +596,7 @@ fn visual_preset_fallback_requires_one_record() {
         base_color: None,
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     };
     let appearances = [
         appearance("f3d:test:appearance#first"),
@@ -873,12 +877,13 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
             id: format!("test:model:attribute#{}", face.rsplit_once('#').unwrap().1)
                 .try_into()
                 .expect("valid identity"),
-            target: AttributeTarget::Face(face.try_into().expect("valid identity")),
+            target: AttributeTarget::Face(face.try_into().expect("valid identity")).into(),
             name: "ATTRIB_CUSTOM-attrib".into(),
             values: vec![
-                AttributeValue::String("NEUTRON_Material_attrib_def".into()),
-                AttributeValue::String(face_guid.into()),
+                Some(AttributeValue::String("NEUTRON_Material_attrib_def".into())),
+                Some(AttributeValue::String(face_guid.into())),
             ],
+            native_ref: None,
         });
     }
     let appearance = |id: &str, token: &str| Appearance {
@@ -893,6 +898,7 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
         base_color: None,
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     };
     // Base record first so prefix-only selection cannot bind it.
     ir.model.appearances.extend([
@@ -930,7 +936,7 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
         .model
         .appearance_bindings
         .iter()
-        .map(|binding| binding.target.clone())
+        .map(|binding| binding.target.entity.clone())
         .collect::<Vec<_>>();
     assert_eq!(
         targets,
@@ -950,9 +956,11 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
         .windows(2)
         .all(|pair| pair[0].id < pair[1].id));
 
-    ir.model.attributes[0].values.push(AttributeValue::String(
-        "cccccccc-1111-2222-3333-dddddddddddd".into(),
-    ));
+    ir.model.attributes[0]
+        .values
+        .push(Some(AttributeValue::String(
+            "cccccccc-1111-2222-3333-dddddddddddd".into(),
+        )));
     let error = crate::decode::resolve_face_appearance_bindings(
         &mut ir,
         &[crate::materials::FaceAppearanceAssignment {
@@ -982,17 +990,18 @@ fn legacy_face_assignment_color_precedes_appearance_base_but_not_brep_color() {
     let explicit_color = Color::new(0.1, 0.8, 0.2, 1.0).expect("valid color");
     let make_ir = || {
         let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-        let face = ir.model.faces[0].id.clone();
+        let face = ir.geometry.faces[0].id.clone();
         ir.model.attributes.push(SourceAttribute {
             id: "f3d:test:attribute#face-material"
                 .try_into()
                 .expect("valid identity"),
-            target: AttributeTarget::Face(face),
+            target: AttributeTarget::Face(face).into(),
             name: "ATTRIB_CUSTOM-attrib".into(),
             values: vec![
-                AttributeValue::String("NEUTRON_Material_attrib_def".into()),
-                AttributeValue::String(face_guid.into()),
+                Some(AttributeValue::String("NEUTRON_Material_attrib_def".into())),
+                Some(AttributeValue::String(face_guid.into())),
             ],
+            native_ref: None,
         });
         ir.model.appearances.push(Appearance {
             id: "test:model:appearance#face"
@@ -1008,6 +1017,7 @@ fn legacy_face_assignment_color_precedes_appearance_base_but_not_brep_color() {
             base_color: Some(Color::new(0.0, 0.0, 1.0, 1.0).expect("valid color")),
             properties: std::collections::BTreeMap::new(),
             textures: Vec::new(),
+            native_ref: None,
         });
         ir
     };
@@ -1023,17 +1033,17 @@ fn legacy_face_assignment_color_precedes_appearance_base_but_not_brep_color() {
     let mut ir = make_ir();
     crate::decode::resolve_face_appearance_bindings(&mut ir, std::slice::from_ref(&assignment))
         .expect("legacy face assignment");
-    assert_eq!(ir.model.faces[0].color, Some(assignment_color));
+    assert_eq!(ir.geometry.faces[0].color, Some(assignment_color));
     assert_eq!(ir.model.appearance_bindings.len(), 1);
 
     let mut explicit = make_ir();
-    explicit.model.faces[0].color = Some(explicit_color);
+    explicit.geometry.faces[0].color = Some(explicit_color);
     crate::decode::resolve_face_appearance_bindings(
         &mut explicit,
         std::slice::from_ref(&assignment),
     )
     .expect("explicit face color");
-    assert_eq!(explicit.model.faces[0].color, Some(explicit_color));
+    assert_eq!(explicit.geometry.faces[0].color, Some(explicit_color));
 
     let mut no_asset = make_ir();
     no_asset.model.appearances.clear();
@@ -1042,7 +1052,7 @@ fn legacy_face_assignment_color_precedes_appearance_base_but_not_brep_color() {
         std::slice::from_ref(&assignment),
     )
     .expect("face color independent of appearance lookup");
-    assert_eq!(no_asset.model.faces[0].color, Some(assignment_color));
+    assert_eq!(no_asset.geometry.faces[0].color, Some(assignment_color));
     assert!(no_asset.model.appearance_bindings.is_empty());
 }
 
@@ -1155,7 +1165,7 @@ fn decode_transfers_generated_custom_attribute() {
             attribute.values.iter().any(|value| {
                 matches!(
                     value,
-                    cadmpeg_ir::attributes::AttributeValue::String(text)
+                    Some(cadmpeg_ir::attributes::AttributeValue::String(text))
                         if text == "generic_tag_attrib_def"
                 )
             })
@@ -1163,12 +1173,12 @@ fn decode_transfers_generated_custom_attribute() {
         .expect("generic tag attribute");
     assert_eq!(attribute.name, "ATTRIB_CUSTOM-attrib");
     assert!(matches!(
-        &attribute.target,
-        cadmpeg_ir::attributes::AttributeTarget::Body(body) if body == &result.ir().model.bodies[0].id
+        &attribute.target.entity,
+        cadmpeg_ir::attributes::AttributeTarget::Body(body) if body == &result.ir().geometry.bodies[0].id
     ));
     assert!(attribute.values.iter().any(|value| matches!(
         value,
-        cadmpeg_ir::attributes::AttributeValue::String(text) if text == "322"
+        Some(cadmpeg_ir::attributes::AttributeValue::String(text)) if text == "322"
     )));
     assert_eq!(f3d_native(result.ir()).persistent_design_links.len(), 2);
     assert_eq!(
@@ -1194,7 +1204,7 @@ fn decode_transfers_generated_custom_attribute() {
     );
     assert!(attribute.values.iter().any(|value| matches!(
         value,
-        cadmpeg_ir::attributes::AttributeValue::String(text) if text == "900"
+        Some(cadmpeg_ir::attributes::AttributeValue::String(text)) if text == "900"
     )));
     assert_eq!(f3d_native(result.ir()).creation_timestamps.len(), 1);
     assert_eq!(
@@ -1212,10 +1222,14 @@ fn source_less_tolerant_vertex_retains_custom_attribute_ownership() {
     let mut source = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     source.source = None;
     source
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
-    let vertex = source.model.vertices[0].id.clone();
-    source.model.vertices[0].tolerance =
+    let vertex = source.geometry.vertices[0].id.clone();
+    source.geometry.vertices[0].tolerance =
         Some(cadmpeg_ir::scalar::PositiveReal::new(0.025).expect("positive finite tolerance"));
     f3d_native_mut(&mut source).creation_timestamps =
         vec![crate::records::recipes::CreationTimestamp {
@@ -1237,7 +1251,7 @@ fn source_less_tolerant_vertex_retains_custom_attribute_ownership() {
 
     let tolerant_vertex = round_trip
         .ir()
-        .model
+        .geometry
         .vertices
         .iter()
         .find(|vertex| vertex.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get) == Some(0.025))
@@ -1249,12 +1263,12 @@ fn source_less_tolerant_vertex_retains_custom_attribute_ownership() {
         .iter()
         .find(|attribute| {
             attribute.name == "ATTRIB_CUSTOM-attrib"
-                && attribute.target == AttributeTarget::Vertex(tolerant_vertex.id.clone())
+                && attribute.target == AttributeTarget::Vertex(tolerant_vertex.id.clone()).into()
         })
         .expect("tolerant vertex attribute");
     assert_eq!(
         attribute.target,
-        AttributeTarget::Vertex(tolerant_vertex.id.clone())
+        AttributeTarget::Vertex(tolerant_vertex.id.clone()).into()
     );
     assert_eq!(
         f3d_native(round_trip.ir()).creation_timestamps[0]
@@ -1390,7 +1404,7 @@ fn an_unconstrained_sketch_link_sense_round_trips_in_its_source_spelling() {
     );
 
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    let coedge = source_less.model.coedges[0].id.clone();
+    let coedge = source_less.geometry.coedges[0].id.clone();
     f3d_native_mut(&mut source_less).sketch_curve_links = vec![SketchCurveLink {
         id: "f3d:generated:sketch-curve-link#0".into(),
         target: cadmpeg_ir::attributes::AttributeTarget::Coedge(coedge),
@@ -1432,16 +1446,27 @@ fn decode_mixed_analytic_and_unknown_faces_sharing_an_edge() {
         .unwrap();
 
     assert!(result.report().geometry_transferred());
+    assert_eq!(
+        cadmpeg_test_support::EditableDecodeResult::from(result.clone())
+            .source_fidelity()
+            .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
+            .unwrap()
+            .untyped()
+            .iter()
+            .copied()
+            .collect::<Vec<_>>(),
+        [cadmpeg_core::decode::ArenaClass::Model]
+    );
     // Two faces (one plane, one spline), sharing one edge; five edges total.
-    assert_eq!(result.ir().model.faces.len(), 2);
-    assert_eq!(result.ir().model.edges.len(), 5);
-    assert_eq!(result.ir().model.vertices.len(), 4);
-    assert_eq!(result.ir().model.coedges.len(), 6);
+    assert_eq!(result.ir().geometry.faces.len(), 2);
+    assert_eq!(result.ir().geometry.edges.len(), 5);
+    assert_eq!(result.ir().geometry.vertices.len(), 4);
+    assert_eq!(result.ir().geometry.coedges.len(), 6);
 
     // Exactly one analytic (plane) and one unknown surface.
     let planes = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .filter(|s| {
@@ -1453,7 +1478,7 @@ fn decode_mixed_analytic_and_unknown_faces_sharing_an_edge() {
         .count();
     let unknowns = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .filter(|s| {
@@ -1469,7 +1494,7 @@ fn decode_mixed_analytic_and_unknown_faces_sharing_an_edge() {
     // sense (the manifold invariant), which coedge-pairing validation enforces.
     let paired = result
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .filter(|c| c.radial_next != c.id)
@@ -1479,7 +1504,7 @@ fn decode_mixed_analytic_and_unknown_faces_sharing_an_edge() {
     let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
         .expect("validate the neutral model");
     assert!(report.is_ok(), "findings: {:?}", report.findings);
-    assert_eq!(result.ir().model.surfaces.len(), 2);
+    assert_eq!(result.ir().geometry.surfaces.len(), 2);
 }
 
 #[test]
@@ -1620,6 +1645,7 @@ fn opaque_appearance(guid: &str) -> cadmpeg_ir::appearance::Appearance {
         ),
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     }
 }
 
@@ -1733,7 +1759,7 @@ fn generic_transparency_sets_opacity_without_changing_rgb() {
         let (appearances, _) = schema_appearances(&[record]).unwrap();
         let color = appearances[0].base_color.unwrap();
         assert_eq!([color.r(), color.g(), color.b()], [0.125, 0.25, 0.375]);
-        assert_eq!(f64::from(color.a()), 1.0 - transparency);
+        assert_eq!(color.a(), 1.0 - transparency);
     }
 }
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_test_support::wire;
+use crate::test_support::wire;
 
 use super::{
     target::{Catalog, DialectFree, ResolvedWrite, TargetRequest},
@@ -159,27 +159,30 @@ fn the_wrapper_stamps_the_resolved_target_on_a_catalog_plan() {
 
 fn recorded_at(depth: DecodeDepth) -> CadIr {
     let mut ir = CadIr::empty();
-    ir.set_decode_depth(depth);
+    ir.set_scope(depth.scope())
+        .expect("an empty document admits every scope");
     ir
 }
 
 #[test]
-fn a_full_need_encoder_refuses_a_geometry_document() {
-    let ir = recorded_at(DecodeDepth::Geometry);
-    let error = F3dCoverageEncoder(ArenaCoverage::Complete)
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .unwrap_err();
-    assert!(
-        matches!(
-            error,
-            CodecError::InsufficientDepth {
-                format: "f3d",
-                needed: DecodeDepth::Full,
-                recorded: DecodeDepth::Geometry,
-            }
-        ),
-        "{error}"
-    );
+fn a_full_need_encoder_refuses_a_document_below_full_scope() {
+    for recorded in [DecodeDepth::Geometry, DecodeDepth::Design] {
+        let ir = recorded_at(recorded);
+        let error = F3dCoverageEncoder(ArenaCoverage::Complete)
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap_err();
+        assert!(
+            matches!(
+                error,
+                CodecError::InsufficientDepth {
+                    format: "f3d",
+                    needed: DecodeDepth::Full,
+                    recorded: actual,
+                } if actual == recorded
+            ),
+            "{error}"
+        );
+    }
 }
 
 #[test]
@@ -218,6 +221,7 @@ fn the_cadir_encoder_writes_the_depth_a_document_records() {
     for depth in [
         DecodeDepth::Container,
         DecodeDepth::Geometry,
+        DecodeDepth::Design,
         DecodeDepth::Full,
     ] {
         let ir = recorded_at(depth);
@@ -227,7 +231,10 @@ fn the_cadir_encoder_writes_the_depth_a_document_records() {
         let mut encoded = Vec::new();
         plan.write_to(&mut encoded).unwrap();
         let written: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
-        assert_eq!(written["decode_depth"], depth.as_str());
+        assert_eq!(
+            written["scope"],
+            serde_json::to_value(depth.scope()).unwrap()
+        );
     }
 }
 
@@ -249,7 +256,7 @@ fn fidelity_resolution_is_not_provided_whenever_the_input_carries_none() {
 #[test]
 fn fidelity_resolution_follows_the_backend_consumption_when_provided() {
     let ir = CadIr::empty();
-    let fidelity = SourceFidelity::default();
+    let fidelity = SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(b"test source"));
     let plan = CatalogEncoder
         .plan(
             EncodeInput::new(&ir, Some(&fidelity)),
@@ -307,9 +314,13 @@ fn write_path_structurally_authors_fidelity_resolution() {
 }
 
 macro_rules! uniform_dispositions {
-    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
+    ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
         fn uniform_dispositions(disposition: ArenaDisposition) -> ArenaDispositions {
-            ArenaDispositions { $($field: disposition,)* }
+            ArenaDispositions {
+                $($field: disposition,)*
+                design: super::DesignArenaDispositions::uniform(disposition),
+                process: super::ProcessArenaDispositions::uniform(disposition),
+            }
         }
     };
 }
@@ -338,11 +349,173 @@ fn coverage_losses(ir: &CadIr, coverage: ArenaCoverage) -> Vec<crate::report::lo
         .clone()
 }
 
+fn design_sheet(key: &str) -> crate::design::spreadsheet::Spreadsheet {
+    crate::design::spreadsheet::Spreadsheet::new(
+        crate::spreadsheets::SpreadsheetId::mint(format!("test:design:spreadsheet#{key}")).unwrap(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        None,
+    )
+    .unwrap()
+}
+
+fn v10_sheet() -> crate::spreadsheets::Spreadsheet {
+    crate::spreadsheets::Spreadsheet::new(
+        crate::spreadsheets::SpreadsheetId::mint("test:design:spreadsheet#v10").unwrap(),
+        crate::features::FeatureId::mint("test:design:feature#v10").unwrap(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        None,
+    )
+    .unwrap()
+}
+
+/// While a document holds a v10 design record, an omitted design-home arena
+/// restates what the v10 path writes and is charged nothing.
+#[test]
+fn an_omitted_design_arena_is_charged_only_without_v10_design_records() {
+    let mut ir = CadIr::empty();
+    ir.design.spreadsheets.push(design_sheet("v11"));
+    let omitted = ArenaCoverage::Declared(uniform_dispositions(ArenaDisposition::Omitted));
+    let losses = coverage_losses(&ir, omitted);
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert!(
+        losses[0].message.contains("`design.spreadsheets`"),
+        "{losses:?}"
+    );
+
+    ir.model.spreadsheets.push(v10_sheet());
+    let losses = coverage_losses(&ir, omitted);
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert!(losses[0].message.contains("`spreadsheets`"), "{losses:?}");
+}
+
+/// No v10 record restates an evaluation, so an omitted `design.evaluations`
+/// arena is charged while the document holds v10 design records.
+#[test]
+fn an_omitted_evaluation_arena_is_charged_beside_v10_design_records() {
+    use crate::design::evaluation::{Evaluation, EvaluationStatus};
+
+    let mut ir = CadIr::empty();
+    ir.model.spreadsheets.push(v10_sheet());
+    ir.design.spreadsheets.push(design_sheet("v11"));
+    ir.design.evaluations.push(Evaluation {
+        id: crate::design::ids::EvaluationId::mint("test:design:evaluation#1").unwrap(),
+        scope: crate::ids::ProductDefinitionId::mint("test:model:definition#1").unwrap(),
+        configuration: None,
+        of: crate::design::refs::Evaluated::Tool(
+            crate::features::FeatureId::mint("test:design:feature#v10").unwrap(),
+        ),
+        status: EvaluationStatus::Stale,
+        content: None,
+        native_ref: None,
+    });
+    let losses = coverage_losses(
+        &ir,
+        ArenaCoverage::Declared(uniform_dispositions(ArenaDisposition::Omitted)),
+    );
+    assert_eq!(losses.len(), 2, "{losses:?}");
+    for (loss, arena) in losses.iter().zip(["spreadsheets", "design.evaluations"]) {
+        assert_eq!(loss.code.namespace(), "export");
+        assert_eq!(loss.code.local_code(), "arena.omitted");
+        assert!(loss.message.contains(&format!("`{arena}`")), "{losses:?}");
+    }
+}
+
+/// An omitted sketch arena of the design home is charged as an omitted
+/// parametric record, and a written one is not.
+#[test]
+fn an_omitted_design_sketch_arena_is_charged() {
+    use crate::design::evaluation::EvaluationStatus;
+    use crate::design::ops::sketch::{Sketch, SketchPlane, SketchSolve, SpatialSketch};
+    use crate::design::options::NativeOptions;
+
+    let solve = || SketchSolve {
+        state: None,
+        status: EvaluationStatus::Current,
+    };
+    let owner = crate::features::FeatureId::mint("test:design:feature#1").unwrap();
+    let mut ir = CadIr::empty();
+    ir.design.sketches.push(Sketch {
+        id: crate::sketches::SketchId::mint("test:design:sketch#1").unwrap(),
+        owner: owner.clone(),
+        name: None,
+        plane: SketchPlane::Block,
+        solve: solve(),
+        native_options: NativeOptions::new(),
+        source_settings: NativeOptions::new(),
+        native_ref: None,
+    });
+    ir.design.spatial_sketches.push(SpatialSketch {
+        id: crate::sketches::SpatialSketchId::mint("test:design:spatial-sketch#1").unwrap(),
+        owner,
+        name: None,
+        solve: solve(),
+        native_options: NativeOptions::new(),
+        source_settings: NativeOptions::new(),
+        native_ref: None,
+    });
+    let mut dispositions = uniform_dispositions(ArenaDisposition::Omitted);
+    let losses = coverage_losses(&ir, ArenaCoverage::Declared(dispositions));
+    assert_eq!(losses.len(), 2, "{losses:?}");
+    for (loss, arena) in losses
+        .iter()
+        .zip(["design.sketches", "design.spatial_sketches"])
+    {
+        assert!(loss.message.contains(&format!("`{arena}`")), "{losses:?}");
+        assert_eq!(
+            loss.code.taxonomy(),
+            crate::report::loss::LossTaxonomy::ParametricRecordOmitted
+        );
+    }
+    dispositions.design.spatial_sketches = ArenaDisposition::Written;
+    let losses = coverage_losses(&ir, ArenaCoverage::Declared(dispositions));
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert!(
+        losses[0].message.contains("`design.sketches`"),
+        "{losses:?}"
+    );
+}
+
+#[test]
+fn an_omitted_process_arena_is_charged_as_a_process_record() {
+    let mut ir = CadIr::empty();
+    ir.process
+        .groups
+        .push(crate::process::groups::ProcessGroup {
+            id: crate::design::ids::ProcessGroupId::try_from("test:process:group#1".to_owned())
+                .unwrap(),
+            kind: crate::process::groups::GroupKind::Method,
+            name: None,
+            parent: None,
+            native_ref: None,
+        });
+    let mut dispositions = uniform_dispositions(ArenaDisposition::Written);
+    dispositions.process.groups = ArenaDisposition::Omitted;
+    let losses = coverage_losses(&ir, ArenaCoverage::Declared(dispositions));
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert_eq!(losses[0].code.local_code(), "arena.omitted");
+    assert_eq!(
+        losses[0].code.taxonomy(),
+        crate::report::loss::LossTaxonomy::ProcessRecordOmitted
+    );
+    assert!(losses[0].message.contains("`process.groups`"), "{losses:?}");
+    assert!(coverage_losses(
+        &ir,
+        ArenaCoverage::Declared(uniform_dispositions(ArenaDisposition::Written))
+    )
+    .is_empty());
+}
+
 #[test]
 fn the_wrapper_charges_one_loss_per_omitted_nonempty_arena() {
     let ir = unit_cube().expect("valid unit cube fixture");
-    assert_eq!(ir.model.faces.len(), 6);
-    assert!(ir.model.subds.is_empty());
+    assert_eq!(ir.geometry.faces.len(), 6);
+    assert!(ir.geometry.subds.is_empty());
     let mut dispositions = uniform_dispositions(ArenaDisposition::Written);
     dispositions.faces = ArenaDisposition::Omitted;
     dispositions.subds = ArenaDisposition::Omitted;
@@ -470,8 +643,8 @@ fn carried_errors_exclude_warnings_and_include_unlocated_errors() {
 #[test]
 fn carried_errors_follow_model_coverage_and_related_locations() {
     let ir = unit_cube().expect("valid cube");
-    let face = ir.model.faces[0].identity();
-    let edge = ir.model.edges[0].identity();
+    let face = ir.geometry.faces[0].identity();
+    let edge = ir.geometry.edges[0].identity();
     let report = validation_report(vec![
         finding(Some(face), "invalid face", Severity::Error),
         finding(

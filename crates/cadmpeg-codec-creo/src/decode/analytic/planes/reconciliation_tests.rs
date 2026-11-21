@@ -66,6 +66,7 @@ fn reconciled_plane_uses_source_carrier_after_millimeter_admission() {
                     .expect("source plane"),
                 )),
                 source_object: None,
+                native_ref: None,
             },
         )
     })
@@ -82,7 +83,7 @@ fn reconciled_plane_uses_source_carrier_after_millimeter_admission() {
         Some([1.0, 0.0, 0.0])
     );
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) =
-        &ir.model.surfaces[0].geometry
+        &ir.geometry.surfaces[0].geometry
     else {
         panic!("surface changed family");
     };
@@ -276,7 +277,7 @@ fn unique_native_conic_loop_places_its_plane_surface() {
         }],
     ));
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: CurveId::mint("creo:visibgeom:curve#11".to_string()).expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -289,6 +290,7 @@ fn unique_native_conic_loop_places_its_plane_surface() {
             .expect("valid CircleCurve fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
 
     let transferred = crate::decode::with_service_context(|ctx| {
@@ -305,7 +307,7 @@ fn unique_native_conic_loop_places_its_plane_surface() {
 
     assert_eq!(transferred, 1);
     let plane = ir
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| {
@@ -325,7 +327,7 @@ fn unique_native_conic_loop_places_its_plane_surface() {
     scan.curves
         .topology_rows
         .push(scan.curves.topology_rows[0].clone());
-    ir.model.surfaces.clear();
+    ir.geometry.surfaces.clear();
     assert_eq!(
         crate::decode::with_service_context(|ctx| transfer_topology_bound_planes(
             ctx,
@@ -380,7 +382,7 @@ fn unique_nurbs_line_loop_places_its_plane_surface() {
         (11, Point3::new(0.0, 0.0, 4.0), Vector3::new(1.0, 0.0, 0.0)),
         (12, Point3::new(0.0, 2.0, 4.0), Vector3::new(0.0, 1.0, 0.0)),
     ] {
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("identity grammar"),
             geometry: nurbs_curve(
@@ -397,6 +399,7 @@ fn unique_nurbs_line_loop_places_its_plane_surface() {
                 None,
             ),
             source_object: None,
+            native_ref: None,
         });
     }
 
@@ -412,7 +415,7 @@ fn unique_nurbs_line_loop_places_its_plane_surface() {
         .expect("valid source object identity"),
         1
     );
-    assert!(ir.model.surfaces.iter().any(|surface| {
+    assert!(ir.geometry.surfaces.iter().any(|surface| {
         surface.id
             == SurfaceId::mint("creo:visibgeom:surface#5".to_string()).expect("identity grammar")
             && matches!(&surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))

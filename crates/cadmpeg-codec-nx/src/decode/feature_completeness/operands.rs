@@ -201,7 +201,7 @@ fn angular_termination_is_incomplete(termination: &AngularTermination) -> bool {
         },
         AngularTermination::OffsetFromFace { face, .. } => face_selection_is_incomplete(face),
         AngularTermination::ToShape { target } => face_selection_is_incomplete(target),
-        AngularTermination::Angle { .. } => false,
+        AngularTermination::Angle { .. } | AngularTermination::ToPlane { .. } => false,
         AngularTermination::ThroughAll {}
         | AngularTermination::ThroughNext {}
         | AngularTermination::ToFirst {}

@@ -1,372 +1,37 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "10",
-    "model": {
-      "appearance_bindings": [
-        {
-          "appearance": "fcstd:appearance:edge#Box:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:13%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:13%40location1",
-            "kind": "edge"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Box:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:15%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:15%40location1",
-            "kind": "edge"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Box:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:17%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:17%40location1",
-            "kind": "edge"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Box:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:18%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:18%40location1",
-            "kind": "edge"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Box:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:21%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:21%40location1",
-            "kind": "edge"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Box:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:22%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:22%40location1",
-            "kind": "edge"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Box:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:25%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:25%40location1",
-            "kind": "edge"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Box:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:26%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:26%40location1",
-            "kind": "edge"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Box:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:3%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:3%40location1",
-            "kind": "edge"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Box:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:5%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:5%40location1",
-            "kind": "edge"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Box:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:7%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:7%40location1",
-            "kind": "edge"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#Box:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:8%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:8%40location1",
-            "kind": "edge"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:shape-material#Box:1",
-          "id": "fcstd:appearance:binding#shape-material:Box:0",
-          "object_type": "ViewProvider ShapeAppearance",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "id": "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1",
-            "kind": "body"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Box:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:1%40location1",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "id": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:1%40location1",
-            "kind": "vertex"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Box:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:11%40location1",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "id": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:11%40location1",
-            "kind": "vertex"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Box:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:12%40location1",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "id": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:12%40location1",
-            "kind": "vertex"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Box:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:14%40location1",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "id": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:14%40location1",
-            "kind": "vertex"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Box:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:16%40location1",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "id": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:16%40location1",
-            "kind": "vertex"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Box:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:2%40location1",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "id": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:2%40location1",
-            "kind": "vertex"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Box:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:4%40location1",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "id": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:4%40location1",
-            "kind": "vertex"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#Box:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:6%40location1",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#Box",
-          "target": {
-            "id": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:6%40location1",
-            "kind": "vertex"
-          }
-        }
-      ],
-      "appearances": [
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.10196078568696976,
-            "g": 0.20000000298023224,
-            "r": 0.7019608020782471
-          },
-          "id": "fcstd:appearance:edge#Box",
-          "name": "Box line appearance",
-          "properties": {
-            "line_width": 3.0
-          },
-          "schema": "FCStd ViewProvider line style"
-        },
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.10196078568696976,
-            "g": 0.20000000298023224,
-            "r": 0.7019608020782471
-          },
-          "id": "fcstd:appearance:edge#Box:1",
-          "name": "Box Edge1 appearance",
-          "properties": {
-            "line_width": 3.0
-          },
-          "schema": "FCStd LineColorArray"
-        },
-        {
-          "asset_guid": "7f9fd73b-50c9-41d8-b7b2-575a030c1eeb",
-          "base_color": {
-            "a": 1.0,
-            "b": 0.6000000238418579,
-            "g": 0.4000000059604645,
-            "r": 0.20000000298023224
-          },
-          "id": "fcstd:appearance:shape-material#Box:1",
-          "name": "Box face 1 material",
-          "properties": {
-            "ambient_packed": 1431655680.0,
-            "emissive_packed": 0.0,
-            "shininess": 0.8999999761581421,
-            "specular_packed": 2290649088.0,
-            "transparency": 0.0
-          },
-          "schema": "FCStd ShapeAppearance"
-        },
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.3019607961177826,
-            "g": 0.800000011920929,
-            "r": 0.10196078568696976
-          },
-          "id": "fcstd:appearance:vertex#Box",
-          "name": "Box point appearance",
-          "properties": {
-            "point_size": 5.0
-          },
-          "schema": "FCStd ViewProvider point style"
-        },
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.3019607961177826,
-            "g": 0.800000011920929,
-            "r": 0.10196078568696976
-          },
-          "id": "fcstd:appearance:vertex#Box:1",
-          "name": "Box Vertex1 appearance",
-          "properties": {
-            "point_size": 5.0
-          },
-          "schema": "FCStd PointColorArray"
-        }
-      ],
-      "assembly_joints": [],
-      "attributes": [],
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
+    "fragment": false,
+    "geometry": {
       "bodies": [
         {
           "color": {
             "a": 1.0,
-            "b": 0.6000000238418579,
-            "g": 0.4000000059604645,
-            "r": 0.20000000298023224
+            "b": 0.6,
+            "g": 0.4,
+            "r": 0.2
           },
           "id": "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1",
           "kind": "solid",
-          "regions": [
-            "fcstd:model:region#Box:Shape:Box.Shape.brp:34%40location1"
-          ],
           "visible": true
         }
       ],
@@ -756,250 +421,296 @@
           "sense": "forward"
         }
       ],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Box:Shape:Box.Shape.brp:1",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 30.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 30.0
+              }
             }
           },
           "id": "fcstd:model:curve#Box:Shape:Box.Shape.brp:10",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 20.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 20.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Box:Shape:Box.Shape.brp:11",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 20.0,
-              "z": 30.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 20.0,
+                "z": 30.0
+              }
             }
           },
           "id": "fcstd:model:curve#Box:Shape:Box.Shape.brp:12",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": -0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 30.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 30.0
+              }
             }
           },
           "id": "fcstd:model:curve#Box:Shape:Box.Shape.brp:2",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 20.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 20.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Box:Shape:Box.Shape.brp:3",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": -0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Box:Shape:Box.Shape.brp:4",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 10.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 10.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Box:Shape:Box.Shape.brp:5",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": -0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 10.0,
-              "y": 0.0,
-              "z": 30.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 10.0,
+                "y": 0.0,
+                "z": 30.0
+              }
             }
           },
           "id": "fcstd:model:curve#Box:Shape:Box.Shape.brp:6",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 10.0,
-              "y": 20.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 10.0,
+                "y": 20.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Box:Shape:Box.Shape.brp:7",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": -0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 10.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 10.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Box:Shape:Box.Shape.brp:8",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#Box:Shape:Box.Shape.brp:9",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         }
       ],
-      "drawings": [],
       "edges": [
         {
           "carrier": {
@@ -1009,9 +720,11 @@
               30.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:11%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:11%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:12%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:13%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:12%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1022,9 +735,11 @@
               20.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:14%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:14%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:11%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:15%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:11%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1035,9 +750,11 @@
               30.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:14%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:14%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:16%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:17%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:16%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1048,9 +765,11 @@
               20.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:16%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:16%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:12%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:18%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:12%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1061,9 +780,11 @@
               10.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:12%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:12%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:2%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:21%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:2%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1074,9 +795,11 @@
               10.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:11%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:11%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:1%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:22%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1087,9 +810,11 @@
               10.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:16%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:16%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:6%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:25%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:6%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1100,9 +825,11 @@
               10.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:14%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:14%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:4%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:26%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:4%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1113,9 +840,11 @@
               30.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:1%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:1%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:2%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:3%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:2%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1126,9 +855,11 @@
               20.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:4%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:4%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:1%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:5%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1139,9 +870,11 @@
               30.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:4%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:4%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:6%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:7%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:6%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1152,9 +885,11 @@
               20.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:6%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:6%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:2%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:8%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:2%40location1",
           "tolerance": 1e-7
         }
       ],
@@ -1162,7 +897,7 @@
         {
           "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:10%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Box:Shape:Box.Shape.brp:10%40location1%3A1"
             ]
@@ -1175,7 +910,7 @@
         {
           "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:20%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Box:Shape:Box.Shape.brp:20%40location1%3A1"
             ]
@@ -1188,7 +923,7 @@
         {
           "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:24%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Box:Shape:Box.Shape.brp:24%40location1%3A1"
             ]
@@ -1201,7 +936,7 @@
         {
           "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:28%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Box:Shape:Box.Shape.brp:28%40location1%3A1"
             ]
@@ -1214,7 +949,7 @@
         {
           "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:30%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Box:Shape:Box.Shape.brp:30%40location1%3A1"
             ]
@@ -1227,7 +962,7 @@
         {
           "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:32%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#Box:Shape:Box.Shape.brp:32%40location1%3A1"
             ]
@@ -1236,25 +971,6 @@
           "shell": "fcstd:model:shell#Box:Shape:Box.Shape.brp:33%40location1",
           "surface": "fcstd:model:surface#Box:Shape:Box.Shape.brp:3",
           "tolerance": 1e-7
-        }
-      ],
-      "features": [
-        {
-          "definition": {
-            "definition": "stored_geometry"
-          },
-          "id": "fcstd:design:feature#Box",
-          "name": "Box",
-          "native_ref": "fcstd:native:object#Box",
-          "ordinal": 0,
-          "outputs": [
-            "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1"
-          ],
-          "source_properties": {
-            "Visibility": "true"
-          },
-          "source_tag": "Part::Feature",
-          "suppressed": null
         }
       ],
       "loops": [
@@ -1266,7 +982,8 @@
               "fcstd:model:coedge#Box:Shape:Box.Shape.brp:10%40location1%3A1%3A3",
               "fcstd:model:coedge#Box:Shape:Box.Shape.brp:10%40location1%3A1%3A2"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Box:Shape:Box.Shape.brp:10%40location1",
           "id": "fcstd:model:loop#Box:Shape:Box.Shape.brp:10%40location1%3A1"
@@ -1279,7 +996,8 @@
               "fcstd:model:coedge#Box:Shape:Box.Shape.brp:20%40location1%3A1%3A3",
               "fcstd:model:coedge#Box:Shape:Box.Shape.brp:20%40location1%3A1%3A2"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Box:Shape:Box.Shape.brp:20%40location1",
           "id": "fcstd:model:loop#Box:Shape:Box.Shape.brp:20%40location1%3A1"
@@ -1292,7 +1010,8 @@
               "fcstd:model:coedge#Box:Shape:Box.Shape.brp:24%40location1%3A1%3A3",
               "fcstd:model:coedge#Box:Shape:Box.Shape.brp:24%40location1%3A1%3A2"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Box:Shape:Box.Shape.brp:24%40location1",
           "id": "fcstd:model:loop#Box:Shape:Box.Shape.brp:24%40location1%3A1"
@@ -1305,7 +1024,8 @@
               "fcstd:model:coedge#Box:Shape:Box.Shape.brp:28%40location1%3A1%3A3",
               "fcstd:model:coedge#Box:Shape:Box.Shape.brp:28%40location1%3A1%3A2"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Box:Shape:Box.Shape.brp:28%40location1",
           "id": "fcstd:model:loop#Box:Shape:Box.Shape.brp:28%40location1%3A1"
@@ -1318,7 +1038,8 @@
               "fcstd:model:coedge#Box:Shape:Box.Shape.brp:30%40location1%3A1%3A3",
               "fcstd:model:coedge#Box:Shape:Box.Shape.brp:30%40location1%3A1%3A2"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Box:Shape:Box.Shape.brp:30%40location1",
           "id": "fcstd:model:loop#Box:Shape:Box.Shape.brp:30%40location1%3A1"
@@ -1331,14 +1052,13 @@
               "fcstd:model:coedge#Box:Shape:Box.Shape.brp:32%40location1%3A1%3A3",
               "fcstd:model:coedge#Box:Shape:Box.Shape.brp:32%40location1%3A1%3A2"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#Box:Shape:Box.Shape.brp:32%40location1",
           "id": "fcstd:model:loop#Box:Shape:Box.Shape.brp:32%40location1%3A1"
         }
       ],
-      "occurrences": [],
-      "parameters": [],
       "pcurves": [
         {
           "geometry": {
@@ -1360,7 +1080,7 @@
                 30.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1383,7 +1103,7 @@
                 30.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1406,7 +1126,7 @@
                 20.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1429,7 +1149,7 @@
                 20.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1452,7 +1172,7 @@
                 30.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1475,7 +1195,7 @@
                 30.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1498,7 +1218,7 @@
                 20.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1521,7 +1241,7 @@
                 20.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1544,7 +1264,7 @@
                 10.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1567,7 +1287,7 @@
                 10.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1590,7 +1310,7 @@
                 10.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1613,7 +1333,7 @@
                 10.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1636,7 +1356,7 @@
                 10.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1659,7 +1379,7 @@
                 10.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1682,7 +1402,7 @@
                 10.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1705,7 +1425,7 @@
                 10.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1728,7 +1448,7 @@
                 30.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1751,7 +1471,7 @@
                 30.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1774,7 +1494,7 @@
                 20.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1797,7 +1517,7 @@
                 20.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1820,7 +1540,7 @@
                 30.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1843,7 +1563,7 @@
                 30.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1866,7 +1586,7 @@
                 20.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1889,11 +1609,10 @@
                 20.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         }
       ],
-      "pmi": [],
       "points": [
         {
           "id": "fcstd:model:point#Box:Shape:Box.Shape.brp:1%40location1",
@@ -1904,6 +1623,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
@@ -1916,6 +1636,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
@@ -1928,6 +1649,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
@@ -1940,6 +1662,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
@@ -1952,6 +1675,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
@@ -1964,6 +1688,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
@@ -1976,6 +1701,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
@@ -1988,55 +1714,13 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         }
       ],
-      "presentation_documents": [
-        {
-          "id": "fcstd:presentation:document#0",
-          "native_ref": "fcstd:gui:document#0",
-          "schema_version": 1,
-          "states": [
-            {
-              "kind": {
-                "type": "Native",
-                "value": "Expand"
-              },
-              "order": 0
-            },
-            {
-              "attributes": {
-                "settings": "OrthographicCamera {\n  viewportMapping ADJUST_CAMERA\n  position 17.311642 -2.3116379 17.811638\n  orientation 0.74290609 0.30772209 0.59447283  1.2171158\n  nearDistance 0\n  farDistance 28.79236\n  aspectRatio 1\n  focalDistance 14.39618\n  height 32.432148\n\n}\n"
-              },
-              "kind": {
-                "type": "Camera",
-                "value": {
-                  "orientation": [
-                    0.74290609,
-                    0.30772209,
-                    0.59447283,
-                    1.2171158
-                  ],
-                  "position": [
-                    17.311642,
-                    -2.3116379,
-                    17.811638
-                  ],
-                  "properties": {
-                    "settings": "OrthographicCamera {\n  viewportMapping ADJUST_CAMERA\n  position 17.311642 -2.3116379 17.811638\n  orientation 0.74290609 0.30772209 0.59447283  1.2171158\n  nearDistance 0\n  farDistance 28.79236\n  aspectRatio 1\n  focalDistance 14.39618\n  height 32.432148\n\n}\n"
-                  }
-                }
-              },
-              "order": 1
-            }
-          ]
-        }
-      ],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [],
       "regions": [
         {
           "body": "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1",
@@ -2046,199 +1730,190 @@
           ]
         }
       ],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "fcstd:model:shell#Box:Shape:Box.Shape.brp:33%40location1",
-          "members": [
-            {
-              "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:10%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:20%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:24%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:28%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:30%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:32%40location1",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "fcstd:model:region#Box:Shape:Box.Shape.brp:34%40location1"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
             }
           },
           "id": "fcstd:model:surface#Box:Shape:Box.Shape.brp:1",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": -0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": -0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
             }
           },
           "id": "fcstd:model:surface#Box:Shape:Box.Shape.brp:2",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 30.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 30.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
             }
           },
           "id": "fcstd:model:surface#Box:Shape:Box.Shape.brp:3",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": -0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 20.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": -0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 20.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
             }
           },
           "id": "fcstd:model:surface#Box:Shape:Box.Shape.brp:4",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
             }
           },
           "id": "fcstd:model:surface#Box:Shape:Box.Shape.brp:5",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
-            },
-            "origin": {
-              "x": 10.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              },
+              "origin": {
+                "x": 10.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
             }
           },
           "id": "fcstd:model:surface#Box:Shape:Box.Shape.brp:6",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#Box"
           }
         }
       ],
-      "tessellations": [],
       "vertices": [
         {
           "id": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:1%40location1",
@@ -2280,7 +1955,514 @@
           "point": "fcstd:model:point#Box:Shape:Box.Shape.brp:6%40location1",
           "tolerance": 1e-7
         }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [
+        {
+          "appearance": "fcstd:appearance:edge#Box:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:13%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:13%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Box:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:15%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:15%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Box:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:17%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:17%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Box:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:18%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:18%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Box:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:21%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:21%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Box:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:22%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:22%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Box:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:25%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:25%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Box:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:26%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:26%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Box:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:3%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:3%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Box:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:5%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:5%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Box:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:7%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:7%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#Box:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:Box:1:Box:Shape:Box.Shape.brp:8%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Box:Shape:Box.Shape.brp:8%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:shape-material#Box:1",
+          "channels": {},
+          "id": "fcstd:appearance:binding#shape-material:Box:0",
+          "object_type": "ViewProvider ShapeAppearance",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "entity": {
+              "kind": "body",
+              "value": "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Box:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:1%40location1",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:1%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Box:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:11%40location1",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:11%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Box:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:12%40location1",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:12%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Box:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:14%40location1",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:14%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Box:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:16%40location1",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:16%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Box:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:2%40location1",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:2%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Box:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:4%40location1",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:4%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#Box:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:Box:1:Box:Shape:Box.Shape.brp:6%40location1",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#Box",
+          "target": {
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:6%40location1"
+            }
+          }
+        }
       ],
+      "appearances": [
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.10196078431372549,
+            "g": 0.2,
+            "r": 0.7019607843137254
+          },
+          "id": "fcstd:appearance:edge#Box",
+          "name": "Box line appearance",
+          "properties": {
+            "line_width": 3.0
+          },
+          "schema": "FCStd ViewProvider line style",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.10196078431372549,
+            "g": 0.2,
+            "r": 0.7019607843137254
+          },
+          "id": "fcstd:appearance:edge#Box:1",
+          "name": "Box Edge1 appearance",
+          "properties": {
+            "line_width": 3.0
+          },
+          "schema": "FCStd LineColorArray",
+          "textures": []
+        },
+        {
+          "asset_guid": "7f9fd73b-50c9-41d8-b7b2-575a030c1eeb",
+          "base_color": {
+            "a": 1.0,
+            "b": 0.6,
+            "g": 0.4,
+            "r": 0.2
+          },
+          "id": "fcstd:appearance:shape-material#Box:1",
+          "name": "Box face 1 material",
+          "properties": {
+            "ambient_packed": 1431655680.0,
+            "emissive_packed": 0.0,
+            "shininess": 0.8999999761581421,
+            "specular_packed": 2290649088.0,
+            "transparency": 0.0
+          },
+          "schema": "FCStd ShapeAppearance",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.30196078431372547,
+            "g": 0.8,
+            "r": 0.10196078431372549
+          },
+          "id": "fcstd:appearance:vertex#Box",
+          "name": "Box point appearance",
+          "properties": {
+            "point_size": 5.0
+          },
+          "schema": "FCStd ViewProvider point style",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.30196078431372547,
+            "g": 0.8,
+            "r": 0.10196078431372549
+          },
+          "id": "fcstd:appearance:vertex#Box:1",
+          "name": "Box Vertex1 appearance",
+          "properties": {
+            "point_size": 5.0
+          },
+          "schema": "FCStd PointColorArray",
+          "textures": []
+        }
+      ],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "stored_geometry",
+              "value": {}
+            }
+          },
+          "dependencies": [],
+          "id": "fcstd:design:feature#Box",
+          "name": "Box",
+          "native_ref": "fcstd:native:object#Box",
+          "ordinal": 0,
+          "outputs": [
+            "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "Visibility": "true"
+          },
+          "source_tag": "Part::Feature"
+        }
+      ],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [
+        {
+          "id": "fcstd:presentation:document#0",
+          "native_ref": "fcstd:gui:document#0",
+          "schema_version": 1,
+          "states": [
+            {
+              "assets": [],
+              "attributes": {
+                "settings": "OrthographicCamera {\n  viewportMapping ADJUST_CAMERA\n  position 17.311642 -2.3116379 17.811638\n  orientation 0.74290609 0.30772209 0.59447283  1.2171158\n  nearDistance 0\n  farDistance 28.79236\n  aspectRatio 1\n  focalDistance 14.39618\n  height 32.432148\n\n}\n"
+              },
+              "kind": {
+                "kind": "Camera",
+                "value": {
+                  "orientation": [
+                    0.74290609,
+                    0.30772209,
+                    0.59447283,
+                    1.2171158
+                  ],
+                  "position": [
+                    17.311642,
+                    -2.3116379,
+                    17.811638
+                  ],
+                  "properties": {
+                    "settings": "OrthographicCamera {\n  viewportMapping ADJUST_CAMERA\n  position 17.311642 -2.3116379 17.811638\n  orientation 0.74290609 0.30772209 0.59447283  1.2171158\n  nearDistance 0\n  farDistance 28.79236\n  aspectRatio 1\n  focalDistance 14.39618\n  height 32.432148\n\n}\n"
+                  }
+                }
+              },
+              "order": 1
+            }
+          ]
+        }
+      ],
+      "presentation_layers": [],
+      "product_definitions": [
+        {
+          "bodies": [
+            "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1"
+          ],
+          "bom_properties": {},
+          "id": "fcstd:model:product_definition#document:root",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "tessellations": [],
       "view_presentations": [
         {
           "display_mode": "0",
@@ -2367,7 +2549,7 @@
           "physical_ledger": "194d326bc4119e0ba1dc6f3238519ee915e1a1410eb83b8e42917feb8ba2eb76",
           "product_nodes": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "properties": "2a0e3def1e10d9a30fa50f87a1bd2599b573df740da77540b8ac23cf0453fac0",
-          "shape_payloads": "9835838cf9c0541e8df7a36d6b45388e3ed20946c21a9abad2d9ba1b6fa06a71",
+          "shape_payloads": "ba0277eda2f58e6ab9c03ca83845f996d978d353c2313db3ac0985ee477de2e6",
           "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f"
         }
       },
@@ -2438,24 +2620,39 @@
       },
       "__elided": "attachment and product-node records are pinned directly; remaining native arena values are omitted and pinned by a digest over their canonical JSON"
     },
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "application_domains": "Part",
-        "archive_entry_count": "6",
         "document_kind": "part",
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
-        "object_count": "1",
-        "physical_archive_bytes": "3744",
-        "physical_ledger_spans": "43",
         "program_version": "1.0R39109 (Git)"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "file_version": "1",
               "program_version": "1.0R39109 (Git)",
@@ -2463,7 +2660,8 @@
             },
             "dialect": "fcstd:schema-4"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -2471,16 +2669,21 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "file_version": "1",
             "program_version": "1.0R39109 (Git)",
@@ -2488,7 +2691,8 @@
           },
           "dialect": "fcstd:schema-4"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [],
     "notes": [
@@ -2502,10 +2706,20 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "decode_digest": "b6840ea50a0b17df9385d99fbaa4895164ca0739219d876ab2f3ac8ec186cf48",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

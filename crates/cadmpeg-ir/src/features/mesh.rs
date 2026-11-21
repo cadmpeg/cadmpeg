@@ -4,14 +4,20 @@ use super::{
 };
 use crate::scalar::{Fraction, Length, NonNegativeLength, PositiveLength, PositiveReal};
 use crate::tessellation::TessellationId;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 #[doc = "Resolved tessellations or retained mesh source selections."]
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(untagged, deny_unknown_fields)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum MeshSelection {
     #[doc = "Nonempty distinct local tessellation identities in source order."]
     Tessellations(SelectionMembers<TessellationId>),
@@ -35,7 +41,7 @@ pub enum MeshSelection {
 }
 
 #[doc = "Construction used to convert mesh faces to a boundary representation."]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum MeshConversionMethod {
@@ -69,7 +75,7 @@ impl MeshConversion {
 }
 
 #[doc = "Distribution of the faces that a mesh operation produces."]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum MeshFaceDistribution {
@@ -80,7 +86,7 @@ pub enum MeshFaceDistribution {
 }
 
 #[doc = "Quantity that bounds a mesh reduction."]
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MeshReduceTarget {
@@ -102,7 +108,7 @@ pub enum MeshReduceTarget {
 }
 
 #[doc = "Reconstruction quality of a mesh rebuild."]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum MeshRebuildMode {
@@ -113,7 +119,7 @@ pub enum MeshRebuildMode {
 }
 
 #[doc = "Repair applied to a mesh."]
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MeshRepair {
@@ -147,7 +153,7 @@ pub enum MeshRepair {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[doc = "Effect of an inline plane on a mesh."]
@@ -160,7 +166,7 @@ pub enum MeshPlaneCutMode {
     SplitFaces,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[doc = "Faces that close mesh boundaries produced by a plane cut."]
@@ -173,7 +179,7 @@ pub enum MeshPlaneCutFill {
     Uniform,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[doc = "Retained half-space relative to the oriented plane normal."]
@@ -238,7 +244,7 @@ cadmpeg_core::named_optional_field!(deserialize_cut_fill, MeshPlaneCutFill, "fil
 cadmpeg_core::named_optional_field!(deserialize_cut_side, MeshPlaneCutSide, "retained_side");
 
 #[doc = "Change that a mesh operation applies to its source."]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MeshModification {
@@ -317,7 +323,7 @@ pub enum MeshModification {
 cadmpeg_core::named_optional_field!(deserialize_members, NativeSelections, "members");
 
 #[doc = "Partition used to separate a mesh."]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum MeshSeparationMethod {
@@ -328,7 +334,7 @@ pub enum MeshSeparationMethod {
 }
 
 #[doc = "Face groups selected for mesh separation, independently of the source meshes."]
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MeshSeparationGroups {
@@ -399,7 +405,7 @@ cadmpeg_core::named_optional_field!(
 cadmpeg_core::named_optional_field!(deserialize_multiple_bodies, bool, "multiple_bodies");
 cadmpeg_core::named_optional_field!(deserialize_keep_body, bool, "keep_body");
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[doc = "Algorithm used to generate mesh face groups."]

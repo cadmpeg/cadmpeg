@@ -327,14 +327,14 @@ struct SketchLinkPayload {
 /// role, form `2` as six integers with a trailing `0`, and form `0` as the five
 /// members alone. All three write the same five members in the same order, so
 /// each yields one link.
-fn sketch_link_payload(values: &[AttributeValue]) -> Option<SketchLinkPayload> {
-    let [AttributeValue::Integer(1), AttributeValue::Integer(1), AttributeValue::Integer(form), payload @ ..] =
+fn sketch_link_payload(values: &[Option<AttributeValue>]) -> Option<SketchLinkPayload> {
+    let [Some(AttributeValue::Integer(1)), Some(AttributeValue::Integer(1)), Some(AttributeValue::Integer(form)), payload @ ..] =
         values
     else {
         return None;
     };
     match (*form, payload) {
-        (3, [AttributeValue::String(field)]) => {
+        (3, [Some(AttributeValue::String(field))]) => {
             let mut fields = field.split_ascii_whitespace();
             let (
                 Some(sketch_curve_id),
@@ -368,11 +368,11 @@ fn sketch_link_payload(values: &[AttributeValue]) -> Option<SketchLinkPayload> {
         }
         (
             2,
-            [AttributeValue::Integer(sketch_curve_id), AttributeValue::Integer(ref_b), AttributeValue::Integer(sense), AttributeValue::Integer(role), AttributeValue::Integer(closure), AttributeValue::Integer(0)],
+            [Some(AttributeValue::Integer(sketch_curve_id)), Some(AttributeValue::Integer(ref_b)), Some(AttributeValue::Integer(sense)), Some(AttributeValue::Integer(role)), Some(AttributeValue::Integer(closure)), Some(AttributeValue::Integer(0))],
         )
         | (
             0,
-            [AttributeValue::Integer(sketch_curve_id), AttributeValue::Integer(ref_b), AttributeValue::Integer(sense), AttributeValue::Integer(role), AttributeValue::Integer(closure)],
+            [Some(AttributeValue::Integer(sketch_curve_id)), Some(AttributeValue::Integer(ref_b)), Some(AttributeValue::Integer(sense)), Some(AttributeValue::Integer(role)), Some(AttributeValue::Integer(closure))],
         ) => Some(SketchLinkPayload {
             sketch_curve_id: *sketch_curve_id,
             ref_b: u64::try_from(*ref_b).ok()?,
@@ -387,7 +387,7 @@ fn sketch_link_payload(values: &[AttributeValue]) -> Option<SketchLinkPayload> {
 /// Locate a Fusion family marker under the caller's scan and comparison allowance.
 fn attribute_family(attribute: &SourceAttribute, family: &str) -> Option<usize> {
     for (index, value) in attribute.values.iter().enumerate() {
-        if let AttributeValue::String(name) = value {
+        if let Some(AttributeValue::String(name)) = value {
             if name == family {
                 return Some(index);
             }
@@ -401,7 +401,7 @@ fn sketch_curve_link(attribute: &SourceAttribute) -> Option<SketchCurveLink> {
     let payload = sketch_link_payload(&attribute.values[family + 1..])?;
     Some(SketchCurveLink {
         id: format!("f3d:design:sketch-curve-link#{}", attribute_key(attribute)),
-        target: attribute.target.clone(),
+        target: attribute.target.entity.clone(),
         sketch_curve_id: payload.sketch_curve_id,
         ref_b: payload.ref_b,
         sense: crate::records::sketch_links::SketchLinkSense::try_from(payload.sense).ok(),
@@ -410,10 +410,10 @@ fn sketch_curve_link(attribute: &SourceAttribute) -> Option<SketchCurveLink> {
     })
 }
 
-fn persistent_design_links(
+pub(crate) fn persistent_design_links(
     attribute: &SourceAttribute,
 ) -> Result<Vec<PersistentDesignLink>, CodecError> {
-    let AttributeTarget::Body(_) = &attribute.target else {
+    let AttributeTarget::Body(_) = &attribute.target.entity else {
         return Ok(Vec::new());
     };
     let Some(GenericTagPayload {
@@ -434,8 +434,8 @@ fn persistent_design_links(
     let mut links = Vec::new();
     for values in rest.chunks_exact(group_width) {
         let (entity_kind, design_id, design_reference) = match values {
-            [AttributeValue::Integer(entity_kind), AttributeValue::String(design_id), AttributeValue::Integer(design_reference), AttributeValue::Integer(0)]
-            | [AttributeValue::Integer(entity_kind), AttributeValue::String(design_id), AttributeValue::Integer(design_reference), AttributeValue::Integer(0), AttributeValue::Integer(0)] => {
+            [Some(AttributeValue::Integer(entity_kind)), Some(AttributeValue::String(design_id)), Some(AttributeValue::Integer(design_reference)), Some(AttributeValue::Integer(0))]
+            | [Some(AttributeValue::Integer(entity_kind)), Some(AttributeValue::String(design_id)), Some(AttributeValue::Integer(design_reference)), Some(AttributeValue::Integer(0)), Some(AttributeValue::Integer(0))] => {
                 (*entity_kind, design_id, *design_reference)
             }
             _ => return Ok(Vec::new()),
@@ -457,7 +457,7 @@ fn persistent_design_links(
                 "f3d:design:persistent-design-link#{}:{ordinal}",
                 attribute_key(attribute)
             ),
-            target: attribute.target.clone(),
+            target: attribute.target.entity.clone(),
             design_id,
             design_reference,
             ordinal,
@@ -471,7 +471,7 @@ fn persistent_subentity_tags(
     attribute: &SourceAttribute,
 ) -> Result<Vec<PersistentSubentityTag>, CodecError> {
     if !matches!(
-        attribute.target,
+        attribute.target.entity,
         AttributeTarget::Face(_) | AttributeTarget::Edge(_)
     ) {
         return Ok(Vec::new());
@@ -495,7 +495,7 @@ fn persistent_subentity_tags(
     let mut groups = Vec::new();
     for ordinal in 0..group_count {
         let Some(
-            [AttributeValue::Integer(selector), AttributeValue::String(token), AttributeValue::Integer(token_integer), AttributeValue::Integer(reference_count)],
+            [Some(AttributeValue::Integer(selector)), Some(AttributeValue::String(token)), Some(AttributeValue::Integer(token_integer)), Some(AttributeValue::Integer(reference_count))],
         ) = rest.get(position..position + 4)
         else {
             return Ok(Vec::new());
@@ -521,13 +521,16 @@ fn persistent_subentity_tags(
         };
         let mut design_references = Vec::new();
         for value in reference_values {
-            let AttributeValue::Integer(value) = value else {
+            let Some(AttributeValue::Integer(value)) = value else {
                 return Ok(Vec::new());
             };
             design_references.push(*value);
         }
         if matches!(version, GenericTagVersion::V3) {
-            if !matches!(rest.get(reference_end), Some(AttributeValue::Integer(0))) {
+            if !matches!(
+                rest.get(reference_end),
+                Some(Some(AttributeValue::Integer(0)))
+            ) {
                 return Ok(Vec::new());
             }
             position = reference_end + 1;
@@ -542,7 +545,7 @@ fn persistent_subentity_tags(
                 "f3d:design:persistent-subentity-tag#{}:{ordinal}",
                 attribute_key(attribute)
             ),
-            target: attribute.target.clone(),
+            target: attribute.target.entity.clone(),
             selector: *selector,
             token,
             token_integer,
@@ -567,7 +570,7 @@ enum GenericTagVersion {
 struct GenericTagPayload<'a> {
     version: GenericTagVersion,
     group_count: usize,
-    rest: &'a [AttributeValue],
+    rest: &'a [Option<AttributeValue>],
 }
 
 /// Return the common generic-tag version, group count, and payload.
@@ -578,7 +581,7 @@ struct GenericTagPayload<'a> {
 fn generic_tag_payload(attribute: &SourceAttribute) -> Option<GenericTagPayload<'_>> {
     let family = attribute_family(attribute, "generic_tag_attrib_def")?;
     let values = attribute.values.get(family + 1..)?;
-    let [AttributeValue::Integer(left_version), AttributeValue::Integer(right_version), AttributeValue::Integer(-1), AttributeValue::String(marker), AttributeValue::Integer(group_count), rest @ ..] =
+    let [Some(AttributeValue::Integer(left_version)), Some(AttributeValue::Integer(right_version)), Some(AttributeValue::Integer(-1)), Some(AttributeValue::String(marker)), Some(AttributeValue::Integer(group_count)), rest @ ..] =
         values
     else {
         return None;
@@ -605,16 +608,17 @@ fn generic_tag_payload(attribute: &SourceAttribute) -> Option<GenericTagPayload<
 fn creation_timestamp(attribute: &SourceAttribute) -> Option<CreationTimestamp> {
     let family = attribute_family(attribute, "Timestamp_attrib_def")?;
     let marker = attribute.values.get(family + 1)?;
-    if !matches!(marker, AttributeValue::Integer(1)) {
+    if !matches!(marker, Some(AttributeValue::Integer(1))) {
         return None;
     }
-    let Some(AttributeValue::Float(unix_microseconds)) = attribute.values.get(family + 2) else {
+    let Some(Some(AttributeValue::Float(unix_microseconds))) = attribute.values.get(family + 2)
+    else {
         return None;
     };
     let record_index = attribute_key(attribute).parse().ok()?;
     Some(CreationTimestamp {
         id: format!("f3d:design:creation-timestamp#{}", attribute_key(attribute)),
-        target: attribute.target.clone(),
+        target: attribute.target.entity.clone(),
         record_index,
         unix_microseconds: *unix_microseconds,
     })

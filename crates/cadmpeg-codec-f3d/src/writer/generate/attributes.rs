@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source-less attribute, link, and tag encoders.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::native::F3dNative;
 use crate::records::{
@@ -41,7 +41,7 @@ pub(super) struct AttributeIndex<'a> {
     coedge_timestamps: HashMap<&'a str, IndexedTimestamp<'a>>,
     vertex_timestamps: HashMap<&'a str, IndexedTimestamp<'a>>,
     coedge_sketch_links: HashMap<&'a str, &'a SketchCurveLink>,
-    body_keys: HashMap<&'a str, &'a cadmpeg_asm::brep::records::BodyNativeKey>,
+    body_keys: HashMap<&'a str, i64>,
 }
 
 /// Record-table starts of the face and coedge sections, which only a solid
@@ -63,12 +63,21 @@ pub(super) struct AttributeOwnerStarts {
 }
 
 impl<'a> AttributeIndex<'a> {
+    /// The index with the ASM body key of each body of `target` set to
+    /// `key` of its ordinal: a Base Feature design keys its history stream's
+    /// bodies from `0` and its snapshot stream's bodies `-1` (f3d.md §3.1,
+    /// "Archive members of a Base Feature design").
+    pub(super) fn with_body_keys(mut self, target: &'a CadIr, key: impl Fn(i64) -> i64) -> Self {
+        self.body_keys = (0..)
+            .zip(&target.geometry.bodies)
+            .map(|(ordinal, body)| (body.id.as_str(), key(ordinal)))
+            .collect();
+        self
+    }
+
     pub(super) fn new(target: &'a CadIr, native: &'a F3dNative) -> Self {
         let mut body_links: HashMap<_, Vec<_>> = HashMap::new();
-        let mut body_keys = HashMap::new();
-        for key in &native.body_native_keys {
-            body_keys.entry(key.body.as_str()).or_insert(key);
-        }
+        let body_keys = emitted_body_keys(target, native);
         for link in &native.persistent_design_links {
             if let cadmpeg_ir::attributes::AttributeTarget::Body(id) = &link.target {
                 body_links.entry(id.as_str()).or_default().push(link);
@@ -160,13 +169,13 @@ impl<'a> AttributeIndex<'a> {
                 }
             };
         }
-        split_timestamp_ordinals!(&target.model.bodies, body_timestamps);
-        split_timestamp_ordinals!(&target.model.faces, face_timestamps);
-        split_timestamp_ordinals!(&target.model.edges, edge_timestamps);
-        split_timestamp_ordinals!(&target.model.coedges, coedge_timestamps);
-        split_timestamp_ordinals!(&target.model.vertices, vertex_timestamps);
+        split_timestamp_ordinals!(&target.geometry.bodies, body_timestamps);
+        split_timestamp_ordinals!(&target.geometry.faces, face_timestamps);
+        split_timestamp_ordinals!(&target.geometry.edges, edge_timestamps);
+        split_timestamp_ordinals!(&target.geometry.coedges, coedge_timestamps);
+        split_timestamp_ordinals!(&target.geometry.vertices, vertex_timestamps);
         let body_group_ordinals = target
-            .model
+            .geometry
             .bodies
             .iter()
             .filter(|body| body_links.contains_key(body.id.as_str()))
@@ -174,7 +183,7 @@ impl<'a> AttributeIndex<'a> {
             .map(|(ordinal, body)| (body.id.as_str().to_owned(), ordinal))
             .collect();
         let face_group_ordinals = target
-            .model
+            .geometry
             .faces
             .iter()
             .filter(|face| face_tags.contains_key(face.id.as_str()))
@@ -182,7 +191,7 @@ impl<'a> AttributeIndex<'a> {
             .map(|(ordinal, face)| (face.id.as_str().to_owned(), ordinal))
             .collect();
         let edge_group_ordinals = target
-            .model
+            .geometry
             .edges
             .iter()
             .filter(|edge| edge_tags.contains_key(edge.id.as_str()))
@@ -190,7 +199,7 @@ impl<'a> AttributeIndex<'a> {
             .map(|(ordinal, edge)| (edge.id.as_str().to_owned(), ordinal))
             .collect();
         let sketch_ordinals = target
-            .model
+            .geometry
             .coedges
             .iter()
             .filter(|coedge| coedge_sketch_links.contains_key(coedge.id.as_str()))
@@ -256,20 +265,72 @@ impl<'a> AttributeIndex<'a> {
 pub(super) fn source_less_body_key(
     index: &AttributeIndex<'_>,
     body: &Body,
-    body_ordinal: usize,
 ) -> Result<i64, CodecError> {
-    if let Some(key) = index.body_keys.get(body.id.as_str()) {
-        return key.asm_body_key.map_or(Ok(-1), |key| {
-            i64::try_from(key)
-                .map_err(|_| CodecError::NotImplemented("F3D ASM body key exceeds i64::MAX".into()))
-        });
+    index
+        .body_keys
+        .get(body.id.as_str())
+        .copied()
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "body {} has no ASM body key in the written document",
+                body.id
+            ))
+        })
+}
+
+/// The distinct ASM body key each body is written with. A body keeps its
+/// retained key unless an earlier body holds it. Any other body takes its
+/// ordinal plus one where that is free, and otherwise the next key above every
+/// retained key and every ordinal.
+fn emitted_body_keys<'a>(target: &'a CadIr, native: &'a F3dNative) -> HashMap<&'a str, i64> {
+    let mut retained = HashMap::new();
+    for key in &native.body_native_keys {
+        retained
+            .entry(key.body.as_str())
+            .or_insert(key.asm_body_key);
     }
-    let key = u64::try_from(body_ordinal)
+    let bodies = &target.geometry.bodies;
+    let mut keys = HashMap::with_capacity(bodies.len());
+    let mut used = HashSet::new();
+    for body in bodies {
+        match retained.get(body.id.as_str()) {
+            Some(None) => {
+                keys.insert(body.id.as_str(), -1);
+            }
+            Some(Some(key)) => {
+                if let Ok(key) = i64::try_from(*key) {
+                    if used.insert(key) {
+                        keys.insert(body.id.as_str(), key);
+                    }
+                }
+            }
+            None => {}
+        }
+    }
+    let highest = used.iter().copied().max().unwrap_or(0);
+    let mut next = i64::try_from(bodies.len())
         .ok()
-        .and_then(|ordinal| ordinal.checked_add(1))
-        .ok_or_else(|| CodecError::NotImplemented("F3D body ordinal exceeds u64".into()))?;
-    i64::try_from(key)
-        .map_err(|_| CodecError::NotImplemented("F3D ASM body key exceeds i64::MAX".into()))
+        .map(|count| count.max(highest));
+    for (ordinal, body) in bodies.iter().enumerate() {
+        if keys.contains_key(body.id.as_str()) {
+            continue;
+        }
+        let Some(key) = i64::try_from(ordinal)
+            .ok()
+            .and_then(|ordinal| ordinal.checked_add(1))
+            .filter(|key| !used.contains(key))
+            .or_else(|| {
+                let key = next?.checked_add(1)?;
+                next = Some(key);
+                Some(key)
+            })
+        else {
+            continue;
+        };
+        used.insert(key);
+        keys.insert(body.id.as_str(), key);
+    }
+    keys
 }
 
 #[derive(Clone, Copy)]
@@ -279,23 +340,23 @@ enum ColorOwner {
 }
 
 fn color_attribute_ref(
-    model: &cadmpeg_ir::document::Model,
+    geometry: &cadmpeg_ir::document::Topology,
     ordinal: usize,
     owner: ColorOwner,
     attribute_start: i64,
 ) -> Result<i64, CodecError> {
     let preceding = match owner {
-        ColorOwner::Body => model.bodies[..ordinal]
+        ColorOwner::Body => geometry.bodies[..ordinal]
             .iter()
             .filter(|body| body.color.is_some())
             .count(),
         ColorOwner::Face => {
-            model
+            geometry
                 .bodies
                 .iter()
                 .filter(|body| body.color.is_some())
                 .count()
-                + model.faces[..ordinal]
+                + geometry.faces[..ordinal]
                     .iter()
                     .filter(|face| face.color.is_some())
                     .count()
@@ -426,7 +487,7 @@ fn body_name_attribute_ref(
         return Ok(None);
     }
     let ordinal = target
-        .model
+        .geometry
         .bodies
         .iter()
         .take_while(|candidate| candidate.id != body.id)
@@ -454,7 +515,7 @@ pub(super) fn owner_attribute_ref(
         AttributeOwner::Face(face) => (face.color.is_some(), ColorOwner::Face),
     };
     if has_color {
-        return color_attribute_ref(&target.model, ordinal, color_owner, attribute_start);
+        return color_attribute_ref(&target.geometry, ordinal, color_owner, attribute_start);
     }
     let name = match owner {
         AttributeOwner::Body(body) => body_name_attribute_ref(target, body, attribute_start),
@@ -510,14 +571,14 @@ fn face_name_attribute_ref(
         return Ok(None);
     }
     let ordinal = target
-        .model
+        .geometry
         .faces
         .iter()
         .take_while(|candidate| candidate.id != face.id)
         .filter(|candidate| candidate.name.is_some())
         .count();
     let body_name_count = target
-        .model
+        .geometry
         .bodies
         .iter()
         .filter(|body| body.name.is_some())
@@ -553,13 +614,13 @@ pub(super) fn edge_persistent_attribute_ref(
 
 fn source_less_color_count(target: &CadIr) -> usize {
     target
-        .model
+        .geometry
         .bodies
         .iter()
         .filter(|body| body.color.is_some())
         .count()
         + target
-            .model
+            .geometry
             .faces
             .iter()
             .filter(|face| face.color.is_some())
@@ -568,13 +629,13 @@ fn source_less_color_count(target: &CadIr) -> usize {
 
 fn source_less_name_count(target: &CadIr) -> usize {
     target
-        .model
+        .geometry
         .bodies
         .iter()
         .filter(|body| body.name.is_some())
         .count()
         + target
-            .model
+            .geometry
             .faces
             .iter()
             .filter(|face| face.name.is_some())
@@ -636,7 +697,7 @@ fn attribute_before_timestamp(
     match entity {
         AttributeTarget::Body(id) => {
             let body = target
-                .model
+                .geometry
                 .bodies
                 .get(owner_ordinal)
                 .filter(|body| body.id == *id)
@@ -653,7 +714,7 @@ fn attribute_before_timestamp(
                 Ok(-1)
             } else {
                 color_attribute_ref(
-                    &target.model,
+                    &target.geometry,
                     owner_ordinal,
                     ColorOwner::Body,
                     attribute_start,
@@ -662,7 +723,7 @@ fn attribute_before_timestamp(
         }
         AttributeTarget::Face(id) => {
             let face = target
-                .model
+                .geometry
                 .faces
                 .get(owner_ordinal)
                 .filter(|face| face.id == *id)
@@ -679,7 +740,7 @@ fn attribute_before_timestamp(
                 Ok(-1)
             } else {
                 color_attribute_ref(
-                    &target.model,
+                    &target.geometry,
                     owner_ordinal,
                     ColorOwner::Face,
                     attribute_start,
@@ -688,7 +749,7 @@ fn attribute_before_timestamp(
         }
         AttributeTarget::Edge(id) => {
             let edge = target
-                .model
+                .geometry
                 .edges
                 .get(owner_ordinal)
                 .filter(|edge| edge.id == *id)
@@ -700,7 +761,7 @@ fn attribute_before_timestamp(
         }
         AttributeTarget::Coedge(id) => {
             let coedge = target
-                .model
+                .geometry
                 .coedges
                 .get(owner_ordinal)
                 .filter(|coedge| coedge.id == *id)
@@ -709,7 +770,7 @@ fn attribute_before_timestamp(
         }
         AttributeTarget::Vertex(id) => {
             if target
-                .model
+                .geometry
                 .vertices
                 .get(owner_ordinal)
                 .is_some_and(|vertex| vertex.id == *id)
@@ -838,16 +899,16 @@ pub(super) fn encode_source_less_attributes(
     attribute_start: i64,
     owners: AttributeOwnerStarts,
 ) -> Result<(), CodecError> {
-    let model = &target.model;
+    let geometry = &target.geometry;
     let (faces, coedges) = match owners.surface {
         Some(surface) => (
-            model
+            geometry
                 .faces
                 .iter()
                 .enumerate()
                 .map(|(ordinal, face)| (ordinal, face, surface.face))
                 .collect::<Vec<_>>(),
-            model
+            geometry
                 .coedges
                 .iter()
                 .enumerate()
@@ -855,12 +916,12 @@ pub(super) fn encode_source_less_attributes(
                 .collect::<Vec<_>>(),
         ),
         None => {
-            if model.faces.iter().any(|face| {
+            if geometry.faces.iter().any(|face| {
                 face.color.is_some()
                     || face.name.is_some()
                     || !face_persistent_tags(index, face).is_empty()
                     || creation_timestamp(index, &AttributeTarget::Face(face.id.clone())).is_some()
-            }) || model.coedges.iter().any(|coedge| {
+            }) || geometry.coedges.iter().any(|coedge| {
                 sketch_link(index, coedge).is_some()
                     || creation_timestamp(index, &AttributeTarget::Coedge(coedge.id.clone()))
                         .is_some()
@@ -889,7 +950,7 @@ pub(super) fn encode_source_less_attributes(
             )));
         }
     }
-    for (body_ordinal, body, color) in model
+    for (body_ordinal, body, color) in geometry
         .bodies
         .iter()
         .enumerate()
@@ -938,7 +999,7 @@ pub(super) fn encode_source_less_attributes(
         )?;
         records.push(0x11);
     }
-    for (body_ordinal, body, name) in model
+    for (body_ordinal, body, name) in geometry
         .bodies
         .iter()
         .enumerate()
@@ -956,7 +1017,7 @@ pub(super) fn encode_source_less_attributes(
             -1
         } else {
             color_attribute_ref(
-                &target.model,
+                &target.geometry,
                 body_ordinal,
                 ColorOwner::Body,
                 attribute_start,
@@ -988,7 +1049,7 @@ pub(super) fn encode_source_less_attributes(
             -1
         } else {
             color_attribute_ref(
-                &target.model,
+                &target.geometry,
                 face_ordinal,
                 ColorOwner::Face,
                 attribute_start,
@@ -1003,7 +1064,7 @@ pub(super) fn encode_source_less_attributes(
         )?;
         records.push(0x11);
     }
-    for (body_ordinal, body) in model.bodies.iter().enumerate() {
+    for (body_ordinal, body) in geometry.bodies.iter().enumerate() {
         let links = body_persistent_links(index, body);
         if links.is_empty() {
             continue;
@@ -1022,7 +1083,7 @@ pub(super) fn encode_source_less_attributes(
                 -1
             } else {
                 color_attribute_ref(
-                    &target.model,
+                    &target.geometry,
                     body_ordinal,
                     ColorOwner::Body,
                     attribute_start,
@@ -1057,7 +1118,7 @@ pub(super) fn encode_source_less_attributes(
                 -1
             } else {
                 color_attribute_ref(
-                    &target.model,
+                    &target.geometry,
                     face_ordinal,
                     ColorOwner::Face,
                     attribute_start,
@@ -1072,7 +1133,7 @@ pub(super) fn encode_source_less_attributes(
         )?;
         records.push(0x11);
     }
-    for (edge_ordinal, edge) in model.edges.iter().enumerate() {
+    for (edge_ordinal, edge) in geometry.edges.iter().enumerate() {
         let tags = edge_persistent_tags(index, edge);
         if tags.is_empty() {
             continue;
@@ -1113,7 +1174,7 @@ pub(super) fn encode_source_less_attributes(
         records.push(0x11);
     }
     for (entity, owner_start, owner_ordinal) in
-        model
+        geometry
             .bodies
             .iter()
             .enumerate()
@@ -1121,7 +1182,7 @@ pub(super) fn encode_source_less_attributes(
             .chain(faces.iter().copied().map(|(ordinal, item, face_start)| {
                 (AttributeTarget::Face(item.id.clone()), face_start, ordinal)
             }))
-            .chain(model.edges.iter().enumerate().map(|(ordinal, item)| {
+            .chain(geometry.edges.iter().enumerate().map(|(ordinal, item)| {
                 (AttributeTarget::Edge(item.id.clone()), owners.edge, ordinal)
             }))
             .chain(
@@ -1136,7 +1197,7 @@ pub(super) fn encode_source_less_attributes(
                         )
                     }),
             )
-            .chain(model.vertices.iter().enumerate().map(|(ordinal, item)| {
+            .chain(geometry.vertices.iter().enumerate().map(|(ordinal, item)| {
                 (
                     AttributeTarget::Vertex(item.id.clone()),
                     owners.vertex,
@@ -1204,9 +1265,9 @@ fn native_color_attribute(
     native_subident(records, "st")?;
     native_ident(records, "attrib")?;
     native_attribute_base(records, next, -1, owner);
-    native_f64(records, f64::from(color.r()));
-    native_f64(records, f64::from(color.g()));
-    native_f64(records, f64::from(color.b()));
+    native_f64(records, color.r());
+    native_f64(records, color.g());
+    native_f64(records, color.b());
     native_f64(records, 1.0);
     Ok(())
 }

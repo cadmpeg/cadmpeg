@@ -21,13 +21,9 @@ use crate::units::UnitVector3;
 pub struct PointCloud {
     /// Stable point cloud identity.
     pub id: PointCloudId,
-    /// Product definition whose frame holds the points.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_product_definition"
-    )]
-    pub product_definition: Option<ProductDefinitionId>,
+    /// Product definition that holds the point cloud, in whose frame the
+    /// points lie.
+    pub definition: ProductDefinitionId,
     /// Source name.
     #[serde(
         default,
@@ -45,13 +41,10 @@ pub struct PointCloud {
     /// Point positions in document length units.
     pub positions: Vec<FinitePoint3>,
     /// One unit normal for each point, or none.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub normals: Vec<UnitVector3>,
     /// One color for each point, or none.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub colors: Vec<Color>,
     /// Named scalar values, one for each point in each channel.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub channels: Vec<PointChannel>,
     /// Identifier of the full-fidelity source record.
     #[serde(
@@ -74,11 +67,6 @@ pub struct PointChannel {
     pub values: Vec<FiniteReal>,
 }
 
-cadmpeg_core::named_optional_field!(
-    deserialize_product_definition,
-    ProductDefinitionId,
-    "product_definition"
-);
 cadmpeg_core::named_optional_field!(deserialize_name, String, "name");
 cadmpeg_core::named_optional_field!(deserialize_sensor, Transform, "sensor");
 cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");

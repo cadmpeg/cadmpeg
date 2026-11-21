@@ -646,6 +646,11 @@ instance. An unknown standard or user-defined entity name produces a named
 opaque record that retains its complete token span, byte span, and links to
 resolved source records.
 
+An entity instance can name its entity by the short name that the schema
+assigns to it, for example `CRTPNT` for `CARTESIAN_POINT`. The reader resolves
+each short name in a simple or complex instance to its standard entity name
+before it reads the parameters.
+
 ISO 10303-21:2016 §11.2 defines a user-defined entity instance as an entity
 that is not part of the EXPRESS schema named by the header. It uses the same
 entity-instance syntax as a schema entity, with `USER_DEFINED_KEYWORD` in its
@@ -687,6 +692,30 @@ edition-3 class-3 grammar
 and reports that choice. A header metadata loss, an unverified implementation
 level, or an out-of-range schema object identifier retains every header record
 as exact source-fidelity bytes under `step:file:header#<byte-offset>`.
+
+CADIR decision: the first `FILE_DESCRIPTION`, `FILE_NAME`, and `FILE_SCHEMA`
+records supply source attributes. A key names the record and its EXPRESS
+attribute:
+
+| Key                                      | Header attribute                        |
+| ---------------------------------------- | --------------------------------------- |
+| `file_description.description.<n>`      | `FILE_DESCRIPTION.description[n]`       |
+| `file_description.implementation_level`  | `FILE_DESCRIPTION.implementation_level` |
+| `file_name.name`                         | `FILE_NAME.name`                        |
+| `file_name.time_stamp`                   | `FILE_NAME.time_stamp`                  |
+| `file_name.author.<n>`                   | `FILE_NAME.author[n]`                   |
+| `file_name.organization.<n>`             | `FILE_NAME.organization[n]`             |
+| `file_name.preprocessor_version`         | `FILE_NAME.preprocessor_version`        |
+| `file_name.originating_system`           | `FILE_NAME.originating_system`          |
+| `file_name.authorization`                | `FILE_NAME.authorization`               |
+| `file_schema.schema_identifiers.<n>`     | `FILE_SCHEMA.schema_identifiers[n]`     |
+
+`<n>` is the zero-based position in the source list, and every list member
+holding a non-blank decodable string supplies an attribute. A value is the
+whole string after §4 escape decoding, with control characters left out; a
+string longer than its effective length below keeps every character. A string
+that is omitted, does not decode, or holds no non-whitespace character
+supplies no attribute.
 
 `FILE_DESCRIPTION` strings and every `FILE_NAME` string attribute have an
 effective length of at most 256 characters. A non-empty `FILE_NAME` timestamp
@@ -750,9 +779,14 @@ The writer's supported schema identifiers are:
 `AUTOMOTIVE_DESIGN_CC2` is the schema name of the AP214 committee draft. Its
 schema identity is AP214, with or without an object identifier.
 
+`{ 1 0 10303 442 2 1 4 }` identifies ISO/TS 10303-442:2018, the AP242 module
+edition between the Edition 1 module (`442 1`) and the Edition 2 module
+(`442 3`).
+
 For the CADIR AP242 edition report, the first identifier must have the exact
-long-form name and one of the exact numeric object identifiers in the table.
-An AP242 identifier with no object identifier, an ASN.1 named object
+long-form name and one of the exact numeric object identifiers in the table, or
+the ISO/TS 10303-442:2018 identifier `{ 1 0 10303 442 2 1 4 }`, which reports
+Edition 2. An AP242 identifier with no object identifier, an ASN.1 named object
 identifier, or another numeric object identifier reports an unspecified
 edition. ASCII case differences compare equal. Later identifiers do not
 override the first identifier's report.
@@ -1106,7 +1140,40 @@ has ratio one. A plane-angle SI unit names `RADIAN`. A
 recursively resolved unit component, so a plane-angle conversion chain ends
 at the radian SI unit and includes its SI prefix and every conversion factor.
 Conversion-based units form an acyclic chain that ends in a dimensional base
-unit. ISO 10303-43
+unit.
+
+CADIR decision: a plane-angle `CONVERSION_BASED_UNIT` whose name is `degree`,
+compared after trimming and without case, is exactly π/180 radian, and every
+angle of the exchange reads it so. A stated factor that differs from π/180 by
+more than 10⁻⁹ of π/180 produces one `geometry.angle-unit-factor-corrected`
+loss for the unit record, with the stated factor and π/180. The 10⁻⁹ bound
+lies far above the rounding of π/180 to the digits an exchange writes and far
+below the `1/57.3` approximation, whose relative error is about 7.4·10⁻⁵.
+
+An ISO 10303-227 plant item states its end-to-end length as a
+`MEASURE_WITH_UNIT` item named `end to end length` of a
+`SHAPE_DIMENSION_REPRESENTATION`. A `DIMENSIONAL_CHARACTERISTIC_REPRESENTATION`
+relates that representation to a `DIMENSIONAL_LOCATION` between two
+`PLANT_ITEM_CONNECTOR`s. A `PROPERTY_DEFINITION` of each connector carries a
+representation whose `CARTESIAN_POINT` named `connect point` is the connector's
+point. The connector's `of_shape` is the plant item's
+`PRODUCT_DEFINITION_SHAPE`, and the shape representation of that shape states
+the geometry context in whose length unit the connect points lie.
+
+CADIR decision: for each such length with one connect point at each
+connector, the reader takes the ratio of the length, in millimetres by its own
+unit, to the connect-point distance, in millimetres by the geometry context's
+declared unit. When the median ratio of a context lies beyond a factor of 1.1
+from one, and at least three quarters of the context's ratios lie within 10⁻⁶
+of the median, relative to it, the decode reports one
+`geometry.length-unit-contradicted` loss for the context. The loss names the
+context, its declared length unit and scale, the implied scale (the declared
+scale times the median ratio), and the count of agreeing lengths out of the
+compared lengths. The decode keeps the declared unit. The factor 1.1 lies far
+below the 2.54 between the closest common length units, and the 10⁻⁶ bound
+lies far above the single-precision step of plant coordinates.
+
+ISO 10303-43
 defines uncertainty at three scopes. `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT`
 applies to representations that share its context,
 `UNCERTAINTY_ASSIGNED_REPRESENTATION` applies to the items collected by one
@@ -1173,10 +1240,22 @@ candidate. The projection removes duplicate candidates by exact numeric
 equality, and no tolerance window applies to that comparison. One distinct
 value becomes `Tolerances.linear`; equal values from different contexts agree
 and are not ambiguous. More than one distinct value keeps the default linear
-tolerance and produces one `geometry.uncertainty-length-ambiguous` note. That
-note names each distinct candidate value and the kept default. No candidate
-with an unresolved measure produces `geometry.uncertainty-length-unresolved`.
-An empty candidate set leaves the default without a selection.
+tolerance. No candidate with an unresolved measure produces
+`geometry.uncertainty-length-unresolved`. An empty candidate set leaves the
+default without a selection.
+CADIR decision: the uncertainty of a context is the largest of its candidates.
+A body belongs to a context when a representation in that context lists the
+body's topology root as an item, or is itself that root. Each face, edge, and
+vertex of the body takes the uncertainty of that context as its `tolerance`;
+an entity of bodies in several contexts takes the largest. An entity keeps a
+larger `tolerance` it already carries. A `tolerance` equal to
+`Tolerances.linear` is omitted, and a context without a resolvable candidate
+gives its entities no `tolerance`. When more than one distinct value exists, a
+value is carried when it is the value some body keeps; a value that a body
+under several contexts gives up for a larger one is not carried. One
+`geometry.uncertainty-length-ambiguous` note follows when a value is not
+carried or a measure is unresolved. That note names each distinct candidate
+value, the kept default, and each value that is not carried.
 Representation-scoped and qualified-item uncertainties remain retained as
 source-native records because one document baseline cannot encode their scopes;
 they do not replace `Tolerances.linear`.
@@ -1467,7 +1546,9 @@ shells, coincident portions of shells shall reference the same source faces,
 edges, and vertices, and a shell may exist independently of the model.
 `FACE_BASED_SURFACE_MODEL` has a nonempty SET of connected face sets, with the
 same common-face, common-edge, or common-vertex reference semantics for
-connected sets. `MANIFOLD_SOLID_BREP` is a `solid_model` with one
+connected sets. `OPEN_SHELL` and `CLOSED_SHELL` are subtypes of
+`CONNECTED_FACE_SET`, so either can be a member of that SET.
+`MANIFOLD_SOLID_BREP` is a `solid_model` with one
 `outer : CLOSED_SHELL`; the outer shell normal points away from the solid
 interior. `BREP_WITH_VOIDS` is a
 `MANIFOLD_SOLID_BREP` with a nonempty SET of oriented closed-shell voids. Each
@@ -1516,6 +1597,147 @@ and source shell instance as a tie-break. The source `voids` SET order does
 not select a neutral shell slot. The outer shell is not repeated in the void
 suffix.
 
+ISO 10303-42:2021 §6.4.6 to §6.4.19 define the CSG primitives, and §6.4.37
+to §6.4.39 define the swept-area solids. Each primitive lies in the frame of
+its `position`:
+
+- `BLOCK(position, x, y, z)` is the rectangular parallelepiped with one
+  vertex at `position.location` and its edges along the positive placement
+  axes, of lengths `x`, `y`, and `z` (§6.4.8).
+- `RIGHT_ANGULAR_WEDGE(position, x, y, z, ltx)` is the trapezoid with the
+  corners `(0, 0)`, `(x, 0)`, `(ltx, y)`, and `(0, y)` in the placement xy
+  plane, extruded by `z` along the placement z axis. WR1 requires
+  `0 ≤ ltx < x`. With `ltx = 0` the trapezoid is a triangle and the wedge has
+  five faces (§6.4.9).
+- `RIGHT_CIRCULAR_CYLINDER(position, height, radius)` has one planar circular
+  face centred at `position.location`. The centre of the second face lies at
+  the distance `height` along `position.axis` (§6.4.16).
+- `RIGHT_CIRCULAR_CONE(position, height, radius, semi_angle)` has its
+  truncated face of radius `radius` centred at `position.location`, or its
+  apex there when `radius` is zero. `position.axis` points out of the solid
+  from that face or apex. The base lies at the distance `height` against the
+  axis, with the radius `radius + height · tan(semi_angle)`, so the cone
+  widens toward its base. WR1 requires `radius ≥ 0`. IP1 requires
+  `semi_angle` between 0 and 90 degrees (§6.4.15).
+- `SPHERE(radius, centre)` is the ball of `radius` about `centre` (§6.4.14).
+- `TORUS(position, major_radius, minor_radius)` sweeps the disc of radius
+  `minor_radius` about the directrix circle of radius `major_radius`, centred
+  at `position.location` in the plane normal to `position.axis`. WR1 requires
+  `major_radius > minor_radius` (§6.4.18).
+- `ELLIPSOID(position, semi_axis_1, semi_axis_2, semi_axis_3)` is centred at
+  `position.location`, with its semi-axes along `position.p[1]`,
+  `position.p[2]`, and `position.p[3]` (§6.4.19).
+- `EXTRUDED_AREA_SOLID(swept_area, extruded_direction, depth)` translates the
+  area by `depth` along `extruded_direction`. WR1 requires a direction out of
+  the plane of the area (§6.4.38).
+- `REVOLVED_AREA_SOLID(swept_area, axis, angle)` turns the area about `axis`
+  through `angle`. A point `p` of the area leaves in the direction
+  `axis.z × (p − axis.location)`, so the turn is right-handed about the axis
+  direction. IP3 requires `0 < angle ≤ 360` degrees (§6.4.39).
+
+The `swept_area` of a swept-area solid is a `CURVE_BOUNDED_SURFACE` whose
+basis surface is a `PLANE` (§6.4.37, WR1). Each of its boundaries is a
+`BOUNDARY_CURVE`, which is closed (§4.5.82, WR1). The segments of a boundary
+meet with the continuity that their `transition` states (§4.5.45). A
+`BOOLEAN_RESULT` applies a regularised union, intersection, or difference to
+its two operands. The difference removes the second operand from the first
+(§6.4.7). A `CSG_SOLID` names the root of one tree of Boolean results and
+primitives; a single primitive is a tree (§6.4.6). A Boolean operand that is
+a `CSG_SOLID` denotes the root of its tree. The operand graph of Boolean
+results is acyclic (§6.4.6). Length attributes convert to millimetres and
+angle attributes to radians by the units of the item's representation
+context.
+
+CADIR decision: a Boolean result on an operand cycle, and a Boolean result
+whose operand tree reaches one, has no feature (`csg.item-unresolved`, which
+names the cycle). Their other operands keep their features and have no derived body.
+
+CADIR decision: a revolution angle within 10⁻⁹ of one turn of its
+plane-angle unit, relative to the turn, is exactly one turn, and a larger
+angle violates IP3.
+
+CADIR decision: in an ISO 10303-227 `PLANT_CSG_SHAPE_REPRESENTATION`, the
+`AXIS2_PLACEMENT_3D` item named `plant item orientation` is the frame in which
+the representation's CSG items state their own placements. The reader composes
+the frame into each item and into the operands of its Boolean tree, so the
+derived body lies in model coordinates. A primitive feature's frame is the
+composed placement. A swept-area feature keeps its profile, direction, and
+axis as stated, and its `Feature.placement` is the orientation frame. A
+representation that lists two or more such placements composes no frame, and
+the decode reports `csg.plant-orientation-ambiguous`.
+
+CADIR decision: every CSG primitive, swept-area solid, and Boolean result is
+one design feature (CADIR v11 §6.3 and §6.5). The features of a product
+definition are the members of one unordered `Group` container, the root of
+the design scope of that definition. A shape representation that lists an
+item, or a `CSG_SOLID` of it, files the item and the operands of its tree
+under the definition that the representation's
+`SHAPE_DEFINITION_REPRESENTATION` names.
+
+| STEP item | Feature operation |
+|---|---|
+| `BLOCK` | `Primitive` `Box`, `size` `[x, y, z]`, frame `position` |
+| `RIGHT_ANGULAR_WEDGE` | `Primitive` `Wedge`, `y` `[0, y]`, `base` `[0, x, 0, z]`, `top` `[0, ltx, 0, z]`, frame `position` |
+| `RIGHT_CIRCULAR_CYLINDER` | `Primitive` `Cylinder`, frame `position` with x from its derived reference direction |
+| `RIGHT_CIRCULAR_CONE` | `Primitive` `Cone`, `radii` `[base, radius]`, frame `position` then a translation by `-height` along z |
+| `SPHERE` | `Primitive` `Sphere`, frame at `centre` with the model axes |
+| `TORUS` | `Primitive` `Torus`, `radii` `[major_radius, minor_radius]`, frame `position` |
+| `ELLIPSOID` | `Primitive` `Ellipsoid`, `radii` `[semi_axis_1, semi_axis_2, semi_axis_3]`, frame `position` |
+| `EXTRUDED_AREA_SOLID` | `Extrude` `Along` the direction, span from the profile plane to `depth`, lengths along the direction |
+| `REVOLVED_AREA_SOLID` | `Revolve` about the axis, span from the profile to `angle` |
+| `BOOLEAN_RESULT` | `Combine`, target the first operand's result, tool the second's, `Join`, `Intersect`, or `Cut` |
+
+Each construction holds its source placement as a `Fixed` step with the
+resolved value as its cache. Each primitive and swept-area solid makes a new
+solid body. The profile of a swept-area solid is a native pick of its
+`CURVE_BOUNDED_SURFACE` record that resolves to the surface decoded from it.
+A combine consumes its operands.
+
+An item outside every Boolean tree also has a solid body derived from it. Every record of the derived body has `derived` exactness. The body is
+a representation item of each representation that lists the item or a
+`CSG_SOLID` of it, so product ownership and occurrence placement treat it as
+any other representation item. The current state after the item's feature
+holds the body. A Boolean tree has features and no derived body, since its
+evaluation needs a solid modelling kernel (`csg.boolean-unevaluated`). An
+ellipsoid has a feature and no derived body, since CADIR has no ellipsoidal
+surface (`csg.solid-unsynthesized`). Other bodies of a definition with a
+design scope belong to one `Stored` feature with `Base` origin.
+
+The derived boundary is one closed shell. A block and a wedge extrude their
+base polygon, and a cylinder extrudes its base disc. A cone, a sphere, and a
+torus revolve their meridian section a full turn about the frame's z axis. A
+straight side segment sweeps a plane; an arc sweeps a cylinder when
+extruded along its axis, and a sphere or a torus when revolved. A revolved
+straight segment sweeps a plane, a cylinder, or a cone. A full-turn
+revolution and an extruded circle keep the profile segment, or the profile
+vertex, as the seam of the closed side face. A profile segment on the
+revolution axis bounds no side face. Face rings run counterclockwise about
+the outward normal.
+
+CADIR decision: the closing tolerance of a profile is the larger of the
+linear uncertainty and 10⁻⁷ of the diagonal of the box that holds the
+profile's segments. A profile whose junction gap exceeds the closing
+tolerance has no derived body (`csg.solid-unsynthesized`); its feature
+remains. A junction between a straight segment, or an arc trimmed by
+Cartesian points, and an arc trimmed by parameters takes the straight
+segment's end. Two parameter-trimmed arcs meet at the midpoint of their ends.
+Each arc then runs on its circle through its junction points. A boundary of
+one arc segment whose ends meet within the closing tolerance is its full
+circle. The decode reports the largest closed gap above the linear
+uncertainty (`csg.profile-gap-closed`).
+
+An extruded profile is projected onto the plane of its `PLANE`. Every point
+of a revolved profile lies within the closing tolerance of the half-plane
+that the axis bounds and the profile's farthest point names; a profile
+outside it has no derived body (`csg.solid-unsynthesized`). The profile is
+projected onto that half-plane. Two of its distances from the axis, or two of
+its heights along the axis, within the closing tolerance of each other are
+one value, and a distance within it of zero lies on the axis. Each arc centre
+then moves along the axis, when it lies on the axis, or else along the arc's
+chord, to the point equidistant from the arc's ends. A revolved face whose
+boundary meets the axis records the axis vertex as a pole occurrence of its
+loop.
+
 A face boundary uses an `EDGE_LOOP` coedge ring, a `POLY_LOOP` point ring, or
 a `VERTEX_LOOP` vertex at a surface singularity. A vertex loop emits a
 vertex-only boundary. ISO 10303-42:2021 §5.5.16 defines `POLY_LOOP` as an
@@ -1530,6 +1752,10 @@ The `FACE_OUTER_BOUND` subtype identifies the outer topological role; it does
 not select an implicit plane carrier. A `FACE` with an implicit surface must
 not mix loop types: if any bound is a `POLY_LOOP`, every bound is a
 `POLY_LOOP`.
+
+CADIR decision: each segment of a `POLY_LOOP` is an edge whose carrier is a
+`LINE` from the segment's first point to its second point, bounded on
+`[0, segment length]`.
 
 CADIR decision: for a face without an explicit `FACE_SURFACE` geometry, the
 decoder applies `FACE_BOUND.orientation` to every bound and derives one plane
@@ -1556,8 +1782,37 @@ absent point carrier is mandatory and unrepresentable. Sheet and wire
 representations omit only the failed independent member and retain complete
 members. A solid-root transaction rejects the root. CADIR has no tolerant-point
 or partial-solid carrier and does not infer coordinates. A geometric set with
-surface members forms a sheet carrier. Curve-only and point-only sets remain
-standalone geometry.
+surface members forms a sheet carrier. Each surface member is a face in its own
+shell of the one sheet region. Curve-only and point-only sets remain
+standalone geometry. The writer states a region of a body that is not a
+solid and has no wire topology (a sheet or a general body) as a `GEOMETRIC_SET` of its faces' surfaces in a
+`GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION` when every face of the
+region is a forward face with no loops whose surface either carries no
+procedural construction and has a solved NURBS geometry, or is a rectangular
+parameter subset (written as a `RECTANGULAR_TRIMMED_SURFACE`). Other
+procedural surfaces, among them an exact NURBS whose retained ranges can make
+the written spline wider than the face and a sub-surface, which the writer
+states by its solved carrier rather than a trim to its ranges, take the
+`OPEN_SHELL` path. For an unplaced body a `SHAPE_REPRESENTATION_RELATIONSHIP`
+links the bounded-surface representation to the product's shape
+representation. For a placed body the bounded-surface representation is the
+mapped representation of the body's `REPRESENTATION_MAP`, so no empty
+body-local representation is written, and the body's `MAPPED_ITEM` is an item
+of the product's shape representation.
+
+CADIR decision: a `CURVE_BOUNDED_SURFACE` member has one ring loop for each
+boundary composite curve and one edge for each composite segment. A trimmed
+segment curve bounds its edge on `[0, span]`, a B-spline segment on its knot
+domain, and a circle or ellipse segment on one turn. Consecutive segments
+share the vertex where one ends and the next starts. The
+`OUTER_BOUNDARY_CURVE` boundary is the outer loop. With no outer boundary curve
+and `implicit_outer` false, a sole boundary is the outer loop. Of several such
+boundaries, the boundary that encloses the largest area in the support
+parameter plane is the outer loop when the area of each boundary resolves in
+that plane. When an area does not resolve, the loops are unclassified and the
+decoder emits `decode.warning`. In the parameter plane of an
+analytic support, the outer loop runs counterclockwise and each other loop
+clockwise.
 
 ISO 10303-42:2021 §5.5.18 defines `FACE_OUTER_BOUND` as a `FACE_BOUND` carrying
 the outer-boundary semantics and states that no more than one boundary of a
@@ -1599,6 +1854,33 @@ meridian edge twice in opposite directions. Its two pcurves have constant
 the selected profile interval. Each `SEAM_EDGE` selects its corresponding pcurve. The resulting
 face is a closed two-dimensional manifold with singular surface parameters
 at its poles.
+
+CADIR decision: a face on a `TOROIDAL_SURFACE` with `0 < R < |r|` (a spindle
+torus) lies on one sheet. In the surface frame, a point at distance `ρ ≥ 0`
+from the axis and height `z` lies on the outer sheet when
+`(ρ − R)² + z² = r²` and on the inner sheet when `(ρ + R)² + z² = r²`. The
+poles lie on both sheets. The decoder samples each face on the surface at its
+boundary vertices and at the parameters 1/4, 1/2 and 3/4 of each bounding
+edge's range on the edge carrier. The tolerance of a sample is the largest of
+the representation linear uncertainty and the tolerances that the face, the
+edge and the vertex carry. A sample within its tolerance of both sheets is a
+pole. A sample within its tolerance of one sheet selects that sheet. A
+sample outside its tolerance of both sheets selects the nearer sheet when its
+distance from the other sheet is at least ten times larger. When
+every face on the surface selects the same sheet, the decoder attaches a
+degenerate-torus record with that `select_outer` value to the surface. When a
+sample lies outside its tolerance of both sheets at comparable distances from
+them, when the samples of one face
+select both sheets, when a face has only pole samples, or when two faces select
+different sheets, the surface carries no selection and the decoder reports
+`geometry.torus-sheet-unresolved` once for the surface. A surface that already
+carries a degenerate-torus record keeps it.
+
+CADIR decision: a `TOROIDAL_SURFACE` with a negative major radius `-R` is the
+torus of major radius `R` with its normal reversed: its point at `(u, v)` is
+the point of that torus at `(u + π, π - v)`. The decoder reads the torus of
+radius `R`, reverses the sense of each face on it, and gives it the inner
+sheet of a `DEGENERATE_TOROIDAL_SURFACE` when `R < r`.
 
 Section §5.5.17 defines the inherited `FACE_BOUND` attributes `bound` and
 `orientation`. Section §5.5.18 declares `FACE_OUTER_BOUND` as a subtype with
@@ -1762,8 +2044,19 @@ the formations of that product. The standard permits a product to have
 multiple definition groups. The product-definition function resolves these
 associations as a `SET`; `PRESENTATION_LAYER_ASSIGNMENT.assigned_items` is also
 a `SET`, so neither relationship supplies a view order.
-CADIR decision: each linked `PRODUCT_DEFINITION` is one product-definition
-view. A product with one definition uses identity
+ISO 10303-41 types `PRODUCT_DEFINITION_RELATIONSHIP.relating_product_definition`
+and `related_product_definition` as `product_definition`, so an entity that
+fills either attribute is a subtype of `product_definition`. In ISO 10303-227
+these subtypes are `DUCTING_SYSTEM`, `INSTRUMENTATION_AND_CONTROL_SYSTEM`,
+`PIPING_COMPONENT_DEFINITION`, `PIPING_SYSTEM`, `PLANT_LINE_DEFINITION`,
+`PLANT_LINE_SEGMENT_DEFINITION`, and `STRUCTURAL_SYSTEM`. Each holds the
+`product_definition` attributes `id`, `description`, `formation`, and
+`frame_of_reference` in its first four places. A plain
+`PRODUCT_DEFINITION_RELATIONSHIP` relates two definitions; it places no
+occurrence.
+CADIR decision: each linked `PRODUCT_DEFINITION`, or linked instance of one of
+these subtypes, is one product-definition view. A subtype instance whose
+`formation` is unset links to no product and is no view. A product with one definition uses identity
 `step:product:product#<product>`. When one `PRODUCT` has multiple definitions,
 each view receives a distinct identity suffixed by its definition instance.
 Shape bodies and definition descriptions bind to their own view and are not
@@ -1810,6 +2103,27 @@ retain their governing root type, even when they share shell carriers.
 ISO 10303-44 defines each `NEXT_ASSEMBLY_USAGE_OCCURRENCE` as one individual
 constituent occurrence. A second use of the same child is a distinct
 `NEXT_ASSEMBLY_USAGE_OCCURRENCE` when position or orientation is assigned.
+CADIR decision: a `NEXT_ASSEMBLY_USAGE_OCCURRENCE` relates two product
+definitions, so every use of a parent definition has the same children. An
+instance at an occurrence path that shows its own bodies
+(`ProductDefinition.instance_bodies`) or its own nested placement
+(`NestedOverride.transform`) is written as an occurrence of a further
+`PRODUCT_DEFINITION` of its prototype's `PRODUCT_DEFINITION_FORMATION`. That
+definition holds the instance's bodies, or else its prototype's bodies, and a
+copy of each occurrence of its prototype. A copy carries the nested placement
+that the instance states for it, and the next step of the path places a further
+definition of the same form. The writer records
+`product.instance-definition-split` for each definition it adds this way,
+naming the path of the instance that definition places. A definition of the
+document whose every occurrence now places such a further definition is not
+written, nor are the occurrences it owns, so the file has no root that the
+document lacks. The first further definition then states the `PRODUCT` and
+carries the identifier the prototype would have carried. Bodies of such a
+definition that no written definition holds are not written, and the writer
+records `product.instance-prototype-bodies-omitted` for that definition. A
+path whose steps do not each name an occurrence of the previous step's
+prototype is `product.instance-path-unresolved`, and the writer applies
+none of it.
 ISO 10303-43 defines `representation.items` as `SET[1:?]` and
 `representation_map.map_usage` as `SET[1:?]`. A representation may contain
 several mapped items, and one representation map may be used by several mapped
@@ -1895,6 +2209,9 @@ assembly-placement loss.
 For the implicit parent-representation salvage path, CADIR considers only a
 mapped item directly listed by a representation linked to the parent
 definition. This salvage rule is not a STEP occurrence association.
+CADIR decision: an occurrence placed by this path keeps the inferred
+transform, and the decode reports one `product.occurrence-placement-inferred`
+note that names every `NEXT_ASSEMBLY_USAGE_OCCURRENCE` so placed.
 CADIR decision: for standalone mapped items that resolve to one body, an
 identical transform is assigned once to that body's `transform`. Distinct
 transforms cannot be represented by one body transform, so CADIR leaves the
@@ -2082,6 +2399,13 @@ omits transparency for that rendering, and records
 `presentation.surface-transparency-conflict`. It never selects a value from
 the SET serialization order.
 
+ISO 10303-46 lists the members of `surface_style_element_select`; a
+transparency enters a surface side style as a `rendering_properties_select`
+value of a `SURFACE_STYLE_RENDERING_WITH_PROPERTIES`. CADIR decision: a
+`SURFACE_STYLE_TRANSPARENT` listed directly in `surface_side_style.styles`
+leaves the resolved color opaque, and the decoder records
+`presentation.surface-transparency-misplaced`.
+
 ISO 10303-46 §6.3.35 defines `surface_side` as `.POSITIVE.`, `.NEGATIVE.`,
 and `.BOTH.`. `.POSITIVE.` is the side in the surface-normal direction,
 `.NEGATIVE.` is the opposite side, and `.BOTH.` is both sides. Section 6.4.66
@@ -2182,8 +2506,23 @@ partial name, retains the source datum identity as a shape-aspect target, and
 does not use the first complex partial as an attribute source. A complex datum
 therefore retains its `identification` even when a recoverable noncanonical
 partial order places `DATUM` after another partial.
+A dimension is an instance of `DIMENSIONAL_SIZE`, `DIMENSIONAL_LOCATION`,
+`ANGULAR_SIZE`, `ANGULAR_LOCATION`, `DIRECTED_DIMENSIONAL_LOCATION`, or an entity
+whose name begins with `DIMENSIONAL_SIZE_`, `DIMENSIONAL_LOCATION_`,
+`ANGULAR_SIZE_`, or `ANGULAR_LOCATION_`, such as `DIMENSIONAL_SIZE_WITH_PATH` or
+`DIMENSIONAL_LOCATION_WITH_DATUM_FEATURE`. A record named `DIAMETER_SIZE` or
+`RADIUS_SIZE` is a diameter or radius size dimension. A
+`DIRECTED_DIMENSIONAL_LOCATION` is a location dimension directed from its
+`relating_shape_aspect` to its `related_shape_aspect`; its CADIR dimension kind
+is `other` with the name `directed_dimensional_location`.
 A complex dimension uses its dimensional partial for its kind and all inherited
-partials for its name, targets, and characteristic value.
+partials for its name, targets, and characteristic value. Dimensions of CADIR kind size,
+location, diameter, radius, spherical diameter, and spherical radius carry
+length measures, and dimensions of CADIR kind angular carry plane-angle
+measures. When the nominal or limits of a dimension disagree with its kind or
+with each other, CADIR keeps the first of these readings that is valid: the
+kind `other`, named by the dimensional entity in lower case, with the limits;
+the dimension's kind without the limits; the kind `other` without the limits.
 ISO 10303-47 defines `DIMENSIONAL_CHARACTERISTIC_REPRESENTATION` as the
 association of a dimension with its explicit representation. Its
 `SHAPE_DIMENSION_REPRESENTATION.items` attribute is a `SET[1:?]` of

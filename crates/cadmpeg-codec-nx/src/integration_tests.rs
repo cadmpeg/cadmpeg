@@ -25,7 +25,9 @@ use crate::test_support::test_deltas::deltas_point_partition_stream;
 use crate::test_support::test_deltas::deltas_shell_partition_stream;
 use crate::test_support::test_deltas::ellipse_topology_partition_stream;
 use crate::test_support::test_deltas::sphere_topology_partition_stream;
+use crate::test_support::test_deltas::swept_surface_topology_partition_stream;
 use crate::test_support::test_deltas::torus_topology_partition_stream;
+use crate::test_support::test_deltas::whole_sphere_partition_stream;
 use crate::test_support::test_prt::boolean_target_body_lineage_prt;
 use crate::test_support::test_prt::composed_feature_history_prt;
 use crate::test_support::test_prt::extract_body_feature_history_prt;
@@ -90,7 +92,6 @@ fn one_preview_summary_scan() -> crate::decode::Scan<'static> {
     crate::decode::Scan {
         container: crate::container::Container {
             data: Vec::new().into(),
-            physical_size: 0,
             layout: crate::container::test_modern_layout(0x06),
             entries: Vec::new(),
             fastload_table: None,
@@ -104,6 +105,7 @@ fn one_preview_summary_scan() -> crate::decode::Scan<'static> {
             inflated: Vec::new(),
             body: crate::parasolid::StreamBody::Preview,
         }],
+        untyped: std::cell::RefCell::default(),
     }
 }
 
@@ -168,6 +170,27 @@ fn legacy_cfb_nx_detection_uses_ug_part_directory_evidence() {
     let result = decode(bytes);
     assert!(!result.report().geometry_transferred());
     assert!(!result.source_fidelity().retained_records().is_empty());
+}
+
+#[test]
+fn a_parasolid_stream_kept_without_decoding_is_untyped_model_content() {
+    let result = decode(legacy_cfb_with_ug_part());
+    assert!(!result.report().geometry_transferred());
+    let streams = result
+        .source_fidelity()
+        .retained_records()
+        .values()
+        .filter(|record| {
+            record
+                .untyped()
+                .contains(&cadmpeg_core::decode::ArenaClass::Model)
+        })
+        .count();
+    assert!(streams > 0);
+    assert!(result
+        .source_fidelity()
+        .unrepresented()
+        .contains(&cadmpeg_core::decode::ArenaClass::Model));
 }
 
 #[test]
@@ -259,8 +282,8 @@ fn legacy_cfb_text_wrapped_partition_transfers_its_geometry() {
     );
     let result = decode(part);
     assert!(result.report().geometry_transferred());
-    assert!(!result.ir().model.faces.is_empty());
-    assert!(!result.ir().model.surfaces.is_empty());
+    assert!(!result.ir().geometry.faces.is_empty());
+    assert!(!result.ir().geometry.surfaces.is_empty());
     assert_valid(&result);
 }
 
@@ -320,10 +343,78 @@ fn analytic_topology_pipeline_covers_every_supported_quadric_and_conic_family() 
     for stream in fixtures {
         let result = decode(prt_with_partition(&stream));
         assert!(result.report().geometry_transferred());
-        assert!(!result.ir().model.faces.is_empty());
-        assert!(!result.ir().model.surfaces.is_empty());
+        assert!(!result.ir().geometry.faces.is_empty());
+        assert!(!result.ir().geometry.surfaces.is_empty());
         assert_valid(&result);
     }
+}
+
+#[test]
+fn loopless_sphere_face_is_bounded_by_a_vertex_loop_at_each_pole() {
+    let result = decode(prt_with_partition(&whole_sphere_partition_stream()));
+    let geometry = &result.ir().geometry;
+    assert_eq!(geometry.faces.len(), 1);
+    assert_eq!(geometry.faces[0].loops.iter().count(), 2);
+    let mut heights = geometry
+        .loops
+        .iter()
+        .map(|candidate| {
+            let cadmpeg_ir::topology::LoopBoundary::Vertex { vertex, .. } = &candidate.boundary
+            else {
+                panic!("a whole sphere is bounded by vertex loops");
+            };
+            let vertex = geometry.vertices.iter().find(|v| &v.id == vertex).unwrap();
+            let point = geometry
+                .points
+                .iter()
+                .find(|p| p.id == vertex.point)
+                .unwrap();
+            let position = point.position().get();
+            assert_eq!((position.x, position.y), (0.0, 0.0));
+            position.z
+        })
+        .collect::<Vec<_>>();
+    heights.sort_by(f64::total_cmp);
+    assert_eq!(heights, [-10.0, 10.0]);
+    assert_valid(&result);
+}
+
+#[test]
+fn swept_surface_face_rests_on_a_linear_sweep_of_its_section() {
+    let result = decode(prt_with_partition(
+        &swept_surface_topology_partition_stream(),
+    ));
+    let geometry = &result.ir().geometry;
+    let surface = geometry
+        .surfaces
+        .iter()
+        .find(|candidate| candidate.id == geometry.faces[0].surface)
+        .unwrap();
+    let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction, .. } = &surface.geometry
+    else {
+        panic!("a swept surface is a procedural surface");
+    };
+    let procedural = geometry
+        .procedural_surfaces
+        .iter()
+        .find(|candidate| &candidate.id == construction)
+        .unwrap();
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::LinearSweep(sweep) =
+        procedural.definition()
+    else {
+        panic!("a swept surface is a linear sweep");
+    };
+    let direction = sweep.direction().get();
+    assert_eq!((direction.x, direction.y, direction.z), (0.0, 0.0, 20.0));
+    let section = geometry
+        .curves
+        .iter()
+        .find(|candidate| &candidate.id == sweep.directrix())
+        .unwrap();
+    assert!(matches!(
+        section.geometry.solved(),
+        Some(cadmpeg_ir::geometry::SolvedCurveGeometry::Line(_))
+    ));
 }
 
 #[test]
@@ -341,20 +432,20 @@ fn freeform_pipeline_binds_nurbs_pcurves_offsets_blends_and_intersections() {
     let mut saw_procedural_curve = false;
     for stream in fixtures {
         let result = decode(prt_with_partition(&stream));
-        saw_nurbs |= result.ir().model.curves.iter().any(|curve| {
+        saw_nurbs |= result.ir().geometry.curves.iter().any(|curve| {
             matches!(
                 curve.geometry,
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
             )
-        }) || result.ir().model.surfaces.iter().any(|surface| {
+        }) || result.ir().geometry.surfaces.iter().any(|surface| {
             matches!(
                 surface.geometry,
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
             )
         });
-        saw_pcurve |= !result.ir().model.pcurves.is_empty();
-        saw_procedural_surface |= !result.ir().model.procedural_surfaces.is_empty();
-        saw_procedural_curve |= !result.ir().model.procedural_curves.is_empty();
+        saw_pcurve |= !result.ir().geometry.pcurves.is_empty();
+        saw_procedural_surface |= !result.ir().geometry.procedural_surfaces.is_empty();
+        saw_procedural_curve |= !result.ir().geometry.procedural_curves.is_empty();
         assert_valid(&result);
     }
     assert!(saw_nurbs);
@@ -380,12 +471,12 @@ fn unselected_deltas_preserve_primary_geometry_and_topology() {
     for deltas in delta_fixtures {
         let result = decode(prt_with_streams(&[&partition, &deltas]));
         assert_eq!(
-            serde_json::to_value(&result.ir().model).unwrap(),
-            serde_json::to_value(&baseline.ir().model).unwrap()
+            serde_json::to_value((&result.ir().geometry, &result.ir().model)).unwrap(),
+            serde_json::to_value((&baseline.ir().geometry, &baseline.ir().model)).unwrap()
         );
         assert!(result.report().geometry_transferred());
-        assert_eq!(result.ir().model.bodies.len(), 1);
-        assert_eq!(result.ir().model.faces.len(), 1);
+        assert_eq!(result.ir().geometry.bodies.len(), 1);
+        assert_eq!(result.ir().geometry.faces.len(), 1);
         assert_valid(&result);
     }
 }

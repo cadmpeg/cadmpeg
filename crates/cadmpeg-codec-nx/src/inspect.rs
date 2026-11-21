@@ -236,6 +236,7 @@ mod tests {
                         cadmpeg_parasolid::test_support::owned_deltas::body_stream(36),
                     ),
                 )],
+                untyped: std::cell::RefCell::default(),
             };
             let summary = super::summarize(&scan).unwrap();
             let attributes = &summary.entries.last().unwrap().attributes;

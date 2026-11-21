@@ -139,7 +139,7 @@ fn decode_preserves_offset_status_without_assigning_parameter_sense() {
 
             let procedural = result
                 .ir()
-                .model
+                .geometry
                 .procedural_surfaces
                 .first()
                 .expect("offset surface");
@@ -164,11 +164,11 @@ fn decode_preserves_offset_status_without_assigning_parameter_sense() {
             );
             let owner = result
                 .ir()
-                .model
+                .geometry
                 .procedural_surface_owner(&procedural.id)
                 .expect("offset carrier");
             assert_ne!(owner, support);
-            assert_eq!(&result.ir().model.faces[0].surface, owner);
+            assert_eq!(&result.ir().geometry.faces[0].surface, owner);
             let records = result
                 .ir()
                 .native
@@ -185,7 +185,7 @@ fn decode_preserves_offset_status_without_assigning_parameter_sense() {
             assert_eq!(records[0].state.distance().get(), 2.5);
             let carrier = result
                 .ir()
-                .model
+                .geometry
                 .surfaces
                 .iter()
                 .find(|surface| &surface.id == owner)
@@ -218,7 +218,7 @@ fn decode_resolves_surface_curve_to_its_basis_curve() {
         .decode(&mut cur, &DecodeOptions::default())
         .expect("required invariant");
 
-    assert_eq!(result.ir().model.edges.len(), 1);
+    assert_eq!(result.ir().geometry.edges.len(), 1);
     let records = result
         .ir()
         .native
@@ -232,8 +232,8 @@ fn decode_resolves_surface_curve_to_its_basis_curve() {
     assert_eq!(records[0].state.original(), Some(9));
     assert_eq!(records[0].state.tolerance().get(), 0.000_01);
     assert_eq!(
-        result.ir().model.edges[0].curve(),
-        Some(&result.ir().model.curves[0].id)
+        result.ir().geometry.edges[0].curve(),
+        Some(&result.ir().geometry.curves[0].id)
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
@@ -252,7 +252,7 @@ fn decode_emits_rolling_ball_blend_surface() {
 
     let procedural = result
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .first()
         .expect("blend surface");
@@ -273,10 +273,10 @@ fn decode_emits_rolling_ball_blend_surface() {
     assert!(native.is_none());
     let owner = result
         .ir()
-        .model
+        .geometry
         .procedural_surface_owner(&procedural.id)
         .expect("blend carrier");
-    assert_eq!(&result.ir().model.faces[0].surface, owner);
+    assert_eq!(&result.ir().geometry.faces[0].surface, owner);
     let records = result
         .ir()
         .native
@@ -291,7 +291,7 @@ fn decode_emits_rolling_ball_blend_surface() {
     assert_eq!(records[0].state.thumb_weights(), [1.0, 1.0]);
     let carrier = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| &surface.id == owner)
@@ -318,10 +318,10 @@ fn decode_preserves_intersection_curve_as_connected_carrier() {
         .decode(&mut cur, &DecodeOptions::default())
         .expect("required invariant");
 
-    let edge_curve = result.ir().model.edges[0].curve().expect("edge curve");
+    let edge_curve = result.ir().geometry.edges[0].curve().expect("edge curve");
     let curve = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| &curve.id == edge_curve)
@@ -347,12 +347,12 @@ fn decode_preserves_intersection_curve_as_connected_carrier() {
             .map(|source| source.object_id.as_str()),
         Some(records[0].id.as_str())
     );
-    assert_eq!(result.ir().model.procedural_curves.len(), 1);
+    assert_eq!(result.ir().geometry.procedural_curves.len(), 1);
     assert_eq!(
         result
             .ir()
-            .model
-            .procedural_curve_owner(&result.ir().model.procedural_curves[0].id),
+            .geometry
+            .procedural_curve_owner(&result.ir().geometry.procedural_curves[0].id),
         Some(&curve.id)
     );
     assert!(result.report().losses.iter().any(|loss| {
@@ -380,7 +380,7 @@ fn decode_does_not_materialize_unanchored_delta_intersection_payload() {
     let deltas = deltas_intersection_curve_stream();
     let mut cur = Cursor::new(prt_with_streams(&[&partition, &deltas]));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    assert!(result.ir().model.procedural_curves.is_empty());
+    assert!(result.ir().geometry.procedural_curves.is_empty());
     let records = result
         .ir()
         .native
@@ -472,16 +472,18 @@ fn decode_emits_charted_surface_intersection_construction() {
 
     let procedural = result
         .ir()
-        .model
+        .geometry
         .procedural_curves
         .first()
         .expect("intersection construction");
     let curve = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
-        .find(|curve| result.ir().model.procedural_curve_owner(&procedural.id) == Some(&curve.id))
+        .find(|curve| {
+            result.ir().geometry.procedural_curve_owner(&procedural.id) == Some(&curve.id)
+        })
         .expect("solved chart cache");
     let Some(SolvedCurveGeometry::Nurbs(nurbs)) = curve.geometry.solved_cache() else {
         panic!("charted NURBS cache");
@@ -504,7 +506,7 @@ fn decode_emits_charted_surface_intersection_construction() {
     assert!(context.sides()[0].pcurve.is_some());
     assert!(context.sides()[1].surface.is_none());
     assert_eq!(context.parameter_range().endpoints(), [0.0, 0.01]);
-    assert!(result.ir().model.coedges[0].pcurves.is_empty());
+    assert!(result.ir().geometry.coedges[0].pcurves.is_empty());
     assert!(!result.report().losses.iter().any(|loss| {
         loss.code.category() == LossCategory::Geometry
             && loss.message.contains("surface-intersection record(s)")
@@ -540,7 +542,7 @@ fn decode_resolves_intersection_second_support_through_blend_bound() {
     );
 
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        &result.ir().model.procedural_curves[0].definition()
+        &result.ir().geometry.procedural_curves[0].definition()
     else {
         panic!("typed intersection");
     };
@@ -558,8 +560,8 @@ fn decode_resolves_trimmed_edge_to_its_basis_curve_and_range() {
     let result = NxCodec
         .decode(&mut cur, &DecodeOptions::default())
         .expect("required invariant");
-    let edge = result.ir().model.edges.first().expect("edge");
-    assert_eq!(edge.curve(), Some(&result.ir().model.curves[0].id));
+    let edge = result.ir().geometry.edges.first().expect("edge");
+    assert_eq!(edge.curve(), Some(&result.ir().geometry.curves[0].id));
     assert_eq!(
         edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
         Some([0.25, 0.75])

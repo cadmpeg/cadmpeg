@@ -80,7 +80,7 @@ fn generated_revision_exact_surface_carries_two_unextended_intervals() {
             &DecodeOptions::default(),
         )
         .expect("revision exact decode");
-    let procedural = result.ir().model.procedural_surfaces.first().unwrap();
+    let procedural = result.ir().geometry.procedural_surfaces.first().unwrap();
     let ProceduralSurfaceDefinition::Exact(definition_payload) = procedural.definition() else {
         panic!("expected exact definition");
     };
@@ -141,7 +141,7 @@ fn generated_revision_loft_surface_carries_one_nonempty_wrap_interval() {
             &DecodeOptions::default(),
         )
         .expect("revision loft decode");
-    let procedural = result.ir().model.procedural_surfaces.first().unwrap();
+    let procedural = result.ir().geometry.procedural_surfaces.first().unwrap();
     let ProceduralSurfaceDefinition::Loft(definition_payload) = procedural.definition() else {
         panic!("expected loft definition");
     };
@@ -271,7 +271,7 @@ fn generated_parameterized_revision_g2_blend_round_trips() {
             &DecodeOptions::default(),
         )
         .expect("parameterized revision g2 blend decode");
-    let procedural = &result.ir().model.procedural_surfaces[0];
+    let procedural = &result.ir().geometry.procedural_surfaces[0];
     assert_eq!(procedural.cache_fit_tolerance(), None);
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RevisionG2Blend { construction } =
         procedural.definition()
@@ -360,7 +360,7 @@ fn generated_single_radius_variable_blend_decodes_explicit_circular_cross_sectio
         )
         .expect("single-radius selector-zero decode");
     let ProceduralSurfaceDefinition::VariableBlend(definition_payload) =
-        &decoded.ir().model.procedural_surfaces[0].definition()
+        &decoded.ir().geometry.procedural_surfaces[0].definition()
     else {
         panic!("expected variable blend")
     };
@@ -374,7 +374,11 @@ fn generated_single_radius_variable_blend_decodes_explicit_circular_cross_sectio
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
@@ -385,7 +389,7 @@ fn generated_single_radius_variable_blend_decodes_explicit_circular_cross_sectio
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("selector-zero round trip");
     assert!(matches!(
-        &round_trip.ir().model.procedural_surfaces[0].definition(), ProceduralSurfaceDefinition::VariableBlend(definition_payload) if matches!((definition_payload.construction(),), (construction,) if construction.to_raw() == expected)));
+        &round_trip.ir().geometry.procedural_surfaces[0].definition(), ProceduralSurfaceDefinition::VariableBlend(definition_payload) if matches!((definition_payload.construction(),), (construction,) if construction.to_raw() == expected)));
 }
 
 #[test]
@@ -418,7 +422,7 @@ fn generated_variable_blend_round_trips_parameterized_cross_sections() {
             )
             .expect("parameterized cross-section decode");
         let ProceduralSurfaceDefinition::VariableBlend(definition_payload) =
-            &decoded.ir().model.procedural_surfaces[0].definition()
+            &decoded.ir().geometry.procedural_surfaces[0].definition()
         else {
             panic!("expected variable blend")
         };
@@ -433,7 +437,11 @@ fn generated_variable_blend_round_trips_parameterized_cross_sections() {
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
         source_less
-            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .set_native_unknowns(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                "f3d",
+                &[],
+            )
             .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
@@ -443,7 +451,7 @@ fn generated_variable_blend_round_trips_parameterized_cross_sections() {
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("parameterized cross-section round trip");
         assert!(matches!(
-            &round_trip.ir().model.procedural_surfaces[0].definition(), ProceduralSurfaceDefinition::VariableBlend(definition_payload) if matches!((definition_payload.construction(),), (construction,) if construction.to_raw() == expected)));
+            &round_trip.ir().geometry.procedural_surfaces[0].definition(), ProceduralSurfaceDefinition::VariableBlend(definition_payload) if matches!((definition_payload.construction(),), (construction,) if construction.to_raw() == expected)));
     }
 }
 
@@ -471,7 +479,7 @@ fn generated_variable_blend_round_trips_unclassified_bare_cross_sections() {
             )
             .expect("bare cross-section decode");
         let ProceduralSurfaceDefinition::VariableBlend(definition_payload) =
-            &decoded.ir().model.procedural_surfaces[0].definition()
+            &decoded.ir().geometry.procedural_surfaces[0].definition()
         else {
             panic!("expected variable blend")
         };
@@ -486,7 +494,11 @@ fn generated_variable_blend_round_trips_unclassified_bare_cross_sections() {
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
         source_less
-            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .set_native_unknowns(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                "f3d",
+                &[],
+            )
             .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
@@ -496,7 +508,7 @@ fn generated_variable_blend_round_trips_unclassified_bare_cross_sections() {
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("bare cross-section round trip");
         assert!(matches!(
-            &round_trip.ir().model.procedural_surfaces[0].definition(), ProceduralSurfaceDefinition::VariableBlend(definition_payload) if matches!((definition_payload.construction(),), (construction,) if construction.to_raw() == expected_construction)));
+            &round_trip.ir().geometry.procedural_surfaces[0].definition(), ProceduralSurfaceDefinition::VariableBlend(definition_payload) if matches!((definition_payload.construction(),), (construction,) if construction.to_raw() == expected_construction)));
     }
 }
 
@@ -551,7 +563,7 @@ fn generated_parameterized_revision_compound_loft_round_trips() {
             &DecodeOptions::default(),
         )
         .expect("parameterized revision compound loft decode");
-    let procedural = &result.ir().model.procedural_surfaces[0];
+    let procedural = &result.ir().geometry.procedural_surfaces[0];
     assert_eq!(procedural.cache_fit_tolerance(), None);
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RevisionCompoundLoft { construction } =
         procedural.definition()
@@ -619,7 +631,7 @@ fn generated_revision_compound_loft_rejects_present_parameters_without_a_curve()
         .expect("decode retains the record as a native unknown");
     assert!(!decoded
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .any(|surface| matches!(
@@ -656,7 +668,7 @@ fn generated_revision_compound_loft_rejects_present_parameters_without_a_curve()
         .expect("legal revision compound loft decode")
         .into_parts()
         .0;
-    let mut wire = serde_json::to_value(&legal.model.procedural_surfaces[0]).unwrap();
+    let mut wire = serde_json::to_value(&legal.geometry.procedural_surfaces[0]).unwrap();
     assert_eq!(wire["definition"]["construction"]["tail"]["kind"], "curve");
     wire["definition"]["construction"]["tail"]
         .as_object_mut()
@@ -721,30 +733,37 @@ fn record_level_surface_bounds_round_trip() {
         .expect("exact revision decode");
     let (mut source_less, _, _) = decoded.into_parts();
     assert_eq!(
-        source_less.model.procedural_surfaces[0]
+        source_less.geometry.procedural_surfaces[0]
             .record_bounds()
             .map(cadmpeg_ir::geometry::RecordBounds::get),
         None
     );
     {
         let replacement = Some([Some(0.1), None, Some(0.2), None]);
-        edit::replace(&mut source_less.model.procedural_surfaces[0], |previous| {
-            replacement
-                .map(cadmpeg_ir::geometry::RecordBounds::try_from)
-                .transpose()
-                .map(|bounds| {
-                    cadmpeg_ir::geometry::ProceduralSurface::new(
-                        previous.id.clone(),
-                        previous.definition().clone(),
-                        bounds,
-                    )
-                })
-        })
+        edit::replace(
+            &mut source_less.geometry.procedural_surfaces[0],
+            |previous| {
+                replacement
+                    .map(cadmpeg_ir::geometry::RecordBounds::try_from)
+                    .transpose()
+                    .map(|bounds| {
+                        cadmpeg_ir::geometry::ProceduralSurface::new(
+                            previous.id.clone(),
+                            previous.definition().clone(),
+                            bounds,
+                        )
+                    })
+            },
+        )
     }
     .expect("finite record bounds");
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
@@ -755,7 +774,7 @@ fn record_level_surface_bounds_round_trip() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("record-bounds round trip");
     assert_eq!(
-        round_trip.ir().model.procedural_surfaces[0]
+        round_trip.ir().geometry.procedural_surfaces[0]
             .record_bounds()
             .map(cadmpeg_ir::geometry::RecordBounds::get),
         Some([Some(0.1), None, Some(0.2), None])
@@ -776,7 +795,7 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
             )
             .expect("vertex-blend decode");
         let ProceduralSurfaceDefinition::VertexBlend(definition_payload) =
-            &result.ir().model.procedural_surfaces[0].definition()
+            &result.ir().geometry.procedural_surfaces[0].definition()
         else {
             panic!("expected vertex blend")
         };
@@ -784,14 +803,14 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
 
         let owner = result
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| {
                 result
                     .ir()
-                    .model
-                    .procedural_surface_owner(&result.ir().model.procedural_surfaces[0].id)
+                    .geometry
+                    .procedural_surface_owner(&result.ir().geometry.procedural_surfaces[0].id)
                     == Some(&surface.id)
             })
             .expect("vertex-blend owner");
@@ -799,7 +818,7 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
             matches!(
                 owner.geometry,
                 SurfaceGeometry::Procedural { ref construction, .. }
-                    if *construction == result.ir().model.procedural_surfaces[0].id
+                    if *construction == result.ir().geometry.procedural_surfaces[0].id
             ),
             "unexpected vertex-blend carrier: {:?}",
             owner.geometry
@@ -853,11 +872,15 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
         let (mut source_less, _, _) = result.into_parts();
         source_less.source = None;
         source_less
-            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .set_native_unknowns(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                "f3d",
+                &[],
+            )
             .unwrap();
         for (ordinal, (curve, _)) in bounded_curves.iter().enumerate() {
             source_less
-                .model
+                .geometry
                 .curves
                 .iter_mut()
                 .find(|candidate| candidate.id == *curve)
@@ -885,7 +908,7 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("source-less vertex-blend round trip");
         let ProceduralSurfaceDefinition::VertexBlend(definition_payload) =
-            &round_trip.ir().model.procedural_surfaces[0].definition()
+            &round_trip.ir().geometry.procedural_surfaces[0].definition()
         else {
             panic!("expected round-trip vertex blend")
         };
@@ -896,7 +919,7 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
             assert!(matches!(
                 round_trip
                     .ir()
-                    .model
+                    .geometry
                     .curves
                     .iter()
                     .find(|candidate| candidate.id == curve)
@@ -918,7 +941,7 @@ fn decode_retains_generated_translational_extrusion_and_fit_contract() {
         .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
         .unwrap();
 
-    let procedural = result.ir().model.procedural_surfaces.first().unwrap();
+    let procedural = result.ir().geometry.procedural_surfaces.first().unwrap();
     assert_eq!(
         procedural
             .cache_fit_tolerance()
@@ -946,7 +969,7 @@ fn decode_retains_generated_translational_extrusion_and_fit_contract() {
     );
     let directrix = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id == *directrix)
@@ -967,7 +990,7 @@ fn decode_retains_versioned_nested_translational_extrusion() {
             &DecodeOptions::default(),
         )
         .expect("versioned extrusion decode");
-    let procedural = result.ir().model.procedural_surfaces.first().unwrap();
+    let procedural = result.ir().geometry.procedural_surfaces.first().unwrap();
     assert_eq!(
         procedural
             .cache_fit_tolerance()
@@ -1006,7 +1029,7 @@ fn revision_cylinder_rejects_tokens_after_its_terminal_surface_tail() {
 
     assert!(result
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .any(|surface| matches!(
@@ -1024,7 +1047,7 @@ fn generated_f3d_rewrites_translational_extrusion_header() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated extrusion decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    edited.model.procedural_surfaces[0].edit_definition(|definition| {
+    edited.geometry.procedural_surfaces[0].edit_definition(|definition| {
         let ProceduralSurfaceDefinition::Extrusion(definition_payload) = definition else {
             panic!("expected extrusion")
         };
@@ -1069,7 +1092,7 @@ fn generated_f3d_rewrites_translational_extrusion_header() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated extrusion decode");
     let ProceduralSurfaceDefinition::Extrusion(definition_payload) =
-        &round_trip.ir().model.procedural_surfaces[0].definition()
+        &round_trip.ir().geometry.procedural_surfaces[0].definition()
     else {
         panic!("expected round-trip extrusion")
     };
@@ -1094,7 +1117,7 @@ fn generated_f3d_rewrites_procedural_surface_fit_tolerance() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated procedural-surface decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    edited.model.procedural_surfaces[0]
+    edited.geometry.procedural_surfaces[0]
         .set_cache_fit_tolerance(Some(0.075))
         .unwrap();
 
@@ -1105,7 +1128,7 @@ fn generated_f3d_rewrites_procedural_surface_fit_tolerance() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated procedural-surface decode");
     assert_eq!(
-        round_trip.ir().model.procedural_surfaces[0]
+        round_trip.ir().geometry.procedural_surfaces[0]
             .cache_fit_tolerance()
             .map(cadmpeg_ir::geometry::FitTolerance::get),
         Some(0.075)
@@ -1120,7 +1143,7 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
         .expect("generated NURBS surface decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
     let surface = edited
-        .model
+        .geometry
         .surfaces
         .iter_mut()
         .find(|surface| {
@@ -1230,7 +1253,7 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
         .expect("regenerated NURBS surface decode");
     let surface = round_trip
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id == surface_id)
@@ -1249,7 +1272,7 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
         .expect("generated rational surface decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
     let surface = edited
-        .model
+        .geometry
         .surfaces
         .iter_mut()
         .find(|surface| {
@@ -1309,7 +1332,7 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
         .expect("regenerated rational surface decode");
     let surface = round_trip
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id == surface_id)
@@ -1330,14 +1353,14 @@ fn generated_f3d_rewrites_extrusion_directrix_control_points() {
         .expect("generated extrusion decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
     let ProceduralSurfaceDefinition::Extrusion(definition_payload) =
-        edited.model.procedural_surfaces[0].definition()
+        edited.geometry.procedural_surfaces[0].definition()
     else {
         panic!("expected extrusion")
     };
     let directrix = definition_payload.directrix();
     let directrix_id = directrix.clone();
     let curve = edited
-        .model
+        .geometry
         .curves
         .iter_mut()
         .find(|curve| curve.id == directrix_id)
@@ -1368,7 +1391,7 @@ fn generated_f3d_rewrites_extrusion_directrix_control_points() {
         .expect("regenerated extrusion decode");
     let curve = round_trip
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id == directrix_id)
@@ -1386,9 +1409,9 @@ fn decode_resolves_generated_ref_translational_extrusion() {
         .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.procedural_surfaces.len(), 1);
     assert_eq!(
-        result.ir().model.procedural_surfaces[0]
+        result.ir().geometry.procedural_surfaces[0]
             .cache_fit_tolerance()
             .map(cadmpeg_ir::geometry::FitTolerance::get),
         Some(0.02)
@@ -1404,9 +1427,9 @@ fn decode_resolves_revision_extrusion_implicit_directrix_reference() {
         .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.procedural_surfaces.len(), 1);
     assert!(matches!(
-        result.ir().model.procedural_surfaces[0].definition(),
+        result.ir().geometry.procedural_surfaces[0].definition(),
         ProceduralSurfaceDefinition::Extrusion(_)
     ));
     assert!(!result

@@ -67,6 +67,7 @@ enum SheetSurfaceFit {
 
 #[derive(Clone, Copy, Default)]
 struct SheetBoundaryRecovery {
+    untransferred_plane_bounds: Option<[[f64; 2]; 2]>,
     rolling_extension_mm: f64,
     affine_vertex_shift_mm: f64,
 }
@@ -457,7 +458,7 @@ fn curve_point(curve: &NurbsCurve, t: f64) -> Option<Point3> {
 }
 
 fn rolling_ball(ir: &CadIr, surface: usize, radius: f64) -> Option<&ProceduralSurfaceDefinition> {
-    let geometry = &ir.model.surfaces.get(surface)?.geometry;
+    let geometry = &ir.geometry.surfaces.get(surface)?.geometry;
     let SurfaceGeometry::Procedural {
         construction,
         cache: None,
@@ -466,7 +467,7 @@ fn rolling_ball(ir: &CadIr, surface: usize, radius: f64) -> Option<&ProceduralSu
         return None;
     };
     let procedure = ir
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .find(|p| &p.id == construction)?;
@@ -489,6 +490,7 @@ pub(super) struct Stream<'a> {
     pub(super) data: &'a [u8],
     pub(super) sources: &'a [Vec<SourceExtent>],
     pub(super) records: &'a [ConsolidatedRecord],
+    pub(super) selection: Option<&'a crate::container::body_selection::BodySelection>,
 }
 
 pub(super) fn append(
@@ -503,6 +505,7 @@ pub(super) fn append(
         data,
         sources,
         records,
+        ..
     } = stream;
     if carriers.is_empty()
         && !records
@@ -511,15 +514,26 @@ pub(super) fn append(
     {
         return Ok(None);
     }
-    let (mut patches, backward_sources) =
-        sheet_group::patches(admission.context(), ir, stream, carriers, refusal)?;
-    let members = roster::members(
-        admission.context(),
-        data,
-        sources,
-        records,
-        &backward_sources,
-    )?;
+    let sheets = sheet_group::patches(admission.context(), ir, stream, carriers, refusal)?;
+    if let Some(selected) = &sheets.selection {
+        for (&position, &index) in carriers {
+            if sources[selected.source]
+                .iter()
+                .any(|extent| extent.range().contains(&position))
+            {
+                if let Some(source) = ir.geometry.surfaces[index].source_object.as_mut() {
+                    source.geometry_role = Some(cadmpeg_ir::SourceGeometryRole::Support);
+                }
+            }
+        }
+    }
+    let mut patches = sheets.patches;
+    let sheet_members = sheets.members;
+    let recovered = patches
+        .iter()
+        .map(|patch| (patch.body, patch.face))
+        .collect();
+    let members = roster::members(admission.context(), data, sources, records)?;
     let fit_limit = MAX_FIT_CANDIDATES_FLOOR.max(records.len().div_ceil(RECORDS_PER_FIT_CANDIDATE));
     let fit_budget = WorkBudget::new(fit_limit);
     for (index, frame) in records.iter().enumerate() {
@@ -527,9 +541,21 @@ pub(super) fn append(
         if frame.class() != 0x5f || frame.family() != Family::B || frame.flag() != Flag::Flag03 {
             continue;
         }
-        let Some(&member) = members.get(&key) else {
+        let Some(&legacy) = members.get(&key) else {
             continue;
         };
+        if sheets.selection.as_ref().is_some_and(|selected| {
+            selected.source == key.0
+                && !sheet_members.contains_key(&key)
+                && !selected.legacy_bodies.contains(&legacy.body)
+        }) {
+            continue;
+        }
+        let owners =
+            roster::fallback_members(key, frame.byte_offset(), legacy, &sheet_members, &recovered);
+        if owners.is_empty() {
+            continue;
+        }
         let Some(boundary) = boundary(
             data,
             records,
@@ -547,11 +573,13 @@ pub(super) fn append(
             refusal.push_sheet_patch_search_bounded("owned face fitting", fit_limit, "candidates");
             break;
         }
-        if let Some(patch) = fit(ir, surface, frame.byte_offset(), member, &boundary) {
-            patches.push(patch);
+        for member in owners {
+            if let Some(patch) = fit(ir, surface, frame.byte_offset(), member, &boundary) {
+                patches.push(patch);
+            }
         }
     }
-    transfer::append(ir, annotations, patches, refusal, admission)
+    transfer::append(ir, annotations, patches, refusal, admission, &sheets.roots)
 }
 
 #[cfg(test)]

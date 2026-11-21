@@ -779,6 +779,7 @@ fn topology_retains_entity_attribute_list_references() {
         cadmpeg_ir::attributes::AttributeTarget::Face(
             cadmpeg_ir::ids::FaceId::mint("nx:s0:face#4").expect("identity grammar")
         )
+        .into()
     );
     assert_eq!(
         result.ir().model.attributes[0].name,
@@ -786,9 +787,9 @@ fn topology_retains_entity_attribute_list_references() {
     );
     assert_eq!(
         result.ir().model.attributes[0].values,
-        [cadmpeg_ir::attributes::AttributeValue::String(
+        [Some(cadmpeg_ir::attributes::AttributeValue::String(
             "deadbeef".into()
-        )]
+        ))]
     );
 }
 

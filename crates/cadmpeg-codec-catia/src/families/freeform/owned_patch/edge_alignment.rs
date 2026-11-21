@@ -7,7 +7,7 @@ use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::math::Point2;
 
-use super::super::rolling_ball_patch::fit_edge_with_error;
+use super::super::{parameter_cache::memoize, rolling_ball_patch::fit_edge_with_error};
 use super::{curve_point, interval_parameter, Use, GAP_MM};
 
 const LOCUS_STEPS: u32 = 64;
@@ -54,11 +54,11 @@ fn align_with_tolerance(
     let [s0, s1] = second.curve.full_knot_endpoints().endpoints();
     let [start, end] = if same { [s0, s1] } else { [s1, s0] };
     let second_at = |fraction: f64| interval_parameter([start, end], fraction);
-    let eval_second = |fraction| curve_point(&second.curve, second_at(fraction));
+    let eval_second = memoize(|fraction| curve_point(&second.curve, second_at(fraction)));
     let samples = (0..=LOCUS_STEPS)
         .map(|i| eval_second(f64::from(i) / f64::from(LOCUS_STEPS)))
         .collect::<Option<Vec<_>>>()?;
-    let project = |parameter: f64| {
+    let calculate_project = |parameter: f64| {
         let point = curve_point(&first.curve, parameter)?;
         if parameter == lo {
             if point.distance(*samples.first()?) <= GAP_MM {
@@ -114,6 +114,7 @@ fn align_with_tolerance(
         let fraction = a.midpoint(b);
         (point.distance(eval_second(fraction)?) <= GAP_MM).then_some(fraction)
     };
+    let project = memoize(calculate_project);
     let parameter_at =
         |step: u32| interval_parameter([lo, hi], f64::from(step) / f64::from(LOCUS_STEPS));
     let mut previous = 0.0;
@@ -153,6 +154,8 @@ fn align_with_tolerance(
             return None;
         }
     }
+    drop(project);
+    drop(eval_second);
     second.curve = first.curve.clone();
     second.vertices = first.vertices;
     second.forward = second.forward == same;
@@ -315,8 +318,9 @@ pub(super) fn project_spline(
                 .get();
         (point.distance(lifted) <= GAP_MM).then_some([uv.u, uv.v, 0.0])
     };
-    let fit = fit_edge_with_error(range, project, UV_FIT_TOLERANCE)
-        .or_else(|| fit_edge_with_error(range, project, UV_FIT_FALLBACK))?;
+    let project = memoize(project);
+    let fit = fit_edge_with_error(range, &project, UV_FIT_TOLERANCE)
+        .or_else(|| fit_edge_with_error(range, &project, UV_FIT_FALLBACK))?;
     let poles = fit
         .control_points()
         .iter()

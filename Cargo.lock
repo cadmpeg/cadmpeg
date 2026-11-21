@@ -234,6 +234,7 @@ name = "cadmpeg-asm"
 version = "0.6.12"
 dependencies = [
  "cadmpeg-core",
+ "cadmpeg-derive",
  "cadmpeg-ir",
  "cadmpeg-test-support",
  "schemars",
@@ -248,6 +249,7 @@ version = "0.6.12"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-measure",
  "cadmpeg-test-support",
  "memchr",
  "serde",
@@ -427,6 +429,7 @@ dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
  "cadmpeg-measure",
+ "cadmpeg-tessellate",
  "cadmpeg-test-support",
  "encoding_rs",
  "hdf5-reader",
@@ -467,6 +470,7 @@ dependencies = [
 name = "cadmpeg-core"
 version = "0.6.12"
 dependencies = [
+ "cadmpeg-derive",
  "flate2",
  "memchr",
  "roxmltree",
@@ -479,18 +483,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadmpeg-derive"
+version = "0.6.12"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "cadmpeg-ir"
 version = "0.6.12"
 dependencies = [
  "base64",
  "cadmpeg-core",
- "cadmpeg-test-support",
+ "cadmpeg-derive",
  "libm",
  "proc-macro2",
  "proptest",
  "schemars",
  "serde",
- "serde-value",
  "serde_json",
  "sha2",
  "syn 3.0.9",
@@ -577,7 +588,9 @@ name = "cadmpeg-test-support"
 version = "0.6.12"
 dependencies = [
  "cadmpeg-core",
+ "cadmpeg-derive",
  "cadmpeg-ir",
+ "regex",
  "serde",
  "serde_json",
  "thiserror",

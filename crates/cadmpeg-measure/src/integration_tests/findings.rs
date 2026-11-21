@@ -20,7 +20,7 @@ fn run(ir: &CadIr) -> Vec<Finding> {
 /// The cube with the listed coedges of its first loop permuted by `order`.
 fn cube_with_listing(order: [usize; 4]) -> (CadIr, String, String) {
     let mut cube = cadmpeg_ir::examples::unit_cube().expect("fixture");
-    let face_loop = &mut cube.model.loops[0];
+    let face_loop = &mut cube.geometry.loops[0];
     let listed = face_loop.coedges().to_vec();
     let permuted = order.map(|index| listed[index].clone()).to_vec();
     face_loop.replace_ring(permuted, Vec::new()).expect("ring");
@@ -80,10 +80,10 @@ fn a_ring_listed_in_another_order_is_a_ring_order_warning() {
 #[test]
 fn a_ring_whose_coedges_do_not_chain_is_a_ring_order_warning() {
     let mut cube = cadmpeg_ir::examples::unit_cube().expect("fixture");
-    let loop_id = cube.model.loops[0].id.clone();
-    let first = cube.model.loops[0].coedges()[0].clone();
+    let loop_id = cube.geometry.loops[0].id.clone();
+    let first = cube.geometry.loops[0].coedges()[0].clone();
     let coedge = cube
-        .model
+        .geometry
         .coedges
         .iter_mut()
         .find(|coedge| coedge.id == first)
@@ -125,12 +125,12 @@ fn a_pcurve_chain_listed_backward_is_a_pcurve_order_warning() {
 #[test]
 fn a_flipped_cube_face_is_an_orientation_warning_on_the_face_and_its_body() {
     let mut cube = cadmpeg_ir::examples::unit_cube().expect("fixture");
-    let flipped = cube.model.faces[0].id.as_str().to_owned();
-    cube.model.faces[0].sense = match cube.model.faces[0].sense {
+    let flipped = cube.geometry.faces[0].id.as_str().to_owned();
+    cube.geometry.faces[0].sense = match cube.geometry.faces[0].sense {
         Sense::Forward => Sense::Reversed,
         Sense::Reversed => Sense::Forward,
     };
-    let body = cube.model.bodies[0].id.as_str().to_owned();
+    let body = cube.geometry.bodies[0].id.as_str().to_owned();
     let found = run(&cube);
     assert!(found.iter().all(
         |finding| finding.check == Check::Orientation && finding.severity == Severity::Warning

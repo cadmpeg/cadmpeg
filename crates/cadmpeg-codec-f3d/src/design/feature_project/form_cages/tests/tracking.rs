@@ -85,6 +85,7 @@ fn routed_tracking_construction(
                 },
                 std::slice::from_ref(&scope),
                 &mut facts,
+                &mut super::super::ReferenceGroups::default(),
                 &mut Vec::new(),
             )?;
             result = Some(
@@ -209,7 +210,12 @@ fn form_tracking_fixed_slots_retain_members_after_malformed_and_null_slots() {
     bytes.extend_from_slice(&indexed_frame(b"264", 226, 30));
     let meta = form_meta(&[("E079B079-016A-43C2-ACC7-9627B32A8960", 0, &[226])]);
     let construction = body_construction(&bytes, &meta, &form_scope(220, vec![226]), &[]);
-    let list = &construction.inputs().lists[0];
+    let list = construction
+        .inputs()
+        .lists
+        .iter()
+        .find(|list| list.role == FormListRole::TrackingSelectionFixedAssumed)
+        .unwrap();
     assert_eq!(list.declared_count, 4);
     assert_eq!(
         list.members
@@ -231,26 +237,117 @@ fn form_tracking_fixed_slots_retain_members_after_malformed_and_null_slots() {
 
 #[test]
 fn form_tracking_variable_references_retain_inline_typed_members() {
-    let mut bytes = indexed_frame(b"429", 226, 36);
-    bytes[21] = 1;
-    bytes[22..30].copy_from_slice(&220u64.to_le_bytes());
-    bytes[32..36].copy_from_slice(&2u32.to_le_bytes());
-    for (target, inline) in [(228u64, true), (230, false)] {
-        bytes.push(1);
-        bytes.extend_from_slice(&target.to_le_bytes());
-        if inline {
-            bytes.extend_from_slice(&36u32.to_le_bytes());
-            bytes.extend_from_slice(b"00000000-0000-4000-8000-000000000001");
+    for (guid, matches) in [
+        ("C46D3EEB-40E1-43FA-83DC-9CB204335417", true),
+        ("00000000-0000-4000-8000-000000000001", false),
+    ] {
+        let mut bytes = indexed_frame(b"429", 226, 36);
+        bytes[21] = 1;
+        bytes[22..30].copy_from_slice(&220u64.to_le_bytes());
+        bytes[32..36].copy_from_slice(&2u32.to_le_bytes());
+        for (target, inline) in [(228u64, true), (230, false)] {
+            bytes.push(1);
+            bytes.extend_from_slice(&target.to_le_bytes());
+            if inline {
+                bytes.extend_from_slice(&36u32.to_le_bytes());
+                bytes.extend_from_slice(guid.as_bytes());
+            }
+            bytes.extend_from_slice(&[0, 0]);
         }
-        bytes.extend_from_slice(&[0, 0]);
+        bytes.extend_from_slice(&[0; 52]);
+        bytes.extend_from_slice(&indexed_frame(b"264", 226, 30));
+        let meta = form_meta(&[
+            ("E079B079-016A-43C2-ACC7-9627B32A8960", 0, &[226]),
+            ("C46D3EEB-40E1-43FA-83DC-9CB204335417", 1, &[228]),
+        ]);
+        let construction = body_construction(&bytes, &meta, &form_scope(220, vec![226]), &[]);
+        let list = &construction.inputs().lists[0];
+        assert_eq!(list.declared_count, 2);
+        assert_eq!(list.members.len(), if matches { 2 } else { 1 });
+        if matches {
+            assert!(list.members[0].reference.as_str().ends_with("#228"));
+        }
+        assert!(list
+            .members
+            .last()
+            .unwrap()
+            .reference
+            .as_str()
+            .ends_with("#230"));
+        assert_eq!(
+            construction
+                .inputs()
+                .reference_evidence
+                .iter()
+                .find(|reference| reference.role == FormReferenceRole::TrackingMember)
+                .unwrap()
+                .inline_type_guid
+                .as_deref(),
+            Some(guid)
+        );
     }
+}
+
+#[test]
+fn form_tracking_foreign_member_and_conflicting_owner_keep_their_typed_evidence() {
+    let mut bytes = indexed_frame(b"429", 226, 21);
+    bytes.push(1);
+    bytes.extend_from_slice(&220u64.to_le_bytes());
+    bytes.extend_from_slice(&36u32.to_le_bytes());
+    bytes.extend_from_slice(b"00000000-0000-4000-8000-000000000001");
+    bytes.extend_from_slice(&[0, 0]);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&228u64.to_le_bytes());
+    bytes.extend_from_slice(&[0, 1]);
+    bytes.extend_from_slice(&7u32.to_le_bytes());
+    push_marked(&mut bytes, 230);
     bytes.extend_from_slice(&[0; 52]);
     bytes.extend_from_slice(&indexed_frame(b"264", 226, 30));
-    let meta = form_meta(&[("E079B079-016A-43C2-ACC7-9627B32A8960", 0, &[226])]);
-    let construction = body_construction(&bytes, &meta, &form_scope(220, vec![226]), &[]);
-    let list = &construction.inputs().lists[0];
+    let meta = form_meta(&[
+        ("E079B079-016A-43C2-ACC7-9627B32A8960", 0, &[226]),
+        ("11111111-1111-4111-8111-111111111111", 0, &[220]),
+    ]);
+    let result = body_construction(&bytes, &meta, &form_scope(220, vec![226]), &[]);
+    let list = &result.inputs().lists[0];
     assert_eq!(list.declared_count, 2);
-    assert_eq!(list.members.len(), 2);
-    assert!(list.members[0].reference.as_str().ends_with("#228"));
-    assert!(list.members[1].reference.as_str().ends_with("#230"));
+    assert_eq!(list.members.len(), 1);
+    assert_eq!(list.members[0].ordinal, 1);
+    assert!(list.members[0].reference.as_str().ends_with("#230"));
+    assert!(result
+        .inputs()
+        .reference_evidence
+        .iter()
+        .any(
+            |reference| reference.role == FormReferenceRole::TrackingOwner
+                && reference.inline_type_guid.as_deref()
+                    == Some("00000000-0000-4000-8000-000000000001")
+        ));
+    assert!(result
+        .inputs()
+        .reference_evidence
+        .iter()
+        .any(
+            |reference| reference.role == FormReferenceRole::TrackingMember
+                && reference.ordinal == 0
+                && matches!(
+                    &reference.target,
+                    FormNativeReferenceTarget::Segment {
+                        target: 228,
+                        segment: 7,
+                        ..
+                    }
+                )
+        ));
+}
+
+#[test]
+fn form_tracking_short_owner_retains_its_source_and_target() {
+    let bytes = form_selection_group_frame(226, 220, 0);
+    let result = routed_tracking_construction(&bytes, vec![226], &[226], 0);
+    assert!(result.inputs().reference_evidence.iter().any(|reference| {
+        reference.role == FormReferenceRole::TrackingOwner
+            && reference.source.as_str().ends_with("#226")
+            && matches!(&reference.target, FormNativeReferenceTarget::Local { target } if target.as_str().ends_with("#220"))
+    }));
 }

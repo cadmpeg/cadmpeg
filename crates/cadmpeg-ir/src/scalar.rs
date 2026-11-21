@@ -155,6 +155,27 @@ impl UnitBinary32 {
     }
 }
 
+impl From<UnitBinary32> for Fraction {
+    /// Widen an admitted binary32 fraction without another admission.
+    fn from(value: UnitBinary32) -> Self {
+        Self(f64::from(value.get()))
+    }
+}
+
+impl Fraction {
+    /// The fraction of 255 that an eight-bit channel value states.
+    #[must_use]
+    pub fn from_byte(value: u8) -> Self {
+        Self(f64::from(value) / 255.0)
+    }
+
+    /// One minus this fraction.
+    #[must_use]
+    pub fn complement(self) -> Self {
+        Self(1.0 - self.0)
+    }
+}
+
 impl<'de> Deserialize<'de> for UnitBinary32 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -1227,6 +1248,12 @@ impl ExtendedReal {
     /// The hypotenuse `hypot(x, y)` of two finite values: finite or `+inf`.
     pub(crate) fn hypot(x: FiniteReal, y: FiniteReal) -> Self {
         Self(x.0.portable_hypot(y.0))
+    }
+
+    /// `-self`.
+    #[must_use]
+    pub(crate) fn negated(self) -> Self {
+        Self(-self.0)
     }
 
     /// `self - value`: an infinity less a finite length keeps its infinity.

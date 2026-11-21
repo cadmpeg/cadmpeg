@@ -123,6 +123,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     };
     let mut surfaces = vec![surface(0, -9.0), surface(1, 13.0), surface(2, 100.0)];
 
@@ -189,6 +190,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     };
     surfaces.extend([opposite_side(3, -9.0), opposite_side(4, 13.0)]);
     assert!(
@@ -291,6 +293,7 @@ fn curve_markers_can_contain_unmatched_construction_loci() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         })
         .collect::<Vec<_>>();
 
@@ -449,6 +452,7 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     assert_eq!(
         marker_pattern_bore_axes(&ctx, &lane, "position", 2.0, &surfaces, None)
@@ -1241,6 +1245,7 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     };
     let mut features = vec![hole, sketch_feature];
 
@@ -1469,6 +1474,7 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     };
     let mut features = vec![hole, sketch_feature];
 

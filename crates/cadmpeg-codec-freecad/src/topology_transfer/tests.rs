@@ -74,7 +74,7 @@ fn geometry_for_kind(kind: TextShapeKind) -> TextTShapeGeometry {
     }
 }
 
-const EPS_COLOR_COMPONENT: f32 = 1.0e-6;
+const EPS_COLOR_COMPONENT: f64 = 1.0e-6;
 
 #[test]
 fn indexed_polygon_pairs_checked_samples() {
@@ -637,10 +637,10 @@ Fa
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("exact pcurve location selection");
-    let pcurve_id = &result.ir().model.coedges[0].pcurves[0].pcurve;
+    let pcurve_id = &result.ir().geometry.coedges[0].pcurves[0].pcurve;
     let pcurve = result
         .ir()
-        .model
+        .geometry
         .pcurves
         .iter()
         .find(|pcurve| pcurve.id == *pcurve_id)
@@ -713,15 +713,15 @@ Co
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("nearby location transfer");
-    let model = &result.ir().model;
-    assert_eq!(model.edges.len(), 2);
-    assert_eq!(model.points.len(), 4);
-    assert_eq!(model.vertices.len(), 4);
-    assert_eq!(model.curves.len(), 3);
-    assert_eq!(model.regions.len(), 2);
-    assert_eq!(model.shells.len(), 2);
-    assert_ne!(model.edges[0].id, model.edges[1].id);
-    assert_ne!(model.regions[0].id, model.regions[1].id);
+    let geometry = &result.ir().geometry;
+    assert_eq!(geometry.edges.len(), 2);
+    assert_eq!(geometry.points.len(), 4);
+    assert_eq!(geometry.vertices.len(), 4);
+    assert_eq!(geometry.curves.len(), 3);
+    assert_eq!(geometry.regions.len(), 2);
+    assert_eq!(geometry.shells.len(), 2);
+    assert_ne!(geometry.edges[0].id, geometry.edges[1].id);
+    assert_ne!(geometry.regions[0].id, geometry.regions[1].id);
 }
 
 #[test]
@@ -740,6 +740,7 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
                 sense: Sense::Forward,
                 use_curve: None,
                 pcurves: Vec::new(),
+                native_ref: None,
             }
         })
         .collect::<Vec<_>>();
@@ -759,6 +760,7 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
                 sense: Sense::Forward,
                 use_curve: None,
                 pcurves: Vec::new(),
+                native_ref: None,
             }
         })
         .collect::<Vec<_>>();
@@ -783,6 +785,7 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
         sense: Sense::Forward,
         use_curve: None,
         pcurves: Vec::new(),
+        native_ref: None,
     }];
     close_radial_rings(&mut singleton);
     assert_eq!(singleton[0].radial_next, id);
@@ -1101,16 +1104,16 @@ Co 1001000 +2 0 *
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("connected topology");
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.loops.len(), 1);
-    assert_eq!(result.ir().model.coedges.len(), 2);
-    assert_eq!(result.ir().model.edges.len(), 2);
-    assert_eq!(result.ir().model.vertices.len(), 2);
-    assert_eq!(result.ir().model.pcurves.len(), 2);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_eq!(result.ir().geometry.loops.len(), 1);
+    assert_eq!(result.ir().geometry.coedges.len(), 2);
+    assert_eq!(result.ir().geometry.edges.len(), 2);
+    assert_eq!(result.ir().geometry.vertices.len(), 2);
+    assert_eq!(result.ir().geometry.pcurves.len(), 2);
     assert!(result
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .any(|coedge| { coedge.pcurves[0].pcurve.as_str().ends_with("3%3A3%3A1") }));
@@ -1123,7 +1126,7 @@ Co 1001000 +2 0 *
             .appearance_bindings
             .iter()
             .filter(|binding| matches!(
-                binding.target,
+                &binding.target.entity,
                 cadmpeg_ir::appearance::AppearanceTarget::Edge(_)
             ))
             .count(),
@@ -1136,7 +1139,7 @@ Co 1001000 +2 0 *
             .appearance_bindings
             .iter()
             .filter(|binding| matches!(
-                binding.target,
+                &binding.target.entity,
                 cadmpeg_ir::appearance::AppearanceTarget::Vertex(_)
             ))
             .count(),
@@ -1167,7 +1170,7 @@ Co 1001000 +2 0 *
             .map(|value| value.get()),
         Some(4.0)
     );
-    assert_eq!(result.ir().model.bodies[0].visible, Some(false));
+    assert_eq!(result.ir().geometry.bodies[0].visible, Some(false));
     assert_eq!(result.ir().model.presentation_documents.len(), 1);
     assert_eq!(result.ir().model.view_presentations.len(), 1);
     let view = &result.ir().model.view_presentations[0];
@@ -1188,10 +1191,10 @@ Co 1001000 +2 0 *
             .map(cadmpeg_ir::scalar::NonNegativeReal::get),
         Some(4.0)
     );
-    let color = result.ir().model.bodies[0].color.expect("shape color");
-    assert!((color.r() - f32::from(0x33_u8) / 255.0).abs() < EPS_COLOR_COMPONENT);
-    assert!((color.g() - f32::from(0x66_u8) / 255.0).abs() < EPS_COLOR_COMPONENT);
-    assert!((color.b() - f32::from(0x99_u8) / 255.0).abs() < EPS_COLOR_COMPONENT);
+    let color = result.ir().geometry.bodies[0].color.expect("shape color");
+    assert!((color.r() - f64::from(0x33_u8) / 255.0).abs() < EPS_COLOR_COMPONENT);
+    assert!((color.g() - f64::from(0x66_u8) / 255.0).abs() < EPS_COLOR_COMPONENT);
+    assert!((color.b() - f64::from(0x99_u8) / 255.0).abs() < EPS_COLOR_COMPONENT);
     assert!((color.a() - 0.75).abs() < EPS_COLOR_COMPONENT);
     let shape_material = result
         .ir()
@@ -1248,7 +1251,7 @@ Co 1001000 +2 0 *
 
     assert!(result
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .all(|coedge| !coedge.pcurves.is_empty()));
@@ -1299,21 +1302,21 @@ So 1001000 +2 0 *
             &DecodeOptions::default(),
         )
         .expect("triangulation-only topology");
-    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
     assert_eq!(result.ir().model.tessellations.len(), 1);
     assert_eq!(result.ir().model.tessellations[0].vertices()[0].x, 0.0);
     assert!(matches!(
-        result.ir().model.surfaces[0].geometry,
+        result.ir().geometry.surfaces[0].geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(ref surface))
             if (surface.chordal_deflection().get() - 0.02).abs() < f64::EPSILON
     ));
     assert!(matches!(
-        result.ir().model.curves[0].geometry,
+        result.ir().geometry.curves[0].geometry,
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Polyline(ref polyline))
             if (polyline.chordal_deflection().get() - 0.01).abs() < f64::EPSILON
     ));
     assert_eq!(
-        result.ir().model.edges[0]
+        result.ir().geometry.edges[0]
             .param_range()
             .map(cadmpeg_ir::units::FiniteVector::get),
         Some([0.0, 1.0])
@@ -1363,10 +1366,10 @@ Co 1001000 +2 0 *
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("cylindrical seam");
-    assert_eq!(result.ir().model.edges.len(), 1);
-    assert_eq!(result.ir().model.coedges.len(), 2);
-    let first = &result.ir().model.coedges[0];
-    let second = &result.ir().model.coedges[1];
+    assert_eq!(result.ir().geometry.edges.len(), 1);
+    assert_eq!(result.ir().geometry.coedges.len(), 2);
+    let first = &result.ir().geometry.coedges[0];
+    let second = &result.ir().geometry.coedges[1];
     assert_eq!(first.radial_next, second.id);
     assert_eq!(second.radial_next, first.id);
     assert_ne!(first.pcurves, second.pcurves);
@@ -1405,14 +1408,14 @@ Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 0 -2 0 *
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("free edge");
-    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
     assert_eq!(
-        result.ir().model.bodies[0].kind,
+        result.ir().geometry.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Wire
     );
-    assert_eq!(result.ir().model.shells.len(), 1);
-    assert_eq!(result.ir().model.shells[0].wire_edges().len(), 1);
-    assert!(result.ir().model.shells[0].faces().is_empty());
+    assert_eq!(result.ir().geometry.shells.len(), 1);
+    assert_eq!(result.ir().geometry.shells[0].wire_edges().count(), 1);
+    assert!(result.ir().geometry.faces.is_empty());
 }
 
 #[test]
@@ -1440,9 +1443,9 @@ Ed 0.001 1 1 0 1 1 0 0 1 1 2 0 0 1 0 1001000 +3 0 -2 0 *
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("equivalent repeated exact curve");
-    assert_eq!(result.ir().model.edges.len(), 1);
-    assert_eq!(result.ir().model.curves.len(), 2);
-    assert!(result.ir().model.edges[0]
+    assert_eq!(result.ir().geometry.edges.len(), 1);
+    assert_eq!(result.ir().geometry.curves.len(), 2);
+    assert!(result.ir().geometry.edges[0]
         .curve()
         .is_some_and(|curve| curve.as_str().ends_with(":1")));
 }
@@ -1488,12 +1491,12 @@ Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 0 -2 0 *
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("repeated roots");
 
-    assert_eq!(result.ir().model.bodies.len(), 2);
-    assert_eq!(result.ir().model.edges.len(), 2);
-    assert_eq!(result.ir().model.vertices.len(), 4);
+    assert_eq!(result.ir().geometry.bodies.len(), 2);
+    assert_eq!(result.ir().geometry.edges.len(), 2);
+    assert_eq!(result.ir().geometry.vertices.len(), 4);
     assert_ne!(
-        result.ir().model.bodies[0].id,
-        result.ir().model.bodies[1].id
+        result.ir().geometry.bodies[0].id,
+        result.ir().geometry.bodies[1].id
     );
     let maps = result
         .ir()
@@ -1531,9 +1534,9 @@ Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 *
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("unbounded datum axis");
-    assert!(result.ir().model.bodies.is_empty());
-    assert_eq!(result.ir().model.curves.len(), 1);
-    assert!(result.ir().model.curves[0].source_object.is_some());
+    assert!(result.ir().geometry.bodies.is_empty());
+    assert_eq!(result.ir().geometry.curves.len(), 1);
+    assert!(result.ir().geometry.curves[0].source_object.is_some());
     assert_valid_document(result.ir());
 }
 
@@ -1574,13 +1577,20 @@ Co 1001000 +2 1 +2 3 *
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("located topology");
-    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
     assert_eq!(
-        result.ir().model.bodies[0].kind,
+        result.ir().geometry.bodies[0].kind,
         // Two uses of a solid whose one shell is open: a sheet.
         cadmpeg_ir::topology::BodyKind::Sheet
     );
-    assert_eq!(result.ir().model.bodies[0].regions.len(), 2);
+    assert_eq!(
+        result
+            .ir()
+            .geometry
+            .body_regions(&result.ir().geometry.bodies[0].id)
+            .count(),
+        2
+    );
     // OCCT's closed flag does not close a shell whose edges are used once.
     let flagged = String::from_utf8_lossy(brep).replacen("Sh 1001000", "Sh 1001100", 1);
     let flagged = archive_entries(&[
@@ -1591,29 +1601,29 @@ Co 1001000 +2 1 +2 3 *
         .decode(&mut Cursor::new(flagged), &DecodeOptions::default())
         .expect("flagged compound");
     assert_eq!(
-        flagged.ir().model.bodies[0].kind,
+        flagged.ir().geometry.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Sheet
     );
-    assert!(result.ir().model.bodies[0].transform.is_none());
-    assert_eq!(result.ir().model.edges.len(), 4);
-    assert_eq!(result.ir().model.vertices.len(), 4);
+    assert!(result.ir().geometry.bodies[0].transform.is_none());
+    assert_eq!(result.ir().geometry.edges.len(), 4);
+    assert_eq!(result.ir().geometry.vertices.len(), 4);
     let mut positions = result
         .ir()
-        .model
+        .geometry
         .edges
         .iter()
-        .flat_map(|edge| [&edge.start, &edge.end])
+        .flat_map(cadmpeg_ir::topology::Edge::vertices)
         .map(|vertex| {
             let vertex = result
                 .ir()
-                .model
+                .geometry
                 .vertices
                 .iter()
                 .find(|candidate| &candidate.id == vertex)
                 .expect("required invariant");
             result
                 .ir()
-                .model
+                .geometry
                 .points
                 .iter()
                 .find(|point| point.id == vertex.point)
@@ -1630,10 +1640,10 @@ Co 1001000 +2 1 +2 3 *
     assert_eq!([positions[2].x, positions[2].y], [18.0, 5.0]);
     assert_eq!([positions[3].x, positions[3].y], [20.0, 5.0]);
     let mut origins = Vec::new();
-    for face in &result.ir().model.faces {
+    for face in &result.ir().geometry.faces {
         let surface = result
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| surface.id == face.surface)
@@ -1655,10 +1665,10 @@ Co 1001000 +2 1 +2 3 *
     }
     origins.sort_by(|left, right| left[0].total_cmp(&right[0]));
     assert_eq!(origins, [[10.0, 5.0], [20.0, 5.0]]);
-    for edge in &result.ir().model.edges {
+    for edge in &result.ir().geometry.edges {
         let curve = result
             .ir()
-            .model
+            .geometry
             .curves
             .iter()
             .find(|curve| Some(&curve.id) == edge.curve())
@@ -1868,7 +1878,7 @@ Co 1001000 +2 1 +2 3 *
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("closed topology");
     assert_eq!(
-        result.ir().model.bodies[0].kind,
+        result.ir().geometry.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Solid
     );
 }
@@ -1918,7 +1928,7 @@ Co 1001000 +2 1 +2 3 *
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("shell topology");
-    result.ir().model.bodies[0].kind
+    result.ir().geometry.bodies[0].kind
 }
 
 /// An edge where two parts of a closed boundary touch bounds four faces,
@@ -1974,7 +1984,7 @@ So 1001000 +2 0 +6 0 *
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("solid with an edge child");
     assert_eq!(
-        result.ir().model.bodies[0].kind,
+        result.ir().geometry.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::General
     );
 }

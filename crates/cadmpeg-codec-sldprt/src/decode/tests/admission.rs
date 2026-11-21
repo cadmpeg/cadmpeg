@@ -4,6 +4,7 @@
 
 use std::io::Cursor;
 
+use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::container::add_solidworks_version;
@@ -279,31 +280,45 @@ fn decode_keeps_container_stream_and_model_entity_admission_additive() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(fixture.clone()), &DecodeOptions::default())
         .expect("decode triangle body");
-    let model_entities = decoded.ir().model.entity_count();
+    let ir = decoded.ir();
+    // Each design scope's root definition is a model record admitted with
+    // the design records.
+    let design_entities = ir.design.entity_count() + ir.design.scopes.len();
+    let model_entities = ir.entity_count() - design_entities;
     assert!(container_entities > 0);
     assert!(stream_entities > 0);
     assert!(model_entities > 0);
+    assert!(design_entities > 0);
 
-    let previous_undercount = cadmpeg_core::decode::u64_from_index(
-        (container_entities + stream_entities).max(model_entities),
-    );
-    let mut options = DecodeOptions::default();
-    options.policy.limits.max_entities = previous_undercount;
-    let error = SldprtCodec
-        .decode(&mut Cursor::new(fixture.clone()), &options)
-        .expect_err("container, stream, and model cardinalities must remain additive");
-    assert!(
+    let refusal = |max_entities: usize| {
+        let mut options = DecodeOptions::default();
+        options.policy.limits.max_entities = cadmpeg_core::decode::u64_from_index(max_entities);
+        SldprtCodec
+            .decode(&mut Cursor::new(fixture.clone()), &options)
+            .expect_err("container, stream, model, and design cardinalities must remain additive")
+    };
+    let refused_at = |error: &cadmpeg_ir::DecodeFailure, operation: &str| {
         matches!(
             error,
             cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
-                    && limit.operation == "admit SLDPRT entities"
-        ),
+                    && limit.operation == operation
+        )
+    };
+    let previous_undercount = (container_entities + stream_entities).max(model_entities);
+    let error = refusal(previous_undercount);
+    assert!(refused_at(&error, "admit SLDPRT entities"), "{error:?}");
+    let error =
+        refusal(container_entities + stream_entities + model_entities + design_entities - 1);
+    assert!(
+        refused_at(&error, "admit SLDPRT design records"),
         "{error:?}"
     );
 
-    options.policy.limits.max_entities =
-        cadmpeg_core::decode::u64_from_index(container_entities + stream_entities + model_entities);
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_entities = cadmpeg_core::decode::u64_from_index(
+        container_entities + stream_entities + model_entities + design_entities,
+    );
     SldprtCodec
         .decode(&mut Cursor::new(fixture), &options)
         .expect("the exact additive entity limit must admit the fixture");
@@ -449,7 +464,7 @@ fn decoded_curve_carrier_is_copied() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .unwrap();
-    assert!(!decoded.ir().model.curves.is_empty());
+    assert!(!decoded.ir().geometry.curves.is_empty());
 }
 
 mod surface_solver;
@@ -470,4 +485,56 @@ fn an_embedded_document_body_is_not_an_active_body_stream() {
         streams[0].source_stream().as_str(),
         "Contents/Config-0-Partition"
     );
+}
+
+fn untyped_marks(
+    source: Vec<u8>,
+    depth: cadmpeg_core::decode::DecodeDepth,
+) -> Vec<(String, Vec<ArenaClass>)> {
+    let options = DecodeOptions {
+        depth,
+        ..DecodeOptions::default()
+    };
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(source), &options)
+        .expect("decode");
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(result);
+    decoded
+        .source_fidelity()
+        .retained_records()
+        .iter()
+        .filter(|(_, record)| !record.untyped().is_empty())
+        .map(|(id, record)| {
+            (
+                id.as_str().to_owned(),
+                record.untyped().iter().copied().collect(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_body_stream_kept_without_decoding_is_untyped_model_content() {
+    assert_eq!(
+        untyped_marks(
+            sldprt_with_body(&triangle_body()),
+            cadmpeg_core::decode::DecodeDepth::Container
+        ),
+        [("sldprt:file:block#8".to_owned(), vec![ArenaClass::Model])]
+    );
+}
+
+#[test]
+fn only_a_record_of_unknown_content_family_is_untyped_after_a_full_decode() {
+    let source = sldprt_with_body(&triangle_body());
+    assert!(untyped_marks(source.clone(), cadmpeg_core::decode::DecodeDepth::default()).is_empty());
+    let mut with_opaque = source;
+    with_opaque.extend(make_block(
+        0x41,
+        "Contents/Opaque",
+        b"\x01\x02 not a known payload",
+    ));
+    let marked = untyped_marks(with_opaque, cadmpeg_core::decode::DecodeDepth::default());
+    assert_eq!(marked.len(), 1, "{marked:?}");
+    assert_eq!(marked[0].1, [ArenaClass::Model, ArenaClass::Design]);
 }

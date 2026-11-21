@@ -10,6 +10,7 @@ use crate::math::sum::ScaledValue;
 use crate::math::{Point2, Vector3};
 use crate::scalar::{PositiveAngle, PositiveLength, PositiveReal};
 use crate::transform::Transform;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -19,15 +20,45 @@ use serde::{Deserialize, Serialize};
 #[serde(deny_unknown_fields)]
 pub(crate) struct CanonicalUnitsWire {
     length: CanonicalLengthUnitWire,
+    angle: CanonicalAngleUnitWire,
+    mass: CanonicalMassUnitWire,
+    time: CanonicalTimeUnitWire,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 enum CanonicalLengthUnitWire {
     #[default]
     Millimeter,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, DeserializeName)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+enum CanonicalAngleUnitWire {
+    #[default]
+    Radian,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, DeserializeName)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+enum CanonicalMassUnitWire {
+    #[default]
+    Kilogram,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, DeserializeName)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+enum CanonicalTimeUnitWire {
+    #[default]
+    Second,
 }
 
 /// Maximum distance, in the document's length unit, between an evaluated
@@ -37,6 +68,22 @@ enum CanonicalLengthUnitWire {
 /// that binds a carrier to topology applies the same bound, so a binding it
 /// accepts is one the topology contract also accepts.
 pub const COINCIDENCE_TOLERANCE: f64 = 0.01;
+
+/// The distance within which positions the model makes coincide agree: the
+/// largest of [`COINCIDENCE_TOLERANCE`], the document's `linear` tolerance and
+/// the declared `tolerances` (edge, vertex, face, cache fit) that apply there.
+/// Validation and every writer that decides whether its output meets that
+/// check use this one bound, so the two cannot disagree.
+pub fn coincidence_allowance(
+    linear: crate::scalar::PositiveLength,
+    tolerances: &[Option<f64>],
+) -> f64 {
+    tolerances
+        .iter()
+        .flatten()
+        .copied()
+        .fold(COINCIDENCE_TOLERANCE.max(linear.get()), f64::max)
+}
 
 /// An array of finite coordinates.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -689,8 +736,10 @@ impl From<UnitVector3> for DirectionAboveEpsilon {
 }
 
 /// A planar direction whose `hypot` length is one within the analytic frame
-/// tolerance.
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// tolerance. It is written `[x, y]` and read only at unit length.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "[f64; 2]", into = "[f64; 2]")]
 pub struct UnitVector2([f64; 2]);
 impl UnitVector2 {
     /// Admit a planar unit direction.
@@ -713,6 +762,18 @@ impl UnitVector2 {
     #[must_use]
     pub fn reverse_quarter_turn(self) -> Self {
         Self([self.0[1], -self.0[0]])
+    }
+}
+
+impl TryFrom<[f64; 2]> for UnitVector2 {
+    type Error = &'static str;
+    fn try_from(value: [f64; 2]) -> Result<Self, Self::Error> {
+        Self::new(value).ok_or("a planar direction has unit length")
+    }
+}
+impl From<UnitVector2> for [f64; 2] {
+    fn from(value: UnitVector2) -> Self {
+        value.0
     }
 }
 

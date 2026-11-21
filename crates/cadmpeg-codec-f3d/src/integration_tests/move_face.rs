@@ -10,7 +10,7 @@ use crate::design::feature_project::{
 use crate::loss::F3dLossCode;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::move_face::{
-    MoveFaceFixture, MoveFaceFrame, OTHER_GUID, TRANSFORM_GUID, TRANSLATION,
+    MoveFaceFixture, MoveFaceFrame, GROUP_GUID, OTHER_GUID, TRANSFORM_GUID, TRANSLATION,
 };
 use cadmpeg_ir::features::{FaceMotion, FaceSelection, FeatureDefinition, FeatureOperation};
 
@@ -24,7 +24,7 @@ struct Projection {
 fn project(fixture: &MoveFaceFixture) -> Projection {
     crate::test_support::zip_test::with_scan(&fixture.archive(), |scan| {
         let types = decode_types(scan).unwrap();
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut decoded = decode_parameter_scopes(
             &ctx,
             scan,
@@ -233,6 +233,61 @@ fn framed_move_face_decodes_middle_transform_trailing_references_and_source_form
             }
         }
     }
+}
+
+#[test]
+fn typed_move_face_prologue_decodes_marked_transform_and_group() {
+    for marker_one in [false, true] {
+        let result = project(&MoveFaceFixture {
+            marker_one,
+            typed: Some((TRANSFORM_GUID, GROUP_GUID)),
+            ..Default::default()
+        });
+        assert_projected(&result, TRANSLATION, true);
+        let native = result.scope.move_operation().unwrap();
+        assert_eq!(native.transform_record_index, 71);
+        let (transform_at, group_at) = if marker_one {
+            (
+                crate::layout::move_face_typed_marker_one_prologue::TRANSFORM_REFERENCE,
+                crate::layout::move_face_typed_marker_one_prologue::GROUP_REFERENCE,
+            )
+        } else {
+            (
+                crate::layout::move_face_typed_marker_zero_prologue::TRANSFORM_REFERENCE,
+                crate::layout::move_face_typed_marker_zero_prologue::GROUP_REFERENCE,
+            )
+        };
+        assert_eq!(
+            native.transform_reference_offset,
+            Some(result.scope.byte_offset() + u64::try_from(transform_at).unwrap())
+        );
+        let group = native.face_group.as_ref().unwrap();
+        assert_eq!(group.value, 50);
+        assert_eq!(
+            group.offset,
+            result.scope.byte_offset() + u64::try_from(group_at + 1).unwrap()
+        );
+    }
+}
+
+#[test]
+fn typed_move_face_prologue_requires_registered_reference_types() {
+    let result = project(&MoveFaceFixture {
+        typed: Some((OTHER_GUID, GROUP_GUID)),
+        ..Default::default()
+    });
+    assert!(result.scope.move_operation().is_none());
+    assert!(!matches!(
+        result.operation,
+        FeatureOperation::MoveFace { .. }
+    ));
+    // A group reference of another type marks no face group.
+    let result = project(&MoveFaceFixture {
+        typed: Some((TRANSFORM_GUID, OTHER_GUID)),
+        ..Default::default()
+    });
+    assert!(result.scope.move_operation().unwrap().face_group.is_none());
+    assert_projected(&result, TRANSLATION, false);
 }
 
 #[test]

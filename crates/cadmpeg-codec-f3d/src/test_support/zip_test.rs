@@ -55,7 +55,7 @@ pub(crate) fn assert_revision_surface_round_trip(smbh: Vec<u8>, expected_kind: &
         .expect("revision surface decode");
     let procedural = result
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .first()
         .expect("revision surface construction");
@@ -68,7 +68,11 @@ pub(crate) fn assert_revision_surface_round_trip(smbh: Vec<u8>, expected_kind: &
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
@@ -81,7 +85,7 @@ pub(crate) fn assert_revision_surface_round_trip(smbh: Vec<u8>, expected_kind: &
     let actual = scrubbed_definition(
         round_trip
             .ir()
-            .model
+            .geometry
             .procedural_surfaces
             .first()
             .expect("round-trip construction")
@@ -426,8 +430,138 @@ pub(crate) fn f3d_with_form_body_resource(tsm: &[u8]) -> Vec<u8> {
     }
     let meta = crate::test_support::streams_test::design_metastream_with_records(&types, &records);
     f3d_with_smbh_and_instance_properties_and_design_with_metastream_and_entries(
-        &synthetic_geometry_smbh(), &[], &bulk, &meta,
-        &[("FusionAssetName[Active]/TSplines.BlobParts/TSpline.00000000-0000-4000-8000-000000000099.tsm", tsm)],
+        &synthetic_geometry_smbh(),
+        &[],
+        &bulk,
+        &meta,
+        &[(
+            "FusionAssetName[Active]/TSplines.BlobParts/TSpline.00000000-0000-4000-8000-000000000099.tsm",
+            tsm,
+        )],
+    )
+}
+
+pub(crate) fn f3d_with_partial_form_body_resource_aliases(tsm: &[u8], literal: &str) -> Vec<u8> {
+    use crate::test_support::{indexed_header, lp_ascii, lp_utf16, push_marked_reference};
+    let (mut bulk, mut records) = generated_design_form_bulkstream();
+    let mut types = generated_design_types(GeneratedDesignMetastreamVariant::Form);
+    let rows = [
+        (
+            "830A2A2B-0AA9-4D6A-ACA1-F7A2B2A06571",
+            "98542EB9-A4F2-4137-A808-DBB5B3CD6159",
+            0,
+            "Fusion",
+            &[1700u64, 1710, 1720][..],
+        ),
+        (
+            "FA1F0081-C9A1-4E14-8F25-D12DD868ED90",
+            "CB844AB6-240D-4FC9-9C9F-3679DC896D6F",
+            10,
+            "Fusion",
+            &[1701u64, 1711][..],
+        ),
+        (
+            "22709494-9149-4A70-A829-7D748A7B5DB1",
+            "1B7920A0-725B-4368-9448-E4D323D53E7C",
+            6,
+            "Fusion",
+            &[1702u64, 1712][..],
+        ),
+        (
+            "CD57BC48-50EC-47DC-975A-FB6DEA72F4DA",
+            "",
+            4,
+            "Fusion",
+            &[1703u64][..],
+        ),
+        (
+            "702B9CD2-537C-429E-8CC4-22BEEEB98C37",
+            "",
+            1,
+            "Fusion",
+            &[1704u64][..],
+        ),
+    ];
+    let first = types.len();
+    types.extend(rows);
+    for (record, kind) in [
+        (1700u32, 0usize),
+        (1701, 1),
+        (1702, 2),
+        (1703, 3),
+        (1704, 4),
+        (1720, 0),
+        (1710, 0),
+        (1711, 1),
+        (1712, 2),
+    ] {
+        records.push((u64::from(record), u64::try_from(bulk.len()).unwrap()));
+        let tag: [u8; 3] = format!("{:03}", first + kind + 256)
+            .as_bytes()
+            .try_into()
+            .unwrap();
+        indexed_header(&mut bulk, tag, record);
+        match record {
+            1700 | 1710 | 1720 => {
+                bulk.extend_from_slice(&[0; 10]);
+                let uuid = if record == 1710 {
+                    "00000000-0000-4000-8000-000000000100"
+                } else {
+                    "00000000-0000-4000-8000-000000000099"
+                };
+                lp_utf16(&mut bulk, &format!("TSpline.{uuid}.tsm"));
+                push_marked_reference(&mut bulk, if record == 1710 { 1712 } else { 1702 });
+            }
+            1701 | 1711 => {
+                for value in [
+                    "00000000-0000-4000-8000-000000000001",
+                    "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C",
+                    "",
+                    "PrismMaterial-001",
+                ] {
+                    lp_utf16(&mut bulk, value);
+                }
+                push_marked_reference(&mut bulk, 1400);
+                if record == 1701 {
+                    push_marked_reference(&mut bulk, 1703);
+                    push_marked_reference(&mut bulk, 1702);
+                    push_marked_reference(&mut bulk, 1704);
+                } else {
+                    bulk.push(1);
+                    bulk.extend_from_slice(&22u64.to_le_bytes());
+                    bulk.push(1);
+                    bulk.extend_from_slice(&7u32.to_le_bytes());
+                    lp_utf16(&mut bulk, literal);
+                    bulk.push(0);
+                    lp_ascii(&mut bulk, "CD57BC48-50EC-47DC-975A-FB6DEA72F4DA");
+                    lp_utf16(&mut bulk, literal);
+                    bulk.push(1);
+                    lp_utf16(&mut bulk, "11111111-2222-3333-4444-555555555555");
+                    lp_utf16(&mut bulk, literal);
+                    push_marked_reference(&mut bulk, 1712);
+                    push_marked_reference(&mut bulk, 9999);
+                }
+                indexed_header(&mut bulk, *b"258", record);
+            }
+            _ => bulk.extend_from_slice(&[0; 10]),
+        }
+    }
+    let meta = crate::test_support::streams_test::design_metastream_with_records(&types, &records);
+    f3d_with_smbh_and_instance_properties_and_design_with_metastream_and_entries(
+        &synthetic_geometry_smbh(),
+        &[],
+        &bulk,
+        &meta,
+        &[
+            (
+                "FusionAssetName[Active]/TSplines.BlobParts/TSpline.00000000-0000-4000-8000-000000000099.tsm",
+                tsm,
+            ),
+            (
+                "FusionAssetName[Active]/TSplines.BlobParts/TSpline.00000000-0000-4000-8000-000000000100.tsm",
+                tsm,
+            ),
+        ],
     )
 }
 
@@ -528,12 +662,14 @@ fn f3d_with_smbh_and_instance_properties_and_design_with_metastream_and_entries(
 
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     write_synthetic_manifests(&mut zip, stored);
-    zip.start_file(
-        "FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
-        stored,
-    )
-    .unwrap();
-    zip.write_all(smbh).unwrap();
+    if !smbh.is_empty() {
+        zip.start_file(
+            "FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
+            stored,
+        )
+        .unwrap();
+        zip.write_all(smbh).unwrap();
+    }
     for (ordinal, protein) in proteins.iter().enumerate() {
         zip.start_file(
             format!(
@@ -830,4 +966,173 @@ pub(crate) fn f3d_with_generated_sketch_presentation(
         &bulk,
         &meta,
     )
+}
+
+pub(crate) fn f3d_with_work_axis(
+    smbh: &[u8],
+    literal: &str,
+    damaged: bool,
+    properties: &[(&str, u64)],
+    foreign: bool,
+) -> Vec<u8> {
+    use crate::test_support::{indexed_header, lp_ascii, lp_utf16, push_marked_reference};
+    let (mut bulk, mut records) = generated_design_bulkstream();
+    if smbh.is_empty() {
+        let end = records.iter().find(|(id, _)| *id == 985).unwrap().1;
+        bulk.drain(..usize::try_from(end).unwrap());
+        records.retain(|(id, _)| *id != 899);
+        for (_, offset) in &mut records {
+            *offset = offset.checked_sub(end).unwrap();
+        }
+    }
+    let mut types = generated_design_types(GeneratedDesignMetastreamVariant::Form);
+    if smbh.is_empty() {
+        for row in &mut types {
+            if row.4.contains(&899) {
+                row.4 = &[];
+            }
+        }
+    }
+    for row in &mut types {
+        if row.4 == [600, 1500] {
+            row.4 = &[600];
+        }
+        if row.4.contains(&1600) {
+            row.4 = &[];
+        }
+    }
+    records.push((1400, u64::try_from(bulk.len()).unwrap()));
+    indexed_header(&mut bulk, *b"268", 1400);
+    bulk.extend_from_slice(&[0; 10]);
+    bulk.extend_from_slice(&2u32.to_le_bytes());
+    push_marked_reference(&mut bulk, 1500);
+    push_marked_reference(&mut bulk, 1700);
+    bulk.extend_from_slice(&u32::MAX.to_le_bytes());
+    lp_utf16(&mut bulk, "WorkAxis");
+    bulk.extend_from_slice(&1u32.to_le_bytes());
+    bulk.extend_from_slice(&[0; 78]);
+    indexed_header(&mut bulk, *b"261", 1400);
+    let carrier_tag: [u8; 3] = format!("{:03}", types.len() + 256)
+        .as_bytes()
+        .try_into()
+        .unwrap();
+    types.push((
+        "F2A7590D-6654-4674-B393-A2AEF4FEC48A",
+        "",
+        4,
+        "Fusion",
+        &[1500],
+    ));
+    records.push((1500, u64::try_from(bulk.len()).unwrap()));
+    indexed_header(&mut bulk, carrier_tag, 1500);
+    bulk.extend_from_slice(&[0; 4]);
+    lp_ascii(&mut bulk, literal);
+    bulk.extend_from_slice(&[0, u8::from(!properties.is_empty())]);
+    if !properties.is_empty() {
+        bulk.extend_from_slice(&u32::try_from(properties.len()).unwrap().to_le_bytes());
+        for (key, value) in properties {
+            lp_ascii(&mut bulk, key);
+            lp_ascii(&mut bulk, "IntrinsicMetaTypeuint64");
+            bulk.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    bulk.extend_from_slice(&8u32.to_le_bytes());
+    for value in [0.0_f64, 0.0, 2.0, 0.0, 0.0, 1.0, -1.5, -1.0] {
+        bulk.extend_from_slice(&value.to_le_bytes());
+    }
+    bulk.extend_from_slice(&19u32.to_le_bytes());
+    bulk.push(0);
+    for value in [if damaged { f64::NAN } else { -1.0 }, -1.0, -1.0] {
+        bulk.extend_from_slice(&value.to_le_bytes());
+    }
+    bulk.extend_from_slice(&1u32.to_le_bytes());
+    if foreign {
+        let guid = "69EE2FA7-BCC7-449E-9CA9-976CEFDFED44";
+        bulk.push(1);
+        bulk.extend_from_slice(&1600u64.to_le_bytes());
+        lp_ascii(&mut bulk, guid);
+        bulk.push(1);
+        bulk.extend_from_slice(&7u32.to_le_bytes());
+        lp_utf16(&mut bulk, "11111111-2222-3333-4444-555555555555");
+        bulk.push(0);
+        lp_ascii(&mut bulk, guid);
+        lp_utf16(&mut bulk, literal);
+        bulk.push(1);
+        lp_utf16(&mut bulk, "11111111-2222-3333-4444-555555555555");
+        lp_utf16(&mut bulk, literal);
+    } else {
+        push_marked_reference(&mut bulk, 1600);
+    }
+    bulk.extend_from_slice(&[0, 0, 1, 0, 0, 0]);
+    indexed_header(&mut bulk, *b"260", 1500);
+    let owner_tag: [u8; 3] = format!("{:03}", types.len() + 256)
+        .as_bytes()
+        .try_into()
+        .unwrap();
+    let parameter_tag: [u8; 3] = format!("{:03}", types.len() + 257)
+        .as_bytes()
+        .try_into()
+        .unwrap();
+    let companion_tag: [u8; 3] = format!("{:03}", types.len() + 258)
+        .as_bytes()
+        .try_into()
+        .unwrap();
+    types.extend([
+        (
+            "00000000-0000-0000-0000-000000001700",
+            "",
+            1,
+            "Dimension",
+            &[1700][..],
+        ),
+        (
+            "00000000-0000-0000-0000-000000001701",
+            "",
+            1,
+            "Dimension",
+            &[1701][..],
+        ),
+        (
+            "00000000-0000-0000-0000-000000001702",
+            "",
+            1,
+            "Dimension",
+            &[1702][..],
+        ),
+    ]);
+    records.push((1700, u64::try_from(bulk.len()).unwrap()));
+    let mut owner = crate::design::test_support::parameter_owner_frame();
+    owner[4..7].copy_from_slice(&owner_tag);
+    owner[7..11].copy_from_slice(&1700u32.to_le_bytes());
+    for at in [25, 68, 94] {
+        owner[at..at + 4].copy_from_slice(&1400u32.to_le_bytes());
+    }
+    owner[35..39].copy_from_slice(&0u32.to_le_bytes());
+    owner[49..53].copy_from_slice(&1701u32.to_le_bytes());
+    owner[82..86].copy_from_slice(&1702u32.to_le_bytes());
+    bulk.extend_from_slice(&owner);
+    indexed_header(&mut bulk, owner_tag, 1700);
+    records.push((1701, u64::try_from(bulk.len()).unwrap()));
+    let mut parameter = crate::design::test_support::parameter_record(
+        Some(1700),
+        literal,
+        "AlongDistance",
+        Some("mm"),
+        "Literal",
+        1.25,
+    );
+    parameter[4..7].copy_from_slice(&parameter_tag);
+    parameter[7..11].copy_from_slice(&1701u32.to_le_bytes());
+    bulk.extend_from_slice(&parameter);
+    records.push((1702, u64::try_from(bulk.len()).unwrap()));
+    let mut companion = vec![0u8; 58];
+    companion[0..4].copy_from_slice(&3u32.to_le_bytes());
+    companion[4..7].copy_from_slice(&companion_tag);
+    companion[7..11].copy_from_slice(&1702u32.to_le_bytes());
+    companion[31] = 1;
+    companion[32..36].copy_from_slice(&1700u32.to_le_bytes());
+    companion[42..50].copy_from_slice(&1_700_000_000_000_000u64.to_le_bytes());
+    bulk.extend_from_slice(&companion);
+    let meta = design_metastream_with_records(&types, &records);
+    f3d_with_smbh_and_instance_properties_and_design_with_metastream(smbh, &[], &bulk, &meta)
 }

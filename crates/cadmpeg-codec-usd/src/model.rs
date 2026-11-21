@@ -28,8 +28,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::products::{
-    ExternalDocument, Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind,
-    PrototypeReference,
+    ExternalDocument, Occurrence, ProductDefinition, ProductDefinitionKind, Storage,
 };
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Angle, FiniteReal, Length};
@@ -274,6 +273,11 @@ struct Builder<'s, 'l, 'c, 'a> {
     tallies: Tallies,
     /// Definitions written, by key.
     definitions: BTreeSet<String>,
+    /// The occurrences each definition places, by definition key; the stage's
+    /// under `None`.
+    owned: BTreeMap<Option<String>, Vec<cadmpeg_ir::ids::OccurrenceId>>,
+    /// Definitions of the documents external arcs name, by identity.
+    externals: BTreeMap<cadmpeg_ir::ids::ProductDefinitionId, ProductDefinition>,
     /// Group prims folded into the B-rep of one `BrepArray` child, with the
     /// child, by path.
     folded: BTreeMap<String, usize>,
@@ -301,7 +305,7 @@ pub(crate) fn build<'a>(
     losses: &mut Vec<LossNote>,
 ) -> Result<bool, CodecError> {
     let stage = crate::stage::compose(ctx, layers)?;
-    let admitted = u64_from_index(ir.model.entity_count());
+    let admitted = u64_from_index(ir.entity_count());
     let mut builder = Builder {
         ctx,
         layers,
@@ -312,6 +316,8 @@ pub(crate) fn build<'a>(
         issues: Issues::default(),
         tallies: Tallies::default(),
         definitions: BTreeSet::new(),
+        owned: BTreeMap::new(),
+        externals: BTreeMap::new(),
         folded: BTreeMap::new(),
         prototypes: BTreeMap::new(),
         appearances: BTreeSet::new(),
@@ -322,14 +328,10 @@ pub(crate) fn build<'a>(
         admitted,
         transferred: false,
     };
-    let mut ordinal = 0_u32;
     for root in stage.roots.clone() {
-        if builder.prim(root, None, &IDENTITY, ordinal)? {
-            ordinal = ordinal
-                .checked_add(1)
-                .ok_or_else(|| CodecError::malformed("root occurrence ordinal exceeds u32"))?;
-        }
+        builder.prim(root, None, &IDENTITY)?;
     }
+    builder.own_occurrences()?;
     let pending = std::mem::take(&mut builder.pending_joints);
     builder.joints(pending)?;
     builder.finish_physx()?;
@@ -369,9 +371,38 @@ pub(crate) fn build<'a>(
 }
 
 impl Builder<'_, '_, '_, '_> {
+    /// Lists each definition's occurrences on it, and adds the stage, which
+    /// places the root prims, and the documents external arcs name.
+    fn own_occurrences(&mut self) -> Result<(), CodecError> {
+        let mut owned = std::mem::take(&mut self.owned);
+        let roots = owned.remove(&None);
+        let by_id: BTreeMap<_, _> = owned
+            .into_iter()
+            .filter_map(|(key, occurrences)| Some((crate::ids::definition(&key?), occurrences)))
+            .collect();
+        for definition in &mut self.ir.model.product_definitions {
+            if let Some(occurrences) = by_id.get(&definition.id) {
+                definition.occurrences.clone_from(occurrences);
+            }
+        }
+        if let Some(roots) = roots {
+            let mut stage =
+                ProductDefinition::root(crate::ids::stage(), ExternalDocument::default());
+            stage.occurrences = roots;
+            self.ir.model.product_definitions.push(stage);
+            self.admit("usd_definition")?;
+        }
+        let externals = std::mem::take(&mut self.externals);
+        self.ir
+            .model
+            .product_definitions
+            .extend(externals.into_values());
+        Ok(())
+    }
+
     fn admit(&mut self, operation: &'static str) -> Result<(), CodecError> {
         self.ctx.admit_entities(
-            u64_from_index(self.ir.model.entity_count()),
+            u64_from_index(self.ir.entity_count()),
             &mut self.admitted,
             operation,
         )
@@ -401,14 +432,15 @@ impl Builder<'_, '_, '_, '_> {
         }
     }
 
-    /// Adds the occurrence of prim `index` and its descendants. Returns
-    /// whether an occurrence was added.
+    /// Adds the occurrence of prim `index`, which the definition `owner` (the
+    /// stage when `None`) places, and, the first time its definition is
+    /// written, the occurrences of its descendants. Returns whether an
+    /// occurrence was added.
     fn prim(
         &mut self,
         index: usize,
-        parent: Option<&str>,
+        owner: Option<&str>,
         parent_world: &Affine,
-        ordinal: u32,
     ) -> Result<bool, CodecError> {
         let stage = self.stage;
         let Some(prim) = stage.prims.get(index) else {
@@ -510,83 +542,77 @@ impl Builder<'_, '_, '_, '_> {
         let visible = (visibility.as_deref() == Some("invisible")
             || matches!(purpose.as_deref(), Some("guide" | "proxy")))
         .then_some(false);
-        if self.definitions.insert(definition.clone()) {
+        let first = self.definitions.insert(definition.clone());
+        if first {
             self.definition(prim, role, &definition)?;
         }
         let folded = self.folded.contains_key(&prim.path);
         self.ctx
             .retain_bytes(u64_from_index(prim.name.len()), RETAIN_NAME)?;
-        self.ir.model.occurrences.push(Occurrence {
-            id: crate::ids::occurrence(&prim.path),
-            prototype: PrototypeReference::Local {
-                definition: crate::ids::definition(&definition),
-            },
-            parent: match parent {
-                None => OccurrenceParent::Root {},
-                Some(parent) => OccurrenceParent::Occurrence {
-                    occurrence: crate::ids::occurrence(parent),
-                },
-            },
-            ordinal,
-            transform,
-            linked_prototype: None,
-            scale: [FiniteReal::ONE; 3],
-            name: Some(display_name(prim).to_owned()),
-            visible,
-            link: None,
-            native_ref: Some(prim.path.clone()),
-        });
+        let id = crate::ids::occurrence(&prim.path);
+        let mut occurrence = Occurrence::new(
+            id.clone(),
+            crate::ids::definition(&definition),
+            Some(transform),
+        );
+        occurrence.name = Some(display_name(prim).to_owned());
+        occurrence.visible = visible;
+        occurrence.native_ref = Some(prim.path.clone());
+        self.ir.model.occurrences.push(occurrence);
+        self.owned
+            .entry(owner.map(str::to_owned))
+            .or_default()
+            .push(id);
         self.admit("usd_occurrence")?;
         let bodied = self.bodied.contains(&definition);
         self.physics_apis(prim, &definition, bodied)?;
-        let mut child_ordinal = 0_u32;
+        // A definition another instance already wrote states its prototype's
+        // descendants once, in it.
+        if !first {
+            return Ok(true);
+        }
         for (arc, external) in prim.external.iter().enumerate() {
-            let document = NonBlankString::new(external.asset.clone())
-                .map_or(ExternalDocument::Missing {}, |path| {
-                    ExternalDocument::Path { path }
-                });
-            self.ir.model.occurrences.push(Occurrence {
-                id: crate::ids::external_occurrence(&prim.path, arc),
-                prototype: PrototypeReference::External {
-                    document,
-                    object: external.prim_path.clone(),
+            let prototype =
+                crate::ids::external_definition(&external.asset, external.prim_path.as_deref());
+            if !self.externals.contains_key(&prototype) {
+                let mut document = ExternalDocument::path(external.asset.clone());
+                if let Some(object) = &external.prim_path {
+                    document = document.with_object(object.clone());
+                }
+                let mut definition =
+                    ProductDefinition::new(prototype.clone(), Storage::External(document));
+                definition.source_name = NonBlankString::new(external.asset.clone())
+                    .map(|asset| asset.as_str().to_owned());
+                self.externals.insert(prototype.clone(), definition);
+                self.admit("usd_definition")?;
+            }
+            let id = crate::ids::external_occurrence(&prim.path, arc);
+            let mut occurrence =
+                Occurrence::new(id.clone(), prototype, Some(Transform::identity()));
+            occurrence.name = Some(external.asset.clone());
+            occurrence.native_ref = Some(format!(
+                "{} {} @{}@",
+                prim.path,
+                if external.payload {
+                    "payload"
+                } else {
+                    "reference"
                 },
-                parent: OccurrenceParent::Occurrence {
-                    occurrence: crate::ids::occurrence(&prim.path),
-                },
-                ordinal: child_ordinal,
-                transform: Transform::identity(),
-                linked_prototype: None,
-                scale: [FiniteReal::ONE; 3],
-                name: Some(external.asset.clone()),
-                visible: None,
-                link: None,
-                native_ref: Some(format!(
-                    "{} {} @{}@",
-                    prim.path,
-                    if external.payload {
-                        "payload"
-                    } else {
-                        "reference"
-                    },
-                    external.asset
-                )),
-            });
+                external.asset
+            ));
+            self.ir.model.occurrences.push(occurrence);
+            self.owned
+                .entry(Some(definition.clone()))
+                .or_default()
+                .push(id);
             self.tallies.external += 1;
-            child_ordinal = child_ordinal
-                .checked_add(1)
-                .ok_or_else(|| CodecError::malformed("child occurrence ordinal exceeds u32"))?;
             self.admit("usd_occurrence")?;
         }
         for child in prim.children.clone() {
             if folded {
                 break;
             }
-            if self.prim(child, Some(&prim.path), &world, child_ordinal)? {
-                child_ordinal = child_ordinal
-                    .checked_add(1)
-                    .ok_or_else(|| CodecError::malformed("child occurrence ordinal exceeds u32"))?;
-            }
+            self.prim(child, Some(&definition), &world)?;
         }
         Ok(true)
     }
@@ -635,13 +661,13 @@ impl Builder<'_, '_, '_, '_> {
                             .and_then(|local| self.transform(&local.matrix));
                         for body in self
                             .ir
-                            .model
+                            .geometry
                             .bodies
                             .iter_mut()
                             .filter(|body| bodies.contains(&body.id))
                         {
                             body.transform = local;
-                            body.name = Some(prim.name.clone());
+                            body.name = Some(definition_name(prim, key).to_owned());
                         }
                         bodies
                     }
@@ -665,7 +691,7 @@ impl Builder<'_, '_, '_, '_> {
         }
         self.ir.model.product_definitions.push(ProductDefinition {
             id: crate::ids::definition(key),
-            kind,
+            kind: Some(kind),
             source_name: Some(definition_name(prim, key).to_owned()),
             label: None,
             description: prim.metadata_text("documentation").map(str::to_owned),
@@ -673,7 +699,16 @@ impl Builder<'_, '_, '_, '_> {
             bom_properties: BTreeMap::new(),
             bodies,
             sketches: Vec::new(),
+            tessellations: Vec::new(),
             native_ref: Some(prim.path.clone()),
+            generated_from: None,
+            storage: cadmpeg_ir::products::Storage::Embedded,
+            occurrences: Vec::new(),
+            instance_bodies: Vec::new(),
+            representations: Vec::new(),
+            units: None,
+            general_tolerance: None,
+            active: None,
         });
         self.admit("usd_definition")
     }
@@ -764,26 +799,20 @@ impl Builder<'_, '_, '_, '_> {
             self.tallies.display_colors += 1;
         }
         let [r, g, b, a] = color?;
-        let channel = |value: f64| crate::text::value::round_f32(value.clamp(0.0, 1.0));
+        let channel = |value: f64| f64::from(crate::text::value::round_f32(value.clamp(0.0, 1.0)));
         Color::new(channel(r), channel(g), channel(b), channel(a))
     }
 
-    fn body(
-        &mut self,
-        prim: &Prim<'_>,
-        key: &str,
-        kind: BodyKind,
-        regions: Vec<cadmpeg_ir::ids::RegionId>,
-    ) {
+    fn body(&mut self, prim: &Prim<'_>, key: &str, kind: BodyKind) {
         let color = self.display_color(prim);
-        self.ir.model.bodies.push(Body {
+        self.ir.geometry.bodies.push(Body {
             id: crate::ids::body(key),
             kind,
-            regions,
             transform: None,
-            name: Some(prim.name.clone()),
+            name: Some(definition_name(prim, key).to_owned()),
             color,
             visible: None,
+            native_ref: None,
         });
     }
 
@@ -834,12 +863,13 @@ impl Builder<'_, '_, '_, '_> {
             }
         };
         let body = crate::ids::body(key);
-        self.body(prim, key, BodyKind::General, Vec::new());
+        self.body(prim, key, BodyKind::General);
         self.ir
             .model
             .tessellations
             .push(tessellation.with_body(Some(body.clone())));
-        self.material(prim, key)?;
+        let target = AppearanceTarget::Tessellation(crate::ids::tessellation(key).to_string());
+        self.material(prim, key, target)?;
         for subset in &mesh.subsets {
             self.subset_material(&subset.path, key)?;
         }
@@ -891,9 +921,8 @@ impl Builder<'_, '_, '_, '_> {
         let mut groups: Vec<TessellationTriangleGroup> = mesh
             .subsets
             .iter()
-            .map(|subset| TessellationTriangleGroup {
-                source_id: Some(subset.path.clone()),
-                triangles: subset.triangles.clone(),
+            .map(|subset| {
+                TessellationTriangleGroup::new(Some(subset.path.clone()), subset.triangles.clone())
             })
             .collect();
         if !groups.is_empty() {
@@ -908,10 +937,7 @@ impl Builder<'_, '_, '_, '_> {
                 .filter(|triangle| !claimed.contains(triangle))
                 .collect();
             if !rest.is_empty() {
-                groups.push(TessellationTriangleGroup {
-                    source_id: None,
-                    triangles: rest,
-                });
+                groups.push(TessellationTriangleGroup::new(None, rest));
             }
         }
         let coordinates = mesh
@@ -943,8 +969,14 @@ impl Builder<'_, '_, '_, '_> {
             .map_err(|error| error.to_string())
     }
 
-    /// Binds the material of `prim` to the tessellation of definition `key`.
-    fn material(&mut self, prim: &Prim<'_>, key: &str) -> Result<(), CodecError> {
+    /// Binds the material of `prim`, whose definition is `key`, to `target`: the tessellation of
+    /// a mesh, the face of a patch.
+    fn material(
+        &mut self,
+        prim: &Prim<'_>,
+        key: &str,
+        target: AppearanceTarget,
+    ) -> Result<(), CodecError> {
         let Some(bound) =
             crate::schema::shading::bound_material(self.stage, prim, &mut self.issues)
         else {
@@ -960,12 +992,13 @@ impl Builder<'_, '_, '_, '_> {
         let appearance = self.appearance(&surface)?;
         self.ir.model.appearance_bindings.push(AppearanceBinding {
             id: crate::ids::appearance_binding(key),
-            target: AppearanceTarget::Tessellation(crate::ids::tessellation(key).to_string()),
+            target: target.into(),
             appearance,
             source_entity_id: Some(surface.material),
             object_type: None,
             visible: None,
             channels: BTreeMap::new(),
+            native_ref: None,
         });
         self.admit("usd_appearance")
     }
@@ -981,7 +1014,7 @@ impl Builder<'_, '_, '_, '_> {
         if self.appearances.insert(surface.material.clone()) {
             let mut record = surface_appearance(surface);
             record.textures = self.textures(surface)?;
-            record.library_id = self.module(surface)?;
+            record.library_id = self.module(surface);
             self.ir.model.appearances.push(record);
         }
         Ok(crate::ids::appearance(&surface.material))
@@ -1014,26 +1047,26 @@ impl Builder<'_, '_, '_, '_> {
             target: AppearanceTarget::TriangleGroup {
                 tessellation: crate::ids::tessellation(key).to_string(),
                 group: path.to_owned(),
-            },
+            }
+            .into(),
             appearance,
             source_entity_id: Some(surface.material),
             object_type: None,
             visible: None,
             channels: BTreeMap::new(),
+            native_ref: None,
         });
         self.admit("usd_appearance")
     }
 
     /// The MDL module of `surface`: the identity of the file it names, or
     /// the path as written for a module that the MDL search path finds.
-    fn module(&self, surface: &SurfaceShader) -> Result<Option<String>, CodecError> {
-        let Some((path, layer)) = &surface.module else {
-            return Ok(None);
-        };
-        Ok(Some(match self.layers.texture(self.ctx, *layer, path)? {
+    fn module(&self, surface: &SurfaceShader) -> Option<String> {
+        let (path, layer) = surface.module.as_ref()?;
+        Some(match self.layers.texture(self.ctx, *layer, path) {
             Resource::Located(id) => id,
             Resource::Embedded { .. } | Resource::Unlocated => path.clone(),
-        }))
+        })
     }
 
     /// The texture references of `surface`, with an asset for each image
@@ -1042,33 +1075,29 @@ impl Builder<'_, '_, '_, '_> {
         let mut out = Vec::new();
         for slot in &surface.textures {
             let texture = &slot.texture;
-            let resource = self
-                .layers
-                .texture(self.ctx, texture.layer, &texture.file)?;
-            let (identity, content) = match resource {
-                Resource::Embedded { id, bytes } => (
-                    id,
-                    AssetData::new(bytes).map(|data| AssetContent::Embedded { data }),
-                ),
-                Resource::Located(id) => {
-                    let uri = NonBlankString::new(id.clone());
-                    (id, uri.map(|uri| AssetContent::External { uri }))
-                }
+            let resource = self.layers.texture(self.ctx, texture.layer, &texture.file);
+            let identity = match &resource {
+                Resource::Embedded { id, .. } | Resource::Located(id) => id.clone(),
                 Resource::Unlocated => {
                     self.tallies.unlocated_textures.insert(texture.file.clone());
-                    let uri = NonBlankString::new(texture.file.clone());
-                    (
-                        texture.file.clone(),
-                        uri.map(|uri| AssetContent::External { uri }),
-                    )
+                    texture.file.clone()
                 }
-            };
-            let Some(content) = content else {
-                self.tallies.materials.insert(surface.material.clone());
-                continue;
             };
             let asset = crate::ids::asset(&identity);
             if !self.ir.model.assets.iter().any(|known| known.id == asset) {
+                let content = match resource {
+                    Resource::Embedded { package, name, .. } => {
+                        let bytes = package.snapshot.open(self.ctx, &name)?.window().to_vec();
+                        AssetData::new(bytes).map(|data| AssetContent::Embedded { data })
+                    }
+                    Resource::Located(_) | Resource::Unlocated => {
+                        NonBlankString::new(identity).map(|uri| AssetContent::External { uri })
+                    }
+                };
+                let Some(content) = content else {
+                    self.tallies.materials.insert(surface.material.clone());
+                    continue;
+                };
                 self.ctx.charge_entities(1, "usd_texture_asset")?;
                 let name = texture
                     .file
@@ -1179,11 +1208,12 @@ impl Builder<'_, '_, '_, '_> {
             let parameter_range = curve
                 .range
                 .and_then(cadmpeg_ir::topology::IncreasingParameterInterval::new);
-            self.ir.model.curves.push(Curve {
+            self.ir.geometry.curves.push(Curve {
                 id: curve_id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
                 parameter_range,
                 source_object: None,
+                native_ref: None,
             });
             let start_vertex = crate::ids::vertex(key, ordinal, 0);
             let end_vertex = if closed {
@@ -1199,22 +1229,26 @@ impl Builder<'_, '_, '_, '_> {
             {
                 let point = crate::ids::point(key, ordinal, end);
                 self.ir
-                    .model
+                    .geometry
                     .points
                     .push(Point::new(point.clone(), position, None));
-                self.ir.model.vertices.push(Vertex {
+                self.ir.geometry.vertices.push(Vertex {
                     id: vertex,
                     point,
                     tolerance: None,
+                    native_ref: None,
                 });
             }
             let edge = crate::ids::edge(key, ordinal);
-            self.ir.model.edges.push(Edge {
+            self.ir.geometry.edges.push(Edge {
                 id: edge.clone(),
                 carrier,
-                start: start_vertex,
-                end: end_vertex,
+                ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                    start_vertex,
+                    end_vertex,
+                )),
                 tolerance: None,
+                native_ref: None,
             });
             edges.push(edge);
             self.admit("usd_curve")?;
@@ -1223,21 +1257,15 @@ impl Builder<'_, '_, '_, '_> {
             return Ok(None);
         }
         let region = crate::ids::region(key);
-        let shell = Shell::new(
-            crate::ids::shell(key),
-            region.clone(),
-            Vec::new(),
-            edges,
-            Vec::new(),
-        )
-        .map_err(|_| CodecError::malformed("a curve shell holds no edge"))?;
-        self.ir.model.shells.push(shell);
-        self.ir.model.regions.push(Region {
+        let shell = Shell::with_members(crate::ids::shell(key), region.clone(), edges, Vec::new());
+        self.ir.geometry.shells.push(shell);
+        self.ir.geometry.regions.push(Region {
             id: region.clone(),
             body: crate::ids::body(key),
             shells: vec![crate::ids::shell(key)],
+            native_ref: None,
         });
-        self.body(prim, key, BodyKind::Wire, vec![region]);
+        self.body(prim, key, BodyKind::Wire);
         self.transferred = true;
         self.admit("usd_curves")?;
         Ok(Some(crate::ids::body(key)))
@@ -1263,15 +1291,16 @@ impl Builder<'_, '_, '_, '_> {
             return Ok(None);
         };
         let surface_id = crate::ids::surface(key);
-        self.ir.model.surfaces.push(Surface {
+        self.ir.geometry.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: None,
+            native_ref: None,
         });
         let face = crate::ids::face(key);
         let region = crate::ids::region(key);
         let shell = crate::ids::shell(key);
-        self.ir.model.faces.push(Face {
+        self.ir.geometry.faces.push(Face {
             id: face.clone(),
             shell: shell.clone(),
             surface: surface_id,
@@ -1284,22 +1313,18 @@ impl Builder<'_, '_, '_, '_> {
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         });
-        let shell_record = Shell::new(
-            shell.clone(),
-            region.clone(),
-            vec![face],
-            Vec::new(),
-            Vec::new(),
-        )
-        .map_err(|_| CodecError::malformed("a patch shell holds no face"))?;
-        self.ir.model.shells.push(shell_record);
-        self.ir.model.regions.push(Region {
+        let shell_record = Shell::new(shell.clone(), region.clone());
+        self.ir.geometry.shells.push(shell_record);
+        self.ir.geometry.regions.push(Region {
             id: region.clone(),
             body: crate::ids::body(key),
             shells: vec![shell],
+            native_ref: None,
         });
-        self.body(prim, key, BodyKind::Sheet, vec![region]);
+        self.body(prim, key, BodyKind::Sheet);
+        self.material(prim, key, AppearanceTarget::Face(face))?;
         self.transferred = true;
         self.admit("usd_patch")?;
         Ok(Some(crate::ids::body(key)))
@@ -1442,7 +1467,7 @@ fn base_color(surface: &SurfaceShader) -> ([f64; 3], f64) {
 /// The appearance of a surface material.
 fn surface_appearance(surface: &SurfaceShader) -> Appearance {
     let ([r, g, b], opacity) = base_color(surface);
-    let channel = |value: f64| crate::text::value::round_f32(value.clamp(0.0, 1.0));
+    let channel = |value: f64| f64::from(crate::text::value::round_f32(value.clamp(0.0, 1.0)));
     let base_color = Color::new(channel(r), channel(g), channel(b), channel(opacity));
     let mut properties = BTreeMap::new();
     for (input, value) in &surface.inputs {
@@ -1472,6 +1497,7 @@ fn surface_appearance(surface: &SurfaceShader) -> Appearance {
         base_color,
         properties,
         textures: Vec::new(),
+        native_ref: None,
     }
 }
 

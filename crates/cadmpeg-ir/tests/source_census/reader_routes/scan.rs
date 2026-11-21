@@ -200,15 +200,20 @@ fn resolved_helper_route(resolved: &ResolvedPath) -> Option<InputRoute> {
         }
         ResolvedPath::Local(symbol)
             if symbol.kind == SymbolKind::Function
-                && ((symbol.path.ends_with("/src/bytes.rs") && symbol.name == "deserialize")
-                    || (symbol.path.ends_with("/src/units.rs")
+                && symbol.scope.len() == 1
+                && ((matches!(
+                    symbol.path.as_str(),
+                    "crates/cadmpeg-core/src/bytes.rs" | "crates/cadmpeg-ir/src/bytes.rs"
+                ) && symbol.name == "deserialize")
+                    || (symbol.path == "crates/cadmpeg-ir/src/units.rs"
                         && symbol.name == "deserialize_named")) =>
         {
             Some(InputRoute::Keyless)
         }
         ResolvedPath::Local(symbol)
             if symbol.kind == SymbolKind::Function
-                && symbol.path.ends_with("/src/distinct_keys.rs")
+                && symbol.scope.len() == 1
+                && symbol.path == "crates/cadmpeg-core/src/distinct_keys.rs"
                 && matches!(symbol.name.as_str(), "json_object" | "btree_map") =>
         {
             Some(InputRoute::FreeForm)

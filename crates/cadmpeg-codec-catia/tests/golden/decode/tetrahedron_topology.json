@@ -1,67 +1,31 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "10",
-    "model": {
-      "appearance_bindings": [
-        {
-          "appearance": "catia:appearance:rgba#d2d2d2d2",
-          "id": "catia:appearance:binding#0:d2d2d2d2",
-          "object_type": "CATIA V5 display property",
-          "target": {
-            "id": "catia:standard:face#0",
-            "kind": "face"
-          }
-        },
-        {
-          "appearance": "catia:appearance:rgba#d2d2d2d2",
-          "id": "catia:appearance:binding#1:d2d2d2d2",
-          "object_type": "CATIA V5 display property",
-          "target": {
-            "id": "catia:standard:face#1",
-            "kind": "face"
-          }
-        },
-        {
-          "appearance": "catia:appearance:rgba#d2d2d2d2",
-          "id": "catia:appearance:binding#2:d2d2d2d2",
-          "object_type": "CATIA V5 display property",
-          "target": {
-            "id": "catia:standard:face#2",
-            "kind": "face"
-          }
-        },
-        {
-          "appearance": "catia:appearance:rgba#d2d2d2d2",
-          "id": "catia:appearance:binding#3:d2d2d2d2",
-          "object_type": "CATIA V5 display property",
-          "target": {
-            "id": "catia:standard:face#3",
-            "kind": "face"
-          }
-        }
-      ],
-      "appearances": [
-        {
-          "base_color": {
-            "a": 0.8235294222831726,
-            "b": 0.8235294222831726,
-            "g": 0.8235294222831726,
-            "r": 0.8235294222831726
-          },
-          "id": "catia:appearance:rgba#d2d2d2d2",
-          "schema": "CATIA V5 display color"
-        }
-      ],
-      "assembly_joints": [],
-      "attributes": [],
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
+    "fragment": false,
+    "geometry": {
       "bodies": [
         {
           "id": "catia:standard:body#0",
-          "kind": "solid",
-          "regions": [
-            "catia:standard:region#0-0"
-          ]
+          "kind": "solid"
         }
       ],
       "coedges": [
@@ -69,6 +33,7 @@
           "edge": "catia:standard:edge#1",
           "id": "catia:standard:coedge#0:0:0",
           "owner_loop": "catia:standard:loop#0:0",
+          "pcurves": [],
           "radial_next": "catia:standard:coedge#2:0:2",
           "sense": "forward"
         },
@@ -76,6 +41,7 @@
           "edge": "catia:standard:edge#2",
           "id": "catia:standard:coedge#0:0:1",
           "owner_loop": "catia:standard:loop#0:0",
+          "pcurves": [],
           "radial_next": "catia:standard:coedge#3:0:2",
           "sense": "forward"
         },
@@ -83,6 +49,7 @@
           "edge": "catia:standard:edge#0",
           "id": "catia:standard:coedge#0:0:2",
           "owner_loop": "catia:standard:loop#0:0",
+          "pcurves": [],
           "radial_next": "catia:standard:coedge#1:0:2",
           "sense": "forward"
         },
@@ -90,6 +57,7 @@
           "edge": "catia:standard:edge#3",
           "id": "catia:standard:coedge#1:0:0",
           "owner_loop": "catia:standard:loop#1:0",
+          "pcurves": [],
           "radial_next": "catia:standard:coedge#3:0:1",
           "sense": "forward"
         },
@@ -97,6 +65,7 @@
           "edge": "catia:standard:edge#4",
           "id": "catia:standard:coedge#1:0:1",
           "owner_loop": "catia:standard:loop#1:0",
+          "pcurves": [],
           "radial_next": "catia:standard:coedge#2:0:0",
           "sense": "reversed"
         },
@@ -104,6 +73,7 @@
           "edge": "catia:standard:edge#0",
           "id": "catia:standard:coedge#1:0:2",
           "owner_loop": "catia:standard:loop#1:0",
+          "pcurves": [],
           "radial_next": "catia:standard:coedge#0:0:2",
           "sense": "reversed"
         },
@@ -111,6 +81,7 @@
           "edge": "catia:standard:edge#4",
           "id": "catia:standard:coedge#2:0:0",
           "owner_loop": "catia:standard:loop#2:0",
+          "pcurves": [],
           "radial_next": "catia:standard:coedge#1:0:1",
           "sense": "forward"
         },
@@ -118,6 +89,7 @@
           "edge": "catia:standard:edge#5",
           "id": "catia:standard:coedge#2:0:1",
           "owner_loop": "catia:standard:loop#2:0",
+          "pcurves": [],
           "radial_next": "catia:standard:coedge#3:0:0",
           "sense": "reversed"
         },
@@ -125,6 +97,7 @@
           "edge": "catia:standard:edge#1",
           "id": "catia:standard:coedge#2:0:2",
           "owner_loop": "catia:standard:loop#2:0",
+          "pcurves": [],
           "radial_next": "catia:standard:coedge#0:0:0",
           "sense": "reversed"
         },
@@ -132,6 +105,7 @@
           "edge": "catia:standard:edge#5",
           "id": "catia:standard:coedge#3:0:0",
           "owner_loop": "catia:standard:loop#3:0",
+          "pcurves": [],
           "radial_next": "catia:standard:coedge#2:0:1",
           "sense": "forward"
         },
@@ -139,6 +113,7 @@
           "edge": "catia:standard:edge#3",
           "id": "catia:standard:coedge#3:0:1",
           "owner_loop": "catia:standard:loop#3:0",
+          "pcurves": [],
           "radial_next": "catia:standard:coedge#1:0:0",
           "sense": "reversed"
         },
@@ -146,134 +121,157 @@
           "edge": "catia:standard:edge#2",
           "id": "catia:standard:coedge#3:0:2",
           "owner_loop": "catia:standard:loop#3:0",
+          "pcurves": [],
           "radial_next": "catia:standard:coedge#0:0:1",
           "sense": "reversed"
         }
       ],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": -0.7071067811865475,
-              "z": -0.7071067811865475
-            },
-            "kind": "line",
-            "origin": {
-              "x": 1.0,
-              "y": 1.0,
-              "z": 1.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": -0.7071067811865475,
+                "z": -0.7071067811865475
+              },
+              "kind": "line",
+              "origin": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+              }
             }
           },
           "id": "catia:standard:curve#290",
           "source_object": {
             "format": "catia",
+            "instance_path": [],
             "object_id": "cgm-edge-support:000001"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": -0.7071067811865475,
-              "y": 0.7071067811865475,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 1.0,
-              "y": -1.0,
-              "z": -1.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -0.7071067811865475,
+                "y": 0.7071067811865475,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 1.0,
+                "y": -1.0,
+                "z": -1.0
+              }
             }
           },
           "id": "catia:standard:curve#301",
           "source_object": {
             "format": "catia",
+            "instance_path": [],
             "object_id": "cgm-edge-support:000002"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.7071067811865475,
-              "y": 0.0,
-              "z": 0.7071067811865475
-            },
-            "kind": "line",
-            "origin": {
-              "x": -1.0,
-              "y": 1.0,
-              "z": -1.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.7071067811865475,
+                "y": 0.0,
+                "z": 0.7071067811865475
+              },
+              "kind": "line",
+              "origin": {
+                "x": -1.0,
+                "y": 1.0,
+                "z": -1.0
+              }
             }
           },
           "id": "catia:standard:curve#312",
           "source_object": {
             "format": "catia",
+            "instance_path": [],
             "object_id": "cgm-edge-support:000003"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": -0.7071067811865475,
-              "y": -0.7071067811865475,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 1.0,
-              "y": 1.0,
-              "z": 1.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -0.7071067811865475,
+                "y": -0.7071067811865475,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+              }
             }
           },
           "id": "catia:standard:curve#323",
           "source_object": {
             "format": "catia",
+            "instance_path": [],
             "object_id": "cgm-edge-support:000004"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": -0.7071067811865475,
-              "y": 0.0,
-              "z": 0.7071067811865475
-            },
-            "kind": "line",
-            "origin": {
-              "x": 1.0,
-              "y": -1.0,
-              "z": -1.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -0.7071067811865475,
+                "y": 0.0,
+                "z": 0.7071067811865475
+              },
+              "kind": "line",
+              "origin": {
+                "x": 1.0,
+                "y": -1.0,
+                "z": -1.0
+              }
             }
           },
           "id": "catia:standard:curve#334",
           "source_object": {
             "format": "catia",
+            "instance_path": [],
             "object_id": "cgm-edge-support:000005"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": -0.7071067811865475,
-              "z": 0.7071067811865475
-            },
-            "kind": "line",
-            "origin": {
-              "x": -1.0,
-              "y": 1.0,
-              "z": -1.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": -0.7071067811865475,
+                "z": 0.7071067811865475
+              },
+              "kind": "line",
+              "origin": {
+                "x": -1.0,
+                "y": 1.0,
+                "z": -1.0
+              }
             }
           },
           "id": "catia:standard:curve#345",
           "source_object": {
             "format": "catia",
+            "instance_path": [],
             "object_id": "cgm-edge-support:000006"
           }
         }
       ],
-      "drawings": [],
       "edges": [
         {
           "carrier": {
@@ -283,9 +281,11 @@
               2.8284271247461903
             ]
           },
-          "end": "catia:standard:v#1",
-          "id": "catia:standard:edge#0",
-          "start": "catia:standard:v#0"
+          "ends": {
+            "end": "catia:standard:v#1",
+            "start": "catia:standard:v#0"
+          },
+          "id": "catia:standard:edge#0"
         },
         {
           "carrier": {
@@ -295,9 +295,11 @@
               2.8284271247461903
             ]
           },
-          "end": "catia:standard:v#2",
-          "id": "catia:standard:edge#1",
-          "start": "catia:standard:v#1"
+          "ends": {
+            "end": "catia:standard:v#2",
+            "start": "catia:standard:v#1"
+          },
+          "id": "catia:standard:edge#1"
         },
         {
           "carrier": {
@@ -307,9 +309,11 @@
               2.8284271247461903
             ]
           },
-          "end": "catia:standard:v#0",
-          "id": "catia:standard:edge#2",
-          "start": "catia:standard:v#2"
+          "ends": {
+            "end": "catia:standard:v#0",
+            "start": "catia:standard:v#2"
+          },
+          "id": "catia:standard:edge#2"
         },
         {
           "carrier": {
@@ -319,9 +323,11 @@
               2.8284271247461903
             ]
           },
-          "end": "catia:standard:v#3",
-          "id": "catia:standard:edge#3",
-          "start": "catia:standard:v#0"
+          "ends": {
+            "end": "catia:standard:v#3",
+            "start": "catia:standard:v#0"
+          },
+          "id": "catia:standard:edge#3"
         },
         {
           "carrier": {
@@ -331,9 +337,11 @@
               2.8284271247461903
             ]
           },
-          "end": "catia:standard:v#3",
-          "id": "catia:standard:edge#4",
-          "start": "catia:standard:v#1"
+          "ends": {
+            "end": "catia:standard:v#3",
+            "start": "catia:standard:v#1"
+          },
+          "id": "catia:standard:edge#4"
         },
         {
           "carrier": {
@@ -343,17 +351,19 @@
               2.8284271247461903
             ]
           },
-          "end": "catia:standard:v#3",
-          "id": "catia:standard:edge#5",
-          "start": "catia:standard:v#2"
+          "ends": {
+            "end": "catia:standard:v#3",
+            "start": "catia:standard:v#2"
+          },
+          "id": "catia:standard:edge#5"
         }
       ],
       "faces": [
         {
           "id": "catia:standard:face#0",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "catia:standard:loop#0:0"
           },
           "sense": "forward",
@@ -363,8 +373,8 @@
         {
           "id": "catia:standard:face#1",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "catia:standard:loop#1:0"
           },
           "sense": "forward",
@@ -374,8 +384,8 @@
         {
           "id": "catia:standard:face#2",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "catia:standard:loop#2:0"
           },
           "sense": "forward",
@@ -385,8 +395,8 @@
         {
           "id": "catia:standard:face#3",
           "loops": {
-            "classification": "classified",
             "inner": [],
+            "kind": "classified",
             "outer": "catia:standard:loop#3:0"
           },
           "sense": "forward",
@@ -394,7 +404,6 @@
           "surface": "catia:standard:surf#3"
         }
       ],
-      "features": [],
       "loops": [
         {
           "boundary": {
@@ -407,14 +416,17 @@
             "vertex_uses": [
               {
                 "after": "catia:standard:coedge#0:0:0",
+                "pcurves": [],
                 "vertex": "catia:standard:v#2"
               },
               {
                 "after": "catia:standard:coedge#0:0:1",
+                "pcurves": [],
                 "vertex": "catia:standard:v#0"
               },
               {
                 "after": "catia:standard:coedge#0:0:2",
+                "pcurves": [],
                 "vertex": "catia:standard:v#1"
               }
             ]
@@ -433,14 +445,17 @@
             "vertex_uses": [
               {
                 "after": "catia:standard:coedge#1:0:0",
+                "pcurves": [],
                 "vertex": "catia:standard:v#3"
               },
               {
                 "after": "catia:standard:coedge#1:0:1",
+                "pcurves": [],
                 "vertex": "catia:standard:v#1"
               },
               {
                 "after": "catia:standard:coedge#1:0:2",
+                "pcurves": [],
                 "vertex": "catia:standard:v#0"
               }
             ]
@@ -459,14 +474,17 @@
             "vertex_uses": [
               {
                 "after": "catia:standard:coedge#2:0:0",
+                "pcurves": [],
                 "vertex": "catia:standard:v#3"
               },
               {
                 "after": "catia:standard:coedge#2:0:1",
+                "pcurves": [],
                 "vertex": "catia:standard:v#2"
               },
               {
                 "after": "catia:standard:coedge#2:0:2",
+                "pcurves": [],
                 "vertex": "catia:standard:v#1"
               }
             ]
@@ -485,14 +503,17 @@
             "vertex_uses": [
               {
                 "after": "catia:standard:coedge#3:0:0",
+                "pcurves": [],
                 "vertex": "catia:standard:v#3"
               },
               {
                 "after": "catia:standard:coedge#3:0:1",
+                "pcurves": [],
                 "vertex": "catia:standard:v#0"
               },
               {
                 "after": "catia:standard:coedge#3:0:2",
+                "pcurves": [],
                 "vertex": "catia:standard:v#2"
               }
             ]
@@ -501,10 +522,7 @@
           "id": "catia:standard:loop#3:0"
         }
       ],
-      "occurrences": [],
-      "parameters": [],
       "pcurves": [],
-      "pmi": [],
       "points": [
         {
           "id": "catia:standard:pt#0",
@@ -539,11 +557,8 @@
           }
         }
       ],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [],
       "regions": [
         {
           "body": "catia:standard:body#0",
@@ -553,145 +568,136 @@
           ]
         }
       ],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "catia:standard:shell#0-0",
-          "members": [
-            {
-              "id": "catia:standard:face#0",
-              "kind": "face"
-            },
-            {
-              "id": "catia:standard:face#1",
-              "kind": "face"
-            },
-            {
-              "id": "catia:standard:face#2",
-              "kind": "face"
-            },
-            {
-              "id": "catia:standard:face#3",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "catia:standard:region#0-0"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 0.3333333432674408,
-              "y": 0.3333333432674408,
-              "z": -0.3333333432674408
-            },
-            "kind": "sphere",
-            "radius": 1.632993221282959,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": 0.3333333432674408,
+                "y": 0.3333333432674408,
+                "z": -0.3333333432674408
+              },
+              "kind": "sphere",
+              "radius": 1.632993221282959,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "catia:standard:surf#0",
           "source_object": {
             "format": "catia",
+            "instance_path": [],
             "object_id": "cgm-carrier:000001"
           }
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 0.3333333432674408,
-              "y": -0.3333333432674408,
-              "z": 0.3333333432674408
-            },
-            "kind": "sphere",
-            "radius": 1.632993221282959,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": 0.3333333432674408,
+                "y": -0.3333333432674408,
+                "z": 0.3333333432674408
+              },
+              "kind": "sphere",
+              "radius": 1.632993221282959,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "catia:standard:surf#1",
           "source_object": {
             "format": "catia",
+            "instance_path": [],
             "object_id": "cgm-carrier:000002"
           }
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": -0.3333333432674408,
-              "y": -0.3333333432674408,
-              "z": -0.3333333432674408
-            },
-            "kind": "sphere",
-            "radius": 1.632993221282959,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": -0.3333333432674408,
+                "y": -0.3333333432674408,
+                "z": -0.3333333432674408
+              },
+              "kind": "sphere",
+              "radius": 1.632993221282959,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "catia:standard:surf#2",
           "source_object": {
             "format": "catia",
+            "instance_path": [],
             "object_id": "cgm-carrier:000003"
           }
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": -0.3333333432674408,
-              "y": 0.3333333432674408,
-              "z": 0.3333333432674408
-            },
-            "kind": "sphere",
-            "radius": 1.632993221282959,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": -0.3333333432674408,
+                "y": 0.3333333432674408,
+                "z": 0.3333333432674408
+              },
+              "kind": "sphere",
+              "radius": 1.632993221282959,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "catia:standard:surf#3",
           "source_object": {
             "format": "catia",
+            "instance_path": [],
             "object_id": "cgm-carrier:000004"
           }
         }
       ],
-      "tessellations": [],
       "vertices": [
         {
           "id": "catia:standard:v#0",
@@ -709,7 +715,124 @@
           "id": "catia:standard:v#3",
           "point": "catia:standard:pt#3"
         }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [
+        {
+          "appearance": "catia:appearance:rgba#d2d2d2d2",
+          "channels": {},
+          "id": "catia:appearance:binding#0:d2d2d2d2",
+          "object_type": "CATIA V5 display property",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "catia:standard:face#0"
+            }
+          }
+        },
+        {
+          "appearance": "catia:appearance:rgba#d2d2d2d2",
+          "channels": {},
+          "id": "catia:appearance:binding#1:d2d2d2d2",
+          "object_type": "CATIA V5 display property",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "catia:standard:face#1"
+            }
+          }
+        },
+        {
+          "appearance": "catia:appearance:rgba#d2d2d2d2",
+          "channels": {},
+          "id": "catia:appearance:binding#2:d2d2d2d2",
+          "object_type": "CATIA V5 display property",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "catia:standard:face#2"
+            }
+          }
+        },
+        {
+          "appearance": "catia:appearance:rgba#d2d2d2d2",
+          "channels": {},
+          "id": "catia:appearance:binding#3:d2d2d2d2",
+          "object_type": "CATIA V5 display property",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "catia:standard:face#3"
+            }
+          }
+        }
       ],
+      "appearances": [
+        {
+          "base_color": {
+            "a": 0.8235294117647058,
+            "b": 0.8235294117647058,
+            "g": 0.8235294117647058,
+            "r": 0.8235294117647058
+          },
+          "id": "catia:appearance:rgba#d2d2d2d2",
+          "properties": {},
+          "schema": "CATIA V5 display color",
+          "textures": []
+        }
+      ],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [
+        {
+          "bodies": [
+            "catia:standard:body#0"
+          ],
+          "bom_properties": {},
+          "id": "catia:model:product-definition#root",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "tessellations": [],
       "view_presentations": []
     },
     "native": {
@@ -787,30 +910,38 @@
         "zero_entity_vertex_incidences": []
       }
     },
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
-      "attributes": {
-        "brep_stream_len": "616",
-        "brep_stream_sha256": "d7fb4c3acc0a6eba22f5b98742357824db6b2fd70767cf9be35ec0bcd799c626",
-        "external_reference_count": "0",
-        "fbb_face_rows": "4",
-        "fbb_runs": "1",
-        "file_size": "879",
-        "finjpl_segment_count": "0",
-        "inner_offset": "16",
-        "outer_dir_offset": "879",
-        "preview_count": "0",
-        "stream_count": "2",
-        "vertex_records": "4"
-      },
+      "attributes": {},
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
+            "declared": {},
             "dialect": "catia:standard-nested"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -818,7 +949,10 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
@@ -1203,32 +1337,39 @@
       "unresolved_unreferenced_relation_expression_count": 0
     },
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
+          "declared": {},
           "dialect": "catia:standard-nested"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "geometry.carrier-summary",
-          "kind": "carrier_summary",
-          "namespace": "catia",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "geometry.carrier-summary",
+            "kind": "carrier_summary",
+            "namespace": "catia"
+          }
         },
         "message": "4 vertex point(s) were decoded verbatim from `05 08 01` records (3×f32 LE, millimetres, identity world placement) and 4 analytic surface carrier(s) were decoded from `SurfacicReps` `00 33` records: 0 plane, 0 cylinder, 0 cone, 4 sphere, 0 torus.",
         "severity": "info"
       },
       {
         "code": {
-          "code": "attributes.materials-metadata-not-transferred",
-          "kind": "attributes_not_transferred",
-          "namespace": "catia",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "attributes.materials-metadata-not-transferred",
+            "kind": "attributes_not_transferred",
+            "namespace": "catia"
+          }
         },
         "message": "Standard circles with an exact adjacent-carrier section normal or two non-collinear endpoint radii, plane-plane lines, and same-surface cylinder or cone generators are transferred as curves. Standard spline edges retain exact two-surface intersection constructions and their identity-bound support pcurves when present, but unbound serialized 3D NURBS caches, materials, and document metadata are not yet transferred.",
         "severity": "warning"
@@ -1242,7 +1383,10 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
@@ -1253,15 +1397,14 @@
           "fields": {
             "links": "derived"
           },
-          "scope": "entity"
+          "kind": "entity"
         },
         "catia:standard:body#0": {
           "entity": "inferred",
           "fields": {
-            "kind": "derived",
-            "regions": "derived"
+            "kind": "derived"
           },
-          "scope": "entity"
+          "kind": "entity"
         },
         "catia:standard:coedge#0:0:0": {
           "fields": {
@@ -1270,7 +1413,7 @@
             "radial_next": "derived",
             "sense": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:coedge#0:0:1": {
           "fields": {
@@ -1279,7 +1422,7 @@
             "radial_next": "derived",
             "sense": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:coedge#0:0:2": {
           "fields": {
@@ -1288,7 +1431,7 @@
             "radial_next": "derived",
             "sense": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:coedge#1:0:0": {
           "fields": {
@@ -1297,7 +1440,7 @@
             "radial_next": "derived",
             "sense": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:coedge#1:0:1": {
           "fields": {
@@ -1306,7 +1449,7 @@
             "radial_next": "derived",
             "sense": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:coedge#1:0:2": {
           "fields": {
@@ -1315,7 +1458,7 @@
             "radial_next": "derived",
             "sense": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:coedge#2:0:0": {
           "fields": {
@@ -1324,7 +1467,7 @@
             "radial_next": "derived",
             "sense": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:coedge#2:0:1": {
           "fields": {
@@ -1333,7 +1476,7 @@
             "radial_next": "derived",
             "sense": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:coedge#2:0:2": {
           "fields": {
@@ -1342,7 +1485,7 @@
             "radial_next": "derived",
             "sense": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:coedge#3:0:0": {
           "fields": {
@@ -1351,7 +1494,7 @@
             "radial_next": "derived",
             "sense": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:coedge#3:0:1": {
           "fields": {
@@ -1360,7 +1503,7 @@
             "radial_next": "derived",
             "sense": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:coedge#3:0:2": {
           "fields": {
@@ -1369,171 +1512,171 @@
             "radial_next": "derived",
             "sense": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:curve#290": {
           "fields": {
-            "geometry.direction": "derived",
-            "geometry.origin": "derived"
+            "geometry.value.direction": "derived",
+            "geometry.value.origin": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:curve#301": {
           "fields": {
-            "geometry.direction": "derived",
-            "geometry.origin": "derived"
+            "geometry.value.direction": "derived",
+            "geometry.value.origin": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:curve#312": {
           "fields": {
-            "geometry.direction": "derived",
-            "geometry.origin": "derived"
+            "geometry.value.direction": "derived",
+            "geometry.value.origin": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:curve#323": {
           "fields": {
-            "geometry.direction": "derived",
-            "geometry.origin": "derived"
+            "geometry.value.direction": "derived",
+            "geometry.value.origin": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:curve#334": {
           "fields": {
-            "geometry.direction": "derived",
-            "geometry.origin": "derived"
+            "geometry.value.direction": "derived",
+            "geometry.value.origin": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:curve#345": {
           "fields": {
-            "geometry.direction": "derived",
-            "geometry.origin": "derived"
+            "geometry.value.direction": "derived",
+            "geometry.value.origin": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:edge#0": {
           "fields": {
-            "curve": "derived",
-            "end": "derived",
-            "param_range": "derived",
-            "start": "derived"
+            "carrier.curve": "derived",
+            "carrier.param_range": "derived",
+            "ends.end": "derived",
+            "ends.start": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:edge#1": {
           "fields": {
-            "curve": "derived",
-            "end": "derived",
-            "param_range": "derived",
-            "start": "derived"
+            "carrier.curve": "derived",
+            "carrier.param_range": "derived",
+            "ends.end": "derived",
+            "ends.start": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:edge#2": {
           "fields": {
-            "curve": "derived",
-            "end": "derived",
-            "param_range": "derived",
-            "start": "derived"
+            "carrier.curve": "derived",
+            "carrier.param_range": "derived",
+            "ends.end": "derived",
+            "ends.start": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:edge#3": {
           "fields": {
-            "curve": "derived",
-            "end": "derived",
-            "param_range": "derived",
-            "start": "derived"
+            "carrier.curve": "derived",
+            "carrier.param_range": "derived",
+            "ends.end": "derived",
+            "ends.start": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:edge#4": {
           "fields": {
-            "curve": "derived",
-            "end": "derived",
-            "param_range": "derived",
-            "start": "derived"
+            "carrier.curve": "derived",
+            "carrier.param_range": "derived",
+            "ends.end": "derived",
+            "ends.start": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:edge#5": {
           "fields": {
-            "curve": "derived",
-            "end": "derived",
-            "param_range": "derived",
-            "start": "derived"
+            "carrier.curve": "derived",
+            "carrier.param_range": "derived",
+            "ends.end": "derived",
+            "ends.start": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:face#0": {
           "fields": {
+            "loops": "derived",
             "sense": "derived",
             "shell": "derived",
             "surface": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:face#1": {
           "fields": {
+            "loops": "derived",
             "sense": "derived",
             "shell": "derived",
             "surface": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:face#2": {
           "fields": {
+            "loops": "derived",
             "sense": "derived",
             "shell": "derived",
             "surface": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:face#3": {
           "fields": {
+            "loops": "derived",
             "sense": "derived",
             "shell": "derived",
             "surface": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:loop#0:0": {
           "fields": {
-            "boundary_role": "derived",
-            "coedges": "derived",
-            "face": "derived",
-            "vertex_uses": "derived"
+            "boundary.coedges": "derived",
+            "boundary.vertex_uses": "derived",
+            "face": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:loop#1:0": {
           "fields": {
-            "boundary_role": "derived",
-            "coedges": "derived",
-            "face": "derived",
-            "vertex_uses": "derived"
+            "boundary.coedges": "derived",
+            "boundary.vertex_uses": "derived",
+            "face": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:loop#2:0": {
           "fields": {
-            "boundary_role": "derived",
-            "coedges": "derived",
-            "face": "derived",
-            "vertex_uses": "derived"
+            "boundary.coedges": "derived",
+            "boundary.vertex_uses": "derived",
+            "face": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:loop#3:0": {
           "fields": {
-            "boundary_role": "derived",
-            "coedges": "derived",
-            "face": "derived",
-            "vertex_uses": "derived"
+            "boundary.coedges": "derived",
+            "boundary.vertex_uses": "derived",
+            "face": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:region#0-0": {
           "entity": "inferred",
@@ -1541,39 +1684,38 @@
             "body": "derived",
             "shells": "derived"
           },
-          "scope": "entity"
+          "kind": "entity"
         },
         "catia:standard:shell#0-0": {
           "entity": "inferred",
           "fields": {
-            "faces": "derived",
             "region": "derived"
           },
-          "scope": "entity"
+          "kind": "entity"
         },
         "catia:standard:v#0": {
           "fields": {
             "point": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:v#1": {
           "fields": {
             "point": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:v#2": {
           "fields": {
             "point": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:v#3": {
           "fields": {
             "point": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         }
       },
       "provenance": {
@@ -1819,15 +1961,19 @@
         }
       }
     },
+    "decode_digest": "c0ac58d0d7f4492b5f4beae33ee29f7f1fab5b7b65ad9e48930abb554f2622f1",
+    "file_digests": {},
     "retained_records": {
       "catia:payload:unknown#brep-stream": {
         "bytes": {
           "data": "AUQB/wsAAAALAfQAHgAKABQAHwALABUAIAAMABYAHgFEAf8LAAAACwH1ACgADQAXACkAGAAOACoAFAAKACgBRAH/CwAAAAsB9gAyAA4AGAAzABkADwA0ABUACwAyAUQB/wsAAAALAfcAPAAPABkAPQAXAA0APgAWAAwAPDAEBP/S0tLSMAQE/9LS0tIwBAT/0tLS0jAEBP/S0tLSAQEGAgQAZAAKABQAZQIEAGUACwAVAGYCBABmAAwAFgBkAgQAZAANABcAZwIEAGUADgAYAGcCBABmAA8AGQBnECQE//8AAAABBgQFCAEAAIA/AACAPwAAgD8FCAEAAIA/AACAvwAAgL8FCAEAAIC/AACAPwAAgL8FCAEAAIC/AACAvwAAgD9gAQAAAAIAMzYAAWACAAAAAgAzNgACYAMAAAACADM2AANgBAAAAAIAMzYBA2AFAAAAAgAzNgECYAYAAAACADM2AgMBAAAAEgAzNT6qqqs+qqqrvqqqqz/RBewAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQIAAAASADM1Pqqqq76qqqs+qqqrP9EF7AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAwAAABIAMzW+qqqrvqqqq76qqqs/0QXsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEEAAAAEgAzNb6qqqs+qqqrPqqqqz/RBewAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQ==",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 0,
-        "stream": "catia:MainDataStream+SurfacicReps"
+        "stream": "catia:MainDataStream+SurfacicReps",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

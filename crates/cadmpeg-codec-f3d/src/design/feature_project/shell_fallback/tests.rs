@@ -113,7 +113,10 @@ fn projected(
             let evidence: serde_json::Value =
                 serde_json::from_str(feature.source_properties.get("shell:source").unwrap())
                     .unwrap();
-            assert_eq!(evidence["native"]["parameters"]["Wall"], "q + 1 mm");
+            assert_eq!(
+                evidence["native"]["value"]["value"]["parameters"]["Wall"],
+                "q + 1 mm"
+            );
             (feature, notes)
         })
     })

@@ -1,0 +1,71 @@
+use crate::test_support::container::{make_block, sldprt_with_body};
+use crate::test_support::parasolid::triangle_body;
+use crate::SldprtCodec;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_test_support::EditableDecodeResult;
+use std::io::Cursor;
+
+#[test]
+fn semantic_writer_refuses_partial_or_controlled_axes_without_writing_geometry() {
+    use cadmpeg_ir::design::dimension::Dimension;
+    use cadmpeg_ir::design::options::NativeOption;
+    use cadmpeg_ir::features::{datums::DatumAxisDraft, FeatureDefinition, FeatureOperation};
+    for case in 0..5 {
+        let mut source = sldprt_with_body(&triangle_body());
+        source.extend(make_block(0x42,"Contents/Keywords",br#"<Keywords><ReferenceAxis Name="Axis" Type="ReferenceAxis" id="26" Origin="1mm,2mm,3mm" Direction="0,0,1"/></Keywords>"#));
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        let mut decoded = EditableDecodeResult::from(decoded);
+        {
+            let mut ir = decoded.ir_mut();
+            let feature = &mut ir.model.features[0];
+            let FeatureOperation::DatumAxis { axis } = feature.evaluation.definition().operation()
+            else {
+                panic!("datum axis")
+            };
+            let mut draft = DatumAxisDraft::from(axis.clone());
+            match case {
+                0 => draft.direction = None,
+                1 => draft.origin = None,
+                2 => {
+                    draft.native_options.insert(
+                        cadmpeg_core::nonblank_literal!("sldprt:unknown"),
+                        NativeOption::Bool(Dimension::Literal(false)),
+                    );
+                }
+                3 => {
+                    draft.source_settings.insert(
+                        cadmpeg_core::nonblank_literal!("sldprt:setting"),
+                        NativeOption::Bool(Dimension::Literal(false)),
+                    );
+                }
+                _ => draft
+                    .inputs
+                    .push(cadmpeg_ir::design::construction::ConstructionInput {
+                        role: None,
+                        reference: None,
+                        value: None,
+                        reversed: None,
+                    }),
+            }
+            feature
+                .evaluation
+                .set_definition(FeatureDefinition::Operation(
+                    draft.into_operation().unwrap(),
+                ));
+        }
+        let mut encoded = Vec::new();
+        let error = crate::test_support::plan_fixture_write_with_native_envelope(
+            decoded.ir(),
+            decoded.source_fidelity(),
+            &mut encoded,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(&error,cadmpeg_core::CodecError::NotImplemented(detail) if detail.contains("unsupported datum-axis construction or partial geometry")),
+            "{error}"
+        );
+        assert!(encoded.is_empty());
+    }
+}

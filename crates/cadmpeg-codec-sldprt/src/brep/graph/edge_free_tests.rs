@@ -64,10 +64,7 @@ fn typed_loopless_sphere_and_torus_keep_their_ownership() {
         assert!(out.edges.is_empty());
         assert!(out.vertices.is_empty());
         assert!(out.losses.is_empty());
-        assert_eq!(
-            out.shells[0].faces(),
-            std::slice::from_ref(&out.faces[0].id)
-        );
+        assert_eq!(out.faces[0].shell, out.shells[0].id);
     }
 }
 
@@ -129,10 +126,7 @@ fn a_compact_trimmed_face_supplies_topology_for_its_null_loop_ownership_face() {
         );
         assert_eq!(out.faces[0].loops.len(), usize::from(trimmed));
         assert_eq!(out.loops.len(), usize::from(trimmed));
-        assert_eq!(
-            out.shells[0].faces(),
-            std::slice::from_ref(&out.faces[0].id)
-        );
+        assert_eq!(out.faces[0].shell, out.shells[0].id);
         assert!(out.losses.is_empty(), "{:?}", out.losses);
     }
 }
@@ -215,7 +209,10 @@ fn a_reciprocal_ellipse_ring_keeps_its_sheet_face() {
         ),
         (1, 1, 1, 1)
     );
-    assert_eq!(out.edges[0].start, out.edges[0].end);
+    assert_eq!(
+        out.edges[0].ends.as_ref().unwrap().start,
+        out.edges[0].ends.as_ref().unwrap().end
+    );
     assert_eq!(
         out.edges[0].param_range().unwrap().get(),
         [0.0, std::f64::consts::TAU]
@@ -396,7 +393,7 @@ fn a_loopless_nurbs_face_requires_both_periodic_parameters() {
         assert_eq!(out.faces.len(), usize::from(periodic == [true, true]));
         if let Some(face) = out.faces.first() {
             assert!(face.loops.is_empty());
-            assert_eq!(out.shells[0].faces(), std::slice::from_ref(&face.id));
+            assert_eq!(face.shell, out.shells[0].id);
         }
     }
 }
@@ -436,7 +433,7 @@ fn spun_circle_with_one_stored_bound_revolves_the_whole_profile() {
     ] {
         body.extend(value.to_be_bytes());
     }
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let carriers = index::scan_carriers(&ctx, &body).unwrap();
     let face = super::WalkedFace {
         bridge_attr: 20,

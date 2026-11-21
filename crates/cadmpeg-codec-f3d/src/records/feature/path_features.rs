@@ -67,8 +67,8 @@ pub(crate) struct DesignRevolveConstruction {
     /// both sides of the profile plane.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) second_side: Option<DesignRevolveSecondSide>,
-    /// Solid flag of a referenced-angle form: `true` for a solid body and
-    /// `false` for a surface body.
+    /// Solid flag of a referenced-angle, Symmetric, or Two Sides form: `true`
+    /// for a solid body and `false` for a surface body.
     pub(crate) solid: Option<bool>,
     /// Whether the stored angle is negative, so that the profile turns toward
     /// the negative normal of its sketch plane.
@@ -167,7 +167,7 @@ struct DesignRevolveConstructionWire {
         deserialize_with = "deserialize_second_side"
     )]
     second_side: Option<DesignRevolveSecondSideWire>,
-    /// Solid flag of a referenced-angle form.
+    /// Solid flag of a referenced-angle, Symmetric, or Two Sides form.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",

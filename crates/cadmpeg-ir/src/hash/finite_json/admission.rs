@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed traversal admission for canonical JSON serialization.
 
-use std::convert::Infallible;
-
 use cadmpeg_core::decode::{DecodeContext, DepthGuard, ResourceLimit};
 use cadmpeg_core::CodecError;
 
@@ -16,29 +14,38 @@ pub(in crate::hash) trait Admission {
     fn resource(error: Self::Error) -> Option<ResourceLimit>;
 }
 
-pub(super) struct StandardAdmission;
+/// The depth admission of one canonical JSON walk.
+pub(crate) struct CanonicalAdmission<'ctx, 'input> {
+    context: Option<(&'ctx DecodeContext<'input>, &'static str)>,
+}
 
-impl Admission for StandardAdmission {
-    type Error = Infallible;
-    type Depth<'scope> = ();
-
-    fn enter(&self) -> Result<(), Infallible> {
-        Ok(())
+impl<'ctx, 'input> CanonicalAdmission<'ctx, 'input> {
+    /// Admits every depth.
+    pub(crate) fn unlimited() -> Self {
+        Self { context: None }
     }
-    fn resource(error: Infallible) -> Option<ResourceLimit> {
-        match error {}
+
+    /// Enters the depth limit of `ctx` at each nested value, charged to
+    /// `operation`.
+    pub(crate) fn limited(ctx: &'ctx DecodeContext<'input>, operation: &'static str) -> Self {
+        Self {
+            context: Some((ctx, operation)),
+        }
     }
 }
 
-impl Admission for &DecodeContext<'_> {
+impl Admission for CanonicalAdmission<'_, '_> {
     type Error = CodecError;
     type Depth<'scope>
-        = DepthGuard<'scope>
+        = Option<DepthGuard<'scope>>
     where
         Self: 'scope;
 
-    fn enter(&self) -> Result<DepthGuard<'_>, CodecError> {
-        self.enter_nested("walk document digest")
+    fn enter(&self) -> Result<Option<DepthGuard<'_>>, CodecError> {
+        match self.context {
+            Some((ctx, operation)) => ctx.enter_nested(operation).map(Some),
+            None => Ok(None),
+        }
     }
     fn resource(error: CodecError) -> Option<ResourceLimit> {
         match error {

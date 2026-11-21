@@ -18,17 +18,21 @@ use crate::StepCodec;
 /// whether every loop runs counterclockwise about its face's oriented normal.
 fn planar_solid_volume_and_ccw_loops(ir: &CadIr) -> (f64, bool) {
     use cadmpeg_ir::topology::{LoopBoundary, Sense};
-    let model = &ir.model;
+    let geometry = &ir.geometry;
     let position = |vertex: &cadmpeg_ir::ids::VertexId| {
-        let vertex = model.vertices.iter().find(|v| &v.id == vertex).unwrap();
-        let point = model.points.iter().find(|p| p.id == vertex.point).unwrap();
+        let vertex = geometry.vertices.iter().find(|v| &v.id == vertex).unwrap();
+        let point = geometry
+            .points
+            .iter()
+            .find(|p| p.id == vertex.point)
+            .unwrap();
         point.position().get()
     };
     let origin = Point3::new(0.0, 0.0, 0.0);
     let mut volume6 = 0.0;
     let mut every_loop_ccw = true;
-    for face in &model.faces {
-        let surface = model
+    for face in &geometry.faces {
+        let surface = geometry
             .surfaces
             .iter()
             .find(|s| s.id == face.surface)
@@ -41,7 +45,7 @@ fn planar_solid_volume_and_ccw_loops(ir: &CadIr) -> (f64, bool) {
             normal = Vector3::new(-normal.x, -normal.y, -normal.z);
         }
         for loop_id in &face.loops {
-            let ring = model.loops.iter().find(|l| &l.id == loop_id).unwrap();
+            let ring = geometry.loops.iter().find(|l| &l.id == loop_id).unwrap();
             let LoopBoundary::Ring(ring) = &ring.boundary else {
                 panic!("edge loop");
             };
@@ -49,11 +53,11 @@ fn planar_solid_volume_and_ccw_loops(ir: &CadIr) -> (f64, bool) {
                 .coedges()
                 .iter()
                 .map(|id| {
-                    let coedge = model.coedges.iter().find(|c| &c.id == id).unwrap();
-                    let edge = model.edges.iter().find(|e| e.id == coedge.edge).unwrap();
+                    let coedge = geometry.coedges.iter().find(|c| &c.id == id).unwrap();
+                    let edge = geometry.edges.iter().find(|e| e.id == coedge.edge).unwrap();
                     position(match coedge.sense {
-                        Sense::Forward => &edge.start,
-                        Sense::Reversed => &edge.end,
+                        Sense::Forward => &edge.ends.as_ref().unwrap().start,
+                        Sense::Reversed => &edge.ends.as_ref().unwrap().end,
                     })
                 })
                 .collect();
@@ -102,7 +106,7 @@ fn a_bspline_face_with_a_reversed_normal_keeps_its_outward_side() {
     // `Pu × Pv` is +z; the reversed oriented normal is -z, the bottom face's
     // outward side.
     let mut source = unit_cube().expect("unit cube fixture is admitted");
-    let bottom = source.model.faces[0].surface.clone();
+    let bottom = source.geometry.faces[0].surface.clone();
     let patch = NurbsSurface::new(
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
@@ -116,7 +120,7 @@ fn a_bspline_face_with_a_reversed_normal_keeps_its_outward_side() {
     )
     .expect("bilinear patch");
     let surface = source
-        .model
+        .geometry
         .surfaces
         .iter_mut()
         .find(|surface| surface.id == bottom)
@@ -127,10 +131,10 @@ fn a_bspline_face_with_a_reversed_normal_keeps_its_outward_side() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode written cube");
-    let model = &decoded.ir().model;
+    let geometry = &decoded.ir().geometry;
     let mut patches = 0;
-    for face in &model.faces {
-        let surface = model
+    for face in &geometry.faces {
+        let surface = geometry
             .surfaces
             .iter()
             .find(|surface| surface.id == face.surface)

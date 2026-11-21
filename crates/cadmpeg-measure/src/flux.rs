@@ -6,7 +6,9 @@
 //! (closure), `d_i³ N_i / 3` and `d_i² d_j N_i / 2` (second moments `∫ d_i²`
 //! and `∫ d_i d_j` of the volume) and `d_i |N|` (area moments). Each is `∮ F du` by Green's
 //! theorem with the inner integral `F(u, v) = −∫_{v₀}^{v} f(u, s) ds` from
-//! the region's base `v₀`, plus the whole domain when the region reaches
+//! the region's base `v₀`, or `∮ G dv` with `G(u, v) = ∫_{u₀}^{u} f(s, v) ds`
+//! from the domain's lower `u₀` on a chart whose inner integrals run along
+//! `u`, plus the whole domain when the region reaches
 //! the domain's natural edges. A body sums its faces' fluxes with the sign
 //! of each face's oriented normal reading.
 
@@ -15,6 +17,7 @@ use std::f64::consts::TAU;
 use cadmpeg_ir::math::Point3;
 
 use crate::area::LoopCut;
+use crate::boundary::piece::Piece;
 use crate::boundary::ResolvedLoop;
 use crate::canonical::column::Column;
 use crate::canonical::surface::{Chart, Partials, PlaneChart};
@@ -235,6 +238,21 @@ pub(crate) struct FluxFrame<'a, 'ir> {
     pub(crate) active: [bool; FLUX],
 }
 
+/// A piece's breaks, with the parameters where it crosses a `v` knot when
+/// the inner integrals run along `u`: there the inner integral has a kink.
+pub(crate) fn outer_breaks(
+    eval: &Eval<'_, '_>,
+    chart: &Chart<'_>,
+    piece: &Piece<'_>,
+    along_u: Option<f64>,
+) -> Measure<Vec<f64>> {
+    let mut breaks = piece.breaks();
+    if along_u.is_some() {
+        breaks.extend(piece.v_knot_crossings(eval, chart)?);
+    }
+    Ok(breaks)
+}
+
 fn not_converged() -> MeasureFailure {
     MeasureFailure::unavailable(
         UnavailableReason::QuadratureNotConverged,
@@ -269,18 +287,60 @@ impl FluxFrame<'_, '_> {
             Ok(density(&column.partials(eval, s)?, self.origin))
         };
         let scale = scales(self.scale, self.reach);
+        let width = match self.chart {
+            Chart::Nurbs(nurbs) => nurbs.width(0),
+            _ => 1.0,
+        };
         let integral = integrate(
             &mut charge,
             &mut density_at,
             from,
             to,
             &self.v_breaks(),
-            Target::inner(std::array::from_fn(|k| scale[k])).with_active(self.active),
+            Target::inner(std::array::from_fn(|k| scale[k] / width)).with_active(self.active),
         )?;
         if !integral.converged {
             return Err(not_converged());
         }
         Ok((integral.value, integral.error))
+    }
+
+    /// `∫_from^to f(s, v) ds` along a `u`-isoline and its error estimate.
+    fn inner_across(
+        &self,
+        eval: &Eval<'_, '_>,
+        v: f64,
+        [from, to]: [f64; 2],
+    ) -> Measure<([f64; FLUX], [f64; FLUX])> {
+        let row = Column::across(eval, self.chart, v)?;
+        let mut charge = |units| eval.charge(units);
+        let mut density_at =
+            |s: f64| -> Measure<[f64; FLUX]> { Ok(density(&row.partials(eval, s)?, self.origin)) };
+        let scale = scales(self.scale, self.reach);
+        let (breaks, width) = match self.chart {
+            Chart::Nurbs(nurbs) => (nurbs.u_breaks(), nurbs.width(1)),
+            _ => (Vec::new(), 1.0),
+        };
+        let integral = integrate(
+            &mut charge,
+            &mut density_at,
+            from,
+            to,
+            &breaks,
+            Target::inner(std::array::from_fn(|k| scale[k] / width)).with_active(self.active),
+        )?;
+        if !integral.converged {
+            return Err(not_converged());
+        }
+        Ok((integral.value, integral.error))
+    }
+
+    /// The lower `u` of the domain when the inner integrals run along `u`.
+    fn along_u(&self) -> Option<f64> {
+        match self.chart {
+            Chart::Nurbs(nurbs) if self.chart.inner_along_u() => Some(nurbs.domain[0][0]),
+            _ => None,
+        }
     }
 
     /// `∮ F du` over one loop with `F` based at `base`, with each piece's
@@ -293,10 +353,26 @@ impl FluxFrame<'_, '_> {
         cut: Option<LoopCut<'_>>,
     ) -> Measure<Flux> {
         let mut flux = Flux::ZERO;
+        let along_u = self.along_u();
         for (position, piece) in resolved.pieces.iter().enumerate() {
             let mut charge = |units| eval.charge(units);
             let mut integrand = |t: f64| -> Measure<[f64; TRACKED]> {
                 let sample = piece.sample(eval, self.chart, t)?;
+                if let Some(u0) = along_u {
+                    if sample.duv[1] == 0.0 {
+                        return Ok([0.0; TRACKED]);
+                    }
+                    let (value, error) =
+                        self.inner_across(eval, sample.uv[1], [u0, sample.uv[0]])?;
+                    let speed = sample.duv[1];
+                    return Ok(std::array::from_fn(|k| {
+                        if k < FLUX {
+                            value[k] * speed
+                        } else {
+                            error[k - FLUX] * speed.abs()
+                        }
+                    }));
+                }
                 if sample.duv[0] == 0.0 {
                     return Ok([0.0; TRACKED]);
                 }
@@ -316,7 +392,11 @@ impl FluxFrame<'_, '_> {
                 &mut integrand,
                 piece.t0,
                 piece.t1,
-                &LoopCut::breaks(cut.as_ref(), position, piece.breaks()),
+                &LoopCut::breaks(
+                    cut.as_ref(),
+                    position,
+                    outer_breaks(eval, self.chart, piece, along_u)?,
+                ),
                 Target::outer(scales(self.scale, self.reach)).with_active(self.tracked()),
             )?;
             if !integral.converged {

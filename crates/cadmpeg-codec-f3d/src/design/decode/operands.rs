@@ -3,6 +3,7 @@
 
 pub(crate) mod extrude_extent;
 mod fillet_variable_groups;
+mod split_groups;
 
 use crate::bytes::lp_utf16_bounded;
 use crate::records::topology::entity_selection::SelectionSerializationForm;
@@ -19,7 +20,10 @@ use crate::design::decode::dimension_frames::{
     bind_recipe_reference_candidates, contiguous_i32_program, decode_recipe_references,
     recipe_record_prefix,
 };
-use crate::design::decode::scopes::extrude::is_class_296_two_sided_to_faces_scope;
+use crate::design::decode::meta::{unambiguous_design_primary_frames, DesignPrimaryFrame};
+use crate::design::decode::scopes::extrude::{
+    extrude_marked_reference_slots, is_class_296_two_sided_to_faces_scope,
+};
 use crate::design::decode::scopes::parameter_scope::payload_prologue;
 use crate::design::decode::scopes::shared_frames::marked_record_reference;
 use crate::design::decode::sketch::{
@@ -41,6 +45,8 @@ use crate::layout::construction_operand_affine_transform_frame as trailing_affin
 use crate::layout::construction_operand_extended_path_prefix as extended_path;
 use crate::layout::extrude_selection_member_fixed_frame as extrude_member;
 use crate::layout::indexed_design_record_header as indexed_header;
+use crate::layout::legacy_extrude_group_tail_marker as group_tail_marker;
+use crate::layout::legacy_extrude_sketch_profile_tail as legacy_profile_tail;
 use crate::layout::legacy_loft_body_carrier as legacy_loft;
 use crate::layout::legacy_loft_body_carrier_owner_tail as legacy_loft_tail;
 use crate::layout::legacy_loft_body_carrier_three_flag as legacy_loft_three;
@@ -50,6 +56,8 @@ use crate::layout::sheet_metal_region_carrier_scalar_lane as region_scalar;
 use crate::layout::sheet_metal_region_identity_reference as region_reference;
 use crate::layout::sketch_profile_region_member as region_member;
 use crate::layout::sketch_profile_region_selection_prefix as region_selection;
+use crate::layout::sketch_profile_text_selection as text_selection;
+use crate::layout::split_body_compact_group_prefix as split_group;
 use crate::layout::typed_reference_extrude_selection_group_prefix as typed_group;
 use crate::layout::typed_reference_profile_chain_record as typed_chain;
 use crate::layout::typed_reference_profile_identity_record as typed_identity;
@@ -60,7 +68,9 @@ use crate::records::{
     decal::DesignRecordHeader,
     entity_header::{DesignEntityHeader, SegmentType},
     feature::{
-        extrude::{DesignExtrudeExtent, DesignExtrudePrologue, DesignExtrudeStart},
+        extrude::{
+            DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart,
+        },
         hole::DesignHoleConstruction,
         scope::DesignParameterScope,
         surface_ops::DesignSurfaceOffsetSupport,
@@ -101,6 +111,8 @@ use crate::records::{
 };
 use cadmpeg_core::decode::{bounded_len, index_from_u32, DecodeContext, View, WorkBudget};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::report::loss::LossNote;
+use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet};
 
 /// Decode edge-recipe operand frames named by edge-selecting feature scopes.
@@ -869,6 +881,86 @@ pub(crate) fn decode_edge_identity_operands(
     Ok(out)
 }
 
+pub(crate) struct RegisteredFaceOperandFrame {
+    header: DesignRecordHeader,
+    offsets: [usize; 5],
+    next_record_index: u32,
+    recipe_frame: Option<crate::records::topology::face::RegisteredFaceRecipeFrame>,
+}
+
+fn registered_face_operand_frame(
+    stream: &str,
+    frames: &[DesignPrimaryFrame<'_>],
+    meta: &crate::metastream::MetaStream,
+    ordinal: usize,
+) -> Option<RegisteredFaceOperandFrame> {
+    let chain = frames.get(ordinal..ordinal.checked_add(4)?)?;
+    let [primary, first, second, recipe] = chain else {
+        return None;
+    };
+    let record_index = u32::try_from(primary.entity_id).ok()?;
+    if primary.member_end >= primary.end {
+        return None;
+    }
+    for pair in chain.windows(2) {
+        let previous = u32::try_from(pair[0].entity_id).ok()?;
+        let next = u32::try_from(pair[1].entity_id).ok()?;
+        if pair[0].end != pair[1].start || next != previous.checked_add(1)? {
+            return None;
+        }
+    }
+    let (end, next_record_index, recipe_frame) = if recipe.member_end < recipe.end {
+        let record_index = u32::try_from(recipe.entity_id).ok()?;
+        (
+            recipe.member_end,
+            record_index,
+            Some(crate::records::topology::face::RegisteredFaceRecipeFrame {
+                record_index,
+                primary_offset: u64::try_from(recipe.start).ok()?,
+                secondary_offset: u64::try_from(recipe.member_end).ok()?,
+                end_offset: u64::try_from(recipe.end).ok()?,
+                next_primary_index: meta
+                    .records
+                    .binary_search_by_key(&u64::try_from(recipe.end).ok()?, |record| {
+                        record.bulk_offset
+                    })
+                    .ok()
+                    .map(|index| meta.records[index].entity_id),
+            }),
+        )
+    } else {
+        let next = frames.get(ordinal.checked_add(chain.len())?)?;
+        if recipe.end != next.start {
+            return None;
+        }
+        (next.start, u32::try_from(next.entity_id).ok()?, None)
+    };
+    let byte_offset = u64::try_from(primary.start).ok()?;
+    Some(RegisteredFaceOperandFrame {
+        header: DesignRecordHeader {
+            id: design_record_id(
+                stream
+                    .strip_prefix(crate::ids::SCHEME_PREFIX)
+                    .unwrap_or(stream),
+                ":design-record-header#",
+                byte_offset,
+            ),
+            byte_offset,
+            record_index,
+            class_tag: primary.class_tag.clone(),
+        },
+        offsets: [
+            primary.member_end,
+            first.start,
+            second.start,
+            recipe.start,
+            end,
+        ],
+        next_record_index,
+        recipe_frame,
+    })
+}
+
 /// Decode face-recipe operand frames named by grouped and direct feature references.
 pub(crate) fn decode_face_operands(
     ctx: &DecodeContext<'_>,
@@ -878,7 +970,7 @@ pub(crate) fn decode_face_operands(
     headers: &[DesignRecordHeader],
     recipes: &[ConstructionRecipe],
     types: &[crate::records::entity_header::SegmentType],
-) -> Result<Vec<DesignFaceOperand>, CodecError> {
+) -> Result<(Vec<DesignFaceOperand>, Vec<LossNote>), CodecError> {
     let mut header_index = HashMap::new();
     for header in headers {
         let Some(stream) = native_stream(&header.id) else {
@@ -895,9 +987,69 @@ pub(crate) fn decode_face_operands(
         let key = (stream, scope.record_index);
         scope_index.insert(key, scope);
     }
+    let mut split_face_frames = HashMap::new();
+    let mut indexed_split_face_streams = HashSet::new();
+    for scope in scopes.iter().filter(|scope| {
+        scope.kind() == crate::records::feature::scope::DesignFeatureKind::SplitFace
+    }) {
+        let Some(stream) = native_stream(&scope.id) else {
+            continue;
+        };
+        if !indexed_split_face_streams.insert(stream) {
+            continue;
+        }
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let Ok(Some(meta)) =
+            crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)
+        else {
+            continue;
+        };
+        let Ok(frames) = unambiguous_design_primary_frames(bytes, &meta) else {
+            continue;
+        };
+        for ordinal in 0..frames.len() {
+            if let Some(frame) = registered_face_operand_frame(stream, &frames, &meta, ordinal) {
+                split_face_frames.insert((stream, frame.header.record_index), frame);
+            }
+        }
+    }
     let mut out = Vec::new();
     let mut seen = HashSet::new();
+    let grouped_members = groups
+        .iter()
+        .filter_map(|group| native_stream(&group.id).map(|stream| (stream, group)))
+        .flat_map(|(stream, group)| {
+            group
+                .members()
+                .iter()
+                .map(move |member| (stream, group.scope_record_index, member.value))
+        })
+        .collect::<HashSet<_>>();
     let mut record_offset_index: HashMap<&str, IndexedRecordOffsets> = HashMap::new();
+    for scope in scope_index.values().filter(|scope| {
+        scope.kind() == crate::records::feature::scope::DesignFeatureKind::SplitFace
+    }) {
+        let Some(stream) = native_stream(&scope.id) else {
+            continue;
+        };
+        let Some(operation) = scope.split_face_operation() else {
+            continue;
+        };
+        if let Some(reference) = operation.direction_reference.local_record_index() {
+            seen.insert((stream, scope.record_index, reference));
+        }
+        for input in &operation.inputs {
+            if let Some(reference) = input.value.local_record_index() {
+                if !grouped_members.contains(&(stream, scope.record_index, reference)) {
+                    seen.insert((stream, scope.record_index, reference));
+                }
+            }
+        }
+    }
     for group in groups {
         let Some(stream) = native_stream(&group.id) else {
             continue;
@@ -953,7 +1105,10 @@ pub(crate) fn decode_face_operands(
             && group.role() == DesignOperandRole::ROLE_0X10;
         let is_split_face_operand = scope.kind()
             == crate::records::feature::scope::DesignFeatureKind::SplitFace
-            && group.role() == DesignOperandRole::ROLE_0X10;
+            && matches!(
+                group.role(),
+                DesignOperandRole::ROLE_0X9 | DesignOperandRole::ROLE_0X10
+            );
         let is_delete_face_operand = matches!(
             scope.kind(),
             crate::records::feature::scope::DesignFeatureKind::MoveFace
@@ -979,10 +1134,17 @@ pub(crate) fn decode_face_operands(
             design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Draft);
         let is_replace_face_operand = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::ReplaceFace)
-            && group.role() == DesignOperandRole::ROLE_0X10;
+            && matches!(
+                group.role(),
+                DesignOperandRole::ROLE_0X9 | DesignOperandRole::ROLE_0X10
+            );
         let is_surface_offset_operand = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::SurfaceOffset)
             && group.role() == DesignOperandRole::PROFILE;
+        let is_surface_trim_tool = design_feature_family(&scope.kind())
+            == Some(DesignFeatureFamily::SurfaceTrim)
+            && group.role() == DesignOperandRole::ROLE_0X9
+            && group.members().len() == 1;
         if scope.kind() == crate::records::feature::scope::DesignFeatureKind::SplitFace
             && !is_split_face_operand
         {
@@ -1013,6 +1175,7 @@ pub(crate) fn decode_face_operands(
             && !is_draft_operand
             && !is_replace_face_operand
             && !is_surface_offset_operand
+            && !is_surface_trim_tool
         {
             continue;
         }
@@ -1052,10 +1215,16 @@ pub(crate) fn decode_face_operands(
             let Ok(group_member_ordinal) = u32::try_from(group_member_index) else {
                 continue;
             };
-            let Some(header) = header_index.get(&(stream, *record_index)) else {
+            let registered_frame = is_split_face_operand
+                .then(|| split_face_frames.get(&(stream, *record_index)))
+                .flatten();
+            let header = registered_frame
+                .map(|frame| &frame.header)
+                .or_else(|| header_index.get(&(stream, *record_index)).copied());
+            let Some(header) = header else {
                 continue;
             };
-            let next_byte_offset = group
+            let caller_next_byte_offset = group
                 .members()
                 .get(group_member_index + 1)
                 .and_then(|record| header_index.get(&(stream, record.value)))
@@ -1090,14 +1259,16 @@ pub(crate) fn decode_face_operands(
                     scope,
                     scope_reference_ordinal: group.scope_reference_ordinal,
                     group_ownership: Some((group.record_index, group_member_ordinal)),
-                    next_byte_offset,
+                    next_byte_offset: caller_next_byte_offset,
+                    registered_frame,
                     header,
                 },
                 recipes,
             ) {
                 let operand = operand?;
-                if !is_pattern_face_seed
-                    || operand.recipe_kind == ConstructionRecipeKind::BoundedFace
+                if (!is_pattern_face_seed
+                    || operand.recipe_kind == ConstructionRecipeKind::BoundedFace)
+                    && (!is_surface_trim_tool || operand.is_terminal_face_recipe())
                 {
                     out.push(operand);
                 }
@@ -1152,16 +1323,33 @@ pub(crate) fn decode_face_operands(
             else {
                 continue;
             };
+            if scope.kind() == crate::records::feature::scope::DesignFeatureKind::ReplaceFace
+                && groups.iter().any(|group| {
+                    native_stream(&group.id) == Some(stream)
+                        && group.scope_record_index == scope.record_index
+                        && group
+                            .members()
+                            .iter()
+                            .any(|member| member.value == record_index)
+                })
+            {
+                continue;
+            }
             if !seen.insert((stream, scope.record_index, record_index)) {
                 continue;
             }
-            let (Ok(scope_reference_ordinal), Some(header)) = (
-                u32::try_from(ordinal),
-                header_index.get(&(stream, record_index)),
-            ) else {
+            let registered_frame = (scope.kind()
+                == crate::records::feature::scope::DesignFeatureKind::SplitFace)
+                .then(|| split_face_frames.get(&(stream, record_index)))
+                .flatten();
+            let header = registered_frame
+                .map(|frame| &frame.header)
+                .or_else(|| header_index.get(&(stream, record_index)).copied());
+            let (Ok(scope_reference_ordinal), Some(header)) = (u32::try_from(ordinal), header)
+            else {
                 continue;
             };
-            let next_byte_offset = if scope.kind()
+            let caller_next_byte_offset = if scope.kind()
                 == crate::records::feature::scope::DesignFeatureKind::AsBuilt
                 && crate::design::assembly::legacy_as_built_421_generation(
                     scope.frame_length(),
@@ -1187,7 +1375,8 @@ pub(crate) fn decode_face_operands(
                     scope,
                     scope_reference_ordinal,
                     group_ownership: None,
-                    next_byte_offset,
+                    next_byte_offset: caller_next_byte_offset,
+                    registered_frame,
                     header,
                 },
                 recipes,
@@ -1197,7 +1386,23 @@ pub(crate) fn decode_face_operands(
         }
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
-    Ok(out)
+    let losses = out
+        .iter()
+        .filter_map(|operand| {
+            let stream = native_stream(&operand.id)?;
+            let scope = scope_index.get(&(stream, operand.scope_record_index))?;
+            let record_index = operand.record_index();
+            (scope.kind() == crate::records::feature::scope::DesignFeatureKind::SplitFace
+                && !split_face_frames.contains_key(&(stream, record_index)))
+            .then(|| {
+                crate::loss::F3dLossCode::FeatureSplitFaceIndexedOperandAssumed.note(format!(
+                    "SplitFace scope {} assumes the indexed headers bound face operand {record_index}; its registered envelope is unavailable.",
+                    scope.id,
+                ))
+            })
+        })
+        .collect();
+    Ok((out, losses))
 }
 
 /// Decode ordered sheet-metal source-region identities.
@@ -1430,7 +1635,7 @@ pub(crate) enum FaceSourceType {
 impl FaceSourceType {
     fn matches(self, registration: &crate::records::entity_header::SegmentTypeData) -> bool {
         let (guid, module, versions): (&str, &str, &[u32]) = match self {
-            Self::Scope => ("7AFA0A65-B53C-472C-ACA4-5C7C0A65001C", "Fusion", &[3]),
+            Self::Scope => ("7AFA0A65-B53C-472C-ACA4-5C7C0A65001C", "Fusion", &[3, 4]),
             Self::Carrier => ("CAA55628-037B-4D01-9C74-26118F70B63E", "Fusion", &[0]),
             Self::Settings => ("E75C86D6-76D8-4F1F-BC16-AB8CB74958B0", "Fusion", &[2, 3]),
             Self::Identity => (
@@ -1754,15 +1959,101 @@ pub(crate) fn edge_operand_candidate_faces(
     faces
 }
 
-/// Resolve the unique sketch-profile frame named by profile-based scopes.
+/// The Sketch text record index named by the text selection `N+3` of the
+/// sketch-profile operand with record index `N`.
+fn sketch_profile_text_target(
+    bytes: &[u8],
+    profile_record_index: u32,
+    paired_byte_offset: u64,
+) -> Option<u32> {
+    let paired_at = usize::try_from(paired_byte_offset).ok()?;
+    let next_header = |position: usize, expected: u32| {
+        let at = next_indexed_record_offset(bytes, position)?;
+        (indexed_record_header_at(bytes, at)?.record_index == expected).then_some(at)
+    };
+    let nested_one_at = next_header(
+        paired_at.checked_add(indexed_header::LEN)?,
+        profile_record_index.checked_add(1)?,
+    )?;
+    let nested_two_at = next_header(
+        nested_one_at.checked_add(indexed_header::LEN)?,
+        profile_record_index.checked_add(2)?,
+    )?;
+    let selection_at = next_header(
+        nested_two_at.checked_add(indexed_header::LEN)?,
+        profile_record_index.checked_add(3)?,
+    )?;
+    let zeros_at = selection_at.checked_add(text_selection::ZERO_RUN_10)?;
+    let text_at = selection_at.checked_add(text_selection::TEXT_RECORD_INDEX)?;
+    let end = selection_at.checked_add(text_selection::LEN)?;
+    if bytes.get(zeros_at..text_at)?.iter().any(|&byte| byte != 0) {
+        return None;
+    }
+    let text_record = View::u64_le_at(bytes, text_at)?;
+    match next_indexed_record_offset(bytes, zeros_at) {
+        Some(next) if next == end => {}
+        None if bytes.len() == end => {}
+        _ => return None,
+    }
+    u32::try_from(text_record).ok()
+}
+
+/// The text picks of an Extrude whose every sketch-profile operand carries a
+/// text selection, in operand order.
+fn sketch_profile_text_picks(
+    bytes: &[u8],
+    profiles: &[DesignSketchProfileOperand],
+) -> Option<Vec<crate::design::sketch_text_extrude::SketchTextPick>> {
+    let picks = profiles
+        .iter()
+        .map(|profile| {
+            Some(crate::design::sketch_text_extrude::SketchTextPick {
+                sketch_entity: profile.entity_id.suffix(),
+                text_record: sketch_profile_text_target(
+                    bytes,
+                    profile.record_index,
+                    profile.paired_byte_offset(),
+                )?,
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    (!picks.is_empty()).then_some(picks)
+}
+
+pub(crate) fn unresolved_profile_group_loss(
+    profile_count: usize,
+) -> cadmpeg_ir::report::loss::LossNote {
+    crate::loss::F3dLossCode::FeatureExtrudeProfileGroupNative.note(format!(
+        "{profile_count} Sketch-profile operands remain native because their group composition is unresolved.",
+    ))
+}
+
+/// Several Sketch-profile operands of one Extrude are one selection when they
+/// name the same Sketch and each carries a region selection.
+pub(crate) fn composable_sketch_profiles(profiles: &[DesignSketchProfileOperand]) -> bool {
+    let Some(first) = profiles.first() else {
+        return false;
+    };
+    profiles.len() > 1
+        && profiles.iter().all(|profile| {
+            profile.entity_id == first.entity_id && profile.region_selection.is_some()
+        })
+}
+
+/// Resolve the unique sketch-profile frame named by profile-based scopes, and
+/// record the Extrudes whose operands carry text selections.
 pub(crate) fn bind_sketch_profiles(
     scan: &ContainerScan,
     scopes: &mut [DesignParameterScope],
     headers: &[DesignRecordHeader],
     entities: &[DesignEntityHeader],
+    text_extrude_candidates: &mut Vec<
+        crate::design::sketch_text_extrude::SketchTextExtrudeCandidate,
+    >,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
     let headers = indexed_operand_headers(headers);
     let mut losses = Vec::new();
+    let mut record_offsets = HashMap::<_, OnceCell<_>>::new();
     for scope in scopes.iter_mut().filter(|scope| {
         design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sweep)
@@ -1787,8 +2078,24 @@ pub(crate) fn bind_sketch_profiles(
             else {
                 continue;
             };
-            let Some(profile) = parse_sketch_profile(bytes, stream, ordinal, header, entities)
-            else {
+            let profile =
+                parse_sketch_profile(bytes, stream, ordinal, header, entities).or_else(|| {
+                    if ordinal != 1 || !scope.is_legacy_class_330_symmetric_distance() {
+                        return None;
+                    }
+                    parse_sketch_profile_frame(
+                        bytes,
+                        stream,
+                        ordinal,
+                        header,
+                        entities,
+                        Some((
+                            scope.record_index,
+                            record_offsets.entry(entry.name.as_str()).or_default(),
+                        )),
+                    )
+                });
+            let Some(profile) = profile else {
                 continue;
             };
             profiles.push(profile);
@@ -1816,12 +2123,22 @@ pub(crate) fn bind_sketch_profiles(
             }
         }
         if profiles.len() > 1 {
+            let scope_id = scope.id.clone();
             if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot) =
                 scope.payload_mut()
             {
-                losses.push(crate::loss::F3dLossCode::FeatureExtrudeProfileGroupNative.note(
-                    format!("{} Sketch-profile operands remain native because their group composition is unresolved.", profiles.len()),
-                ));
+                match sketch_profile_text_picks(bytes, &profiles) {
+                    Some(picks) => text_extrude_candidates.push(
+                        crate::design::sketch_text_extrude::SketchTextExtrudeCandidate {
+                            scope_id,
+                            picks,
+                        },
+                    ),
+                    None if !composable_sketch_profiles(&profiles) => {
+                        losses.push(unresolved_profile_group_loss(profiles.len()));
+                    }
+                    None => {}
+                }
                 slot.get_or_insert_with(Default::default)
                     .extrude_native_profiles = Some(profiles);
             }
@@ -1830,6 +2147,16 @@ pub(crate) fn bind_sketch_profiles(
         let Some(profile) = profiles.pop() else {
             continue;
         };
+        if is_extrude {
+            if let Some(picks) = sketch_profile_text_picks(bytes, std::slice::from_ref(&profile)) {
+                text_extrude_candidates.push(
+                    crate::design::sketch_text_extrude::SketchTextExtrudeCandidate {
+                        scope_id: scope.id.clone(),
+                        picks,
+                    },
+                );
+            }
+        }
         losses.extend(profile.flags_assumption_loss());
         if scope.kind() == crate::records::feature::scope::DesignFeatureKind::BaseFlange {
             if let crate::records::feature::scope::DesignScopePayloadMut::BaseFlange(slot) =
@@ -1923,6 +2250,8 @@ pub(crate) fn decode_construction_operand_groups(
 ) -> Result<Vec<DesignConstructionOperandGroup>, CodecError> {
     let headers = indexed_operand_headers(headers);
     let mut out = Vec::new();
+    let mut record_offsets = HashMap::<&str, OnceCell<IndexedRecordOffsets>>::new();
+    let mut split_metadata = HashMap::new();
     for scope in scopes.iter_mut().filter(|scope| {
         design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Coil)
@@ -1938,6 +2267,10 @@ pub(crate) fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::SurfacePatch)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::SurfaceRuled)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::BoundaryFill)
+            || matches!(
+                scope.payload(),
+                crate::records::feature::scope::DesignScopePayload::SilhouetteSplit(Some(_))
+            )
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Split)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Draft)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::ReplaceFace)
@@ -1982,8 +2315,26 @@ pub(crate) fn decode_construction_operand_groups(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
+        let offsets = record_offsets.entry(stream).or_default();
+        let metadata = if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Split) {
+            split_metadata
+                .entry(stream)
+                .or_insert_with(|| {
+                    super::meta::metadata_for_bulk_stream(scan, &entry.name)
+                        .ok()
+                        .flatten()
+                })
+                .as_deref()
+        } else {
+            None
+        };
         let mut unclosed = Vec::new();
         for (ordinal, record_index) in scope.reference_members().values().copied().enumerate() {
+            if scope.kind() == crate::records::feature::scope::DesignFeatureKind::SilhouetteSplit
+                && ordinal != 2
+            {
+                continue;
+            }
             if scope.emboss_operand_construction().is_some() && !matches!(ordinal, 0 | 2) {
                 continue;
             }
@@ -1992,11 +2343,13 @@ pub(crate) fn decode_construction_operand_groups(
             else {
                 continue;
             };
-            match parse_construction_operand_group(
+            match parse_construction_operand_group_in_stream(
                 bytes,
                 scope,
                 ordinal,
                 &RecordFrame::from(*header),
+                Some(offsets),
+                metadata,
             ) {
                 ConstructionOperandGroupParse::Complete(group) => {
                     push_construction_operand_group(
@@ -2014,16 +2367,12 @@ pub(crate) fn decode_construction_operand_groups(
         }
         scope.unclosed_construction_operand_groups = unclosed;
         if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude) {
-            let seventh_slot_record_index = scope.extrude_prologue().and_then(|prologue| {
-                crate::design::decode::scopes::extrude::extrude_seventh_slot_record_index(
-                    bytes, prologue,
-                )
-            });
-            assign_extrude_face_roles(
-                scope,
-                &mut out[scope_group_start..],
-                seventh_slot_record_index,
-            );
+            let slots = scope
+                .extrude_prologue()
+                .and_then(|prologue| extrude_marked_reference_slots(bytes, prologue));
+            let groups = &mut out[scope_group_start..];
+            assign_extrude_face_roles(scope, groups, slots.and_then(|slots| slots[6]));
+            assign_slotted_extrude_face_targets(scope, groups, slots);
         }
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
@@ -2294,6 +2643,54 @@ pub(in crate::design) fn assign_extrude_face_roles(
     }
 }
 
+pub(crate) fn allows_slotted_extrude_face_targets(scope: &DesignParameterScope) -> bool {
+    matches!(
+        scope.extrude_prologue(),
+        Some(DesignExtrudePrologue::ReferenceAware {
+            extent: DesignExtrudeExtent::TwoSidedToTargetsOptionZero,
+            operation: DesignExtrudeOperation::NewBody,
+            start: DesignExtrudeStart::ProfilePlane,
+            solid_operation: true,
+            first_side_target_ordinal: None,
+            ..
+        })
+    )
+}
+
+pub(in crate::design) fn assign_slotted_extrude_face_targets(
+    scope: &DesignParameterScope,
+    groups: &mut [DesignConstructionOperandGroup],
+    slots: Option<[Option<u32>; 7]>,
+) {
+    let Some([None, None, None, Some(_), Some(second), Some(_), Some(first)]) = slots else {
+        return;
+    };
+    if first == second || !allows_slotted_extrude_face_targets(scope) {
+        return;
+    }
+    let mut targets = groups
+        .iter_mut()
+        .filter(|group| group.role() == DesignOperandRole::ROLE_0X5);
+    let (Some(first_group), Some(second_group), None) =
+        (targets.next(), targets.next(), targets.next())
+    else {
+        return;
+    };
+    if first_group.record_index == first
+        && second_group.record_index == second
+        && first_group.scope_reference_ordinal < second_group.scope_reference_ordinal
+        && first_group.members().len() == 1
+        && second_group.members().len() == 1
+    {
+        for group in [first_group, second_group] {
+            group.operand_role = DesignConstructionOperandRole::ExtrudeFaces {
+                encoding: DesignExtrudeFaceEncoding::SelectedStart,
+                usage: DesignExtrudeFaceRole::Termination,
+            };
+        }
+    }
+}
+
 /// Return the Extrude groups that select bodies to their source role.
 ///
 /// A start-from-face Extrude reads every `0x5` group after the first as a
@@ -2475,6 +2872,16 @@ pub(crate) fn decode_fillet_radius_groups(
                     && group.scope_record_index == scope.record_index
             })
             .collect::<Vec<_>>();
+        if scope.fillet_sets().is_some_and(|sets| {
+            sets.projects_short_sets(
+                scope_groups
+                    .iter()
+                    .filter(|group| !group.members().is_empty())
+                    .map(|group| group.record_index),
+            )
+        }) {
+            continue;
+        }
         scope_groups.sort_by_key(|group| group.scope_reference_ordinal);
         let mut owned_parameters = owners
             .iter()
@@ -2489,9 +2896,7 @@ pub(crate) fn decode_fillet_radius_groups(
         owned_parameters.sort_by_key(|(ordinal, _)| *ordinal);
         let radii = owned_parameters
             .iter()
-            .filter_map(|(_, parameter)| {
-                (parameter.source_kind() == "Radius").then_some(*parameter)
-            })
+            .filter_map(|(_, parameter)| parameter.is_fillet_radius().then_some(*parameter))
             .collect::<Vec<_>>();
         let weights = owned_parameters
             .iter()
@@ -2721,7 +3126,7 @@ pub(crate) fn disambiguate_fixed_fillet_parameters(
 }
 
 /// Outcome of reading a scope reference member as a construction-operand group.
-pub(super) enum ConstructionOperandGroupParse {
+pub(crate) enum ConstructionOperandGroupParse {
     /// The record does not open a construction-operand group.
     NotAGroup,
     /// The record opens a group the grammar does not close.
@@ -2823,10 +3228,10 @@ fn extrude_operand_role(
 
 /// Indexed frame identity and stream position.
 #[derive(Clone, Debug)]
-pub(super) struct RecordFrame {
-    pub(super) record_index: u32,
-    pub(super) class_tag: crate::records::references::DesignClassTag,
-    pub(super) byte_offset: u64,
+pub(crate) struct RecordFrame {
+    pub(crate) record_index: u32,
+    pub(crate) class_tag: crate::records::references::DesignClassTag,
+    pub(crate) byte_offset: u64,
 }
 
 impl From<&DesignRecordHeader> for RecordFrame {
@@ -2850,17 +3255,33 @@ impl From<&DesignRecordHeader> for RecordFrame {
 /// slot before the role. The ordinary tail is a reference to record `N + 2`,
 /// a flag block, a reference to record `N + 1`, a zero byte, the owning scope's
 /// reference, and the same-index paired header. One container generation
-/// prefixes the flag block with a further byte. Neither
-/// the repeated ordinal nor the prefix byte is announced, so the tail settles
-/// both: exactly one of the four readings reaches a paired header carrying
-/// this record's own index. That paired header is the next indexed header
-/// with this record's index, and the record's fields are read from the bytes
-/// before it.
-pub(super) fn parse_construction_operand_group(
+/// prefixes the flag block with a further byte. A legacy Extrude tail can
+/// reference an independent empty marker in place of record `N + 2`.
+/// Exactly one ordinal and flag combination reaches the same-index paired
+/// header with the required references.
+pub(crate) fn parse_construction_operand_group(
     bytes: &[u8],
     scope: &DesignParameterScope,
     scope_reference_ordinal: u32,
     header: &RecordFrame,
+) -> ConstructionOperandGroupParse {
+    parse_construction_operand_group_in_stream(
+        bytes,
+        scope,
+        scope_reference_ordinal,
+        header,
+        None,
+        None,
+    )
+}
+
+fn parse_construction_operand_group_in_stream(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    scope_reference_ordinal: u32,
+    header: &RecordFrame,
+    offsets: Option<&OnceCell<IndexedRecordOffsets>>,
+    split_metadata: Option<&crate::metastream::MetaStream>,
 ) -> ConstructionOperandGroupParse {
     use ConstructionOperandGroupParse::{Complete, NotAGroup, Unclosed};
 
@@ -2982,6 +3403,20 @@ pub(super) fn parse_construction_operand_group(
 
     // Past this point the record has opened the group grammar, so a tail that
     // does not close is a group this reader cannot name.
+    let Some(nested_index) = header.record_index.checked_add(1) else {
+        return Unclosed;
+    };
+    let compact_split_group = scope.kind()
+        == crate::records::feature::scope::DesignFeatureKind::Split
+        && member_count != 0
+        && member_count_at.checked_sub(start) == Some(split_group::MEMBER_COUNT)
+        && auxiliary_reference_slots == [false, false]
+        && trailing_count == 1
+        && match role {
+            DesignOperandRole::ROLE_0X21 => scope_reference_ordinal == 0,
+            DesignOperandRole::BODIES_A => scope_reference_ordinal >= 2,
+            _ => false,
+        };
     let mut closed = None;
     for repeats_ordinal in [true, false] {
         let mut tail = cursor;
@@ -2991,11 +3426,11 @@ pub(super) fn parse_construction_operand_group(
             }
             tail += 4;
         }
-        if take_record_reference(record_bytes, &mut tail).map(|(index, _)| index)
-            != header.record_index.checked_add(2)
-        {
+        let first_at = tail;
+        let Some((first_tail_target, _)) = take_record_reference(record_bytes, &mut tail) else {
             continue;
-        }
+        };
+        let ordinary = Some(first_tail_target) == header.record_index.checked_add(2);
         for flag_bytes in [2usize, 3] {
             let Some(flags) = record_bytes.get(tail..tail + flag_bytes) else {
                 continue;
@@ -3007,7 +3442,7 @@ pub(super) fn parse_construction_operand_group(
             let closing_flag = flags[flag_bytes - 1] != 0;
             let mut after = tail + flag_bytes;
             if take_record_reference(record_bytes, &mut after).map(|(index, _)| index)
-                != header.record_index.checked_add(1)
+                != Some(nested_index)
             {
                 continue;
             }
@@ -3031,15 +3466,70 @@ pub(super) fn parse_construction_operand_group(
             if View::u32_le_at(bytes, after_tag) != Some(header.record_index) {
                 continue;
             }
+            let compact = !ordinary
+                && compact_split_group
+                && repeats_ordinal
+                && flags == [0, 0]
+                && marked_record_reference(record_bytes, first_at) == Some(first_tail_target)
+                && split_metadata.is_some_and(|meta| {
+                    split_groups::registered_companion(bytes, meta, header, first_tail_target)
+                });
+            if !ordinary && !compact {
+                let has_independent_tail = if scope
+                    .extrude_prologue()
+                    .is_some_and(DesignExtrudePrologue::is_legacy_shifted_to_face)
+                {
+                    matches!(
+                        role,
+                        DesignOperandRole::BODIES_A
+                            | DesignOperandRole::PROFILE
+                            | DesignOperandRole::ROLE_0X12
+                    )
+                } else {
+                    role == DesignOperandRole::PROFILE
+                        && scope_reference_ordinal == 0
+                        && member_count == 1
+                        && scope.is_legacy_class_330_symmetric_distance()
+                        && marked_record_reference(record_bytes, members_at).is_some_and(|member| {
+                            scope
+                                .reference_members()
+                                .values()
+                                .take(2)
+                                .copied()
+                                .eq([header.record_index, member])
+                        })
+                };
+                if !(has_independent_tail
+                    && repeats_ordinal
+                    && flags == [0, 0]
+                    && first_tail_target > header.record_index
+                    && offsets.is_some_and(|offsets| {
+                        is_following_empty_extrude_record(
+                            bytes,
+                            offsets,
+                            first_tail_target,
+                            after_tag + size_of::<u32>(),
+                        )
+                    }))
+                {
+                    continue;
+                }
+            }
             if closed
-                .replace((variant, closing_flag, after, paired_class_tag.to_owned()))
+                .replace((
+                    variant,
+                    closing_flag,
+                    after,
+                    paired_class_tag.to_owned(),
+                    compact,
+                ))
                 .is_some()
             {
                 return Unclosed;
             }
         }
     }
-    let Some((variant, closing_flag, paired_at, paired_class_tag)) = closed else {
+    let Some((variant, closing_flag, paired_at, paired_class_tag, compact)) = closed else {
         return Unclosed;
     };
 
@@ -3080,6 +3570,18 @@ pub(super) fn parse_construction_operand_group(
             return NotAGroup;
         };
         members.push(crate::records::identity::Located { value, offset });
+    }
+    if compact
+        && !scope
+            .reference_members()
+            .values()
+            .skip(index_from_u32(scope_reference_ordinal))
+            .take(members.len() + 1)
+            .copied()
+            .eq(std::iter::once(header.record_index)
+                .chain(members.iter().map(|member| member.value)))
+    {
+        return Unclosed;
     }
     let auxiliary_records = auxiliary_slots.into_iter().flatten().collect::<Vec<_>>();
     let mut trailing_records = Vec::new();
@@ -3129,6 +3631,26 @@ pub(super) fn parse_construction_operand_group(
         return Unclosed;
     };
     Complete(Box::new(group))
+}
+
+fn is_following_empty_extrude_record(
+    bytes: &[u8],
+    offsets: &OnceCell<IndexedRecordOffsets>,
+    record_index: u32,
+    after: usize,
+) -> bool {
+    let records = offsets.get_or_init(|| IndexedRecordOffsets::build(bytes));
+    let &[target] = records.offsets(record_index) else {
+        return false;
+    };
+    let Some(end) = target.checked_add(group_tail_marker::LEN) else {
+        return false;
+    };
+    target >= after
+        && bytes
+            .get(target + group_tail_marker::ZERO_PAYLOAD..end)
+            .is_some_and(|payload| payload.iter().all(|&byte| byte == 0))
+        && indexed_record_header_at(bytes, end).is_some()
 }
 
 fn construction_tracking_registry<'cache>(
@@ -5548,10 +6070,33 @@ pub(in crate::design) fn parse_sketch_profile(
     header: &DesignRecordHeader,
     entities: &[DesignEntityHeader],
 ) -> Option<DesignSketchProfileOperand> {
+    parse_sketch_profile_frame(
+        bytes,
+        stream,
+        scope_reference_ordinal,
+        header,
+        entities,
+        None,
+    )
+}
+
+fn parse_sketch_profile_frame(
+    bytes: &[u8],
+    stream: &str,
+    scope_reference_ordinal: u32,
+    header: &DesignRecordHeader,
+    entities: &[DesignEntityHeader],
+    legacy: Option<(u32, &OnceCell<IndexedRecordOffsets>)>,
+) -> Option<DesignSketchProfileOperand> {
+    if legacy.is_some() && header.class_tag.as_str() != "272" {
+        return None;
+    }
     let start = usize::try_from(header.byte_offset).ok()?;
+    let prefix_record_delta = if legacy.is_some() { 2 } else { 3 };
     if bytes.get(start + 11..start + 21)? != [0; 10]
         || bytes.get(start + 21) != Some(&1)
-        || View::u32_le_at(bytes, start + 22)? != header.record_index.checked_add(3)?
+        || View::u32_le_at(bytes, start + 22)?
+            != header.record_index.checked_add(prefix_record_delta)?
         || bytes.get(start + 26..start + 32)? != [0; 6]
         || View::u32_le_at(bytes, start + 32)? != 1
     {
@@ -5566,6 +6111,8 @@ pub(in crate::design) fn parse_sketch_profile(
     let tail_length = paired_at.checked_sub(after_entity_suffix)?;
     if View::u32_le_at(bytes, after_paired_tag)? != header.record_index
         || !matches!(tail_length, 82 | 83 | 89 | 93 | 94)
+        || (legacy.is_some()
+            && (tail_length != legacy_profile_tail::LEN || paired_class_tag != "262"))
     {
         return None;
     }
@@ -5613,12 +6160,12 @@ pub(in crate::design) fn parse_sketch_profile(
         let (nested_two_at, nested_one_at, scope_at) = if tail_length == 89 {
             (53, 66, 78)
         } else {
-            (57, 70, 82)
+            (legacy_profile_tail::EMPTY_RECORD_REFERENCE, 70, 82)
         };
+        let first_tail_target = marked_record_reference(bytes, tail + nested_two_at)?;
+        let scope_target = marked_record_reference(bytes, tail + scope_at)?;
         if bytes.get(tail..tail + 8) != Some(&[1, 0, 0, 0, 0, 0, 0, 0])
             || View::u32_le_at(bytes, tail + 8) != Some(1)
-            || marked_record_reference(bytes, tail + nested_two_at)
-                != header.record_index.checked_add(2)
             || !bytes
                 .get(tail + nested_one_at - 2..tail + nested_one_at)?
                 .iter()
@@ -5626,11 +6173,29 @@ pub(in crate::design) fn parse_sketch_profile(
             || marked_record_reference(bytes, tail + nested_one_at)
                 != header.record_index.checked_add(1)
             || bytes.get(tail + scope_at - 1) != Some(&0)
-            || marked_record_reference(bytes, tail + scope_at).is_none()
             || View::u32_le_at(bytes, tail + 41) == Some(0)
             || (tail_length == 93
                 && View::u32_le_at(bytes, tail + 41) != View::u32_le_at(bytes, tail + 53))
         {
+            return None;
+        }
+        if let Some((owner, offsets)) = legacy {
+            if scope_target != owner
+                || first_tail_target <= header.record_index
+                || View::u32_le_at(bytes, tail + legacy_profile_tail::ROLE)
+                    != Some(legacy_profile_tail::ROLE_VALUE)
+                || bytes.get(tail + legacy_profile_tail::ZERO_FLAGS..tail + nested_one_at)
+                    != Some(&[0, 0])
+                || !is_following_empty_extrude_record(
+                    bytes,
+                    offsets,
+                    first_tail_target,
+                    after_paired_tag + size_of::<u32>(),
+                )
+            {
+                return None;
+            }
+        } else if Some(first_tail_target) != header.record_index.checked_add(2) {
             return None;
         }
         compact_tail_flags = Some([
@@ -5671,8 +6236,15 @@ pub(in crate::design) fn parse_sketch_profile(
             (format!("{prefix}_{entity_suffix}"), true)
         }
     };
-    let region_selection =
-        parse_sketch_profile_region_selection(bytes, header.record_index, paired_at);
+    let region_selection = parse_sketch_profile_region_selection_frame(
+        bytes,
+        header.record_index,
+        paired_at,
+        prefix_record_delta,
+    );
+    if legacy.is_some() && region_selection.is_none() {
+        return None;
+    }
     DesignSketchProfileOperand::try_new(
         crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
             sketch_absent,
@@ -5699,6 +6271,15 @@ fn parse_sketch_profile_region_selection(
     profile_record_index: u32,
     paired_at: usize,
 ) -> Option<DesignSketchProfileRegionSelection> {
+    parse_sketch_profile_region_selection_frame(bytes, profile_record_index, paired_at, 3)
+}
+
+fn parse_sketch_profile_region_selection_frame(
+    bytes: &[u8],
+    profile_record_index: u32,
+    paired_at: usize,
+    selection_delta: u32,
+) -> Option<DesignSketchProfileRegionSelection> {
     const COUNT_LEN: usize = 4;
     // Each counted region stores at least its four-byte loop count, so the
     // bytes after a count bound it.
@@ -5714,17 +6295,16 @@ fn parse_sketch_profile_region_selection(
         let at = next_indexed_record_offset(bytes, position)?;
         (indexed_record_header_at(bytes, at)?.record_index == expected).then_some(at)
     };
-    let nested_one_at = next_header(
-        paired_at.checked_add(indexed_header::LEN)?,
-        profile_record_index.checked_add(1)?,
-    )?;
-    let nested_two_at = next_header(
-        nested_one_at.checked_add(indexed_header::LEN)?,
-        profile_record_index.checked_add(2)?,
-    )?;
-    let selection_record_index = profile_record_index.checked_add(3)?;
+    let mut predecessor = paired_at;
+    for delta in 1..selection_delta {
+        predecessor = next_header(
+            predecessor.checked_add(indexed_header::LEN)?,
+            profile_record_index.checked_add(delta)?,
+        )?;
+    }
+    let selection_record_index = profile_record_index.checked_add(selection_delta)?;
     let selection_at = next_header(
-        nested_two_at.checked_add(indexed_header::LEN)?,
+        predecessor.checked_add(indexed_header::LEN)?,
         selection_record_index,
     )?;
     let (class_tag, after_class_tag) =
@@ -5824,10 +6404,9 @@ fn parse_sketch_profile_region_loops(
     let mut loops = Vec::new();
     for _ in 0..loop_count {
         let (mut ring, next) = parse_sketch_profile_region_members(bytes, cursor, EXTERIOR_LEN)?;
-        if !matches!(bytes.get(next), Some(0 | 1)) {
-            return None;
-        }
+        let &exterior = bytes.get(next).filter(|byte| matches!(byte, 0 | 1))?;
         ring.region_ordinal = region_ordinal;
+        ring.hole = exterior == 0;
         loops.push(ring);
         cursor = next.checked_add(EXTERIOR_LEN)?;
     }
@@ -5865,7 +6444,7 @@ fn parse_sketch_profile_region_members(
             bytes,
             cursor.checked_add(region_member::CURVE_PRIMARY_ID)?,
         )?)?;
-        let incidence_words_offset = cursor.checked_add(region_member::ZERO_WORDS_3)?;
+        let incidence_words_offset = cursor.checked_add(region_member::ZERO_WORD_AFTER_PRIMARY)?;
         let mut incidence_words = [0; 8];
         for (ordinal, word) in incidence_words.iter_mut().enumerate() {
             *word = View::u32_le_at(
@@ -5873,8 +6452,17 @@ fn parse_sketch_profile_region_members(
                 incidence_words_offset.checked_add(ordinal.checked_mul(4)?)?,
             )?;
         }
+        let curve_secondary_id = View::u32_le_at(
+            bytes,
+            cursor.checked_add(region_member::CURVE_SECONDARY_ID)?,
+        )?;
+        let zero_after_secondary = View::u32_le_at(
+            bytes,
+            cursor.checked_add(region_member::ZERO_WORD_AFTER_SECONDARY)?,
+        )?;
         if kind != 3
-            || incidence_words[..3] != [0; 3]
+            || incidence_words[0] != 0
+            || zero_after_secondary != 0
             || !matches!(incidence_words[3], 0 | 1)
             || incidence_words[6..] != [0; 2]
         {
@@ -5887,6 +6475,7 @@ fn parse_sketch_profile_region_members(
                 cursor.checked_add(region_member::CURVE_PRIMARY_ID)?,
             )
             .ok()?,
+            curve_secondary_id: std::num::NonZeroU32::new(curve_secondary_id),
             incidence_flag: incidence_words[3] == 1,
             incidence_values: [
                 crate::records::topology::sketch_profile::DesignRegionIncidence::try_from(
@@ -5907,6 +6496,7 @@ fn parse_sketch_profile_region_members(
             member_count_offset: u64::try_from(member_count_offset).ok()?,
             members,
             region_ordinal: 0,
+            hole: false,
         },
         cursor,
     ))
@@ -6938,10 +7528,11 @@ pub(crate) struct FaceOperandFrame<'a> {
     pub(crate) scope_reference_ordinal: u32,
     pub(crate) group_ownership: Option<(u32, u32)>,
     pub(crate) next_byte_offset: Option<u64>,
+    pub(crate) registered_frame: Option<&'a RegisteredFaceOperandFrame>,
     pub(crate) header: &'a DesignRecordHeader,
 }
 
-pub(super) fn parse_face_operand(
+pub(crate) fn parse_face_operand(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -6953,43 +7544,55 @@ pub(super) fn parse_face_operand(
         scope_reference_ordinal,
         group_ownership,
         next_byte_offset,
+        registered_frame,
         header,
     } = input;
-    let start = usize::try_from(header.byte_offset).ok()?;
-    let mut offsets = [0usize; 5];
-    let mut position = start.checked_add(11)?;
-    for (delta, slot) in offsets[..4].iter_mut().enumerate() {
-        let record_index = header
-            .record_index
-            .checked_add(u32::try_from(delta).ok()?)?;
-        let offset = records.first_at_or_after(position, record_index)?;
-        *slot = offset;
-        position = offset.checked_add(11)?;
-    }
-    if parse_sketch_profile_region_selection(bytes, header.record_index, offsets[0]).is_some() {
-        return None;
-    }
     let stream = native_stream(&scope.id)?;
-    let recipe_start = u64::try_from(offsets[3]).ok()?;
-    let first_recipe = recipes
-        .iter()
-        .filter(|recipe| {
-            native_stream(&recipe.id) == Some(stream)
-                && recipe.byte_offset > recipe_start
-                && next_byte_offset.is_none_or(|end| recipe.byte_offset < end)
-        })
-        .min_by_key(|recipe| recipe.byte_offset)?;
-    let family_name_len = match first_recipe.kind {
-        ConstructionRecipeKind::Face => b"face_recipe_data".len(),
-        ConstructionRecipeKind::BoundedFace => b"bounded_face_recipe_data".len(),
-        _ => return None,
+    let (offsets, next_record_index) = if let Some(frame) = registered_frame {
+        if frame.header.record_index != header.record_index
+            || frame.header.byte_offset != header.byte_offset
+        {
+            return None;
+        }
+        (frame.offsets, frame.next_record_index)
+    } else {
+        let start = usize::try_from(header.byte_offset).ok()?;
+        let mut offsets = [0usize; 5];
+        let mut position = start.checked_add(11)?;
+        for (delta, slot) in offsets[..4].iter_mut().enumerate() {
+            let record_index = header
+                .record_index
+                .checked_add(u32::try_from(delta).ok()?)?;
+            let offset = records.first_at_or_after(position, record_index)?;
+            *slot = offset;
+            position = offset.checked_add(11)?;
+        }
+        if parse_sketch_profile_region_selection(bytes, header.record_index, offsets[0]).is_some() {
+            return None;
+        }
+        let recipe_start = u64::try_from(offsets[3]).ok()?;
+        let first_recipe = recipes
+            .iter()
+            .filter(|recipe| {
+                native_stream(&recipe.id) == Some(stream)
+                    && recipe.byte_offset > recipe_start
+                    && next_byte_offset.is_none_or(|end| recipe.byte_offset < end)
+            })
+            .min_by_key(|recipe| recipe.byte_offset)?;
+        let family_name_len = match first_recipe.kind {
+            ConstructionRecipeKind::Face => b"face_recipe_data".len(),
+            ConstructionRecipeKind::BoundedFace => b"bounded_face_recipe_data".len(),
+            _ => return None,
+        };
+        let program_start = usize::try_from(first_recipe.byte_offset)
+            .ok()?
+            .checked_add(family_name_len)?;
+        let (immediate_next, next_record_index) =
+            face_recipe_next_boundary(bytes, program_start, header.record_index, next_byte_offset)?;
+        offsets[4] = immediate_next;
+        (offsets, next_record_index)
     };
-    let program_start = usize::try_from(first_recipe.byte_offset)
-        .ok()?
-        .checked_add(family_name_len)?;
-    let (immediate_next, next_record_index) =
-        face_recipe_next_boundary(bytes, program_start, header.record_index, next_byte_offset)?;
-    offsets[4] = immediate_next;
+    let recipe_start = u64::try_from(offsets[3]).ok()?;
     let mut indexed = [("", 0u32); 5];
     for (offset, slot) in offsets.iter().zip(&mut indexed) {
         if *offset == bytes.len() {
@@ -7012,10 +7615,11 @@ pub(super) fn parse_face_operand(
     let mut matches = recipes.iter().filter(|recipe| {
         recipe.byte_offset > recipe_start
             && recipe.byte_offset < next_byte_offset
-            && matches!(
-                recipe.kind,
-                ConstructionRecipeKind::Face | ConstructionRecipeKind::BoundedFace
-            )
+            && (registered_frame.is_some()
+                || matches!(
+                    recipe.kind,
+                    ConstructionRecipeKind::Face | ConstructionRecipeKind::BoundedFace
+                ))
             && native_stream(&recipe.id) == Some(stream)
     });
     let recipe = matches.next()?;
@@ -7027,6 +7631,18 @@ pub(super) fn parse_face_operand(
         ConstructionRecipeKind::BoundedFace => b"bounded_face_recipe_data".len(),
         _ => return None,
     };
+    if registered_frame.is_some() {
+        let family = match recipe.kind {
+            ConstructionRecipeKind::Face => b"face_recipe_data".as_slice(),
+            ConstructionRecipeKind::BoundedFace => b"bounded_face_recipe_data".as_slice(),
+            _ => return None,
+        };
+        let at = usize::try_from(recipe.byte_offset).ok()?;
+        let end = at.checked_add(family.len())?;
+        if end >= offsets[4] || bytes.get(at..end)? != family {
+            return None;
+        }
+    }
     let (recipe_prefix_at, recipe_prefix_bytes) = recipe_record_prefix(
         bytes,
         offsets[3],
@@ -7095,6 +7711,9 @@ pub(super) fn parse_face_operand(
         resolved_active_face: None,
         next_record_index,
         next_byte_offset,
+    })
+    .and_then(|operand| {
+        operand.with_registered_recipe_frame(registered_frame.and_then(|frame| frame.recipe_frame))
     })
     .ok()
     .map(Ok)
@@ -7373,7 +7992,11 @@ fn parse_profile_curve_selection(
         else {
             return Ok(None);
         };
-        if parse_sketch_profile_region_selection(bytes, header.record_index, paired_at).is_some() {
+        // A nested region selection whose members name curves without a
+        // secondary identity is the sketch-profile frame's own selection.
+        if parse_sketch_profile_region_selection(bytes, header.record_index, paired_at)
+            .is_some_and(|selection| !selection.has_secondary_identity())
+        {
             return Ok(None);
         }
     }
@@ -7513,4 +8136,128 @@ pub(crate) fn construction_closing_flag_losses(
             ))
         })
         .collect()
+}
+
+/// Chain-record bytes after its fourteen zero bytes and before the typed
+/// reference back to the selection record of a sketchless chain record.
+const SKETCHLESS_PROFILE_CHAIN_MARKER: [u8; 6] = [1, 1, 0, 0, 0, 0];
+
+/// The asset GUID of the typed-reference profile selection at `header` when
+/// its chain record is sketchless.
+fn sketchless_profile_selection_asset(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    header: &DesignRecordHeader,
+) -> Option<String> {
+    use crate::layout::typed_reference_sketchless_profile_chain_record as sketchless_chain;
+    let start = usize::try_from(header.byte_offset).ok()?;
+    let record_index = header.record_index;
+    let chain_index = record_index.checked_add(1)?;
+    let identity_index = record_index.checked_add(3)?;
+    let typed_target = |at: usize| {
+        let mut end = at;
+        let reference = take_reference(bytes, &mut end)?;
+        let (target, inline_type) = reference.local()?;
+        inline_type.is_some().then_some((target, end))
+    };
+    let (target, after_reference) = typed_target(start + typed_selection::IDENTITY_REFERENCE)?;
+    if bytes.get(start + typed_selection::ZERO_RUN_10..start + typed_selection::IDENTITY_REFERENCE)
+        != Some(&[0; 10][..])
+        || target != u64::from(identity_index)
+        || after_reference != start + typed_selection::CONSTANT_ONE
+        || View::u32_le_at(bytes, start + typed_selection::CONSTANT_ONE) != Some(1)
+    {
+        return None;
+    }
+    let (asset_guid, after_asset) = lp_utf16_bounded(bytes, start + typed_selection::LEN, 36..=36)?;
+    let (owner_text, _) = lp_utf16_bounded(bytes, after_asset, 1..=20)?;
+    if !owner_text.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let &chain_at = records.offsets(chain_index).first()?;
+    if bytes
+        .get(chain_at + sketchless_chain::ZERO_RUN_14..chain_at + sketchless_chain::CHAIN_MARKER)
+        != Some(&[0; 14][..])
+        || bytes.get(
+            chain_at + sketchless_chain::CHAIN_MARKER
+                ..chain_at + sketchless_chain::SELECTION_REFERENCE,
+        ) != Some(&SKETCHLESS_PROFILE_CHAIN_MARKER[..])
+        || typed_target(chain_at + sketchless_chain::SELECTION_REFERENCE)?.0
+            != u64::from(record_index)
+    {
+        return None;
+    }
+    Some(asset_guid)
+}
+
+/// The `feature.extrude-profile-sketch-absent` note for selection record
+/// `selection_record` of Extrude scope record `scope_record`.
+fn sketchless_profile_selection_loss(
+    selection_record: u32,
+    scope_record: u32,
+    asset_guid: &str,
+    design_asset_guid: Option<&str>,
+) -> LossNote {
+    let foreign =
+        design_asset_guid.is_some_and(|design_guid| !design_guid.eq_ignore_ascii_case(asset_guid));
+    let message = if foreign {
+        format!(
+            "Profile selection record {selection_record} of Extrude scope record {scope_record} has a chain record that names no Sketch; its asset GUID {asset_guid} is not the Design's asset GUID, and the profile stays native."
+        )
+    } else {
+        format!(
+            "Profile selection record {selection_record} of Extrude scope record {scope_record} has a chain record that names no Sketch, and the profile stays native."
+        )
+    };
+    crate::loss::F3dLossCode::FeatureExtrudeProfileSketchAbsent.note(message)
+}
+
+/// One `feature.extrude-profile-sketch-absent` note for each Extrude profile
+/// member whose typed-reference selection has a sketchless chain record.
+pub(crate) fn sketchless_profile_selection_losses(
+    scan: &ContainerScan,
+    scopes: &[DesignParameterScope],
+    groups: &[DesignConstructionOperandGroup],
+    headers: &[DesignRecordHeader],
+) -> Result<Vec<LossNote>, CodecError> {
+    let headers = indexed_operand_headers(headers);
+    let extrude_scopes = scopes
+        .iter()
+        .filter(|scope| design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude))
+        .filter_map(|scope| Some((native_stream(&scope.id)?, scope.record_index)))
+        .collect::<HashSet<_>>();
+    let mut records_by_stream = HashMap::new();
+    let mut losses = Vec::new();
+    for group in groups {
+        let Some(stream) = native_stream(&group.id) else {
+            continue;
+        };
+        if !extrude_scopes.contains(&(stream, group.scope_record_index)) {
+            continue;
+        }
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        for member in group.members() {
+            let Some(header) = headers.get(&(stream, member.value)) else {
+                continue;
+            };
+            let records = records_by_stream
+                .entry(stream)
+                .or_insert_with(|| IndexedRecordOffsets::build(bytes));
+            let Some(asset_guid) = sketchless_profile_selection_asset(bytes, records, header)
+            else {
+                continue;
+            };
+            losses.push(sketchless_profile_selection_loss(
+                header.record_index,
+                group.scope_record_index,
+                &asset_guid,
+                scan.design_asset_guid(),
+            ));
+        }
+    }
+    Ok(losses)
 }

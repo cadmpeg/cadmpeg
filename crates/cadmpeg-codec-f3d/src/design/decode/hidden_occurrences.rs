@@ -152,8 +152,13 @@ fn occurrence_path(body: &[u8], occurrences: &BTreeSet<u32>) -> Option<Vec<u32>>
 /// occurrence carrier or the placement carrier of an external reference, and,
 /// for each ancestor the record names, one of its containing occurrences
 /// instantiates that ancestor carrier.
+/// `parents` names the occurrence each nested occurrence sits in.
 pub(crate) fn apply_hidden_occurrences(
     occurrences: &mut [cadmpeg_ir::products::Occurrence],
+    parents_of: &std::collections::BTreeMap<
+        cadmpeg_ir::ids::OccurrenceId,
+        cadmpeg_ir::ids::OccurrenceId,
+    >,
     carriers: &[DesignComponentOccurrence],
     references: &[XrefReference],
     hidden: &[DesignHiddenOccurrence],
@@ -202,9 +207,7 @@ pub(crate) fn apply_hidden_occurrences(
         let mut ancestors = Vec::new();
         let mut current = occurrence;
         for _ in 0..occurrences.len() {
-            let cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence: parent } =
-                &current.parent
-            else {
+            let Some(parent) = parents_of.get(&current.id) else {
                 break;
             };
             let Some(&next) = parents.get(parent) else {

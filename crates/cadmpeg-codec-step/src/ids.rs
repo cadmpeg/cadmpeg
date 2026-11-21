@@ -39,6 +39,12 @@ static SCOPE_TESSELLATION: IdentityComponent = cadmpeg_ir::identity_component!("
 /// The `<scope>` component of a drawing-graph identity.
 static SCOPE_DRAWING: IdentityComponent = cadmpeg_ir::identity_component!("drawing");
 
+/// The `<scope>` component of a body derived from a CSG item.
+static SCOPE_CSG: IdentityComponent = cadmpeg_ir::identity_component!("csg");
+
+/// The `<scope>` component of a design-layer identity.
+static SCOPE_DESIGN: IdentityComponent = cadmpeg_ir::identity_component!("design");
+
 /// The `<kind>` component a source literal spells.
 ///
 /// The literal is checked in the initializer of a `static` item, so a literal
@@ -133,6 +139,20 @@ pub(crate) fn tessellation(kind: &IdentityKind, key: impl Into<IdentityKey>) -> 
 #[must_use]
 pub(crate) fn drawing(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity {
     let namespace = IdentityNamespace::from_components(&FORMAT, &SCOPE_DRAWING, kind);
+    Identity::compose(&namespace, key)
+}
+
+/// Record of a body derived from a CSG item: `step:csg:{kind}#{key}`.
+#[must_use]
+pub(crate) fn csg(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity {
+    let namespace = IdentityNamespace::from_components(&FORMAT, &SCOPE_CSG, kind);
+    Identity::compose(&namespace, key)
+}
+
+/// Design-layer identity: `step:design:{kind}#{key}`.
+#[must_use]
+pub(crate) fn design(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity {
+    let namespace = IdentityNamespace::from_components(&FORMAT, &SCOPE_DESIGN, kind);
     Identity::compose(&namespace, key)
 }
 

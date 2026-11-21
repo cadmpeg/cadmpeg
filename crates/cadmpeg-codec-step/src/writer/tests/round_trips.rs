@@ -172,7 +172,7 @@ fn curve_geometry_for_sheet_pcurve(
             let distance = offset_pcurve.distance();
             let basis = offset_pcurve.basis();
             let Some((origin, direction)) = basis
-                .line_parameters(&cadmpeg_test_support::service_decode_context())
+                .line_parameters(&cadmpeg_core::decode::test_support::service_decode_context())
                 .expect("fixture line parameter walk is admitted")
             else {
                 return Ok(None);
@@ -201,10 +201,10 @@ fn align_sheet_edge_to_pcurve(
     ir: &mut CadIr,
     geometry: &PcurveGeometry,
 ) -> Result<(), cadmpeg_ir::geometry::nurbs::NurbsError> {
-    let pcurve_id = ir.model.pcurves[0].id.clone();
+    let pcurve_id = ir.geometry.pcurves[0].id.clone();
     let (curve_id, point_ids) = {
         let edge_id = ir
-            .model
+            .geometry
             .coedges
             .iter()
             .find(|coedge| {
@@ -217,18 +217,21 @@ fn align_sheet_edge_to_pcurve(
             .edge
             .clone();
         let edge = ir
-            .model
+            .geometry
             .edges
             .iter()
             .find(|edge| edge.id == edge_id)
             .expect("sheet pcurve edge");
         (
             edge.curve().cloned().expect("sheet pcurve edge curve"),
-            [edge.start.clone(), edge.end.clone()],
+            [
+                edge.ends.as_ref().unwrap().start.clone(),
+                edge.ends.as_ref().unwrap().end.clone(),
+            ],
         )
     };
     if let Some(curve_geometry) = curve_geometry_for_sheet_pcurve(geometry)? {
-        ir.model
+        ir.geometry
             .curves
             .iter_mut()
             .find(|curve| curve.id == curve_id)
@@ -236,7 +239,7 @@ fn align_sheet_edge_to_pcurve(
             .geometry = curve_geometry;
     }
     let point_ids = point_ids.map(|vertex_id| {
-        ir.model
+        ir.geometry
             .vertices
             .iter()
             .find(|vertex| vertex.id == vertex_id)
@@ -261,7 +264,7 @@ fn align_sheet_edge_to_pcurve(
         Point3::new(uv.u, uv.v, 0.0)
     });
     for (point_id, position) in point_ids.into_iter().zip(positions) {
-        ir.model
+        ir.geometry
             .points
             .iter_mut()
             .find(|point| point.id == point_id)
@@ -350,15 +353,15 @@ fn negative_cone_round_trip_preserves_point_set_and_face_sense() {
         )
         .expect("finite cone"),
     );
-    let source_surface = ir.model.surfaces[0].id.clone();
+    let source_surface = ir.geometry.surfaces[0].id.clone();
     let source_face_sense = ir
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.surface == source_surface)
         .expect("cone face")
         .sense;
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(source.clone());
+    ir.geometry.surfaces[0].geometry = SurfaceGeometry::Solved(source.clone());
 
     let output = export(&ir);
     let decoded = StepCodec::default()
@@ -366,7 +369,7 @@ fn negative_cone_round_trip_preserves_point_set_and_face_sense() {
         .expect("decode written cone");
     let (surface_id, written) = decoded
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find_map(|surface| match surface.geometry.solved() {
@@ -378,7 +381,7 @@ fn negative_cone_round_trip_preserves_point_set_and_face_sense() {
         .expect("written cone surface");
     let written_face = decoded
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| &face.surface == surface_id)
@@ -464,7 +467,7 @@ fn buf_line_count(buf: &[u8]) -> usize {
 /// interning of shared points/directions.
 pub(super) fn cylinder_surface_doc() -> CadIr {
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: SurfaceId::mint("test:model:surface#cyl").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -476,6 +479,7 @@ pub(super) fn cylinder_surface_doc() -> CadIr {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir
 }
@@ -489,7 +493,7 @@ pub(crate) fn writer_round_trips_rational_nurbs_pcurves(
         .expect("decode sheet")
         .into_parts()
         .0;
-    ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
+    ir.geometry.pcurves[0].geometry = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
         nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
             1,
             vec![0.0, 0.0, 1.0, 1.0],
@@ -502,7 +506,7 @@ pub(crate) fn writer_round_trips_rational_nurbs_pcurves(
         )
         .unwrap(),
     };
-    let geometry = ir.model.pcurves[0].geometry.clone();
+    let geometry = ir.geometry.pcurves[0].geometry.clone();
     align_sheet_edge_to_pcurve(&mut ir, &geometry)?;
 
     let mut output = Vec::new();
@@ -517,7 +521,7 @@ pub(crate) fn writer_round_trips_rational_nurbs_pcurves(
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode NURBS pcurve");
     assert!(matches!(
-        &decoded.ir().model.pcurves[0].geometry,
+        &decoded.ir().geometry.pcurves[0].geometry,
         cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs }
             if nurbs.degree() == 1
                 && !nurbs.periodic()
@@ -628,7 +632,7 @@ fn writer_round_trips_every_exact_step_pcurve_family(
 
     for geometry in cases {
         let mut ir = template.clone();
-        ir.model.pcurves[0].geometry = geometry.clone();
+        ir.geometry.pcurves[0].geometry = geometry.clone();
         align_sheet_edge_to_pcurve(&mut ir, &geometry)?;
         let mut output = Vec::new();
         write_step(
@@ -658,8 +662,8 @@ fn writer_round_trips_every_exact_step_pcurve_family(
                 &DecodeOptions::default(),
             )
             .expect("decode exact pcurve");
-        assert_eq!(decoded.ir().model.pcurves[0].geometry, expected);
-        assert_eq!(decoded.ir().model.bodies.len(), 1);
+        assert_eq!(decoded.ir().geometry.pcurves[0].geometry, expected);
+        assert_eq!(decoded.ir().geometry.bodies.len(), 1);
         assert!(decoded
             .report()
             .losses
@@ -672,7 +676,7 @@ fn writer_round_trips_every_exact_step_pcurve_family(
 #[test]
 pub(crate) fn writer_round_trips_rigid_body_placements() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    ir.model.bodies[0].transform = Some(
+    ir.geometry.bodies[0].transform = Some(
         cadmpeg_ir::transform::Transform::affine([
             [0.0, -1.0, 0.0, 15.0],
             [1.0, 0.0, 0.0, 4.0],
@@ -688,49 +692,27 @@ pub(crate) fn writer_round_trips_rigid_body_placements() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode placed body");
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
     assert_eq!(
-        decoded.ir().model.bodies[0].transform,
-        ir.model.bodies[0].transform
+        decoded.ir().geometry.bodies[0].transform,
+        ir.geometry.bodies[0].transform
     );
 }
 
 #[test]
 pub(crate) fn writer_round_trips_product_body_ownership() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    let product =
+    let mut product = cadmpeg_ir::products::ProductDefinition::root(
         cadmpeg_ir::ids::ProductDefinitionId::mint("test:model:product-definition#product-0")
-            .expect("identity grammar");
-    ir.model
-        .product_definitions
-        .push(cadmpeg_ir::products::ProductDefinition {
-            sketches: Vec::default(),
-            id: product.clone(),
-            kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
-            source_name: Some("Cube part".into()),
-            label: Some("Cube part".into()),
-            description: None,
-            part_number: Some("PART-001".into()),
-            bom_properties: std::collections::BTreeMap::default(),
-            bodies: vec![ir.model.bodies[0].id.clone()],
-            native_ref: None,
-        });
-    ir.model.occurrences.push(cadmpeg_ir::products::Occurrence {
-        id: cadmpeg_ir::ids::OccurrenceId::mint("test:model:occurrence#root-0")
             .expect("identity grammar"),
-        prototype: cadmpeg_ir::products::PrototypeReference::Local {
-            definition: product,
-        },
-        parent: cadmpeg_ir::products::OccurrenceParent::Root {},
-        ordinal: 0,
-        transform: cadmpeg_ir::transform::Transform::identity(),
-        linked_prototype: None,
-        scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-        name: Some("Cube root".into()),
-        visible: None,
-        link: None,
-        native_ref: None,
-    });
+        cadmpeg_ir::products::ExternalDocument::default(),
+    );
+    product.kind = Some(cadmpeg_ir::products::ProductDefinitionKind::Part);
+    product.source_name = Some("Cube part".into());
+    product.label = Some("Cube part".into());
+    product.part_number = Some("PART-001".into());
+    product.bodies = vec![ir.geometry.bodies[0].id.clone()];
+    ir.model.product_definitions.push(product);
     let options = StepWriteOptions {
         ..StepWriteOptions::default()
     };
@@ -748,46 +730,44 @@ pub(crate) fn writer_round_trips_product_body_ownership() {
         Some("PART-001")
     );
     assert_eq!(decoded.ir().model.product_definitions[0].bodies.len(), 1);
-    assert_eq!(decoded.ir().model.occurrences.len(), 1);
+    assert!(decoded.ir().model.product_definitions[0].is_root());
+    assert!(decoded.ir().model.occurrences.is_empty());
 }
 
-pub(super) fn wire_body_ir(alpha: f32) -> CadIr {
+pub(super) fn wire_body_ir(alpha: f64) -> CadIr {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    let edge = ir.model.edges[0].clone();
+    let edge = ir.geometry.edges[0].clone();
     let curve = edge.curve().cloned().expect("cube edge curve");
-    ir.model.edges.retain(|candidate| candidate.id == edge.id);
-    ir.model.curves.retain(|candidate| candidate.id == curve);
-    ir.model
-        .vertices
-        .retain(|vertex| vertex.id == edge.start || vertex.id == edge.end);
+    ir.geometry
+        .edges
+        .retain(|candidate| candidate.id == edge.id);
+    ir.geometry.curves.retain(|candidate| candidate.id == curve);
+    ir.geometry.vertices.retain(|vertex| {
+        vertex.id == edge.ends.as_ref().unwrap().start
+            || vertex.id == edge.ends.as_ref().unwrap().end
+    });
     let point_ids = ir
-        .model
+        .geometry
         .vertices
         .iter()
         .map(|vertex| vertex.point.clone())
         .collect::<Vec<_>>();
-    ir.model
+    ir.geometry
         .points
         .retain(|point| point_ids.contains(&point.id));
-    ir.model.coedges.clear();
-    ir.model.loops.clear();
-    ir.model.faces.clear();
-    ir.model.surfaces.clear();
-    ir.model.shells.truncate(1);
-    ir.model.shells[0]
-        .edit_topology(|faces, wire_edges, free_vertices| {
-            faces.clear();
-            *wire_edges = vec![edge.id];
-            free_vertices.clear();
-        })
-        .unwrap();
-    ir.model.regions.truncate(1);
-    ir.model.regions[0].shells = vec![ir.model.shells[0].id.clone()];
-    ir.model.bodies.truncate(1);
-    ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Wire;
-    ir.model.bodies[0].color =
+    ir.geometry.coedges.clear();
+    ir.geometry.loops.clear();
+    ir.geometry.faces.clear();
+    ir.geometry.surfaces.clear();
+    ir.geometry.shells.truncate(1);
+    ir.geometry.shells[0].members =
+        vec![cadmpeg_ir::topology::ShellMember::WireEdge { id: edge.id }];
+    ir.geometry.regions.truncate(1);
+    ir.geometry.regions[0].shells = vec![ir.geometry.shells[0].id.clone()];
+    ir.geometry.bodies.truncate(1);
+    ir.geometry.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Wire;
+    ir.geometry.bodies[0].color =
         Some(cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.8, alpha).expect("valid color"));
-    ir.model.bodies[0].regions = vec![ir.model.regions[0].id.clone()];
     ir
 }
 
@@ -808,15 +788,15 @@ pub(crate) fn writer_round_trips_edge_based_wire_bodies() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode wire body");
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
     assert_eq!(
-        decoded.ir().model.bodies[0].kind,
+        decoded.ir().geometry.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Wire
     );
-    assert_eq!(decoded.ir().model.edges.len(), 1);
-    assert_eq!(decoded.ir().model.shells[0].wire_edges().len(), 1);
+    assert_eq!(decoded.ir().geometry.edges.len(), 1);
+    assert_eq!(decoded.ir().geometry.shells[0].wire_edges().count(), 1);
     assert_eq!(
-        decoded.ir().model.bodies[0].color,
+        decoded.ir().geometry.bodies[0].color,
         Some(cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.8, 1.0).expect("valid color"))
     );
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
@@ -848,16 +828,16 @@ fn translucent_direct_wire_body_color_reports_curve_style_alpha_loss() {
 #[test]
 fn writer_round_trips_standalone_points_and_curves() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    ir.model.curves.truncate(1);
-    ir.model.surfaces.clear();
-    ir.model.bodies.clear();
-    ir.model.regions.clear();
-    ir.model.shells.clear();
-    ir.model.faces.clear();
-    ir.model.loops.clear();
-    ir.model.coedges.clear();
-    ir.model.edges.clear();
-    ir.model.vertices.clear();
+    ir.geometry.curves.truncate(1);
+    ir.geometry.surfaces.clear();
+    ir.geometry.bodies.clear();
+    ir.geometry.regions.clear();
+    ir.geometry.shells.clear();
+    ir.geometry.faces.clear();
+    ir.geometry.loops.clear();
+    ir.geometry.coedges.clear();
+    ir.geometry.edges.clear();
+    ir.geometry.vertices.clear();
 
     let mut output = Vec::new();
     write_step(
@@ -870,9 +850,9 @@ fn writer_round_trips_standalone_points_and_curves() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode standalone geometry");
-    assert_eq!(decoded.ir().model.curves.len(), 1);
-    assert_eq!(decoded.ir().model.points.len(), ir.model.points.len());
-    assert!(decoded.ir().model.bodies.is_empty());
+    assert_eq!(decoded.ir().geometry.curves.len(), 1);
+    assert_eq!(decoded.ir().geometry.points.len(), ir.geometry.points.len());
+    assert!(decoded.ir().geometry.bodies.is_empty());
 }
 
 #[test]
@@ -895,7 +875,7 @@ pub(crate) fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link(
             Vec::new(),
         )
         .expect("valid tessellation")
-        .with_body(Some(ir.model.bodies[0].id.clone())),
+        .with_body(Some(ir.geometry.bodies[0].id.clone())),
     );
     let mut bytes = Vec::new();
     let report = write_step(
@@ -945,18 +925,20 @@ pub(crate) fn analytic_conics_round_trip_through_step() {
         .unwrap(),
     ));
     let mut source = CadIr::empty();
-    source.model.curves.extend([
+    source.geometry.curves.extend([
         Curve {
             parameter_range: None,
             id: CurveId::mint("test:model:curve#parabola").expect("identity grammar"),
             geometry: parabola.clone(),
             source_object: None,
+            native_ref: None,
         },
         Curve {
             parameter_range: None,
             id: CurveId::mint("test:model:curve#hyperbola").expect("identity grammar"),
             geometry: hyperbola.clone(),
             source_object: None,
+            native_ref: None,
         },
     ]);
 
@@ -973,13 +955,13 @@ pub(crate) fn analytic_conics_round_trip_through_step() {
         .expect("decode conics");
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .any(|curve| curve.geometry == parabola));
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .any(|curve| curve.geometry == hyperbola));
@@ -988,7 +970,7 @@ pub(crate) fn analytic_conics_round_trip_through_step() {
 #[test]
 pub(crate) fn standalone_geometry_uses_general_shape_representation() {
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: CurveId::mint("test:model:curve#line").expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -999,6 +981,7 @@ pub(crate) fn standalone_geometry_uses_general_shape_representation() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     let output = export(&ir);
     assert!(output.contains("SHAPE_REPRESENTATION('',"));
@@ -1104,7 +1087,7 @@ fn every_reference_resolves() {
 #[test]
 fn unclassified_face_loops_round_trip_without_inventing_outer_roles() {
     let mut ir = unit_cube().expect("unit cube fixture");
-    for face in &mut ir.model.faces {
+    for face in &mut ir.geometry.faces {
         face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(face.loops.to_vec());
     }
     let output = export(&ir);
@@ -1113,8 +1096,8 @@ fn unclassified_face_loops_round_trip_without_inventing_outer_roles() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(decoded.ir().model.faces.len(), ir.model.faces.len());
-    assert!(decoded.ir().model.faces.iter().all(|face| matches!(
+    assert_eq!(decoded.ir().geometry.faces.len(), ir.geometry.faces.len());
+    assert!(decoded.ir().geometry.faces.iter().all(|face| matches!(
         face.loops,
         cadmpeg_ir::topology::FaceLoops::Unspecified { .. }
     )));
@@ -1130,18 +1113,18 @@ fn periodic_two_rim_face_keeps_unclassified_bounds_through_export() {
         let decoded = StepCodec::default()
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .unwrap();
-        assert_eq!(decoded.ir().model.faces.len(), 1);
-        assert_eq!(decoded.ir().model.loops.len(), 2);
+        assert_eq!(decoded.ir().geometry.faces.len(), 1);
+        assert_eq!(decoded.ir().geometry.loops.len(), 2);
         let output = export(decoded.ir());
         assert_eq!(output.matches("FACE_OUTER_BOUND").count(), 0);
         assert_eq!(output.matches("FACE_BOUND").count(), 2);
         let round_trip = StepCodec::default()
             .decode(&mut Cursor::new(output), &DecodeOptions::default())
             .unwrap();
-        assert_eq!(round_trip.ir().model.faces.len(), 1);
-        assert_eq!(round_trip.ir().model.loops.len(), 2);
+        assert_eq!(round_trip.ir().geometry.faces.len(), 1);
+        assert_eq!(round_trip.ir().geometry.loops.len(), 2);
         assert!(matches!(
-            round_trip.ir().model.faces[0].loops,
+            round_trip.ir().geometry.faces[0].loops,
             cadmpeg_ir::topology::FaceLoops::Unspecified { .. }
         ));
         cadmpeg_measure::test_support::round_trip::measures_agree(
@@ -1198,17 +1181,19 @@ fn writer_round_trips_binding_scoped_appearance_visibility() {
         ),
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:model:appearance-binding#hidden-face"
             .try_into()
             .expect("valid identity"),
-        target: AppearanceTarget::Face(ir.model.faces[0].id.clone()),
+        target: AppearanceTarget::Face(ir.geometry.faces[0].id.clone()).into(),
         appearance,
         source_entity_id: None,
         object_type: None,
         visible: Some(false),
         channels: std::collections::BTreeMap::new(),
+        native_ref: None,
     });
 
     let mut output = Vec::new();
@@ -1236,7 +1221,7 @@ fn writer_round_trips_binding_scoped_appearance_visibility() {
 
 #[test]
 fn writer_round_trips_surface_appearance_transparency() {
-    const EPS_ALPHA: f32 = 0.000_001;
+    const EPS_ALPHA: f64 = 0.000_001;
 
     use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::ids::AppearanceId;
@@ -1260,6 +1245,7 @@ fn writer_round_trips_surface_appearance_transparency() {
         ),
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     });
     ir.model.appearances.push(Appearance {
         id: second_appearance.clone(),
@@ -1275,28 +1261,31 @@ fn writer_round_trips_surface_appearance_transparency() {
         ),
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:model:appearance-binding#transparent-face"
             .try_into()
             .expect("valid identity"),
-        target: AppearanceTarget::Face(ir.model.faces[0].id.clone()),
+        target: AppearanceTarget::Face(ir.geometry.faces[0].id.clone()).into(),
         appearance,
         source_entity_id: None,
         object_type: None,
         visible: None,
         channels: std::collections::BTreeMap::new(),
+        native_ref: None,
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:model:appearance-binding#more-transparent-face"
             .try_into()
             .expect("valid identity"),
-        target: AppearanceTarget::Face(ir.model.faces[1].id.clone()),
+        target: AppearanceTarget::Face(ir.geometry.faces[1].id.clone()).into(),
         appearance: second_appearance,
         source_entity_id: None,
         object_type: None,
         visible: None,
         channels: std::collections::BTreeMap::new(),
+        native_ref: None,
     });
 
     let mut output = Vec::new();
@@ -1333,13 +1322,13 @@ fn writer_round_trips_presentation_layer_visibility() {
     use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
 
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     ir.model.presentation_layers.push(PresentationLayer {
         id: LayerId::mint("test:model:layer#hidden").expect("identity grammar"),
         name: "hidden layer".into(),
         description: Some("layer visibility".into()),
         visible: Some(false),
-        items: vec![PresentationItem::Body { body }],
+        items: vec![PresentationItem::Body { body }.into()],
     });
 
     let mut output = Vec::new();
@@ -1366,7 +1355,7 @@ fn writer_round_trips_presentation_layer_visibility() {
         .find(|layer| layer.name == "hidden layer")
         .expect("decoded hidden presentation layer");
     assert_eq!(layer.visible, Some(false));
-    assert_ne!(decoded.ir().model.bodies[0].visible, Some(false));
+    assert_ne!(decoded.ir().geometry.bodies[0].visible, Some(false));
 }
 
 #[test]
@@ -1375,13 +1364,13 @@ fn writer_round_trips_empty_presentation_layer_label() {
     use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
 
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     ir.model.presentation_layers.push(PresentationLayer {
         id: LayerId::mint("test:model:layer#unnamed").expect("identity grammar"),
         name: String::new(),
         description: Some("unnamed layer".into()),
         visible: Some(false),
-        items: vec![PresentationItem::Body { body }],
+        items: vec![PresentationItem::Body { body }.into()],
     });
 
     let mut output = Vec::new();
@@ -1409,7 +1398,12 @@ fn writer_round_trips_empty_presentation_layer_label() {
     assert_eq!(layer.description.as_deref(), Some("unnamed layer"));
     assert_eq!(layer.visible, Some(false));
     assert!(matches!(
-        layer.items.as_slice(),
+        layer
+            .items
+            .iter()
+            .map(|item| &item.entity)
+            .collect::<Vec<_>>()
+            .as_slice(),
         [PresentationItem::Body { .. }]
     ));
 }
@@ -1472,14 +1466,15 @@ fn analytic_surfaces_map_to_their_step_entities() {
     ];
     for (geom, kw) in cases {
         let mut ir = CadIr::empty();
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: SurfaceId::mint("test:model:surface#s").expect("identity grammar"),
             geometry: geom,
             source_object: None,
+            native_ref: None,
         });
         // Surfaces alone aren't reachable from a shell, so they won't be emitted
         // by the topology walk; emit directly via the geometry module instead.
-        let s = emit_surface_only(&ir.model.surfaces[0].geometry);
+        let s = emit_surface_only(&ir.geometry.surfaces[0].geometry);
         assert!(s.contains(kw), "missing {kw} in {s}");
     }
 }
@@ -1578,13 +1573,9 @@ fn real_formatting_always_has_decimal_point() {
 #[test]
 fn writer_emits_both_carriers_for_mixed_general_bodies() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    let edge = ir.model.edges[0].id.clone();
-    ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::General;
-    {
-        let members = vec![edge];
-        ir.model.shells[0].edit_topology(|_, wire_edges, _| *wire_edges = members)
-    }
-    .unwrap();
+    let edge = ir.geometry.edges[0].id.clone();
+    ir.geometry.bodies[0].kind = cadmpeg_ir::topology::BodyKind::General;
+    ir.geometry.shells[0].add_wire_edge(edge);
 
     let mut output = Vec::new();
     let report = write_step(
@@ -1607,7 +1598,7 @@ fn writer_emits_both_carriers_for_mixed_general_bodies() {
 fn writer_orders_edge_loop_coedges_by_oriented_endpoints() {
     let mut source = unit_cube().expect("unit cube fixture is admitted");
     let loop_ = source
-        .model
+        .geometry
         .loops
         .iter_mut()
         .find(|loop_| loop_.coedges().len() >= 3)
@@ -1636,7 +1627,10 @@ fn writer_orders_edge_loop_coedges_by_oriented_endpoints() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode reordered edge loops");
-    assert_eq!(decoded.ir().model.faces.len(), source.model.faces.len());
+    assert_eq!(
+        decoded.ir().geometry.faces.len(),
+        source.geometry.faces.len()
+    );
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -1724,7 +1718,7 @@ fn a_linear_sweep_whose_magnitude_overflows_is_refused() {
         .expect("decode procedural geometry");
     let mut ir = source.ir().clone();
     let sweep = ir
-        .model
+        .geometry
         .procedural_surfaces
         .iter_mut()
         .find(|surface| {
@@ -1797,7 +1791,7 @@ fn replica_written_with(
     let source = crate::test_support::exchange::decode_inline(records);
     let mut ir = source.ir().clone();
     let mut replicas = 0;
-    for surface in &mut ir.model.procedural_surfaces {
+    for surface in &mut ir.geometry.procedural_surfaces {
         surface.edit_definition(|definition| {
             if let ProceduralSurfaceDefinition::Replica {
                 transform: held, ..
@@ -1808,7 +1802,7 @@ fn replica_written_with(
             }
         });
     }
-    for curve in &mut ir.model.procedural_curves {
+    for curve in &mut ir.geometry.procedural_curves {
         curve.edit_definition(|definition| {
             if let ProceduralCurveDefinition::Replica {
                 transform: held, ..
@@ -1926,46 +1920,40 @@ fn disconnected_wire_edges_export_in_separate_connected_sets() {
     let full = unit_cube().expect("cube");
     let mut ir = wire_body_ir(1.0);
     let second = full
-        .model
+        .geometry
         .edges
         .iter()
         .find(|edge| {
-            ir.model
-                .vertices
-                .iter()
-                .all(|v| v.id != edge.start && v.id != edge.end)
+            ir.geometry.vertices.iter().all(|v| {
+                v.id != edge.ends.as_ref().unwrap().start && v.id != edge.ends.as_ref().unwrap().end
+            })
         })
         .expect("disconnected edge")
         .clone();
     let curve = second.curve().expect("curve");
-    ir.model.curves.push(
-        full.model
+    ir.geometry.curves.push(
+        full.geometry
             .curves
             .iter()
             .find(|item| item.id == *curve)
             .expect("carrier")
             .clone(),
     );
-    for vertex in full
-        .model
-        .vertices
-        .iter()
-        .filter(|v| v.id == second.start || v.id == second.end)
-    {
-        ir.model.points.push(
-            full.model
+    for vertex in full.geometry.vertices.iter().filter(|v| {
+        v.id == second.ends.as_ref().unwrap().start || v.id == second.ends.as_ref().unwrap().end
+    }) {
+        ir.geometry.points.push(
+            full.geometry
                 .points
                 .iter()
                 .find(|p| p.id == vertex.point)
                 .expect("point")
                 .clone(),
         );
-        ir.model.vertices.push(vertex.clone());
+        ir.geometry.vertices.push(vertex.clone());
     }
-    ir.model.shells[0]
-        .edit_topology(|_, edges, _| edges.push(second.id.clone()))
-        .expect("wire topology");
-    ir.model.edges.push(second);
+    ir.geometry.shells[0].add_wire_edge(second.id.clone());
+    ir.geometry.edges.push(second);
     assert!(cadmpeg_ir::validate_neutral(&ir, Vec::new())
         .expect("neutral validation")
         .is_ok());
@@ -1984,7 +1972,7 @@ fn disconnected_wire_edges_export_in_separate_connected_sets() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("round trip");
-    assert_eq!(decoded.ir().model.edges.len(), 2);
+    assert_eq!(decoded.ir().geometry.edges.len(), 2);
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
         .expect("validation")
         .is_ok());

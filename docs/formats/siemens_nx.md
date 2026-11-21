@@ -631,6 +631,10 @@ a FREESECT link there is malformed. The CFB directory contains the
 `UG_PART/UG_PART` stream. The CFB signature alone does not identify NX; the
 `UG_PART/UG_PART` directory path is required.
 
+The sections in `UG_PART/UG_PART` have two stored forms. NX 8 parts store clear
+transmit sections. NX 9 parts store each section as a zlib member. A part without
+a clear transmit section is scanned for zlib members.
+
 Every reachable CFB stream has one exact logical byte span bounded by its
 declared stream size. Storage entries have no stream bytes. Stream payloads are
 addressed by their directory paths; their physical sector chains do not join
@@ -846,7 +850,7 @@ Parasolid XT node type.
 |   29 | POINT   |     40 |  133 | TRIMMED_CURVE | 85 + shift |
 |   30 | LINE    |     67 |  134 | B_CURVE       | 23         |
 |   31 | CIRCLE  |     99 |  137 | SP_CURVE      | 33 + shift |
-|   32 | ELLIPSE |    107 |      |               |            |
+|   32 | ELLIPSE |    107 |   67 | SWEPT_SURF    | 53         |
 |   38 | INTERSECTION |  31 |      |               |            |
 
 Types carrying `node_id:u32` place it at record offset `+4` (after shifts). Every `u32` value is valid; node admission has no smaller numerical bound. FIN has no `node_id`. EDGE and VERTEX candidates with denormal tolerance (`abs(tol) < 1e-100`) are payload coincidences, not records. Every POINT coordinate is finite and its converted millimeter value is finite; no normality or model-magnitude condition applies.
@@ -866,6 +870,17 @@ this ownership transitively through their typed support, spine, basis, pcurve,
 and original-curve slots. A fixed-record-shaped byte run with no such owner is
 not part of the body topology image.
 
+A CHART and a type-141 record of five non-null references are also record
+boundaries for a preceding fixed record. Attribute records of types 79 through 84
+are record boundaries for a preceding fixed record. In a byte scan, a complete
+type-81, type-82, or type-83 record that ends at a record boundary and spans at
+most 16,384 bytes owns its bytes: a fixed-record-shaped byte run inside that record
+is attribute data. The byte bound is a scan heuristic. Schema text and node fields
+can read as an attribute tag with a large count, and the scan reads the nodes
+inside such a longer span. The compact index 81, 82, or 83 of a complete fixed
+record has the same two bytes as these tags, so those bytes belong to the fixed
+record.
+
 Type 38 is the XT `INTERSECTION` node. A first-use declaration may append
 an `intersection_data` pointer to type 204 (`00cc`) `INTERSECTION_DATA`.
 The type-204 declaration gives the node name `INTERSECTION_DATA`, description
@@ -880,6 +895,11 @@ then the owning-feature, owner, next, previous, next-member, and
 previous-member references. Its owner reference is non-null. A complete
 `MEMBER_OF_FEATURE` frame and the type-38 inline schema header each begin a
 record, so each bounds the fixed record before it.
+
+Type 90 `FEATURE` has `node_id:u32 +4`, then the attributes, owner, next and
+previous references, a one-byte type, and the first-member reference. Its owner
+reference is non-null. A complete `FEATURE` frame also bounds the fixed record
+before it.
 
 ### 4.2 Deltas-stream framing
 
@@ -1208,6 +1228,8 @@ body → shell → [region] → face → loop → fin → edge → vertex → po
 
 **Common header** for analytic curve/surface types 30–32, 50–54: `attributes +8`, `owner +10`, `next +12`, `previous +14`, `group +16`, `sense +18`.
 
+A FACE on a SPHERE with a null loop reference covers the whole sphere. Its body is closed although it has no EDGE. The neutral model bounds the face with a one-vertex loop at each pole.
+
 Fixed-record lengths are logical lengths before framing bytes. A frame begins at
 the owned type tag, consumes its first-use schema information, reads the compact
 or extended xmt, and then parses the complete family field grammar. Each
@@ -1238,9 +1260,13 @@ Topology node layouts (logical offsets, pre-shift):
 
 A **body-shape SHELL** requires the invariant fields `attributes`, `next_shell`, and `+16/+18` to equal `1`, non-null `body_ref` and `region_ref`, and a resolvable `first_face`. With null `face_anchor`, `FACE.next_face` defines a finite ownership chain whose members back-reference the SHELL. With non-null `face_anchor == first_face`, every FACE that back-references the SHELL belongs to it. The body and region references remain ownership identities when the stream omits the corresponding BODY or REGION record. FACE and EDGE `tolerance` decode as the sentinel `-3.14158e13` (`c2 bc 92 8f 99 6e 00 00`) or a positive finite meter value whose converted millimeter value is finite. The format imposes no magnitude bound on a tolerance. `FIN.curve` is non-null only on tolerant edges (tolerant-edge trims use TRIMMED_CURVE→SP_CURVE).
 
+A FIN has one of two forms. An edge FIN has `sense` `+` (`2b`) or `-` (`2d`) and bounds the EDGE that `FIN.edge` names. A vertex-loop FIN has `sense` `?` (`3f`), `forward_fin` and `backward_fin` equal to its own xmt, null `other_fin`, and null `edge`; its `vertex` names the VERTEX at which its LOOP bounds the face. A vertex-loop FIN is the single FIN of its LOOP. The vertex-loop form is the complete grammar of a FIN with `sense` `?`.
+
 Within one physical graph view, each fixed-record `(type, XMT)` identity is
-unique. Multiple complete records with the same identity invalidate that
-identity and transfer no node. Delta replacements are resolved before graph
+unique. When a byte scan finds several complete records with the same identity,
+the one record among them that ends at a record boundary transfers. When several
+of them end at a record boundary, or none does, the identity is invalid and
+transfers no node. Delta replacements are resolved before graph
 construction and do not form duplicate identities.
 
 For SHELL, FACE, LOOP, FIN, EDGE, and VERTEX, a non-null `attributes`
@@ -1260,7 +1286,7 @@ referenced list and its instances resolve.
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | vertices | FIN-referenced VERTEX nodes; coordinates from same-stream POINT nodes                                                                                                                                                                                                                                                                      |
 | edges    | one per EDGE node; `FIN.vertex` is the vertex at the end of its FIN, and a FIN begins at `FIN.other_fin → FIN.vertex`, or at `FIN.backward_fin → FIN.vertex` when `other_fin` is null; a forward `EDGE.fin` runs along its EDGE and a reversed one against it; the EDGE runs along its curve when the curve's common-header sense is `+` and against it when the sense is `-`; canonical start/end order follows the curve direction and each coedge sense is relative to that order; the carrier resolves through non-null `EDGE.curve`, otherwise through the owning `FIN.curve` |
-| loops    | walked from `FACE.loop` through the null-terminated LOOP chain; each FIN ring closes at its first FIN with reciprocal forward/backward links; non-null partner FINs reciprocally reference one another and carry the same EDGE                                                                                                             |
+| loops    | walked from `FACE.loop` through the null-terminated LOOP chain; each FIN ring closes at its first FIN with reciprocal forward/backward links; non-null partner FINs reciprocally reference one another and carry the same EDGE; a LOOP whose `fin` is a vertex-loop FIN of that LOOP is a vertex loop, and its boundary is the vertex at `FIN.vertex → VERTEX.point`; a vertex loop whose vertex has no resolved POINT is omitted from its FACE |
 | faces    | one per FACE node, with resolved surface when available; its orientation relative to an analytic surface's stored parameter frame is the composition of the FACE sense and the surface common-header sense                                                                                                                               |
 | bodies   | one per validated body-shape SHELL                                                                                                                                                                                                                                                                                                         |
 
@@ -1319,7 +1345,10 @@ reference is the carrier path. When it resolves through
 `TRIMMED_CURVE → SP_CURVE` whose original 3D curve is null, the SP_CURVE's
 surface and pcurve define a procedural parametric surface curve. Its finite
 domain is the trim interval, or the solved NURBS pcurve knot domain when the FIN
-references the SP_CURVE directly.
+references the SP_CURVE directly. Each FIN of a tolerant edge can carry its own
+curve. When the curve of the first FIN does not resolve, the curve of the radial
+partner FIN is the carrier path. The first FIN of such an edge can be on a swept
+surface; open item PS-44 holds the parameterization of that surface.
 A FIN pcurve attaches to a coedge only when its `SP_CURVE.surface` and the
 owning `FACE.surface` reference the same surface in the same physical stream,
 and evaluation through that surface reaches both edge vertices within the
@@ -1335,7 +1364,7 @@ BODY, REGION, and SHELL records contain no placement reference. POINT coordinate
 
 Body-shape SHELL validation: invariant/ref predicate passes; `body_ref` and `region_ref` are non-null; `first_face`→FACE in the SHELL's stream. A null `face_anchor` requires the `FACE.next` walk to close at null with visited faces back-referencing the SHELL. A non-null `face_anchor` equals `first_face` and selects all FACE records that back-reference the SHELL.
 
-**Periodic faces / closed edges.** Parasolid stores a periodic surface as one face. A full-circle/ellipse edge stores no trim interval or wrap-count field and references the bare CIRCLE/ELLIPSE. Its one-FIN loop has `forward_fin == backward_fin == self`. The FIN vertex is either a VERTEX shared by both edge ends or the null reference; the null form's canonical topological point is the analytic curve point at parameter zero. The full revolution has parameter identity `[0, 2π]`. An EDGE with `curve == 1` has no curve record and is the surface-intersection locus of its incident faces.
+**Periodic faces / closed edges.** Parasolid stores a periodic surface as one face. A full-circle/ellipse edge stores no trim interval or wrap-count field and references the bare CIRCLE/ELLIPSE. Its one-FIN loop has `forward_fin == backward_fin == self`. The FIN vertex is either a VERTEX shared by both edge ends or the null reference; the null form's canonical topological point is the analytic curve point at parameter zero. The full revolution has parameter identity `[0, 2π]`. An EDGE with `curve == 1` has no curve record and is the surface-intersection locus of its incident faces. A null-vertex EDGE can have a partner FIN with a null loop, null forward and backward references, and a null vertex. This partner closes the EDGE at the same point as the FIN in the loop.
 
 ---
 
@@ -1410,9 +1439,13 @@ The type-126 `u_periodic` and `v_periodic` bytes are binary logical flags at `+4
 
 Degree, pole-count, and distinct-knot-count fields have no additional numeric ceiling beyond their encoded integer widths. The basis cardinality and the complete counted control, multiplicity, and knot lanes are the validity bounds. Multiplicity and knot arrays hold at least the distinct-knot count of entries, and every entry past that count has zero multiplicity. Every distinct knot has a positive multiplicity, and the expanded knot count is exactly `pole_count + degree + 1` in each direction. Every weight is positive.
 
+#### 6.2.1 Swept surface (SWEPT_SURF 67)
+
+**SWEPT_SURF (67):** header through sense `+18`, section curve ref `+19` (large-index capable), unit `sweep` vector `+21`, `scale:f64 +45`, length `53`. Transfer gives a linear sweep of the section curve along `sweep × scale`, in millimetres. The header sense gives the face normal in the same way as an analytic surface. Open item PS-44 holds the surface parameterization.
+
 ### 6.3 Procedural intersection curves (type 38)
 
-NX stores freeform edges and blend rails as construction relations with branch witnesses. The modern type-38 record has a compact header through sense `+18` and five construction xmt references at `+19,+21,+23,+25,+27`. A first-use declaration that appends `intersection_data` adds a sixth reference at `+29`; without that declaration the record ends after `+27`.
+NX stores freeform edges and blend rails as construction relations with branch witnesses. The modern type-38 record has a compact header through sense `+18` and five construction xmt references at `+19,+21,+23,+25,+27`. A first-use declaration that appends `intersection_data` adds a sixth reference at `+29`; without that declaration the record ends after `+27`, as in older schemas such as `SCH_2400143`. A byte scan reads every type-38 record after that declaration in its stream with six references. A type-38 record that no such declaration precedes has five references when a record tag is at the sixth reference and no record tag is after it.
 
 The neutral curve carrier references a complete typed source record. The source record retains the five common-header references, orientation sense, construction references, and the type-38 nodetype’s inflated-stream offset. First-use and subsequent instances share one type identity.
 
@@ -1531,7 +1564,7 @@ parameter_error[2]:f64   (sentinel pair -31415800000000.0)
 count × Hvec              (Hvec block always starts at pre+52, pre = end of count+xmt)
 ```
 
-The counted description in the physical Parasolid transmit header selects the Hvec row width. The big-endian u32 at offset 2 after `PS` counts the description bytes that start at offset 6. A `TRANSMIT FILE (partition)` description or a `TRANSMIT FILE created` description without a subtype selects **`xyz3`**: 24-byte `(x,y,z)` rows in metres. A `TRANSMIT FILE (deltas)` description selects **`ext11`**: 88-byte `(x,y,z, p3,p4,p5,p6, tx,ty,tz, t)` rows. The schema token and record-local coordinates do not select the width. A malformed or unrecognized description, including `MESH FILE`, does not establish a Hvec layout. Layout selection precedes the semantic checks for a unit tangent and strictly increasing native `t`; failure of those checks does not select another row width. The two ext11 surface-parameter lanes are `(p3,p5)` and `(p4,p6)`. A non-sentinel lane belongs to a support when evaluating every lane pair on that support reproduces the corresponding chart point within `chordal_error` and no other support satisfies the same lane. Two assigned lanes address distinct supports. When exactly one of two complete lanes has a unique support assignment, the other lane belongs to the other distinct support. A sentinel-bearing, multiply matching, non-evaluating, or conflicting lane otherwise supplies no support chart. For an `xyz3` chart, `t_0 = base_parameter` and `t_{k+1} = t_k + chord_k · base_scale`, with chords in metres. An `ext11` chart retains its serialized native `t` values; accumulated chords do not replace them. `chordal_error` defines the verification tolerance for chart-hosted carriers. `base_parameter` is finite, and `base_scale` is finite and nonzero. Procedural-spine charts have `chart_count == count`, sentinel `parameter_error`, and finite non-zero `base_scale`. When `xyz3` and `ext11` records have the same xmt, count, and point sequence within the larger chordal error, the `ext11` native `t` sequence and surface-parameter lanes govern the shared chart carrier.
+The counted description in the physical Parasolid transmit header selects the Hvec row width. The big-endian u32 at offset 2 after `PS` counts the description bytes that start at offset 6. A `TRANSMIT FILE (partition)` description or a `TRANSMIT FILE created` description without a subtype selects **`xyz3`**: 24-byte `(x,y,z)` rows in metres. A `TRANSMIT FILE (deltas)` description selects **`ext11`**: 88-byte `(x,y,z, p3,p4,p5,p6, tx,ty,tz, t)` rows. The schema token and record-local coordinates do not select the width. A malformed or unrecognized description, including `MESH FILE`, does not establish a Hvec layout. Layout selection precedes the semantic checks for a unit tangent and strictly increasing native `t`; failure of those checks does not select another row width. The two ext11 surface-parameter lanes are `(p3,p5)` and `(p4,p6)`. A non-sentinel lane belongs to a support when evaluating every lane pair on that support reproduces the corresponding chart point within `chordal_error` and no other support satisfies the same lane. Two assigned lanes address distinct supports. When exactly one of two complete lanes has a unique support assignment, the other lane belongs to the other distinct support. A sentinel-bearing, multiply matching, non-evaluating, or conflicting lane otherwise supplies no support chart. For an `xyz3` chart, `t_0 = base_parameter` and `t_{k+1} = t_k + chord_k · base_scale`, with chords in metres. An `ext11` chart retains its serialized native `t` values; accumulated chords do not replace them. `chordal_error` defines the verification tolerance for chart-hosted carriers. A chart with points on one straight line can state a `chordal_error` of zero, because the points give the line exactly. A curved chart states a positive `chordal_error`. `base_parameter` is finite, and `base_scale` is finite and nonzero. Procedural-spine charts have `chart_count == count`, sentinel `parameter_error`, and finite non-zero `base_scale`. When `xyz3` and `ext11` records have the same xmt, count, and point sequence within the larger chordal error, the `ext11` native `t` sequence and surface-parameter lanes govern the shared chart carrier.
 
 The leading count is positive and the complete Hvec lane is the record boundary. A chart carrier requires at least two distinct model-space points. No additional numeric ceiling applies.
 
@@ -1540,7 +1573,11 @@ Each physical direct or escaped CHART_s record remains a distinct typed source r
 **LIMIT (`0x29`, inserted field `term_use`)** records contain a leading count,
 XMT, the one-byte limit type and inserted one-byte `term_use` field, and exactly
 that many Hvec rows. Their two bytes form the endpoint discriminator.
-Form `L?` has count `1`; forms `TF` and `TS` have count `2`. The count and
+Form `L?` has count `1`; forms `TF` and `TS` have count `2`. Older schemas, such
+as `SCH_2400143`, store the limit type alone. Their one-byte forms are `L` with
+count `1` and `T` with count `2`. Form `L` before a coordinate that starts with
+byte `3f` has the same two bytes as form `L?`. The form is the one whose rows end
+at a record tag. The count and
 discriminator remain separate fields. Partition `xyz3` rows
 contain three model-space coordinates in metres. Deltas `ext11` rows contain
 `x, y, z, u0, u1, v0, v1, tx, ty, tz, t`, all big-endian binary64. The support
@@ -1639,15 +1676,23 @@ chart tolerance.
 
 ### 6.5 Rolling-ball blend surface (BLEND_SURF 56)
 
+A subtype `E` record has the same fields as a subtype `R` record. One support of a subtype `E` record is a subtype `R` record with zero offsets. That zero-radius record has collapsed onto its spine, so the ball touches the other support and passes through that spine. In a type-38 record without a support-UV reference, a type-59 blend bound can be in the first support slot. The bound resolves to its blend surface in either slot. A blend face with closed edges on a closed spine covers the complete spine domain, independent of the parameters that its pcurves reach.
+
 A BLEND_SURF FACE is a procedural canal or envelope surface. Record layout:
 
 ```text
 compact header through sense +18
-subtype byte +19            (`0x52` / `R` = rolling-ball)
+subtype byte +19            (`0x52` / `R` = rolling-ball, `0x45` / `E` = cliff-edge)
 support refs +20,+22,+24    (large-index capable): support 0, support 1, spine
 4 × f64                     values = (range[0], range[1], thumb_weight[0], thumb_weight[1])
 4 × xmt tail refs           `1` (null references)
 ```
+
+A constant circular BLEND_SURF without a section cache has a surface parameter
+`u` along its spine and a parameter `v` across the section, from the contact on
+support 0 at `v = 0` to the contact on support 1 at `v = 1`. The section center is
+at the blend radius from both supports. A blend rail is that contact, where the
+blend and its support are tangent. A degree-one CHART_s node parameter is cumulative chord length in metres.
 
 A BLEND_SURF used by a FACE transfers as a procedural surface carrier. The
 carrier references the complete typed source record. The carrier and blend
@@ -2322,11 +2367,11 @@ The logical pattern construction payload also uses the shifted-IEEE binary64 lan
 
 `Pattern Feature` payloads contain at most one counted reference lane. Its exact framing is `01, declared_count:u8, reference[declared_count-1], 00 00 00 37 ff ff 01 00 00 00 38 ff 01 ff ff ff ff 01 ff`, with `declared_count >= 2`. Each reference is a non-null canonical object-index encoding and uses the unique-store resolution rule. The lane retains its declared count, ordered references, exact reference tokens, and absolute reference offsets. The fixed trailer terminates this lane. The framing does not assign seed, transform, or output roles to the references.
 
-`Pattern Feature` and `Pattern Geometry` payloads contain at most one transform lane. The scalar-row form is `01, count, row[count-1], row-schema-index-1, 00 00 01`, where `count >= 2` and every row uses one common nonzero `row-schema-index`. A `Pattern Feature` row is `row-schema-index, 01 00 00, shifted-scalar, 00 01 00 00 00 00 01 00 00 00 00 01 01 03, selector, 01, ordinal, 00 00 ff 00 00`. A `Pattern Geometry` row is `row-schema-index, 01 00 00 00 00 01 00, shifted-scalar, 00 00 01 00 00 00 00 01 01 03, selector, 01, ordinal, 00 00 ff 00 00`. Each shifted scalar independently uses the self-delimiting finite binary32 or binary64 form. Each selector is a non-null compact index and row ordinals are exactly `1..count-1`. The lane retains its row schema index, count, ordered scalar encodings, exact scalar bytes and offsets, decoded values, selectors, exact selector tokens and offsets, and source offset. A zero or changed row schema index, mismatched terminal schema index, malformed count, non-finite scalar encoding, null selector, incorrect ordinal, incomplete row or terminator, or multiple complete lanes rejects the lane atomically. Scalar and selector roles are not assigned by this framing.
+`Pattern Feature` and `Pattern Geometry` payloads contain at most one transform lane. The scalar-row form is `01, count, row[count-1], row-schema-index-1, 00 00 01`, where `count >= 2` and every row uses one common nonzero `row-schema-index`. A `Pattern Feature` row is `row-schema-index, 01 00 00, shifted-scalar, 00 01 00 00 00 00 01 00 00 00 00 01 01 03, selector, 01, ordinal, 00 00 ff 00 00`. A `Pattern Geometry` row is `row-schema-index, 01 00 00 00 00 01 00, shifted-scalar, 00 00 01 00 00 00 00 01 01 03, selector, 01, ordinal, 00 00 ff 00 00`. Each shifted scalar is one self-delimiting pattern atom. A first byte in `40..5f` or `c0..df` opens a four-byte atom, and a first byte in `20..3f` or `a0..bf` opens an eight-byte atom; another first byte opens no pattern atom. A four-byte atom is the leading four bytes of a binary64 whose first byte is stored `0x10` higher; the omitted low four bytes are zero. An eight-byte atom is a shifted binary64. Every pattern atom states four times its value, so the decoded value is the binary64 scaled by `1/4`. Each selector is a non-null compact index and row ordinals are exactly `1..count-1`. The lane retains its row schema index, count, ordered scalar encodings, in which `binary32` names a four-byte atom and `binary64` an eight-byte atom, exact scalar bytes and offsets, decoded values, selectors, exact selector tokens and offsets, and source offset. A zero or changed row schema index, mismatched terminal schema index, malformed count, a first byte that opens no pattern atom, null selector, incorrect ordinal, incomplete row or terminator, or multiple complete lanes rejects the lane atomically. Scalar and selector roles are not assigned by this framing.
 
 The pattern row schema index addresses the owning OM section class declaration at ordinal `row-schema-index - 1`. The instance class is `UGS::ModlUtils::PatternInstance`, whose base chain is `UGS::ModlUtils::PatternInstanceBase`, `UGS::OM::SubObject`, and `UGS::OM::MethodicObject`. Class identity does not assign physical roles or units to the row scalars. The compact row key is an unsigned value in the owning operation lane, including zero. Its numeric value is separate from the explicit row ordinal and does not establish an offset-store or feature-operation reference.
 
-`Pattern Feature` also admits the wide-row form `01, count, row[count-1], row-schema-index-1, 00 00 02`, with the same count, common nonzero row schema index, selector, ordinal, and row-tail invariants. Each row is `row-schema-index, shifted-f64, shifted-f64, 00 00, shifted-f64, shifted-f64, 00 00 00 00, terminal-scalar, 00 00 00 00 01 01 03, selector, 01, ordinal, 00 00 ff 00 00`. The terminal scalar is either the exact-one byte `01` or one finite shifted-binary32 atom. The lane retains its wide-row layout, row schema index, count, five values per row in row-major order, ordered encodings and exact bytes and offsets, selectors, exact selector tokens and offsets, and source offset. A non-binary64 leading value, unsupported terminal scalar, changed row schema index, mismatched terminal schema index, malformed count, non-finite value, null selector, incorrect ordinal, incomplete row or terminator, or multiple complete transform lanes rejects the lane atomically. The framing does not assign semantic roles to the five values or selector.
+`Pattern Feature` also admits the wide-row form `01, count, row[count-1], row-schema-index-1, 00 00 02`, with the same count, common nonzero row schema index, selector, ordinal, and row-tail invariants. Each row is `row-schema-index, pattern-atom8, pattern-atom8, 00 00, pattern-atom8, pattern-atom8, 00 00 00 00, terminal-scalar, 00 00 00 00 01 01 03, selector, 01, ordinal, 00 00 ff 00 00`. Each `pattern-atom8` is an eight-byte pattern atom. The terminal scalar is either the exact-one byte `01`, the value 1, or one four-byte pattern atom. The lane retains its wide-row layout, row schema index, count, five values per row in row-major order, ordered encodings (`binary64` for a leading atom, `binary32` for a four-byte terminal atom, and `exact_one` for the terminal byte `01`) and exact bytes and offsets, selectors, exact selector tokens and offsets, and source offset. A leading value that is not an eight-byte pattern atom, an unsupported terminal scalar, changed row schema index, mismatched terminal schema index, malformed count, null selector, incorrect ordinal, incomplete row or terminator, or multiple complete transform lanes rejects the lane atomically. The framing does not assign semantic roles to the five values or selector.
 
 `Multi Instance Output` payloads contain at most one counted output lane `3a 00 00 01 00 00 00 00 25 01, count, row[count-1], 00 3b, reference[instance-count-1], 01, instance-count`, where `count >= 2` and `instance-count >= 2`. Each row is `26 27 01 02 65 01 02, selector, 28, ordinal, row-index`. Selectors are non-null compact indices. Row indices are exactly `2..count` in serialized order. For every distinct selector, its rows carry the complete ordered ordinal interval `2..instance-count`; the maximum row ordinal defines `instance-count`. Trailing references are non-null canonical object indices. The lane retains both counts, row order, row indices, decoded selectors and references, exact selector and reference tokens, and token offsets. A count mismatch, incorrect row index, incomplete selector group, null or noncanonical token, incorrect suffix, or multiple complete lanes rejects the lane atomically.
 

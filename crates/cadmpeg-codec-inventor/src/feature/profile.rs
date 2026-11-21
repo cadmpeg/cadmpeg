@@ -181,10 +181,10 @@ fn profile_wires(ctx: &DecodeContext<'_>, brep: &AsmBrep) -> Result<Vec<ProfileW
         .collect::<HashMap<_, _>>();
     let mut names = HashMap::<&str, Vec<Option<EdgeName>>>::new();
     for attribute in &brep.attributes {
-        if let AttributeTarget::Edge(edge) = &attribute.target {
+        if let AttributeTarget::Edge(edge) = &attribute.target.entity {
             let naming = attribute.name == NAMING_ATTRIBUTE
                 || (attribute.name == CUSTOM_NAMING_ATTRIBUTE
-                    && matches!(attribute.values.get(5), Some(AttributeValue::String(family))
+                    && matches!(attribute.values.get(5), Some(Some(AttributeValue::String(family)))
                         if family == CUSTOM_NAMING_FAMILY));
             if !naming {
                 continue;
@@ -262,8 +262,8 @@ fn profile_wires(ctx: &DecodeContext<'_>, brep: &AsmBrep) -> Result<Vec<ProfileW
         for id in members {
             let Some((start, end)) = edges.get(id.as_str()).and_then(|edge| {
                 Some((
-                    *vertices.get(edge.start.as_str())?,
-                    *vertices.get(edge.end.as_str())?,
+                    *vertices.get(edge.start()?.as_str())?,
+                    *vertices.get(edge.end()?.as_str())?,
                 ))
             }) else {
                 wire_edges.clear();
@@ -315,7 +315,7 @@ fn profile_wires(ctx: &DecodeContext<'_>, brep: &AsmBrep) -> Result<Vec<ProfileW
 }
 
 /// The naming-type and associative-id integers of an edge naming attribute.
-fn edge_name(attribute: &str, values: &[AttributeValue]) -> Option<EdgeName> {
+fn edge_name(attribute: &str, values: &[Option<AttributeValue>]) -> Option<EdgeName> {
     let [_, _, _, _, _, rest @ ..] = values else {
         return None;
     };
@@ -323,14 +323,14 @@ fn edge_name(attribute: &str, values: &[AttributeValue]) -> Option<EdgeName> {
         (NAMING_ATTRIBUTE, rest) => rest,
         (
             CUSTOM_NAMING_ATTRIBUTE,
-            [AttributeValue::String(family), AttributeValue::Integer(1), rest @ ..],
+            [Some(AttributeValue::String(family)), Some(AttributeValue::Integer(1)), rest @ ..],
         ) if family == CUSTOM_NAMING_FAMILY => rest,
         _ => return None,
     };
     let integers = rest
         .iter()
         .map(|value| match value {
-            AttributeValue::Integer(value) => Some(*value),
+            Some(AttributeValue::Integer(value)) => Some(*value),
             _ => None,
         })
         .collect::<Option<Vec<_>>>()?;
@@ -1190,6 +1190,42 @@ fn chain(curves: &[&SketchEntity]) -> Option<Vec<SketchEntityUse>> {
         uses.push(use_(entity, reversed));
     }
     near(at, origin).then_some(uses)
+}
+
+/// Whether `curves`, in this order, form one open path: each curve shares an
+/// end with the next, and the two free ends differ.
+fn open_chain(curves: &[&SketchEntity]) -> bool {
+    let Some(ends) = curves
+        .iter()
+        .map(|entity| Some(LoopCurve::new(entity, false)?.ends()))
+        .collect::<Option<Vec<_>>>()
+    else {
+        return false;
+    };
+    let Some((first, rest)) = ends.split_first() else {
+        return false;
+    };
+    let Some(second) = rest.first() else {
+        return !near(first.0, first.1);
+    };
+    let touches = |point: Point2| near(point, second.0) || near(point, second.1);
+    let (start, mut at) = if touches(first.1) {
+        (first.0, first.1)
+    } else if touches(first.0) {
+        (first.1, first.0)
+    } else {
+        return false;
+    };
+    for next in rest {
+        at = if near(next.0, at) {
+            next.1
+        } else if near(next.1, at) {
+            next.0
+        } else {
+            return false;
+        };
+    }
+    !near(start, at)
 }
 
 fn near(left: Point2, right: Point2) -> bool {

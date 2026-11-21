@@ -22,35 +22,90 @@ census = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(census)
 
 
+# The root of each wire package a reader path can name, as a fixture states it.
+WIRE_PACKAGES = {
+    "cadmpeg-core": "pub mod absent_key; pub mod distinct_keys; pub mod tag_only;",
+    "cadmpeg-derive": "",
+    "cadmpeg-ir": "pub mod bytes; pub mod features; pub mod ids; pub mod units;",
+}
+REGISTRY_PACKAGES = {"serde_json": "1", "serde_bytes": "0.11", "indexmap": "2"}
+
+
+def write_workspace(directory: Path, crate: Path, package: str) -> None:
+    """A workspace around one fixture crate: each wire package its reader
+    paths name, and a manifest that depends on every one of them."""
+    homes = {}
+    for wire, root in WIRE_PACKAGES.items():
+        homes[wire] = crate if package == wire else directory / "crates" / wire
+        if package != wire:
+            (homes[wire] / "src").mkdir(parents=True, exist_ok=True)
+            (homes[wire] / "Cargo.toml").write_text(f'[package]\nname = "{wire}"\n')
+            (homes[wire] / "src" / "lib.rs").write_text(root)
+    workspace = "[workspace]\n[workspace.dependencies]\n" + "".join(
+        f'{wire} = {{ path = "{home.relative_to(directory).as_posix()}" }}\n'
+        for wire, home in homes.items()
+    ) + "".join(f'{name} = "{version}"\n' for name, version in REGISTRY_PACKAGES.items())
+    dependencies = "".join(
+        f"{name}.workspace = true\n"
+        for name in [*WIRE_PACKAGES, *REGISTRY_PACKAGES] if name != package
+    )
+    stated = f'[package]\nname = "{package}"\n[dependencies]\n{dependencies}'
+    crate.mkdir(parents=True, exist_ok=True)
+    if crate == directory:
+        (crate / "Cargo.toml").write_text(f"{stated}{workspace}")
+    else:
+        (directory / "Cargo.toml").write_text(workspace)
+        (crate / "Cargo.toml").write_text(stated)
+
+
+def write_fixture(src: Path, files: dict[str, str]) -> list[Path]:
+    """Write ``files`` under ``src``; a ``../`` name replaces a file of the
+    crate itself, such as its manifest. Returns the Rust sources."""
+    paths = []
+    for name, source in files.items():
+        path = src / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(source, encoding="utf-8")
+        if path.suffix == ".rs":
+            paths.append(path)
+    return paths
+
+
 class DenyCensusTests(unittest.TestCase):
-    def run_census(self, files: dict[str, str]) -> tuple[int, str]:
+    def run_census(self, files: dict[str, str], crate: str = "") -> tuple[int, str]:
         with tempfile.TemporaryDirectory() as directory:
-            paths = []
-            for name, source in files.items():
-                path = Path(directory) / "src" / name
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(source, encoding="utf-8")
-                paths.append(path)
+            root = Path(directory)
+            write_workspace(root, root / crate, crate or "fixture")
+            paths = write_fixture(root / crate / "src", files)
             output = io.StringIO()
             # The absent-key rule has its own scope, the whole crates tree.
             # These fixtures state the unknown-key rule only, so that pass is
-            # held out here and exercised by `run_absent_key_census` below.
+            # held out here and exercised by `run_absent_key_census` below,
+            # and the set rule by `run_set_census`.
             with patch.object(census, "source_files", return_value=paths), \
                     patch.object(census, "EXCEPTIONS", {}), \
                     patch.object(census, "absent_key_failures", return_value=[]), \
+                    patch.object(census, "set_spelling_failures", return_value=[]), \
+                    patch.object(census, "trait_impl_source_files", return_value=[]), \
                     contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
                 status = census.main()
             return status, output.getvalue()
 
+    def run_set_census(self, files: dict[str, str]) -> list[str]:
+        """The set rule's findings over one fixture crate."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_workspace(root, root, "fixture")
+            paths = write_fixture(root / "src", files)
+            with patch.object(census, "source_files", return_value=paths):
+                return [message for _, _, message in census.set_spelling_failures()]
+
     def run_absent_key_census(self, files: dict[str, str]) -> list[str]:
         """The absent-key rule's findings over one fixture tree."""
         with tempfile.TemporaryDirectory() as directory:
-            paths = []
-            for name, source in files.items():
-                path = Path(directory) / "crates" / "fixture" / "src" / name
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(source, encoding="utf-8")
-                paths.append(path)
+            crate = Path(directory) / "crates" / "fixture"
+            write_workspace(Path(directory), crate, "fixture")
+            paths = write_fixture(crate / "src", files)
             with patch.object(census, "absent_key_source_files", return_value=paths), \
                     patch.object(census, "ABSENT_KEY_EXCEPTIONS", {}):
                 return [message for _, _, message in census.absent_key_failures()]
@@ -58,12 +113,9 @@ class DenyCensusTests(unittest.TestCase):
     def run_absent_key_main(self, files: dict[str, str]) -> tuple[int, str]:
         """The whole census over one fixture tree, absent-key rule included."""
         with tempfile.TemporaryDirectory() as directory:
-            paths = []
-            for name, source in files.items():
-                path = Path(directory) / "crates" / "fixture" / "src" / name
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(source, encoding="utf-8")
-                paths.append(path)
+            crate = Path(directory) / "crates" / "fixture"
+            write_workspace(Path(directory), crate, "fixture")
+            paths = write_fixture(crate / "src", files)
             output = io.StringIO()
             with patch.object(census, "source_files", return_value=[]), \
                     patch.object(census, "absent_key_source_files",
@@ -94,10 +146,10 @@ class DenyCensusTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'wire.rs'
             path.write_text('fn r#read<T>() { struct Inner { value: T } T::deserialize(d); }')
-            entries = census.reader_function_index(path)['r#read']
+            entries = census.reader_function_index(path)['read']
             self.assertEqual(len(entries), 1)
             opening, end, read, parameters = entries[0]
-            self.assertIn('struct Inner', path.read_text()[opening:end])
+            self.assertIn('struct Inner', census.read_source(path)[opening:end])
             self.assertEqual(read, {'T'})
             self.assertEqual(parameters, {'T'})
 
@@ -445,6 +497,20 @@ print(json.dumps([(name, optional) for _, _, name, optional in runs]))
         self.assertEqual(status, 1, output)
         self.assertIn("Reader", output)
 
+    def test_a_tagged_reader_derive_is_checked_as_a_deserialize_derive(self) -> None:
+        open_reader = '''
+            #[derive(cadmpeg_derive::DeserializeTagged)]
+            #[serde(tag = "kind")]
+            enum Reader { Value { value: u8 } }
+        '''
+        status, output = self.run_census({"lib.rs": open_reader})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader", output)
+        status, output = self.run_census({"lib.rs": open_reader.replace(
+            '#[serde(tag = "kind")]', '#[serde(tag = "kind", deny_unknown_fields)]'
+        )})
+        self.assertEqual(status, 0, output)
+
     def test_raw_type_literals_follow_the_actual_reader(self) -> None:
         for target, status in [("Closed", 0), ("Open", 1)]:
             with self.subTest(target=target):
@@ -490,6 +556,292 @@ print(json.dumps([(name, optional) for _, _, name, optional in runs]))
                 self.assertEqual(status, 1, output)
                 self.assertIn("Reader", output)
 
+    NAME_READ = '''
+        IMPORT
+        #[derive(Serialize, DERIVE)]
+        #[serde(rename_all = "snake_case", deny_unknown_fields)]
+        enum Reader { A, B = 2 }
+        #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+        struct Holder { base: Reader }
+    '''
+
+    def name_read(self, derive="DeserializeName",
+                  imported="use cadmpeg_derive::DeserializeName;") -> str:
+        return self.NAME_READ.replace("IMPORT", imported).replace("DERIVE", derive)
+
+    SET_PRELUDE = '''
+        use std::collections::{BTreeMap, BTreeSet};
+        #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        enum Class { Model, Process }
+    '''
+
+    def test_a_set_or_map_read_by_serde_states_a_second_spelling(self) -> None:
+        unsorted = "in any order and merges a repeated member"
+        last = "keeping the last value of a repeated key"
+        cases = {
+            "a transparent newtype over a set": ('''
+                #[derive(Serialize, Deserialize)] #[serde(transparent)]
+                pub struct ArenaClasses(std::collections::BTreeSet<Class>);
+            ''', f"ArenaClasses.0: serde reads the BTreeSet in std::collections::BTreeSet<Class> {unsorted}"),
+            "an optional set field": ('''
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Machine { #[serde(default)] axes: Option<BTreeSet<Class>> }
+            ''', f"Machine.axes: serde reads the BTreeSet in Option<BTreeSet<Class>> {unsorted}"),
+            "a map field": ('''
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder { names: BTreeMap<String, u8> }
+            ''', f"Holder.names: serde reads the BTreeMap in BTreeMap<String, u8> {last}"),
+            "a JSON object field": ('''
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder { context: serde_json::Map<String, serde_json::Value> }
+            ''', "Holder.context: serde reads the serde_json::Map"),
+            "a newtype variant": ('''
+                #[derive(Deserialize)] #[serde(tag = "kind", content = "value")]
+                enum Holder { Classes(BTreeSet<Class>) }
+            ''', f"Holder::Classes.0: serde reads the BTreeSet in BTreeSet<Class> {unsorted}"),
+            "a struct variant": ('''
+                #[derive(Deserialize)] #[serde(tag = "kind")]
+                enum Holder { Classes { members: Vec<BTreeSet<Class>> } }
+            ''', f"Holder::Classes.members: serde reads the BTreeSet in Vec<BTreeSet<Class>> {unsorted}"),
+            "an alias": ('''
+                type Classes = BTreeSet<Class>;
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder { classes: Classes }
+            ''', f"Holder.classes: serde reads the BTreeSet in Classes {unsorted}"),
+            "a set inside a distinct map": ('''
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder {
+                    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+                    by_name: BTreeMap<String, BTreeSet<Class>>,
+                }
+            ''', f"Holder.by_name: serde reads the BTreeSet in BTreeSet<Class> {unsorted}"),
+            "an integer key in a JSON object": ('''
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder {
+                    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+                    by_index: BTreeMap<u32, u8>,
+                }
+            ''', "Holder.by_index: a JSON object key u32 is not a JSON string"),
+            "a reader that reads serde's set": ('''
+                fn read_classes<'de, D: serde::Deserializer<'de>>(d: D) -> Result<BTreeSet<Class>, D::Error> {
+                    BTreeSet::deserialize(d)
+                }
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder { #[serde(deserialize_with = "read_classes")] classes: BTreeSet<Class> }
+            ''', "Holder.classes: the reader read_classes calls no cadmpeg_core::distinct_keys reader"),
+            "a shim over a hand-written set reader": ('''
+                struct Distinct<T>(BTreeSet<T>);
+                impl<'de, T: Deserialize<'de> + Ord> Deserialize<'de> for Distinct<T> {
+                    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                        Ok(Distinct(BTreeSet::from_iter(Vec::<T>::deserialize(d)?)))
+                    }
+                }
+                impl<T> From<Distinct<T>> for BTreeSet<T> {
+                    fn from(set: Distinct<T>) -> Self { set.0 }
+                }
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Machine {
+                    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "read_axes")]
+                    axes: Option<BTreeSet<Class>>,
+                }
+                cadmpeg_core::named_optional_field!(read_axes, Distinct<Class> as BTreeSet<Class>, "axes");
+            ''', "Distinct: a hand-written reader of a type holding a BTreeSet calls no "
+                 "cadmpeg_core::distinct_keys reader"),
+            "a set reader whose root binds another item": ('''
+                mod cadmpeg_core { pub mod distinct_keys { pub mod set {} } }
+                #[derive(Deserialize)] #[serde(transparent)]
+                struct Classes(#[serde(with = "cadmpeg_core::distinct_keys::set")] BTreeSet<Class>);
+            ''', "spells cadmpeg_core where it can bind another item"),
+        }
+        for case, (source, expected) in cases.items():
+            with self.subTest(case=case):
+                findings = self.run_set_census({"lib.rs": self.SET_PRELUDE + source})
+                self.assertEqual(len(findings), 1, findings)
+                self.assertIn(expected, findings[0])
+
+    def test_a_set_or_map_read_by_a_distinct_keys_reader_has_one_spelling(self) -> None:
+        cases = {
+            "a transparent newtype over a set": '''
+                #[derive(Serialize, Deserialize)] #[serde(transparent)]
+                pub struct ArenaClasses(
+                    #[serde(with = "cadmpeg_core::distinct_keys::set")] std::collections::BTreeSet<Class>,
+                );
+            ''',
+            "maps by their key": '''
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder {
+                    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+                    names: BTreeMap<String, u8>,
+                    #[serde(with = "cadmpeg_core::distinct_keys::pairs")]
+                    by_index: BTreeMap<u32, u8>,
+                    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::json_object")]
+                    context: serde_json::Map<String, serde_json::Value>,
+                    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::set::deserialize")]
+                    classes: BTreeSet<Class>,
+                }
+            ''',
+            "a shim over a set newtype": '''
+                #[derive(Deserialize)] #[serde(transparent)]
+                struct AxisSet(#[serde(with = "cadmpeg_core::distinct_keys::set")] BTreeSet<Class>);
+                impl From<AxisSet> for BTreeSet<Class> {
+                    fn from(AxisSet(axes): AxisSet) -> Self { axes }
+                }
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Machine {
+                    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "read_axes")]
+                    axes: Option<BTreeSet<Class>>,
+                }
+                cadmpeg_core::named_optional_field!(read_axes, AxisSet as BTreeSet<Class>, "axes");
+            ''',
+            "a reader that forwards to a shim": '''
+                #[derive(Deserialize)] #[serde(transparent)]
+                struct Centers(#[serde(with = "cadmpeg_core::distinct_keys::set")] BTreeSet<Class>);
+                fn read_centers<'de, D: Deserializer<'de>>(d: D) -> Result<Option<BTreeSet<Class>>, D::Error> {
+                    read_center_set(d).map(|centers| centers.map(|Centers(set)| set))
+                }
+                cadmpeg_core::named_optional_field!(read_center_set, Centers, "centers");
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder {
+                    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "read_centers")]
+                    centers: Option<BTreeSet<Class>>,
+                }
+            ''',
+            "a hand-written reader that reads a checked wire type": '''
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct StatsWire {
+                    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+                    kinds: BTreeMap<String, usize>,
+                }
+                struct Stats { kinds: BTreeMap<String, usize> }
+                impl<'de> Deserialize<'de> for Stats {
+                    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                        let wire = StatsWire::deserialize(d)?;
+                        Ok(Stats { kinds: wire.kinds })
+                    }
+                }
+            ''',
+            "an associated type and serde_json's value": '''
+                trait Kind { type Value; }
+                struct Classes;
+                impl Kind for Classes { type Value = BTreeSet<Class>; }
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder<K: Kind> { value: K::Value, raw: serde_json::Value }
+            ''',
+            "a skipped field": '''
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder { #[serde(skip)] cache: BTreeSet<Class> }
+            ''',
+        }
+        for case, source in cases.items():
+            with self.subTest(case=case):
+                self.assertEqual(self.run_set_census({"lib.rs": self.SET_PRELUDE + source}), [])
+
+    def test_the_whole_census_fails_on_a_set_read_by_serde(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_workspace(root, root, "fixture")
+            paths = write_fixture(root / "src", {"lib.rs": self.SET_PRELUDE + '''
+                #[derive(Serialize, Deserialize)] #[serde(transparent)]
+                pub struct ArenaClasses(BTreeSet<Class>);
+            '''})
+            output = io.StringIO()
+            with patch.object(census, "source_files", return_value=paths), \
+                    patch.object(census, "absent_key_failures", return_value=[]), \
+                    patch.object(census, "trait_impl_source_files", return_value=[]), \
+                    contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+                status = census.main()
+        self.assertEqual(status, 1, output.getvalue())
+        self.assertIn("ArenaClasses.0: serde reads the BTreeSet", output.getvalue())
+
+    def test_a_data_free_enum_read_by_serde_states_a_second_spelling(self) -> None:
+        for case, (source, name) in {
+            "denying": (self.name_read("Deserialize", ""), "Reader"),
+            "not denying": ('''
+                #[derive(Deserialize)] #[serde(rename_all = "snake_case")]
+                enum Reader { A, B }
+            ''', "Reader"),
+            "a macro template": ('''
+                macro_rules! labels {
+                    ($name:ident { $($variant:ident,)* }) => {
+                        #[derive(Deserialize)]
+                        enum $name { $($variant,)* }
+                    };
+                }
+                labels! { Reader { A, B, } }
+            ''', "$name"),
+        }.items():
+            with self.subTest(case=case):
+                status, output = self.run_census({"lib.rs": source})
+                self.assertEqual(status, 1, output)
+                self.assertIn(
+                    f"{name}: serde's derived Deserialize reads a data-free enum from "
+                    '{"<variant>": null} beside its name; derive cadmpeg_derive::DeserializeName',
+                    output,
+                )
+
+    def test_a_data_free_enum_read_by_its_name_alone(self) -> None:
+        for case, source in {
+            "imported": self.name_read(),
+            "by its path": self.name_read("cadmpeg_derive::DeserializeName", ""),
+            "by its absolute path": self.name_read("::cadmpeg_derive::DeserializeName", ""),
+            "a macro template": '''
+                use cadmpeg_derive::DeserializeName;
+                macro_rules! labels {
+                    ($name:ident { $($variant:ident,)* }) => {
+                        #[derive(DeserializeName)]
+                        enum $name { $($variant,)* }
+                    };
+                }
+                labels! { Reader { A, B, } }
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder { base: Reader }
+            ''',
+        }.items():
+            with self.subTest(case=case):
+                status, output = self.run_census({"lib.rs": source})
+                self.assertEqual(status, 0, output)
+
+    def test_a_name_reader_that_is_not_the_workspace_derive_proves_nothing(self) -> None:
+        local = "mod cadmpeg_derive { pub use serde::Deserialize as DeserializeName; }"
+        cases = {
+            "no import": (self.name_read(imported=""), "imports no one"),
+            "an import from another crate": (
+                self.name_read(imported="use serde::Deserialize as DeserializeName;"),
+                "serde::Deserialize is not cadmpeg_derive::DeserializeName",
+            ),
+            "a local module of the root's name": (
+                local + self.name_read(),
+                r"spells cadmpeg_derive where it can bind another item",
+            ),
+            "a conditional derive": (
+                self.name_read().replace(
+                    "#[derive(Serialize, DeserializeName)]",
+                    '#[derive(Serialize)] #[cfg_attr(feature = "x", derive(DeserializeName))]',
+                ),
+                "the derive is conditional",
+            ),
+            "a variant that holds data": (
+                self.name_read().replace("B = 2", "B(u8)"),
+                "it reads an enum whose variants hold no data",
+            ),
+            "a tag": (
+                self.name_read().replace('rename_all = "snake_case"', 'tag = "kind"'),
+                "serde tag gives the enum another wire form",
+            ),
+        }
+        for case, (source, reason) in cases.items():
+            with self.subTest(case=case):
+                status, output = self.run_census({"lib.rs": source})
+                self.assertEqual(status, 1, output)
+                self.assertIn("Reader: derives DeserializeName, but", output)
+                self.assertRegex(output, reason)
+        undeclared = '[package]\nname = "fixture"\n[dependencies]\nserde_json.workspace = true\n'
+        status, output = self.run_census(
+            {"lib.rs": self.name_read(), "../Cargo.toml": undeclared}, crate="fixture")
+        self.assertEqual(status, 1, output)
+        self.assertIn("names no dependency cadmpeg_derive", output)
+
     def test_adjacent_tagged_unit_enum_can_deny_unknown_keys(self) -> None:
         status, output = self.run_census({"lib.rs": '''
             #[derive(Deserialize)]
@@ -505,6 +857,198 @@ print(json.dumps([(name, optional) for _, _, name, optional in runs]))
         '''})
         self.assertEqual(status, 1, output)
         self.assertIn("Reader::A", output)
+
+    def test_internal_tagged_unit_arm_read_by_its_tag_alone(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader {
+                #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+                A,
+                B { value: u8 },
+            }
+        '''})
+        self.assertEqual(status, 0, output)
+
+    def test_internal_tagged_unit_arm_read_by_the_tag_only_reader_spellings(self) -> None:
+        cases = [
+            ("", "::cadmpeg_core::tag_only::read"),
+            ("", "cadmpeg_core :: tag_only :: read"),
+            ("cadmpeg-core", "crate::tag_only::read"),
+        ]
+        for crate, reader in cases:
+            with self.subTest(crate=crate, reader=reader):
+                status, output = self.run_census({"lib.rs": f'''
+                    pub mod tag_only;
+                    #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+                    enum Reader {{
+                        #[serde(deserialize_with = "{reader}")]
+                        A,
+                        B {{ value: u8 }},
+                    }}
+                '''}, crate=crate)
+                self.assertEqual(status, 0, output)
+
+    def test_internal_tagged_unit_arm_read_any_other_way_ignores_local_deny(self) -> None:
+        arms = {
+            "crate path outside the declaring crate":
+                '#[serde(deserialize_with = "crate::tag_only::read")]',
+            "suffix of another module":
+                '#[serde(deserialize_with = "other::tag_only::read")]',
+            "bare module path":
+                '#[serde(deserialize_with = "tag_only::read")]',
+            "conditional reader":
+                '#[cfg_attr(feature = "x", serde(deserialize_with = '
+                '"cadmpeg_core::tag_only::read"))]',
+            "reader named in documentation":
+                '/// #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]',
+            "reader named in a doc attribute":
+                '#[doc = "deserialize_with = \\"cadmpeg_core::tag_only::read\\""]',
+            "two readers":
+                '#[serde(deserialize_with = "cadmpeg_core::tag_only::read")] '
+                '#[cfg_attr(feature = "x", serde(deserialize_with = "other::read"))]',
+            "another reader":
+                '#[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]',
+        }
+        for case, attributes in arms.items():
+            with self.subTest(case=case):
+                status, output = self.run_census({"lib.rs": f'''
+                    #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+                    enum Reader {{
+                        {attributes}
+                        A,
+                        B {{ value: u8 }},
+                    }}
+                '''}, crate="cadmpeg-ir")
+                self.assertEqual(status, 1, output)
+                self.assertIn("Reader::A: an internally tagged unit arm", output)
+
+    TAG_ONLY_ARM = '''
+        #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+        enum Reader {
+            #[serde(deserialize_with = "READER")]
+            A,
+            B { value: u8 },
+        }
+    '''
+    LOCAL_TAG_ONLY = '''pub mod tag_only {
+            pub fn read<'de, D: serde::Deserializer<'de>>(d: D) -> Result<(), D::Error> {
+                serde::Deserialize::deserialize(d).map(|_: ::serde_json::Value| ())
+            }
+        }'''
+
+    def test_a_tag_only_path_whose_root_binds_another_item_is_no_reader(self) -> None:
+        """The root names the workspace's cadmpeg-core only where nothing in
+        the crate binds it otherwise."""
+        arm = self.TAG_ONLY_ARM.replace("READER", "cadmpeg_core::tag_only::read")
+        absolute = self.TAG_ONLY_ARM.replace("READER", "::cadmpeg_core::tag_only::read")
+        local = self.LOCAL_TAG_ONLY
+        renamed = (
+            '[package]\nname = "cadmpeg-ir"\n[dependencies]\n'
+            'cadmpeg_core = { package = "evil", path = "../evil" }\n'
+            'serde_json.workspace = true\n'
+        )
+        moved = (
+            '[package]\nname = "cadmpeg-ir"\n[dependencies]\n'
+            'cadmpeg-core = { path = "../evil" }\nserde_json.workspace = true\n'
+        )
+        spelled = r"lib\.rs:\d+ spells cadmpeg_core where it can bind another item"
+        cases = {
+            "a local module": (
+                {"lib.rs": f"mod cadmpeg_core {{ {local} }}" + arm}, spelled,
+            ),
+            "a module in another file": (
+                {"lib.rs": "mod cadmpeg_core;" + arm, "cadmpeg_core.rs": local}, spelled,
+            ),
+            "a use rename": (
+                {"lib.rs": f"mod other {{ {local} }} use other as cadmpeg_core;" + arm}, spelled,
+            ),
+            "a re-export another module's glob brings in": (
+                {"lib.rs": "mod api; use api::*;" + arm,
+                 "api.rs": f"pub mod other {{ {local} }} pub use other as cadmpeg_core;"},
+                spelled.replace("lib", "api"),
+            ),
+            "a glob from outside the crate": (
+                {"lib.rs": "use serde_json::*;" + arm}, "imports every name of serde_json",
+            ),
+            "an extern crate rename": (
+                {"lib.rs": "extern crate serde_json as cadmpeg_core;" + arm}, spelled,
+            ),
+            "an extern crate rename of an absolute path": (
+                {"lib.rs": "extern crate serde_json as cadmpeg_core;" + absolute}, spelled,
+            ),
+            "a macro that declares the module it is passed": (
+                {"lib.rs": f"macro_rules! module {{ ($name:ident) => {{ mod $name {{ {local} }} }}; }}"
+                           " module!(cadmpeg_core);" + arm},
+                spelled,
+            ),
+            "a dependency renamed to the root": (
+                {"lib.rs": arm, "../Cargo.toml": renamed},
+                "is not the workspace's cadmpeg-core",
+            ),
+            "a dependency on another directory": (
+                {"lib.rs": arm, "../Cargo.toml": moved},
+                "is not the workspace's cadmpeg-core",
+            ),
+        }
+        for case, (files, reason) in cases.items():
+            with self.subTest(case=case):
+                status, output = self.run_census(files, crate="cadmpeg-ir")
+                self.assertEqual(status, 1, output)
+                self.assertIn(
+                    "Reader::A: an internally tagged unit arm names "
+                    "cadmpeg_core::tag_only::read, but", output,
+                )
+                self.assertRegex(output, reason)
+        for files in ({"lib.rs": arm}, {"lib.rs": "mod std {}" + absolute}):
+            with self.subTest(control=files["lib.rs"][:12]):
+                status, output = self.run_census(files, crate="cadmpeg-ir")
+                self.assertEqual(status, 0, output)
+
+    def test_a_crate_path_to_the_tag_only_reader_needs_the_real_module(self) -> None:
+        for crate, files, reason in (
+            ("cadmpeg-core", {"lib.rs": self.TAG_ONLY_ARM.replace(
+                "READER", "$crate::tag_only::read")}, "names $crate"),
+            ("cadmpeg-core", {"lib.rs": f"mod other {{ {self.LOCAL_TAG_ONLY} }}"
+                              + self.TAG_ONLY_ARM.replace("READER", "crate::tag_only::read")},
+             "declares no module tag_only"),
+            ("cadmpeg-ir", {"lib.rs": "pub mod tag_only;" + self.TAG_ONLY_ARM.replace(
+                "READER", "crate::tag_only::read")}, "is written outside cadmpeg-core"),
+        ):
+            with self.subTest(crate=crate, reason=reason):
+                status, output = self.run_census(files, crate=crate)
+                self.assertEqual(status, 1, output)
+                self.assertIn("names cadmpeg_core::tag_only::read, but", output)
+                self.assertIn(reason, output)
+
+    def test_every_reader_accepted_by_path_needs_its_root_to_bind_the_real_crate(self) -> None:
+        """The distinct-key, absent-key and free-form readers are each read
+        by their path, so a local module of the root's name is not one."""
+        payloads = {
+            "a distinct-key map": (
+                "cadmpeg_core",
+                '#[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")] '
+                'BTreeMap<String, u8>',
+            ),
+            "a nullable optional": (
+                "cadmpeg_core",
+                '#[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")] Option<u8>',
+            ),
+            "a free-form value": ("serde_json", "serde_json::Value"),
+        }
+        for case, (root, payload) in payloads.items():
+            reader = f'''
+                #[derive(Deserialize)]
+                #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+                enum Reader {{ A({payload}) }}
+            '''
+            with self.subTest(case=case):
+                status, output = self.run_census({"lib.rs": reader}, crate="cadmpeg-ir")
+                self.assertEqual(status, 0, output)
+                status, output = self.run_census(
+                    {"lib.rs": f"mod {root} {{}}" + reader}, crate="cadmpeg-ir"
+                )
+                self.assertEqual(status, 1, output)
+                self.assertIn("Reader::A: payload", output)
 
     def test_internal_tagged_empty_struct_and_skipped_unit_arms(self) -> None:
         status, output = self.run_census({"lib.rs": '''
@@ -740,6 +1284,54 @@ print(json.dumps([(name, optional) for _, _, name, optional in runs]))
         self.assertEqual(status, 1, output)
         self.assertIn("Reader::A", output)
 
+    NAMED_OPTIONAL_FIELD = '''
+        macro_rules! named_optional_field {
+            ($name:ident, $wire:ty as $value:ty, $field:literal) => {
+                fn $name<'de, D: serde::Deserializer<'de>>(d: D)
+                    -> Result<Option<$value>, D::Error> {
+                    $crate::absent_key::named_present::<D, $wire>(d, $field)
+                        .map(|value| value.map(Into::into))
+                }
+            };
+        }
+    '''
+
+    def test_a_converting_shim_is_proved_through_the_wire_it_reads(self) -> None:
+        status, output = self.run_census({"lib.rs": self.NAMED_OPTIONAL_FIELD + '''
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            struct Closed { value: u8 }
+            struct Value;
+            impl From<Closed> for Value { fn from(_: Closed) -> Self { Self } }
+            named_optional_field!(read_closed, Closed as Value, "closed");
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader {
+                A(#[serde(deserialize_with = "read_closed")] Option<Value>),
+            }
+        '''}, crate="cadmpeg-core")
+        self.assertEqual(status, 0, output)
+
+    def test_a_converting_shim_over_an_open_wire_is_unproved(self) -> None:
+        status, output = self.run_census({"lib.rs": self.NAMED_OPTIONAL_FIELD + '''
+            struct Open;
+            impl<'de> serde::Deserialize<'de> for Open {
+                fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                    let _ = serde_json::Value::deserialize(d)?;
+                    Ok(Self)
+                }
+            }
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            struct Closed { value: u8 }
+            impl From<Open> for Closed { fn from(_: Open) -> Self { Self { value: 0 } } }
+            named_optional_field!(read_open, Open as Closed, "open");
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader {
+                A(#[serde(deserialize_with = "read_open")] Option<Closed>),
+            }
+        '''}, crate="cadmpeg-core")
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader::A", output)
+        self.assertIn("payload reader Open lacks checked unknown-key refusal", output)
+
     def test_unproved_deserializer_macro_body_cannot_certify_a_payload(self) -> None:
         status, output = self.run_census({"lib.rs": '''
             macro_rules! selection_field_deserializer {
@@ -801,6 +1393,63 @@ print(json.dumps([(name, optional) for _, _, name, optional in runs]))
             checked_feature_geometry!(ClosedGeometry, Closed);
             #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
             enum Reader { A(ClosedGeometry) }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader::A", output)
+
+    CHECKED_QUANTITY = '''
+        macro_rules! checked_quantity {
+            ($(#[$attribute:meta])* $name:ident, $value:ident, $condition:expr, $error:literal) => {
+                $(#[$attribute])*
+                #[derive(Clone, Copy, Serialize, Deserialize)]
+                #[serde(into = "f64", try_from = "{target}")]
+                pub struct $name(f64);
+            };
+        }
+        checked_quantity!(
+            /// A positive finite area.
+            PositiveArea, value, value > 0.0, "a PositiveArea is finite and positive"
+        );
+        #[derive(Deserialize)] #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+        enum Reader { A(PositiveArea) }
+    '''
+
+    def test_checked_quantity_macro_expands_its_conversion_reader(self) -> None:
+        status, output = self.run_census(
+            {"lib.rs": self.CHECKED_QUANTITY.replace("{target}", "f64")}
+        )
+        self.assertEqual(status, 0, output)
+
+    def test_checked_quantity_macro_with_an_open_conversion_fails_closed(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            #[derive(Deserialize)]
+            struct Open { value: f64 }
+        ''' + self.CHECKED_QUANTITY.replace("{target}", "Open")})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader::A", output)
+
+    def test_checked_quantity_macro_without_a_conversion_route_fails_closed(self) -> None:
+        source = self.CHECKED_QUANTITY.replace(
+            '#[serde(into = "f64", try_from = "{target}")]', ""
+        ).replace("pub struct $name(f64);", "pub struct $name { value: f64 }")
+        status, output = self.run_census({"lib.rs": source})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader::A", output)
+
+    def test_an_imported_nonzero_integer_is_a_scalar_reader(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            use std::num::NonZeroU32;
+            #[derive(Deserialize)] #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+            enum Reader { A(NonZeroU32), B(core::num::NonZeroI8) }
+        '''})
+        self.assertEqual(status, 0, output)
+
+    def test_a_local_nonzero_declaration_is_not_the_std_scalar(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            #[derive(Deserialize)]
+            struct NonZeroU32 { value: u32 }
+            #[derive(Deserialize)] #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+            enum Reader { A(NonZeroU32) }
         '''})
         self.assertEqual(status, 1, output)
         self.assertIn("Reader::A", output)
@@ -1588,7 +2237,7 @@ print(json.dumps([(name, optional) for _, _, name, optional in runs]))
         }
         fixed_status, fixed_output = self.run_census(imported_alias)
         self.assertEqual(fixed_status, 1, fixed_output)
-        import_old = '''imported = imported_path(path, owner)
+        import_old = '''imported = import_missing if path in names else imported_path(path, owner)
         if imported is import_ambiguous:
             return False, f"ambiguous imported payload reader {path}"
         resolved_path = path if imported is import_missing else imported'''
@@ -1626,7 +2275,7 @@ print(json.dumps([(name, optional) for _, _, name, optional in runs]))
         self.assertEqual(flow_mutated, 0, flow_output)
 
     def run_mutated_census(
-        self, files: dict[str, str], old: str, new: str
+        self, files: dict[str, str], old: str, new: str, crate: str = ""
     ) -> tuple[int, str]:
         source = Path(__file__).with_name("check-deny-census.py").read_text(
             encoding="utf-8"
@@ -1638,18 +2287,17 @@ print(json.dumps([(name, optional) for _, _, name, optional in runs]))
         }
         exec(compile(source.replace(old, new), "<mutated-census>", "exec"), namespace)
         with tempfile.TemporaryDirectory() as directory:
-            paths = []
-            for name, content in files.items():
-                path = Path(directory) / "src" / name
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(content, encoding="utf-8")
-                paths.append(path)
+            root = Path(directory)
+            write_workspace(root, root / crate, crate or "fixture")
+            paths = write_fixture(root / crate / "src", files)
             namespace["source_files"] = lambda: paths
             namespace["EXCEPTIONS"] = {}
             # The absent-key rule has its own scope, the whole crates tree,
             # and these fixtures state the unknown-key rule only. Without this
-            # the mutated census walks the real repository once per mutation.
+            # the mutated census walks the real repository once per mutation;
+            # the walk for impls outside the wire crates is held out likewise.
             namespace["absent_key_failures"] = lambda: []
+            namespace["trait_impl_source_files"] = lambda: []
             output = io.StringIO()
             with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
                 status = namespace["main"]()
@@ -1788,6 +2436,7 @@ print(json.dumps([(name, optional) for _, _, name, optional in runs]))
             macro_contract_old,
             '''if True:
                 forwarders.add(name)''',
+            crate="cadmpeg-ir",
         )
         self.assertEqual(macro_contract_mutated, 0, macro_contract_output)
 
@@ -1820,6 +2469,41 @@ class AbsentKeyCensusTests(unittest.TestCase):
             self.run_absent_key_census({"wire.rs": declared + shim}), []
         )
 
+    def test_a_converting_shim_states_the_spelling(self) -> None:
+        declared = self.OMITTED % ',\n        deserialize_with = "read_key"'
+        shim = (
+            'cadmpeg_core::named_optional_field!(\n'
+            '    read_key,\n'
+            '    wire::Distinct<u32> as BTreeSet<u32>,\n'
+            '    "key"\n'
+            ');\n'
+        )
+        self.assertEqual(
+            self.run_absent_key_census({"wire.rs": declared + shim}), []
+        )
+
+    def test_a_declaration_macro_whose_root_binds_another_item_declares_nothing(self) -> None:
+        declared = self.OMITTED % ',\n        deserialize_with = "read_key"'
+        local = (
+            "mod cadmpeg_core { macro_rules! named_optional_field "
+            "{ ($($t:tt)*) => {}; } }\n"
+        )
+        for shim, reason in (
+            ('cadmpeg_core::named_optional_field!(read_key, u32, "key");\n',
+             "spells cadmpeg_core where it can bind another item"),
+            ('other::cadmpeg_core::named_optional_field!(read_key, u32, "key");\n',
+             "names no root of cadmpeg-core"),
+            ('crate::named_optional_field!(read_key, u32, "key");\n',
+             "is written outside cadmpeg-core"),
+        ):
+            with self.subTest(shim=shim):
+                findings = self.run_absent_key_census({"wire.rs": local + declared + shim})
+                self.assertTrue(
+                    any("named_optional_field!: " in finding and reason in finding
+                        for finding in findings),
+                    findings,
+                )
+                self.assertTrue(any("Wire.key" in finding for finding in findings), findings)
     def test_the_unnamed_refusal_is_not_a_declaration(self) -> None:
         declared = self.OMITTED % (
             ',\n        deserialize_with = "cadmpeg_core::absent_key::present"'
@@ -2204,6 +2888,32 @@ class GenericParameterProofTests(unittest.TestCase):
             "instantiated with the generic parameter U of Forwarder", output
         )
 
+    FORWARDED_DIMENSION = CLOSED + '''
+        #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+        struct AlsoClosed { other: u8 }
+        #[derive(Deserialize)]
+        #[serde(tag = "kind", content = "value", deny_unknown_fields,
+                bound(deserialize = "T: Deserialize<'de>, P: Deserialize<'de>"))]
+        enum Dimension<T, P = Closed> { Literal(T), Parameter(P) }
+        #[derive(Deserialize)] #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+        enum Offset { Distance(Dimension<AlsoClosed>) }
+        #[derive(Deserialize)] #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+        enum Law<Q> { Constant(Dimension<Q>) }
+    '''
+
+    def test_a_concrete_use_is_unproved_while_a_forwarder_has_no_instantiation(self) -> None:
+        status, output = self.run_census({"lib.rs": self.FORWARDED_DIMENSION})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Offset::Distance: payload Dimension<AlsoClosed>", output)
+        self.assertIn("generic parameter Q of Law", output)
+
+    def test_instantiating_the_forwarder_proves_every_use(self) -> None:
+        status, output = self.run_census({"lib.rs": self.FORWARDED_DIMENSION + '''
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            struct Twist { law: Law<Closed> }
+        '''})
+        self.assertEqual(status, 0, output)
+
     def test_two_generic_owners_forward_to_checked_readers(self) -> None:
         status, output = self.run_census({"lib.rs": self.CLOSED + '''
             #[derive(Deserialize)] #[serde(deny_unknown_fields)]
@@ -2254,12 +2964,960 @@ class GenericParameterProofTests(unittest.TestCase):
         '''})
         self.assertEqual(status, 0, output)
 
+    GENERIC_ALIAS = CLOSED + '''
+        #[derive(Deserialize)]
+        #[serde(tag = "kind", content = "value", deny_unknown_fields,
+                bound(deserialize = "T: Deserialize<'de>, P: Deserialize<'de>"))]
+        enum Dimension<T, P = Closed> { Literal(T), Parameter(P) }
+        #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+        struct Ref { id: u8 }
+        pub type RefDimension<T> = Dimension<T, Ref>;
+    '''
+
+    def test_a_generic_alias_is_proved_through_its_instantiations(self) -> None:
+        status, output = self.run_census({"lib.rs": self.GENERIC_ALIAS + '''
+            #[derive(Deserialize)] #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+            enum Feed { PerTooth(RefDimension<Closed>) }
+        '''})
+        self.assertEqual(status, 0, output)
+
+    def test_an_open_instantiation_of_a_generic_alias_is_unproved(self) -> None:
+        status, output = self.run_census({"lib.rs": self.GENERIC_ALIAS + self.OPEN + '''
+            #[derive(Deserialize)] #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+            enum Feed { PerTooth(RefDimension<Open>) }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Feed::PerTooth: payload RefDimension<Open>", output)
+        self.assertIn("generic parameter T of RefDimension", output)
+        self.assertIn("instantiated as Open", output)
+
+    def test_a_generic_alias_with_a_where_clause_is_unproved(self) -> None:
+        status, output = self.run_census({"lib.rs": self.GENERIC_ALIAS + '''
+            pub type Bounded<T> where T: Copy = Dimension<T, Ref>;
+            #[derive(Deserialize)] #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+            enum Feed { PerTooth(Bounded<Closed>) }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("payload reader Bounded lacks checked unknown-key refusal", output)
+
+    SAME_NAMED_GENERICS = {
+        "lib.rs": "mod first; mod second;",
+        "first.rs": CLOSED + '''
+            #[derive(Deserialize)]
+            #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+            pub enum Wrapper<T> { A(T) }
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            struct Use { inner: Wrapper<Closed> }
+        ''',
+        "second.rs": OPEN + '''
+            #[derive(Deserialize)]
+            #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+            pub enum Wrapper<T> { A(T) }
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            struct Use { inner: Wrapper<Open> }
+        ''',
+    }
+
+    def test_each_same_named_generic_is_proved_by_its_own_instantiations(self) -> None:
+        status, output = self.run_census(self.SAME_NAMED_GENERICS)
+        self.assertEqual(status, 1, output)
+        self.assertIn("second.rs:5 Wrapper::A: payload T", output)
+        self.assertIn("instantiated as Open", output)
+        self.assertNotIn("first.rs:5 Wrapper::A", output)
+
+    def test_a_same_named_instantiation_does_not_prove_another_module(self) -> None:
+        files = dict(self.SAME_NAMED_GENERICS)
+        files["second.rs"] = files["second.rs"].replace(
+            "struct Use { inner: Wrapper<Open> }", "struct Use { inner: u8 }"
+        )
+        status, output = self.run_census(files)
+        self.assertEqual(status, 1, output)
+        self.assertIn("second.rs:5 Wrapper::A: payload T", output)
+        self.assertIn("no default and no workspace instantiation", output)
+        self.assertNotIn("first.rs:5 Wrapper::A", output)
+
+    def test_a_qualified_instantiation_reaches_its_module(self) -> None:
+        files = dict(self.SAME_NAMED_GENERICS)
+        files["second.rs"] = files["second.rs"].replace(
+            "struct Use { inner: Wrapper<Open> }",
+            "struct Use { inner: crate::first::Wrapper<Open> }",
+        )
+        status, output = self.run_census(files)
+        self.assertEqual(status, 1, output)
+        self.assertIn("first.rs:5 Wrapper::A: payload T", output)
+        self.assertIn("instantiated as Open", output)
+
+    def test_an_instantiation_that_resolves_nowhere_is_unread(self) -> None:
+        files = dict(self.SAME_NAMED_GENERICS)
+        files["second.rs"] = files["second.rs"].replace(
+            "struct Use { inner: Wrapper<Open> }",
+            "struct Use { inner: elsewhere::Wrapper<Open> }",
+        )
+        status, output = self.run_census(files)
+        self.assertEqual(status, 1, output)
+        self.assertIn("the use of elsewhere::Wrapper in Use resolves to no one declaration", output)
+
+    WRAPPER = '''
+        #[derive(Deserialize)]
+        #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+        pub enum Wrapper<T = u8> { A(T) }
+    '''
+
+    def test_a_use_under_a_renamed_import_instantiates_the_parameter(self) -> None:
+        for rename, payload in (
+            ("pub use Wrapper as Closed;", "Closed<Open>"),
+            ("mod api { pub use crate::Wrapper as Closed; }", "api::Closed<Open>"),
+            ("pub use Wrapper as Middle; pub use Middle as Closed;", "Closed<Open>"),
+        ):
+            status, output = self.run_census({"lib.rs": self.WRAPPER + self.OPEN + rename + f'''
+                #[derive(Deserialize)]
+                #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+                pub enum Doc {{ Face({payload}) }}
+            '''})
+            self.assertEqual(status, 1, f"{rename}: {output}")
+            self.assertIn(
+                "Wrapper::A: payload T: generic parameter T instantiated as Open", output
+            )
+
+    def test_a_macro_that_can_declare_its_input_leaves_the_parameter_unread(self) -> None:
+        status, output = self.run_census({"lib.rs": self.WRAPPER + self.OPEN + '''
+            macro_rules! host {
+                ($t:ty) => {
+                    #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                    pub struct Host { pub value: $t }
+                };
+            }
+            host!(Wrapper<Open>);
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn(
+            "Wrapper::A: payload T: the macro call at", output
+        )
+        self.assertIn("names Wrapper, and the census does not expand it", output)
+
+    def test_a_macro_writing_only_functions_states_no_instantiation(self) -> None:
+        status, output = self.run_census({"lib.rs": self.WRAPPER + '''
+            macro_rules! reader {
+                ($name:ident, $t:ty) => {
+                    fn $name() -> Option<$t> { None }
+                };
+            }
+            reader!(read_wrapper, Wrapper<u16>);
+        '''})
+        self.assertEqual(status, 0, output)
+
+    SAFE_USE = '''
+        #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+        struct Host { value: Wrapper<u8> }
+    '''
+
+    def test_an_instantiation_outside_a_declaration_is_read_beside_a_safe_one(self) -> None:
+        """A signature, a const, a static, a const block, an impl header and a
+        macro body each instantiate what they spell."""
+        for case, written in {
+            "a function's return": "pub fn read() -> Wrapper<Open> { todo!() }",
+            "a function's argument": "pub fn take(value: Wrapper<Open>) {}",
+            "a function's bound": "pub fn read<F: Fn() -> Wrapper<Open>>(f: F) {}",
+            "an inherent method": "pub struct Doc; impl Doc { pub fn read() -> Wrapper<Open> { todo!() } }",
+            "a trait method": "pub trait Read { fn read() -> Wrapper<Open>; }",
+            "a static": "pub static CELL: std::sync::OnceLock<Wrapper<Open>> = std::sync::OnceLock::new();",
+            "a const": "pub const NEXT: fn() -> Wrapper<Open> = next;",
+            "a const block": "const _: () = { let _ = Wrapper::<Open>::A; };",
+            "an impl header": "pub struct Doc; impl From<Wrapper<Open>> for Doc { fn from(_: Wrapper<Open>) -> Self { Doc } }",
+            "a macro body": '''macro_rules! reader {
+                () => { pub fn read(t: &str) -> Wrapper<Open> { serde_json::from_str(t).unwrap() } };
+            }
+            reader!();''',
+        }.items():
+            with self.subTest(case=case):
+                status, output = self.run_census(
+                    {"lib.rs": self.WRAPPER + self.OPEN + self.SAFE_USE + written}
+                )
+                self.assertEqual(status, 1, output)
+                self.assertIn(
+                    "Wrapper::A: payload T: generic parameter T instantiated as Open", output
+                )
+
+    def test_a_forwarded_signature_parameter_states_nothing_and_a_wrapped_one_is_unread(self) -> None:
+        status, output = self.run_census({"lib.rs": self.WRAPPER + self.SAFE_USE + '''
+            pub fn read<U>() -> Wrapper<U> { todo!() }
+            pub struct Doc<V>(V);
+            impl<V> Doc<V> { pub fn get(&self) -> Wrapper<V> { todo!() } }
+        '''})
+        self.assertEqual(status, 0, output)
+        status, output = self.run_census({"lib.rs": self.WRAPPER + self.SAFE_USE + '''
+            pub fn read<U>() -> Wrapper<Option<U>> { todo!() }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn(
+            "fills T with Option<U>, which names the parameter U there", output
+        )
+
+    def test_a_macro_body_spelling_a_fragment_leaves_the_parameter_unread(self) -> None:
+        status, output = self.run_census({"lib.rs": self.WRAPPER + self.SAFE_USE + '''
+            macro_rules! reader {
+                ($t:ty) => { pub fn read() -> Wrapper<$t> { todo!() } };
+            }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("instantiated as $t", output)
     def test_generic_parameters_reads_names_bounds_and_defaults(self) -> None:
         item = census.Item(
             Path("crates/ir/src/lib.rs"), 1, "enum", "Reader",
             "", "pub enum Reader<'a, T: Clone = Closed, const N: usize> { A(T) }",
         )
         self.assertEqual(census.generic_parameters(item), [("T", "Closed")])
+
+
+class AssociatedTypeProofTests(unittest.TestCase):
+    """A payload named by a trait's associated type is proved through its impls."""
+
+    run_census = DenyCensusTests.run_census
+
+    SPACE = '''
+        pub trait Space {
+            type Entity: Clone;
+        }
+        #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+        pub struct ClosedId { value: u8 }
+        pub struct Planar;
+        impl Space for Planar { type Entity = ClosedId; }
+        pub struct Spatial;
+        impl Space for Spatial { type Entity = u64; }
+    '''
+    OPERAND = '''
+        #[derive(Deserialize)]
+        #[serde(tag = "kind", content = "value", deny_unknown_fields, bound = "")]
+        pub enum Operand<S: Space> { Entity(S::Entity) }
+    '''
+    OPEN_ID = '''
+        #[derive(Deserialize)]
+        pub struct OpenId { value: u8 }
+    '''
+
+    def test_every_closed_impl_proves_the_payload(self) -> None:
+        status, output = self.run_census({"lib.rs": self.SPACE + self.OPERAND})
+        self.assertEqual(status, 0, output)
+
+    def test_one_open_impl_leaves_the_payload_unproved(self) -> None:
+        source = self.SPACE.replace("type Entity = u64;", "type Entity = OpenId;")
+        status, output = self.run_census({"lib.rs": source + self.OPEN_ID + self.OPERAND})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Operand::Entity: payload S::Entity: impl Space for Spatial", output)
+        self.assertIn("type Entity = OpenId: payload reader OpenId lacks", output)
+
+    def test_a_forwarded_payload_reader_follows_the_impls(self) -> None:
+        source = self.SPACE.replace("type Entity = u64;", "type Entity = OpenId;")
+        status, output = self.run_census({"lib.rs": source + self.OPEN_ID + self.OPERAND + '''
+            #[derive(Deserialize)]
+            #[serde(tag = "kind", content = "value", deny_unknown_fields, bound = "")]
+            pub enum Axis<S: Space> { Along(Operand<S>) }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Axis::Along: payload Operand<S>", output)
+
+    def test_an_impl_that_states_no_type_is_unread(self) -> None:
+        source = self.SPACE.replace("{ type Entity = u64; }", "{}")
+        status, output = self.run_census({"lib.rs": source + self.OPERAND})
+        self.assertEqual(status, 1, output)
+        self.assertIn("impl Space for Spatial at", output)
+        self.assertIn("states no type Entity", output)
+
+    def test_an_impl_type_the_parser_cannot_read_is_unread(self) -> None:
+        source = self.SPACE.replace("type Entity = u64;", "type Entity<'a> = u64;")
+        status, output = self.run_census({"lib.rs": source + self.OPERAND})
+        self.assertEqual(status, 1, output)
+        self.assertIn("states a type Entity the census cannot read", output)
+
+    def test_a_trait_without_an_impl_is_unread(self) -> None:
+        source = '''
+            pub trait Space { type Entity; }
+        '''
+        status, output = self.run_census({"lib.rs": source + self.OPERAND})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Space has no impl in the wire crates", output)
+
+    def test_an_impl_outside_the_wire_crates_is_unread(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            codec = Path(directory) / "crates" / "codec" / "src" / "lib.rs"
+            codec.parent.mkdir(parents=True)
+            codec.write_text('''
+                use wire::Space;
+                pub struct Codec;
+                impl Space for Codec { type Entity = CodecId; }
+            ''', encoding="utf-8")
+            status, output = self.run_foreign(
+                {"lib.rs": self.SPACE + self.OPERAND}, [codec]
+            )
+        self.assertEqual(status, 1, output)
+        self.assertIn("impl Space for Codec at", output)
+        self.assertIn("is outside the wire crates, so its associated types are unread", output)
+
+    def run_foreign(self, files, foreign):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = []
+            for name, source in files.items():
+                path = Path(directory) / "src" / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(source, encoding="utf-8")
+                paths.append(path)
+            output = io.StringIO()
+            with patch.object(census, "source_files", return_value=paths), \
+                    patch.object(census, "EXCEPTIONS", {}), \
+                    patch.object(census, "absent_key_failures", return_value=[]), \
+                    patch.object(census, "trait_impl_source_files", return_value=foreign), \
+                    contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+                status = census.main()
+            return status, output.getvalue()
+
+    def test_a_where_clause_bound_is_read(self) -> None:
+        operand = self.OPERAND.replace(
+            "enum Operand<S: Space> {", "enum Operand<S> where S: Space {"
+        )
+        status, output = self.run_census({"lib.rs": self.SPACE + operand})
+        self.assertEqual(status, 0, output)
+
+    def test_a_qualified_associated_type_names_its_trait(self) -> None:
+        operand = self.OPERAND.replace("S::Entity", "<S as Space>::Entity")
+        status, output = self.run_census({"lib.rs": self.SPACE + operand})
+        self.assertEqual(status, 0, output)
+        source = self.SPACE.replace("type Entity = u64;", "type Entity = OpenId;")
+        status, output = self.run_census({"lib.rs": source + self.OPEN_ID + operand})
+        self.assertEqual(status, 1, output)
+        self.assertIn("payload <S as Space>::Entity: impl Space for Spatial", output)
+
+    def test_standard_bounds_beside_the_trait_are_ignored(self) -> None:
+        operand = self.OPERAND.replace(
+            "<S: Space>", "<S: Clone + Space + serde::de::DeserializeOwned>"
+        )
+        status, output = self.run_census({"lib.rs": self.SPACE + operand})
+        self.assertEqual(status, 0, output)
+
+    def test_a_parameter_without_a_bound_is_unread(self) -> None:
+        operand = self.OPERAND.replace("<S: Space>", "<S>")
+        status, output = self.run_census({"lib.rs": self.SPACE + operand})
+        self.assertEqual(status, 1, output)
+        self.assertIn("generic parameter S of Operand states no trait bound", output)
+
+    def test_a_bound_outside_the_workspace_is_unread(self) -> None:
+        operand = self.OPERAND.replace("<S: Space>", "<S: Space + external::Mystery>")
+        status, output = self.run_census({"lib.rs": self.SPACE + operand})
+        self.assertEqual(status, 1, output)
+        self.assertIn("the bound external::Mystery of S is no workspace trait", output)
+
+    def test_two_bounds_declaring_the_type_name_no_one_trait(self) -> None:
+        operand = self.OPERAND.replace("<S: Space>", "<S: Space + Other>")
+        status, output = self.run_census({"lib.rs": self.SPACE + operand + '''
+            pub trait Other { type Entity; }
+            impl Other for Planar { type Entity = u8; }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("2 bounds of S declare Entity", output)
+
+    def test_a_default_associated_type_is_unread(self) -> None:
+        source = self.SPACE.replace("type Entity: Clone;", "type Entity: Clone = u8;")
+        status, output = self.run_census({"lib.rs": source + self.OPERAND})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Space::Entity states a default", output)
+
+    def test_an_impl_in_another_module_is_read_where_it_is_written(self) -> None:
+        status, output = self.run_census({
+            "lib.rs": "mod space; mod planar; use crate::space::Space;" + self.OPERAND,
+            "space.rs": '''
+                pub trait Space { type Entity; }
+            ''',
+            "planar.rs": '''
+                use crate::space::Space;
+                #[derive(Deserialize)]
+                pub struct Id { value: u8 }
+                pub struct Planar;
+                impl Space for Planar { type Entity = Id; }
+            ''',
+        })
+        self.assertEqual(status, 1, output)
+        self.assertIn("impl Space for Planar at", output)
+        self.assertIn("planar.rs", output)
+        self.assertIn("payload reader Id lacks checked unknown-key refusal", output)
+
+    def test_a_same_named_trait_in_another_module_is_another_trait(self) -> None:
+        files = {
+            "lib.rs": "mod first; mod second;",
+            "first.rs": self.SPACE + self.OPERAND,
+            "second.rs": '''
+                pub trait Space { type Entity; }
+                #[derive(Deserialize)]
+                pub struct Open { value: u8 }
+                pub struct Loose;
+                impl Space for Loose { type Entity = Open; }
+            ''',
+        }
+        status, output = self.run_census(files)
+        self.assertEqual(status, 1, output)
+        self.assertIn("second.rs:3 Open", output)
+        self.assertNotIn("Operand::Entity", output)
+        files["second.rs"] += self.OPERAND
+        status, output = self.run_census(files)
+        self.assertEqual(status, 1, output)
+        self.assertIn("impl Space for Loose", output)
+        self.assertNotIn("impl Space for Spatial", output)
+
+    def test_an_impl_whose_trait_resolves_nowhere_is_unread(self) -> None:
+        status, output = self.run_census({
+            "lib.rs": "mod first; mod second; mod stray;",
+            "first.rs": self.SPACE + self.OPERAND,
+            "second.rs": "pub trait Space { type Entity; }",
+            "stray.rs": '''
+                pub struct Stray;
+                impl Space for Stray { type Entity = u8; }
+            ''',
+        })
+        self.assertEqual(status, 1, output)
+        self.assertIn("the trait of impl Space for Stray", output)
+        self.assertIn("resolves to no one declaration", output)
+
+    def test_a_macro_call_naming_the_trait_leaves_its_impls_unread(self) -> None:
+        status, output = self.run_census({"lib.rs": self.SPACE + self.OPERAND + '''
+            macro_rules! implement {
+                ($trait:ident, $name:ident) => { impl $trait for $name { type Entity = u8; } };
+            }
+            pub struct Extra;
+            implement!(Space, Extra);
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("names Space and its macro spells impl", output)
+
+    def test_a_macro_impl_of_the_trait_states_an_unread_type(self) -> None:
+        status, output = self.run_census({"lib.rs": self.SPACE + self.OPERAND + '''
+            macro_rules! space {
+                ($name:ident, $entity:ty) => {
+                    impl $crate::Space for $name { type Entity = $entity; }
+                };
+            }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("impl Space for $name at", output)
+        self.assertIn("type Entity = $entity", output)
+
+    IMPLEMENT = '''
+        macro_rules! implement {
+            ($t:ident, $n:ident) => { impl $t for $n { type Entity = OpenId; } };
+        }
+        pub struct Extra;
+    '''
+
+    def test_a_wrapper_macro_naming_the_trait_leaves_its_impls_unread(self) -> None:
+        status, output = self.run_census({"lib.rs": self.SPACE + self.OPERAND + self.OPEN_ID + self.IMPLEMENT + '''
+            macro_rules! expand {
+                ($t:ident, $n:ident) => { implement!($t, $n); };
+            }
+            expand!(Space, Extra);
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Operand::Entity: payload S::Entity: the macro call at", output)
+        self.assertIn("names Space and the census does not expand it", output)
+
+    def test_a_wrapper_macro_body_naming_the_trait_leaves_its_impls_unread(self) -> None:
+        status, output = self.run_census({"lib.rs": self.SPACE + self.OPERAND + self.OPEN_ID + self.IMPLEMENT + '''
+            macro_rules! expand {
+                ($n:ident) => { implement!(Space, $n); };
+            }
+            expand!(Extra);
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("the macro_rules! expand at", output)
+        self.assertIn("names Space outside an impl header the census reads", output)
+
+    def test_a_renamed_macro_naming_the_trait_leaves_its_impls_unread(self) -> None:
+        status, output = self.run_census({"lib.rs": self.SPACE + self.OPERAND + self.OPEN_ID + self.IMPLEMENT + '''
+            use implement as expand;
+            expand!(Space, Extra);
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Operand::Entity: payload S::Entity: the macro call at", output)
+        self.assertIn("names Space and the census does not expand it", output)
+
+    def test_an_attribute_naming_the_trait_leaves_its_impls_unread(self) -> None:
+        status, output = self.run_census({"lib.rs": self.SPACE + self.OPERAND + '''
+            #[external::implement(Space)]
+            pub struct Extra;
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Operand::Entity: payload S::Entity: the attribute at", output)
+        self.assertIn("names Space and the census does not expand it", output)
+
+    def test_an_impl_through_a_renamed_trait_is_read(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            mod geom {
+                pub trait Space { type Entity; }
+                pub struct Planar;
+                impl Space for Planar { type Entity = u8; }
+            }
+            use geom::Space as Plane;
+            pub struct Decoy;
+            impl Plane for Decoy { type Entity = OpenId; }
+        ''' + self.OPEN_ID + self.OPERAND.replace("<S: Space>", "<S: geom::Space>")})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Operand::Entity: payload S::Entity: impl Space for Decoy", output)
+        self.assertIn("type Entity = OpenId: payload reader OpenId lacks", output)
+
+    def test_bounds_are_read_from_the_header_and_the_where_clause(self) -> None:
+        item = census.Item(
+            Path("crates/ir/src/lib.rs"), 1, "enum", "Reader", "",
+            "pub enum Reader<'a, S: Space + Clone, T: ?Sized + a::Other<X = u8> = u8>"
+            " where S: serde::Serialize, 'a: 'a { A(S) }",
+        )
+        self.assertEqual(census.generic_bounds(item), {
+            "S": ["Space", "Clone", "serde::Serialize"],
+            "T": ["a::Other"],
+        })
+
+
+class FailClosedResolutionTests(unittest.TestCase):
+    """A path is read as what it names in Rust, never as a nearby declaration."""
+
+    run_census = DenyCensusTests.run_census
+
+    OPERAND = AssociatedTypeProofTests.OPERAND
+    SPACE = '''
+        pub trait Space { type Entity; }
+        pub struct Planar;
+        impl Space for Planar { type Entity = u8; }
+    '''
+
+    def run_tree(self, files: dict[str, str]) -> tuple[int, str]:
+        """Run the census script itself from a fixture workspace root."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for crate in census.ROOTS:
+                (root / crate).mkdir(parents=True)
+                (root / crate / "lib.rs").write_text("", encoding="utf-8")
+            for name, source in files.items():
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(source, encoding="utf-8")
+            completed = subprocess.run(
+                [sys.executable, str(Path(__file__).with_name("check-deny-census.py"))],
+                cwd=root, text=True, capture_output=True, check=False,
+            )
+            return completed.returncode, completed.stdout + completed.stderr
+
+    def test_an_impl_parameter_is_never_read_as_a_module(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            mod T {
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                pub struct Entity { pub value: u8 }
+            }
+            pub trait Space { type Entity; }
+            pub struct Holder<T> { marker: std::marker::PhantomData<T> }
+            impl<T: Space> Space for Holder<T> { type Entity = T::Entity; }
+        ''' + self.OPERAND})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Operand::Entity: payload S::Entity: impl Space for Holder<T>", output)
+        self.assertIn("the type T::Entity depends on what fills the impl", output)
+
+    def test_an_impl_parameter_is_never_read_as_a_declaration(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            pub struct T { pub value: u8 }
+            pub trait Space { type Entity; }
+            pub struct Holder<T> { marker: std::marker::PhantomData<T> }
+            impl<T> Space for Holder<T> { type Entity = T; }
+        ''' + self.OPERAND})
+        self.assertEqual(status, 1, output)
+        self.assertIn("the type T depends on what fills the generic parameter T", output)
+
+    def test_a_type_parameter_shadows_a_same_named_declaration(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            pub struct T { pub value: u8 }
+            pub struct Open { pub value: u8 }
+            #[derive(Deserialize)]
+            #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+            pub enum Wrapper<T> { A(T) }
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            pub struct Host { pub value: Wrapper<Open> }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Wrapper::A: payload T: generic parameter T instantiated as Open", output)
+
+    def test_a_path_through_a_type_parameter_is_unread(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            mod S {
+                pub mod Entity {
+                    #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                    pub struct Inner { pub value: u8 }
+                }
+            }
+        ''' + self.SPACE + self.OPERAND.replace("S::Entity", "S::Entity::Inner")})
+        self.assertEqual(status, 1, output)
+        self.assertIn("the type S::Entity::Inner depends on what fills the generic parameter S", output)
+
+    DESCENDANT_TRAIT = '''
+        mod geom {
+            pub trait Space { type Entity; }
+            pub struct Planar;
+            impl Space for Planar { type Entity = GEOM; }
+        }
+        mod other {
+            REEXPORT
+            pub mod inner {
+                pub trait Space { type Entity; }
+                pub struct Decoy;
+                impl Space for Decoy { type Entity = u8; }
+            }
+        }
+    '''
+
+    def descendant_trait(self, geom: str, reexport: str) -> dict[str, str]:
+        source = self.DESCENDANT_TRAIT.replace("GEOM", geom).replace("REEXPORT", reexport)
+        return {"lib.rs": source + self.OPERAND.replace("<S: Space>", "<S: other::Space>")}
+
+    def test_a_reexported_trait_is_the_trait_it_reexports(self) -> None:
+        status, output = self.run_census(
+            self.descendant_trait("Foreign", "pub use crate::geom::Space;")
+        )
+        self.assertEqual(status, 1, output)
+        self.assertIn("impl Space for Planar", output)
+        self.assertIn("type Entity = Foreign", output)
+        self.assertNotIn("Decoy", output)
+
+    def test_a_reexported_trait_with_an_open_impl_fails_its_payload(self) -> None:
+        files = self.descendant_trait("OpenId", "pub use crate::geom::Space;")
+        files["lib.rs"] += '''
+            #[derive(Deserialize)]
+            pub struct OpenId { value: u8 }
+        '''
+        status, output = self.run_census(files)
+        self.assertEqual(status, 1, output)
+        self.assertIn("Operand::Entity: payload S::Entity: impl Space for Planar", output)
+
+    def test_a_descendant_trait_is_not_the_trait_a_shorter_path_names(self) -> None:
+        status, output = self.run_census(self.descendant_trait("u8", ""))
+        self.assertEqual(status, 1, output)
+        self.assertIn("the bound other::Space of S is no workspace trait", output)
+
+    def test_a_reexported_reader_is_the_reader_it_reexports(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            mod open_mod {
+                #[derive(Deserialize)]
+                pub struct Wrapper<T> { pub value: T }
+            }
+            mod closed {
+                pub mod inner {
+                    #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                    pub struct Wrapper<T> { pub value: T }
+                }
+                pub use crate::open_mod::Wrapper;
+            }
+            #[derive(Deserialize)]
+            #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+            pub enum Doc { Face(closed::Wrapper<u8>) }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Doc::Face: payload closed::Wrapper<u8>: payload reader closed::Wrapper lacks", output)
+
+    REEXPORTED_CLOSED = {
+        "lib.rs": '''
+            mod geom;
+            mod api;
+            #[derive(Deserialize)]
+            #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+            pub enum Doc { Face(api::Closed) }
+        ''',
+        "geom.rs": '''
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            pub struct Closed { pub value: u8 }
+            pub struct Open { pub value: u8 }
+        ''',
+    }
+
+    def test_reexports_are_followed_where_they_are_written(self) -> None:
+        for api in (
+            "pub use crate::geom::Closed;",
+            "pub use super::geom::Closed;",
+            "pub use crate::geom::*;",
+            "pub use crate::geom::Open as Closed;",
+        ):
+            files = dict(self.REEXPORTED_CLOSED, **{"api.rs": api})
+            status, output = self.run_census(files)
+            if "Open" in api:
+                self.assertEqual(status, 1, output)
+                self.assertIn("payload reader api::Closed lacks", output)
+            else:
+                self.assertEqual(status, 0, f"{api}: {output}")
+
+    def test_two_globs_bringing_in_a_name_resolve_it_nowhere(self) -> None:
+        files = dict(self.REEXPORTED_CLOSED, **{
+            "api.rs": "pub use crate::geom::*; pub use crate::other::*;",
+            "other.rs": "pub struct Closed;",
+        })
+        files["lib.rs"] = "mod other;" + files["lib.rs"]
+        status, output = self.run_census(files)
+        self.assertEqual(status, 1, output)
+        self.assertIn("Doc::Face: payload api::Closed: cannot resolve imported payload reader", output)
+
+    def test_a_turbofish_argument_instantiates_the_parameter(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            #[derive(Deserialize)]
+            #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+            pub enum Wrapper<T = u8> { A(T) }
+            pub struct Foreign;
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            pub struct Host { pub value: Wrapper::<Foreign> }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Wrapper::A: payload T: generic parameter T instantiated as Foreign", output)
+
+    def test_an_impl_stated_argument_instantiates_the_parameter(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            #[derive(Deserialize)]
+            #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+            pub enum Wrapper<T = u8> { A(T) }
+            pub struct Foreign;
+            pub trait Space { type Entity; }
+            pub struct Planar;
+            impl Space for Planar { type Entity = Wrapper<Foreign>; }
+        ''' + self.OPERAND})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Wrapper::A: payload T: generic parameter T instantiated as Foreign", output)
+
+    def test_an_impl_parameter_argument_is_unread(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            pub struct T { pub value: u8 }
+            #[derive(Deserialize)]
+            #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+            pub enum Wrapper<T = u8> { A(T) }
+            pub trait Space { type Entity; }
+            pub struct Holder<T> { marker: std::marker::PhantomData<T> }
+            impl<T> Space for Holder<T> { type Entity = Wrapper<T>; }
+        ''' + self.OPERAND})
+        self.assertEqual(status, 1, output)
+        self.assertIn("generic parameter T instantiated as T: the type T depends on", output)
+
+    WIRE = {"crates/cadmpeg-ir/src/lib.rs": SPACE + OPERAND}
+
+    def test_the_census_proves_a_wire_impl_from_a_workspace_root(self) -> None:
+        status, output = self.run_tree(self.WIRE)
+        self.assertEqual(status, 0, output)
+
+    def test_an_impl_under_examples_is_outside_the_wire_crates(self) -> None:
+        for name in ("examples/demo/src/lib.rs", "examples/demo.rs", "build.rs"):
+            files = dict(self.WIRE, **{name: '''
+                pub struct Demo;
+                impl Space for Demo { type Entity = DemoId; }
+            '''})
+            status, output = self.run_tree(files)
+            self.assertEqual(status, 1, f"{name}: {output}")
+            self.assertIn(f"impl Space for Demo at {name}:3 is outside the wire crates", output)
+
+    def test_a_foreign_file_the_census_cannot_read_leaves_the_trait_unread(self) -> None:
+        files = dict(self.WIRE, **{
+            "examples/demo.rs": "impl Space for Demo { type Entity = DemoId;",
+        })
+        status, output = self.run_tree(files)
+        self.assertEqual(status, 1, output)
+        self.assertIn(
+            "the impl at examples/demo.rs:1 names Space, and the census cannot parse its header",
+            output,
+        )
+        self.assertNotIn("Traceback", output)
+
+    def test_a_foreign_call_to_an_implementing_macro_leaves_the_trait_unread(self) -> None:
+        files = dict(self.WIRE, **{
+            "crates/codec/src/macros.rs": '''
+                macro_rules! implement {
+                    ($trait:path, $name:ident) => { impl $trait for $name { type Entity = Open; } };
+                }
+            ''',
+            "crates/codec/src/lib.rs": "pub struct Codec;\nimplement!(Space, Codec);\n",
+        })
+        status, output = self.run_tree(files)
+        self.assertEqual(status, 1, output)
+        self.assertIn("the macro call at crates/codec/src/lib.rs:2 names Space", output)
+
+    FOREIGN_IMPLEMENT = '''
+        #[derive(Deserialize)]
+        pub struct OpenId { pub value: u8 }
+        macro_rules! implement {
+            ($t:ident, $n:ident) => { impl $t for $n { type Entity = OpenId; } };
+        }
+        pub struct Extra;
+    '''
+
+    def test_a_foreign_wrapper_macro_naming_the_trait_leaves_it_unread(self) -> None:
+        files = dict(self.WIRE, **{"examples/demo.rs": self.FOREIGN_IMPLEMENT + '''
+            macro_rules! expand {
+                ($t:ident, $n:ident) => { implement!($t, $n); };
+            }
+            expand!(Space, Extra);
+        '''})
+        status, output = self.run_tree(files)
+        self.assertEqual(status, 1, output)
+        self.assertIn(
+            "Operand::Entity: payload S::Entity: the macro call at examples/demo.rs:"
+            "12 names Space outside the wire crates",
+            output,
+        )
+
+    def test_a_renamed_foreign_macro_naming_the_trait_leaves_it_unread(self) -> None:
+        files = dict(self.WIRE, **{"examples/demo.rs": self.FOREIGN_IMPLEMENT + '''
+            use implement as expand;
+            expand!(Space, Extra);
+        '''})
+        status, output = self.run_tree(files)
+        self.assertEqual(status, 1, output)
+        self.assertIn("the macro call at examples/demo.rs:10 names Space outside the wire crates", output)
+
+    def test_a_foreign_impl_through_a_renamed_trait_is_outside_the_wire_crates(self) -> None:
+        files = dict(self.WIRE, **{"crates/codec/src/lib.rs": '''
+            use cadmpeg_ir::Space as Plane;
+            pub struct Codec;
+            impl Plane for Codec { type Entity = CodecId; }
+        '''})
+        status, output = self.run_tree(files)
+        self.assertEqual(status, 1, output)
+        self.assertIn(
+            "impl Plane for Codec at crates/codec/src/lib.rs:4 is outside the wire crates", output
+        )
+
+    def test_build_output_and_hidden_directories_hold_no_impl(self) -> None:
+        impl = "pub struct Demo; impl Space for Demo { type Entity = DemoId; }"
+        status, output = self.run_tree(dict(self.WIRE, **{
+            "target/debug/build/out.rs": impl,
+            ".git/hooks/demo.rs": impl,
+            "crates/codec/tests/fixture.rs": impl,
+        }))
+        self.assertEqual(status, 0, output)
+
+    GENERIC_SPACE = '''
+        pub trait Space<F = ()> { type Entity; }
+        pub struct Planar;
+        impl Space for Planar { type Entity = u8; }
+    '''
+
+    def assert_open_impl_read(self, space: str, extra: str, described: str) -> None:
+        """The census reads the impl in ``extra`` and fails its open type."""
+        status, output = self.run_census({"lib.rs": space + self.OPERAND + extra})
+        self.assertEqual(status, 1, output)
+        self.assertIn(f"Operand::Entity: payload S::Entity: {described} at", output)
+        self.assertIn("type Entity = Foreign", output)
+
+    def test_an_fn_bound_in_the_impl_generics_is_read(self) -> None:
+        self.assert_open_impl_read(self.SPACE, '''
+            pub struct Holder<F>(F);
+            impl<F: Fn() -> u8> Space for Holder<F> { type Entity = Foreign; }
+        ''', "impl Space for Holder<F>")
+
+    def test_a_binder_in_the_trait_arguments_is_read(self) -> None:
+        self.assert_open_impl_read(self.GENERIC_SPACE, '''
+            pub struct Extra;
+            impl Space<for<'a> fn(&'a u8)> for Extra { type Entity = Foreign; }
+        ''', "impl Space for Extra")
+
+    def test_a_shift_in_an_array_length_of_the_trait_arguments_is_read(self) -> None:
+        self.assert_open_impl_read(self.GENERIC_SPACE, '''
+            pub struct Extra;
+            impl Space<[u8; 1 << 2]> for Extra { type Entity = Foreign; }
+        ''', "impl Space for Extra")
+
+    def test_a_shift_in_a_const_block_of_the_self_type_is_read(self) -> None:
+        self.assert_open_impl_read(self.SPACE, '''
+            pub struct Arr<const N: usize>;
+            impl Space for Arr<{ 1 << 2 }> { type Entity = Foreign; }
+        ''', "impl Space for Arr<{ 1 << 2 }>")
+
+    def test_a_const_impl_is_read(self) -> None:
+        self.assert_open_impl_read(self.SPACE, '''
+            pub struct Extra;
+            impl const Space for Extra { type Entity = Foreign; }
+        ''', "impl Space for Extra")
+
+    def test_a_raw_identifier_trait_is_the_trait(self) -> None:
+        self.assert_open_impl_read(self.SPACE, '''
+            pub struct Extra;
+            impl r#Space for Extra { type Entity = Foreign; }
+        ''', "impl Space for Extra")
+
+    def test_a_raw_identifier_in_the_trait_path_is_the_trait(self) -> None:
+        self.assert_open_impl_read(self.SPACE, '''
+            pub struct Extra;
+            impl crate::r#Space for Extra { type Entity = Foreign; }
+        ''', "impl Space for Extra")
+
+    def test_a_wire_impl_header_the_parser_rejects_leaves_the_trait_unread(self) -> None:
+        status, output = self.run_census({"lib.rs": self.GENERIC_SPACE + self.OPERAND + '''
+            pub struct Extra;
+            impl Space::<()> for Extra { type Entity = Foreign; }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Operand::Entity: payload S::Entity: the impl at ", output)
+        self.assertIn(
+            "lib.rs:11 names Space, and the census cannot parse its header", output
+        )
+
+    def assert_foreign_impl_unread(self, codec: str, reason: str) -> None:
+        status, output = self.run_tree(dict(self.WIRE, **{"crates/codec/src/lib.rs": codec}))
+        self.assertEqual(status, 1, output)
+        self.assertIn(f"Operand::Entity: payload S::Entity: {reason}", output)
+
+    def test_a_foreign_impl_with_an_fn_bound_is_outside_the_wire_crates(self) -> None:
+        self.assert_foreign_impl_unread(
+            "pub struct Holder<F>(F);\n"
+            "impl<F: Fn() -> u8> cadmpeg_ir::Space for Holder<F> { type Entity = CodecId; }\n",
+            "impl cadmpeg_ir::Space for Holder<F> at crates/codec/src/lib.rs:2 is outside",
+        )
+
+    def test_a_foreign_impl_with_a_binder_is_outside_the_wire_crates(self) -> None:
+        self.assert_foreign_impl_unread(
+            "pub struct Codec;\n"
+            "impl cadmpeg_ir::Space<for<'a> fn(&'a u8)> for Codec { type Entity = CodecId; }\n",
+            "impl cadmpeg_ir::Space for Codec at crates/codec/src/lib.rs:2 is outside",
+        )
+
+    def test_a_foreign_raw_identifier_impl_is_outside_the_wire_crates(self) -> None:
+        self.assert_foreign_impl_unread(
+            "pub struct Codec;\n"
+            "impl cadmpeg_ir::r#Space for Codec { type Entity = CodecId; }\n",
+            "impl cadmpeg_ir::Space for Codec at crates/codec/src/lib.rs:2 is outside",
+        )
+
+    def test_a_foreign_impl_header_the_parser_rejects_leaves_the_trait_unread(self) -> None:
+        self.assert_foreign_impl_unread(
+            "pub struct Codec;\n"
+            "impl cadmpeg_ir::Space::<()> for Codec { type Entity = CodecId; }\n",
+            "the impl at crates/codec/src/lib.rs:2 names Space, and the census "
+            "cannot parse its header",
+        )
+
+    WRAPPER = '''
+        #[derive(Deserialize)]
+        #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+        pub enum Wrapper<T = u8> { A(T) }
+    '''
+
+    def test_a_macro_naming_the_reader_beside_its_argument_leaves_it_unread(self) -> None:
+        status, output = self.run_census({"lib.rs": self.WRAPPER + '''
+            macro_rules! host {
+                ($w:ident, $t:ty) => {
+                    #[derive(Deserialize)]
+                    #[serde(deny_unknown_fields)]
+                    pub struct Host { pub value: $w<$t> }
+                };
+            }
+            host!(Wrapper, Foreign);
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Wrapper::A: payload T: the macro call at ", output)
+        self.assertIn("lib.rs:13 names Wrapper, and the census does not expand it", output)
+
+    def test_a_foreign_macro_naming_the_reader_leaves_it_unread(self) -> None:
+        status, output = self.run_census({"lib.rs": self.WRAPPER + '''
+            other_crate::host!(Wrapper, Foreign);
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Wrapper::A: payload T: the macro call at ", output)
+        self.assertIn("lib.rs:6 names Wrapper, and the census does not expand it", output)
 
 
 if __name__ == "__main__":

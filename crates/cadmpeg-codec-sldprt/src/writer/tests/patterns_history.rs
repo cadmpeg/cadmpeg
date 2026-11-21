@@ -1263,8 +1263,8 @@ fn semantic_writer_preserves_parametric_history() {
         )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    let moved = decoded.ir_mut().model.points[0].position().get();
-    decoded.ir_mut().model.points[0].set_position(
+    let moved = decoded.ir_mut().geometry.points[0].position().get();
+    decoded.ir_mut().geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
@@ -1314,8 +1314,8 @@ fn semantic_writer_applies_neutral_feature_edits() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
-        let moved = ir_edit.model.points[0].position().get();
-        ir_edit.model.points[0].set_position(
+        let moved = ir_edit.geometry.points[0].position().get();
+        ir_edit.geometry.points[0].set_position(
             cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
                 moved.x,
                 moved.y,
@@ -1688,7 +1688,7 @@ fn semantic_writer_rejects_edited_feature_input_class_index() {
         native.feature_input_lanes[0].classes[0].name = "sgOtherHandle".into();
     });
     assert!(crate::resolved_features::validate::validate_native(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         decoded.ir()
     )
     .unwrap()
@@ -1771,7 +1771,7 @@ fn semantic_writer_rejects_edited_feature_input_scalar_index() {
             cadmpeg_ir::scalar::FiniteReal::new(0.050).expect("finite test scalar");
     });
     assert!(crate::resolved_features::validate::validate_native(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         decoded.ir()
     )
     .unwrap()

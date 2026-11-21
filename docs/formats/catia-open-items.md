@@ -106,7 +106,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which sketch constraint, feature/model-tolerance object, or product-manufacturing-information object owns each complete schema-selected `Range` interval?
 
-**Known.** `catia.md` §7.3 "A catalog-resolved value selection named `Range`" defines the complete interval independently of selector cardinality and suffix framing and retains every incoming payload reference and storage selector. Range intervals occur with no slots or with finite and unset lower and upper tolerance-deviation slots. They occur in `Range`-only, `Range`/`CstAttr_Dimension`, and larger selector sequences. Exact `D8`/`81 93`, `D8`/`81 DB`, and `DC`/`81 DB` scalar suffix dialects supply the nominal independently of selector cardinality. A `Range`-only interval can carry both deviations and its nominal. Range intervals can occupy a stable `MechanicalPart` aggregate slot selected by a `_SpecList`/`FeatureFSUR` relation whose other operand carries `UserPattern` and `SimpleLimit`; sketch-versus-PMI is not an exhaustive ownership choice. Their paired and incoming classes also include presentation, TPS capture-link, limiting-element, Boolean, geometry, and catalog-manager classes. Some intervals have no incoming incidence, one incidence, duplicate references from one object, or references from multiple objects. The narrower two-selector constraint-range production retains five exact selector/code/trailer tuples. `ListAggregator` references can include unrelated and repeated identities. A shared structural design-object owner can contain feature, geometry, and presentation classes. These incidences do not distinguish sketch, feature/model-tolerance, and product-manufacturing-information ownership. A two-selector range transfers as one opaque sketch constraint only when exactly one total incoming incidence resolves to its same-graph paired source entity and object record, and that source object's complete owner chain reaches one transferred `Sketch` before another transferred feature. The source object record is retained as one unresolved native operand. Its nominal, deviations, evaluation, and suffix framing remain native because this production does not assign a physical quantity. Other two-selector ranges remain unresolved. The `T` definition with ordered `ProfileList`/`GSMProject`/`Range` selectors has the feature-local diameter frame and cylinder-face incidence defined in §7.3.
+**Known.** `catia.md` §7.3 "A catalog-resolved value selection named `Range`" defines the complete interval independently of selector cardinality and suffix framing and retains every incoming payload reference and storage selector. Range intervals occur with no slots or with finite and `E8` zero lower and upper tolerance-deviation slots. They occur in `Range`-only, `Range`/`CstAttr_Dimension`, and larger selector sequences. Exact `D8`/`81 93`, `D8`/`81 DB`, and `DC`/`81 DB` scalar suffix dialects supply the nominal independently of selector cardinality. A `Range`-only interval can carry both deviations and its nominal. Range intervals can occupy a stable `MechanicalPart` aggregate slot selected by a `_SpecList`/`FeatureFSUR` relation whose other operand carries `UserPattern` and `SimpleLimit`; sketch-versus-PMI is not an exhaustive ownership choice. Their paired and incoming classes also include presentation, TPS capture-link, limiting-element, Boolean, geometry, and catalog-manager classes. Some intervals have no incoming incidence, one incidence, duplicate references from one object, or references from multiple objects. The narrower two-selector constraint-range production retains five exact selector/code/trailer tuples. `ListAggregator` references can include unrelated and repeated identities. A shared structural design-object owner can contain feature, geometry, and presentation classes. These incidences do not distinguish sketch, feature/model-tolerance, and product-manufacturing-information ownership. A two-selector range transfers as one opaque sketch constraint only when exactly one total incoming incidence resolves to its same-graph paired source entity and object record, and that source object's complete owner chain reaches one transferred `Sketch` before another transferred feature. The source object record is retained as one unresolved native operand. Its nominal, deviations, evaluation, and suffix framing remain native because this production does not assign a physical quantity. Other two-selector ranges remain unresolved. The `T` definition with ordered `ProfileList`/`GSMProject`/`Range` selectors has the feature-local diameter frame and cylinder-face incidence defined in §7.3.
 
 **Note.** A Range-only entity with the exact source-closed production in `catia.md` §7.3 transfers as a targetless PMI size dimension. `DiameterThread` selects diameter and `FeatureRSUR` selects general feature size; the finite nominal and both finite deviations are millimetre lengths. Range-only entities outside those two definitions remain unresolved. The feature-local GSMProject incidence does not establish a PMI annotation owner.
 
@@ -164,11 +164,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which native incidences assign annotation-set ownership, capture membership, active TPS-view state, and annotation geometry targets?
 
-**Known.** Cameras, TPS views, annotation sets, and captures have separate relations. An annotation set owns annotation, capture, and TPS-view collections. A capture owns a set reference and visually manages annotations and TPS views. Its current state governs future TPS membership; its active-view and viewpoint states govern display behavior. These states do not define a parametric model variant. Native `CATCameraFeat` catalogs and ordered camera programs retain camera data. View and capture field-class names can pair with tolerance, circle, and model-schema values; the class name alone does not identify an instance or membership relation. Range-only `DiameterThread` and `FeatureRSUR` dimensions are separate from the two-selector constraint-range production. Their retained values do not identify an annotation set, capture, view, or geometric target.
+**Known.** Cameras, TPS views, annotation sets, and captures have separate relations. An annotation set owns annotation, capture, and TPS-view collections. A capture owns a set reference and visually manages annotations and TPS views. Its current state governs future TPS membership; its active-view and viewpoint states govern display behavior. These states do not define a parametric model variant. Native `CATCameraFeat` catalogs and ordered camera programs retain camera data. View and capture field-class names can pair with tolerance, circle, and model-schema values; the class name alone does not identify an instance or membership relation. Range-only `DiameterThread` and `FeatureRSUR` dimensions are separate from the two-selector constraint-range production. Their retained values do not identify an annotation set, capture, view, or geometric target. `catia.md` §7.3.1 transfers the characteristic, magnitude, datum frame, and secondary activation of a tolerance record, and each `CATMmrTTRS` root as a source shape aspect. In FTC-07 the parallelism `0.762` record selects a chain that reaches `ShortBrpLocation` label `2(E,227)`. The surface-profile `0.762` record selects an aggregate with 32 members; one member reaches label `2(E,220)`, and recursive traversal reaches 33 locations. That record also has `Seg3TolNumValue` and `Seg3TolTabValue` fields with a stored `0.03` mm value and an activation role separate from the `TolWiDRF` declaration.
 
-**Need.** We must identify complete native set-owner, ordered collection, capture-membership, active-view, and geometry-target incidences. Validate each relation independently against producer collections and properties. A named camera, shared structural ancestry, numeric equality, or a display state cannot supply a missing relation. Document design configurations require their own model-variant production.
-
-**Conflict.** FTC-07 has two native scalar candidates with value `0.762`, the same decoded framing, and the same design-object owner. Its STEP twin assigns `0.762 mm` to a parallelism tolerance and to a surface-profile tolerance with different targets. Contextual entity references select the two scalars and distinct geometry-reference chains. The first chain reaches `ShortBrpLocation` label `2(E,227)`. The second selects an aggregate with 32 members; one member reaches label `2(E,220)`, and recursive traversal reaches 33 locations. The second record also selects a `0.127` scalar and fields named `Seg3TolNumValue` and `Seg3TolTabValue`. This supports a composite-profile candidate. The subtype, datum references, and topology targets remain unresolved.
+**Need.** We must identify complete native set-owner, ordered collection, capture-membership, active-view, and geometry-target incidences. Validate each relation independently against producer collections and properties. A named camera, shared structural ancestry, numeric equality, or a display state cannot supply a missing relation. Document design configurations require their own model-variant production. Each `CATMmrTTRS` root needs the face or edge relation that it selects, and the `Seg3` segment needs its tolerance role. A `TolWiDRF` key that zero or several distinct field members carry, or a key in a field with a member that fails to resolve, needs its owner relation: the secondary value transfers with `attributes.pmi-field-key-unresolved`, and the key stays native.
 
 ### DI-29. Sheet topology roots
 
@@ -189,6 +187,22 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Need.** Resolve complete selector and value-program framing across definition, value, and suffix fields. Preserve each decoded scalar and its source owner when changing a lookup. Establish contextual entity-reference encoding independently of schema indexing.
 
 **Conflict.** The current lookup selects the catalog entry at the stored fixed-width ordinal. The one-based interpretation selects the preceding entry and gives scalar-compatible roles for these controls. A partial change also alters the number of selectors in a definition and changes downstream value-chain admission.
+
+### DI-31. Non-semantic feature control frame content
+
+**Question.** Which fields of a `CATTPSNonSemanticGDT` annotation and its drafting object graph give the tolerance characteristic, the magnitude with its unit, and the datum references?
+
+**Known.** In FTC-07 the general-note frame `profile .06 | A | B | C` has one `CATTPSNonSemanticGDT` entity and no `CATTPSToleranceWithDRF`, `CATTPSToleranceWithoutDRF`, or `TolBloc` production; the 20 typed tolerances and their 6 secondary values account for every other STEP tolerance. No source field stores the magnitude as binary64 `1.524` or `0.06`, or as binary32 `0.06`; the binary32 `1.524` occurrences lie outside every entity record. The drafting catalog stores the frame as consecutive entries `DftGDT`, `ToleranceType`, `BoxNumber`, `UpperText`, `StringList`, and four RTF cells whose text is `.06`, `A`, `B`, and `C`. No decoded field references the four cell entries. The `StringList` object record has an empty payload, and the records for entities 95–97 have no decoded head. The only unit text is the general note `UNITS: INCHES`.
+
+**Need.** A typed characteristic, a numeric magnitude with a typed unit, and an owner relation from the annotation to its cells transfer the frame as a semantic tolerance. Without them the frame stays native, and the part transfers 26 of the 27 STEP tolerances.
+
+### DI-32. `E7` and `E8` literals beside a contradicting formula
+
+**Question.** Does a stored `E7` or `E8` parameter literal hold the value one or zero when the formula that reads or defines that parameter gives another value?
+
+**Known.** `catia.md` §7.3 gives `E7` as the value one and `E8` as the value zero in parameter, constraint-range, and `Range` nominal suffixes. The decoder publishes every `E7` or `E8` length, angle, real, or integer parameter value and every `E7` or `E8` `Range` nominal as one or zero and charges `history.parameter-literal-assumed` with their count. A Boolean or string parameter with `E7` or `E8` has no value. The legacy scalar form reads `E7` as unset. An `E7` or `E8` input leaves its formula unevaluated. An `E7` or `E8` result whose evaluated expression gives another value keeps no value, and the same loss counts it.
+
+**Need.** A saved part whose `E7` or `E8` parameters have known values in the application, with formulas that read and define them.
 
 ## 3. Standard nested `V5_CFV2`
 
@@ -298,15 +312,17 @@ In FTC-07, treating consecutive operand values as one parameter representation j
 
 **Conflict.** A unique class-`19` record with tag 125 and a pcurve with `op1=125` occupy the same source extent, but their U intervals differ and the pcurve is not constant in V. Distinct tags 113 and 126 lift to the same five-site geometric locus through different cylinder charts. Same-source containment, numeric uniqueness, and geometric coincidence do not identify the owning factory or object.
 
-**Note.** In FTC-07, class-`5f` and class-`62` owner references bind two class-`20` jets to consecutive spherical edge uses. Each jet interval equals its class-`25` source interval. Scaling the jet coordinates by the sphere radius makes both lifts follow their edge curves. The class-`06` compressed station controls need an independent decoding. The solid area and volume remain unavailable because other face curves and orientation relations also fail measurement.
+**Note.** In FTC-07, class-`5f` and class-`62` owner references bind two class-`20` jets to consecutive spherical edge uses. Each jet interval equals its class-`25` source interval. The class-`06` compressed station controls need an independent decoding.
 
-### SN-15. Additional standard-circle branch relations
+### SN-15. Additional standard-conic branch relations
 
-**Question.** Which native incidence or chart relation selects a standard circle's edge interval when the admitted witnesses in `catia.md` §5.8 leave the branch unresolved?
+**Question.** Which native incidence or chart relation selects a standard conic's edge interval when the admitted witnesses in `catia.md` §5.8 leave the branch unresolved?
 
 **Known.** `catia.md` §5.8 "Cylinder and torus payloads use" identifies their witness point as the trimmed-face AABB center and defines a branch when one candidate's exact extrema fit all available incident-face boxes. The same bounds block exists on plane, cone, and sphere records. A box center is a spatial bound, independent of an edge's angular interval.
 
-**Need.** Establish a source-bound parameter or boundary incidence for the remaining branches. Require independent interior-arc verification and agreement between incident carriers before extending the witness relation.
+**Note.** Public FTC-07 has 28 ellipse trims retained under the bounds-excess inference in §5.8, with reported excesses from 0.003397 to 0.004548 mm. Independent interior-arc verification remains required to settle this relation.
+
+**Need.** Establish a source-bound parameter or boundary incidence for the remaining unresolved branches. Independently verify interior points of the inferred ellipse arcs and agreement between incident carriers to settle the bounds-excess inference recorded in §5.8.
 
 **Conflict.** In FTC-07, a cylinder face's AABB-center azimuth lies about `1.38e-7` radians beyond an edge endpoint. Strict angular containment selects the complementary arc, whose extrema exceed the face box by more than 3 mm. The STEP twin's short arc and the native face box select the other interval.
 
@@ -340,7 +356,9 @@ In FTC-07, treating consecutive operand values as one parameter representation j
 
 **Known.** `catia.md` §6.4 "Member bits retain serialized occurrence order" defines the reference forms, packed control, occurrence bits, and closure. Source-closed class-`65`/`60`/`61` chains with a one-child class-`60` owner use control `1`. A one-child allocation list does not by itself identify the owning domain. The wide control-`1` roster binds its members through the allocation widths in the frame headers. Control `3` identifies the sheet-group roster form in §6.4, with member orientation established in the native rolling-ball chart. Other carrier charts use inferred parity. The owning domain of control `8` remains open.
 
-**Need.** Resolve the active-result relation from the feature or container data. Verify chart parity for additional carrier forms. Establish a selector oracle for control `8`.
+`catia.md` §3.1 "A `CATSeeBodyCont` visible-body list" defines the visible result-body selection through absolute allocation ends in the declared `CGMGeom` stream.
+
+**Need.** Resolve result selection in other container forms. Verify chart parity for additional carrier forms. Establish a selector oracle for control `8`.
 
 **Conflict.** A source-local 53-member roster and the current 700-face shell have different cardinalities. Descending numeric reference order agrees with six independent face-orientation sequences, but numeric order alone does not supply an allocation-to-standard identity relation.
 
@@ -379,6 +397,25 @@ In FTC-07, treating consecutive operand values as one parameter representation j
 **Known.** The class-`62` complement relation determines the endpoint pairing in four isolated faces. The curved face has forward sense in CATIA STEP; two selector-`d8` planar faces have reversed sense. Both planar face boundaries and areas agree with native pcurve lifts independently of their sense. The last singleton class-`61` record before the boundary owner has occurrence bit one on the curved face and bit zero on both selector-`d8` planar faces; the independent tilted planar face has bit one.
 
 **Need.** Prove the last singleton class-`61` to selected-face identity beyond an isolated one-face source and establish its chart-parity rule for additional surface carriers. A third tilted planar face uses carrier and pcurve productions outside the currently decoded variants.
+
+### SN-41. Trimmed-face box extent
+
+**Question.** Which construction produces the stored trimmed-face AABB of a curved face, and what bounds its distance from the exact face extent?
+
+**Known.** `catia.md` §5.8 "A standard circle without an admitted native edge support" retains a witnessed ellipse interval whose extrema exceed a face box beyond the `2e-3` mm allowance when its complement exceeds that box by more, and charges `geometry.conic-branch-bounds-inferred`. Across 8,601 measured standard faces in 79 files, the box exceeds the exact face extent by at most binary32 rounding on all but 13 faces, and lies inside it on 1,854 faces by more than `2e-3` mm. The following readings are falsified:
+
+- The box is the exact trimmed extent: 1,273 of 4,027 cylinder faces fall short by more than `2e-3` mm.
+- The box covers only the boundary vertices: half-cylinder faces whose four vertices lie in one axial plane reach `11.1091` mm from that plane at radius `11.1125` mm.
+- The box is a control-net or conservative bound: it never exceeds the exact extent.
+- The shortfall is binary32 rounding: `3.4e-3` mm is several hundred ulps at the coordinate scale.
+- The shortfall follows a fixed angular step: in one part, radius `2.197` mm falls short by `7.3e-3` mm and radius `11.1125` mm by `3.4e-3` mm.
+- The shortfall is bounded by `0.01` mm: 41 files peak at `0.0034`–`0.0100` mm, but 13 files reach `0.020`–`0.26` mm.
+- The bound scales with part size: in the first group the peak stays at or below `0.0100` mm for part sizes from `4.8` to `780` mm.
+- The saving release selects the bound: files saved by the same release fall in both groups.
+
+The two groups match a tessellation chord tolerance that differs between files. The trim mesh stores handles without coordinates, so a mesh-vertex box has no direct check.
+
+**Need.** A stored or derived per-file tolerance replaces the smaller-excess rule with a containment test, and removes the loss that rule records.
 
 ## 4. Object stream
 
@@ -498,3 +535,15 @@ different, independently constrained orientation route.
 **Need.** An independent presentation-object incidence must establish the selector's target namespace. A face-selector rule must identify a native face independently before binding its appearance.
 
 **Note.** The four reference `FeatureForColor` groups in CTC-05 and STC-10 carry black-alpha-127 assets, selector atom `1`, and UUID-named atom `12`. Their 434 governing FBB rows are all pale blue. The sibling AP242 black styles reach 20 annotation-curve occurrences and 68 tessellated-annotation occurrences, respectively, and zero advanced faces. These groups supply no face-selector witness.
+
+### RW-01. Extended rational weight-row controls
+
+**Question.** Which non-palindromic A5 weight-row controls select reflected columns and leading repeats?
+
+**Known.** Controls `0003` and `0007` in command `01` expand a complete symmetric row. Additional command-`01` controls and command `05` admit finite row programs under a reflected-column mask and leading-repeat reading. The decoder reports `geometry.surface-weights-inferred` when it emits that reading.
+
+**Need.** Independently authored rational surfaces that distinguish each mask bit, leading-repeat count, and consumed scalar count.
+
+**Conflict.** The extended controls previously failed the row-prefix gate. The public NIST and issue-sample replay emits no rational NURBS surfaces and does not validate these extended readings.
+
+**Note.** The legacy symmetric and flat-grid forms retain their established readings.

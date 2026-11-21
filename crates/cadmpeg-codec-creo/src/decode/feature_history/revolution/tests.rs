@@ -150,6 +150,7 @@ fn saved_spline_curve() -> Curve {
             .expect("valid saved-spline curve"),
         )),
         source_object: None,
+        native_ref: None,
     }
 }
 
@@ -173,7 +174,7 @@ fn transfer_with_curve_count_and_scale(
             })
             .expect("saved spline admission");
         } else {
-            ir.model.curves.push(curve);
+            ir.geometry.curves.push(curve);
         }
     }
     let transferred = crate::decode::with_service_context(|ctx| {
@@ -195,7 +196,8 @@ fn saved_spline_revolution_uses_source_directrix_after_mm_admission() {
     let scale = cadmpeg_ir::scalar::PositiveReal::new(25.4).expect("inch scale");
     let (transferred, ir) = transfer_with_curve_count_and_scale(1, Some(scale));
     assert_eq!(transferred, 1);
-    let Some(SolvedCurveGeometry::Nurbs(directrix)) = ir.model.curves[0].geometry.solved() else {
+    let Some(SolvedCurveGeometry::Nurbs(directrix)) = ir.geometry.curves[0].geometry.solved()
+    else {
         panic!("saved directrix changed family");
     };
     assert_eq!(
@@ -203,7 +205,7 @@ fn saved_spline_revolution_uses_source_directrix_after_mm_admission() {
         Point3::new(50.8, 0.0, 0.0)
     );
     let Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Nurbs(surface)) =
-        ir.model.surfaces[0].geometry.solved()
+        ir.geometry.surfaces[0].geometry.solved()
     else {
         panic!("revolved surface changed family");
     };
@@ -214,13 +216,13 @@ fn saved_spline_revolution_uses_source_directrix_after_mm_admission() {
 fn saved_spline_revolution_rejects_duplicate_model_curve_ids() {
     let (transferred, ir) = transfer_with_curve_count(1);
     assert_eq!(transferred, 1);
-    assert_eq!(ir.model.surfaces.len(), 1);
-    assert_eq!(ir.model.procedural_surfaces.len(), 1);
+    assert_eq!(ir.geometry.surfaces.len(), 1);
+    assert_eq!(ir.geometry.procedural_surfaces.len(), 1);
 
     let (transferred, ir) = transfer_with_curve_count(2);
     assert_eq!(transferred, 0);
-    assert!(ir.model.surfaces.is_empty());
-    assert!(ir.model.procedural_surfaces.is_empty());
+    assert!(ir.geometry.surfaces.is_empty());
+    assert!(ir.geometry.procedural_surfaces.is_empty());
 }
 
 fn saved_spline_revolution_scan() -> crate::container::ContainerScan<'static> {

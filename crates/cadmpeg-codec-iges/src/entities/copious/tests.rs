@@ -41,7 +41,7 @@ fn closed_planar_copious_curve_over_the_pair_budget_is_skipped_with_a_loss() {
 
     let curve_ids: Vec<_> = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .map(|curve| curve.id.as_str())
@@ -95,7 +95,7 @@ fn decode_skips_a_copious_tuple_count_over_its_projection_limit() {
         )
         .unwrap();
 
-    assert!(decoded.ir().model.curves.is_empty());
+    assert!(decoded.ir().geometry.curves.is_empty());
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss.message.contains("tuple count exceeds 1000000")
@@ -125,7 +125,7 @@ fn decode_rejects_presentation_copious_forms_without_annotation_use_flag() {
             )
             .unwrap();
 
-        assert!(result.ir().model.curves.is_empty());
+        assert!(result.ir().geometry.curves.is_empty());
         assert!(result.report().losses.iter().any(|loss| {
             loss.code == IgesLossCode::EntityNotProjected.kind()
                 && loss
@@ -148,7 +148,7 @@ fn decode_projects_copious_linear_paths_with_segment_parameters() {
         )
         .unwrap();
 
-    let Some(SolvedCurveGeometry::Nurbs(path)) = result.ir().model.curves[0].geometry.solved()
+    let Some(SolvedCurveGeometry::Nurbs(path)) = result.ir().geometry.curves[0].geometry.solved()
     else {
         panic!("expected a degree-one path carrier");
     };
@@ -165,7 +165,7 @@ fn decode_projects_copious_linear_paths_with_segment_parameters() {
         Some(cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0))
     );
     assert_eq!(
-        result.ir().model.edges[0]
+        result.ir().geometry.edges[0]
             .param_range()
             .map(cadmpeg_ir::units::FiniteVector::get),
         Some([0.0, 2.0])
@@ -196,9 +196,9 @@ fn v4_one_tuple_linear_path_is_projected_as_its_authored_point() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.points.len(), 1);
-    assert_eq!(result.ir().model.vertices.len(), 1);
-    assert!(result.ir().model.curves.is_empty());
+    assert_eq!(result.ir().geometry.points.len(), 1);
+    assert_eq!(result.ir().geometry.vertices.len(), 1);
+    assert!(result.ir().geometry.curves.is_empty());
     assert!(!result
         .report()
         .losses
@@ -234,8 +234,8 @@ fn v5_one_tuple_linear_path_keeps_the_later_minimum() {
         )
         .unwrap();
 
-    assert!(result.ir().model.points.is_empty());
-    assert!(result.ir().model.curves.is_empty());
+    assert!(result.ir().geometry.points.is_empty());
+    assert!(result.ir().geometry.curves.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss
@@ -257,7 +257,7 @@ fn decode_preserves_coincident_segments_in_a_copious_linear_path() {
         )
         .unwrap();
 
-    let Some(SolvedCurveGeometry::Nurbs(path)) = result.ir().model.curves[0].geometry.solved()
+    let Some(SolvedCurveGeometry::Nurbs(path)) = result.ir().geometry.curves[0].geometry.solved()
     else {
         panic!("expected a degree-one path carrier");
     };
@@ -281,7 +281,7 @@ fn decode_preserves_crossing_segments_in_a_copious_linear_path() {
         )
         .unwrap();
 
-    let Some(SolvedCurveGeometry::Nurbs(path)) = result.ir().model.curves[0].geometry.solved()
+    let Some(SolvedCurveGeometry::Nurbs(path)) = result.ir().geometry.curves[0].geometry.solved()
     else {
         panic!("expected a degree-one path carrier");
     };
@@ -304,20 +304,20 @@ fn decode_closes_form_63_with_the_global_minimum_resolution() {
             .unwrap();
 
         assert_eq!(
-            result.ir().model.curves.len(),
+            result.ir().geometry.curves.len(),
             usize::from(decoded),
             "{gap}"
         );
         if decoded {
             assert_eq!(
-                result.ir().model.edges[0]
+                result.ir().geometry.edges[0]
                     .tolerance
                     .map(cadmpeg_ir::scalar::PositiveReal::get),
                 Some(0.001)
             );
             assert_eq!(
-                result.ir().model.edges[0].start,
-                result.ir().model.edges[0].end
+                result.ir().geometry.edges[0].ends.as_ref().unwrap().start,
+                result.ir().geometry.edges[0].ends.as_ref().unwrap().end
             );
             assert!(result.report().losses.is_empty());
             let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
@@ -344,7 +344,7 @@ fn decode_rejects_a_form_63_non_endpoint_duplicate() {
         )
         .unwrap();
 
-    assert!(result.ir().model.curves.is_empty());
+    assert!(result.ir().geometry.curves.is_empty());
     assert!(result
         .report()
         .losses
@@ -365,7 +365,7 @@ fn decode_rejects_form_63_self_intersections_without_duplicate_points() {
             )
             .unwrap();
 
-        assert!(result.ir().model.curves.is_empty());
+        assert!(result.ir().geometry.curves.is_empty());
         assert!(result
             .report()
             .losses
@@ -381,7 +381,7 @@ fn decode_rejects_a_copious_interpretation_that_disagrees_with_its_form() {
         .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
         .unwrap();
 
-    assert!(result.ir().model.curves.is_empty());
+    assert!(result.ir().geometry.curves.is_empty());
     let loss = result
         .report()
         .losses
@@ -455,7 +455,7 @@ fn semantic_copious_projection_uses_entity_boundary_before_generic_candidate() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.curves.len(), 1);
+    assert_eq!(result.ir().geometry.curves.len(), 1);
     assert!(!result
         .report()
         .losses
@@ -507,8 +507,8 @@ fn decode_separates_copious_points_vectors_and_presentation_forms() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert_eq!(points.ir().model.points.len(), 2);
-    assert_eq!(points.ir().model.vertices.len(), 2);
+    assert_eq!(points.ir().geometry.points.len(), 2);
+    assert_eq!(points.ir().geometry.vertices.len(), 2);
     let native = points.ir().native.namespace("iges").unwrap();
     assert_eq!(native.arenas()["copious_data"].len(), 1);
     assert_eq!(
@@ -524,7 +524,7 @@ fn decode_separates_copious_points_vectors_and_presentation_forms() {
         )
         .unwrap();
     assert!(!witness.report().geometry_transferred());
-    assert!(witness.ir().model.curves.is_empty());
+    assert!(witness.ir().geometry.curves.is_empty());
     assert!(witness
         .report()
         .losses

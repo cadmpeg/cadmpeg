@@ -186,7 +186,7 @@ enum SpecForm {
 struct SetForm {
     len: usize,
     tangent_chain: usize,
-    flip: Option<usize>,
+    distance_reversed: Option<usize>,
     spec: SpecForm,
     owners: [usize; 2],
     owner_count: usize,
@@ -202,7 +202,7 @@ const SET_FORMS: [SetForm; 4] = [
     SetForm {
         len: equal::LEN,
         tangent_chain: equal::TANGENT_CHAIN,
-        flip: None,
+        distance_reversed: None,
         spec: SpecForm::EqualDistance,
         owners: [equal::DISTANCE_OWNER_REFERENCE, 0],
         owner_count: 1,
@@ -216,7 +216,7 @@ const SET_FORMS: [SetForm; 4] = [
     SetForm {
         len: two_distances::LEN,
         tangent_chain: two_distances::FLAG,
-        flip: Some(two_distances::FLIP),
+        distance_reversed: Some(two_distances::DISTANCE_REVERSED),
         spec: SpecForm::TwoDistances,
         owners: [
             two_distances::FIRST_DISTANCE_OWNER_REFERENCE,
@@ -233,7 +233,7 @@ const SET_FORMS: [SetForm; 4] = [
     SetForm {
         len: distance_angle::LEN,
         tangent_chain: distance_angle::FLAG,
-        flip: Some(distance_angle::FLIP),
+        distance_reversed: Some(distance_angle::DISTANCE_REVERSED),
         spec: SpecForm::DistanceAngle,
         owners: [
             distance_angle::DISTANCE_OWNER_REFERENCE,
@@ -250,7 +250,7 @@ const SET_FORMS: [SetForm; 4] = [
     SetForm {
         len: compact::LEN,
         tangent_chain: compact::FLAG,
-        flip: None,
+        distance_reversed: None,
         spec: SpecForm::EqualDistance,
         owners: [compact::DISTANCE_OWNER_REFERENCE, 0],
         owner_count: 1,
@@ -282,7 +282,7 @@ impl SetForm {
                 .map(|at| (*at, REFERENCE_LEN)),
         );
         fields.extend(self.one_byte.map(|at| (at, 1)));
-        fields.extend(self.flip.map(|at| (at, 1)));
+        fields.extend(self.distance_reversed.map(|at| (at, 1)));
         frame.iter().enumerate().all(|(at, byte)| {
             *byte == 0
                 || fields
@@ -310,7 +310,7 @@ fn chamfer_set(
         if frame.len() != form.len
             || !matches!(frame.get(form.tangent_chain), Some(0 | 1))
             || form
-                .flip
+                .distance_reversed
                 .is_some_and(|at| !matches!(frame.get(at), Some(0 | 1)))
             || View::u32_le_at(frame, form.kind.0)? != form.kind.1
             || View::u32_le_at(frame, form.set_number)? != set_number
@@ -343,7 +343,9 @@ fn chamfer_set(
             auxiliary_record_index: marked_record_reference(frame, form.auxiliary)?,
             entry_count,
             tangent_chain: frame.get(form.tangent_chain) == Some(&1),
-            flipped: form.flip.is_some_and(|at| frame.get(at) == Some(&1)),
+            distance_reversed: form
+                .distance_reversed
+                .is_some_and(|at| frame.get(at) == Some(&1)),
         })
     });
     let set = matches.next()?;

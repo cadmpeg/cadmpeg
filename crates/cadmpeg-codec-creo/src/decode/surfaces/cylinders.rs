@@ -110,7 +110,10 @@ pub(in super::super) fn transfer_active_datum_cylinders(
     let mut transferred = 0;
     let namespaces = super::NativeSurfaceNamespaces::new(scan);
     let mut surface_ids = crate::decode::uniqueness::ExactIdPositions::new(
-        ir.model.surfaces.iter().map(|surface| surface.id.as_str()),
+        ir.geometry
+            .surfaces
+            .iter()
+            .map(|surface| surface.id.as_str()),
     );
     for datum in &scan.planes.datum_cylinders {
         let id = namespaces.surface_id(datum.id)?;
@@ -133,7 +136,7 @@ pub(in super::super) fn transfer_active_datum_cylinders(
             Exactness::Derived,
         )?;
         ctx.charge_entities(1, "admit Creo model surfaces")?;
-        let surface_position = ir.model.surfaces.len();
+        let surface_position = ir.geometry.surfaces.len();
         source_carriers.admit_surface(
             ctx,
             ir,
@@ -158,10 +161,11 @@ pub(in super::super) fn transfer_active_datum_cylinders(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         surface_ids.admit(
-            ir.model.surfaces[surface_position].id.as_str(),
+            ir.geometry.surfaces[surface_position].id.as_str(),
             surface_position,
         );
         transferred += 1;
@@ -230,7 +234,7 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
             crate::decode::uniqueness::exactly_one(scan.surfaces.rows.iter().filter(|row| {
                 row.feature_id == feature_id
                     && row.kind == crate::surface::SurfaceKind::Cylinder
-                    && !ir.model.surfaces.iter().any(|surface| {
+                    && !ir.geometry.surfaces.iter().any(|surface| {
                         crate::identity::matches_numbered_identity(
                             surface.id.as_str(),
                             "creo:visibgeom:surface#",
@@ -286,6 +290,7 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         transferred += 1;
@@ -313,7 +318,7 @@ pub(in super::super) fn report_unresolved_round_carriers(
         &scan.features.entity_tables,
         &scan.surfaces.rows,
     ) {
-        if ir.model.surfaces.iter().any(|surface| {
+        if ir.geometry.surfaces.iter().any(|surface| {
             crate::identity::matches_numbered_identity(
                 surface.id.as_str(),
                 "creo:visibgeom:surface#",
@@ -364,7 +369,7 @@ pub(in super::super) fn transfer_hole_cylinders(
                 &crate::identity::VISIBGEOM_SURFACE,
                 cylinder_id,
             )?;
-            if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            if ir.geometry.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
             annotate(
@@ -399,6 +404,7 @@ pub(in super::super) fn transfer_hole_cylinders(
                         layer: None,
                         instance_path: Vec::new(),
                     }),
+                    native_ref: None,
                 },
             )?;
             transferred += 1;
@@ -501,7 +507,7 @@ pub(in super::super) fn transfer_split_outline_cylinders(
                 &crate::identity::VISIBGEOM_SURFACE,
                 cylinder_id,
             )?;
-            if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            if ir.geometry.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
             let row = rows[&cylinder_id];
@@ -537,6 +543,7 @@ pub(in super::super) fn transfer_split_outline_cylinders(
                         layer: None,
                         instance_path: Vec::new(),
                     }),
+                    native_ref: None,
                 },
             )?;
             transferred += 1;
@@ -900,7 +907,7 @@ pub(in super::super) fn transfer_positional_cylinders(
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<PositionalCylinderTransferSummary, cadmpeg_core::CodecError> {
     let mut named_matrix_cylinders = BTreeSet::new();
-    for (prototype, row, _) in super::prototypes::unique_surface_prototype_associations(scan)? {
+    for (prototype, row, _, _) in super::prototypes::unique_surface_prototype_associations(scan)? {
         let super::prototypes::SupportedPrototype::Cylinder(record) = prototype else {
             continue;
         };
@@ -1235,9 +1242,9 @@ pub(in super::super) fn transfer_positional_cylinders(
             &crate::identity::VISIBGEOM_SURFACE,
             record.surface_id,
         )?;
-        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+        if ir.geometry.surfaces.iter().any(|surface| surface.id == id) {
             if named_matrix_cylinders.contains(&record.surface_id)
-                && ir.model.surfaces.iter().any(|surface| {
+                && ir.geometry.surfaces.iter().any(|surface| {
                     surface.id == id
                         && matches!(
                             surface.geometry,
@@ -1250,7 +1257,7 @@ pub(in super::super) fn transfer_positional_cylinders(
 
             if row_local_frame_selected
                 && ir
-                    .model
+                    .geometry
                     .surfaces
                     .iter()
                     .filter(|surface| surface.id == id)
@@ -1258,7 +1265,7 @@ pub(in super::super) fn transfer_positional_cylinders(
                     == 1
             {
                 if let Some(surface) = ir
-                    .model
+                    .geometry
                     .surfaces
                     .iter_mut()
                     .find(|surface| surface.id == id)
@@ -1313,6 +1320,7 @@ pub(in super::super) fn transfer_positional_cylinders(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         summary.transferred += 1;
@@ -1533,7 +1541,7 @@ pub(in super::super) fn transfer_positional_cones(
             &crate::identity::VISIBGEOM_SURFACE,
             record.surface_id,
         )?;
-        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+        if ir.geometry.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
         let cone_surface = super::apex_cone(frame.frame(), frame.half_angle());
@@ -1568,6 +1576,7 @@ pub(in super::super) fn transfer_positional_cones(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         transferred += 1;
@@ -1610,7 +1619,7 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
                 &crate::identity::VISIBGEOM_SURFACE,
                 cylinder_id,
             )?;
-            if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            if ir.geometry.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
             annotate(
@@ -1647,6 +1656,7 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
                         layer: None,
                         instance_path: Vec::new(),
                     }),
+                    native_ref: None,
                 },
             )?;
             transferred += 1;
@@ -1679,7 +1689,7 @@ pub(in super::super) fn transfer_cross_section_planes(
             &crate::identity::CROSS_SECTION_GEOMETRY_SURFACE,
             frame.surface_id,
         )?;
-        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+        if ir.geometry.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
         let Ok(plane_surface) = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1720,6 +1730,7 @@ pub(in super::super) fn transfer_cross_section_planes(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         transferred += 1;
@@ -1729,7 +1740,7 @@ pub(in super::super) fn transfer_cross_section_planes(
             &crate::identity::CROSS_SECTION_GEOMETRY_SURFACE,
             plane.surface_id,
         )?;
-        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+        if ir.geometry.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
         let Ok(plane_surface) = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1770,6 +1781,7 @@ pub(in super::super) fn transfer_cross_section_planes(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         transferred += 1;

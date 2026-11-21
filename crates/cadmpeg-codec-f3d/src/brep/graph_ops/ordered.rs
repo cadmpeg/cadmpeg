@@ -28,6 +28,21 @@ fn target_selected(target: &AttributeTarget, reachable: &HashSet<String>) -> boo
         AttributeTarget::Coedge(id) => id.as_str(),
         AttributeTarget::Edge(id) => id.as_str(),
         AttributeTarget::Vertex(id) => id.as_str(),
+        AttributeTarget::Region(id) => id.as_str(),
+        AttributeTarget::Surface(id) => id.as_str(),
+        AttributeTarget::Curve(id) => id.as_str(),
+        AttributeTarget::Point(id) => id.as_str(),
+        AttributeTarget::Feature(id) => id.as_str(),
+        AttributeTarget::Sketch(id) => id.as_str(),
+        AttributeTarget::Parameter(id) => id.as_str(),
+        AttributeTarget::ProductDefinition(id) => id.as_str(),
+        AttributeTarget::Occurrence(id) => id.as_str(),
+        AttributeTarget::Tessellation(id) | AttributeTarget::Record { id, .. } => id.as_str(),
+        AttributeTarget::Pmi(id) => id.as_str(),
+        AttributeTarget::SemanticAnnotation(id) => id.as_str(),
+        AttributeTarget::Drawing(id) => id.as_str(),
+        AttributeTarget::ViewPresentation(id) => id.as_str(),
+        AttributeTarget::Configuration(id) => id.as_str(),
     };
     reachable.contains(id)
 }

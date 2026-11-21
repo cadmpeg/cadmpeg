@@ -9,6 +9,7 @@ use cadmpeg_core::CodecError;
 #[cfg(test)]
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::hash::{document_local_sha256, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::report::{
     decode::{TransferLedger, TransferOutcome},
@@ -20,19 +21,32 @@ use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+#[cfg(test)]
 fn source_meta(
     global: &global::GlobalRecord,
     representation: Representation,
     primary: cadmpeg_core::dialect::DialectMatch,
 ) -> SourceMeta {
+    source_meta_with_losses(global, representation, primary).0
+}
+
+fn source_meta_with_losses(
+    global: &global::GlobalRecord,
+    representation: Representation,
+    primary: cadmpeg_core::dialect::DialectMatch,
+) -> (SourceMeta, Vec<LossNote>) {
+    let mut losses = Vec::new();
     let mut attributes = BTreeMap::from([(
         cadmpeg_core::nonblank_const!("representation"),
         representation.as_str().to_owned(),
     )]);
     let global::GlobalRecord::Resolved(global) = global else {
-        return SourceMeta::classified(
-            cadmpeg_core::dialect::DialectLayers::of(primary),
-            attributes,
+        return (
+            SourceMeta::classified(
+                cadmpeg_core::dialect::DialectLayers::of(primary),
+                attributes,
+            ),
+            losses,
         );
     };
     attributes.insert(
@@ -61,9 +75,62 @@ fn source_meta(
             value.to_owned(),
         );
     }
-    SourceMeta::classified(
-        cadmpeg_core::dialect::DialectLayers::of(primary),
-        attributes,
+    for (key, value) in [
+        (
+            cadmpeg_core::nonblank_literal!("native_system_id"),
+            global.native_system(),
+        ),
+        (
+            cadmpeg_core::nonblank_literal!("preprocessor_version"),
+            global.preprocessor_version(),
+        ),
+        (cadmpeg_core::nonblank_literal!("author"), global.author()),
+        (
+            cadmpeg_core::nonblank_literal!("organization"),
+            global.organization(),
+        ),
+    ] {
+        let Some(raw) = value else {
+            continue;
+        };
+        let (value, removed) = cadmpeg_core::text::attribute_text_checked(raw);
+        if removed {
+            losses.push(IgesLossCode::GlobalMetadataFieldUnusable.note(format!(
+                "IGES Global attribute {} contained control characters that were omitted.",
+                key.as_str()
+            )));
+        }
+        let Some(value) = value else {
+            continue;
+        };
+        attributes.insert(key, value);
+    }
+    if let Some(flag) = global.units_flag() {
+        attributes.insert(
+            cadmpeg_core::nonblank_const!("units_flag"),
+            flag.to_string(),
+        );
+    }
+    attributes.insert(
+        cadmpeg_core::nonblank_const!("drafting_standard"),
+        global.drafting_standard().to_string(),
+    );
+    if let Some(scale) = global.model_scale() {
+        attributes.insert(
+            cadmpeg_core::nonblank_const!("model_scale"),
+            scale.get().to_string(),
+        );
+    }
+    attributes.insert(
+        cadmpeg_core::nonblank_const!("iges_version_flag"),
+        global.declared_version_flag().to_string(),
+    );
+    (
+        SourceMeta::classified(
+            cadmpeg_core::dialect::DialectLayers::of(primary),
+            attributes,
+        ),
+        losses,
     )
 }
 
@@ -154,7 +221,7 @@ fn source_fidelity(
         .map_err(|_| CodecError::Malformed("IGES source image id is invalid".into()))?;
     let owner = "iges".to_owned();
 
-    let mut fidelity = SourceFidelity::default();
+    let mut fidelity = SourceFidelity::new(Sha256Digest::digest(source_bytes));
     fidelity.insert_retained_record(id, RetainedSourceRecord::whole(owner, retained_source))?;
     Ok(fidelity)
 }
@@ -450,10 +517,11 @@ fn decode_with_occurrence_limits(
     let projected_directory =
         projection_directory(&parse.directory, &quarantined_parameter_sequences);
     let projected_directory = projected_directory.as_deref().unwrap_or(&parse.directory);
-    let source_fidelity = source_fidelity(source_bytes, ctx)?;
+    let mut source_fidelity = source_fidelity(source_bytes, ctx)?;
 
     let primary = crate::dialect::classify(representation, &parse.global);
-    let mut ir = CadIr::decoded(source_meta(&parse.global, representation, primary));
+    let (meta, attribute_losses) = source_meta_with_losses(&parse.global, representation, primary);
+    let mut ir = CadIr::decoded(meta);
     let mut invalid_resolution = false;
     if let Some(context) = &length_context {
         match cadmpeg_ir::scalar::PositiveLength::new(context.minimum_resolution_mm()) {
@@ -511,11 +579,37 @@ fn decode_with_occurrence_limits(
             native::store_physical_cards(&mut ir, &parse.scan, ctx)?
         }
     };
+    ir.state_root_definition(
+        ctx,
+        cadmpeg_ir::ids::ProductDefinitionId::compose(
+            &cadmpeg_ir::identity_namespace!("iges", "model", "product-definition"),
+            cadmpeg_ir::identity_key!("root"),
+        ),
+        cadmpeg_ir::products::ExternalDocument::default(),
+    )?;
     // The transfer ledger is verified before DecodeResult construction, so its
     // identity checks require the same canonical arena order as the result.
     ir.finalize();
     let geometry_transferred = !projection.decoded.is_empty();
+    // The source image is the only home of a geometry entry that no typed
+    // record carries.
+    let untyped_geometry = parse.directory.iter().any(|entry| {
+        matches!(
+            entry.entity_type,
+            100 | 102 | 104 | 108 | 110 | 112 | 114 | 116 | 118 | 120 | 122 | 126 | 128 | 130 | 140
+                ..=144 | 186 | 190 | 192 | 194 | 196 | 198 | 502 | 504 | 508 | 510 | 514
+        ) && (ctx.container_only()
+            || (!projection.decoded.contains(&entry.sequence)
+                && !projection.consumed.contains(&entry.sequence)))
+    });
+    if untyped_geometry {
+        source_fidelity.mark_untyped(
+            crate::SOURCE_IMAGE_ID,
+            [cadmpeg_core::decode::ArenaClass::Model],
+        )?;
+    }
     let mut losses = parse.admission_losses();
+    losses.extend(attribute_losses);
     if invalid_resolution
         && !losses.iter().any(|loss| {
             loss.code.local_code() == IgesLossCode::GlobalSemanticContextSubstituted.code()

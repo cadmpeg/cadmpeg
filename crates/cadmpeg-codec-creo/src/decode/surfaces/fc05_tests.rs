@@ -80,14 +80,14 @@ fn service_fc05_ir() -> CadIr {
 #[test]
 fn fc05_cap_transfer_preserves_curve_and_surface_geometry() {
     let ir = service_fc05_ir();
-    assert_eq!(ir.model.curves.len(), 1);
-    assert_eq!(ir.model.surfaces.len(), 1);
+    assert_eq!(ir.geometry.curves.len(), 1);
+    assert_eq!(ir.geometry.surfaces.len(), 1);
     assert_eq!(
-        ir.model.curves[0].id,
+        ir.geometry.curves[0].id,
         CurveId::compose(&crate::identity::VISIBGEOM_CURVE, 7)
     );
     assert_eq!(
-        ir.model.surfaces[0].id,
+        ir.geometry.surfaces[0].id,
         SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, 2)
     );
 }

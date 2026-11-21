@@ -438,6 +438,53 @@ pub(crate) fn sphere_topology_partition_stream() -> Vec<u8> {
     stream
 }
 
+/// A body whose only face covers a whole sphere and therefore has no loop.
+pub(crate) fn whole_sphere_partition_stream() -> Vec<u8> {
+    let mut s = Vec::new();
+    s.extend_from_slice(b"PS\x00\x00\x00/: TRANSMIT FILE (partition) created by modeller\x00\x00\x00\x0fSCH_TEST_1_9999\x00");
+
+    let mut body = record(12, 24);
+    put_ref(&mut body, 2, 2);
+    s.extend_from_slice(&body);
+
+    let mut shell = record(13, 24);
+    put_ref(&mut shell, 2, 3);
+    put_ref(&mut shell, 8, 1); // attributes
+    put_ref(&mut shell, 10, 2); // body
+    put_ref(&mut shell, 12, 1); // next shell
+    put_ref(&mut shell, 14, 4); // first face
+    put_ref(&mut shell, 16, 1); // sentinel
+    put_ref(&mut shell, 18, 1); // sentinel
+    put_ref(&mut shell, 20, 12); // region
+    put_ref(&mut shell, 22, 1); // sentinel
+    s.extend_from_slice(&shell);
+
+    let mut face = record(14, 39);
+    put_ref(&mut face, 2, 4);
+    put_f64(&mut face, 10, 0.000_2); // 0.2 mm
+    put_ref(&mut face, 18, 1); // next face
+    put_ref(&mut face, 20, 1); // previous face
+    put_ref(&mut face, 22, 1); // no loop
+    put_ref(&mut face, 24, 3); // shell
+    put_ref(&mut face, 26, 6); // sphere
+    face[28] = b'+';
+    s.extend_from_slice(&face);
+
+    let mut sphere = record(53, 99);
+    put_ref(&mut sphere, 2, 6);
+    sphere[18] = b'+';
+    put_vec3(&mut sphere, 19, [0.0, 0.0, 0.0]);
+    put_f64(&mut sphere, 43, 0.01);
+    put_vec3(&mut sphere, 51, [0.0, 0.0, 1.0]);
+    put_vec3(&mut sphere, 75, [1.0, 0.0, 0.0]);
+    s.extend_from_slice(&sphere);
+
+    let mut region = record(19, 16);
+    put_ref(&mut region, 2, 12);
+    s.extend_from_slice(&region);
+    s
+}
+
 pub(crate) fn deltas_sphere_partition_stream() -> Vec<u8> {
     deltas_analytic_partition_stream(
         53,
@@ -445,6 +492,25 @@ pub(crate) fn deltas_sphere_partition_stream() -> Vec<u8> {
         912,
         &[0.001, 0.002, 0.003, 0.025, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0],
     )
+}
+
+pub(crate) fn swept_surface_topology_partition_stream() -> Vec<u8> {
+    let mut stream = topology_partition_stream();
+    link_partition_face(&mut stream, 12);
+    let mut swept = record(67, 53);
+    put_ref(&mut swept, 2, 12);
+    swept[18] = b'+';
+    put_ref(&mut swept, 19, 40);
+    put_vec3(&mut swept, 21, [0.0, 0.0, 1.0]);
+    put_f64(&mut swept, 45, 0.02);
+    stream.extend(swept);
+    let mut section = record(30, 67);
+    put_ref(&mut section, 2, 40);
+    section[18] = b'+';
+    put_vec3(&mut section, 19, [0.0, 0.0, 0.0]);
+    put_vec3(&mut section, 43, [1.0, 0.0, 0.0]);
+    stream.extend(section);
+    stream
 }
 
 pub(crate) fn torus_topology_partition_stream() -> Vec<u8> {

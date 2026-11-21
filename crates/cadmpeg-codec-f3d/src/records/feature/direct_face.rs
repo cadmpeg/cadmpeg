@@ -402,7 +402,7 @@ pub(crate) struct DesignDraftOperation {
 }
 
 /// Flags that the `Draft` prologue stores.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignDraftFlags {
     /// Whether the pull direction is opposite the neutral plane normal.
     pub(crate) flipped: bool,
@@ -415,6 +415,36 @@ pub(crate) struct DesignDraftFlags {
         deserialize_with = "deserialize_two_sided"
     )]
     pub(crate) two_sided: Option<DesignDraftTwoSided>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_draft_parting"
+    )]
+    pub(crate) parting: Option<DesignDraftParting>,
+}
+
+cadmpeg_core::named_optional_field!(deserialize_draft_parting, DesignDraftParting, "parting");
+cadmpeg_core::named_optional_field!(
+    deserialize_draft_fixed_edges,
+    crate::records::identity::Located<u32>,
+    "fixed_edges"
+);
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignDraftParting {
+    pub(crate) form: u32,
+    pub(crate) mode: u32,
+    pub(crate) prefix_scalars: [FiniteReal; 2],
+    pub(crate) boundary_flag: bool,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_draft_fixed_edges"
+    )]
+    pub(crate) fixed_edges: Option<crate::records::identity::Located<u32>>,
+    pub(crate) pull: crate::records::identity::Located<u32>,
+    pub(crate) tool: crate::records::identity::Located<u32>,
+    pub(crate) faces: crate::records::identity::Located<u32>,
 }
 
 /// Source mode code of a two-sided `Draft`.
@@ -454,6 +484,35 @@ mod tests {
     use super::{
         DesignShellOperation, DesignShellOutsideWall, DesignShellPrefixFlag, DesignShellWallSlots,
     };
+
+    #[test]
+    fn draft_parting_optional_keys_distinguish_absence_value_and_null() {
+        let mut wire = serde_json::json!({"flipped":false,"tangent_chain":false});
+        let absent: super::DesignDraftFlags = serde_json::from_value(wire.clone()).unwrap();
+        assert!(absent.parting.is_none());
+        wire["parting"] = serde_json::json!({
+            "form":2,"mode":3,"prefix_scalars":[1.5,0.5],"boundary_flag":false,
+            "pull":{"value":93,"offset":75},"tool":{"value":92,"offset":86},"faces":{"value":91,"offset":101}
+        });
+        let present: super::DesignDraftFlags = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(present).unwrap(), wire);
+        assert!(present.parting.unwrap().fixed_edges.is_none());
+        wire["parting"]["fixed_edges"] = serde_json::json!({"value":94,"offset":75});
+        let with_fixed: super::DesignDraftFlags = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(with_fixed.parting.unwrap().fixed_edges.unwrap().value, 94);
+        wire["parting"]["fixed_edges"] = serde_json::Value::Null;
+        assert!(
+            serde_json::from_value::<super::DesignDraftFlags>(wire.clone())
+                .unwrap_err()
+                .to_string()
+                .contains("fixed_edges")
+        );
+        wire["parting"] = serde_json::Value::Null;
+        assert!(serde_json::from_value::<super::DesignDraftFlags>(wire)
+            .unwrap_err()
+            .to_string()
+            .contains("parting"));
+    }
 
     fn operation(outside: Option<DesignShellOutsideWall>) -> DesignShellOperation {
         DesignShellOperation {

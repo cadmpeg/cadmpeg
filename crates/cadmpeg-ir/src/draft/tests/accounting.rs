@@ -11,7 +11,7 @@ use crate::provenance::Exactness;
 fn adding_accounting_preserves_entities_and_commits_exactness() {
     let identity = "test:model:point#accounted";
     let mut draft = point_draft(identity).with_accounting();
-    assert_eq!(draft.model().points, vec![point(identity)]);
+    assert_eq!(draft.geometry().points, vec![point(identity)]);
     assert_eq!(
         draft.insert(point(identity)),
         Err(DraftError::IdentityCollision(identity.into()))
@@ -23,12 +23,12 @@ fn adding_accounting_preserves_entities_and_commits_exactness() {
         .commit(
             &mut base,
             &mut annotations,
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
         )
         .unwrap()
         .unwrap();
 
-    assert_eq!(base.model.points, vec![point(identity)]);
+    assert_eq!(base.geometry.points, vec![point(identity)]);
     assert_eq!(
         annotations.exactness()[identity].entity(),
         Exactness::Derived
@@ -39,7 +39,7 @@ fn adding_accounting_preserves_entities_and_commits_exactness() {
 fn refused_accounted_draft_leaves_all_existing_destinations_unchanged() {
     let existing = "test:model:point#existing";
     let mut base = CadIr::empty();
-    base.model.points.push(point(existing));
+    base.geometry.points.push(point(existing));
     let mut builder = crate::annotations::AnnotationBuilder::new();
     builder.exactness(existing, Exactness::Inferred);
     let mut annotations = builder.build();
@@ -52,7 +52,7 @@ fn refused_accounted_draft_leaves_all_existing_destinations_unchanged() {
             .commit(
                 &mut base,
                 &mut annotations,
-                &cadmpeg_test_support::service_decode_context()
+                &cadmpeg_core::decode::test_support::service_decode_context()
             )
             .unwrap(),
         Err(DraftError::IdentityCollision(existing.into()))
@@ -65,7 +65,7 @@ fn rejected_accounted_draft_does_not_retain_the_annotation_copy() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let identity = "test:model:point#existing";
     let mut base = CadIr::empty();
-    base.model.points.push(point(identity));
+    base.geometry.points.push(point(identity));
     let mut builder = crate::annotations::AnnotationBuilder::new();
     builder.exactness(identity, Exactness::Inferred);
     let mut annotations = builder.build();

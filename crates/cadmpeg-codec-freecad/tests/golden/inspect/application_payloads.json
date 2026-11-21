@@ -8,8 +8,8 @@
         "data_offset": "42",
         "header_offset": "0"
       },
-      "compression": "deflate",
       "expanded": 17887,
+      "kind": "deflate",
       "name": "Document.xml",
       "role": "document",
       "stored": 2351
@@ -21,8 +21,8 @@
         "data_offset": "2437",
         "header_offset": "2393"
       },
-      "compression": "deflate",
       "expanded": 392,
+      "kind": "deflate",
       "name": "MeshKernel.bms",
       "role": "auxiliary",
       "stored": 50
@@ -34,8 +34,8 @@
         "data_offset": "2527",
         "header_offset": "2487"
       },
-      "compression": "deflate",
       "expanded": 40,
+      "kind": "deflate",
       "name": "PointCloud",
       "role": "auxiliary",
       "stored": 25
@@ -47,8 +47,8 @@
         "data_offset": "2589",
         "header_offset": "2552"
       },
-      "compression": "deflate",
       "expanded": 4,
+      "kind": "deflate",
       "name": "Normals",
       "role": "auxiliary",
       "stored": 6
@@ -60,8 +60,8 @@
         "data_offset": "2631",
         "header_offset": "2595"
       },
-      "compression": "deflate",
       "expanded": 4,
+      "kind": "deflate",
       "name": "Points",
       "role": "auxiliary",
       "stored": 6
@@ -73,8 +73,8 @@
         "data_offset": "2678",
         "header_offset": "2637"
       },
-      "compression": "deflate",
       "expanded": 114,
+      "kind": "deflate",
       "name": "Toolpath.nc",
       "role": "auxiliary",
       "stored": 39
@@ -86,19 +86,20 @@
         "data_offset": "2762",
         "header_offset": "2717"
       },
-      "compression": "deflate",
       "expanded": 16,
+      "kind": "deflate",
       "name": "cc0_payload.bin",
       "role": "auxiliary",
       "stored": 13
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "file_version": "1",
           "program_version": "1.1R20260414 (Git shallow)",
@@ -106,8 +107,10 @@
         },
         "dialect": "fcstd:schema-4"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "SchemaVersion=4",
     "FileVersion=1",

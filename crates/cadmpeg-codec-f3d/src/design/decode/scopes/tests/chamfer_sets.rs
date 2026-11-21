@@ -288,7 +288,11 @@ fn each_form_rejects_a_nonzero_unnamed_byte_and_a_second_frame() {
         let set_start =
             crate::design::test_support::indexed_record_offsets_for_test(&bytes).offsets(SET)[0];
         let mut mutated = bytes.clone();
-        mutated[set_start + 12] = 1;
+        mutated[set_start + 22] = if matches!(form, Form::TwoDistances | Form::DistanceAngle) {
+            2
+        } else {
+            1
+        };
         assert!(decode_bytes(&mutated, &scope).is_none());
         let mut third = bytes.clone();
         third.extend(header(b"268", SET));
@@ -333,7 +337,7 @@ fn crossed_sets(crossed: bool) -> (DesignParameterScope, [DesignParameterOwner; 
         auxiliary_record_index: AUXILIARY,
         entry_count: 1,
         tangent_chain: true,
-        flipped: false,
+        distance_reversed: false,
     };
     if let crate::records::feature::scope::DesignScopePayloadMut::Chamfer(slot) =
         scope.payload_mut()
@@ -407,28 +411,6 @@ fn corner_type_and_tangent_chain_read_from_their_bytes() {
         let list = decode_bytes(&bytes, &scope).unwrap();
         assert_eq!(list.corner_type, corner_type);
         assert!(!list.sets[0].tangent_chain);
-    }
-}
-
-#[test]
-fn the_flip_byte_reads_in_the_two_distance_and_distance_angle_forms() {
-    for form in [Form::TwoDistances, Form::DistanceAngle] {
-        let (bytes, scope) = stream(form, false);
-        let set_start =
-            crate::design::test_support::indexed_record_offsets_for_test(&bytes).offsets(SET)[0];
-        assert!(!decode_bytes(&bytes, &scope).unwrap().sets[0].flipped);
-        let mut flipped = bytes.clone();
-        flipped[set_start + 22] = 1;
-        assert!(decode_bytes(&flipped, &scope).unwrap().sets[0].flipped);
-        flipped[set_start + 22] = 2;
-        assert!(decode_bytes(&flipped, &scope).is_none());
-    }
-    for (form, compact) in [(Form::Equal, false), (Form::CompactEqual, true)] {
-        let (mut bytes, scope) = stream(form, compact);
-        let set_start =
-            crate::design::test_support::indexed_record_offsets_for_test(&bytes).offsets(SET)[0];
-        bytes[set_start + 22] = 1;
-        assert!(decode_bytes(&bytes, &scope).is_none());
     }
 }
 
@@ -517,4 +499,138 @@ fn recognized_sets_keep_references_whose_definitions_or_generic_members_are_miss
             distance_owner_record_index: FIRST_OWNER
         }
     );
+}
+
+#[test]
+fn two_distances_reversal_is_independent_of_tangent_chain_and_keeps_its_owners() {
+    let (bytes, scope) = stream(Form::TwoDistances, false);
+    let set_start =
+        crate::design::test_support::indexed_record_offsets_for_test(&bytes).offsets(SET)[0];
+    for tangent in [0, 1] {
+        for reversed in [0, 1] {
+            let mut changed = bytes.clone();
+            changed[set_start + 21] = tangent;
+            changed[set_start + 22] = reversed;
+            let list = decode_bytes(&changed, &scope).unwrap();
+            let [set] = list.sets.as_slice() else {
+                panic!("one two-distances set");
+            };
+            assert_eq!(set.tangent_chain, tangent == 1);
+            assert_eq!(set.distance_reversed, reversed == 1);
+            assert_eq!(set.group_record_index, GROUP);
+            assert_eq!(
+                set.spec,
+                DesignChamferSetSpec::TwoDistances {
+                    first_owner_record_index: FIRST_OWNER,
+                    second_owner_record_index: SECOND_OWNER,
+                }
+            );
+        }
+    }
+    for invalid in 2..=u8::MAX {
+        let mut changed = bytes.clone();
+        changed[set_start + 22] = invalid;
+        assert!(decode_bytes(&changed, &scope).is_none());
+    }
+}
+
+#[test]
+fn distance_angle_reversal_is_independent_of_tangent_chain_and_keeps_its_owners() {
+    let (bytes, scope) = stream(Form::DistanceAngle, false);
+    let set_start =
+        crate::design::test_support::indexed_record_offsets_for_test(&bytes).offsets(SET)[0];
+    for tangent in [0, 1] {
+        for reversed in [0, 1] {
+            let mut changed = bytes.clone();
+            changed[set_start + 21] = tangent;
+            changed[set_start + 22] = reversed;
+            let list = decode_bytes(&changed, &scope).unwrap();
+            let [set] = list.sets.as_slice() else {
+                panic!("one distance-angle set");
+            };
+            assert_eq!(set.tangent_chain, tangent == 1);
+            assert_eq!(set.distance_reversed, reversed == 1);
+            assert_eq!(set.group_record_index, GROUP);
+            assert_eq!(
+                set.spec,
+                DesignChamferSetSpec::DistanceAngle {
+                    distance_owner_record_index: FIRST_OWNER,
+                    angle_owner_record_index: SECOND_OWNER,
+                }
+            );
+        }
+    }
+    for invalid in 2..=u8::MAX {
+        let mut changed = bytes.clone();
+        changed[set_start + 22] = invalid;
+        assert!(decode_bytes(&changed, &scope).is_none());
+    }
+}
+
+#[test]
+fn a_reversed_distance_angle_set_keeps_all_four_mixed_sets() {
+    let (_, mut scope) = stream(Form::Equal, false);
+    let set_indices = [SET, SET + 20, SET + 40, SET + 60];
+    let group_indices = [GROUP, GROUP + 20, GROUP + 40, GROUP + 60];
+    let mut bytes = header(b"261", SCOPE);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    bytes.extend_from_slice(&[0, 1]);
+    bytes.extend_from_slice(&4_u32.to_le_bytes());
+    for (ordinal, set_number) in [(1_u64, 1_u8), (2, 3), (3, 4), (4, 2)] {
+        bytes.extend_from_slice(&ordinal.to_le_bytes());
+        bytes.extend_from_slice(&[set_number, 0]);
+    }
+    for indices in [set_indices, group_indices] {
+        bytes.extend_from_slice(&4_u32.to_le_bytes());
+        for index in indices {
+            bytes.extend(reference(index));
+        }
+    }
+    bytes.extend_from_slice(&36_u32.to_le_bytes());
+    crate::design::test_support::name_scope_references(&mut scope, group_indices);
+    bytes.resize(usize::try_from(scope.frame_length()).unwrap(), 0);
+    bytes.extend(header(b"257", SCOPE));
+    for (ordinal, form) in [
+        Form::DistanceAngle,
+        Form::DistanceAngle,
+        Form::TwoDistances,
+        Form::TwoDistances,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut frame = set_frame(form);
+        frame[7..11].copy_from_slice(&set_indices[ordinal].to_le_bytes());
+        frame[50..61].copy_from_slice(&reference(group_indices[ordinal]));
+        frame[63..67].copy_from_slice(&u32::try_from(ordinal + 1).unwrap().to_le_bytes());
+        if ordinal == 1 {
+            frame[22] = 1;
+        }
+        bytes.extend(frame);
+        bytes.extend(header(b"267", set_indices[ordinal]));
+    }
+    let list = decode_bytes(&bytes, &scope).unwrap();
+    assert_eq!(list.entry_count, 4);
+    assert_eq!(list.sets.len(), 4);
+    for (ordinal, set) in list.sets.iter().enumerate() {
+        assert_eq!(set.record_index, set_indices[ordinal]);
+        assert_eq!(set.group_record_index, group_indices[ordinal]);
+        assert_eq!(set.entry_count, 1);
+        assert_eq!(set.distance_reversed, ordinal == 1);
+        assert_eq!(
+            set.spec,
+            if ordinal < 2 {
+                DesignChamferSetSpec::DistanceAngle {
+                    distance_owner_record_index: FIRST_OWNER,
+                    angle_owner_record_index: SECOND_OWNER,
+                }
+            } else {
+                DesignChamferSetSpec::TwoDistances {
+                    first_owner_record_index: FIRST_OWNER,
+                    second_owner_record_index: SECOND_OWNER,
+                }
+            }
+        );
+    }
 }

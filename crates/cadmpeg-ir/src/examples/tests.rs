@@ -31,7 +31,12 @@ fn directed_subd_sum_fixture_carries_the_literal_axes_and_frame() {
         (crate::identity_key!("v"), Vector3::new(0.0, 1.0, 0.0)),
     ] {
         let id = v2_id!(CurveId, "curve", key);
-        let curve = ir.model.curves.iter().find(|curve| curve.id == id).unwrap();
+        let curve = ir
+            .geometry
+            .curves
+            .iter()
+            .find(|curve| curve.id == id)
+            .unwrap();
         let CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) = &curve.geometry else {
             panic!("the directed SubD example curve is a line");
         };
@@ -42,7 +47,7 @@ fn directed_subd_sum_fixture_carries_the_literal_axes_and_frame() {
     }
     let id = v2_id!(SurfaceId, "surface", crate::identity_key!("sum-cache"));
     let surface = ir
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id == id)
@@ -71,7 +76,8 @@ fn directed_subd_sum_fixture_carries_the_literal_axes_and_frame() {
 #[cfg(feature = "schema")]
 #[test]
 fn directed_subd_sum_fixture_matches_schema_shape() {
-    let schema = serde_json::to_value(crate::cadir_json_schema()).expect("serialize schema");
+    let schema = serde_json::to_value(schemars::schema_for!(crate::document::Topology))
+        .expect("serialize schema");
     let schema_text = schema.to_string();
     assert!(schema_text.contains("procedural_surfaces"));
     assert!(schema_text.contains("sharpness"));
@@ -81,17 +87,17 @@ fn directed_subd_sum_fixture_matches_schema_shape() {
 #[test]
 fn unit_cube_has_expected_census() {
     let ir = unit_cube().expect("valid unit cube fixture");
-    assert_eq!(ir.model.bodies.len(), 1);
-    assert_eq!(ir.model.regions.len(), 1);
-    assert_eq!(ir.model.shells.len(), 1);
-    assert_eq!(ir.model.faces.len(), 6);
-    assert_eq!(ir.model.loops.len(), 6);
-    assert_eq!(ir.model.coedges.len(), 24);
-    assert_eq!(ir.model.edges.len(), 12);
-    assert_eq!(ir.model.vertices.len(), 8);
-    assert_eq!(ir.model.points.len(), 8);
-    assert_eq!(ir.model.surfaces.len(), 6);
-    assert_eq!(ir.model.curves.len(), 12);
+    assert_eq!(ir.geometry.bodies.len(), 1);
+    assert_eq!(ir.geometry.regions.len(), 1);
+    assert_eq!(ir.geometry.shells.len(), 1);
+    assert_eq!(ir.geometry.faces.len(), 6);
+    assert_eq!(ir.geometry.loops.len(), 6);
+    assert_eq!(ir.geometry.coedges.len(), 24);
+    assert_eq!(ir.geometry.edges.len(), 12);
+    assert_eq!(ir.geometry.vertices.len(), 8);
+    assert_eq!(ir.geometry.points.len(), 8);
+    assert_eq!(ir.geometry.surfaces.len(), 6);
+    assert_eq!(ir.geometry.curves.len(), 12);
 }
 
 #[test]
@@ -111,9 +117,9 @@ fn unit_cube_validates_clean() {
 #[test]
 fn every_cube_edge_has_two_opposite_sense_coedges() {
     let ir = unit_cube().expect("valid unit cube fixture");
-    for edge in &ir.model.edges {
+    for edge in &ir.geometry.edges {
         let coedges: Vec<_> = ir
-            .model
+            .geometry
             .coedges
             .iter()
             .filter(|c| c.edge == edge.id)

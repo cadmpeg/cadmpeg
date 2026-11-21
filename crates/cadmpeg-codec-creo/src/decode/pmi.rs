@@ -7,6 +7,7 @@ mod elements;
 pub(super) mod tags;
 mod targets;
 
+use cadmpeg_ir::design::options::NativeOptions;
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
@@ -154,7 +155,10 @@ pub(super) fn transfer(
             elements: &element_tables,
             dimension_targets: &dimension_targets,
         },
-        scale.map(cadmpeg_ir::scalar::PositiveReal::get),
+        &dimensions::DimensionSource {
+            length_scale_mm: scale.map(cadmpeg_ir::scalar::PositiveReal::get),
+            release_major: crate::container::banner_release_major(&scan.framing.data),
+        },
         ir,
         annotations,
         losses,
@@ -295,12 +299,15 @@ pub(super) fn transfer(
                         id,
                         name: None,
                         visible: None,
-                        targets: target_faces,
+                        targets: target_faces.into_iter().map(Into::into).collect(),
                         definition: PmiDefinition::Presentation {
                             text: Some(text.to_owned()),
                             placement: None,
                             semantics,
                         },
+                        native_ref: None,
+                        native_options: NativeOptions::new(),
+                        source_settings: NativeOptions::new(),
                     });
                 }
                 Ok(_) => {}
@@ -498,6 +505,9 @@ fn datum_system(
                     definition: PmiDefinition::Datum {
                         identification: label.to_owned(),
                     },
+                    native_ref: None,
+                    native_options: NativeOptions::new(),
+                    source_settings: NativeOptions::new(),
                 });
                 state.ids.insert(label.to_owned(), id.clone());
                 id
@@ -534,6 +544,9 @@ fn datum_system(
         visible: None,
         targets: Vec::new(),
         definition: PmiDefinition::DatumSystem { references },
+        native_ref: None,
+        native_options: NativeOptions::new(),
+        source_settings: NativeOptions::new(),
     });
     Ok(Some(id))
 }
@@ -596,7 +609,7 @@ fn push_tolerance(
         id: id.clone(),
         name: None,
         visible: None,
-        targets,
+        targets: targets.into_iter().map(Into::into).collect(),
         definition: PmiDefinition::GeometricTolerance {
             tolerance: definition.0,
             magnitude: definition.1,
@@ -609,8 +622,13 @@ fn push_tolerance(
             } else {
                 Vec::new()
             },
-            constraints: cadmpeg_ir::pmi::zones::ToleranceConstraints::default(),
+            displacement: None,
+            maximum_upper: None,
+            zones: Vec::new(),
         },
+        native_ref: None,
+        native_options: NativeOptions::new(),
+        source_settings: NativeOptions::new(),
     });
     Ok(id)
 }

@@ -90,7 +90,7 @@ fn inherit_refuses_a_source_that_records_no_dialect() {
     let mut ir = CadIr::empty();
     ir.source = Some(
         serde_json::from_value(serde_json::json!({
-            "identity": {"classification": "unclassified", "format": "rhino"},
+            "identity": {"kind": "unclassified", "format": "rhino"},
             "attributes": {},
         }))
         .unwrap(),
@@ -234,7 +234,7 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
     let mut ir = CadIr::empty();
-    ir.model.points.push(cadmpeg_ir::topology::Point::new(
+    ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         cadmpeg_ir::ids::PointId::mint("cadir:model:point#honesty").expect("identity grammar"),
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
             .expect("a finite position is a point"),

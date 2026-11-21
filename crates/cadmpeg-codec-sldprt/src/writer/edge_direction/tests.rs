@@ -14,8 +14,8 @@ fn cube() -> CadIr {
 
 /// Make every coedge of edge `index` run against it.
 fn reverse_all_coedges(ir: &mut CadIr, index: usize) {
-    let edge = ir.model.edges[index].id.clone();
-    for coedge in &mut ir.model.coedges {
+    let edge = ir.geometry.edges[index].id.clone();
+    for coedge in &mut ir.geometry.coedges {
         if coedge.edge == edge {
             coedge.sense = Sense::Reversed;
         }
@@ -34,7 +34,7 @@ fn an_edge_whose_coedges_all_run_against_it_is_stored_reversed() {
     let mut ir = cube();
     reverse_all_coedges(&mut ir, 0);
     let reversed = reversed_compact_edges(&ir).unwrap();
-    let edge = &ir.model.edges[0];
+    let edge = &ir.geometry.edges[0];
     assert_eq!(reversed.edges.len(), 1);
     assert!(reversed.edges.contains(&edge.id));
     assert_eq!(reversed.curves.len(), 1);
@@ -46,8 +46,8 @@ fn stored_sense_flips_only_the_coedges_of_reversed_edges() {
     let mut ir = cube();
     reverse_all_coedges(&mut ir, 0);
     let reversed = reversed_compact_edges(&ir).unwrap();
-    let flipped = &ir.model.edges[0].id;
-    let kept = &ir.model.edges[1].id;
+    let flipped = &ir.geometry.edges[0].id;
+    let kept = &ir.geometry.edges[1].id;
     assert_eq!(
         reversed.stored_sense(flipped, Sense::Reversed),
         Sense::Forward
@@ -67,8 +67,8 @@ fn stored_sense_flips_only_the_coedges_of_reversed_edges() {
 fn a_curve_with_edges_stored_in_both_directions_is_refused() {
     let mut ir = cube();
     reverse_all_coedges(&mut ir, 0);
-    let shared = ir.model.edges[0].curve().cloned();
-    ir.model.edges[1].set_curve(shared).unwrap();
+    let shared = ir.geometry.edges[0].curve().cloned();
+    ir.geometry.edges[1].set_curve(shared).unwrap();
     let error = reversed_compact_edges(&ir).err().unwrap();
     assert!(
         matches!(&error, CodecError::NotImplemented(message)

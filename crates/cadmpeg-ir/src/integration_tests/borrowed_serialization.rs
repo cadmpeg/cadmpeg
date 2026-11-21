@@ -10,14 +10,13 @@ use serde_json::json;
 fn check_wire<T: Serialize + DeserializeOwned>(wire: &serde_json::Value) {
     let value: T = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(&value).unwrap(), *wire);
-    let expected = serde_value::to_value(&value).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let projected =
         crate::schema::structural::project(&ctx, &value, "project borrowed owner").unwrap();
-    assert_eq!(*projected, expected);
+    assert_eq!(projected, *wire);
     drop(projected);
     ctx.finish_session().unwrap();
     let arena = DecodeArena::new();
@@ -47,7 +46,7 @@ macro_rules! wire_case {
 wire_case!(
     borrowed_shell_members_wire,
     crate::topology::Shell,
-    json!({"id":"test:model:shell#s","region":"test:model:region#r","members":[{"kind":"face","id":"test:model:face#f"},{"kind":"wire_edge","id":"test:model:edge#e"},{"kind":"free_vertex","id":"test:model:vertex#v"}]})
+    json!({"id":"test:model:shell#s","region":"test:model:region#r","members":[{"kind":"wire_edge","id":"test:model:edge#e"},{"kind":"free_vertex","id":"test:model:vertex#v"}]})
 );
 wire_case!(
     borrowed_edge_carrier_wire,
@@ -67,7 +66,7 @@ wire_case!(
 wire_case!(
     borrowed_sketch_binding_wire,
     crate::features::SketchFeatureBinding,
-    json!({"space":"planar","sketch":"test:model:sketch#s"})
+    json!({"kind":"planar","sketch":"test:model:sketch#s"})
 );
 wire_case!(
     borrowed_coil_placement_wire,
@@ -77,7 +76,7 @@ wire_case!(
 wire_case!(
     borrowed_tspline_construction_wire,
     crate::geometry::TSplineSurfaceConstruction,
-    json!({"parameter_ranges":[[0.0,1.0],[0.0,1.0]],"type_code":7,"subtransform":{"kind":"inline","program":"v 1 2","separator":null,"values":"e 3"},"trailing_value":4,"discontinuities":[[0.2],[0.3],[],[],[],[]],"discontinuity_flag":false})
+    json!({"parameter_ranges":[[0.0,1.0],[0.0,1.0]],"type_code":7,"subtransform":{"kind":"inline","program":"v 1 2","values":"e 3"},"trailing_value":4,"discontinuities":[[0.2],[0.3],[],[],[],[]],"discontinuity_flag":false,"cache":{"kind":"legacy"}})
 );
 wire_case!(
     borrowed_compound_curve_wire,
@@ -97,17 +96,17 @@ wire_case!(
 wire_case!(
     borrowed_dimension_wire,
     crate::pmi::PmiDimension,
-    json!({"dimension":{"other":"native-dimension"}})
+    json!({"dimension":{"kind":"other","value":"native-dimension"},"modifiers":[]})
 );
 wire_case!(
-    borrowed_link_state_wire,
-    crate::products::LinkState,
-    json!({"members":[{"kind":"linked_subelement","subelement":"Face1"},{"kind":"element_component","component":"test:model:product#p"},{"kind":"claim_child","claim":true},{"kind":"copy_on_change","state":{"policy":{"policy":"native","native_policy":"source-policy"}}}]})
+    borrowed_storage_wire,
+    crate::products::Storage,
+    json!({"kind":"external","path":"parts/widget.FCStd","object":"Body"})
 );
 wire_case!(
     borrowed_reference_target_wire,
     crate::references::ReferenceTarget,
-    json!({"kind":"external","document":"external-document","object":"source-object"})
+    json!({"kind":"external","value":{"document":"external-document","object":"source-object"}})
 );
 wire_case!(
     borrowed_spreadsheet_cell_wire,
@@ -132,12 +131,12 @@ wire_case!(
 wire_case!(
     borrowed_tessellation_channel_wire,
     crate::tessellation::TessellationChannel,
-    json!({"addressing":{"domain":"corner","indices":[0,1,0]},"item_size":1,"kind":2,"flags":3,"data":"AQI="})
+    json!({"addressing":{"kind":"corner","indices":[0,1,0]},"item_size":1,"kind":2,"flags":3,"data":"AQI="})
 );
 wire_case!(
     borrowed_tessellation_wire,
     crate::tessellation::Tessellation,
-    json!({"id":"test:model:tessellation#t","body":"test:model:body#b","faces":["test:model:face#f"],"mesh":{"kind":"list","vertices":[{"x":0.0,"y":0.0,"z":0.0},{"x":1.0,"y":0.0,"z":0.0},{"x":0.0,"y":1.0,"z":0.0}],"triangles":[[0,1,2]]},"channels":[]})
+    json!({"id":"test:model:tessellation#t","body":"test:model:body#b","faces":["test:model:face#f"],"mesh":{"kind":"list","vertices":[{"x":0.0,"y":0.0,"z":0.0},{"x":1.0,"y":0.0,"z":0.0},{"x":0.0,"y":1.0,"z":0.0}],"triangles":[[0,1,2]]},"feature_edges":[],"triangle_groups":[],"texture_assignments":[],"texture_coordinates":[],"channels":[]})
 );
 wire_case!(
     borrowed_exactness_field_wire,

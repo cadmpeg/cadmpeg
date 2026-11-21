@@ -57,8 +57,6 @@ pub(crate) enum FreecadLossCode {
     DrawingDimensionGeometryNotTransferred,
     /// Persisted drawing content remains native.
     DrawingDimensionToleranceNotTransferred,
-    /// A bounded archive payload cannot be opened; its stored bytes remain retained.
-    ArchiveEntryUnreadable,
     /// A mesh use has no complete neutral placement path.
     MeshPlacementNotTransferred,
     /// Mesh occurrence expansion reached its input-scaled local work cap.
@@ -75,6 +73,8 @@ pub(crate) enum FreecadLossCode {
     FeatureNativeKindRetained,
     /// A revolution has no complete admitted angular construction.
     FeatureRevolutionNotTransferred,
+    /// A removal feature starts from an empty body.
+    FeatureRemovalWithoutBase,
     /// A primitive has no admitted local-to-model frame.
     FeaturePrimitivePlacementUnresolved,
     /// Sketch geometry record retains a native kind without solved geometry.
@@ -145,7 +145,6 @@ impl FreecadLossCode {
         Self::DrawingDimensionKindNotTransferred,
         Self::DrawingDimensionGeometryNotTransferred,
         Self::DrawingDimensionToleranceNotTransferred,
-        Self::ArchiveEntryUnreadable,
         Self::MeshPlacementNotTransferred,
         Self::MeshPlacementBounded,
         Self::PersistencePayloadUnresolved,
@@ -154,6 +153,7 @@ impl FreecadLossCode {
         Self::FeatureCyclicHistory,
         Self::FeatureNativeKindRetained,
         Self::FeatureRevolutionNotTransferred,
+        Self::FeatureRemovalWithoutBase,
         Self::FeaturePrimitivePlacementUnresolved,
         Self::SketchNativeGeometry,
         Self::SketchNurbsNative,
@@ -204,7 +204,6 @@ impl FreecadLossCode {
             Self::DrawingDimensionToleranceNotTransferred => {
                 "drawing.dimension-tolerance-not-transferred"
             }
-            Self::ArchiveEntryUnreadable => "source.archive-entry-unreadable",
             Self::MeshPlacementNotTransferred => "geometry.mesh-placement-not-transferred",
             Self::MeshPlacementBounded => "geometry.mesh-placement-bounded",
             Self::PersistencePayloadUnresolved => "metadata.persistence-payload-unresolved",
@@ -214,6 +213,7 @@ impl FreecadLossCode {
             Self::FeaturePrimitivePlacementUnresolved => "feature.primitive-placement-unresolved",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
             Self::FeatureRevolutionNotTransferred => "feature.revolution-not-transferred",
+            Self::FeatureRemovalWithoutBase => "feature.removal-without-base",
             Self::SketchNativeGeometry => "sketch.native-geometry",
             Self::SketchNurbsNative => "sketch.nurbs-native",
             Self::SketchNativeConstraint => "sketch.native-constraint",
@@ -255,6 +255,7 @@ impl FreecadLossCode {
             | Self::FeatureCyclicHistory
             | Self::FeatureNativeKindRetained
             | Self::FeatureRevolutionNotTransferred
+            | Self::FeatureRemovalWithoutBase
             | Self::FeaturePrimitivePlacementUnresolved
             | Self::SketchNativeGeometry
             | Self::SketchNurbsNative
@@ -282,7 +283,6 @@ impl FreecadLossCode {
             | Self::SketchExternalCacheUnresolved
             | Self::SketchExternalReferenceUnresolved
             | Self::SketchProfileMatchingBounded
-            | Self::ArchiveEntryUnreadable
             | Self::PersistencePayloadUnresolved
             | Self::PersistenceSideEntryUnresolved
             | Self::PersistenceCountNoncanonical
@@ -323,12 +323,12 @@ impl FreecadLossCode {
             | Self::DrawingDimensionKindNotTransferred
             | Self::DrawingDimensionGeometryNotTransferred
             | Self::DrawingDimensionToleranceNotTransferred
-            | Self::ArchiveEntryUnreadable
             | Self::PersistencePayloadUnresolved
             | Self::PersistenceSideEntryUnresolved => LossTaxonomy::RecordNotTyped,
             Self::FeatureCyclicHistory
             | Self::FeatureNativeKindRetained
             | Self::FeatureRevolutionNotTransferred
+            | Self::FeatureRemovalWithoutBase
             | Self::FeaturePrimitivePlacementUnresolved => LossTaxonomy::FeatureHistoryRetained,
             Self::SketchExternalCacheUnresolved
             | Self::SketchExternalReferenceUnresolved
@@ -408,7 +408,6 @@ mod tests {
                 "drawing.dimension-kind-not-transferred",
                 "drawing.dimension-geometry-not-transferred",
                 "drawing.dimension-tolerance-not-transferred",
-                "source.archive-entry-unreadable",
                 "geometry.mesh-placement-not-transferred",
                 "geometry.mesh-placement-bounded",
                 "metadata.persistence-payload-unresolved",
@@ -417,6 +416,7 @@ mod tests {
                 "feature.cyclic-history",
                 "feature.native-kind-retained",
                 "feature.revolution-not-transferred",
+                "feature.removal-without-base",
                 "feature.primitive-placement-unresolved",
                 "sketch.native-geometry",
                 "sketch.nurbs-native",

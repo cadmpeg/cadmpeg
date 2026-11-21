@@ -157,10 +157,10 @@ fn transfers_application_saved_rotated_conics_and_profile_chain() {
     ));
     assert!(result
         .ir()
-        .model
+        .geometry
         .shells
         .iter()
-        .any(|shell| shell.wire_edges().len() == 3));
+        .any(|shell| shell.wire_edges().count() == 3));
     assert_valid_document(result.ir());
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
@@ -411,7 +411,7 @@ fn sketch_keeps_no_profiles_when_endpoint_matching_spends_the_work_limit() {
 <Constrain Type="1" First="2" FirstPos="2" Second="0" SecondPos="1"/>
 </ConstraintList></Property>
 </Properties></Object></ObjectData></Document>"#;
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let xml = crate::container::admit_document(&ctx, document.as_bytes()).expect("document XML");
     let graph = crate::persistence::parse_document(&xml, crate::persistence::Vocabulary::Objects)
         .expect("persistence graph");

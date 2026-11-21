@@ -26,15 +26,22 @@ const NAMING_TYPE: u32 = 38;
 const SKETCH_ORDINAL: u32 = 2;
 const BODY_ORDINAL: u32 = 30;
 
-fn naming_values(naming_type: i64, associative_id: i64, topology: i64) -> Vec<AttributeValue> {
+fn naming_values(
+    naming_type: i64,
+    associative_id: i64,
+    topology: i64,
+) -> Vec<Option<AttributeValue>> {
     let mut values = vec![
-        AttributeValue::Reference("sat:brep:entity#-1".into()),
-        AttributeValue::Integer(-1),
-        AttributeValue::Reference("sat:brep:entity#-1".into()),
-        AttributeValue::Reference("sat:brep:entity#-1".into()),
-        AttributeValue::Reference("sat:brep:entity#9".into()),
+        Some(AttributeValue::Reference("sat:brep:entity#-1".into())),
+        Some(AttributeValue::Integer(-1)),
+        Some(AttributeValue::Reference("sat:brep:entity#-1".into())),
+        Some(AttributeValue::Reference("sat:brep:entity#-1".into())),
+        Some(AttributeValue::Reference("sat:brep:entity#9".into())),
     ];
-    values.extend([naming_type, 0, associative_id, 0, topology].map(AttributeValue::Integer));
+    values.extend(
+        [naming_type, 0, associative_id, 0, topology]
+            .map(|value| Some(AttributeValue::Integer(value))),
+    );
     values
 }
 
@@ -64,8 +71,8 @@ fn custom_edge_name_requires_its_family_version_and_exact_integer_layout() {
     values.splice(
         5..5,
         [
-            AttributeValue::String("INV_NMX_GEN_TAG".into()),
-            AttributeValue::Integer(1),
+            Some(AttributeValue::String("INV_NMX_GEN_TAG".into())),
+            Some(AttributeValue::Integer(1)),
         ],
     );
     assert_eq!(
@@ -81,16 +88,16 @@ fn custom_edge_name_requires_its_family_version_and_exact_integer_layout() {
         edge_name(super::CUSTOM_NAMING_ATTRIBUTE, &values[..11]),
         None
     );
-    values.push(AttributeValue::Integer(0));
+    values.push(Some(AttributeValue::Integer(0)));
     assert_eq!(edge_name(super::CUSTOM_NAMING_ATTRIBUTE, &values), None);
     values.pop();
-    values[11] = AttributeValue::Integer(1);
+    values[11] = Some(AttributeValue::Integer(1));
     assert_eq!(edge_name(super::CUSTOM_NAMING_ATTRIBUTE, &values), None);
-    values[11] = AttributeValue::Integer(2);
-    values[6] = AttributeValue::Integer(2);
+    values[11] = Some(AttributeValue::Integer(2));
+    values[6] = Some(AttributeValue::Integer(2));
     assert_eq!(edge_name(super::CUSTOM_NAMING_ATTRIBUTE, &values), None);
-    values[6] = AttributeValue::Integer(1);
-    values[5] = AttributeValue::String("other_family".into());
+    values[6] = Some(AttributeValue::Integer(1));
+    values[5] = Some(AttributeValue::String("other_family".into()));
     assert_eq!(edge_name(super::CUSTOM_NAMING_ATTRIBUTE, &values), None);
     assert_eq!(
         edge_name(super::CUSTOM_NAMING_ATTRIBUTE, &naming_values(44, 7, 2)),
@@ -269,15 +276,12 @@ fn a_profile_face_loop_uses_its_body_key_and_custom_edge_names() {
         id: id(2).try_into().expect("synthetic identity"),
         body: id(1).try_into().expect("synthetic identity"),
         shells: vec![id(3).try_into().expect("synthetic identity")],
+        native_ref: None,
     });
-    brep.shells.push(
-        Shell::with_faces(
-            id(3).try_into().expect("synthetic identity"),
-            id(2).try_into().expect("synthetic identity"),
-            vec![id(4).try_into().expect("synthetic identity")],
-        )
-        .expect("synthetic profile fixture"),
-    );
+    brep.shells.push(Shell::new(
+        id(3).try_into().expect("synthetic identity"),
+        id(2).try_into().expect("synthetic identity"),
+    ));
     brep.faces.push(Face {
         id: id(4).try_into().expect("synthetic identity"),
         shell: id(3).try_into().expect("synthetic identity"),
@@ -290,6 +294,7 @@ fn a_profile_face_loop_uses_its_body_key_and_custom_edge_names() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
     brep.loops.push(Loop {
         id: id(5).try_into().expect("synthetic identity"),
@@ -303,6 +308,7 @@ fn a_profile_face_loop_uses_its_body_key_and_custom_edge_names() {
             )
             .expect("synthetic profile fixture"),
         ),
+        native_ref: None,
     });
     let points = [(0.0, 0.0), (20.0, 0.0), (20.0, 20.0), (0.0, 20.0)];
     for (i, (x, y)) in (0..4).zip(points) {
@@ -316,13 +322,17 @@ fn a_profile_face_loop_uses_its_body_key_and_custom_edge_names() {
             id: id(31 + i).try_into().expect("synthetic identity"),
             point: id(41 + i).try_into().expect("synthetic identity"),
             tolerance: None,
+            native_ref: None,
         });
         brep.edges.push(Edge {
             id: id(11 + i).try_into().expect("synthetic identity"),
             carrier: EdgeCarrier::unbounded(None),
-            start: id(31 + i).try_into().expect("synthetic identity"),
-            end: id(31 + (i + 1) % 4).try_into().expect("synthetic identity"),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                id(31 + i).try_into().expect("synthetic identity"),
+                id(31 + (i + 1) % 4).try_into().expect("synthetic identity"),
+            )),
             tolerance: None,
+            native_ref: None,
         });
         brep.coedges.push(Coedge {
             id: id(21 + i).try_into().expect("synthetic identity"),
@@ -332,34 +342,38 @@ fn a_profile_face_loop_uses_its_body_key_and_custom_edge_names() {
             sense: Sense::Forward,
             pcurves: vec![],
             use_curve: None,
+            native_ref: None,
         });
         let mut values = naming_values(i64::from(NAMING_TYPE), i64::from(i + 1), 2);
         values.splice(
             5..5,
             [
-                AttributeValue::String("INV_NMX_GEN_TAG".into()),
-                AttributeValue::Integer(1),
+                Some(AttributeValue::String("INV_NMX_GEN_TAG".into())),
+                Some(AttributeValue::Integer(1)),
             ],
         );
         brep.attributes.push(SourceAttribute {
             id: format!("inventor:brep:attribute#{}", 51 + i)
                 .try_into()
                 .expect("synthetic profile fixture"),
-            target: AttributeTarget::Edge(id(11 + i).try_into().expect("synthetic identity")),
+            target: AttributeTarget::Edge(id(11 + i).try_into().expect("synthetic identity"))
+                .into(),
             name: super::CUSTOM_NAMING_ATTRIBUTE.into(),
             values,
+            native_ref: None,
         });
     }
     brep.attributes.push(SourceAttribute {
         id: "inventor:brep:attribute#60"
             .try_into()
             .expect("synthetic identity"),
-        target: AttributeTarget::Edge(id(11).try_into().expect("synthetic identity")),
+        target: AttributeTarget::Edge(id(11).try_into().expect("synthetic identity")).into(),
         name: super::CUSTOM_NAMING_ATTRIBUTE.into(),
-        values: vec![AttributeValue::Integer(0); 5]
+        values: vec![Some(AttributeValue::Integer(0)); 5]
             .into_iter()
-            .chain([AttributeValue::String("other_family".into())])
+            .chain([Some(AttributeValue::String("other_family".into()))])
             .collect(),
+        native_ref: None,
     });
     brep.body_native_keys.push(BodyNativeKey {
         source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
@@ -394,8 +408,8 @@ fn custom_edge_names_restore_a_selected_loop_that_the_sketch_table_lacks() {
         values.splice(
             5..5,
             [
-                AttributeValue::String("INV_NMX_GEN_TAG".into()),
-                AttributeValue::Integer(1),
+                Some(AttributeValue::String("INV_NMX_GEN_TAG".into())),
+                Some(AttributeValue::Integer(1)),
             ],
         );
         edge.name = edge_name(super::CUSTOM_NAMING_ATTRIBUTE, &values);
@@ -596,20 +610,21 @@ fn a_wire_that_does_not_close_leaves_the_selection_unresolved() {
         .is_none());
 }
 
-/// The winding number of a closed loop about `point`, from a dense polyline
-/// through its curves.
-fn polyline_winding(curves: &[LoopCurve], point: Point2) -> f64 {
-    let mut turns = 0.0;
-    for curve in curves {
-        let samples = match *curve {
+/// A dense polyline through each curve of a closed loop.
+fn loop_polylines(curves: &[LoopCurve]) -> Vec<Vec<Point2>> {
+    // The 256 chords of each arc in these tests stay within 4e-5 of it, far
+    // inside the 0.01 band that the test skips.
+    curves
+        .iter()
+        .map(|curve| match *curve {
             LoopCurve::Arc {
                 center,
                 radius,
                 start_angle,
                 sweep,
-            } => (0..=4000)
+            } => (0..=256)
                 .map(|step| {
-                    let angle = sweep.mul_add(f64::from(step) / 4000.0, start_angle);
+                    let angle = sweep.mul_add(f64::from(step) / 256.0, start_angle);
                     Point2::new(
                         radius.mul_add(angle.cos(), center.u),
                         radius.mul_add(angle.sin(), center.v),
@@ -620,10 +635,15 @@ fn polyline_winding(curves: &[LoopCurve], point: Point2) -> f64 {
                 let (start, end) = curve.ends();
                 vec![start, end]
             }
-        };
-        for pair in samples.windows(2) {
-            turns += chord_turn(pair[0], pair[1], point);
-        }
+        })
+        .collect()
+}
+
+/// The winding number of a closed loop about `point`, from its polylines.
+fn polyline_winding(polylines: &[Vec<Point2>], point: Point2) -> f64 {
+    let mut turns = 0.0;
+    for pair in polylines.iter().flat_map(|polyline| polyline.windows(2)) {
+        turns += chord_turn(pair[0], pair[1], point);
     }
     turns / std::f64::consts::TAU
 }
@@ -647,6 +667,7 @@ fn an_arc_turns_by_its_chord_and_the_segment_it_bounds() {
         vec![upper, arc((0.5, 0.5), radius, -3.0 * FRAC_PI_4, -1.5 * PI)],
     ];
     for curves in &loops {
+        let polylines = loop_polylines(curves);
         for i in 0..=40 {
             for j in 0..=40 {
                 let point = Point2::new(
@@ -661,7 +682,7 @@ fn an_arc_turns_by_its_chord_and_the_segment_it_bounds() {
                 }
                 assert_eq!(
                     encloses(curves, point),
-                    Some(polyline_winding(curves, point).round() != 0.0),
+                    Some(polyline_winding(&polylines, point).round() != 0.0),
                     "{point:?}"
                 );
             }

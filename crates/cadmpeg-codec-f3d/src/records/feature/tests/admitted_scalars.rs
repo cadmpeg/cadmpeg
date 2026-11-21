@@ -112,6 +112,8 @@ fn surface_extend_operation_refuses_a_nonpositive_tolerance() {
             edge_record_indices: vec![6],
             tolerance: positive(1.0e-6),
             tolerance_offset: 57,
+            method_code: None,
+            method_code_offset: None,
         },
         "tolerance",
         "PositiveReal",

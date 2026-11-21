@@ -198,9 +198,10 @@ fn project(
             )?;
             out.push(SourceAttribute {
                 id,
-                target: AttributeTarget::Document,
+                target: AttributeTarget::Document.into(),
                 name: alias.name.clone(),
-                values: value.cloned().into_iter().collect(),
+                values: value.cloned().into_iter().map(Some).collect(),
+                native_ref: None,
             });
         } else {
             unusable[unusable_count] = alias.pid;

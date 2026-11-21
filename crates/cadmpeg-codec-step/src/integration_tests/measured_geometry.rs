@@ -65,7 +65,7 @@ fn assert_close(computed: f64, expected: f64, numeric: f64) {
 #[test]
 fn writer_round_trip_keeps_measured_body_geometry() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    ir.model.bodies[0].transform = Some(
+    ir.geometry.bodies[0].transform = Some(
         Transform::affine([
             [0.0, -1.0, 0.0, 15.0],
             [1.0, 0.0, 0.0, 4.0],
@@ -194,7 +194,10 @@ fn reversed_shell_exchanges_have_no_orientation_findings() {
         let decoded = StepCodec::default()
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .expect("decode reversed-shell exchange");
-        assert!(!decoded.ir().model.faces.is_empty(), "{name} decodes faces");
+        assert!(
+            !decoded.ir().geometry.faces.is_empty(),
+            "{name} decodes faces"
+        );
         let findings = orientation_findings(decoded.ir());
         assert!(findings.is_empty(), "{name}: {findings:#?}");
     }
@@ -225,8 +228,8 @@ fn reversed_void_shell_measures_the_enclosed_volume_through_a_round_trip() {
         solid_representation(1, solid)
     );
     let decoded = decode_inline(&records);
-    assert_eq!(decoded.ir().model.regions.len(), 1);
-    assert_eq!(decoded.ir().model.regions[0].shells.len(), 2);
+    assert_eq!(decoded.ir().geometry.regions.len(), 1);
+    assert_eq!(decoded.ir().geometry.regions[0].shells.len(), 2);
     let findings = orientation_findings(decoded.ir());
     assert!(findings.is_empty(), "{findings:#?}");
     let before = measured("solid with a void", decoded.ir()).expect("the document is measured");
@@ -265,7 +268,7 @@ fn solid_cylinder_round_trip_keeps_measured_geometry() {
         let decoded = StepCodec::default()
             .decode(&mut Cursor::new(output), &DecodeOptions::default())
             .expect("decode the written cylinder");
-        assert_eq!(decoded.ir().model.bodies.len(), ir.model.bodies.len());
+        assert_eq!(decoded.ir().geometry.bodies.len(), ir.geometry.bodies.len());
         measures_agree("cylinder", &ir, decoded.ir())
             .expect("the round trip keeps its measured geometry");
     }
@@ -536,4 +539,178 @@ fn concave_dish_on_a_negative_radius_sphere_keeps_its_volume() {
         let (volume, numeric) = volume_by_face_sense(&decoded);
         assert_close(volume, (plate - dish) * (angles[1] - angles[0]), numeric);
     }
+}
+
+/// `ir` with each face on its negative-radius sphere carried by the
+/// procedural surface `wrap` builds on that sphere.
+fn with_wrapped_sphere(
+    mut ir: CadIr,
+    wrap: impl FnOnce(cadmpeg_ir::ids::SurfaceId) -> cadmpeg_ir::geometry::ProceduralSurfaceDefinition,
+) -> CadIr {
+    use cadmpeg_ir::geometry::{
+        ProceduralSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    };
+    use cadmpeg_ir::ids::{ProceduralSurfaceId, SurfaceId};
+
+    let sphere = ir
+        .geometry
+        .surfaces
+        .iter()
+        .find(|surface| {
+            matches!(
+                surface.geometry.solved(),
+                Some(SolvedSurfaceGeometry::Sphere(sphere)) if sphere.radius().get() < 0.0
+            )
+        })
+        .expect("a negative-radius sphere")
+        .id
+        .clone();
+    let wrapped = SurfaceId::mint("test:model:surface#wrapped").expect("identity grammar");
+    let construction =
+        ProceduralSurfaceId::mint("test:model:surface-construction#wrapped").expect("identity");
+    ir.geometry.surfaces.push(Surface {
+        id: wrapped.clone(),
+        source_object: None,
+        geometry: SurfaceGeometry::Procedural {
+            construction: construction.clone(),
+            cache: None,
+        },
+        native_ref: None,
+    });
+    ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
+        construction,
+        wrap(sphere.clone()),
+        None,
+    ));
+    for face in &mut ir.geometry.faces {
+        if face.surface == sphere {
+            face.surface = wrapped.clone();
+        }
+    }
+    ir.finalize();
+    ir
+}
+
+/// A face carried by a replica of a negative-radius sphere takes the
+/// written sphere's reversed normal through the replica, as a face on the
+/// sphere itself does.
+#[test]
+fn a_replicated_negative_radius_sphere_reverses_its_face() {
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    for angles in WEDGE_WINDOWS {
+        let ir = with_wrapped_sphere(dish_wedge(angles), |source| {
+            ProceduralSurfaceDefinition::Replica {
+                source,
+                transform: Transform::identity(),
+            }
+        });
+        let (text, _) = written_and_decoded(&ir);
+        assert!(!same_sense_on(&text, "SURFACE_REPLICA"), "{text}");
+    }
+}
+
+/// An offset of a negative-radius sphere runs along the carrier's normal,
+/// which the written sphere reverses: the record negates the distance, and
+/// the face takes the reversed normal.
+#[test]
+fn an_offset_negative_radius_sphere_reverses_its_distance_and_face() {
+    use cadmpeg_ir::geometry::surface_payloads::ParallelOffsetSurfaceConstruction;
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    for angles in WEDGE_WINDOWS {
+        let ir = with_wrapped_sphere(dish_wedge(angles), |support| {
+            ProceduralSurfaceDefinition::ParallelOffset(
+                ParallelOffsetSurfaceConstruction::try_new(support, 0.5, Some(false))
+                    .expect("offset"),
+            )
+        });
+        let (text, _) = written_and_decoded(&ir);
+        assert!(!same_sense_on(&text, "OFFSET_SURFACE"), "{text}");
+        let offset = text
+            .lines()
+            .find(|line| line.contains("OFFSET_SURFACE"))
+            .expect("written offset");
+        assert!(offset.contains(",-0.5,"), "{offset}");
+    }
+}
+
+/// A dome-shaped biquadratic B-spline patch over `[0, 20]²` whose normal
+/// `∂u × ∂v` points along `+z`, bounded by its four boundary curves in
+/// counterclockwise order about `+z`, with the face sense `sense`.
+fn dome_patch(sense: &str) -> String {
+    format!(
+        "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));
+#101=CARTESIAN_POINT('',(0.,0.,0.));
+#102=CARTESIAN_POINT('',(0.,10.,3.));
+#103=CARTESIAN_POINT('',(0.,20.,0.));
+#104=CARTESIAN_POINT('',(10.,0.,3.));
+#105=CARTESIAN_POINT('',(10.,10.,6.));
+#106=CARTESIAN_POINT('',(10.,20.,3.));
+#107=CARTESIAN_POINT('',(20.,0.,0.));
+#108=CARTESIAN_POINT('',(20.,10.,3.));
+#109=CARTESIAN_POINT('',(20.,20.,0.));
+#110=B_SPLINE_SURFACE_WITH_KNOTS('',2,2,((#101,#102,#103),(#104,#105,#106),(#107,#108,#109)),.UNSPECIFIED.,.F.,.F.,.F.,(3,3),(3,3),(0.,1.),(0.,1.),.UNSPECIFIED.);
+#111=VERTEX_POINT('',#101);
+#112=VERTEX_POINT('',#107);
+#113=VERTEX_POINT('',#109);
+#114=VERTEX_POINT('',#103);
+#115=B_SPLINE_CURVE_WITH_KNOTS('',2,(#101,#104,#107),.UNSPECIFIED.,.F.,.F.,(3,3),(0.,1.),.UNSPECIFIED.);
+#116=EDGE_CURVE('',#111,#112,#115,.T.);
+#117=B_SPLINE_CURVE_WITH_KNOTS('',2,(#107,#108,#109),.UNSPECIFIED.,.F.,.F.,(3,3),(0.,1.),.UNSPECIFIED.);
+#118=EDGE_CURVE('',#112,#113,#117,.T.);
+#119=B_SPLINE_CURVE_WITH_KNOTS('',2,(#103,#106,#109),.UNSPECIFIED.,.F.,.F.,(3,3),(0.,1.),.UNSPECIFIED.);
+#120=EDGE_CURVE('',#114,#113,#119,.T.);
+#121=B_SPLINE_CURVE_WITH_KNOTS('',2,(#101,#102,#103),.UNSPECIFIED.,.F.,.F.,(3,3),(0.,1.),.UNSPECIFIED.);
+#122=EDGE_CURVE('',#111,#114,#121,.T.);
+#123=ORIENTED_EDGE('',*,*,#116,.T.);
+#124=ORIENTED_EDGE('',*,*,#118,.T.);
+#125=ORIENTED_EDGE('',*,*,#120,.F.);
+#126=ORIENTED_EDGE('',*,*,#122,.F.);
+#127=EDGE_LOOP('',(#123,#124,#125,#126));
+#128=FACE_OUTER_BOUND('',#127,.T.);
+#129=ADVANCED_FACE('patch',(#128),#110,{sense});
+#130=OPEN_SHELL('',(#129));
+#131=SHELL_BASED_SURFACE_MODEL('',(#130));
+#132=MANIFOLD_SURFACE_SHAPE_REPRESENTATION('',(#131),#2);"
+    )
+}
+
+/// The measurement checks of `ir` under the default profile.
+fn measurement_checks(ir: &CadIr) -> Vec<cadmpeg_ir::report::check::Finding> {
+    use cadmpeg_ir::report::check::Check;
+
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let ctx = DecodeContext::for_loaded_input(&arena, &policy, 0).expect("context");
+    let findings =
+        cadmpeg_measure::findings(&ctx, ir, MeasureOptions::default()).expect("findings");
+    ctx.finish_session().expect("session stays unrefused");
+    findings
+        .into_iter()
+        .filter(|finding| {
+            matches!(
+                finding.check,
+                Check::Orientation | Check::MeasurementIncomplete
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_free_form_face_is_checked_against_its_loop_winding() {
+    use cadmpeg_ir::report::check::Check;
+
+    let agreeing = decode_inline(&dome_patch(".T."));
+    assert_eq!(measurement_checks(agreeing.ir()), []);
+
+    let contradicting = decode_inline(&dome_patch(".F."));
+    let found = measurement_checks(contradicting.ir());
+    let [finding] = found.as_slice() else {
+        panic!("one finding: {found:#?}");
+    };
+    assert_eq!(finding.check, Check::Orientation);
+    assert_eq!(
+        finding.entity.as_deref(),
+        Some(contradicting.ir().geometry.faces[0].id.as_str())
+    );
 }

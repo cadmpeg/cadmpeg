@@ -7,12 +7,14 @@ use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
 use cadmpeg_asm::brep::{decode_with_header, AsmBrep, DecodePurpose};
 use cadmpeg_asm::kernel_header::{BinaryHeader, KernelHeader};
 use cadmpeg_asm::{sab, sat};
+use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::{AnnotationBuilder, StreamHandle};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use std::collections::BTreeMap;
 
 use crate::detect::{classify, header_attributes, StreamKind};
@@ -89,21 +91,20 @@ fn decode_asm_binary(
         Some(brep)
     };
     let mut attributes = BTreeMap::new();
-    header_attributes(&header.metadata, Family::Asm, &mut attributes);
+    source_header_attributes(&header.metadata, Family::Asm, &mut attributes);
     let evidence = StreamEvidence::Binary {
         family: Family::Asm,
         header,
         stream: Some(stream),
     };
-    let (matched, kernel) = layers(&evidence);
     let mut result = build_result(
         ctx,
+        Sha256Digest::digest(bytes),
         payload,
         attributes,
         &header.metadata,
         None,
-        matched,
-        &kernel,
+        layers(&evidence),
     )?;
     if header.metadata.unreadable_product_fields().next().is_some() {
         retain_source(
@@ -171,7 +172,7 @@ fn decode_acis_binary(
         Some(brep)
     };
     let mut attributes = BTreeMap::new();
-    header_attributes(&header.metadata, Family::Acis, &mut attributes);
+    source_header_attributes(&header.metadata, Family::Acis, &mut attributes);
     // Every band frames and decodes the same way. Classification states
     // whether the grammar applied is the one the framed stream declares; it
     // gates nothing. Build the admitted evidence only after framing succeeds.
@@ -180,15 +181,14 @@ fn decode_acis_binary(
         header,
         stream: Some(stream),
     };
-    let (matched, kernel) = layers(&evidence);
     let mut result = build_result(
         ctx,
+        Sha256Digest::digest(bytes),
         payload,
         attributes,
         &header.metadata,
         None,
-        matched,
-        &kernel,
+        layers(&evidence),
     )?;
     if header.metadata.unreadable_product_fields().next().is_some() {
         retain_source(
@@ -234,7 +234,7 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
         };
     let header = text_header.as_kernel_header();
     let mut attributes = BTreeMap::new();
-    header_attributes(&header, branch.into(), &mut attributes);
+    source_header_attributes(&header, branch.into(), &mut attributes);
     if let sat::TextUnits::Declared(scale) = text_header.units() {
         attributes.insert("scale".to_owned(), scale.get().to_string());
     }
@@ -296,12 +296,12 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
     };
     let mut result = build_result(
         ctx,
+        Sha256Digest::digest(bytes),
         payload,
         attributes,
         &header,
         Some(branch),
-        matched,
-        &kernel,
+        (matched, kernel),
     )?;
     crate::loss::text_stream_losses(
         text_header.diagnostics.iter().chain(&framing),
@@ -370,11 +370,18 @@ fn retain_source<'a>(
     extents: impl IntoIterator<Item = (&'a str, std::ops::Range<usize>)>,
 ) -> Result<(), CodecError> {
     let mut retained = Vec::new();
+    let mut untyped = Vec::new();
     for (id, span) in extents {
         ctx.retain_bytes(
             cadmpeg_core::decode::u64_from_index(span.len()),
             "SAT recovered source bytes",
         )?;
+        if !matches!(
+            id,
+            "sat:source:header#0" | "sat:source:concatenated-streams#0"
+        ) {
+            untyped.push(id);
+        }
         retained.push(cadmpeg_ir::UnknownRecord::retained(
             cadmpeg_ir::ids::UnknownId::mint(id.to_owned()).map_err(CodecError::malformed)?,
             cadmpeg_core::decode::u64_from_index(span.start),
@@ -387,7 +394,13 @@ fn retain_source<'a>(
     }
     result
         .source_fidelity
-        .attach_native_unknown_records(&mut result.ir, FORMAT, retained, ctx)
+        .attach_native_unknown_records(&mut result.ir, FORMAT, retained, ctx)?;
+    for id in untyped {
+        result
+            .source_fidelity
+            .mark_untyped(id, [ArenaClass::Model])?;
+    }
+    Ok(())
 }
 
 /// Refusal for bytes whose SAT discriminant matched but whose stream did not
@@ -417,12 +430,12 @@ fn unsupported_unframed(evidence: &StreamEvidence<'_>, message: impl Into<String
 
 fn build_result(
     ctx: &DecodeContext<'_>,
+    decode_digest: Sha256Digest,
     payload: Option<AsmBrep>,
     attributes: BTreeMap<String, String>,
     header: &KernelHeader,
     text_dialect: Option<sat::Terminator>,
-    matched: DialectMatch,
-    kernel: &DialectMatch,
+    (matched, kernel): (DialectMatch, DialectMatch),
 ) -> Result<Decoded, CodecError> {
     let mut ir = CadIr::decoded(SourceMeta::classified(
         DialectLayers::of(matched)
@@ -469,7 +482,7 @@ fn build_result(
                 losses,
                 ..DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {})
             },
-            source_fidelity: cadmpeg_ir::SourceFidelity::default(),
+            source_fidelity: cadmpeg_ir::SourceFidelity::new(decode_digest),
         });
     };
 
@@ -506,9 +519,10 @@ fn build_result(
         },
     ) = transfer_into_ir(ctx, &mut ir, FORMAT, brep)?;
 
-    let geometry_transferred =
-        !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
-    losses.extend(dialect_loss(kernel));
+    let geometry_transferred = !(ir.geometry.surfaces.is_empty()
+        && ir.geometry.points.is_empty()
+        && ir.geometry.faces.is_empty());
+    losses.extend(dialect_loss(&kernel));
     if !geometry_transferred {
         let branch = text_dialect.map_or(String::new(), |dialect| {
             format!(" The stream ends with `{}`.", terminator_line(dialect))
@@ -569,8 +583,20 @@ fn build_result(
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
     }
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations.build());
+    let untyped = unknowns
+        .iter()
+        .filter(|record| {
+            let id = record.id().as_str();
+            !id.contains(":brep:tvertex#") && !id.contains(":brep:tedge#")
+        })
+        .map(|record| record.id().clone())
+        .collect::<Vec<_>>();
+    let mut source_fidelity =
+        cadmpeg_ir::SourceFidelity::with_annotations(annotations.build(), decode_digest);
     source_fidelity.attach_native_unknown_records(&mut ir, FORMAT, unknowns, ctx)?;
+    for id in untyped {
+        source_fidelity.mark_untyped(id.as_str(), [ArenaClass::Model])?;
+    }
     Ok(Decoded {
         ir,
         body,
@@ -582,7 +608,7 @@ fn unmapped_support_chart_losses(ir: &CadIr) -> Vec<cadmpeg_ir::report::loss::Lo
     use cadmpeg_ir::geometry::ProceduralCurveDefinition;
 
     let mut losses = Vec::new();
-    for curve in &ir.model.procedural_curves {
+    for curve in &ir.geometry.procedural_curves {
         let context = match curve.definition() {
             ProceduralCurveDefinition::Intersection { context, .. } => context,
             ProceduralCurveDefinition::SurfaceCurve { family } => family.context(),
@@ -601,6 +627,17 @@ fn unmapped_support_chart_losses(ir: &CadIr) -> Vec<cadmpeg_ir::report::loss::Lo
         }
     }
     losses
+}
+
+/// The kernel header facts a decoded document keeps; the declared entity
+/// count is a count of source records.
+fn source_header_attributes(
+    header: &KernelHeader,
+    family: Family,
+    attributes: &mut BTreeMap<String, String>,
+) {
+    header_attributes(header, family, attributes);
+    attributes.remove("kernel_entity_count");
 }
 
 #[cfg(test)]
