@@ -551,10 +551,11 @@ pub(crate) fn project_compact_sketch_profiles(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<Vec<SketchId>, CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
     let metadata_ids = history_metadata_ids(histories);
+    let mut assumed_planes = Vec::new();
 
     let native_features = crate::records::HistoryFeatures::new(histories);
     let feature_positions = FeaturePositions::new(features);
@@ -836,7 +837,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 sketch.profiles = profiles.try_into().map_err(CodecError::malformed)?;
                 sketches.push(sketch);
                 if assumed {
-                    losses.push(plane_assumed_note(&sketch_id));
+                    assumed_planes.push(sketch_id.clone());
                 }
                 record_component_marker_coordinates(&mut features[feature_index], top_frame);
                 features[feature_index].evaluation.set_definition(
@@ -979,7 +980,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 sketch.profiles = profiles.try_into().map_err(CodecError::malformed)?;
                 sketches.push(sketch);
                 if assumed {
-                    losses.push(plane_assumed_note(&sketch_id));
+                    assumed_planes.push(sketch_id.clone());
                 }
                 record_component_marker_coordinates(&mut features[feature_index], top_frame);
                 features[feature_index].evaluation.set_definition(
@@ -1057,7 +1058,7 @@ pub(crate) fn project_compact_sketch_profiles(
             sketch.profiles = profiles.try_into().map_err(CodecError::malformed)?;
             sketches.push(sketch);
             if assumed {
-                losses.push(plane_assumed_note(&sketch_id));
+                assumed_planes.push(sketch_id.clone());
             }
             record_component_marker_coordinates(&mut features[feature_index], top_frame);
             features[feature_index].evaluation.set_definition(
@@ -1069,7 +1070,7 @@ pub(crate) fn project_compact_sketch_profiles(
             );
         }
     }
-    Ok(())
+    Ok(assumed_planes)
 }
 
 fn profile_entity(
@@ -1120,11 +1121,18 @@ pub(crate) struct HeldMarkerGeometry {
     unchecked: HashMap<String, ChordConflict>,
     /// The lines an earlier finalize pass examined.
     finalized: HashSet<SketchEntityId>,
-    /// The sketches that take the retained Front fallback frame.
+    /// The sketches that take the retained Front fallback frame; the
+    /// finalize pass charges each one that remains.
     assumed_planes: Vec<SketchId>,
 }
 
 impl HeldMarkerGeometry {
+    /// Holds `sketches`, which take the retained Front fallback frame, for
+    /// the finalize pass.
+    pub(crate) fn hold_assumed_planes(&mut self, sketches: Vec<SketchId>) {
+        self.assumed_planes.extend(sketches);
+    }
+
     /// Held geometry for a projection over `sketch_entities` after an
     /// earlier finalize pass over them.
     pub(crate) fn after_finalized(sketch_entities: &[SketchEntity]) -> Self {
@@ -1151,6 +1159,7 @@ impl HeldMarkerGeometry {
 /// and charges one loss for each line whose curve record states another
 /// form.
 pub(crate) fn finalize_unread_marker_entities(
+    sketches: &[Sketch],
     sketch_entities: &mut Vec<SketchEntity>,
     held: HeldMarkerGeometry,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
@@ -1164,7 +1173,13 @@ pub(crate) fn finalize_unread_marker_entities(
         finalized,
         assumed_planes,
     } = held;
-    losses.extend(assumed_planes.iter().map(plane_assumed_note));
+    let assumed_planes = assumed_planes.iter().collect::<HashSet<_>>();
+    losses.extend(
+        sketches
+            .iter()
+            .filter(|sketch| assumed_planes.contains(&sketch.id))
+            .map(|sketch| plane_assumed_note(&sketch.id)),
+    );
     sketch_entities.extend(handles);
     for entity in sketch_entities.iter_mut() {
         let SketchGeometryDefinition::Native { native_kind } = entity.geometry.definition() else {

@@ -3541,15 +3541,18 @@ fn build_geometry_ir(
         &mut ir,
         &supplemental_config_lanes,
     )?;
-    crate::resolved_features::profiles::project_compact_sketch_profiles(
-        ctx,
-        &mut ir.model.features,
-        &mut sketches,
-        &mut sketch_entities,
-        &histories,
-        &lanes,
-        &mut pmi_losses,
-    )?;
+    let mut held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::default();
+    held_handles.hold_assumed_planes(
+        crate::resolved_features::profiles::project_compact_sketch_profiles(
+            ctx,
+            &mut ir.model.features,
+            &mut sketches,
+            &mut sketch_entities,
+            &histories,
+            &lanes,
+            &mut pmi_losses,
+        )?,
+    );
     // Marker-backed sketches can originate in either lane family. Their
     // geometry and constraints must use the same complete lane set.
     let base_lane_count = lanes.len();
@@ -3565,7 +3568,6 @@ fn build_geometry_ir(
         );
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
-    let mut held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::default();
     crate::resolved_features::profiles::project_marker_backed_sketches(
         ctx,
         &mut ir.model.features,
@@ -3644,6 +3646,7 @@ fn build_geometry_ir(
         sketch_lanes,
     )?;
     crate::resolved_features::profiles::finalize_unread_marker_entities(
+        &sketches,
         &mut sketch_entities,
         held_handles,
         &mut pmi_losses,
@@ -4858,15 +4861,18 @@ fn build_metadata_ir(
         &mut ir,
         &supplemental_config_lanes,
     )?;
-    crate::resolved_features::profiles::project_compact_sketch_profiles(
-        ctx,
-        &mut ir.model.features,
-        &mut ir.model.sketches,
-        &mut ir.model.sketch_entities,
-        &histories,
-        &lanes,
-        &mut pmi_losses,
-    )?;
+    let mut held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::default();
+    held_handles.hold_assumed_planes(
+        crate::resolved_features::profiles::project_compact_sketch_profiles(
+            ctx,
+            &mut ir.model.features,
+            &mut ir.model.sketches,
+            &mut ir.model.sketch_entities,
+            &histories,
+            &lanes,
+            &mut pmi_losses,
+        )?,
+    );
     // Marker-backed sketches can originate in either lane family. Their
     // geometry and constraints must use the same complete lane set.
     let base_lane_count = lanes.len();
@@ -4882,7 +4888,6 @@ fn build_metadata_ir(
         );
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
-    let mut held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::default();
     crate::resolved_features::profiles::project_marker_backed_sketches(
         ctx,
         &mut ir.model.features,
@@ -5046,6 +5051,7 @@ fn build_metadata_ir(
         lanes,
     );
     crate::resolved_features::profiles::finalize_unread_marker_entities(
+        &ir.model.sketches,
         &mut ir.model.sketch_entities,
         held_handles,
         &mut pmi_losses,
