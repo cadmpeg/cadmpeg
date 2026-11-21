@@ -32,9 +32,10 @@ const LINEAR_RESOLUTION_MM: f64 = 1.0e-5;
 /// Relative roundoff within which a range end equals a NURBS domain end.
 const DOMAIN_END_ROUNDOFF_RELATIVE: f64 = 1.0e-9;
 
-/// The writer bounds every edge by its vertices. A range the decode derives
-/// from those vertices is stated by them; any other range is not written. A
-/// line edge decodes with no range, so its range is not written either.
+/// A generated partition bounds every edge by its vertices. A range the
+/// decode derives from those vertices is stated by them; any other range is
+/// not written. A line edge decodes with no range, so its range is not
+/// written either.
 pub(super) fn edge_ranges_omitted(
     ir: &CadIr,
     annotations: &Annotations,

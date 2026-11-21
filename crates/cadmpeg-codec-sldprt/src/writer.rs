@@ -190,7 +190,11 @@ pub(crate) fn write_semantic_with_records(
     let ir = &normalized;
     let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new())?;
     losses.extend(reduce::invalid_records(ir, &validation));
-    losses.extend(reduce::edge_ranges_omitted(ir, annotations).map_err(CodecError::ResourceLimit)?);
+    if !retain_native_brep {
+        losses.extend(
+            reduce::edge_ranges_omitted(ir, annotations).map_err(CodecError::ResourceLimit)?,
+        );
+    }
     losses.extend(reduce::empty_output(ir));
     let brep_empty = ir.geometry.faces.is_empty();
     let coverage = semantic_coverage(retained_partition.is_some());
