@@ -41,7 +41,7 @@ fn tessellate_scope_reads_owner_slots_and_operand_run() {
     let parsed = read(&scope([30, 31, 32, 33], &[40])).unwrap();
     assert_eq!(parsed.owners, [Some(30), Some(31), Some(32), Some(33)]);
     assert_eq!(parsed.operand_count, Some(1));
-    assert_eq!(parsed.operands, [40]);
+    assert_eq!(parsed.operands, [Some(40)]);
     assert_eq!(parsed.tail_error, None);
     assert!(parsed.deviations.is_empty());
 }
@@ -50,7 +50,7 @@ fn tessellate_scope_reads_owner_slots_and_operand_run() {
 fn tessellate_scope_reads_the_operand_word_as_a_count() {
     let parsed = read(&scope([30, 31, 32, 33], &[40, 41])).unwrap();
     assert_eq!(parsed.operand_count, Some(2));
-    assert_eq!(parsed.operands, [40, 41]);
+    assert_eq!(parsed.operands, [Some(40), Some(41)]);
     assert_eq!(parsed.tail_error, None);
 }
 
@@ -66,6 +66,19 @@ fn tessellate_scope_keeps_owners_before_an_unreadable_operand_run() {
     assert_eq!(
         parsed.tail_error,
         Some(MeshOperationFraming("tessellate operand count"))
+    );
+}
+
+#[test]
+fn tessellate_scope_leaves_operands_after_a_null_reference_unread() {
+    let mut bytes = scope([30, 31, 32, 33], &[40, 41]);
+    let second = prefix::LEN + 11;
+    bytes.splice(second..second + 11, [0]);
+    let parsed = read(&bytes).unwrap();
+    assert_eq!(parsed.operands, [Some(40), None]);
+    assert_eq!(
+        parsed.tail_error,
+        Some(MeshOperationFraming("tessellate operand reference"))
     );
 }
 

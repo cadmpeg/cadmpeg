@@ -106,6 +106,9 @@ pub(in crate::decode) fn bind_features(
                 }
                 let mut deviations = parsed.deviations;
                 for (ordinal, operand) in parsed.operands.into_iter().enumerate() {
+                    let Some(operand) = operand else {
+                        continue;
+                    };
                     notes.property(format!("mesh-tessellate-operand:{ordinal}"), operand);
                     let reason = match records.tessellate_operand(operand) {
                         Ok(read) => {

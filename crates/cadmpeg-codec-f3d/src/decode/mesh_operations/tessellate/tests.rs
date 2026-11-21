@@ -23,13 +23,19 @@ fn record(index: u32, tag: [u8; 3], length: usize) -> Vec<u8> {
     bytes
 }
 
-fn fixture(operand_version: u32) -> (Vec<u8>, Vec<u8>) {
+fn fixture(operand_version: u32, null_second_operand: bool) -> (Vec<u8>, Vec<u8>) {
     let mut scope = record(7, *b"256", 21);
     for owner in [11, 31, 32, 33] {
         scope.extend_from_slice(&reference(owner));
     }
-    scope.extend_from_slice(&1u32.to_le_bytes());
-    scope.extend_from_slice(&reference(20));
+    if null_second_operand {
+        scope.extend_from_slice(&2u32.to_le_bytes());
+        scope.extend_from_slice(&reference(20));
+        scope.push(0);
+    } else {
+        scope.extend_from_slice(&1u32.to_le_bytes());
+        scope.extend_from_slice(&reference(20));
+    }
     scope.extend_from_slice(&[1, 1, 0, 0, 0, 0]);
     scope.extend_from_slice(&36u32.to_le_bytes());
     for word in "00000000-0000-0000-0000-000000000000".encode_utf16() {
@@ -175,7 +181,7 @@ fn project(stream: &[u8], metadata: Option<&[u8]>) -> (Feature, Vec<String>) {
 
 #[test]
 fn tessellation_records_owner_roles_operand_group_and_produced_body() {
-    let (stream, meta) = fixture(1);
+    let (stream, meta) = fixture(1, false);
     let (feature, codes) = project(&stream, Some(&meta));
     assert_eq!(feature.evaluation.definition(), &native());
     for (key, expected) in [
@@ -199,7 +205,7 @@ fn tessellation_records_owner_roles_operand_group_and_produced_body() {
 
 #[test]
 fn tessellation_with_an_unreadable_operand_keeps_the_scope_fields() {
-    let (stream, meta) = fixture(2);
+    let (stream, meta) = fixture(2, false);
     let (feature, codes) = project(&stream, Some(&meta));
     assert_eq!(feature.evaluation.definition(), &native());
     assert_eq!(feature.source_properties["mesh-tessellate-operand:0"], "20");
@@ -211,9 +217,31 @@ fn tessellation_with_an_unreadable_operand_keeps_the_scope_fields() {
 
 #[test]
 fn tessellation_without_metadata_keeps_its_native_parameters() {
-    let (stream, _) = fixture(1);
+    let (stream, _) = fixture(1, false);
     let (feature, codes) = project(&stream, None);
     assert_eq!(feature.evaluation.definition(), &native());
     assert!(feature.source_properties.is_empty());
     assert_eq!(codes, ["feature.mesh-tessellate-scope-unparsed"]);
+}
+
+#[test]
+fn tessellation_binds_no_operand_after_an_unread_reference() {
+    let (stream, meta) = fixture(1, true);
+    let (feature, codes) = project(&stream, Some(&meta));
+    assert_eq!(
+        feature.source_properties["mesh-tessellate-operand-count"],
+        "2"
+    );
+    assert_eq!(feature.source_properties["mesh-tessellate-operand:0"], "20");
+    assert!(!feature
+        .source_properties
+        .contains_key("mesh-tessellate-operand:1"));
+    assert_eq!(
+        codes
+            .iter()
+            .filter(|code| code.as_str() == "feature.mesh-tessellate-source-unresolved")
+            .count(),
+        1
+    );
+    assert!(codes.contains(&"feature.mesh-tessellate-scope-unparsed".to_owned()));
 }

@@ -25,7 +25,7 @@ pub(crate) const OWNER_ROLES: [&str; 4] = [
 pub(crate) struct MeshTessellateScope {
     pub(crate) owners: [Option<u32>; 4],
     pub(crate) operand_count: Option<u32>,
-    pub(crate) operands: Vec<u32>,
+    pub(crate) operands: Vec<Option<u32>>,
     pub(crate) tail_error: Option<MeshOperationFraming>,
     pub(crate) deviations: Vec<(&'static str, u32)>,
 }
@@ -133,10 +133,10 @@ pub(crate) fn read_scope(
         let Some(count) = bounded_len(u64::from(declared), 1, bytes.len() - cursor.at) else {
             return Ok(Err(MeshOperationFraming("tessellate operand count")));
         };
-        parsed.operands = ctx.alloc_filled(count, 0, "F3D mesh tessellate operands")?;
+        parsed.operands = ctx.alloc_filled(count, None, "F3D mesh tessellate operands")?;
         for operand in &mut parsed.operands {
             match cursor.reference("tessellate operand reference") {
-                Ok(reference) => *operand = reference,
+                Ok(reference) => *operand = Some(reference),
                 Err(error) => return Ok(Err(error)),
             }
         }
