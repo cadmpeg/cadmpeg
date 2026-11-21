@@ -1401,3 +1401,19 @@ fn retained_scope_cylinder_only_state_retains_topology_and_memberships() {
 
     assert_identity_query(&mut history, &requested);
 }
+#[test]
+fn a_changed_envelope_bound_has_a_row_delta() {
+    let before = AsmHistoricalEnvelope {
+        entity: 7,
+        boundary: vec![8, 9, 10],
+        low: Point3::new(0.0, 0.0, 0.0),
+        high: Point3::new(1.0, 1.0, 1.0),
+    };
+    let after = AsmHistoricalEnvelope {
+        high: Point3::new(2.0, 1.0, 1.0),
+        ..before.clone()
+    };
+    let delta = AsmHistoricalRowDelta::between(&[before], std::slice::from_ref(&after)).unwrap();
+    assert_eq!(delta.set, vec![after]);
+    assert!(delta.removed.is_empty());
+}

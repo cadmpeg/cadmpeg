@@ -3,9 +3,10 @@ use super::Slots;
 use crate::history_records::{
     AsmHistoricalBodyDesignLink, AsmHistoricalCarrierBinding, AsmHistoricalCoedge,
     AsmHistoricalCurveAxis, AsmHistoricalCylinder, AsmHistoricalEdge, AsmHistoricalEdgeSample,
-    AsmHistoricalOptionalCarrierBinding, AsmHistoricalPersistentSubentityTag, AsmHistoricalPlane,
-    AsmHistoricalPoint, AsmHistoricalRelation, AsmHistoricalSurfaceAxis,
-    AsmHistoricalSurfaceRadius, AsmHistoricalTopology,
+    AsmHistoricalEnvelope, AsmHistoricalOptionalCarrierBinding,
+    AsmHistoricalPersistentSubentityTag, AsmHistoricalPlane, AsmHistoricalPoint,
+    AsmHistoricalRelation, AsmHistoricalSurfaceAxis, AsmHistoricalSurfaceRadius,
+    AsmHistoricalTopology,
 };
 use std::collections::BTreeMap;
 
@@ -13,7 +14,7 @@ use std::collections::BTreeMap;
 type Families = u64;
 
 fn group<T>(
-    rows: Vec<T>,
+    rows: impl IntoIterator<Item = T>,
     key: impl Fn(&T) -> i64,
     family: Families,
     families: &mut BTreeMap<i64, Families>,
@@ -188,6 +189,8 @@ indexed_topology! {
         vertex_points = 22: AsmHistoricalCarrierBinding => |row: &AsmHistoricalCarrierBinding| row.entity,
         point_positions = 23: AsmHistoricalPoint => |row: &AsmHistoricalPoint| row.point,
         edge_samples = 24: AsmHistoricalEdgeSample => |row: &AsmHistoricalEdgeSample| row.edge,
+        face_envelopes = 34: AsmHistoricalEnvelope => |row: &AsmHistoricalEnvelope| row.entity,
+        edge_envelopes = 35: AsmHistoricalEnvelope => |row: &AsmHistoricalEnvelope| row.entity,
     }
     containers {
         bodies = 25: i64 => |row: &i64| *row,

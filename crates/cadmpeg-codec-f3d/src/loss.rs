@@ -729,6 +729,7 @@ pub(crate) enum F3dLossCode {
     FeatureSketchProfileFlagsAssumed,
     /// Extrude profile selections skipped the sketch arrangement search at a local cap.
     FeatureProfileArrangementCapped,
+    FeatureProfileJoinEnvelopeCapped,
     FeatureProfileCrossingRunsCapped,
     /// Extrude profile selections skipped a certified profile test at a local cap.
     FeatureProfileDensificationCapped,
@@ -1730,6 +1731,7 @@ impl F3dLossCode {
         Self::FeatureExtrudeProfileFaceCurved,
         Self::FeatureSketchProfileFlagsAssumed,
         Self::FeatureProfileArrangementCapped,
+        Self::FeatureProfileJoinEnvelopeCapped,
         Self::FeatureProfileCrossingRunsCapped,
         Self::FeatureProfileDensificationCapped,
         Self::FeatureProfileCrossingLoopCapped,
@@ -2719,6 +2721,7 @@ impl F3dLossCode {
             Self::FeatureExtrudeProfileFaceCurved => "feature.extrude-profile-face-curved",
             Self::FeatureProfileSelectionNative => "feature.profile-selection-native",
             Self::FeatureProfileArrangementCapped => "feature.profile-arrangement-capped",
+            Self::FeatureProfileJoinEnvelopeCapped => "feature.profile-join-envelope-capped",
             Self::FeatureProfileCrossingRunsCapped => "feature.profile-crossing-runs-capped",
             Self::FeatureProfileDensificationCapped => "feature.profile-densification-capped",
             Self::FeatureProfileCrossingLoopCapped => "feature.profile-crossing-loop-capped",
@@ -3691,6 +3694,7 @@ impl F3dLossCode {
             | Self::FeatureExtrudeProfileFaceCurved
             | Self::FeatureSketchProfileFlagsAssumed
             | Self::FeatureProfileArrangementCapped
+            | Self::FeatureProfileJoinEnvelopeCapped
             | Self::FeatureProfileCrossingRunsCapped
             | Self::FeatureProfileDensificationCapped
             | Self::FeatureProfileCrossingLoopCapped
@@ -4407,6 +4411,7 @@ impl F3dLossCode {
             | Self::FeatureExtrudeProfileFaceCurved
             | Self::FeatureSketchProfileFlagsAssumed
             | Self::FeatureProfileArrangementCapped
+            | Self::FeatureProfileJoinEnvelopeCapped
             | Self::FeatureProfileCrossingRunsCapped
             | Self::FeatureProfileDensificationCapped
             | Self::FeatureProfileCrossingLoopCapped
@@ -5236,6 +5241,7 @@ mod tests {
                 "feature.extrude-profile-face-curved",
                 "feature.sketch-profile-flags-assumed",
                 "feature.profile-arrangement-capped",
+                "feature.profile-join-envelope-capped",
                 "feature.profile-crossing-runs-capped",
                 "feature.profile-densification-capped",
                 "feature.profile-crossing-loop-capped",
