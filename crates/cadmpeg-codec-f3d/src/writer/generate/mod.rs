@@ -224,6 +224,16 @@ fn attempt<W: Write + Seek>(
         let mut losses = roster_losses(target, &native);
         losses.extend(design.into_losses());
         losses.extend(unstated_visibility);
+        losses.extend(cadmpeg_ir::codec::write::value_unwritable(
+            "F3D",
+            "writes these bodies as visible: the Base Feature design records hold no body visibility",
+            target
+                .geometry
+                .bodies
+                .iter()
+                .filter(|body| body.visible == Some(false))
+                .map(|body| body.id.to_string()),
+        ));
         return Ok((coverage, losses));
     }
     let mut neutral_records = None;
