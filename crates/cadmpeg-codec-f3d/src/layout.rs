@@ -13444,3 +13444,19 @@ pub(crate) mod base_feature_browser_root_prefix {
     /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
     pub(crate) const UNSTATED: [(usize, usize); 4] = [(0, 11), (41, 15), (61, 624), (685, 11)];
 }
+
+/// Byte offsets for the `local_component_occurrence_attributed_source_matrix` record.
+///
+/// Spec §3.1. Record length 129 B.
+///
+/// ```text
+/// Offsets are relative to the source flag after the occurrence ordinal. The carrier GUID follows this matrix.
+/// ```
+pub(crate) mod local_component_occurrence_attributed_source_matrix {
+    /// Offset of `source_flag` (`u8`). Spec §3.1.
+    pub(crate) const SOURCE_FLAG: usize = 0;
+    /// Stated value of `source_flag` (`u8`). Spec §3.1.
+    pub(crate) const SOURCE_FLAG_VALUE: u8 = 0;
+    /// Offset of `source_matrix` (`bytes[128]`). Spec §3.1.
+    pub(crate) const SOURCE_MATRIX: usize = 1;
+}

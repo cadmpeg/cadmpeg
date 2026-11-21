@@ -15512,6 +15512,20 @@ Offsets are relative to the collection's indexed header. The `k` container refer
 | 70 | 8 | `crv_tag_id_idx` | `u64` | little | spec | The sketch collection of a component with `k` sketches stores, in order |
 | 78 | 4 | `container_count` | `u32` | little | spec | The sketch collection of a component with `k` sketches stores, in order |
 
+## `local_component_occurrence_attributed_source_matrix`
+
+Spec §3.1 · layout: byte offsets · size: 129 B
+
+Offsets are relative to the source flag after the occurrence ordinal. The carrier GUID follows this matrix.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `source_flag` | `u8` | little | spec | The two-byte prefix form also permits source flag `u8 0` after the ordinal · value `0` |
+| 1 | 128 | `source_matrix` | `bytes[128]` | little | spec | The source matrix starts one byte after this flag and occupies 128 bytes. |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

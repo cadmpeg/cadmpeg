@@ -1257,6 +1257,41 @@ fn an_object_snapshot_with_an_unproven_body_frame_keeps_its_subtree_native() {
 }
 
 #[test]
+fn an_object_snapshot_with_an_explicit_source_frame_uses_its_closing_local_pose() {
+    let (original, components) = fixture(1);
+    let expected = project(&original, &components, &[]);
+    for source_flag in [0, 1] {
+        let mut carriers = original.clone();
+        let carrier = carriers
+            .iter_mut()
+            .find(|carrier| carrier.record_index == 100)
+            .unwrap();
+        object_snapshot(carrier);
+        let mut wire = serde_json::to_value(&*carrier).unwrap();
+        wire["attributed"]["guid_marker"] = source_flag.into();
+        if source_flag == 0 {
+            wire["attributed"]["source_transform"] =
+                serde_json::to_value(pose(EYE, [7.0, 8.0, 9.0])).unwrap();
+        }
+        *carrier = serde_json::from_value(wire).unwrap();
+        let projection = project(&carriers, &components, &[]);
+        for chain in [
+            &[100][..],
+            &[100, u32::try_from(SUB_MODULE).unwrap()],
+            &[
+                100,
+                u32::try_from(SUB_MODULE).unwrap(),
+                u32::try_from(LEAF).unwrap(),
+            ],
+        ] {
+            let id = instance(&carriers, chain);
+            assert_close(world(&projection, &id), world(&expected, &id));
+        }
+        assert!(!has(&projection, F3dLossCode::LocalOccurrenceUnplaced));
+    }
+}
+
+#[test]
 fn an_object_snapshot_with_a_resolved_world_path_uses_the_path_pose() {
     let (mut carriers, components) = fixture(1);
     object_snapshot(

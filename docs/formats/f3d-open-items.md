@@ -3604,7 +3604,7 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Conflict.** Treating every object-prelude closing matrix as a solved-body local placement gives the two incorrect mating placements above.
 
-**Note.** The decoder retains the native carrier. A matrix-bearing object-prelude occurrence requires an independently resolved component-path pose before neutral projection. Its unresolved subtree retains stored body frames and the existing `assembly.local-occurrence-unplaced` loss. Identity frames retain their definition frame. Ancestor placement must also resolve.
+**Note.** The decoder retains the native carrier. A matrix-bearing object-prelude occurrence whose carrier GUID follows the ordinal directly requires an independently resolved component-path pose before neutral projection. Its unresolved subtree retains stored body frames and the existing `assembly.local-occurrence-unplaced` loss. Identity frames retain their definition frame. Ancestor placement must also resolve.
 
 ### SM-03. ContourFlange travel, thickness side and rule entries
 

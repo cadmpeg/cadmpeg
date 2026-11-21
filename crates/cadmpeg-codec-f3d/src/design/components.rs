@@ -1401,7 +1401,7 @@ impl<'a> Projector<'a> {
             .filter_map(|(key, (_, carrier))| {
                 carrier
                     .filter(|carrier| {
-                        carrier.has_object_prelude()
+                        carrier.needs_object_pose_proof()
                             && carrier.transform().is_some()
                             && !self.path_poses.applied_instances.contains(key)
                     })

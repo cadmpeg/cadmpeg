@@ -534,8 +534,9 @@ pub(crate) struct DesignAttributedOccurrenceFrame {
     pub(crate) property_names: Vec<String>,
     /// Persistent object key in that prelude.
     pub(crate) persistent_key: Option<String>,
-    /// Optional marker one between the ordinal and carrier GUID.
+    /// Source identity flag between the ordinal and carrier GUID.
     pub(crate) guid_marker: Option<u8>,
+    pub(crate) source_transform: Option<SketchPlacementMatrix>,
     /// The ordinal prefix, widened to u16 for a one-byte prefix.
     pub(crate) ordinal_prefix: u16,
     pub(crate) path_discriminator: u32,
@@ -759,8 +760,10 @@ impl DesignComponentOccurrence {
         if placed != frame.transform_offset.is_some() {
             return Err("transform_offset must be present exactly for a placed occurrence".into());
         }
-        if frame.guid_marker.is_some_and(|marker| marker != 1) {
-            return Err("an occurrence GUID marker is one".into());
+        if frame.guid_marker.is_some_and(|marker| marker > 1)
+            || (frame.guid_marker == Some(0)) != frame.source_transform.is_some()
+        {
+            return Err("an occurrence source flag is Boolean and flag zero has a matrix".into());
         }
         if frame.property_names.is_empty() != frame.persistent_key.is_none() {
             return Err("an occurrence property prelude has names and a persistent key".into());
@@ -848,9 +851,9 @@ impl DesignComponentOccurrence {
         }
     }
 
-    /// Whether the carrier stores an object property prelude.
-    pub(crate) fn has_object_prelude(&self) -> bool {
-        matches!(&self.frame, DesignComponentOccurrenceFrame::Attributed(frame) if !frame.property_names.is_empty())
+    /// Whether the stored body frame needs an independent current pose.
+    pub(crate) fn needs_object_pose_proof(&self) -> bool {
+        matches!(&self.frame, DesignComponentOccurrenceFrame::Attributed(frame) if !frame.property_names.is_empty() && frame.guid_marker.is_none())
     }
 
     /// Attributed-frame members on the wire, for an attributed frame.
@@ -866,6 +869,7 @@ impl DesignComponentOccurrence {
                     property_names: frame.property_names.clone(),
                     persistent_key: frame.persistent_key.clone(),
                     guid_marker: frame.guid_marker,
+                    source_transform: frame.source_transform,
                     ordinal_prefix: frame.ordinal_prefix,
                     path_discriminator: frame.path_discriminator,
                     key_record_index: frame.key_record_index,
@@ -1108,6 +1112,11 @@ struct DesignComponentOccurrenceWire {
 
 cadmpeg_core::named_optional_field!(deserialize_persistent_key, String, "persistent_key");
 cadmpeg_core::named_optional_field!(deserialize_guid_marker, u8, "guid_marker");
+cadmpeg_core::named_optional_field!(
+    deserialize_source_transform,
+    SketchPlacementMatrix,
+    "source_transform"
+);
 
 /// Members of an attributed occurrence frame on the wire.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1128,6 +1137,12 @@ struct DesignAttributedOccurrenceWire {
         deserialize_with = "deserialize_guid_marker"
     )]
     guid_marker: Option<u8>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_source_transform"
+    )]
+    source_transform: Option<SketchPlacementMatrix>,
     /// The ordinal prefix, widened to u16 for a one-byte prefix.
     ordinal_prefix: u16,
     path_discriminator: u32,
@@ -1323,6 +1338,7 @@ impl TryFrom<DesignComponentOccurrenceWire> for DesignComponentOccurrence {
                     property_names: attributed.property_names,
                     persistent_key: attributed.persistent_key,
                     guid_marker: attributed.guid_marker,
+                    source_transform: attributed.source_transform,
                     ordinal_prefix: attributed.ordinal_prefix,
                     path_discriminator: attributed.path_discriminator,
                     key_record_index: attributed.key_record_index,
