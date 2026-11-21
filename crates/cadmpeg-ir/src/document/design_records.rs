@@ -1,18 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The configurations, parameters, and features a reference can name.
+//! The configurations, parameters, features, and sketches a reference can
+//! name.
 
 use std::collections::BTreeSet;
 
 use super::CadIr;
 use crate::features::{ConfigurationId, FeatureId, ParameterId};
+use crate::sketches::SketchId;
 
-/// The ids of the configurations, parameters, and features a document holds,
-/// in the design root and in the v10 `model` arenas. Decoders write the v10
-/// arenas until their codec port; XF deletes the v10 lookups with them.
+/// The ids of the configurations, parameters, features, and sketches a
+/// document holds, in the design root and in the v10 `model` arenas.
+/// Decoders write the v10 arenas until their codec port; XF deletes the v10
+/// lookups with them.
 pub(crate) struct DesignRecords<'a> {
     configurations: BTreeSet<&'a str>,
     parameters: BTreeSet<&'a str>,
     features: BTreeSet<&'a str>,
+    sketches: BTreeSet<&'a str>,
 }
 
 impl<'a> DesignRecords<'a> {
@@ -34,6 +38,11 @@ impl<'a> DesignRecords<'a> {
                 .iter()
                 .map(|record| record.id.as_str())
                 .collect(),
+            sketches: design
+                .sketches
+                .iter()
+                .map(|record| record.id.as_str())
+                .collect(),
         };
         let model = &ir.model;
         records
@@ -45,6 +54,9 @@ impl<'a> DesignRecords<'a> {
         records
             .features
             .extend(model.features.iter().map(|record| record.id.as_str()));
+        records
+            .sketches
+            .extend(model.sketches.iter().map(|record| record.id.as_str()));
         records
     }
 
@@ -58,5 +70,9 @@ impl<'a> DesignRecords<'a> {
 
     pub(crate) fn holds_feature(&self, id: &FeatureId) -> bool {
         self.features.contains(id.as_str())
+    }
+
+    pub(crate) fn holds_sketch(&self, id: &SketchId) -> bool {
+        self.sketches.contains(id.as_str())
     }
 }
