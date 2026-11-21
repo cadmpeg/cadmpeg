@@ -47,7 +47,7 @@ impl AreaSum {
 impl Design {
     fn measure(ir: CadIr) -> Self {
         let solids = ir
-            .model
+            .geometry
             .bodies
             .iter()
             .filter(|body| body.kind == BodyKind::Solid)
@@ -331,7 +331,7 @@ fn nist_twin_check_accepts_equal_geometry_across_face_partitions() {
 fn nist_twin_check_rejects_reversed_face_senses() {
     let cube = cadmpeg_ir::examples::unit_cube().unwrap();
     let mut broken = cube.clone();
-    for face in &mut broken.model.faces {
+    for face in &mut broken.geometry.faces {
         face.sense = cadmpeg_ir::topology::Sense::Reversed;
     }
     let a = Design::measure(cube);
@@ -340,22 +340,22 @@ fn nist_twin_check_rejects_reversed_face_senses() {
     assert!(!agreement(&a, &b).is_empty());
 
     let mut one_reversed = a.ir.clone();
-    one_reversed.model.faces[0].sense = cadmpeg_ir::topology::Sense::Reversed;
+    one_reversed.geometry.faces[0].sense = cadmpeg_ir::topology::Sense::Reversed;
     let b = Design::measure(one_reversed);
     assert!(!b.complete());
     assert!(!agreement(&a, &b).is_empty());
 
     let mut inward = a.ir.clone();
-    for face in &mut inward.model.faces {
+    for face in &mut inward.geometry.faces {
         face.sense = cadmpeg_ir::topology::Sense::Reversed;
     }
-    for coedge in &mut inward.model.coedges {
+    for coedge in &mut inward.geometry.coedges {
         coedge.sense = match coedge.sense {
             cadmpeg_ir::topology::Sense::Forward => cadmpeg_ir::topology::Sense::Reversed,
             cadmpeg_ir::topology::Sense::Reversed => cadmpeg_ir::topology::Sense::Forward,
         };
     }
-    for face_loop in &mut inward.model.loops {
+    for face_loop in &mut inward.geometry.loops {
         let mut coedges = face_loop.coedges().to_vec();
         coedges.reverse();
         face_loop.replace_ring(coedges, Vec::new()).unwrap();
@@ -370,8 +370,7 @@ fn nist_twin_check_rejects_reversed_face_senses() {
 fn nist_twin_check_rejects_an_open_shell() {
     let cube = cadmpeg_ir::examples::unit_cube().unwrap();
     let mut broken = cube.clone();
-    let faces = broken.model.shells[0].faces()[1..].to_vec();
-    broken.model.shells[0].replace_faces(faces).unwrap();
+    broken.geometry.faces.remove(0);
     let a = Design::measure(cube);
     let b = Design::measure(broken);
     assert_eq!(b.closed_shells(), 0);
@@ -382,7 +381,7 @@ fn nist_twin_check_rejects_an_open_shell() {
 fn nist_twin_check_rejects_changed_dimensions_and_placement() {
     let cube = cadmpeg_ir::examples::unit_cube().unwrap();
     let mut scaled = cube.clone();
-    scaled.model.bodies[0].transform = cadmpeg_ir::transform::Transform::affine([
+    scaled.geometry.bodies[0].transform = cadmpeg_ir::transform::Transform::affine([
         [2.0, 0.0, 0.0, 0.0],
         [0.0, 2.0, 0.0, 0.0],
         [0.0, 0.0, 2.0, 0.0],
@@ -396,7 +395,7 @@ fn nist_twin_check_rejects_changed_dimensions_and_placement() {
     }
 
     let mut translated = cube;
-    translated.model.bodies[0].transform = cadmpeg_ir::transform::Transform::affine([
+    translated.geometry.bodies[0].transform = cadmpeg_ir::transform::Transform::affine([
         [1.0, 0.0, 0.0, 1.0],
         [0.0, 1.0, 0.0, 0.0],
         [0.0, 0.0, 1.0, 0.0],
