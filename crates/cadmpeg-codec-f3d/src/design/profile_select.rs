@@ -634,7 +634,7 @@ pub(crate) fn bind_extrude_profile_selections(
                                 .history_state_id()
                                 .zip(effective_previous_history_state_id),
                         ) {
-                            if let Some(selection) = stored_loop_cap::resolve(
+                            if let Some((selection, selection_losses)) = stored_loop_cap::resolve(
                                 group,
                                 &curve_resolution.path_resolution(),
                                 scoped_resolution,
@@ -647,6 +647,12 @@ pub(crate) fn bind_extrude_profile_selections(
                                 },
                             )? {
                                 *profile = ProfileRef::Planar(selection);
+                                for code in selection_losses {
+                                    losses.push(code.note(format!(
+                                        "{}: stored profile entries use their participating intervals on the certified cap boundary",
+                                        feature.id,
+                                    )));
+                                }
                                 break 'feature_edit;
                             }
                         }

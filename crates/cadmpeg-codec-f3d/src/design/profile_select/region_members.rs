@@ -145,13 +145,17 @@ pub(super) fn resolve_certified(
             ) else {
                 return Ok(None);
             };
-            named.push(entity.clone());
+            named.push(vec![entity.clone()]);
         }
     }
     if named.is_empty() {
         return Ok(None);
     }
-    super::stored_loop_cap::certified_regions_bounded_by(sketch, &named, resolution, states, sweep)
+    Ok(super::stored_loop_cap::certified_regions_bounded_by(
+        sketch, &named, resolution, states, sweep,
+    )?
+    .filter(|(_, losses)| losses.is_empty())
+    .map(|(profile, _)| profile))
 }
 
 pub(super) fn resolve_stale(

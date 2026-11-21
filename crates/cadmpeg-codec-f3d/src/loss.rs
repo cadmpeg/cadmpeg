@@ -743,6 +743,8 @@ pub(crate) enum F3dLossCode {
     /// Extrude profile selections joined stored loops to faces through the assumed reading of their first entry operand.
     FeatureProfileLoopFlagsAssumed,
     FeatureProfileCoincidentDirectionAssumed,
+    FeatureProfileCoincidentBoundaryAssumed,
+    FeatureProfilePartialEntryAssumed,
     /// Extrude profile selections took regions from the faces a cut changed, at one point per region.
     FeatureProfileCutRegionsAssumed,
     /// A stored Cut transition certifies regions with stale curve identities.
@@ -1728,6 +1730,8 @@ impl F3dLossCode {
         Self::FeatureProfileCrossingLoopCapped,
         Self::FeatureProfileCrossingLoopAssumed,
         Self::FeatureProfileCoincidentDirectionAssumed,
+        Self::FeatureProfileCoincidentBoundaryAssumed,
+        Self::FeatureProfilePartialEntryAssumed,
         Self::FeatureProfileLoopFlagsAssumed,
         Self::FeatureProfileCutRegionsAssumed,
         Self::FeatureProfileRegionIdentitiesStale,
@@ -2718,6 +2722,10 @@ impl F3dLossCode {
             Self::FeatureProfileCoincidentDirectionAssumed => {
                 "feature.profile-coincident-direction-assumed"
             }
+            Self::FeatureProfileCoincidentBoundaryAssumed => {
+                "feature.profile-coincident-boundary-assumed"
+            }
+            Self::FeatureProfilePartialEntryAssumed => "feature.profile-partial-entry-assumed",
             Self::FeatureProfileRegionIdentitiesStale => "feature.profile-region-identities-stale",
             Self::FeatureProfileTextGlyphsAssumed => "feature.profile-text-glyphs-assumed",
             Self::FeatureProfileTextGlyphsNative => "feature.profile-text-glyphs-native",
@@ -3678,6 +3686,8 @@ impl F3dLossCode {
             | Self::FeatureProfileCrossingLoopCapped
             | Self::FeatureProfileCrossingLoopAssumed
             | Self::FeatureProfileCoincidentDirectionAssumed
+            | Self::FeatureProfileCoincidentBoundaryAssumed
+            | Self::FeatureProfilePartialEntryAssumed
             | Self::FeatureProfileLoopFlagsAssumed
             | Self::FeatureProfileRegionIdentitiesStale
             | Self::FeatureProfileTextGlyphsAssumed
@@ -4394,6 +4404,8 @@ impl F3dLossCode {
             | Self::FeatureProfileCrossingLoopCapped
             | Self::FeatureProfileCrossingLoopAssumed
             | Self::FeatureProfileCoincidentDirectionAssumed
+            | Self::FeatureProfileCoincidentBoundaryAssumed
+            | Self::FeatureProfilePartialEntryAssumed
             | Self::FeatureProfileLoopFlagsAssumed
             | Self::FeatureProfileRegionIdentitiesStale
             | Self::FeatureProfileTextGlyphsAssumed
@@ -5218,6 +5230,8 @@ mod tests {
                 "feature.profile-crossing-loop-capped",
                 "feature.profile-crossing-loop-assumed",
                 "feature.profile-coincident-direction-assumed",
+                "feature.profile-coincident-boundary-assumed",
+                "feature.profile-partial-entry-assumed",
                 "feature.profile-loop-flags-assumed",
                 "feature.profile-cut-regions-assumed",
                 "feature.profile-region-identities-stale",
