@@ -28,7 +28,8 @@ use crate::records::{
 };
 use cadmpeg_core::decode::{u64_from_index, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, FinitePoint3};
+use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::sketches::{
     SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,

@@ -31,14 +31,12 @@ use crate::records::topology::sketch_profile::DesignSketchProfileOperand;
 use crate::records::topology::{
     construction::DesignConstructionOperandGroupFrame, extrude_selection::DesignOperandRole,
 };
-use cadmpeg_ir::features::Feature;
-use cadmpeg_ir::features::FeatureDefinition;
-use cadmpeg_ir::features::FeatureId;
-use cadmpeg_ir::features::FeatureOperation;
-use cadmpeg_ir::features::ProfileRef;
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::ProfileRef;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::ids::FaceId;
-use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::SketchId;
 use std::collections::BTreeMap;
 
@@ -176,10 +174,11 @@ fn set_extrude_start(scope: &mut DesignParameterScope, start: DesignExtrudeStart
 #[test]
 fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     crate::test_support::with_decode_context(|decode_ctx| {
-        use cadmpeg_ir::features::{
-            BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection,
-            LinearTermination, PlanarProfileRef, ProfileRef,
+        use cadmpeg_ir::features::extents::{
+            ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
         };
+        use cadmpeg_ir::features::profiles::PlanarProfileRef;
+        use cadmpeg_ir::features::selections::FaceSelection;
 
         let parameter = |source_kind: &str, unit: &str, value| {
             parse_design_parameter_record(&parameter_record(
@@ -513,7 +512,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             source_text: None,
             source_content: Default::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(blind),
+            evaluation: FeatureEvaluation::from_definition(blind),
             native_ref: Some(scope.id.clone()),
         };
         let profile_work = ProfileGeometryWork::new();
@@ -1911,7 +1910,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
 
 #[test]
 fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
-    use cadmpeg_ir::features::{BooleanOp, LoftSection, PathRef, SheetMetalThicknessSide};
+    use cadmpeg_ir::features::profiles::{LoftSection, PathRef, PlanarProfileRef};
+    use cadmpeg_ir::features::sheet_metal_forms::SheetMetalThicknessSide;
     use cadmpeg_ir::sketches::SpatialSketchId;
 
     let feature = |id: &str, ordinal, definition| Feature {
@@ -1926,7 +1926,7 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
         source_text: None,
         source_content: Default::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+        evaluation: FeatureEvaluation::from_definition(definition),
         native_ref: None,
     };
     let planar_sketch = SketchId::mint("synthetic:test:id#f3d:sketch:planar").unwrap();
@@ -1949,7 +1949,7 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
         "synthetic:test:id#f3d:feature:base-flange",
         2,
         FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
-            profile: cadmpeg_ir::features::PlanarProfileRef::Sketch(planar_sketch.clone()),
+            profile: PlanarProfileRef::Sketch(planar_sketch.clone()),
             thickness: cadmpeg_ir::scalar::PositiveLength::new(1.0),
             side: Some(SheetMetalThicknessSide::Forward),
         }),

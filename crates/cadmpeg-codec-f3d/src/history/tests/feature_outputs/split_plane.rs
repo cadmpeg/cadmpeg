@@ -6,10 +6,13 @@ use crate::history_records::{
     AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalEdge, AsmHistoricalPlane,
     AsmHistoricalPoint, AsmHistoricalRelation, AsmHistoricalTopology,
 };
+use cadmpeg_ir::features::direct_edit::SplitBodyTool;
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::geometry::FeatureDatumPlaneFrame;
+use cadmpeg_ir::features::operation_settings::BooleanKind;
+use cadmpeg_ir::features::selections::{BodySelection, DistinctMembers, FaceSelection};
 use cadmpeg_ir::features::{
-    BodySelection, BooleanKind, CombineOperands, DistinctMembers, FaceSelection, Feature,
-    FeatureDatumPlaneFrame, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
-    SplitBodyTool,
+    CombineOperands, Feature, FeatureDefinition, FeatureId, FeatureOperation,
 };
 use cadmpeg_ir::ids::{BodyId, FaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -521,18 +524,18 @@ fn split_plane_only_emitted_for_split_body() {
         source_content: Default::default(),
         evaluation: FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::Extrude {
-                profile: cadmpeg_ir::features::ProfileRef::Planar(
-                    cadmpeg_ir::features::PlanarProfileRef::Native("scope".into()),
+                profile: cadmpeg_ir::features::profiles::ProfileRef::Planar(
+                    cadmpeg_ir::features::profiles::PlanarProfileRef::Native("scope".into()),
                 ),
-                direction: cadmpeg_ir::features::ExtrudeDirection::default(),
-                start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
-                extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                    side: cadmpeg_ir::features::ExtrudeSide {
-                        termination: cadmpeg_ir::features::LinearTermination::ThroughAll {},
+                direction: cadmpeg_ir::features::extents::ExtrudeDirection::default(),
+                start: cadmpeg_ir::features::extents::ExtrudeStart::ProfilePlane {},
+                extent: cadmpeg_ir::features::extents::ExtrudeExtent::OneSided {
+                    side: cadmpeg_ir::features::extents::ExtrudeSide {
+                        termination: cadmpeg_ir::features::extents::LinearTermination::ThroughAll {},
                         draft: None,
                     },
                 },
-                op: cadmpeg_ir::features::BooleanOp::NewBody,
+                op: cadmpeg_ir::features::operation_settings::BooleanOp::NewBody,
                 solid: None,
                 face_maker: None,
                 inner_wire_taper: None,
@@ -1228,7 +1231,8 @@ fn combine_join_test_feature(scope_id: &str, target: Option<i64>, tool: Option<i
                 op: BooleanKind::Join,
                 keep_tools: false,
 
-                destination: cadmpeg_ir::features::CombineDestination::default(),
+                destination: cadmpeg_ir::features::operation_settings::CombineDestination::default(
+                ),
             }),
             DistinctMembers::try_from(vec![]).unwrap(),
         ),

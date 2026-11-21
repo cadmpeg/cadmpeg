@@ -10,7 +10,7 @@ use crate::eval::variable_blend_is_zero_radius;
 use crate::eval::variable_blend_radius;
 use crate::eval::ConstantRollingBallSection;
 use crate::eval::{cacheless_circular_variable_blend_section, ContactTrack, SurfaceFirstOrder};
-use crate::features::{FinitePoint3, FiniteVector3};
+use crate::features::geometry::{FinitePoint3, FiniteVector3};
 use crate::geometry::pcurve::PcurveGeometry;
 use crate::geometry::sampled::PolylineSamples;
 use crate::geometry::sampled::PolylineVertex;
@@ -201,7 +201,7 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
             0.0,
             0.5
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(2.0, 3.5, 0.0))
     );
     assert_eq!(
@@ -212,7 +212,7 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
             1.0,
             0.5
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(10.0, 7.0, 8.5))
     );
     assert_eq!(
@@ -223,7 +223,7 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
             0.25,
             0.5
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(4.0, 4.375, 2.125))
     );
     let partials = model_surface_partials_by_id(
@@ -264,7 +264,7 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
             0.25,
             0.5
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(4.0, 4.375, 2.125))
     );
 
@@ -301,7 +301,7 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
             0.25,
             0.5
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(4.0, 4.375, 2.125))
     );
     assert!(variable_blend_is_zero_radius(
@@ -367,7 +367,7 @@ fn current_variable_blend_uses_the_solved_cache_for_points_and_partials() {
             0.25,
             0.5
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(0.25, 0.5, 0.0))
     );
     let partials = model_surface_partials_by_id(
@@ -436,7 +436,7 @@ fn cacheless_circular_variable_blend_uses_the_common_contact_center() {
             0.0,
             0.5
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(3.0, 0.5, 0.0))
     );
     assert_eq!(
@@ -447,7 +447,7 @@ fn cacheless_circular_variable_blend_uses_the_common_contact_center() {
             1.0,
             0.5
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(0.0, 0.5, 3.0))
     );
     let point = model_surface_point_by_id(
@@ -693,7 +693,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
             0.0,
             0.5
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(3.0, 0.5, 0.0))
     );
     assert_eq!(
@@ -704,7 +704,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
             1.0,
             0.5
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(0.0, 0.5, 3.0))
     );
     let point = model_surface_point_by_id(
@@ -895,7 +895,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
             0.25,
             0.5
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(0.25, 0.5, 0.0))
     );
     let cached_partials = model_surface_partials_by_id(
@@ -1239,7 +1239,7 @@ fn a_ruled_variable_blend_whose_support_partial_overflows_keeps_its_point() {
             0.5,
             0.5
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(point)
     );
     assert_eq!(
@@ -1250,7 +1250,7 @@ fn a_ruled_variable_blend_whose_support_partial_overflows_keeps_its_point() {
             0.5,
             0.5
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(point)
     );
     assert_eq!(
@@ -1302,7 +1302,7 @@ fn a_constant_rolling_ball_whose_support_partial_overflows_keeps_its_point() {
             0.0,
             0.5
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(3.0, 0.5, 0.0))
     );
     let point = model_surface_point_by_id(

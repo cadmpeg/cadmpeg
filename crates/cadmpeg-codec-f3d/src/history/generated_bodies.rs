@@ -28,10 +28,10 @@ pub(crate) fn bind_generated_body_selections(
     scope_histories: &HashMap<String, String>,
     primary_brep: Option<&str>,
     losses: &mut Vec<LossNote>,
-) -> Vec<cadmpeg_ir::features::FeatureResultTopology> {
-    use cadmpeg_ir::features::{
-        patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation, GeneratedBodyRef,
-    };
+) -> Vec<cadmpeg_ir::features::evaluation::FeatureResultTopology> {
+    use cadmpeg_ir::features::patterns::PatternSeed;
+    use cadmpeg_ir::features::selections::{BodySelection, GeneratedBodyRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let live = inputs
         .bodies
@@ -248,19 +248,21 @@ pub(crate) fn bind_generated_body_selections(
                 .iter()
                 .map(|slot| cadmpeg_core::text::NonBlankString::new(slot.to_string()))
                 .collect::<Option<Vec<_>>>()?;
-            let members = cadmpeg_ir::features::FeatureResultMembers::new(
+            let members = cadmpeg_ir::features::evaluation::FeatureResultMembers::new(
                 bodies,
                 Vec::new(),
                 Vec::new(),
                 Vec::new(),
             )
             .ok()?;
-            Some(cadmpeg_ir::features::FeatureResultTopology::new(
-                crate::ids::history_result_state_id(&producer, state_id),
-                producer,
-                members,
-                None,
-            ))
+            Some(
+                cadmpeg_ir::features::evaluation::FeatureResultTopology::new(
+                    crate::ids::history_result_state_id(&producer, state_id),
+                    producer,
+                    members,
+                    None,
+                ),
+            )
         })
         .collect()
 }
@@ -279,7 +281,7 @@ struct ReverseContext<'a> {
 enum ReverseBinding {
     /// Every slot is a result body of the bound history's BREP source.
     Model {
-        bodies: cadmpeg_ir::features::DistinctMembers<cadmpeg_ir::ids::BodyId>,
+        bodies: cadmpeg_ir::features::selections::DistinctMembers<cadmpeg_ir::ids::BodyId>,
         dependencies: Vec<cadmpeg_ir::features::FeatureId>,
     },
     /// No slot is a result body of that source; each has a generating feature.
@@ -448,12 +450,12 @@ pub(super) fn group_operand_body_slots(
 /// selects a model body whose entity number is outside the body slots that
 /// the group's operands resolve through their recipe identity.
 pub(super) fn keep_recipe_body_slots(
-    selection: &mut cadmpeg_ir::features::BodySelection,
-    native: cadmpeg_ir::features::BodySelection,
+    selection: &mut cadmpeg_ir::features::selections::BodySelection,
+    native: cadmpeg_ir::features::selections::BodySelection,
     scope: &crate::records::feature::scope::DesignParameterScope,
     inputs: &FeatureBodySelectionInputs<'_>,
 ) {
-    use cadmpeg_ir::features::BodySelection;
+    use cadmpeg_ir::features::selections::BodySelection;
     let (BodySelection::Native(group_id), BodySelection::Resolved { bodies, .. }) =
         (&native, &*selection)
     else {

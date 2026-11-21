@@ -201,9 +201,9 @@ fn unequal_decoded_wall_slots_project_without_a_symmetric_thickness() {
         DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
     };
     use crate::records::topology::construction::DesignConstructionOperandGroup;
-    use cadmpeg_ir::features::{
-        FaceSelection, FeatureDefinition, FeatureOperation, ShellJoin, ShellMode,
-    };
+    use cadmpeg_ir::features::operation_settings::{ShellJoin, ShellMode};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let operation = Fixture::new(Some(INSIDE), Some(OUTSIDE)).decode().unwrap();
     assert_eq!(operation.thickness.get(), 0.25);

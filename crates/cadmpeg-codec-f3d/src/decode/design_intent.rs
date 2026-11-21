@@ -7,21 +7,21 @@
 use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::{
-    assets::Asset,
-    document::Model,
-    features::{DesignConfiguration, DesignParameter, Feature, FeatureInputTopology},
-    geometry::Surface,
-    products::{AssemblyJoint, Occurrence},
-    report::loss::LossNote,
-    sketches::{
-        Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchConstraint,
-        SpatialSketchEntity,
-    },
-    subd::SubdSurface,
-    topology::{Body, Face, Region, Shell},
-    units::Tolerances,
+use cadmpeg_ir::assets::Asset;
+use cadmpeg_ir::document::Model;
+use cadmpeg_ir::features::evaluation::FeatureInputTopology;
+use cadmpeg_ir::features::parameters::{DesignConfiguration, DesignParameter};
+use cadmpeg_ir::features::Feature;
+use cadmpeg_ir::geometry::Surface;
+use cadmpeg_ir::products::{AssemblyJoint, Occurrence};
+use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::sketches::{
+    Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchConstraint,
+    SpatialSketchEntity,
 };
+use cadmpeg_ir::subd::SubdSurface;
+use cadmpeg_ir::topology::{Body, Face, Region, Shell};
+use cadmpeg_ir::units::Tolerances;
 
 use super::prereqs::{
     append_related_record_headers, collect_related_indices, history_ref_width, ProductPrereqs,
@@ -293,7 +293,8 @@ pub(super) struct DesignModel {
     /// Canvas and decal assets that the geometry assets do not hold yet.
     pub(super) assets: Vec<Asset>,
     pub(super) feature_input_topologies: Vec<FeatureInputTopology>,
-    pub(super) feature_result_topologies: Vec<cadmpeg_ir::features::FeatureResultTopology>,
+    pub(super) feature_result_topologies:
+        Vec<cadmpeg_ir::features::evaluation::FeatureResultTopology>,
     pub(super) sketches: Vec<Sketch>,
     pub(super) sketch_entities: Vec<SketchEntity>,
     pub(super) sketch_constraints: Vec<SketchConstraint>,

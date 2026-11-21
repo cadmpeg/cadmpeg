@@ -5,7 +5,8 @@ use crate::design::feature_project::{
 use crate::design::test_support::{indexed_record_offsets_for_test, with_test_decode_context};
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::test_support::lp_utf16;
-use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 fn named_delete_scope(kind: &str, label: &str) -> Vec<u8> {
     let mut bytes = vec![0; 127];

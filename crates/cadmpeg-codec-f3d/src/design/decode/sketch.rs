@@ -41,7 +41,7 @@ use crate::records::{
 use cadmpeg_core::bytes::find_from;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Angle, FiniteReal, NonNegativeLength, NonNegativeReal, PositiveLength};

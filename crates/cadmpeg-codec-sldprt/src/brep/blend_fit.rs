@@ -1247,7 +1247,7 @@ impl<'a, 'ctx> BlendGeometry<'a, 'ctx> {
             return polyline.point(s);
         }
         match super::evaluation::curve_point(self.ctx, self.spine, s) {
-            Ok(point) => point.map(cadmpeg_ir::features::FinitePoint3::get),
+            Ok(point) => point.map(cadmpeg_ir::features::geometry::FinitePoint3::get),
             Err(error) => {
                 self.refusal.borrow_mut().get_or_insert(error);
                 None
@@ -1509,7 +1509,7 @@ const fn analytic(surface: &SurfaceGeometry) -> bool {
 #[cfg(test)]
 mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::geometry::analytic::{LineCurve, PlaneSurface};
     use cadmpeg_ir::geometry::{
         CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,

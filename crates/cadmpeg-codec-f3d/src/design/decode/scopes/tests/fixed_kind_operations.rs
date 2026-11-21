@@ -1574,7 +1574,7 @@ fn fixed_kind_edge_and_revolve_operations(
         projected,
         Some(FeatureDefinition::Operation(FeatureOperation::Revolve {
             ref construction,
-            op: cadmpeg_ir::features::BooleanOp::Cut,
+            op: cadmpeg_ir::features::operation_settings::BooleanOp::Cut,
         })) if construction.axis().is_some_and(|axis|
             axis.origin == Point3::new(1.0, 2.0, 3.0)
                 && axis.direction == Vector3::new(0.0, -1.0, 0.0))
@@ -1631,7 +1631,9 @@ fn fixed_kind_edge_and_revolve_operations(
         source_text: None,
         source_content: Default::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(historical_definition),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            historical_definition,
+        ),
         native_ref: Some(indexed_revolve_scope.id.clone()),
     };
     let surface_id =
@@ -1787,9 +1789,9 @@ fn fixed_kind_edge_and_revolve_operations(
     )
     .expect("face-recipe axis retains a neutral Revolve before geometry binding");
     let mut face_axis_feature = cadmpeg_ir::features::Feature {
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
             face_axis_definition.clone(),
-            cadmpeg_ir::features::DistinctMembers::try_from(
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(
                 (feature.clone()).evaluation.outputs().clone(),
             )
             .unwrap(),
@@ -1879,10 +1881,12 @@ fn fixed_kind_edge_and_revolve_operations(
                 && axis.direction == Vector3::new(0.0, 0.0, 1.0))
     ));
     let mut conflicting_face_axis_feature = cadmpeg_ir::features::Feature {
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
             face_axis_definition,
-            cadmpeg_ir::features::DistinctMembers::try_from((feature).evaluation.outputs().clone())
-                .unwrap(),
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(
+                (feature).evaluation.outputs().clone(),
+            )
+            .unwrap(),
         ),
         ..feature
     };

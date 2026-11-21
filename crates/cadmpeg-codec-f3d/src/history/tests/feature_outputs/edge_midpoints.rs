@@ -6,9 +6,8 @@ fn midpoint_fillet(
     scope: &crate::records::feature::scope::DesignParameterScope,
 ) -> cadmpeg_ir::features::Feature {
     use cadmpeg_ir::features::edge_treatments::{FilletGroup, RadiusSpec};
-    use cadmpeg_ir::features::{
-        EdgeSelection, FeatureDefinition, FeatureOperation, NonEmptyMembers,
-    };
+    use cadmpeg_ir::features::selections::{EdgeSelection, NonEmptyMembers};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let mut feature = base_feature();
     feature.id = crate::ids::neutral_feature_id(scope);
     feature.native_ref = Some(scope.id.clone());

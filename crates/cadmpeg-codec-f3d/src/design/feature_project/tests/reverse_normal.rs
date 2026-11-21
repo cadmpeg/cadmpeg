@@ -18,7 +18,8 @@ use crate::records::topology::construction::{
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use crate::test_support::reverse_normal::{linked, timeline};
 use cadmpeg_core::decode::u64_from_index;
-use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 
 const STREAM: &str = "f3d:native/BulkStream.dat";

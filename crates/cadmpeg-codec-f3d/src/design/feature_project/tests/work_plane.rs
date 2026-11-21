@@ -20,7 +20,7 @@ fn work_plane_projects_solved_frame_in_millimetres() {
     else {
         panic!("expected solved datum plane");
     };
-    let expected = cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+    let expected = cadmpeg_ir::features::geometry::FeatureDatumPlaneFrame::new(
         Point3::new(30.0, -40.0, 70.0),
         Vector3::new(1.0, 0.0, 0.0),
         Vector3::new(0.0, 1.0, 0.0),
@@ -90,7 +90,7 @@ fn work_plane_projects_three_point_vertex_recipes() {
     let feature = crate::ids::neutral_feature_id(&plane);
     let prefix = crate::ids::feature_input_prefix(&feature, 4);
     let expected = [(22, 43), (27, 64), (32, 84)].map(|(record_index, slot)| {
-        cadmpeg_ir::features::VertexSelection::historical(
+        cadmpeg_ir::features::selections::VertexSelection::historical(
             crate::ids::feature_input_topology_id(&feature, 4),
             crate::ids::history_input_vertex_id(&prefix, slot),
             format!("f3d:test:recipe#{record_index}"),
@@ -123,7 +123,7 @@ fn work_plane_modern_solved_frames_project_without_a_construction_inference() {
         } else {
             Point3::new(20.0, 30.0, 40.0)
         };
-        let expected = cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+        let expected = cadmpeg_ir::features::geometry::FeatureDatumPlaneFrame::new(
             origin,
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),

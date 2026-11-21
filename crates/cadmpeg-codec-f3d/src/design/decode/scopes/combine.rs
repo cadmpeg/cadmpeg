@@ -311,9 +311,9 @@ fn combine_operation_with(
         let operation = match View::u32_le_at(bytes, operation_offset)
             .and_then(|code| code.checked_sub(first_operation_code))
         {
-            Some(0) => Some(cadmpeg_ir::features::BooleanKind::Join),
-            Some(1) => Some(cadmpeg_ir::features::BooleanKind::Cut),
-            Some(2) => Some(cadmpeg_ir::features::BooleanKind::Intersect),
+            Some(0) => Some(cadmpeg_ir::features::operation_settings::BooleanKind::Join),
+            Some(1) => Some(cadmpeg_ir::features::operation_settings::BooleanKind::Cut),
+            Some(2) => Some(cadmpeg_ir::features::operation_settings::BooleanKind::Intersect),
             _ => None,
         };
         let keep_tools = match bytes.get(keep_tools_offset) {

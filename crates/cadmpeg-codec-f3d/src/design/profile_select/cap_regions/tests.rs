@@ -2,7 +2,7 @@
 
 use std::f64::consts::TAU;
 
-use cadmpeg_ir::features::SketchProfileBoundaryUse;
+use cadmpeg_ir::features::profiles::SketchProfileBoundaryUse;
 use cadmpeg_ir::geometry::DirectedParameterRange;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::Length;
@@ -24,7 +24,7 @@ use super::{
     polygon_area, sample_regions, trimmed_selection, Agreement, PlaneFrame, Sampled,
 };
 use crate::design::profile_select::ResolvedProfileSelection;
-use cadmpeg_ir::features::SketchProfileRegion;
+use cadmpeg_ir::features::profiles::SketchProfileRegion;
 
 const TOLERANCE: f64 = 1e-6;
 /// The cap face every test topology draws.
@@ -826,7 +826,7 @@ fn a_cut_through_an_x_braced_window_selects_its_four_openings() {
     assert_eq!(regions.len(), 4);
     let mut sides = Vec::new();
     for region in &regions {
-        let cadmpeg_ir::features::SketchProfileRegion::Trimmed {
+        let cadmpeg_ir::features::profiles::SketchProfileRegion::Trimmed {
             outer_boundary,
             hole_boundaries,
         } = region
@@ -1111,7 +1111,7 @@ fn a_cut_whose_regions_use_curves_outside_the_stored_profile_takes_the_proven_re
     // A stored reading of the same loop as a whole-loop region takes the same
     // regions.
     let as_region = super::ResolvedProfileSelection::Regions(vec![
-        cadmpeg_ir::features::SketchProfileRegion::loops(0, Vec::new()).unwrap(),
+        cadmpeg_ir::features::profiles::SketchProfileRegion::loops(0, Vec::new()).unwrap(),
     ]);
     let Some(super::ResolvedProfileSelection::Regions(from_region)) =
         super::removed_regions_beyond_profile(&window.sketch, resolution, 2, 1, Some(&as_region))
@@ -1133,10 +1133,11 @@ fn a_cut_whose_regions_use_curves_outside_the_stored_profile_takes_the_proven_re
 }
 #[test]
 fn compact_cut_certificate_checks_region_side_carriers_and_stored_travel() {
-    use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
-        PlanarProfileRef, ProfileRef,
+    use cadmpeg_ir::features::extents::{
+        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
     };
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
     use cadmpeg_ir::sketches::SketchEntityUse;
     let plate = vec![(-2.0, -2.0), (5.0, -2.0), (5.0, 5.0), (-2.0, 5.0)];
     let square = unit_square_corners();
@@ -1270,7 +1271,7 @@ fn compact_cut_certificate_checks_region_side_carriers_and_stored_travel() {
     let complement = ProfileRef::Planar(
         PlanarProfileRef::sketch_regions(
             sketch.id.clone(),
-            vec![cadmpeg_ir::features::SketchProfileRegion::loops(2, vec![0]).unwrap()],
+            vec![cadmpeg_ir::features::profiles::SketchProfileRegion::loops(2, vec![0]).unwrap()],
         )
         .unwrap(),
     );
@@ -1323,7 +1324,7 @@ fn compact_cut_certificate_checks_region_side_carriers_and_stored_travel() {
     let annulus = ProfileRef::Planar(
         PlanarProfileRef::sketch_regions(
             sketch.id.clone(),
-            vec![cadmpeg_ir::features::SketchProfileRegion::loops(0, vec![3]).unwrap()],
+            vec![cadmpeg_ir::features::profiles::SketchProfileRegion::loops(0, vec![3]).unwrap()],
         )
         .unwrap(),
     );

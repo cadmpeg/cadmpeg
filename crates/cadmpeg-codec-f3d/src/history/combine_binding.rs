@@ -3,7 +3,8 @@
 
 use std::collections::BTreeSet;
 
-use cadmpeg_ir::features::{BodyMember, BodySelection, FeatureId};
+use cadmpeg_ir::features::selections::{BodyMember, BodySelection};
+use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::report::loss::LossNote;
 
 use super::{
@@ -116,7 +117,7 @@ fn bind_historical_combine_operands<'a>(
     let body_id = crate::ids::history_input_body_id(&prefix, body);
     let native_id = native.to_owned();
     let target_bodies = vec![body_id];
-    if let Ok(historical) = cadmpeg_ir::features::BodySelection::historical(
+    if let Ok(historical) = cadmpeg_ir::features::selections::BodySelection::historical(
         crate::ids::history_input_state_id(&prefix),
         target_bodies,
         native_id,
@@ -193,7 +194,8 @@ fn bind_historical_combine_operands<'a>(
         direct_tool_rows.push(row);
     }
     if historical_tool_rows.len() == native_tools.len() {
-        let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_rows(historical_tool_rows)
+        let Ok(members) =
+            cadmpeg_ir::features::selections::BodyMembers::try_from_rows(historical_tool_rows)
         else {
             return;
         };
@@ -208,12 +210,14 @@ fn bind_historical_combine_operands<'a>(
             };
             let (body, native) = row.into_parts();
             let selected = vec![body];
-            let Ok(bodies) = cadmpeg_ir::features::DistinctMembers::try_from(selected) else {
+            let Ok(bodies) = cadmpeg_ir::features::selections::DistinctMembers::try_from(selected)
+            else {
                 return;
             };
             BodySelection::Resolved { bodies, native }
         } else {
-            let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_rows(direct_tool_rows)
+            let Ok(members) =
+                cadmpeg_ir::features::selections::BodyMembers::try_from_rows(direct_tool_rows)
             else {
                 return;
             };
@@ -239,7 +243,8 @@ fn bind_historical_combine_operands<'a>(
             let Some(rows) = combine_historical_rows(&prefix, tool_slots, native_tools) else {
                 return;
             };
-            let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_rows(rows) else {
+            let Ok(members) = cadmpeg_ir::features::selections::BodyMembers::try_from_rows(rows)
+            else {
                 return;
             };
             *tools = BodySelection::HistoricalSet {
@@ -257,7 +262,8 @@ fn bind_historical_combine_operands<'a>(
             let Some(rows) = combine_historical_rows(&prefix, tool_slots, native_tools) else {
                 return;
             };
-            let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_rows(rows) else {
+            let Ok(members) = cadmpeg_ir::features::selections::BodyMembers::try_from_rows(rows)
+            else {
                 return;
             };
             *tools = BodySelection::HistoricalSet {
@@ -272,7 +278,7 @@ fn combine_historical_rows(
     prefix: &cadmpeg_ir::ids::IdentityKey,
     slots: Vec<i64>,
     native_tools: Vec<String>,
-) -> Option<Vec<cadmpeg_ir::features::BodyMember<cadmpeg_ir::ids::HistoricalBodyId>>> {
+) -> Option<Vec<cadmpeg_ir::features::selections::BodyMember<cadmpeg_ir::ids::HistoricalBodyId>>> {
     let mut rows = Vec::new();
     for (slot, native) in slots.into_iter().zip(native_tools) {
         let body = crate::ids::history_input_body_id(prefix, slot);

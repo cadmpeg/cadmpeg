@@ -363,9 +363,11 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                 std::collections::BTreeMap::from([(
                     operations[1].clone(),
                     HolePlacement::Axis {
-                        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
-                            .unwrap(),
-                        axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                        origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                            1.0, 0.0, 0.0
+                        ))
+                        .unwrap(),
+                        axis: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
                             0.0, 1.0, 0.0
                         ))
                         .unwrap(),
@@ -399,9 +401,11 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                 std::collections::BTreeMap::from([(
                     operations[1].clone(),
                     HolePlacement::Axis {
-                        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
-                            .unwrap(),
-                        axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                        origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                            1.0, 0.0, 0.0
+                        ))
+                        .unwrap(),
+                        axis: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
                             0.0, 1.0, 0.0
                         ))
                         .unwrap(),
@@ -459,9 +463,11 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                 std::collections::BTreeMap::from([(
                     operations[1].clone(),
                     HolePlacement::Axis {
-                        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
-                            .unwrap(),
-                        axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                        origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                            1.0, 0.0, 0.0
+                        ))
+                        .unwrap(),
+                        axis: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
                             0.0, 1.0, 0.0
                         ))
                         .unwrap(),

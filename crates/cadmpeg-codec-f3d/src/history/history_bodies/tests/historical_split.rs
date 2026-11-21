@@ -98,8 +98,8 @@ fn a_base_and_later_historical_split_share_one_history_body() {
                     scopes[1].id.clone(),
                 )
                 .unwrap(),
-                tool: cadmpeg_ir::features::SplitBodyTool::Faces(
-                    cadmpeg_ir::features::FaceSelection::Unresolved,
+                tool: cadmpeg_ir::features::direct_edit::SplitBodyTool::Faces(
+                    cadmpeg_ir::features::selections::FaceSelection::Unresolved,
                 ),
             }));
         let bindings = scopes

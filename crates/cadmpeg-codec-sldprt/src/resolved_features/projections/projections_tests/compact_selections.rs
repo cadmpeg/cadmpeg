@@ -9,20 +9,20 @@ use crate::records::{
     FeatureInputBodySelection, FeatureInputComponentPathEntry, FeatureInputLane,
     FeatureInputSurfaceSelection, FeatureInputSurfaceSelectionKind,
 };
-use cadmpeg_ir::features::{
-    BodyRetentionMode, BodySelection, FeatureDefinition, FeatureId, FeatureOperation,
-    UnresolvedFamily,
-};
+use cadmpeg_ir::features::operation_settings::BodyRetentionMode;
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation, UnresolvedFamily};
 use std::collections::BTreeMap;
 
 fn parameter_scalar_binding_fixture() -> (
-    Vec<cadmpeg_ir::features::DesignParameter>,
+    Vec<cadmpeg_ir::features::parameters::DesignParameter>,
     Vec<cadmpeg_ir::features::Feature>,
     Vec<crate::records::FeatureHistory>,
     Vec<FeatureInputLane>,
 ) {
     use crate::records::{FeatureInputName, FeatureInputScalar, FeatureInputScalarRole};
-    use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
+    use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
+    use cadmpeg_ir::features::ParameterId;
 
     let mut feature = compact_edge_projection_feature();
     feature.native_ref = Some("native-feature".into());
@@ -37,7 +37,7 @@ fn parameter_scalar_binding_fixture() -> (
         value: Some(ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
         )),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -120,14 +120,14 @@ fn parameter_scalar_binding_preserves_native_reference_and_value() {
     bind_parameter_scalars(&mut parameters, &features, &histories, &lanes).expect("scalar binding");
     assert_eq!(parameters[0].native_ref.as_deref(), Some("native-scalar"));
     assert!(
-        matches!(parameters[0].value, Some(cadmpeg_ir::features::ParameterValue::Real(value))
+        matches!(parameters[0].value, Some(cadmpeg_ir::features::parameters::ParameterValue::Real(value))
         if value.get() == 2.0)
     );
 }
 
 #[test]
 fn archive_length_class_types_a_raw_scalar_value_as_a_length() {
-    use cadmpeg_ir::features::ParameterValue;
+    use cadmpeg_ir::features::parameters::ParameterValue;
     // With no display number the decoder writes the raw SI value (`0.00635`);
     // the archive walk read that value in a `moLengthParameter_c`, so it is
     // 6.35 mm. Without the class it stays a plain real.
@@ -179,14 +179,15 @@ fn tied_object_names_bind_unowned_scalars_to_the_later_history_feature() {
         native_ref: Some(native.into()),
         ..features[0].clone()
     });
-    let parameters = features
-        .each_ref()
-        .map(|feature| cadmpeg_ir::features::DesignParameter {
-            id: cadmpeg_ir::features::ParameterId::mint(format!("{}-parameter", feature.id))
-                .expect("identity grammar"),
-            owner: Some(feature.id.clone()),
-            ..parameters[0].clone()
-        });
+    let parameters =
+        features.each_ref().map(
+            |feature| cadmpeg_ir::features::parameters::DesignParameter {
+                id: cadmpeg_ir::features::ParameterId::mint(format!("{}-parameter", feature.id))
+                    .expect("identity grammar"),
+                owner: Some(feature.id.clone()),
+                ..parameters[0].clone()
+            },
+        );
     for _ in 0..32 {
         let mut bound = parameters.clone();
         bind_parameter_scalars(&mut bound, &features, &histories, &lanes).expect("scalar binding");
@@ -200,7 +201,7 @@ fn tied_object_names_bind_unowned_scalars_to_the_later_history_feature() {
 }
 
 fn display_relation_synthesis_fixture() -> (
-    Vec<cadmpeg_ir::features::DesignParameter>,
+    Vec<cadmpeg_ir::features::parameters::DesignParameter>,
     Vec<cadmpeg_ir::features::Feature>,
     Vec<FeatureInputLane>,
 ) {
@@ -249,7 +250,8 @@ fn display_relation_synthesis_preserves_reference_parameter() {
 
 #[test]
 fn compact_surface_projection_binds_generated_thread_face_alias() {
-    use cadmpeg_ir::features::{DatumPlaneReference, FaceSelection, GeneratedFaceRef};
+    use cadmpeg_ir::features::datums::DatumPlaneReference;
+    use cadmpeg_ir::features::selections::{FaceSelection, GeneratedFaceRef};
     use cadmpeg_ir::scalar::Length;
 
     let mut thread = compact_edge_projection_feature();
@@ -303,7 +305,7 @@ fn compact_surface_projection_binds_generated_thread_face_alias() {
 #[test]
 fn compact_generated_edges_match_the_linear_repeat_check() {
     use crate::records::FeatureInputEdgeSelection;
-    use cadmpeg_ir::features::GeneratedEdgeRef;
+    use cadmpeg_ir::features::selections::GeneratedEdgeRef;
 
     fn linear(
         selections: &[&FeatureInputEdgeSelection],
@@ -375,12 +377,12 @@ fn compact_edge_projection_feature() -> cadmpeg_ir::features::Feature {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::Fillet,
             }),
@@ -507,9 +509,9 @@ fn draft_face_selection_preserves_native_path_order_and_deduplicates() {
         "consumer",
         &[],
         &HashMap::new(),
-        &mut cadmpeg_ir::features::DistinctMembers::default(),
+        &mut cadmpeg_ir::features::selections::DistinctMembers::default(),
     );
-    assert_eq!(selection, cadmpeg_ir::features::FaceSelection::Native(
+    assert_eq!(selection, cadmpeg_ir::features::selections::FaceSelection::Native(
         "sldprt:feature-input:draft-surface-vectors:sldprt:feature-input:surface-component-ids:7;sldprt:feature-input:surface-component-ids:9".into()
     ));
 }

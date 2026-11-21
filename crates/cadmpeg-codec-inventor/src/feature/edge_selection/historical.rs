@@ -8,13 +8,10 @@ use cadmpeg_core::{
     decode::{unique_index, DecodeContext, View},
     CodecError,
 };
-use cadmpeg_ir::{
-    features::{
-        DistinctMembers, EdgeSelection, Feature, FeatureDefinition, FeatureInputTopology,
-        FeatureOperation, HistoricalEdgeGeometry,
-    },
-    ids::{FeatureInputTopologyId, HistoricalEdgeId},
-};
+use cadmpeg_ir::features::evaluation::{FeatureInputTopology, HistoricalEdgeGeometry};
+use cadmpeg_ir::features::selections::{DistinctMembers, EdgeSelection};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::ids::{FeatureInputTopologyId, HistoricalEdgeId};
 
 use super::{geometry::EdgeGeometry, PmDcFeaturePropertyKind};
 use crate::pmdc::{state_content_header, u32_list_with_context, Cursor, PmDcReference};

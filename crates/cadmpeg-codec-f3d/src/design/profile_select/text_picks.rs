@@ -11,7 +11,7 @@ use crate::records::topology::extrude_selection::{
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
 };
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::PlanarProfileRef;
+use cadmpeg_ir::features::profiles::PlanarProfileRef;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::sketches::{Sketch, SketchGeometryDefinition};
 

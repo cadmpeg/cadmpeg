@@ -31,7 +31,7 @@ fn input_fixture() -> (
         source_tag: Some("WorkPoint".into()),
         source_text: None,
         source_content: Default::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::DatumPoint,
             }),
@@ -73,7 +73,7 @@ fn input_fixture() -> (
     (feature, scope, history)
 }
 
-fn project() -> Vec<cadmpeg_ir::features::FeatureInputTopology> {
+fn project() -> Vec<cadmpeg_ir::features::evaluation::FeatureInputTopology> {
     let (feature, scope, mut history) = input_fixture();
     super::super::project_feature_input_topologies(
         std::slice::from_ref(&feature),
@@ -256,16 +256,16 @@ fn input_edge_geometry_carries_samples_endpoints_and_faces() {
     assert_eq!(edge.edge, crate::ids::history_input_edge_id(&prefix, 40));
     assert_eq!(
         edge.interior,
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 5.0)).unwrap()
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 5.0)).unwrap()
     );
     assert_eq!(edge.tangent, Some(cadmpeg_ir::units::UnitVector3::Z_AXIS));
     assert_eq!(
         edge.start,
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
     );
     assert_eq!(
         edge.end,
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 10.0))
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 10.0))
     );
     assert_eq!(
         edge.faces.iter().cloned().collect::<Vec<_>>(),
@@ -278,18 +278,19 @@ fn input_edge_geometry_carries_samples_endpoints_and_faces() {
 
 #[test]
 fn input_edge_geometry_keeps_only_selected_edges() {
-    use cadmpeg_ir::features::{FinitePoint3, HistoricalEdgeGeometry};
+    use cadmpeg_ir::features::evaluation::HistoricalEdgeGeometry;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::math::Point3;
 
     let (mut feature, _, _) = input_fixture();
     let prefix = crate::ids::feature_input_prefix(&feature.id, 4);
     let selected = crate::ids::history_input_edge_id(&prefix, 40);
     let unselected = crate::ids::history_input_edge_id(&prefix, 41);
-    feature.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+    feature.evaluation = cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
         FeatureDefinition::Operation(FeatureOperation::Fillet {
-            groups: cadmpeg_ir::features::NonEmptyMembers::try_from(vec![
+            groups: cadmpeg_ir::features::selections::NonEmptyMembers::try_from(vec![
                 cadmpeg_ir::features::edge_treatments::FilletGroup {
-                    edges: cadmpeg_ir::features::EdgeSelection::historical(
+                    edges: cadmpeg_ir::features::selections::EdgeSelection::historical(
                         crate::ids::history_input_state_id(&prefix),
                         vec![selected.clone()],
                         "f3d:test:fillet-group".to_owned(),
@@ -313,12 +314,12 @@ fn input_edge_geometry_keeps_only_selected_edges() {
         faces: Default::default(),
         supports: Vec::new(),
     };
-    let mut topologies = vec![cadmpeg_ir::features::FeatureInputTopology {
+    let mut topologies = vec![cadmpeg_ir::features::evaluation::FeatureInputTopology {
         id: crate::ids::history_input_state_id(&prefix),
         input_of: feature.id.clone(),
         bodies: Default::default(),
         faces: Default::default(),
-        edges: cadmpeg_ir::features::DistinctMembers::try_from(vec![
+        edges: cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
             selected.clone(),
             unselected.clone(),
         ])
@@ -342,16 +343,17 @@ fn input_edge_geometry_keeps_only_selected_edges() {
 
 #[test]
 fn input_edge_geometry_keeps_the_edges_that_bound_a_selected_face() {
-    use cadmpeg_ir::features::{FinitePoint3, HistoricalEdgeGeometry};
+    use cadmpeg_ir::features::evaluation::HistoricalEdgeGeometry;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::math::Point3;
 
     let (mut feature, _, _) = input_fixture();
     let prefix = crate::ids::feature_input_prefix(&feature.id, 4);
     let removed = crate::ids::history_input_face_id(&prefix, 10);
-    feature.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+    feature.evaluation = cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
         FeatureDefinition::Operation(FeatureOperation::Shell {
             bodies: None,
-            removed_faces: cadmpeg_ir::features::FaceSelection::historical(
+            removed_faces: cadmpeg_ir::features::selections::FaceSelection::historical(
                 crate::ids::history_input_state_id(&prefix),
                 vec![removed.clone()],
                 "f3d:test:shell-faces".to_owned(),
@@ -371,7 +373,7 @@ fn input_edge_geometry_keeps_the_edges_that_bound_a_selected_face() {
         tangent: None,
         start: None,
         end: None,
-        faces: cadmpeg_ir::features::DistinctMembers::try_from(
+        faces: cadmpeg_ir::features::selections::DistinctMembers::try_from(
             faces
                 .map(|face| crate::ids::history_input_face_id(&prefix, face))
                 .to_vec(),
@@ -379,7 +381,7 @@ fn input_edge_geometry_keeps_the_edges_that_bound_a_selected_face() {
         .unwrap(),
         supports: Vec::new(),
     };
-    let mut topologies = vec![cadmpeg_ir::features::FeatureInputTopology {
+    let mut topologies = vec![cadmpeg_ir::features::evaluation::FeatureInputTopology {
         id: crate::ids::history_input_state_id(&prefix),
         input_of: feature.id.clone(),
         bodies: Default::default(),

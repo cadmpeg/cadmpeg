@@ -9,10 +9,9 @@ use super::support::{
 };
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{
-    patterns::{PatternKind, PatternSeed, PatternTransform},
-    BooleanOp, RibConstruction, RibDraft, RibSide,
-};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::patterns::{PatternKind, PatternSeed, PatternTransform};
+use cadmpeg_ir::features::revolve::{RibConstruction, RibDraft, RibSide};
 
 impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_rib(

@@ -455,10 +455,12 @@ fn spatial_parallel_line_span_distance(
 fn spatial_length_parameter_matches(
     measured: Option<f64>,
     parameter: &crate::features::ParameterId,
-    parameter_values: &BorrowedIdentities<'_, &Option<crate::features::ParameterValue>>,
+    parameter_values: &BorrowedIdentities<'_, &Option<crate::features::parameters::ParameterValue>>,
 ) -> bool {
     let expected = match parameter_values.get(parameter.as_str()) {
-        Some(Some(crate::features::ParameterValue::Length(length))) => length.get().abs(),
+        Some(Some(crate::features::parameters::ParameterValue::Length(length))) => {
+            length.get().abs()
+        }
         _ => return false,
     };
     measured.is_some_and(|measured| {
@@ -865,7 +867,7 @@ pub(super) fn check_sketches(
                     None => None,
                 };
                 let expected = match parameter_values.get(parameter.as_str()) {
-                    Some(Some(crate::features::ParameterValue::Length(length))) => {
+                    Some(Some(crate::features::parameters::ParameterValue::Length(length))) => {
                         Some(length.get().abs())
                     }
                     _ => None,
@@ -919,7 +921,7 @@ pub(super) fn check_sketches(
                     _ => None,
                 };
                 let expected = match parameter_values.get(parameter.as_str()) {
-                    Some(Some(crate::features::ParameterValue::Length(length))) => {
+                    Some(Some(crate::features::parameters::ParameterValue::Length(length))) => {
                         Some(length.get().abs())
                     }
                     _ => None,
@@ -1100,7 +1102,7 @@ pub(super) fn check_sketches(
                 let parameter_matches = match parameter {
                     None => true,
                     Some(parameter) => match parameter_values.get(parameter.id.as_str()) {
-                        Some(Some(crate::features::ParameterValue::Length(value))) => {
+                        Some(Some(crate::features::parameters::ParameterValue::Length(value))) => {
                             let expected = if parameter.negated {
                                 -value.get()
                             } else {
@@ -1244,20 +1246,21 @@ pub(super) fn check_sketches(
                                 EPS_DISTANCE_VALUE * (1.0 + measured.abs().max(distance.get())),
                             )
                     });
-                let parameter_matches =
-                    match parameter.as_ref() {
-                        None => true,
-                        Some(parameter) => match parameter_values.get(parameter.as_str()) {
-                            Some(Some(crate::features::ParameterValue::Length(value))) => {
-                                let expected = value.get().abs();
-                                (expected - distance.get()).abs()
-                                    <= ir.tolerances.linear.get().max(
-                                        EPS_DISTANCE_VALUE * (1.0 + expected.max(distance.get())),
-                                    )
-                            }
-                            _ => false,
-                        },
-                    };
+                let parameter_matches = match parameter.as_ref() {
+                    None => true,
+                    Some(parameter) => match parameter_values.get(parameter.as_str()) {
+                        Some(Some(crate::features::parameters::ParameterValue::Length(value))) => {
+                            let expected = value.get().abs();
+                            (expected - distance.get()).abs()
+                                <= ir
+                                    .tolerances
+                                    .linear
+                                    .get()
+                                    .max(EPS_DISTANCE_VALUE * (1.0 + expected.max(distance.get())))
+                        }
+                        _ => false,
+                    },
+                };
                 distance_matches && parameter_matches
             }
             Constraint::PointCoordinateValues { point, values } => {
@@ -1323,7 +1326,7 @@ pub(super) fn check_sketches(
                 let parameter_matches = match distance_parameter.as_ref() {
                     None => true,
                     Some(parameter) => match parameter_values.get(parameter.as_str()) {
-                        Some(Some(crate::features::ParameterValue::Length(value))) => {
+                        Some(Some(crate::features::parameters::ParameterValue::Length(value))) => {
                             let expected = value.get().abs();
                             (expected - distance.get()).abs()
                                 <= ir
@@ -1396,7 +1399,7 @@ pub(super) fn check_sketches(
                     })
                 });
                 let expected = match parameter_values.get(parameter.as_str()) {
-                    Some(Some(crate::features::ParameterValue::Length(length))) => {
+                    Some(Some(crate::features::parameters::ParameterValue::Length(length))) => {
                         Some(length.get().abs())
                     }
                     _ => None,
@@ -1507,7 +1510,9 @@ pub(super) fn check_sketches(
                         _ => None,
                     });
             let diameter = match parameter_values.get(parameter.as_str()) {
-                Some(Some(crate::features::ParameterValue::Length(value))) => Some(value.get()),
+                Some(Some(crate::features::parameters::ParameterValue::Length(value))) => {
+                    Some(value.get())
+                }
                 _ => None,
             };
             if constraint.active != Some(false)
@@ -1725,13 +1730,13 @@ fn planar_parallel_lines(
     {
         return None;
     }
-    let first_unit = crate::features::FiniteVector3::new(crate::math::Vector3::new(
+    let first_unit = crate::features::geometry::FiniteVector3::new(crate::math::Vector3::new(
         first_direction.u,
         first_direction.v,
         0.0,
     ))?
     .unit_nonzero()?;
-    let second_unit = crate::features::FiniteVector3::new(crate::math::Vector3::new(
+    let second_unit = crate::features::geometry::FiniteVector3::new(crate::math::Vector3::new(
         second_direction.u,
         second_direction.v,
         0.0,
@@ -1768,7 +1773,7 @@ fn planar_parallel_line_span_distance(
     let [second_start, second_end] = lines.second;
     let direction =
         crate::math::Point2::new(first_end.u - first_start.u, first_end.v - first_start.v);
-    let unit = crate::features::FiniteVector3::new(crate::math::Vector3::new(
+    let unit = crate::features::geometry::FiniteVector3::new(crate::math::Vector3::new(
         direction.u,
         direction.v,
         0.0,

@@ -12,7 +12,8 @@ use crate::records::sketch_placement::SketchPlacementMatrix;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use crate::test_support::align::{align_motion_fixture, ALIGN_MOTION_MATRIX};
-use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 fn fixture(
     omitted: bool,

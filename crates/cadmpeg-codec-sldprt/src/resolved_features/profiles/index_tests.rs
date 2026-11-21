@@ -1,8 +1,9 @@
 use super::{markers_by_owner, only_enclosed, FeaturePositions};
 use crate::records::{SketchInputEntity, SketchInputKind};
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{
-    DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
-    FeatureOperation, SketchFeatureBinding,
+    Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation, SketchFeatureBinding,
 };
 
 fn feature(position: usize, native_ref: Option<String>) -> Feature {

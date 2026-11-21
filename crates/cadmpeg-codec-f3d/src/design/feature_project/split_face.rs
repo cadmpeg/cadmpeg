@@ -22,9 +22,10 @@ pub(super) fn project_split_face(
     use crate::records::feature::split_face::{
         DesignSplitFaceDirectionReference, DesignSplitFaceMethod,
     };
-    use cadmpeg_ir::features::{
-        FaceSelection, FeatureDefinition, FeatureOperation, FiniteVector3, SplitFaceTool,
-    };
+    use cadmpeg_ir::features::direct_edit::SplitFaceTool;
+    use cadmpeg_ir::features::geometry::FiniteVector3;
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut losses = Vec::new();
     if scope.split_face_operation().is_some_and(

@@ -17,7 +17,8 @@ use crate::records::{
         construction::DesignConstructionOperandGroupFrame,
     },
 };
-use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 #[test]
 fn replacement_missing_definitions_retains_control_and_typed_selections() {
@@ -557,8 +558,8 @@ fn surface_trim_projects_body_target_and_curve_tool() {
         definition,
         FeatureDefinition::Operation(FeatureOperation::TrimSurface {
             faces: FaceSelection::Historical { ref faces, ref native, .. },
-            tool: cadmpeg_ir::features::PathRef::Native(ref tool),
-            keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+            tool: cadmpeg_ir::features::profiles::PathRef::Native(ref tool),
+            keep: cadmpeg_ir::features::surface_inputs::TrimRegion::Unresolved,
         }) if faces.len() == 1
             && native.as_str() == target_group.id
             && tool == &tool_group.id
@@ -624,8 +625,8 @@ fn surface_trim_projects_the_owned_face_recipe_as_its_tool() {
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::TrimSurface {
             faces: FaceSelection::Historical { faces, .. },
-            tool: cadmpeg_ir::features::PathRef::Native(tool),
-            keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+            tool: cadmpeg_ir::features::profiles::PathRef::Native(tool),
+            keep: cadmpeg_ir::features::surface_inputs::TrimRegion::Unresolved,
         }) if faces.len() == 1 && tool == &tool_id
     ));
     assert!(projection.projection_losses.is_empty());
@@ -677,8 +678,8 @@ fn surface_trim_keeps_native_target_when_its_body_is_unresolved() {
         definition,
         FeatureDefinition::Operation(FeatureOperation::TrimSurface {
             faces: FaceSelection::Native(ref faces),
-            tool: cadmpeg_ir::features::PathRef::Native(ref tool),
-            keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+            tool: cadmpeg_ir::features::profiles::PathRef::Native(ref tool),
+            keep: cadmpeg_ir::features::surface_inputs::TrimRegion::Unresolved,
         }) if faces == &target_group.id && tool == &tool_group.id
     ));
 }
@@ -714,7 +715,7 @@ fn surface_trim_projects_multi_member_target_and_tool_groups() {
         definition,
         FeatureDefinition::Operation(FeatureOperation::TrimSurface {
             faces: FaceSelection::Native(ref faces),
-            tool: cadmpeg_ir::features::PathRef::Native(ref tool),
+            tool: cadmpeg_ir::features::profiles::PathRef::Native(ref tool),
             ..
         }) if faces == &target_group.id && tool == &tool_group.id
     ));
@@ -786,8 +787,8 @@ fn surface_trim_projects_untyped_members_by_group_role_with_a_loss() {
         definition,
         FeatureDefinition::Operation(FeatureOperation::TrimSurface {
             faces: FaceSelection::Native(ref faces),
-            tool: cadmpeg_ir::features::PathRef::Native(ref tool),
-            keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+            tool: cadmpeg_ir::features::profiles::PathRef::Native(ref tool),
+            keep: cadmpeg_ir::features::surface_inputs::TrimRegion::Unresolved,
         }) if faces == &target_group.id && tool == &tool_group.id
     ));
     assert_eq!(losses, vec![untyped_trim_member_loss(1)]);
@@ -807,8 +808,8 @@ fn surface_trim_projects_untyped_members_by_group_role_with_a_loss() {
             definition,
             FeatureDefinition::Operation(FeatureOperation::TrimSurface {
                 faces: FaceSelection::Historical { ref faces, ref native, .. },
-                tool: cadmpeg_ir::features::PathRef::Native(ref tool),
-                keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+                tool: cadmpeg_ir::features::profiles::PathRef::Native(ref tool),
+                keep: cadmpeg_ir::features::surface_inputs::TrimRegion::Unresolved,
             }) if faces.len() == 1
                 && native.as_str() == target_group.id
                 && tool == &tool_group.id
@@ -837,7 +838,7 @@ fn surface_trim_projects_a_trimming_body_tool() {
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::TrimSurface {
-            tool: cadmpeg_ir::features::PathRef::Native(ref tool),
+            tool: cadmpeg_ir::features::profiles::PathRef::Native(ref tool),
             ..
         }) if tool == &tool_group.id
     ));
@@ -878,7 +879,7 @@ fn assert_native_cells(ordinals: &[u64], trailing_value: u32) {
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::TrimSurface {
-            keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+            keep: cadmpeg_ir::features::surface_inputs::TrimRegion::Unresolved,
             ..
         })
     ));
@@ -926,11 +927,11 @@ fn unresolved_trim_feature(scope: &DesignParameterScope) -> cadmpeg_ir::features
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::TrimSurface {
                 faces: FaceSelection::Unresolved,
-                tool: cadmpeg_ir::features::PathRef::Unresolved("tool".into()),
-                keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+                tool: cadmpeg_ir::features::profiles::PathRef::Unresolved("tool".into()),
+                keep: cadmpeg_ir::features::surface_inputs::TrimRegion::Unresolved,
             }),
         ),
         native_ref: Some(scope.id.clone()),
@@ -1000,11 +1001,11 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::TrimSurface {
                 faces: FaceSelection::Unresolved,
-                tool: cadmpeg_ir::features::PathRef::Unresolved("tool".into()),
-                keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+                tool: cadmpeg_ir::features::profiles::PathRef::Unresolved("tool".into()),
+                keep: cadmpeg_ir::features::surface_inputs::TrimRegion::Unresolved,
             }),
         ),
         native_ref: None,
@@ -1074,7 +1075,7 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
     assert!(matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::TrimSurface {
-            keep: cadmpeg_ir::features::TrimRegion::Cells(ref selection),
+            keep: cadmpeg_ir::features::surface_inputs::TrimRegion::Cells(ref selection),
             ..
         }) if wire::field::<Vec<u64>>(&selection, "removed") == [1, 4] && wire::field::<u64>(&selection, "total") == 5
     ));
@@ -1098,11 +1099,11 @@ fn surface_trim_selected_cells_keep_cells() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::TrimSurface {
                 faces: FaceSelection::Unresolved,
-                tool: cadmpeg_ir::features::PathRef::Unresolved("tool".into()),
-                keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+                tool: cadmpeg_ir::features::profiles::PathRef::Unresolved("tool".into()),
+                keep: cadmpeg_ir::features::surface_inputs::TrimRegion::Unresolved,
             }),
         ),
         native_ref: Some(scope.id.clone()),
@@ -1162,7 +1163,7 @@ fn surface_trim_selected_cells_keep_cells() {
     assert!(matches!(
         unchanged[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::TrimSurface {
-            keep: cadmpeg_ir::features::TrimRegion::Cells(_),
+            keep: cadmpeg_ir::features::surface_inputs::TrimRegion::Cells(_),
             ..
         })
     ));

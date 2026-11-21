@@ -10,11 +10,13 @@ use crate::records::topology::body_recipe::DesignBodyRecipeOperand;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::entity_selection::DesignEntitySelectionOperand;
 use crate::records::topology::face::DesignFaceOperand;
-use cadmpeg_ir::features::{
-    AngularTermination, FaceSelection, FeatureDefinition, FeatureOperation,
-    FeatureSupportPlaneFrame, PartialRevolveConstruction, PlaneTargetSource, RevolveConstruction,
-    RevolveExtent,
+use cadmpeg_ir::features::extents::{AngularTermination, PlaneTargetSource};
+use cadmpeg_ir::features::geometry::FeatureSupportPlaneFrame;
+use cadmpeg_ir::features::revolve::{
+    PartialRevolveConstruction, RevolveConstruction, RevolveExtent,
 };
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 /// Scope records a one-sided `Revolve` target can name.
 pub(super) struct RevolveTargetInputs<'a> {

@@ -1,7 +1,7 @@
-use crate::{
-    features::{DesignParameter, DistinctMembers, ParameterId, ParameterValue},
-    scalar::FiniteReal,
-};
+use crate::features::parameters::{DesignParameter, ParameterValue};
+use crate::features::selections::DistinctMembers;
+use crate::features::ParameterId;
+use crate::scalar::FiniteReal;
 
 #[test]
 fn parameter_real_admission_preserves_finite_signed_wire_values() {

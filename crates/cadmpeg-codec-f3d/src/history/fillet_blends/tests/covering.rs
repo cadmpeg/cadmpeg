@@ -15,7 +15,8 @@ use crate::history_records::{
     AsmHistoricalSurfaceAxis, AsmHistoricalSurfaceRadius, AsmHistoricalTopology,
 };
 use crate::loss::F3dLossCode;
-use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureId, FeatureOperation};
+use cadmpeg_ir::features::selections::EdgeSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::math::Point3;
 use std::collections::HashSet;
 

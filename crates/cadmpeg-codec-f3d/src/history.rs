@@ -1016,7 +1016,8 @@ pub(crate) fn bind_feature_outputs(
     scope_histories: &HashMap<String, String>,
     primary_brep: Option<&str>,
 ) -> Result<BoundFeatureOutputs, cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::EdgeSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut losses = Vec::new();
     let mut sweep_kinds = crate::design::feature_project::sweep_fallback::OutputFacts::default();
@@ -1836,8 +1837,10 @@ pub(crate) fn bind_feature_outputs(
                     ..
                 } = def
                 {
-                    if *op == cadmpeg_ir::features::BooleanKind::Join && *keep_tools {
-                        *op = cadmpeg_ir::features::BooleanKind::Cut;
+                    if *op == cadmpeg_ir::features::operation_settings::BooleanKind::Join
+                        && *keep_tools
+                    {
+                        *op = cadmpeg_ir::features::operation_settings::BooleanKind::Cut;
                         assumed_cut = true;
                     }
                 }
@@ -1950,7 +1953,7 @@ pub(crate) fn bind_feature_outputs(
         }
         let complete_sweep_output = resolved.len() == outputs.len() && saved_edges.is_empty();
         feature.evaluation.set_outputs(
-            cadmpeg_ir::features::DistinctMembers::try_from(resolved)
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(resolved)
                 .map_err(cadmpeg_core::CodecError::from)?,
         );
         sweep_kinds.record(feature, active_bodies, complete_sweep_output);
@@ -2024,7 +2027,7 @@ fn bind_base_feature_output_selection(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::BaseFeature {
-            bodies: cadmpeg_ir::features::BodySelection::Native(native),
+            bodies: cadmpeg_ir::features::selections::BodySelection::Native(native),
         },
     ) = feature.evaluation.definition()
     else {
@@ -2036,8 +2039,8 @@ fn bind_base_feature_output_selection(
 
         selected.push(id);
     }
-    let bodies = cadmpeg_ir::features::BodySelection::Resolved {
-        bodies: cadmpeg_ir::features::DistinctMembers::try_from(selected)
+    let bodies = cadmpeg_ir::features::selections::BodySelection::Resolved {
+        bodies: cadmpeg_ir::features::selections::DistinctMembers::try_from(selected)
             .map_err(cadmpeg_core::CodecError::from)?,
         native: native.to_owned(),
     };
@@ -2053,7 +2056,8 @@ pub(crate) fn bind_sweep_result_modes(
     features: &mut [cadmpeg_ir::features::Feature],
     bodies: &[cadmpeg_ir::topology::Body],
 ) {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SweepMode, SweepShape};
+    use cadmpeg_ir::features::sweeps::{SweepMode, SweepShape};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::topology::BodyKind;
 
     let mut body_kinds = HashMap::new();
@@ -2087,7 +2091,7 @@ pub(crate) fn bind_sweep_result_modes(
             SweepMode::Surface {}
         } else if all_solid {
             SweepMode::Solid {
-                op: cadmpeg_ir::features::SolidSweepOperation::NewBody,
+                op: cadmpeg_ir::features::sweeps::SolidSweepOperation::NewBody,
             }
         } else {
             SweepMode::Unresolved {}
@@ -2149,7 +2153,8 @@ pub(crate) fn bind_feature_body_selections(
     inputs: &FeatureBodySelectionInputs<'_>,
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     use cadmpeg_ir::features::boundary_fill::BoundaryFillCell;
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut losses = Vec::new();
     let scopes = inputs.scopes;
@@ -2341,12 +2346,12 @@ pub(crate) fn bind_feature_body_selections(
                 }
                 if let FeatureDefinition::Operation(
                     FeatureOperation::Coil {
-                        result: cadmpeg_ir::features::SolidFeatureResult::Boolean { targets, .. },
+                        result: cadmpeg_ir::features::operation_settings::SolidFeatureResult::Boolean { targets, .. },
                         ..
                     }
                     | FeatureOperation::Thicken {
                         result:
-                            Some(cadmpeg_ir::features::SolidFeatureResult::Boolean { targets, .. }),
+                            Some(cadmpeg_ir::features::operation_settings::SolidFeatureResult::Boolean { targets, .. }),
                         ..
                     },
                 ) = definition
@@ -2528,7 +2533,7 @@ pub(crate) fn bind_feature_body_selections(
                 let native = group_id.to_owned();
                 let selected = vec![body_id];
                 if let Ok(historical) =
-                    cadmpeg_ir::features::BodySelection::historical(state_id, selected, native)
+                    cadmpeg_ir::features::selections::BodySelection::historical(state_id, selected, native)
                 {
                     *bodies = historical;
                 }
@@ -2706,8 +2711,8 @@ fn combine_recipe_family_tool_slots(
 /// state. A body that both sides name leaves both selections native.
 fn bind_operand_list_combine_bodies(
     (target, tools): (
-        &mut cadmpeg_ir::features::BodySelection,
-        &mut cadmpeg_ir::features::BodySelection,
+        &mut cadmpeg_ir::features::selections::BodySelection,
+        &mut cadmpeg_ir::features::selections::BodySelection,
     ),
     scope: &crate::records::feature::scope::DesignParameterScope,
     operation: &crate::records::feature::combine::DesignCombineOperation,
@@ -2719,7 +2724,7 @@ fn bind_operand_list_combine_bodies(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<()> {
     use crate::records::feature::combine::DesignCombineBodyNode;
-    use cadmpeg_ir::features::{BodyMembers, BodySelection};
+    use cadmpeg_ir::features::selections::{BodyMembers, BodySelection};
 
     let stream = crate::ids::native_stream(&scope.id)?;
     let (history, _, previous) =
@@ -2823,7 +2828,7 @@ fn bind_operand_list_combine_bodies(
 
 fn combine_external_local_tools(
     scope: &crate::records::feature::scope::DesignParameterScope,
-) -> Option<cadmpeg_ir::features::BodySelection> {
+) -> Option<cadmpeg_ir::features::selections::BodySelection> {
     let operation = scope.combine_operation()?;
     let mut bodies = Vec::new();
     for tool in operation.tools.iter() {
@@ -2836,7 +2841,7 @@ fn combine_external_local_tools(
         bodies.push(id);
     }
     let native = scope.id.clone();
-    cadmpeg_ir::features::BodySelection::local(bodies, native).ok()
+    cadmpeg_ir::features::selections::BodySelection::local(bodies, native).ok()
 }
 
 fn historical_body_slot(id: &str) -> Option<i64> {
@@ -2848,14 +2853,14 @@ fn historical_body_slot(id: &str) -> Option<i64> {
 }
 
 fn bind_body_recipe_body_selection(
-    selection: &mut cadmpeg_ir::features::BodySelection,
+    selection: &mut cadmpeg_ir::features::selections::BodySelection,
     feature_id: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
     scope: &crate::records::feature::scope::DesignParameterScope,
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::body_recipe::DesignBodyRecipeOperand],
 ) {
-    use cadmpeg_ir::features::BodySelection;
+    use cadmpeg_ir::features::selections::BodySelection;
 
     let BodySelection::Native(group_id) = selection else {
         return;
@@ -2915,7 +2920,8 @@ fn bind_body_recipe_body_selection(
     }
     let state = crate::ids::history_input_state_id(&prefix);
     let native = group.id.clone();
-    if let Ok(historical) = cadmpeg_ir::features::BodySelection::historical(state, body_ids, native)
+    if let Ok(historical) =
+        cadmpeg_ir::features::selections::BodySelection::historical(state, body_ids, native)
     {
         *selection = historical;
     }
@@ -2927,7 +2933,7 @@ fn direct_design_record_body<'a>(
     stream: Option<&str>,
     operands: &'a [crate::records::topology::body_recipe::DesignBodyRecipeOperand],
     body_candidates: &mut BodyCandidates<'a>,
-) -> Option<cadmpeg_ir::features::BodyMember<cadmpeg_ir::ids::BodyId>> {
+) -> Option<cadmpeg_ir::features::selections::BodyMember<cadmpeg_ir::ids::BodyId>> {
     let (native_stream_name, record_index) = native.rsplit_once(":design-record#")?;
     let record_index = record_index.parse::<u32>().ok()?;
     if Some(native_stream_name) != stream {
@@ -2951,12 +2957,12 @@ fn direct_design_record_body<'a>(
 }
 
 fn bind_direct_body_recipe_body_selection<'a>(
-    selection: &mut cadmpeg_ir::features::BodySelection,
+    selection: &mut cadmpeg_ir::features::selections::BodySelection,
     scope: &crate::records::feature::scope::DesignParameterScope,
     inputs: &FeatureBodySelectionInputs<'a>,
     body_candidates: &mut BodyCandidates<'a>,
 ) {
-    use cadmpeg_ir::features::{BodyMember, BodySelection};
+    use cadmpeg_ir::features::selections::{BodyMember, BodySelection};
 
     let groups = inputs.groups;
     let operands = inputs.body_recipe_operands;
@@ -3007,7 +3013,8 @@ fn bind_direct_body_recipe_body_selection<'a>(
 
                         selected.push(body);
                     }
-                    let Ok(bodies) = cadmpeg_ir::features::DistinctMembers::try_from(selected)
+                    let Ok(bodies) =
+                        cadmpeg_ir::features::selections::DistinctMembers::try_from(selected)
                     else {
                         return;
                     };
@@ -3028,7 +3035,8 @@ fn bind_direct_body_recipe_body_selection<'a>(
                     ) else {
                         return;
                     };
-                    let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_rows(vec![row])
+                    let Ok(members) =
+                        cadmpeg_ir::features::selections::BodyMembers::try_from_rows(vec![row])
                     else {
                         return;
                     };
@@ -3064,7 +3072,7 @@ fn bind_direct_body_recipe_body_selection<'a>(
         }
         rows.push(row);
     }
-    if let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_rows(rows) {
+    if let Ok(members) = cadmpeg_ir::features::selections::BodyMembers::try_from_rows(rows) {
         *selection = BodySelection::ResolvedSet { members };
     }
 }
@@ -3210,7 +3218,7 @@ pub(crate) struct FeatureFaceSelectionInputs<'a> {
 
 pub(crate) fn bind_feature_face_selections(
     features: &mut [cadmpeg_ir::features::Feature],
-    input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
+    input_topologies: &mut [cadmpeg_ir::features::evaluation::FeatureInputTopology],
     input: FeatureFaceSelectionInputs<'_>,
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     let mut losses = Vec::new();
@@ -3276,7 +3284,9 @@ pub(crate) fn bind_feature_face_selections(
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Extrude { start, extent, .. },
                 ) => {
-                    if let cadmpeg_ir::features::ExtrudeStart::FromFace { face, .. } = start {
+                    if let cadmpeg_ir::features::extents::ExtrudeStart::FromFace { face, .. } =
+                        start
+                    {
                         selection::bind_face_selection(
                             face,
                             scope,
@@ -3298,15 +3308,22 @@ pub(crate) fn bind_feature_face_selections(
                         );
                     }
                     let sides = match extent {
-                        cadmpeg_ir::features::ExtrudeExtent::OneSided { side }
-                        | cadmpeg_ir::features::ExtrudeExtent::Symmetric { side } => vec![side],
-                        cadmpeg_ir::features::ExtrudeExtent::TwoSided { first, second } => {
+                        cadmpeg_ir::features::extents::ExtrudeExtent::OneSided { side }
+                        | cadmpeg_ir::features::extents::ExtrudeExtent::Symmetric { side } => {
+                            vec![side]
+                        }
+                        cadmpeg_ir::features::extents::ExtrudeExtent::TwoSided {
+                            first,
+                            second,
+                        } => {
                             vec![first, second]
                         }
                     };
                     for side in sides {
-                        if let cadmpeg_ir::features::LinearTermination::ToFace { face, .. } =
-                            &mut side.termination
+                        if let cadmpeg_ir::features::extents::LinearTermination::ToFace {
+                            face,
+                            ..
+                        } = &mut side.termination
                         {
                             selection::bind_face_selection(
                                 face,
@@ -3454,7 +3471,7 @@ pub(crate) fn bind_feature_face_selections(
                         operands,
                         &transition.topology.faces.updated,
                     );
-                    if let cadmpeg_ir::features::SplitFaceTool::Faces(faces) = tool {
+                    if let cadmpeg_ir::features::direct_edit::SplitFaceTool::Faces(faces) = tool {
                         selection::bind_face_selection(
                             faces,
                             scope,
@@ -3507,7 +3524,7 @@ pub(crate) fn bind_feature_face_selections(
                     }
                     if matches!(
                         hole_face,
-                        Some(cadmpeg_ir::features::FaceSelection::Native(_))
+                        Some(cadmpeg_ir::features::selections::FaceSelection::Native(_))
                     ) && scope.hole_construction().zip(preceding).is_some_and(
                         |(construction, preceding)| {
                             hole_support::entries_lie_on_no_face(construction, preceding)
@@ -3681,16 +3698,16 @@ struct FaceSelectionBinding<'a> {
     previous_state_id: i64,
     operation_history_id: &'a str,
     scope: &'a crate::records::feature::scope::DesignParameterScope,
-    input_topologies: &'a mut [cadmpeg_ir::features::FeatureInputTopology],
+    input_topologies: &'a mut [cadmpeg_ir::features::evaluation::FeatureInputTopology],
 }
 
 fn bind_entity_face_selection(
-    selection: &mut cadmpeg_ir::features::FaceSelection,
+    selection: &mut cadmpeg_ir::features::selections::FaceSelection,
     input: FaceSelectionBinding<'_>,
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
 ) {
-    use cadmpeg_ir::features::FaceSelection;
+    use cadmpeg_ir::features::selections::FaceSelection;
     let FaceSelectionBinding {
         feature_id,
         previous_state_id,
@@ -3733,7 +3750,7 @@ fn bind_entity_face_selection(
 // Keep the serialized-selection context explicit at this boundary so every
 // admission input remains visible to the strict all-members proof.
 fn bind_surface_stitch_face_selection(
-    selection: &mut cadmpeg_ir::features::FaceSelection,
+    selection: &mut cadmpeg_ir::features::selections::FaceSelection,
     input: FaceSelectionBinding<'_>,
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
@@ -3746,7 +3763,7 @@ fn bind_surface_stitch_face_selection(
         input_topologies,
     } = input;
     let native_id = match selection {
-        cadmpeg_ir::features::FaceSelection::Native(native_id) => native_id.as_str(),
+        cadmpeg_ir::features::selections::FaceSelection::Native(native_id) => native_id.as_str(),
         _ => return,
     };
     if native_id != scope.id {
@@ -3811,7 +3828,7 @@ fn bind_surface_stitch_face_selection(
 // Keep the shared selection-binding inputs explicit; this helper is the
 // single admission point for both one-group and SurfaceStitch selections.
 fn bind_entity_face_groups(
-    selection: &mut cadmpeg_ir::features::FaceSelection,
+    selection: &mut cadmpeg_ir::features::selections::FaceSelection,
     native_id: &str,
     input: FaceSelectionBinding<'_>,
     groups: &[&crate::records::topology::construction::DesignConstructionOperandGroup],
@@ -3903,19 +3920,20 @@ fn bind_entity_face_groups(
         }
     }
     let native = native_id.to_owned();
-    if let Ok(historical) = cadmpeg_ir::features::FaceSelection::historical(state_id, faces, native)
+    if let Ok(historical) =
+        cadmpeg_ir::features::selections::FaceSelection::historical(state_id, faces, native)
     {
         *selection = historical;
     }
 }
 
 fn bind_hole_face_selection(
-    selection: &mut cadmpeg_ir::features::FaceSelection,
+    selection: &mut cadmpeg_ir::features::selections::FaceSelection,
     input: FaceSelectionBinding<'_>,
     transition: &crate::history_records::AsmHistoricalTransition,
     preceding: Option<&crate::history_records::AsmHistoricalTopology>,
 ) {
-    use cadmpeg_ir::features::FaceSelection;
+    use cadmpeg_ir::features::selections::FaceSelection;
     let FaceSelectionBinding {
         feature_id,
         previous_state_id,
@@ -3955,7 +3973,7 @@ fn bind_hole_face_selection(
                 topology.faces.insert(face.clone());
             }
         }
-        if let Ok(historical) = cadmpeg_ir::features::FaceSelection::historical(
+        if let Ok(historical) = cadmpeg_ir::features::selections::FaceSelection::historical(
             state_id,
             selected,
             native_id.to_owned(),
@@ -4008,7 +4026,7 @@ fn bind_hole_face_selection(
     let native = native_id.to_owned();
     let selected = vec![face];
     if let Ok(historical) =
-        cadmpeg_ir::features::FaceSelection::historical(state_id, selected, native)
+        cadmpeg_ir::features::selections::FaceSelection::historical(state_id, selected, native)
     {
         *selection = historical;
     }
@@ -4020,7 +4038,8 @@ pub(crate) fn bind_feature_path_selections(
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
 ) {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SurfaceBoundary};
+    use cadmpeg_ir::features::surface_inputs::SurfaceBoundary;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     for feature in features {
         let native_ref = feature.native_ref.as_deref();
@@ -4109,14 +4128,14 @@ pub(crate) fn bind_feature_path_selections(
 }
 
 fn bind_entity_selection_path(
-    path: &mut cadmpeg_ir::features::PathRef,
+    path: &mut cadmpeg_ir::features::profiles::PathRef,
     feature_id: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
     scope: &crate::records::feature::scope::DesignParameterScope,
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
 ) {
-    use cadmpeg_ir::features::PathRef;
+    use cadmpeg_ir::features::profiles::PathRef;
 
     let PathRef::Native(group_id) = path else {
         return;
@@ -4297,7 +4316,7 @@ pub(crate) fn project_feature_input_topologies(
     histories: &mut [AsmHistory],
     edge_operands: &[crate::records::topology::edge_identity::DesignEdgeOperand],
     scope_histories: &HashMap<String, String>,
-) -> Vec<cadmpeg_ir::features::FeatureInputTopology> {
+) -> Vec<cadmpeg_ir::features::evaluation::FeatureInputTopology> {
     let mut jobs = Vec::new();
     for (feature_position, feature) in features.iter().enumerate() {
         let histories = &*histories;
@@ -4376,7 +4395,7 @@ fn project_input_topology(
     history: &AsmHistory,
     state: &AsmDeltaState,
     previous_state_id: i64,
-) -> Option<cadmpeg_ir::features::FeatureInputTopology> {
+) -> Option<cadmpeg_ir::features::evaluation::FeatureInputTopology> {
     let topology = history.topology(state)?;
     let prefix = crate::ids::feature_input_prefix(&feature.id, previous_state_id);
     let bodies = project_input_members(&topology.bodies, |slot| {
@@ -4397,7 +4416,7 @@ fn project_input_topology(
     let input_of = feature.id.clone();
     let native_ref = state.id.clone();
 
-    Some(cadmpeg_ir::features::FeatureInputTopology {
+    Some(cadmpeg_ir::features::evaluation::FeatureInputTopology {
         id,
         input_of,
         bodies,
@@ -4416,7 +4435,7 @@ fn project_input_topology(
 pub(crate) fn retain_selected_edge_geometry(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &[cadmpeg_ir::features::Feature],
-    input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
+    input_topologies: &mut [cadmpeg_ir::features::evaluation::FeatureInputTopology],
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
     let mut sampled = HashSet::new();
@@ -4465,7 +4484,7 @@ pub(crate) fn retain_selected_edge_geometry(
 fn project_input_edge_geometry(
     topology: &AsmHistoricalTopology,
     prefix: &cadmpeg_ir::ids::IdentityKey,
-) -> Vec<cadmpeg_ir::features::HistoricalEdgeGeometry> {
+) -> Vec<cadmpeg_ir::features::evaluation::HistoricalEdgeGeometry> {
     if topology.edge_samples.is_empty() {
         return Vec::new();
     }
@@ -4511,7 +4530,7 @@ fn project_input_edge_geometry(
         vertex_positions
             .get(&vertex)
             .copied()
-            .and_then(cadmpeg_ir::features::FinitePoint3::new)
+            .and_then(cadmpeg_ir::features::geometry::FinitePoint3::new)
     };
     topology
         .edges
@@ -4523,9 +4542,9 @@ fn project_input_edge_geometry(
             });
             let mut faces = edge_faces.get(slot).cloned().unwrap_or_default();
             faces.sort_unstable();
-            Some(cadmpeg_ir::features::HistoricalEdgeGeometry {
+            Some(cadmpeg_ir::features::evaluation::HistoricalEdgeGeometry {
                 edge: crate::ids::history_input_edge_id(prefix, *slot),
-                interior: cadmpeg_ir::features::FinitePoint3::new(sample.interior)?,
+                interior: cadmpeg_ir::features::geometry::FinitePoint3::new(sample.interior)?,
                 tangent: sample.tangent.and_then(cadmpeg_ir::units::UnitVector3::new),
                 start,
                 end,
@@ -4541,9 +4560,9 @@ fn project_input_edge_geometry(
 fn project_input_members<T: Eq + std::hash::Hash>(
     slots: &[i64],
     id: impl FnMut(i64) -> T,
-) -> Option<cadmpeg_ir::features::DistinctMembers<T>> {
+) -> Option<cadmpeg_ir::features::selections::DistinctMembers<T>> {
     let members = slots.iter().copied().map(id).collect::<Vec<_>>();
-    cadmpeg_ir::features::DistinctMembers::try_from(members).ok()
+    cadmpeg_ir::features::selections::DistinctMembers::try_from(members).ok()
 }
 
 /// Resolve persistent vertex recipes in the last history-bearing feature state
@@ -6739,8 +6758,11 @@ fn select_legacy_extrude_face_candidate(
 ///
 /// `None` when the record states a blank native member: a row the IR carrier
 /// does not hold.
-fn body_member<B>(body: B, native: String) -> Option<cadmpeg_ir::features::BodyMember<B>> {
-    Some(cadmpeg_ir::features::BodyMember::new(
+fn body_member<B>(
+    body: B,
+    native: String,
+) -> Option<cadmpeg_ir::features::selections::BodyMember<B>> {
+    Some(cadmpeg_ir::features::selections::BodyMember::new(
         body,
         cadmpeg_core::text::NonBlankString::new(native)?,
     ))
@@ -8221,8 +8243,8 @@ fn design_axis(
     direction: cadmpeg_ir::math::Vector3,
 ) -> Option<crate::records::feature::patterns::DesignAxis> {
     crate::records::feature::patterns::DesignAxis::from_parts(
-        cadmpeg_ir::features::FinitePoint3::new(origin)?,
-        cadmpeg_ir::features::FiniteVector3::new(direction)?,
+        cadmpeg_ir::features::geometry::FinitePoint3::new(origin)?,
+        cadmpeg_ir::features::geometry::FiniteVector3::new(direction)?,
     )
 }
 

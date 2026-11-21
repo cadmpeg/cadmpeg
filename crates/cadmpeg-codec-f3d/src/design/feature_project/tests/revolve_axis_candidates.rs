@@ -120,7 +120,7 @@ fn axis_selection(
 fn construction_with(
     selection: &DesignEntitySelectionOperand,
     placements: &[crate::records::sketch_placement::DesignSketchPlacement],
-) -> Option<cadmpeg_ir::features::RevolveConstruction> {
+) -> Option<cadmpeg_ir::features::revolve::RevolveConstruction> {
     let groups = [
         group(100, 200, DesignOperandRole::PROFILE),
         group(101, 201, DesignOperandRole::ROLE_0X21),
@@ -147,18 +147,18 @@ fn construction_with(
 
 fn construction(
     selection: &DesignEntitySelectionOperand,
-) -> Option<cadmpeg_ir::features::RevolveConstruction> {
+) -> Option<cadmpeg_ir::features::revolve::RevolveConstruction> {
     construction_with(selection, &[])
 }
 
 #[test]
 fn an_origin_axis_identity_keeps_its_axis_when_an_asm_entity_shares_it() {
-    let y_axis = cadmpeg_ir::features::RevolutionAxis {
-        origin: cadmpeg_ir::features::FinitePoint3::ZERO,
-        direction: cadmpeg_ir::features::FeatureDirection3::from(
+    let y_axis = cadmpeg_ir::features::revolve::RevolutionAxis {
+        origin: cadmpeg_ir::features::geometry::FinitePoint3::ZERO,
+        direction: cadmpeg_ir::features::geometry::FeatureDirection3::from(
             cadmpeg_ir::units::UnitVector3::Y_AXIS,
         ),
-        reference: Some(cadmpeg_ir::features::PathRef::Native(
+        reference: Some(cadmpeg_ir::features::profiles::PathRef::Native(
             "f3d:Design/BulkStream.dat:entity-selection#201".into(),
         )),
     };
@@ -225,7 +225,7 @@ fn the_type_table_gives_each_origin_axis_its_direction() {
             .expect("an origin axis");
         assert_eq!(
             axis.direction,
-            cadmpeg_ir::features::FeatureDirection3::from(direction)
+            cadmpeg_ir::features::geometry::FeatureDirection3::from(direction)
         );
     }
 }

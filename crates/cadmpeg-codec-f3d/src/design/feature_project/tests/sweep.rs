@@ -252,9 +252,11 @@ fn sweep_projects_guide_surface() {
         .unwrap()
         .unwrap(),
         FeatureDefinition::Operation(FeatureOperation::Sweep {
-            orientation: Some(cadmpeg_ir::features::SweepOrientation::GuideSurface {
-                faces: cadmpeg_ir::features::FaceSelection::Native(_),
-            }),
+            orientation: Some(
+                cadmpeg_ir::features::sweeps::SweepOrientation::GuideSurface {
+                    faces: cadmpeg_ir::features::selections::FaceSelection::Native(_),
+                }
+            ),
             ..
         })
     ));
@@ -287,7 +289,7 @@ fn two_lane_sweep_projects_with_along_and_against_extents() {
             guide_rail: None,
             twist: None,
             taper: None,
-            path_extent: Some(cadmpeg_ir::features::SweepPathExtent {
+            path_extent: Some(cadmpeg_ir::features::sweeps::SweepPathExtent {
                 along_fraction,
                 against_fraction,
             }),
@@ -299,7 +301,8 @@ fn two_lane_sweep_projects_with_along_and_against_extents() {
 #[test]
 fn sweep_profile_of_resolved_body_faces_projects_historical_faces() {
     use crate::records::topology::face::{DesignFaceOperand, DesignFaceOperandDraft};
-    use cadmpeg_ir::features::{PlanarProfileRef, SweepSection, SweepShape};
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
+    use cadmpeg_ir::features::sweeps::{SweepSection, SweepShape};
 
     let (mut scope, groups) = sweep_input();
     scope

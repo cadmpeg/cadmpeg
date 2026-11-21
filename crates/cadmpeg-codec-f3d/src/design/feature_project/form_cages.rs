@@ -24,7 +24,8 @@ use cadmpeg_ir::features::form::{
     FormPositionEvidence, FormReferenceGroup, FormReferenceRole, FormResource,
     FormResourceAssociation, FormResourceAvailability, FormResourceStateEvidence,
 };
-use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation, NonEmptyMembers};
+use cadmpeg_ir::features::selections::NonEmptyMembers;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::ids::{NativeId, SubdId};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::subd::SubdSurface;

@@ -405,9 +405,9 @@ fn authored_scope_ordinals_for_stream<'a>(
 /// The millimetre coordinate frame that a `JointOrigin` scope solves.
 pub(crate) fn joint_origin_frame(
     scope: &DesignParameterScope,
-) -> Option<cadmpeg_ir::features::FeatureCoordinateFrame> {
+) -> Option<cadmpeg_ir::features::geometry::FeatureCoordinateFrame> {
     let transform = scope.joint_origin_transform()?;
-    cadmpeg_ir::features::FeatureCoordinateFrame::new(
+    cadmpeg_ir::features::geometry::FeatureCoordinateFrame::new(
         Point3::new(
             transform[0][3] * 10.0,
             transform[1][3] * 10.0,
@@ -666,7 +666,7 @@ fn ensure_feature_dependencies_precede(
 #[derive(Debug)]
 pub(crate) struct ProjectedParameterDesign {
     pub(crate) features: Vec<cadmpeg_ir::features::Feature>,
-    pub(crate) parameters: Vec<cadmpeg_ir::features::DesignParameter>,
+    pub(crate) parameters: Vec<cadmpeg_ir::features::parameters::DesignParameter>,
     /// Owner scopes whose parameter ordering exceeded [`PARAMETER_ORDER_WORK`].
     /// Each keeps its source ordinals and loses its same-scope dependency edges.
     pub(crate) unordered_parameter_scopes: usize,
@@ -696,9 +696,12 @@ pub(crate) fn project_parameter_design_with_edge_identities(
     ctx: &DecodeContext<'_>,
     inputs: &ProjectInputs<'_>,
 ) -> Result<ProjectedParameterDesign, CodecError> {
+    use cadmpeg_ir::features::parameters::{
+        DesignParameter as NeutralParameter, DimensionDisplay, ParameterValue,
+    };
+    use cadmpeg_ir::features::patterns::PatternKind;
     use cadmpeg_ir::features::{
-        patterns::PatternKind, DesignParameter as NeutralParameter, DimensionDisplay, Feature,
-        FeatureDefinition, FeatureOperation, ParameterId, ParameterValue, UnresolvedFamily,
+        Feature, FeatureDefinition, FeatureOperation, ParameterId, UnresolvedFamily,
     };
     use cadmpeg_ir::scalar::{Angle, Length};
     use std::collections::BTreeMap;
@@ -998,7 +1001,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         })
                     {
                         FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
-                            faces: cadmpeg_ir::features::FaceSelection::Native(format!(
+                            faces: cadmpeg_ir::features::selections::FaceSelection::Native(format!(
                                 "{}{}{}",
                                 native_scope,
                                 ":design-record#",
@@ -1198,13 +1201,13 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             crate::records::feature::body_ops::DesignScaleFactors::Uniform {
                                 factor,
                                 ..
-                            } => cadmpeg_ir::features::ScaleFactors::Uniform {
+                            } => cadmpeg_ir::features::direct_edit::ScaleFactors::Uniform {
                                 factor: cadmpeg_ir::scalar::NonZeroReal::from(factor),
                             },
                             crate::records::feature::body_ops::DesignScaleFactors::PerAxis {
                                 factors,
                                 ..
-                            } => cadmpeg_ir::features::ScaleFactors::PerAxis {
+                            } => cadmpeg_ir::features::direct_edit::ScaleFactors::PerAxis {
                                 factors: factors.map(cadmpeg_ir::scalar::NonZeroReal::from),
                             },
                         };
@@ -1226,16 +1229,16 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             .collect::<Option<Vec<_>>>();
                         let bodies = match selected.as_deref() {
                             Some([group]) => {
-                                cadmpeg_ir::features::BodySelection::Native(group.clone())
+                                cadmpeg_ir::features::selections::BodySelection::Native(group.clone())
                             }
-                            Some([_, _, ..]) => cadmpeg_ir::features::NativeSelections::try_from(
+                            Some([_, _, ..]) => cadmpeg_ir::features::selections::NativeSelections::try_from(
                                 selected.clone().unwrap_or_default(),
                             )
                             .map_or(
-                                cadmpeg_ir::features::BodySelection::Unresolved,
-                                cadmpeg_ir::features::BodySelection::NativeSet,
+                                cadmpeg_ir::features::selections::BodySelection::Unresolved,
+                                cadmpeg_ir::features::selections::BodySelection::NativeSet,
                             ),
-                            _ => cadmpeg_ir::features::BodySelection::Unresolved,
+                            _ => cadmpeg_ir::features::selections::BodySelection::Unresolved,
                         };
                         if operation.matrix_offset.is_some() {
                             let unlisted = construction_groups
@@ -1259,14 +1262,14 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             }
                         }
                         let center = match operation.center_position.and_then(|center| {
-                            cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
                                 center.value[0].get() * 10.0,
                                 center.value[1].get() * 10.0,
                                 center.value[2].get() * 10.0,
                             ))
                         }) {
-                            Some(center) => cadmpeg_ir::features::ScaleCenter::Point(center),
-                            None => cadmpeg_ir::features::ScaleCenter::Native(format!(
+                            Some(center) => cadmpeg_ir::features::direct_edit::ScaleCenter::Point(center),
+                            None => cadmpeg_ir::features::direct_edit::ScaleCenter::Native(format!(
                                 "{}{}{}",
                                 native_scope,
                                 ":design-record#",
@@ -1452,7 +1455,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             .and_then(|construction| {
                                 Some((
                                     construction,
-                                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                                    cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
                                         construction.position[0].get() * 10.0,
                                         construction.position[1].get() * 10.0,
                                         construction.position[2].get() * 10.0,
@@ -1626,14 +1629,14 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 body_bindings,
                             );
                             let bodies = match selection {
-                                cadmpeg_ir::features::BodySelection::Resolved {
+                                cadmpeg_ir::features::selections::BodySelection::Resolved {
                                     bodies,
                                     native,
                                 } => {
                                     inserted_bodies.extend_from_slice(bodies.as_slice());
-                                    cadmpeg_ir::features::InsertedBodies::Resolved { native }
+                                    cadmpeg_ir::features::selections::InsertedBodies::Resolved { native }
                                 }
-                                _ => cadmpeg_ir::features::InsertedBodies::Native(scope.id.clone()),
+                                _ => cadmpeg_ir::features::selections::InsertedBodies::Native(scope.id.clone()),
                             };
                             FeatureDefinition::Operation(FeatureOperation::InsertBodies { bodies })
                         } else {
@@ -1733,7 +1736,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             let retain_face_trim_references = matches!(
                 &definition,
                 FeatureDefinition::Operation(FeatureOperation::TrimSurface {
-                    tool: cadmpeg_ir::features::PathRef::Native(tool),
+                    tool: cadmpeg_ir::features::profiles::PathRef::Native(tool),
                     ..
                 }) if construction_groups.iter().any(|group| {
                     group.id == *tool && group.role() == DesignOperandRole::ROLE_0X9
@@ -1770,7 +1773,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         && scope.history_state_id().is_none()
                         && scope.previous_history_state_id().is_none(),
                 ),
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                 source_properties: if promoted_fillet_source.is_some() || promoted_fillet_sets.is_some() || matches!(
                     &definition,
                     FeatureDefinition::Operation(FeatureOperation::Native { .. } | FeatureOperation::Form(_) | FeatureOperation::FilledSurface { .. } | FeatureOperation::MeshGenerateFaceGroups { .. } | FeatureOperation::MeshCombineFaceGroups { .. })
@@ -1847,9 +1850,9 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 source_text: None,
                 source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-                evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+                evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
                     definition,
-                    cadmpeg_ir::features::DistinctMembers::try_from(outputs)
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(outputs)
                         .map_err(cadmpeg_core::CodecError::from)?,
                 ),
                 native_ref: Some(scope.id.clone()),
@@ -1896,7 +1899,10 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 })
         {
             let bodies = design_body_selection(scope, results.into_iter(), body_bindings);
-            if matches!(bodies, cadmpeg_ir::features::BodySelection::Resolved { .. }) {
+            if matches!(
+                bodies,
+                cadmpeg_ir::features::selections::BodySelection::Resolved { .. }
+            ) {
                 feature
                     .evaluation
                     .set_definition(FeatureDefinition::Operation(
@@ -1966,16 +1972,16 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             }
             FeatureDefinition::Operation(
                 FeatureOperation::SplitFace {
-                    tool: cadmpeg_ir::features::SplitFaceTool::Plane { plane },
+                    tool: cadmpeg_ir::features::direct_edit::SplitFaceTool::Plane { plane },
                     ..
                 }
                 | FeatureOperation::SplitBody {
-                    tool: cadmpeg_ir::features::SplitBodyTool::Plane { plane },
+                    tool: cadmpeg_ir::features::direct_edit::SplitBodyTool::Plane { plane },
                     ..
                 },
             ) => add_dependency(plane)?,
             FeatureDefinition::Operation(FeatureOperation::SplitFace {
-                tool: cadmpeg_ir::features::SplitFaceTool::Planes { planes },
+                tool: cadmpeg_ir::features::direct_edit::SplitFaceTool::Planes { planes },
                 ..
             }) => {
                 for plane in planes {
@@ -1986,9 +1992,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 construction: Some(construction),
                 ..
             }) => {
-                use cadmpeg_ir::features::{
-                    DatumPlaneReference, DatumPointConstruction, VertexSelection,
-                };
+                use cadmpeg_ir::features::datums::{DatumPlaneReference, DatumPointConstruction};
+                use cadmpeg_ir::features::selections::VertexSelection;
                 match construction.as_ref() {
                     DatumPointConstruction::ThreePlaneIntersection { planes } => {
                         for plane in planes.iter() {
@@ -2011,7 +2016,11 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 points, ..
             }) => {
                 for point in points.iter() {
-                    if let cadmpeg_ir::features::VertexSelection::Generated { vertex, .. } = point {
+                    if let cadmpeg_ir::features::selections::VertexSelection::Generated {
+                        vertex,
+                        ..
+                    } = point
+                    {
                         add_dependency(&vertex.feature)?;
                     }
                 }
@@ -2150,7 +2159,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     None
                 },
                 value,
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                 properties,
                 pmi: None,
                 native_ref: Some(parameter.id.clone()),
@@ -2320,16 +2329,19 @@ fn project_solid_primitive(
     placements: &[crate::records::placement_construction::DesignPlacementConstruction],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, PrimitiveSolid, PrimitiveSolidKind,
-    };
+    use cadmpeg_ir::features::primitives::{PrimitiveSolid, PrimitiveSolidKind};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::scalar::{Angle, Length};
     let operation = |operation| match operation {
-        DesignExtrudeOperation::Join => cadmpeg_ir::features::BooleanOp::Join,
-        DesignExtrudeOperation::Cut => cadmpeg_ir::features::BooleanOp::Cut,
-        DesignExtrudeOperation::Intersect => cadmpeg_ir::features::BooleanOp::Intersect,
-        DesignExtrudeOperation::NewBody => cadmpeg_ir::features::BooleanOp::NewBody,
+        DesignExtrudeOperation::Join => cadmpeg_ir::features::operation_settings::BooleanOp::Join,
+        DesignExtrudeOperation::Cut => cadmpeg_ir::features::operation_settings::BooleanOp::Cut,
+        DesignExtrudeOperation::Intersect => {
+            cadmpeg_ir::features::operation_settings::BooleanOp::Intersect
+        }
+        DesignExtrudeOperation::NewBody => {
+            cadmpeg_ir::features::operation_settings::BooleanOp::NewBody
+        }
     };
     Some(match &scope.payload() {
         crate::records::feature::scope::DesignScopePayload::BoxPrimitive(Some(
@@ -2394,7 +2406,7 @@ fn project_solid_primitive(
                         let support = cadmpeg_ir::transform::Transform::affine(
                             [x, y, z].map(|[x, y, z, translation]| [x, y, z, translation * 10.0]),
                         )?;
-                        cadmpeg_ir::features::FeatureRigidPlacement::new(support)?;
+                        cadmpeg_ir::features::geometry::FeatureRigidPlacement::new(support)?;
                         Some((support.compose(local).ok()?, flags_assumed))
                     })();
                     match support {
@@ -2430,7 +2442,9 @@ fn project_solid_primitive(
                     cadmpeg_ir::scalar::PositiveLength::new(width.get() * 10.0)?,
                     cadmpeg_ir::scalar::PositiveLength::new(height.get() * 10.0)?,
                 ]),
-                placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::new(placement)?),
+                placement: Some(cadmpeg_ir::features::geometry::FeatureRigidPlacement::new(
+                    placement,
+                )?),
                 op: operation(*result),
             });
             if let Some((code, assumption)) = support_assumption {
@@ -2467,7 +2481,7 @@ fn project_solid_primitive(
                         let [x, y, z, translation] = rows[index];
                         [x, y * direction, z * direction, translation * 10.0]
                     };
-                    Some(cadmpeg_ir::features::FeatureRigidPlacement::new(
+                    Some(cadmpeg_ir::features::geometry::FeatureRigidPlacement::new(
                         cadmpeg_ir::transform::Transform::affine([row(0), row(1), row(2)])?,
                     )?)
                 }
@@ -2497,7 +2511,7 @@ fn project_solid_primitive(
                     * 10.0
             });
             FeatureDefinition::Operation(FeatureOperation::Sphere {
-                center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                center: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
                     center[0], center[1], center[2],
                 ))?,
                 radius: cadmpeg_ir::scalar::PositiveLength::new(diameter.get() * 5.0)?,
@@ -2513,7 +2527,7 @@ fn project_solid_primitive(
                 ..
             },
         )) => FeatureDefinition::Operation(FeatureOperation::Torus {
-            center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+            center: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
                 transform[0][3] * 10.0,
                 transform[1][3] * 10.0,
                 transform[2][3] * 10.0,
@@ -2600,13 +2614,12 @@ fn project_work_point_construction(
     parameters: &[(u32, &DesignParameter)],
     edge_operands: &[DesignEdgeOperand],
     scope_ids: &HashMap<(&str, u32), cadmpeg_ir::features::FeatureId>,
-) -> Option<cadmpeg_ir::features::DatumPointConstruction> {
+) -> Option<cadmpeg_ir::features::datums::DatumPointConstruction> {
     use crate::records::feature::work_geometry::{
         DesignWorkPointInput, DesignWorkPointInputCarrier, DesignWorkPointRuleForm,
     };
-    use cadmpeg_ir::features::{
-        DatumPlaneReference, DatumPointConstruction, EdgeSelection, VertexSelection,
-    };
+    use cadmpeg_ir::features::datums::{DatumPlaneReference, DatumPointConstruction};
+    use cadmpeg_ir::features::selections::{EdgeSelection, VertexSelection};
 
     let stream = native_stream(&scope.id)?;
     let edge = |input: &DesignWorkPointInput| -> Option<EdgeSelection> {
@@ -2620,7 +2633,7 @@ fn project_work_point_construction(
         let feature_id = crate::ids::neutral_feature_id(scope);
         let prefix = crate::ids::feature_input_prefix(&feature_id, state_id);
         Some(
-            match cadmpeg_ir::features::EdgeSelection::historical(
+            match cadmpeg_ir::features::selections::EdgeSelection::historical(
                 crate::ids::feature_input_topology_id(&feature_id, state_id),
                 vec![crate::ids::history_input_edge_id(&prefix, edge_slot)],
                 operand.id.clone(),
@@ -2728,17 +2741,17 @@ const DESIGN_LENGTH_TO_MM: f64 = 10.0;
 /// u-axis, column 2 the normal, and column 3 the origin in centimetres.
 pub(crate) fn work_plane_datum_frame(
     transform: [[f64; 4]; 4],
-) -> Option<cadmpeg_ir::features::FeatureDatumPlaneFrame> {
+) -> Option<cadmpeg_ir::features::geometry::FeatureDatumPlaneFrame> {
     let (origin, normal, u_axis) = work_plane_frame_columns(transform);
-    cadmpeg_ir::features::FeatureDatumPlaneFrame::new(origin, normal, u_axis)
+    cadmpeg_ir::features::geometry::FeatureDatumPlaneFrame::new(origin, normal, u_axis)
 }
 
 /// The same `WorkPlane` frame as a feature support plane.
 fn work_plane_support_frame(
     transform: [[f64; 4]; 4],
-) -> Option<cadmpeg_ir::features::FeatureSupportPlaneFrame> {
+) -> Option<cadmpeg_ir::features::geometry::FeatureSupportPlaneFrame> {
     let (origin, normal, u_axis) = work_plane_frame_columns(transform);
-    cadmpeg_ir::features::FeatureSupportPlaneFrame::new(origin, normal, u_axis)
+    cadmpeg_ir::features::geometry::FeatureSupportPlaneFrame::new(origin, normal, u_axis)
 }
 
 fn work_plane_frame_columns(transform: [[f64; 4]; 4]) -> (Point3, Vector3, Vector3) {
@@ -2757,9 +2770,8 @@ fn project_work_plane(
     scope: &DesignParameterScope,
     transform: [[f64; 4]; 4],
 ) -> cadmpeg_ir::features::FeatureDefinition {
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, UnresolvedFamily, VertexSelection,
-    };
+    use cadmpeg_ir::features::selections::VertexSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, UnresolvedFamily};
 
     let Some(frame) = work_plane_datum_frame(transform) else {
         return FeatureDefinition::Operation(FeatureOperation::Unresolved {
@@ -2795,9 +2807,9 @@ fn project_work_plane(
             family: UnresolvedFamily::DatumPlane,
         });
     };
-    let Ok(points) =
-        cadmpeg_ir::features::ThreePointSelection::try_from(Box::new([first, second, third]))
-    else {
+    let Ok(points) = cadmpeg_ir::features::profiles::ThreePointSelection::try_from(Box::new([
+        first, second, third,
+    ])) else {
         return FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumPlane,
         });
@@ -2810,9 +2822,9 @@ pub(super) fn project_combine(
     native_scope: &str,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use crate::records::feature::combine::DesignCombineDestination;
-    use cadmpeg_ir::features::{
-        BodySelection, CombineDestination, FeatureDefinition, FeatureOperation,
-    };
+    use cadmpeg_ir::features::operation_settings::CombineDestination;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let operation = scope.combine_operation()?;
     let selection = |record_index| {
@@ -2831,7 +2843,9 @@ pub(super) fn project_combine(
         for tool in operation.tools.iter() {
             selected.push(selection(tool.record_index));
         }
-        BodySelection::NativeSet(cadmpeg_ir::features::NativeSelections::try_from(selected).ok()?)
+        BodySelection::NativeSet(
+            cadmpeg_ir::features::selections::NativeSelections::try_from(selected).ok()?,
+        )
     };
     let operands = cadmpeg_ir::features::CombineOperands::new(target, tools).ok()?;
     Some(FeatureDefinition::Operation(FeatureOperation::Combine {
@@ -3259,8 +3273,8 @@ fn project_thread_face_selection(
     face_group_record_indices: &[u32],
     groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
-) -> cadmpeg_ir::features::FaceSelection {
-    use cadmpeg_ir::features::FaceSelection;
+) -> cadmpeg_ir::features::selections::FaceSelection {
+    use cadmpeg_ir::features::selections::FaceSelection;
 
     let Some(stream) = native_stream(&scope.id) else {
         return FaceSelection::Unresolved;
@@ -3325,7 +3339,7 @@ fn project_thread_face_selection(
 
     let historical_native = native.clone();
 
-    cadmpeg_ir::features::FaceSelection::historical(state, faces, historical_native)
+    cadmpeg_ir::features::selections::FaceSelection::historical(state, faces, historical_native)
         .unwrap_or(FaceSelection::Native(native))
 }
 
@@ -3354,12 +3368,15 @@ fn project_full_round_fillet(
         return Ok(None);
     }
     let center_faces = project_face_selection(scope, group, face_operands, histories)?;
-    if matches!(center_faces, cadmpeg_ir::features::FaceSelection::Native(_)) {
+    if matches!(
+        center_faces,
+        cadmpeg_ir::features::selections::FaceSelection::Native(_)
+    ) {
         return Ok(None);
     }
     Ok(Some(cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::FullRoundFillet {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(or_none!(
+            groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(or_none!(
                 cadmpeg_ir::features::edge_treatments::FullRoundFilletGroup::new(
                     center_faces,
                     cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Automatic,
@@ -3427,8 +3444,8 @@ fn design_body_selection(
     scope: &DesignParameterScope,
     entity_suffixes: impl ExactSizeIterator<Item = u64>,
     body_bindings: &[DesignBodyBinding],
-) -> cadmpeg_ir::features::BodySelection {
-    use cadmpeg_ir::features::BodySelection;
+) -> cadmpeg_ir::features::selections::BodySelection {
+    use cadmpeg_ir::features::selections::BodySelection;
 
     let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
     let expected_count = entity_suffixes.len();
@@ -3446,7 +3463,7 @@ fn design_body_selection(
         bodies.push(body.clone());
     }
     if bodies.len() == expected_count {
-        if let Ok(bodies) = cadmpeg_ir::features::DistinctMembers::try_from(bodies) {
+        if let Ok(bodies) = cadmpeg_ir::features::selections::DistinctMembers::try_from(bodies) {
             return BodySelection::Resolved {
                 bodies,
                 native: scope.id.clone(),
@@ -3464,10 +3481,9 @@ pub(crate) fn bind_sketch_feature_geometry(
     sketches: &[cadmpeg_ir::sketches::Sketch],
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
 ) -> Result<(), CodecError> {
-    use cadmpeg_ir::features::{
-        DatumPointConstruction, FeatureDefinition, FeatureOperation, LoftSection, PathRef,
-        PlanarProfileRef, ProfileRef, SketchPointSelection,
-    };
+    use cadmpeg_ir::features::datums::{DatumPointConstruction, SketchPointSelection};
+    use cadmpeg_ir::features::profiles::{LoftSection, PathRef, PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     for feature in features.iter_mut() {
         let mut display_name_to_apply = None;
@@ -3688,8 +3704,8 @@ pub(crate) fn bind_sketch_feature_geometry(
                         .and_then(planar_profile_dependency),
                 )?;
                 match shape {
-                    cadmpeg_ir::features::SweepShape::Unresolved { sections, .. }
-                    | cadmpeg_ir::features::SweepShape::Surface { sections, .. } => {
+                    cadmpeg_ir::features::sweeps::SweepShape::Unresolved { sections, .. }
+                    | cadmpeg_ir::features::sweeps::SweepShape::Surface { sections, .. } => {
                         for section in sections {
                             add_dependency(
                                 section
@@ -3698,7 +3714,7 @@ pub(crate) fn bind_sketch_feature_geometry(
                             )?;
                         }
                     }
-                    cadmpeg_ir::features::SweepShape::Solid { sections, .. } => {
+                    cadmpeg_ir::features::sweeps::SweepShape::Solid { sections, .. } => {
                         for section in sections {
                             add_dependency(
                                 section
@@ -3770,9 +3786,8 @@ pub(crate) fn bind_loft_sketch_point_sections(
     features: &mut [cadmpeg_ir::features::Feature],
     sources: &LoftPointSources<'_>,
 ) {
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, LoftPointSection, LoftSection,
-    };
+    use cadmpeg_ir::features::profiles::{LoftPointSection, LoftSection};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     for feature in features.iter_mut() {
         feature.evaluation.edit(|definition, _| {
@@ -3795,7 +3810,7 @@ pub(crate) fn bind_loft_sketch_point_sections(
 fn loft_sketch_point(
     group_id: &str,
     sources: &LoftPointSources<'_>,
-) -> Option<cadmpeg_ir::features::FinitePoint3> {
+) -> Option<cadmpeg_ir::features::geometry::FinitePoint3> {
     fn only<T>(mut matches: impl Iterator<Item = T>) -> Option<T> {
         let first = matches.next()?;
         matches.next().is_none().then_some(first)
@@ -3863,9 +3878,8 @@ pub(crate) fn bind_work_point_sketch_point_constructions(
     sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
     spatial_sketch_entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
 ) {
-    use cadmpeg_ir::features::{
-        DatumPointConstruction, FeatureDefinition, FeatureOperation, SketchPointSelection,
-    };
+    use cadmpeg_ir::features::datums::{DatumPointConstruction, SketchPointSelection};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     for feature in features.iter_mut() {
         feature.evaluation.edit(|definition, _| 'feature_edit: {
@@ -3939,9 +3953,9 @@ pub(crate) fn bind_hole_sketch_point_profiles(
     sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
 ) {
     use crate::records::feature::work_geometry::DesignWorkPointInputCarrier;
-    use cadmpeg_ir::features::{
-        holes::HoleProfileFilter, FeatureDefinition, FeatureOperation, PlanarProfileRef,
-    };
+    use cadmpeg_ir::features::holes::HoleProfileFilter;
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     for feature in features.iter_mut() {
         feature.evaluation.edit(|definition, _| {
@@ -4020,10 +4034,10 @@ fn draft_sides(
     flipped: bool,
 ) -> Option<(
     cadmpeg_ir::scalar::SlopeAngle,
-    Option<cadmpeg_ir::features::DraftSecondSide>,
+    Option<cadmpeg_ir::features::direct_edit::DraftSecondSide>,
 )> {
     use crate::records::feature::direct_face::DesignDraftTwoSided;
-    use cadmpeg_ir::features::DraftSecondSide;
+    use cadmpeg_ir::features::direct_edit::DraftSecondSide;
     use cadmpeg_ir::scalar::SlopeAngle;
 
     let first = construction.angle.get();
@@ -4151,7 +4165,7 @@ fn selected_historical_face_selection(
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     histories: &[crate::history_records::AsmHistory],
     design_types: &[crate::records::entity_header::SegmentType],
-) -> Option<cadmpeg_ir::features::FaceSelection> {
+) -> Option<cadmpeg_ir::features::selections::FaceSelection> {
     let previous_state_id =
         crate::history::effective_scope_previous_history_state_id(scope, histories)?;
     let stream = native_stream(&scope.id)?;
@@ -4189,13 +4203,13 @@ fn selected_historical_face_selection(
     let feature = crate::ids::neutral_feature_id(scope);
     let prefix = crate::ids::feature_input_prefix(&feature, previous_state_id);
     Some(
-        match cadmpeg_ir::features::FaceSelection::historical(
+        match cadmpeg_ir::features::selections::FaceSelection::historical(
             crate::ids::feature_input_topology_id(&feature, previous_state_id),
             vec![crate::ids::history_input_face_id(&prefix, face_slot)],
             group.id.clone(),
         ) {
             Ok(selection) => selection,
-            Err(_) => cadmpeg_ir::features::FaceSelection::Native(group.id.clone()),
+            Err(_) => cadmpeg_ir::features::selections::FaceSelection::Native(group.id.clone()),
         },
     )
 }
@@ -4205,7 +4219,7 @@ fn project_face_selection(
     group: &DesignConstructionOperandGroup,
     face_operands: &[DesignFaceOperand],
     histories: &[crate::history_records::AsmHistory],
-) -> Result<cadmpeg_ir::features::FaceSelection, CodecError> {
+) -> Result<cadmpeg_ir::features::selections::FaceSelection, CodecError> {
     let historical = if let Some(previous_state_id) =
         crate::history::effective_scope_previous_history_state_id(scope, histories)
     {
@@ -4239,7 +4253,7 @@ fn project_face_selection(
     }
     match resolved_face_group(group, face_operands)? {
         Some(selection) => Ok(selection),
-        None => Ok(cadmpeg_ir::features::FaceSelection::Native(
+        None => Ok(cadmpeg_ir::features::selections::FaceSelection::Native(
             group.id.clone(),
         )),
     }
@@ -4250,9 +4264,12 @@ fn project_draft_face_selection(
     group: &DesignConstructionOperandGroup,
     face_operands: &[DesignFaceOperand],
     histories: &[crate::history_records::AsmHistory],
-) -> Result<cadmpeg_ir::features::FaceSelection, CodecError> {
+) -> Result<cadmpeg_ir::features::selections::FaceSelection, CodecError> {
     let selection = project_face_selection(scope, group, face_operands, histories)?;
-    if matches!(&selection, cadmpeg_ir::features::FaceSelection::Native(_)) {
+    if matches!(
+        &selection,
+        cadmpeg_ir::features::selections::FaceSelection::Native(_)
+    ) {
         Ok(
             crate::design::face_resolve::resolved_explicit_bounded_face_group(
                 group,
@@ -4359,8 +4376,8 @@ fn resolved_split_face_path(
     group: &DesignConstructionOperandGroup,
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     histories: &[crate::history_records::AsmHistory],
-) -> Option<cadmpeg_ir::features::PathRef> {
-    use cadmpeg_ir::features::PathRef;
+) -> Option<cadmpeg_ir::features::profiles::PathRef> {
+    use cadmpeg_ir::features::profiles::PathRef;
 
     let previous_state_id =
         crate::history::effective_scope_previous_history_state_id(scope, histories)?;
@@ -4428,7 +4445,8 @@ pub(super) fn project_offset_faces(
     operands: &[DesignFaceOperand],
     groups: &[DesignConstructionOperandGroup],
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    use cadmpeg_ir::features::{FaceMotion, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::direct_edit::FaceMotion;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::scalar::Length;
 
     let parameter_distance = match parameters {
@@ -4459,7 +4477,7 @@ pub(super) fn project_offset_faces(
     };
     let faces =
         if let Some(group) = single_operand_group(groups, scope, DesignOperandRole::ROLE_0X10) {
-            cadmpeg_ir::features::FaceSelection::Native(group.id.clone())
+            cadmpeg_ir::features::selections::FaceSelection::Native(group.id.clone())
         } else {
             or_none!(direct_face_selection(scope, operands))
         };
@@ -4526,7 +4544,8 @@ pub(super) fn project_shell(
     operands: &[DesignFaceOperand],
     groups: &[DesignConstructionOperandGroup],
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::{BodySelection, FaceSelection};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let crate::records::feature::scope::DesignScopePayload::Shell(Some(operation)) =
         &scope.payload()
@@ -4540,15 +4559,19 @@ pub(super) fn project_shell(
         Some(outside) if outside.thickness.get().to_bits() == inside.to_bits() => (
             Some(inside + outside.thickness.get()),
             None,
-            Some(cadmpeg_ir::features::ShellMode::BothSides),
+            Some(cadmpeg_ir::features::operation_settings::ShellMode::BothSides),
         ),
-        Some(_) => (None, None, Some(cadmpeg_ir::features::ShellMode::BothSides)),
+        Some(_) => (
+            None,
+            None,
+            Some(cadmpeg_ir::features::operation_settings::ShellMode::BothSides),
+        ),
     };
     let join = slots.map(|slots| {
         if slots.rounded_corners {
-            cadmpeg_ir::features::ShellJoin::Arc
+            cadmpeg_ir::features::operation_settings::ShellJoin::Arc
         } else {
-            cadmpeg_ir::features::ShellJoin::Intersection
+            cadmpeg_ir::features::operation_settings::ShellJoin::Intersection
         }
     });
     let bodies = single_operand_group(groups, scope, DesignOperandRole::BODIES_A)
@@ -4607,9 +4630,10 @@ fn project_align(
     };
     let Some(definition) = move_body(
         operation,
-        group.map_or(cadmpeg_ir::features::BodySelection::Unresolved, |group| {
-            cadmpeg_ir::features::BodySelection::Native(group.id.clone())
-        }),
+        group.map_or(
+            cadmpeg_ir::features::selections::BodySelection::Unresolved,
+            |group| cadmpeg_ir::features::selections::BodySelection::Native(group.id.clone()),
+        ),
     ) else {
         losses.push(crate::loss::F3dLossCode::FeatureAlignMotionUnprojected.note(format!(
             "Align scope {} has no finite orientation-preserving body motion in canonical millimetres; its constructor is retained (DR-120).", scope.id
@@ -4650,7 +4674,7 @@ fn project_move(
     owners: &[DesignParameterOwner],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::BodySelection;
+    use cadmpeg_ir::features::selections::BodySelection;
 
     let operation = scope.move_operation()?;
     let group = single_operand_group(groups, scope, DesignOperandRole::BODIES_A)?;
@@ -4688,7 +4712,7 @@ fn project_move(
 
 fn move_body(
     operation: &crate::records::feature::direct_face::DesignMoveOperation,
-    bodies: cadmpeg_ir::features::BodySelection,
+    bodies: cadmpeg_ir::features::selections::BodySelection,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
@@ -4697,7 +4721,7 @@ fn move_body(
     }
     Some(FeatureDefinition::Operation(FeatureOperation::MoveBody {
         bodies,
-        translation: cadmpeg_ir::features::FiniteVector3::new(Vector3::new(
+        translation: cadmpeg_ir::features::geometry::FiniteVector3::new(Vector3::new(
             operation.transform[0][3] * 10.0,
             operation.transform[1][3] * 10.0,
             operation.transform[2][3] * 10.0,
@@ -4712,7 +4736,7 @@ pub(super) fn project_modify(
     groups: &[DesignConstructionOperandGroup],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::BodySelection;
+    use cadmpeg_ir::features::selections::BodySelection;
 
     let operation = scope.modify_operation()?;
     let stream = native_stream(&scope.id)?;
@@ -4733,7 +4757,7 @@ pub(super) fn project_modify(
     let bodies = match selected.as_slice() {
         [group] => BodySelection::Native(group.clone()),
         _ => BodySelection::NativeSet(
-            cadmpeg_ir::features::NativeSelections::try_from(selected.clone()).ok()?,
+            cadmpeg_ir::features::selections::NativeSelections::try_from(selected.clone()).ok()?,
         ),
     };
     let definition = move_body(&operation.motion, bodies)?;
@@ -4785,9 +4809,9 @@ pub(super) fn project_remove_body(
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{
-        BodyRetentionMode, BodySelection, FeatureDefinition, FeatureOperation,
-    };
+    use cadmpeg_ir::features::operation_settings::BodyRetentionMode;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let group = single_operand_group(groups, scope, DesignOperandRole::BODIES_A)?;
     Some(FeatureDefinition::Operation(FeatureOperation::DeleteBody {
@@ -4804,9 +4828,9 @@ fn project_base_flange(
     placements: &[DesignSketchPlacement],
     settings: &[crate::records::sheet_metal_settings::DesignSheetMetalSettings],
 ) -> Option<(cadmpeg_ir::features::FeatureDefinition, bool)> {
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, PlanarProfileRef, SheetMetalThicknessSide,
-    };
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
+    use cadmpeg_ir::features::sheet_metal_forms::SheetMetalThicknessSide;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let operation = scope.base_flange_operation()?;
     let mut matching = groups.iter().filter(|group| {
@@ -4872,11 +4896,11 @@ fn project_edge_flange(
         DesignBendPosition, DesignEdgeFlangeHeightExtent, DesignEdgeFlangeWidthParameterSource,
         DesignSheetMetalHeightDatum,
     };
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, SheetMetalBendPosition, SheetMetalFlangeHeight,
-        SheetMetalFlangeHeightTarget, SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth,
-        SheetMetalHeightDatum,
+    use cadmpeg_ir::features::sheet_metal_forms::{
+        SheetMetalBendPosition, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
+        SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth, SheetMetalHeightDatum,
     };
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let ProjectInputs {
         native: parameters,
         owners,
@@ -5020,12 +5044,13 @@ fn project_edge_flange(
                                         row.owners[1],
                                         "EdgeOffset_2"
                                     ))))),
-                                    first_reference: cadmpeg_ir::features::SelectionReference::new(
-                                        scope.id.clone(),
-                                    )
-                                    .ok(),
+                                    first_reference:
+                                        cadmpeg_ir::features::selections::SelectionReference::new(
+                                            scope.id.clone(),
+                                        )
+                                        .ok(),
                                     second_reference:
-                                        cadmpeg_ir::features::SelectionReference::new(
+                                        cadmpeg_ir::features::selections::SelectionReference::new(
                                             scope.id.clone(),
                                         )
                                         .ok(),
@@ -5033,10 +5058,12 @@ fn project_edge_flange(
                             offsets.push(offset);
                         }
                         SheetMetalFlangeWidth::TwoOffsetsPerEdge {
-                            offsets: or_none!(cadmpeg_ir::features::NonEmptyMembers::try_from(
-                                offsets
-                            )
-                            .ok()),
+                            offsets: or_none!(
+                                cadmpeg_ir::features::selections::NonEmptyMembers::try_from(
+                                    offsets
+                                )
+                                .ok()
+                            ),
                         }
                     } else {
                         let mut widths = Vec::new();
@@ -5054,7 +5081,7 @@ fn project_edge_flange(
                         }
                         SheetMetalFlangeWidth::TwoSidesPerEdge {
                             widths: or_none!(
-                                cadmpeg_ir::features::SheetMetalFlangeEdgeWidths::new(widths).ok()
+                                cadmpeg_ir::features::sheet_metal_forms::SheetMetalFlangeEdgeWidths::new(widths).ok()
                             ),
                         }
                     }
@@ -5226,9 +5253,8 @@ fn project_hem(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use crate::records::feature::sheet_metal::DesignHemParameterOwners;
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, SheetMetalHemDirection, SheetMetalHemForm,
-    };
+    use cadmpeg_ir::features::sheet_metal_forms::{SheetMetalHemDirection, SheetMetalHemForm};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let ProjectInputs {
         native: parameters,
@@ -5402,7 +5428,8 @@ pub(super) fn project_surface_stitch(
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let operation = scope.surface_stitch_operation()?;
     let input_end = scope.reference_members().len().checked_sub(2)?;
@@ -5465,9 +5492,9 @@ fn project_ruled_surface(
     use crate::records::feature::surface_ops::{
         DesignRuledSurfaceCorner, DesignRuledSurfaceMethod,
     };
-    use cadmpeg_ir::features::{
-        FaceSelection, FeatureDefinition, FeatureOperation, RuledSurfaceCorner, RuledSurfaceMode,
-    };
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::surface_inputs::{RuledSurfaceCorner, RuledSurfaceMode};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let operation = or_none!(scope.ruled_surface_operation());
     let stream = or_none!(native_stream(&scope.id));
@@ -5558,9 +5585,9 @@ fn project_ruled_surface(
 
 fn merge_edge_selections(
     scope: &DesignParameterScope,
-    selections: &[cadmpeg_ir::features::EdgeSelection],
-) -> cadmpeg_ir::features::EdgeSelection {
-    use cadmpeg_ir::features::EdgeSelection;
+    selections: &[cadmpeg_ir::features::selections::EdgeSelection],
+) -> cadmpeg_ir::features::selections::EdgeSelection {
+    use cadmpeg_ir::features::selections::EdgeSelection;
 
     let native = || EdgeSelection::Native(scope.id.clone());
     if selections.iter().all(|selection| {
@@ -5608,7 +5635,7 @@ fn merge_edge_selections(
                 }
             }
             let selected_native = scope.id.clone();
-            return cadmpeg_ir::features::EdgeSelection::historical(
+            return cadmpeg_ir::features::selections::EdgeSelection::historical(
                 state,
                 resolved,
                 selected_native,
@@ -5619,8 +5646,10 @@ fn merge_edge_selections(
     native()
 }
 
-fn matrix_axis_angle(transform: &[[f64; 4]; 4]) -> Option<cadmpeg_ir::features::AxisAngle> {
-    use cadmpeg_ir::features::AxisAngle;
+fn matrix_axis_angle(
+    transform: &[[f64; 4]; 4],
+) -> Option<cadmpeg_ir::features::direct_edit::AxisAngle> {
+    use cadmpeg_ir::features::direct_edit::AxisAngle;
     use cadmpeg_ir::scalar::Angle;
 
     let trace = transform[0][0] + transform[1][1] + transform[2][2];
@@ -5675,8 +5704,8 @@ fn matrix_axis_angle(transform: &[[f64; 4]; 4]) -> Option<cadmpeg_ir::features::
         };
     let norm = x.hypot(y).hypot(z);
     (norm > EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E12).then_some(AxisAngle {
-        origin: cadmpeg_ir::features::FinitePoint3::ZERO,
-        direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+        origin: cadmpeg_ir::features::geometry::FinitePoint3::ZERO,
+        direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
             x / norm,
             y / norm,
             z / norm,
@@ -5688,8 +5717,8 @@ fn matrix_axis_angle(transform: &[[f64; 4]; 4]) -> Option<cadmpeg_ir::features::
 pub(crate) fn direct_face_selection<'a>(
     scope: &DesignParameterScope,
     operands: impl IntoIterator<Item = &'a DesignFaceOperand>,
-) -> Option<cadmpeg_ir::features::FaceSelection> {
-    use cadmpeg_ir::features::FaceSelection;
+) -> Option<cadmpeg_ir::features::selections::FaceSelection> {
+    use cadmpeg_ir::features::selections::FaceSelection;
 
     let mut matching = Vec::new();
     for operand in operands.into_iter().filter(|operand| {
@@ -5725,7 +5754,7 @@ pub(crate) fn direct_face_selection<'a>(
                     resolved.push(face);
                 }
             }
-            match cadmpeg_ir::features::FaceSelection::historical(
+            match cadmpeg_ir::features::selections::FaceSelection::historical(
                 crate::ids::feature_input_topology_id(&feature_id, previous_state_id),
                 resolved,
                 scope.id.clone(),
@@ -5749,7 +5778,7 @@ pub(crate) fn direct_face_selection<'a>(
                     }
                 }
             }
-            match cadmpeg_ir::features::FaceSelection::historical_partial(
+            match cadmpeg_ir::features::selections::FaceSelection::historical_partial(
                 crate::ids::feature_input_topology_id(&feature_id, previous_state_id),
                 faces,
                 unresolved,
@@ -5774,7 +5803,7 @@ pub(crate) const PARAMETER_ORDER_WORK: usize = 1 << 22;
 /// Order every owner scope's parameters and return how many scopes exceeded
 /// [`PARAMETER_ORDER_WORK`].
 fn normalize_parameter_ordinals(
-    parameters: &mut [cadmpeg_ir::features::DesignParameter],
+    parameters: &mut [cadmpeg_ir::features::parameters::DesignParameter],
     owners: &HashMap<cadmpeg_ir::features::ParameterId, Option<cadmpeg_ir::features::FeatureId>>,
 ) -> Result<usize, CodecError> {
     let mut groups = HashMap::<Option<cadmpeg_ir::features::FeatureId>, Vec<usize>>::new();
@@ -5812,7 +5841,7 @@ fn normalize_parameter_ordinals(
 /// `parameter.order-budget-exceeded` and the dropped edges as unbound
 /// expression symbols.
 fn order_parameter_scope(
-    parameters: &mut [cadmpeg_ir::features::DesignParameter],
+    parameters: &mut [cadmpeg_ir::features::parameters::DesignParameter],
     owners: &HashMap<cadmpeg_ir::features::ParameterId, Option<cadmpeg_ir::features::FeatureId>>,
     owner: Option<&cadmpeg_ir::features::FeatureId>,
     indices: &[usize],
@@ -5927,7 +5956,7 @@ fn order_parameter_scope(
 /// Strongly connected components of the unresolved parameter graph that contain a cycle.
 /// Each component retains one member separately from its remaining members.
 fn cyclic_parameter_components(
-    parameters: &[cadmpeg_ir::features::DesignParameter],
+    parameters: &[cadmpeg_ir::features::parameters::DesignParameter],
     unresolved: &HashSet<usize>,
 ) -> Vec<(usize, Vec<usize>)> {
     enum Visit {
@@ -6088,7 +6117,7 @@ fn project_variable_fillet(
     let (points, tangency_weight) = or_none!(variable_fillet_law(parameters));
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Fillet {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(FilletGroup {
+            groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(FilletGroup {
                 edges: resolved_edge_treatment_group_with_corners(
                     group,
                     crate::design::edge_resolve::EdgeTreatmentInputs {
@@ -6531,7 +6560,12 @@ fn project_fixed_chamfer(
             ctx,
             losses,
         )?;
-        if shared && matches!(edges, cadmpeg_ir::features::EdgeSelection::Native(_)) {
+        if shared
+            && matches!(
+                edges,
+                cadmpeg_ir::features::selections::EdgeSelection::Native(_)
+            )
+        {
             losses.push(crate::loss::F3dLossCode::ChamferSelectionUnresolved.note(format!(
                 "Chamfer {} retains native selection {} because the group of its shared fixed specification resolves to no input edges.",
                 scope.id, group.id
@@ -6552,7 +6586,7 @@ fn project_fixed_chamfer(
         )));
     }
     let groups = projected.try_into().unwrap_or_else(|_| {
-        cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
+        cadmpeg_ir::features::selections::NonEmptyMembers::one(ChamferGroup {
             edges: chamfer::unresolved_selection(scope, None, losses),
             spec,
         })
@@ -6580,12 +6614,18 @@ fn stateless_scope_is_suppressed(family: DesignFeatureFamily) -> bool {
     )
 }
 
-fn fixed_boolean_operation(operation: DesignExtrudeOperation) -> cadmpeg_ir::features::BooleanOp {
+fn fixed_boolean_operation(
+    operation: DesignExtrudeOperation,
+) -> cadmpeg_ir::features::operation_settings::BooleanOp {
     match operation {
-        DesignExtrudeOperation::Join => cadmpeg_ir::features::BooleanOp::Join,
-        DesignExtrudeOperation::Cut => cadmpeg_ir::features::BooleanOp::Cut,
-        DesignExtrudeOperation::Intersect => cadmpeg_ir::features::BooleanOp::Intersect,
-        DesignExtrudeOperation::NewBody => cadmpeg_ir::features::BooleanOp::NewBody,
+        DesignExtrudeOperation::Join => cadmpeg_ir::features::operation_settings::BooleanOp::Join,
+        DesignExtrudeOperation::Cut => cadmpeg_ir::features::operation_settings::BooleanOp::Cut,
+        DesignExtrudeOperation::Intersect => {
+            cadmpeg_ir::features::operation_settings::BooleanOp::Intersect
+        }
+        DesignExtrudeOperation::NewBody => {
+            cadmpeg_ir::features::operation_settings::BooleanOp::NewBody
+        }
     }
 }
 
@@ -6598,10 +6638,10 @@ pub(super) fn project_fixed_revolve_with_entities(
     (placements, curve_identities): (&[DesignSketchPlacement], &[SketchCurveIdentity]),
     design_types: &[crate::records::entity_header::SegmentType],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{
-        AngularTermination, FeatureDefinition, FeatureOperation, PlanarProfileRef, RevolutionAxis,
-        RevolveConstruction, RevolveExtent,
-    };
+    use cadmpeg_ir::features::extents::AngularTermination;
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
+    use cadmpeg_ir::features::revolve::{RevolutionAxis, RevolveConstruction, RevolveExtent};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let crate::records::feature::scope::DesignScopePayload::Revolve(Some(
         crate::records::feature::path_features::DesignRevolveConstruction {
@@ -6658,7 +6698,7 @@ pub(super) fn project_fixed_revolve_with_entities(
                 None => (
                     Some(RevolveExtent::OneSided {
                         termination: AngularTermination::ToShape {
-                            target: cadmpeg_ir::features::FaceSelection::Native(
+                            target: cadmpeg_ir::features::selections::FaceSelection::Native(
                                 side_one.id.clone(),
                             ),
                         },
@@ -6703,8 +6743,8 @@ pub(super) fn project_fixed_revolve_with_entities(
     let axis = if let (Some(axis_operand), None) = (first, second) {
         axis_operand.resolved_axis.map(|axis| RevolutionAxis {
             origin: axis.origin,
-            direction: cadmpeg_ir::features::FeatureDirection3::from(axis.direction),
-            reference: Some(cadmpeg_ir::features::PathRef::Native(
+            direction: cadmpeg_ir::features::geometry::FeatureDirection3::from(axis.direction),
+            reference: Some(cadmpeg_ir::features::profiles::PathRef::Native(
                 axis_operand.id.clone(),
             )),
         })
@@ -6742,7 +6782,7 @@ pub(super) fn project_fixed_revolve_with_entities(
     } else {
         return None;
     };
-    let revolve_profile: cadmpeg_ir::features::PlanarProfileRef =
+    let revolve_profile: cadmpeg_ir::features::profiles::PlanarProfileRef =
         PlanarProfileRef::Native(profile.id.clone());
     let extent = match (travel, second_side) {
         (crate::records::feature::path_features::DesignRevolveTravel::ToTargets(_), _) => {
@@ -6783,7 +6823,7 @@ pub(super) fn project_fixed_revolve_with_entities(
                 allow_multi_profile_faces: None,
             },
             None => RevolveConstruction::Unresolved(
-                cadmpeg_ir::features::PartialRevolveConstruction::Axis {
+                cadmpeg_ir::features::revolve::PartialRevolveConstruction::Axis {
                     profile: revolve_profile,
                     extent: Some(extent),
                     solid: *solid,
@@ -6842,9 +6882,10 @@ pub(crate) fn orient_revolve_axes(
     sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
     (linear_tolerance, angular_tolerance): (f64, f64),
 ) {
-    use cadmpeg_ir::features::{
-        AngularTermination, FeatureDefinition, FeatureOperation, PlanarProfileRef, RevolveExtent,
-    };
+    use cadmpeg_ir::features::extents::AngularTermination;
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
+    use cadmpeg_ir::features::revolve::RevolveExtent;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     for feature in features {
         let reversed = scopes.iter().any(|scope| {
@@ -6910,10 +6951,10 @@ pub(crate) fn orient_revolve_axes(
 }
 
 fn selected_revolve_profile_entities<'a>(
-    profile: &'a cadmpeg_ir::features::PlanarProfileRef,
+    profile: &'a cadmpeg_ir::features::profiles::PlanarProfileRef,
     sketch: &'a cadmpeg_ir::sketches::Sketch,
 ) -> Option<Vec<&'a cadmpeg_ir::sketches::SketchEntityId>> {
-    use cadmpeg_ir::features::{PlanarProfileRef, SketchProfileRegion};
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, SketchProfileRegion};
     let mut entities = Vec::new();
     let mut add_loop = |index: u32| {
         let loop_ = sketch.profiles.get(usize::try_from(index).ok()?)?;
@@ -6968,13 +7009,13 @@ fn selected_revolve_profile_entities<'a>(
 /// `None` when the axis is not parallel to the sketch plane or the profile does
 /// not lie on one side of the axis.
 fn oriented_revolve_axis(
-    axis: &cadmpeg_ir::features::RevolutionAxis,
+    axis: &cadmpeg_ir::features::revolve::RevolutionAxis,
     sketch: &cadmpeg_ir::sketches::Sketch,
-    profile: &cadmpeg_ir::features::PlanarProfileRef,
+    profile: &cadmpeg_ir::features::profiles::PlanarProfileRef,
     sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
     reversed: bool,
     (linear_tolerance, angular_tolerance): (f64, f64),
-) -> Option<cadmpeg_ir::features::RevolutionAxis> {
+) -> Option<cadmpeg_ir::features::revolve::RevolutionAxis> {
     let (origin, normal, u_axis) = sketch.resolved_placement()?;
     let normal = normal.get().unit()?;
     let u_axis = u_axis.get().unit()?;
@@ -7006,10 +7047,10 @@ fn oriented_revolve_axis(
             }
         }
     }
-    Some(cadmpeg_ir::features::RevolutionAxis {
+    Some(cadmpeg_ir::features::revolve::RevolutionAxis {
         direction: if positive_side? == reversed {
             // Reversing a zero component gives -0.0; keep it a plain zero.
-            cadmpeg_ir::features::FeatureDirection3::from_unit_without_small_components(
+            cadmpeg_ir::features::geometry::FeatureDirection3::from_unit_without_small_components(
                 cadmpeg_ir::units::UnitVector3::normalized(axis.direction.reversed().get())?,
             )
         } else {
@@ -7159,7 +7200,9 @@ pub(crate) fn bind_revolve_face_axes(
                 _ => None,
             };
             construction.set_axis(axis.map(|mut axis| {
-                axis.reference = Some(cadmpeg_ir::features::PathRef::Native(group.id.clone()));
+                axis.reference = Some(cadmpeg_ir::features::profiles::PathRef::Native(
+                    group.id.clone(),
+                ));
                 axis
             }));
         });
@@ -7170,7 +7213,7 @@ fn analytic_axis_for_face(
     face_id: &cadmpeg_ir::ids::FaceId,
     faces: &[cadmpeg_ir::topology::Face],
     surfaces: &[cadmpeg_ir::geometry::Surface],
-) -> Option<cadmpeg_ir::features::RevolutionAxis> {
+) -> Option<cadmpeg_ir::features::revolve::RevolutionAxis> {
     let face = unique_feature_match(faces.iter().filter(|face| &face.id == face_id))?;
     let surface =
         unique_feature_match(surfaces.iter().filter(|surface| surface.id == face.surface))?;
@@ -7179,7 +7222,7 @@ fn analytic_axis_for_face(
 
 fn analytic_surface_axis(
     geometry: &cadmpeg_ir::geometry::SurfaceGeometry,
-) -> Option<cadmpeg_ir::features::RevolutionAxis> {
+) -> Option<cadmpeg_ir::features::revolve::RevolutionAxis> {
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
     let (origin, direction) = match geometry {
@@ -7197,9 +7240,9 @@ fn analytic_surface_axis(
         }
         _ => return None,
     };
-    Some(cadmpeg_ir::features::RevolutionAxis {
+    Some(cadmpeg_ir::features::revolve::RevolutionAxis {
         origin,
-        direction: cadmpeg_ir::features::FeatureDirection3::from(direction),
+        direction: cadmpeg_ir::features::geometry::FeatureDirection3::from(direction),
         reference: None,
     })
 }
@@ -7216,7 +7259,7 @@ fn design_geometry_axis_selection(
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     placements: &[DesignSketchPlacement],
     design_types: &[crate::records::entity_header::SegmentType],
-) -> Option<cadmpeg_ir::features::RevolutionAxis> {
+) -> Option<cadmpeg_ir::features::revolve::RevolutionAxis> {
     let stream = native_stream(&scope.id)?;
     let selection = unique_feature_match(entity_selection_operands.iter().filter(|operand| {
         native_stream(&operand.id) == Some(stream)
@@ -7247,10 +7290,12 @@ fn design_geometry_axis_selection(
         2 => cadmpeg_ir::units::UnitVector3::Z_AXIS,
         _ => return None,
     };
-    Some(cadmpeg_ir::features::RevolutionAxis {
-        origin: cadmpeg_ir::features::FinitePoint3::ZERO,
-        direction: cadmpeg_ir::features::FeatureDirection3::from(direction),
-        reference: Some(cadmpeg_ir::features::PathRef::Native(selection.id.clone())),
+    Some(cadmpeg_ir::features::revolve::RevolutionAxis {
+        origin: cadmpeg_ir::features::geometry::FinitePoint3::ZERO,
+        direction: cadmpeg_ir::features::geometry::FeatureDirection3::from(direction),
+        reference: Some(cadmpeg_ir::features::profiles::PathRef::Native(
+            selection.id.clone(),
+        )),
     })
 }
 
@@ -7261,7 +7306,7 @@ fn resolve_sketch_axis_selection(
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     placements: &[DesignSketchPlacement],
     curve_identities: &[SketchCurveIdentity],
-) -> Option<cadmpeg_ir::features::RevolutionAxis> {
+) -> Option<cadmpeg_ir::features::revolve::RevolutionAxis> {
     let stream = native_stream(&scope.id)?;
     let selection = unique_feature_match(entity_selection_operands.iter().filter(|operand| {
         native_stream(&operand.id) == Some(stream)
@@ -7314,12 +7359,14 @@ fn resolve_sketch_axis_selection(
             + placement.transform()[2][1] * direction.y
             + placement.transform()[2][2] * direction.z,
     );
-    Some(cadmpeg_ir::features::RevolutionAxis {
-        origin: cadmpeg_ir::features::FinitePoint3::new(origin)?,
-        direction: cadmpeg_ir::features::FeatureDirection3::from(
+    Some(cadmpeg_ir::features::revolve::RevolutionAxis {
+        origin: cadmpeg_ir::features::geometry::FinitePoint3::new(origin)?,
+        direction: cadmpeg_ir::features::geometry::FeatureDirection3::from(
             cadmpeg_ir::units::UnitVector3::normalized_by_reciprocal(direction)?,
         ),
-        reference: Some(cadmpeg_ir::features::PathRef::Native(selection.id.clone())),
+        reference: Some(cadmpeg_ir::features::profiles::PathRef::Native(
+            selection.id.clone(),
+        )),
     })
 }
 
@@ -7415,10 +7462,10 @@ pub(super) fn project_fixed_loft(
     ctx: &DecodeContext<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, LoftGuidance, LoftPointSection, LoftSection,
-        PlanarProfileRef, ProfileRef,
+    use cadmpeg_ir::features::profiles::{
+        LoftPointSection, LoftSection, PlanarProfileRef, ProfileRef,
     };
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, LoftGuidance};
     let &ProjectInputs {
         construction_groups,
         edge_operands,
@@ -7528,7 +7575,7 @@ fn resolved_loft_path(
     identity_operands: &[DesignEdgeIdentityOperand],
     scope: &DesignParameterScope,
     ctx: &DecodeContext<'_>,
-) -> Result<cadmpeg_ir::features::PathRef, CodecError> {
+) -> Result<cadmpeg_ir::features::profiles::PathRef, CodecError> {
     let selection = resolved_edge_group(
         group,
         groups,
@@ -7543,9 +7590,10 @@ fn resolved_loft_path(
 
 fn loft_path_from_edge_selection(
     native: &str,
-    selection: cadmpeg_ir::features::EdgeSelection,
-) -> cadmpeg_ir::features::PathRef {
-    use cadmpeg_ir::features::{EdgeSelection, PathRef};
+    selection: cadmpeg_ir::features::selections::EdgeSelection,
+) -> cadmpeg_ir::features::profiles::PathRef {
+    use cadmpeg_ir::features::profiles::PathRef;
+    use cadmpeg_ir::features::selections::EdgeSelection;
 
     match selection {
         EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => {
@@ -7598,8 +7646,8 @@ fn project_circular_pattern(
         entity_selection_operands,
         scopes,
     );
-    let axis_origin = cadmpeg_ir::features::FinitePoint3::new(axis_origin)?;
-    let axis_dir = cadmpeg_ir::features::FeatureDirection3::new(axis_dir)?;
+    let axis_origin = cadmpeg_ir::features::geometry::FinitePoint3::new(axis_origin)?;
+    let axis_dir = cadmpeg_ir::features::geometry::FeatureDirection3::new(axis_dir)?;
     let pattern = PatternKind::new(PatternTransform::Circular {
         axis_origin,
         axis_dir,
@@ -7861,7 +7909,9 @@ fn project_rectangular_pattern_scalars(
                 *direction,
                 *symmetric,
                 Some(cadmpeg_ir::features::patterns::LinearPatternDirection {
-                    direction: cadmpeg_ir::features::FeatureDirection3::from(*second_direction),
+                    direction: cadmpeg_ir::features::geometry::FeatureDirection3::from(
+                        *second_direction,
+                    ),
                     spacing: *second_spacing,
                     count: *second_count,
                     symmetric: *second_symmetric,
@@ -7871,7 +7921,7 @@ fn project_rectangular_pattern_scalars(
         _ => return None,
     };
     let pattern = PatternKind::new(PatternTransform::Linear {
-        direction: direction.map(cadmpeg_ir::features::FeatureDirection3::from),
+        direction: direction.map(cadmpeg_ir::features::geometry::FeatureDirection3::from),
         spacing,
         count,
         second,
@@ -7981,10 +8031,10 @@ pub(super) fn project_fixed_sweep(
     face_operands: &[DesignFaceOperand],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    use cadmpeg_ir::features::{
-        FaceSelection, FeatureDefinition, FeatureOperation, PlanarProfileRef, SweepGuideRail,
-        SweepOrientation, SweepPathExtent,
-    };
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::sweeps::{SweepGuideRail, SweepOrientation, SweepPathExtent};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::scalar::Angle;
 
     let Some((operation, values, profile, path, paths, guide_surfaces)) = (|| -> Option<_> {
@@ -8188,15 +8238,15 @@ pub(super) fn project_fixed_sweep(
         });
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Sweep {
-            shape: cadmpeg_ir::features::SweepShape::Solid {
+            shape: cadmpeg_ir::features::sweeps::SweepShape::Solid {
                 op: if *operation == DesignExtrudeOperation::NewBody {
-                    cadmpeg_ir::features::SolidSweepOperation::NewBody
+                    cadmpeg_ir::features::sweeps::SolidSweepOperation::NewBody
                 } else {
                     or_none!(fixed_boolean_operation(*operation).try_into().ok())
                 },
-                section: cadmpeg_ir::features::SweepSection::Profile(
+                section: cadmpeg_ir::features::sweeps::SweepSection::Profile(
                     match resolved_profile_face_group(scope, profile, face_operands)? {
-                        Some(cadmpeg_ir::features::ProfileRef::Planar(faces)) => faces,
+                        Some(cadmpeg_ir::features::profiles::ProfileRef::Planar(faces)) => faces,
                         _ => PlanarProfileRef::Native(profile.id.clone()),
                     },
                 ),
@@ -8238,7 +8288,7 @@ fn hole_extent_face(
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
-) -> Option<cadmpeg_ir::features::FaceSelection> {
+) -> Option<cadmpeg_ir::features::selections::FaceSelection> {
     let group = single_operand_group(groups, scope, DesignOperandRole::ROLE_0X5)?;
     let [member] = group.members() else {
         return None;
@@ -8262,7 +8312,9 @@ fn hole_extent_face(
         ),
         _ => None,
     });
-    Some(resolved.unwrap_or_else(|| cadmpeg_ir::features::FaceSelection::Native(group.id.clone())))
+    Some(resolved.unwrap_or_else(|| {
+        cadmpeg_ir::features::selections::FaceSelection::Native(group.id.clone())
+    }))
 }
 
 fn hole_termination(
@@ -8270,8 +8322,8 @@ fn hole_termination(
     parameters: &[(u32, &DesignParameter)],
     groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
-) -> Option<cadmpeg_ir::features::LinearTermination> {
-    use cadmpeg_ir::features::LinearTermination;
+) -> Option<cadmpeg_ir::features::extents::LinearTermination> {
+    use cadmpeg_ir::features::extents::LinearTermination;
     let extent = scope.hole_extent()?;
     let mut depths = parameters
         .iter()
@@ -8377,12 +8429,12 @@ fn hole_placements(
             .direction
             .map(cadmpeg_ir::scalar::FiniteReal::get),
     };
-    let direction = cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(x, y, z))?;
+    let direction = cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(x, y, z))?;
     construction
         .entry_points()?
         .into_iter()
         .map(|point| {
-            let position = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+            let position = cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
                 point[0].get() * DESIGN_LENGTH_TO_MILLIMETRE,
                 point[1].get() * DESIGN_LENGTH_TO_MILLIMETRE,
                 point[2].get() * DESIGN_LENGTH_TO_MILLIMETRE,
@@ -8487,9 +8539,10 @@ fn project_emboss(
     face_operands: &[DesignFaceOperand],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<cadmpeg_ir::features::FeatureDefinition, CodecError> {
-    use cadmpeg_ir::features::{
-        FaceSelection, FeatureDefinition, FeatureOperation, PlanarProfileRef, WrapMode,
-    };
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::surface_inputs::WrapMode;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let source_scope = scope.id.as_str();
     let construction = scope.emboss_construction();
@@ -8593,10 +8646,10 @@ fn project_hole(
     face_operands: &[DesignFaceOperand],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    use cadmpeg_ir::features::{
-        holes::{HoleBottom, HoleForm, HoleKind, PartialPair},
-        FaceSelection, FeatureDefinition, FeatureOperation, LinearTermination,
-    };
+    use cadmpeg_ir::features::extents::LinearTermination;
+    use cadmpeg_ir::features::holes::{HoleBottom, HoleForm, HoleKind, PartialPair};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::Hole {
         return Ok(None);
@@ -8854,9 +8907,10 @@ fn project_surface_trim(
     face_operands: &[DesignFaceOperand],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{
-        FaceSelection, FeatureDefinition, FeatureOperation, PathRef, TrimRegion,
-    };
+    use cadmpeg_ir::features::profiles::PathRef;
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::surface_inputs::TrimRegion;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::SurfaceTrim {
         return None;
@@ -8991,7 +9045,7 @@ pub(crate) fn bind_surface_trim_cell_selections(
             feature.evaluation.definition(),
             cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::TrimSurface {
-                    keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+                    keep: cadmpeg_ir::features::surface_inputs::TrimRegion::Unresolved,
                     ..
                 }
             )
@@ -9018,7 +9072,7 @@ pub(crate) fn bind_surface_trim_cell_selections(
         let total = u64::from(operation.trailing_value);
         let selection = u64::try_from(removed.len())
             .is_ok_and(|count| count < total)
-            .then(|| cadmpeg_ir::features::TrimCellSelection::new(removed, total))
+            .then(|| cadmpeg_ir::features::surface_inputs::TrimCellSelection::new(removed, total))
             .flatten();
         let Some(selection) = selection else {
             native_tables += 1;
@@ -9029,7 +9083,7 @@ pub(crate) fn bind_surface_trim_cell_selections(
                 cadmpeg_ir::features::FeatureOperation::TrimSurface { keep, .. },
             ) = definition
             {
-                *keep = cadmpeg_ir::features::TrimRegion::Cells(selection);
+                *keep = cadmpeg_ir::features::surface_inputs::TrimRegion::Cells(selection);
             }
         });
     }
@@ -9049,9 +9103,9 @@ pub(super) fn project_split(
     body_recipe_operands: &[DesignBodyRecipeOperand],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    use cadmpeg_ir::features::{
-        BodySelection, FaceSelection, FeatureDefinition, FeatureOperation, SplitBodyTool,
-    };
+    use cadmpeg_ir::features::direct_edit::SplitBodyTool;
+    use cadmpeg_ir::features::selections::{BodySelection, FaceSelection};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let crate::records::feature::scope::DesignScopePayload::Split(split) = scope.payload() else {
         return Ok(None);
@@ -9185,7 +9239,7 @@ fn assumed_split_face_tool(
     group: &DesignConstructionOperandGroup,
     operands: &[&DesignFaceOperand],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> cadmpeg_ir::features::FaceSelection {
+) -> cadmpeg_ir::features::selections::FaceSelection {
     losses.push(
         crate::loss::F3dLossCode::FeatureSplitBodyFaceToolGroupAssumed.note(format!(
             "Split scope {} reads face recipes in group {} as its splitting surfaces (DR-878).",
@@ -9213,7 +9267,9 @@ fn assumed_split_face_tool(
             group.id.clone(),
         )
     })();
-    historical.unwrap_or_else(|| cadmpeg_ir::features::FaceSelection::Native(group.id.clone()))
+    historical.unwrap_or_else(|| {
+        cadmpeg_ir::features::selections::FaceSelection::Native(group.id.clone())
+    })
 }
 
 fn project_move_face(
@@ -9221,7 +9277,8 @@ fn project_move_face(
     construction_groups: &[DesignConstructionOperandGroup],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let operation = or_none!(scope.move_operation());
     if !operation.preserves_orientation() {
@@ -9299,8 +9356,11 @@ fn project_move_face(
     )))
 }
 
-fn move_face_motion(transform: &[[f64; 4]; 4]) -> Option<cadmpeg_ir::features::FaceMotion> {
-    use cadmpeg_ir::features::{FaceMotion, FeatureDirection3, FinitePoint3};
+fn move_face_motion(
+    transform: &[[f64; 4]; 4],
+) -> Option<cadmpeg_ir::features::direct_edit::FaceMotion> {
+    use cadmpeg_ir::features::direct_edit::FaceMotion;
+    use cadmpeg_ir::features::geometry::{FeatureDirection3, FinitePoint3};
 
     let translation = Vector3::new(
         transform[0][3] * DESIGN_LENGTH_TO_MILLIMETRE,
@@ -9363,7 +9423,7 @@ fn move_face_motion(transform: &[[f64; 4]; 4]) -> Option<cadmpeg_ir::features::F
 fn move_face_rotation_preserves_matrix(
     transform: &[[f64; 4]; 4],
     translation: Vector3,
-    rotation: &cadmpeg_ir::features::AxisAngle,
+    rotation: &cadmpeg_ir::features::direct_edit::AxisAngle,
     origin: Vector3,
 ) -> bool {
     let axis = rotation.direction.get();

@@ -6,11 +6,12 @@ use crate::records::feature::sheet_metal::{DesignBendPosition, DesignSheetMetalH
 use crate::records::parameters::{DesignParameter, DesignParameterOwner};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::selections::{EdgeSelection, NonEmptyMembers, SelectionReference};
 use cadmpeg_ir::features::sheet_metal::{SheetMetalEdgeFlangeConstruction, SheetMetalFlangeOffset};
-use cadmpeg_ir::features::{
-    EdgeSelection, FeatureDefinition, FeatureOperation, NonEmptyMembers, SelectionReference,
+use cadmpeg_ir::features::sheet_metal_forms::{
     SheetMetalBendPosition, SheetMetalFlangeHeight, SheetMetalFlangeWidth, SheetMetalHeightDatum,
 };
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Angle, Length, NonNegativeLength, PositiveLength};
 

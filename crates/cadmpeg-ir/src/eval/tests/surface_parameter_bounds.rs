@@ -31,7 +31,7 @@ fn nurbs_surface_parameter_segment_bound_contains_curved_diagonal() {
             if index == 3 {
                 mapped.z = 1.0;
             }
-            crate::features::FinitePoint3::new(mapped).ok_or(())
+            crate::features::geometry::FinitePoint3::new(mapped).ok_or(())
         })
         .unwrap();
     let parameters = [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)];

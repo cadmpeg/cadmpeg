@@ -2,13 +2,10 @@
 //! Solid-loft source operands and generated-result validation.
 
 use cadmpeg_core::decode::unique_index;
-use cadmpeg_ir::{
-    features::{
-        FeatureDefinition, FeatureOperation, LoftSection, ParameterValue, PlanarProfileRef,
-        ProfileRef,
-    },
-    CadIr,
-};
+use cadmpeg_ir::features::parameters::ParameterValue;
+use cadmpeg_ir::features::profiles::{LoftSection, PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::CadIr;
 use std::collections::HashMap;
 
 use super::{controls, projection::evidence};

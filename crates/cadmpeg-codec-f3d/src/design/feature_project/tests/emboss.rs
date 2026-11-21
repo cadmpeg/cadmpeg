@@ -4,7 +4,8 @@ use crate::design::test_support::parameter_record;
 use crate::records::feature::emboss::{DesignEmbossConstruction, DesignEmbossControlWords};
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::identity::Located;
-use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, WrapMode};
+use cadmpeg_ir::features::surface_inputs::WrapMode;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::scalar::{Length, PositiveLength};
 
 #[test]
@@ -29,8 +30,8 @@ fn missing_construction_keeps_owned_depth_in_a_neutral_wrap() {
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::Wrap {
-            profile: cadmpeg_ir::features::PlanarProfileRef::Native(_),
-            face: cadmpeg_ir::features::FaceSelection::Native(_),
+            profile: cadmpeg_ir::features::profiles::PlanarProfileRef::Native(_),
+            face: cadmpeg_ir::features::selections::FaceSelection::Native(_),
             mode: WrapMode::Emboss { depth }
         }) if depth == PositiveLength::new(2.0).unwrap()
     ));
@@ -290,7 +291,7 @@ fn construction_scope(id: &str, record_index: u32) -> DesignParameterScope {
 
 #[test]
 fn target_faces_bind_through_the_named_group_and_keep_unresolved_group_identity() {
-    use cadmpeg_ir::features::FaceSelection;
+    use cadmpeg_ir::features::selections::FaceSelection;
     let mut scope = construction_scope("f3d:test:scope#12", 12);
     if let crate::records::feature::scope::DesignScopePayloadMut::Emboss(Some(construction)) =
         scope.payload_mut()
