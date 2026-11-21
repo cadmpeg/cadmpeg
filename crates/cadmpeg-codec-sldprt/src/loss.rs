@@ -133,6 +133,12 @@ pub(crate) enum SldprtLossCode {
     /// record admits gives no entity, because that record gives none in the
     /// sketch.
     SketchMarkerRecordUnread,
+    /// A profile-stream sketch that no feature binds repeats the profile
+    /// loops of the marker sketch that a sketch feature binds.
+    SketchSecondReading,
+    /// The marker sketch of a sketch feature stays unbound beside the
+    /// profile-stream circle bound to the feature.
+    SketchMarkerReadingUnbound,
     /// A compact sketch profile failed neutral profile admission.
     SketchProfileRejected,
     /// Native sketch relation has no projected neutral constraint.
@@ -397,6 +403,8 @@ impl SldprtLossCode {
         Self::SketchLineDegenerate,
         Self::SketchArcRecordConflict,
         Self::SketchMarkerRecordUnread,
+        Self::SketchSecondReading,
+        Self::SketchMarkerReadingUnbound,
         Self::SketchProfileRejected,
         Self::SketchRelationUnprojected,
         Self::SketchRelationMultiplyProjected,
@@ -537,6 +545,8 @@ impl SldprtLossCode {
             Self::SketchLineDegenerate => "sketch.line-degenerate",
             Self::SketchArcRecordConflict => "sketch.arc-record-conflict",
             Self::SketchMarkerRecordUnread => "sketch.marker-record-unread",
+            Self::SketchSecondReading => "sketch.second-reading",
+            Self::SketchMarkerReadingUnbound => "sketch.marker-reading-unbound",
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
             Self::SketchRelationMultiplyProjected => "sketch.relation-multiply-projected",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
@@ -709,6 +719,7 @@ impl SldprtLossCode {
             | Self::SketchLineDegenerate
             | Self::SketchArcRecordConflict
             | Self::SketchMarkerRecordUnread
+            | Self::SketchMarkerReadingUnbound
             | Self::SketchProfileRejected
             | Self::SketchRelationUnprojected
             | Self::SketchRelationMultiplyProjected
@@ -793,6 +804,7 @@ impl SldprtLossCode {
             | Self::AssemblyConfigurationsNotTransferred
             | Self::AssemblyBomExclusionNotTransferred
             | Self::DesignFeatureUnresolved
+            | Self::SketchSecondReading
             | Self::HistoryRollbackMarkClassInferred => Severity::Info,
         }
     }
@@ -928,6 +940,8 @@ impl SldprtLossCode {
             | Self::SketchLineDegenerate
             | Self::SketchArcRecordConflict
             | Self::SketchMarkerRecordUnread
+            | Self::SketchSecondReading
+            | Self::SketchMarkerReadingUnbound
             | Self::SketchProfileRejected
             | Self::SketchRelationUnprojected
             | Self::SketchRelationMultiplyProjected
@@ -1158,6 +1172,8 @@ mod tests {
                 "sketch.line-degenerate",
                 "sketch.arc-record-conflict",
                 "sketch.marker-record-unread",
+                "sketch.second-reading",
+                "sketch.marker-reading-unbound",
                 "sketch.profile-rejected",
                 "sketch.relation-unprojected",
                 "sketch.relation-multiply-projected",

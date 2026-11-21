@@ -50,6 +50,10 @@ use super::scalars::FeatureObjectNames;
 use super::sketch_lists::{
     listed_entity, unchecked_record_conflict, ChordConflict, ListedEntity, SketchRecordLists,
 };
+use super::sketch_projection::is_profile_stream_sketch;
+use super::stream_readings::{
+    is_revolve_profile, marker_reading, EntityIndex, MarkerReading, UnboundMarkerReading,
+};
 use super::transforms::{record_top_marker_coordinates, sketch_frame_marker_transform};
 use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
@@ -1111,6 +1115,9 @@ pub(crate) struct HeldMarkerGeometry {
     /// sketch and marker reference, with the record's conflict where it
     /// states one.
     unread_admitted: Vec<((SketchId, String), Option<ChordConflict>)>,
+    /// Each feature's marker sketch that stays unbound beside the stream
+    /// circle bound to the feature.
+    unbound_readings: Vec<UnboundMarkerReading>,
 }
 
 impl HeldMarkerGeometry {
@@ -1139,12 +1146,13 @@ impl HeldMarkerGeometry {
 /// where it has them, and otherwise the marker role as its native kind with
 /// one loss per entity, charges one loss for each line whose curve record
 /// states another form, and one for each marker that only its record admits
-/// and whose record gives no entity.
+/// and whose record gives no entity. Returns the unbound marker readings,
+/// which the model pass notes once every binding is made.
 pub(crate) fn finalize_unread_marker_entities(
     sketch_entities: &mut Vec<SketchEntity>,
     held: HeldMarkerGeometry,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) {
+) -> Vec<UnboundMarkerReading> {
     use crate::loss::SldprtLossCode;
     let HeldMarkerGeometry {
         handles,
@@ -1153,6 +1161,7 @@ pub(crate) fn finalize_unread_marker_entities(
         unchecked,
         finalized,
         unread_admitted,
+        unbound_readings,
     } = held;
     sketch_entities.extend(handles);
     for entity in sketch_entities.iter_mut() {
@@ -1235,6 +1244,28 @@ pub(crate) fn finalize_unread_marker_entities(
             "sketch {sketch}: marker {marker}, which the marker layouts skip, gives no entity: {reason}"
         )));
     }
+    unbound_readings
+}
+
+/// Whether every one of a marker sketch's `entities`, held arc handles
+/// among them, has planar geometry once [`finalize_unread_marker_entities`]
+/// runs: geometry now, or a placeholder whose marker has `sgSketch` record
+/// geometry that `listed` holds.
+fn finalizes_planar<'a>(
+    entities: impl IntoIterator<Item = &'a SketchEntity>,
+    listed: impl Fn(&str) -> bool,
+) -> bool {
+    entities
+        .into_iter()
+        .all(|entity| match entity.geometry.definition() {
+            SketchGeometryDefinition::Native { native_kind } => {
+                native_kind
+                    .as_str()
+                    .starts_with(MARKER_GEOMETRY_PLACEHOLDER)
+                    && entity.native_ref.as_deref().is_some_and(&listed)
+            }
+            _ => true,
+        })
 }
 
 impl From<CodecError> for MarkerGeometryFailure {
@@ -1566,7 +1597,34 @@ pub(crate) fn project_marker_backed_sketches(
                 }
                 continue;
             }
-            if sketches.iter().any(|sketch| sketch.id == sketch_id) {
+            let stream_reading = bound_sketch.clone().filter(is_profile_stream_sketch);
+            if let Some(read) = sketches.iter().find(|sketch| sketch.id == sketch_id) {
+                // A later pass over configuration states meets the marker
+                // sketch the first pass read, and takes it in place of a
+                // stream circle only where the first pass did.
+                let stream = stream_reading
+                    .as_ref()
+                    .and_then(|stream| sketches.iter().find(|sketch| sketch.id == *stream));
+                if let Some(stream) = stream {
+                    let entities =
+                        EntityIndex::new(sketch_entities.iter().filter(|entity| {
+                            entity.sketch == sketch_id || entity.sketch == stream.id
+                        }));
+                    let planar = finalizes_planar(
+                        sketch_entities
+                            .iter()
+                            .filter(|entity| entity.sketch == sketch_id),
+                        |_| false,
+                    );
+                    let revolve_profile =
+                        is_revolve_profile(features, &features[feature_index], &stream.id);
+                    if !matches!(
+                        marker_reading(read, stream, &entities, planar, revolve_profile),
+                        MarkerReading::Binds(_)
+                    ) {
+                        continue;
+                    }
+                }
                 features[feature_index]
                     .evaluation
                     .set_definition(if block_definition {
@@ -1586,9 +1644,10 @@ pub(crate) fn project_marker_backed_sketches(
                     });
                 continue;
             }
-            if bound_sketch
-                .as_ref()
-                .is_some_and(|sketch| !sketch.as_str().contains("sketch#compact:"))
+            if stream_reading.is_none()
+                && bound_sketch
+                    .as_ref()
+                    .is_some_and(|sketch| !sketch.as_str().contains("sketch#compact:"))
             {
                 continue;
             }
@@ -2637,7 +2696,36 @@ pub(crate) fn project_marker_backed_sketches(
             if projected.is_empty() || (bound_sketch.is_some() && sketch.profiles.is_empty()) {
                 continue;
             }
-            if let Some(bound_sketch) = &bound_sketch {
+            let mut unbound = None;
+            if let Some(stream) = &stream_reading {
+                if let Some(stream_sketch) = sketches.iter().find(|bound| bound.id == *stream) {
+                    let entities = EntityIndex::new(
+                        projected.iter().chain(
+                            sketch_entities
+                                .iter()
+                                .filter(|entity| entity.sketch == *stream),
+                        ),
+                    );
+                    let planar = finalizes_planar(projected.iter().chain(&held), |marker| {
+                        listed_elsewhere.iter().any(|(listed, _)| listed == marker)
+                    });
+                    let revolve_profile =
+                        is_revolve_profile(features, &features[feature_index], stream);
+                    match marker_reading(&sketch, stream_sketch, &entities, planar, revolve_profile)
+                    {
+                        MarkerReading::Binds(placement) => sketch.placement = placement,
+                        MarkerReading::Unbound(reason) => {
+                            unbound = Some(UnboundMarkerReading {
+                                marker: sketch_id.clone(),
+                                stream: stream.clone(),
+                                feature: features[feature_index].id.clone(),
+                                reason,
+                            });
+                        }
+                        MarkerReading::Stays => continue,
+                    }
+                }
+            } else if let Some(bound_sketch) = &bound_sketch {
                 sketch_entities.retain(|entity| entity.sketch != *bound_sketch);
                 sketches.retain(|sketch| sketch.id != *bound_sketch);
             }
@@ -2659,6 +2747,10 @@ pub(crate) fn project_marker_backed_sketches(
                     .map(|(marker, conflict)| ((sketch_id.clone(), marker), conflict)),
             );
             sketches.push(sketch);
+            if let Some(unbound) = unbound {
+                held_geometry.unbound_readings.push(unbound);
+                continue;
+            }
             record_top_marker_coordinates(&mut features[feature_index], top_frame.is_some());
             features[feature_index]
                 .evaluation
@@ -5268,6 +5360,9 @@ mod configuration_binding_tests;
 
 #[cfg(test)]
 mod record_profile_tests;
+
+#[cfg(test)]
+mod stream_reading_tests;
 
 #[cfg(test)]
 mod unread_marker_tests;

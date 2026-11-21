@@ -38,6 +38,7 @@ use cadmpeg_ir::sketches::{
 };
 
 use super::markers::sketch_marker_prefix_at;
+use super::sketch_projection::is_profile_stream_sketch;
 use crate::records::{FeatureInputLane, SketchInputEntity};
 
 const ROW_HEADER_TAIL: [u8; 10] = [0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0xfe, 0xff, 0x00, 0x00];
@@ -1203,15 +1204,19 @@ pub(super) fn project_relation_tables(
                     },
                     _ => continue,
                 };
-                let lane_sketch = lane_sketches.get(feature).and_then(|counts| {
-                    counts
-                        .iter()
-                        .max_by_key(|&(_, count)| count)
-                        .map(|(&sketch, _)| sketch)
-                });
-                let Some(sketch_id) =
-                    lane_sketch.or_else(|| sketches_by_feature.get(feature).copied())
-                else {
+                // A feature that keeps a profile-stream sketch beside its
+                // unbound marker reading keeps its relations on that sketch.
+                let bound = sketches_by_feature.get(feature).copied();
+                let lane_sketch = lane_sketches
+                    .get(feature)
+                    .filter(|_| !bound.is_some_and(is_profile_stream_sketch))
+                    .and_then(|counts| {
+                        counts
+                            .iter()
+                            .max_by_key(|&(_, count)| count)
+                            .map(|(&sketch, _)| sketch)
+                    });
+                let Some(sketch_id) = lane_sketch.or(bound) else {
                     continue;
                 };
                 let in_sketch = |entity: &SketchEntityId| {

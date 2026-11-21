@@ -37,10 +37,11 @@ fn nested_solid_transmit_has_feature_input_solid_body_retained_loss() {
             .sketches
             .iter()
             .any(|sketch| sketch.name.as_deref() == Some("profile")));
+        assert!(model.sketches.iter().any(|sketch| sketch.name.is_none()));
         assert!(model
             .sketches
             .iter()
-            .any(|sketch| sketch.name.as_deref() == Some(description)));
+            .all(|sketch| sketch.name.as_deref() != Some(description)));
         let retained = result
             .report()
             .losses

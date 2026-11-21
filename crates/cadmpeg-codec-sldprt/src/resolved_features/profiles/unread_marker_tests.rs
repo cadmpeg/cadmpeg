@@ -260,7 +260,7 @@ fn each_placeholder_takes_its_marker_role_and_resolved_geometry_is_untouched() {
 
 /// A geometry-locus arc record with its center, start and end stored inline
 /// (the direct-center layout), coordinates in metres.
-fn inline_arc_record(center: [f64; 2], start: [f64; 2], end: [f64; 2]) -> Vec<u8> {
+pub(super) fn inline_arc_record(center: [f64; 2], start: [f64; 2], end: [f64; 2]) -> Vec<u8> {
     let prefix = super::super::LEGACY_EXTENDED_SKETCH_MARKER;
     let mut payload = vec![0; 138 + prefix.len()];
     payload[..prefix.len()].copy_from_slice(prefix);

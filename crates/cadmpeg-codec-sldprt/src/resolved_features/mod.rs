@@ -130,6 +130,8 @@ pub(crate) mod sketch_projection;
 
 pub(crate) mod sketch_supports;
 
+pub(crate) mod stream_readings;
+
 mod sketch_write;
 
 pub(crate) mod terminations;
