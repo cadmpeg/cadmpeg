@@ -156,8 +156,11 @@ fn projection(
         &mut sketches,
         &mut entities,
         &mut held,
-        &histories,
-        &lanes,
+        crate::resolved_features::profiles::MarkerSources {
+            histories: &histories,
+            lanes: &lanes,
+            solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
+        },
     )
     .expect("marker profile projection fits service policy");
     (sketches, entities, held)

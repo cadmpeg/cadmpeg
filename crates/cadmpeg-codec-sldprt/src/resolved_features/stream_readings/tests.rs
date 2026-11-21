@@ -7,7 +7,7 @@ use cadmpeg_ir::sketches::{
     SketchGeometryDefinition, SketchId, SketchPlacement, SketchProfiles,
 };
 
-use super::{marker_reading, EntityIndex, MarkerReading, UnboundReason};
+use super::{marker_reading, EntityIndex, MarkerReading, SolidEdges, UnboundReason};
 
 fn sketch(id: &str, loops: &[&[&SketchEntity]]) -> Sketch {
     Sketch {
@@ -103,7 +103,14 @@ fn placement(origin: [f64; 3], normal: [f64; 3], u_axis: [f64; 3]) -> SketchPlac
 /// `marker_reading` for a marker reading whose entities are all planar and
 /// that no revolve takes.
 fn reading(marker: &Sketch, stream: &Sketch, entities: &EntityIndex<'_>) -> MarkerReading {
-    marker_reading(marker, stream, entities, true, false)
+    marker_reading(
+        marker,
+        stream,
+        entities,
+        true,
+        false,
+        &SolidEdges::default(),
+    )
 }
 
 /// A marker reading of another loop binds in place of a stream reading of
@@ -126,7 +133,14 @@ fn a_marker_reading_binds_in_place_of_a_lone_circle_it_does_not_repeat() {
         MarkerReading::Binds(stream.placement)
     );
     assert_eq!(
-        marker_reading(&boxed, &stream, &entities, false, true),
+        marker_reading(
+            &boxed,
+            &stream,
+            &entities,
+            false,
+            true,
+            &SolidEdges::default()
+        ),
         MarkerReading::Stays
     );
 }
@@ -190,7 +204,14 @@ fn a_parallel_marker_reading_binds_on_the_stream_plane() {
         ))
     );
     assert_eq!(
-        marker_reading(&boxed, &below, &entities, true, true),
+        marker_reading(
+            &boxed,
+            &below,
+            &entities,
+            true,
+            true,
+            &SolidEdges::default()
+        ),
         reading(&boxed, &below, &entities),
         "a revolve's profile takes the stream plane too where the normals are parallel"
     );
@@ -216,7 +237,7 @@ fn a_marker_reading_on_another_plane_leaves_the_stream_bound_unless_a_revolve_ta
         MarkerReading::Unbound(UnboundReason::OtherPlane)
     );
     assert_eq!(
-        marker_reading(&boxed, &side, &entities, true, true),
+        marker_reading(&boxed, &side, &entities, true, true, &SolidEdges::default()),
         MarkerReading::Binds(boxed.placement)
     );
     let mut unplaced = boxed.clone();
@@ -226,7 +247,14 @@ fn a_marker_reading_on_another_plane_leaves_the_stream_bound_unless_a_revolve_ta
         MarkerReading::Unbound(UnboundReason::PlacementUnresolved)
     );
     assert_eq!(
-        marker_reading(&unplaced, &side, &entities, true, true),
+        marker_reading(
+            &unplaced,
+            &side,
+            &entities,
+            true,
+            true,
+            &SolidEdges::default()
+        ),
         MarkerReading::Binds(SketchPlacement::Unresolved {})
     );
 }
@@ -247,7 +275,158 @@ fn a_marker_reading_that_holds_the_circle_among_other_loops_leaves_the_stream_bo
         MarkerReading::Unbound(UnboundReason::HoldsCircle)
     );
     assert_eq!(
-        marker_reading(&plate, &stream, &entities, true, true),
+        marker_reading(
+            &plate,
+            &stream,
+            &entities,
+            true,
+            true,
+            &SolidEdges::default()
+        ),
         MarkerReading::Unbound(UnboundReason::HoldsCircle)
+    );
+}
+
+/// A solid of the given line edges, each from its two ends, and circular
+/// edges, each from its centre, axis and radius, built from its topology.
+pub(crate) fn solid(
+    lines: &[([f64; 3], [f64; 3])],
+    circles: &[([f64; 3], [f64; 3], f64)],
+) -> SolidEdges {
+    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::geometry::analytic::{CircleCurve, LineCurve};
+    use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
+    use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
+    use cadmpeg_ir::topology::{Edge, EdgeCarrier, EdgeEnds, Point, Vertex};
+
+    let (mut edges, mut vertices, mut points, mut curves) = (vec![], vec![], vec![], vec![]);
+    let mut vertex = |name: String, position: [f64; 3]| {
+        let point = PointId::mint(format!("test:solid:point#{name}")).unwrap();
+        let id = VertexId::mint(format!("test:solid:vertex#{name}")).unwrap();
+        points.push(Point::new(
+            point.clone(),
+            FinitePoint3::new(Point3::from(position)).unwrap(),
+            None,
+        ));
+        vertices.push(Vertex {
+            id: id.clone(),
+            point,
+            tolerance: None,
+            native_ref: None,
+        });
+        id
+    };
+    let geometries = lines
+        .iter()
+        .enumerate()
+        .map(|(index, (start, end))| {
+            let ends = EdgeEnds::new(
+                vertex(format!("{index}a"), *start),
+                vertex(format!("{index}b"), *end),
+            );
+            let direction = Point3::from(*end).vector_from(Point3::from(*start));
+            let line = LineCurve::try_new(Point3::from(*start), direction.unit().unwrap()).unwrap();
+            (Some(ends), SolvedCurveGeometry::Line(line))
+        })
+        .chain(circles.iter().map(|(center, axis, radius)| {
+            let reference = if axis[0] == 0.0 && axis[1] == 0.0 {
+                Vector3::new(1.0, 0.0, 0.0)
+            } else {
+                Vector3::new(0.0, 0.0, 1.0)
+            };
+            let circle = CircleCurve::try_new(
+                Point3::from(*center),
+                Vector3::from(*axis),
+                reference,
+                *radius,
+            )
+            .unwrap();
+            (None, SolvedCurveGeometry::Circle(circle))
+        }))
+        .collect::<Vec<_>>();
+    for (index, (ends, geometry)) in geometries.into_iter().enumerate() {
+        let curve = CurveId::mint(format!("test:solid:curve#{index}")).unwrap();
+        curves.push(Curve {
+            parameter_range: None,
+            id: curve.clone(),
+            geometry: CurveGeometry::Solved(geometry),
+            source_object: None,
+            native_ref: None,
+        });
+        edges.push(Edge {
+            id: EdgeId::mint(format!("test:solid:edge#{index}")).unwrap(),
+            carrier: EdgeCarrier::unbounded(Some(curve)),
+            ends,
+            tolerance: None,
+            native_ref: None,
+        });
+    }
+    SolidEdges::new(&edges, &vertices, &points, &curves)
+}
+
+/// The four sides of the 3-unit square at `[1, 2]` on the plane `z`, as
+/// line edges.
+fn square_edges(z: f64) -> Vec<([f64; 3], [f64; 3])> {
+    let corners = [[1.0, 2.0, z], [4.0, 2.0, z], [4.0, 5.0, z], [1.0, 5.0, z]];
+    (0..4)
+        .map(|index| (corners[index], corners[(index + 1) % 4]))
+        .collect()
+}
+
+/// Where the solid carries the stream circle on its edges and not the
+/// marker reading's loops on the stream plane, a parallel marker reading
+/// leaves the stream circle bound and joins the model unbound. Where the
+/// solid carries the marker loops there, or does not carry the stream
+/// circle, it binds on the stream plane as before; a revolve's profile binds
+/// whatever the solid carries.
+#[test]
+fn a_parallel_marker_reading_off_the_solid_leaves_a_stream_circle_on_it_bound() {
+    let whole = circle("whole", [0.0, 0.0], 10.0);
+    let sides = square("side", 3.0);
+    let entities = EntityIndex::new(sides.iter().chain([&whole]));
+    let boxed = placed(
+        sketch("box", &[&sides.iter().collect::<Vec<_>>()]),
+        [1.0, 2.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+    );
+    let above = placed(
+        sketch("above", &[&[&whole]]),
+        [0.0, 0.0, 20.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+    );
+    let moved = MarkerReading::Binds(placement(
+        [1.0, 2.0, 20.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+    ));
+    let rim = ([0.0, 0.0, 20.0], [0.0, 0.0, -1.0], 10.0);
+    let read = |solid: &SolidEdges, revolve: bool| {
+        marker_reading(&boxed, &above, &entities, true, revolve, solid)
+    };
+    let off = MarkerReading::Unbound(UnboundReason::OffSolid);
+    assert_eq!(read(&solid(&[], &[rim]), false), off);
+    assert_eq!(
+        read(&solid(&square_edges(0.0), &[rim]), false),
+        off,
+        "the witness reads the marker loops on the stream plane, not on their own"
+    );
+    let mut short = square_edges(20.0);
+    short[2] = ([4.0, 5.0, 20.0], [3.0, 5.0, 20.0]);
+    assert_eq!(
+        read(&solid(&short, &[rim]), false),
+        off,
+        "a side whose midpoint lies outside the collinear edge is not on it"
+    );
+    assert_eq!(read(&solid(&square_edges(20.0), &[rim]), false), moved);
+    assert_eq!(read(&solid(&square_edges(20.0), &[]), false), moved);
+    assert_eq!(read(&SolidEdges::default(), false), moved);
+    assert_eq!(read(&solid(&[], &[rim]), true), moved);
+    let wider = ([0.0, 0.0, 20.0], [0.0, 0.0, 1.0], 10.5);
+    assert_eq!(
+        read(&solid(&[], &[wider]), false),
+        moved,
+        "a circular edge of another radius does not carry the stream circle"
     );
 }

@@ -579,8 +579,11 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         &mut sketches,
         &mut entities,
         &mut HeldMarkerGeometry::default(),
-        &histories,
-        &lanes,
+        crate::resolved_features::profiles::MarkerSources {
+            histories: &histories,
+            lanes: &lanes,
+            solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
+        },
     )
     .expect("marker profile projection fits service policy");
 
@@ -630,8 +633,11 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         &mut sketches,
         &mut entities,
         &mut HeldMarkerGeometry::default(),
-        &histories,
-        &lanes,
+        crate::resolved_features::profiles::MarkerSources {
+            histories: &histories,
+            lanes: &lanes,
+            solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
+        },
     )
     .expect("configured marker profile projection fits service policy");
     assert_eq!(sketches.len(), 1);
@@ -671,8 +677,11 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         &mut replacement_sketches,
         &mut replacement_entities,
         &mut HeldMarkerGeometry::default(),
-        &histories,
-        &lanes,
+        crate::resolved_features::profiles::MarkerSources {
+            histories: &histories,
+            lanes: &lanes,
+            solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
+        },
     )
     .expect("replacement marker profile projection fits service policy");
     assert_eq!(replacement_sketches.len(), 1);
@@ -760,8 +769,11 @@ fn marker_backed_sketch_preserves_geometry_when_placement_is_unresolved() {
         &mut sketches,
         &mut entities,
         &mut HeldMarkerGeometry::default(),
-        &histories,
-        &lanes,
+        crate::resolved_features::profiles::MarkerSources {
+            histories: &histories,
+            lanes: &lanes,
+            solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
+        },
     )
     .expect("marker profile projection fits service policy");
 

@@ -3577,8 +3577,16 @@ fn build_geometry_ir(
         &mut sketches,
         &mut sketch_entities,
         &mut held_handles,
-        &histories,
-        sketch_lanes,
+        crate::resolved_features::profiles::MarkerSources {
+            histories: &histories,
+            lanes: sketch_lanes,
+            solid: &crate::resolved_features::stream_readings::SolidEdges::new(
+                &brep.edges,
+                &brep.vertices,
+                &brep.points,
+                &brep.curves,
+            ),
+        },
     )?;
     crate::resolved_features::profiles::project_sketch_block_profiles(
         &mut ir.model.features,
@@ -4899,8 +4907,11 @@ fn build_metadata_ir(
         &mut ir.model.sketches,
         &mut ir.model.sketch_entities,
         &mut held_handles,
-        &histories,
-        sketch_lanes,
+        crate::resolved_features::profiles::MarkerSources {
+            histories: &histories,
+            lanes: sketch_lanes,
+            solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
+        },
     )?;
     crate::resolved_features::profiles::project_sketch_block_profiles(
         &mut ir.model.features,

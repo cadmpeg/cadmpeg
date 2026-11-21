@@ -14,12 +14,17 @@ use cadmpeg_ir::sketches::{
     SketchGeometryDefinition, SketchId, SketchPlacement, SketchProfiles,
 };
 
-use super::{finalize_unread_marker_entities, project_marker_backed_sketches, HeldMarkerGeometry};
+use super::{
+    finalize_unread_marker_entities, project_marker_backed_sketches, HeldMarkerGeometry,
+    MarkerSources,
+};
 use crate::loss::SldprtLossCode;
 use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputLane, FeatureSource, SketchInputEntity,
     SketchInputKind,
 };
+use crate::resolved_features::stream_readings::tests::solid;
+use crate::resolved_features::stream_readings::SolidEdges;
 use crate::test_support::sketch_records::framed_line_sketch;
 
 const LANE: &str = "lane";
@@ -205,8 +210,19 @@ fn decode(streams: Vec<(Sketch, Vec<SketchEntity>)>, bound: &SketchId) -> Decode
 fn decode_markers(
     streams: Vec<(Sketch, Vec<SketchEntity>)>,
     bound: &SketchId,
+    markers: (Vec<SketchInputEntity>, Vec<u8>),
+    revolve: bool,
+) -> Decoded {
+    decode_on(streams, bound, markers, revolve, &SolidEdges::default())
+}
+
+/// `decode_markers` with a decoded solid whose edges are `solid`.
+fn decode_on(
+    streams: Vec<(Sketch, Vec<SketchEntity>)>,
+    bound: &SketchId,
     (markers, payload): (Vec<SketchInputEntity>, Vec<u8>),
     revolve: bool,
+    solid: &SolidEdges,
 ) -> Decoded {
     let histories = vec![FeatureHistory {
         id: "history".into(),
@@ -291,8 +307,11 @@ fn decode_markers(
         &mut sketches,
         &mut entities,
         &mut held,
-        &histories,
-        &lanes,
+        MarkerSources {
+            histories: &histories,
+            lanes: &lanes,
+            solid,
+        },
     )
     .unwrap();
     let mut losses = Vec::new();
@@ -305,8 +324,11 @@ fn decode_markers(
         &mut sketches,
         &mut entities,
         &mut finalized,
-        &histories,
-        &lanes,
+        MarkerSources {
+            histories: &histories,
+            lanes: &lanes,
+            solid,
+        },
     )
     .unwrap();
     let rebound = bound_sketch(&again).cloned();
@@ -542,4 +564,53 @@ fn a_stream_sketch_with_more_loops_than_the_marker_records_keeps_the_binding() {
         .iter()
         .all(|sketch| sketch.id != marker_sketch_id()));
     assert!(second_readings(&decoded.losses).is_empty());
+}
+
+/// A pass that meets the marker sketch already read, as the pass over
+/// configuration states does, with the marker sketch parallel to the stream
+/// circle below it: where the decoded solid carries the circle on its edges
+/// and not the marker sketch's box on the circle's plane, the feature keeps
+/// the circle. Where the solid also carries the box there, or carries
+/// nothing, the feature binds the marker sketch.
+#[test]
+fn a_read_marker_sketch_off_the_solid_leaves_a_stream_circle_on_it_bound() {
+    let circle_id = stream_id(0);
+    let marker_id = marker_sketch_id();
+    let streams = || {
+        let circle = circle(&circle_id, "circle", 40.0);
+        let mut marker = stream_sketch(&marker_id, Some(NAME), &[&rectangle(&marker_id)]);
+        marker.0.placement = SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, -30.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap();
+        vec![stream_sketch(&circle_id, Some(NAME), &[&[circle]]), marker]
+    };
+    let [width, height] = BOX;
+    let corners = [
+        [0.0, 0.0, 0.0],
+        [width, 0.0, 0.0],
+        [width, height, 0.0],
+        [0.0, height, 0.0],
+    ];
+    let box_on_circle_plane = (0..4)
+        .map(|index| (corners[index], corners[(index + 1) % 4]))
+        .collect::<Vec<_>>();
+    let rim = ([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 40.0);
+    let bound_on = |solid: &SolidEdges| {
+        let decoded = decode_on(streams(), &circle_id, box_markers(), false, solid);
+        (bound_sketch(&decoded.features).cloned(), decoded.rebound)
+    };
+    let kept = Some(circle_id.clone());
+    let switched = Some(marker_id.clone());
+    assert_eq!(bound_on(&solid(&[], &[rim])), (kept.clone(), kept));
+    assert_eq!(
+        bound_on(&solid(&box_on_circle_plane, &[rim])),
+        (switched.clone(), switched.clone())
+    );
+    assert_eq!(
+        bound_on(&SolidEdges::default()),
+        (switched.clone(), switched)
+    );
 }

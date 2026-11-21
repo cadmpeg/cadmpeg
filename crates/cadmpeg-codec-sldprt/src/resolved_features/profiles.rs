@@ -52,7 +52,8 @@ use super::sketch_lists::{
 };
 use super::sketch_projection::is_profile_stream_sketch;
 use super::stream_readings::{
-    is_revolve_profile, marker_reading, EntityIndex, MarkerReading, UnboundMarkerReading,
+    is_revolve_profile, marker_reading, EntityIndex, MarkerReading, SolidEdges,
+    UnboundMarkerReading,
 };
 use super::transforms::{record_top_marker_coordinates, sketch_frame_marker_transform};
 use super::typed_relations::{
@@ -1351,17 +1352,31 @@ impl<'a> TerminalRelationCarriers<'a> {
     }
 }
 
+/// The records and the solid that [`project_marker_backed_sketches`] reads.
+#[derive(Clone, Copy)]
+pub(crate) struct MarkerSources<'a> {
+    pub(crate) histories: &'a [crate::records::FeatureHistory],
+    pub(crate) lanes: &'a [FeatureInputLane],
+    /// The decoded solid's edges, the witness between a feature's marker
+    /// sketch and the stream circle bound to it.
+    pub(crate) solid: &'a SolidEdges,
+}
+
 pub(crate) fn project_marker_backed_sketches(
     ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut Vec<Sketch>,
     sketch_entities: &mut Vec<SketchEntity>,
     held_geometry: &mut HeldMarkerGeometry,
-    histories: &[crate::records::FeatureHistory],
-    lanes: &[FeatureInputLane],
+    sources: MarkerSources<'_>,
 ) -> Result<(), CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
+    let MarkerSources {
+        histories,
+        lanes,
+        solid,
+    } = sources;
     let metadata_ids = history_metadata_ids(histories);
 
     let native_features = crate::records::HistoryFeatures::new(histories);
@@ -1619,7 +1634,7 @@ pub(crate) fn project_marker_backed_sketches(
                     let revolve_profile =
                         is_revolve_profile(features, &features[feature_index], &stream.id);
                     if !matches!(
-                        marker_reading(read, stream, &entities, planar, revolve_profile),
+                        marker_reading(read, stream, &entities, planar, revolve_profile, solid),
                         MarkerReading::Binds(_)
                     ) {
                         continue;
@@ -2711,8 +2726,14 @@ pub(crate) fn project_marker_backed_sketches(
                     });
                     let revolve_profile =
                         is_revolve_profile(features, &features[feature_index], stream);
-                    match marker_reading(&sketch, stream_sketch, &entities, planar, revolve_profile)
-                    {
+                    match marker_reading(
+                        &sketch,
+                        stream_sketch,
+                        &entities,
+                        planar,
+                        revolve_profile,
+                        solid,
+                    ) {
                         MarkerReading::Binds(placement) => sketch.placement = placement,
                         MarkerReading::Unbound(reason) => {
                             unbound = Some(UnboundMarkerReading {
@@ -4742,8 +4763,11 @@ mod detached_legacy_sketch_tests {
             &mut sketches,
             &mut sketch_entities,
             &mut HeldMarkerGeometry::default(),
-            &[history],
-            &[lane],
+            crate::resolved_features::profiles::MarkerSources {
+                histories: &[history],
+                lanes: &[lane],
+                solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
+            },
         )
         .expect("marker profile projection fits service policy");
 
@@ -4843,8 +4867,11 @@ mod detached_legacy_sketch_tests {
             &mut sketches,
             &mut sketch_entities,
             &mut HeldMarkerGeometry::default(),
-            &[history],
-            &[lane],
+            crate::resolved_features::profiles::MarkerSources {
+                histories: &[history],
+                lanes: &[lane],
+                solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
+            },
         )
         .expect("marker profile projection fits service policy");
 
@@ -4939,8 +4966,11 @@ mod detached_legacy_sketch_tests {
                 &mut sketches,
                 &mut sketch_entities,
                 &mut HeldMarkerGeometry::default(),
-                std::slice::from_ref(&history),
-                std::slice::from_ref(&lane),
+                crate::resolved_features::profiles::MarkerSources {
+                    histories: std::slice::from_ref(&history),
+                    lanes: std::slice::from_ref(&lane),
+                    solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
+                },
             )
             .expect("marker profile projection fits service policy");
 
@@ -5115,8 +5145,11 @@ mod detached_legacy_sketch_tests {
             &mut Vec::new(),
             &mut Vec::new(),
             &mut HeldMarkerGeometry::default(),
-            &[history],
-            &[],
+            crate::resolved_features::profiles::MarkerSources {
+                histories: &[history],
+                lanes: &[],
+                solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
+            },
         )
         .unwrap();
     }
