@@ -193,9 +193,10 @@ pub(super) fn project_extrude(
         // that adds material (sldprt.md §2). A cut keeps the normal, as the
         // flag does not give its side, and a two-direction extrusion keeps it
         // until its end caps confirm the reversal
-        // (`extrude_direction::retain_contradicted_directions`).
+        // (`extrude_direction::retain_contradicted_directions`). An operation
+        // that binds later settles in `extrude_direction::settle_reversal`.
         None if crate::history::extrude_direction::reversal_flag(&feature.properties)
-            && matches!(op, BooleanOp::Join | BooleanOp::NewBody)
+            && !matches!(op, BooleanOp::Cut | BooleanOp::Intersect)
             && matches!(extent, ExtrudeExtent::OneSided { .. }) =>
         {
             cadmpeg_ir::features::ExtrudeDirection::ReversedProfileNormal {}

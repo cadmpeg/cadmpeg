@@ -509,3 +509,46 @@ fn end_caps_confirm_a_two_direction_reversal() {
         assert_eq!(reversal_unread(&feature.source_properties), !confirmed);
     }
 }
+
+/// A reversal projected before its Boolean operation binds keeps its travel
+/// once the operation adds material, and travels along the normal over an
+/// unread flag otherwise; a settled extrusion is never reversed again.
+#[test]
+fn a_reversal_settles_with_the_bound_operation() {
+    for (op, reversed) in [
+        (BooleanOp::Join, true),
+        (BooleanOp::NewBody, true),
+        (BooleanOp::Cut, false),
+        (BooleanOp::Unresolved, false),
+    ] {
+        let mut ir = model(0.0, -1.0);
+        set_direction(&mut ir, ExtrudeDirection::ReversedProfileNormal {});
+        let feature = &mut ir.model.features[0];
+        feature.source_properties.insert(
+            cadmpeg_core::nonblank_literal!("Reverse"),
+            "true".to_owned(),
+        );
+        feature.evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::Extrude { op: bound, .. }) =
+                definition
+            {
+                *bound = op;
+            }
+        });
+        for _ in 0..2 {
+            settle_reversal(feature);
+            let FeatureOperation::Extrude { direction, .. } =
+                feature.evaluation.definition().operation()
+            else {
+                panic!("extrude");
+            };
+            let expected = if reversed {
+                ExtrudeDirection::ReversedProfileNormal {}
+            } else {
+                ExtrudeDirection::ProfileNormal {}
+            };
+            assert_eq!(direction, &expected, "{op:?}");
+            assert_eq!(reversal_unread(&feature.source_properties), !reversed);
+        }
+    }
+}
