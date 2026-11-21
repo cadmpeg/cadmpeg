@@ -572,7 +572,7 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 348.
+Production `MAX_*` constants: 350.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
