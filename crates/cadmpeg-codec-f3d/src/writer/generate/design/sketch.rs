@@ -3,9 +3,10 @@
 //! origin planes or on offset construction planes (cadir-v11.md §3.4; f3d.md
 //! §3.1, "Records of a Sketch item" and "Records of a construction-plane
 //! item"): which sketches are written, each entity and relation in the frame
-//! Fusion stores for its plane, and the losses of what is not written. A tangency at the ends of its curves is written with its
-//! endpoint branch and the coincidence of those ends, and a dimension as a
-//! Fusion sketch dimension that owns its parameter.
+//! Fusion stores for its plane, and the losses of what is not written. A
+//! tangency at the ends of its curves is written with its endpoint branch and
+//! the coincidence of those ends, and a dimension as a Fusion sketch
+//! dimension that owns its parameter.
 
 pub(super) mod dimensions;
 
