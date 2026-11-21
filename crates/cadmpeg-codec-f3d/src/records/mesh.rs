@@ -970,13 +970,10 @@ impl DesignMeshPlacement {
                 _ => return Err("matrix presence byte is invalid".into()),
             }
         }
+        let mut previous_end = None;
         for (index, offset) in layout.reference_offsets.iter().enumerate() {
             let at = usize::try_from(*offset).map_err(|_| "body reference offset exceeds usize")?;
-            if index > 0 {
-                let previous = layout.reference_offsets[index - 1];
-                let previous_end = previous
-                    .checked_add(11)
-                    .ok_or("body reference offset overflows")?;
+            if let Some(previous_end) = previous_end {
                 let gap = offset
                     .checked_sub(previous_end)
                     .ok_or("body references overlap")?;
@@ -984,6 +981,20 @@ impl DesignMeshPlacement {
                     return Err("body reference gaps are invalid".into());
                 }
             }
+            let mut slot = cadmpeg_core::decode::View::over_retained(native_frame.as_ref());
+            if index == 0 && slot.seek(at).and_then(|()| slot.u8()) == Some(0) {
+                previous_end = Some(
+                    offset
+                        .checked_add(1)
+                        .ok_or("body reference offset overflows")?,
+                );
+                continue;
+            }
+            previous_end = Some(
+                offset
+                    .checked_add(11)
+                    .ok_or("body reference offset overflows")?,
+            );
             let mut cursor = at;
             let target = crate::bytes::take_reference(native_frame.as_ref(), &mut cursor)
                 .and_then(|value| value.local().map(|target| target.0))
@@ -1115,13 +1126,18 @@ pub(crate) struct DesignMeshHistoryStream {
 pub(crate) struct DesignMeshSplitStream {
     pub(crate) name: String,
     pub(crate) descriptor: NativeBytes<Vec<u8>>,
+    /// Whether the nested components store the `Z: true` descriptor flag.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) component_flag: bool,
 }
 
 /// One mesh body and its complete Design identity graph.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(try_from = "DesignMeshBodyWire")]
 pub(crate) struct DesignMeshBody {
-    pub(crate) scope_record_index: u32,
+    /// Owning feature scope; absent when the body record stores a zero byte
+    /// in its feature-scope slot.
+    pub(crate) scope_record_index: Option<u32>,
     pub(crate) scope_body_ordinal: Option<u32>,
     pub(crate) words: DesignMeshBodyWords,
     pub(crate) split_streams: Vec<DesignMeshSplitStream>,
@@ -1154,7 +1170,12 @@ pub(crate) struct DesignMeshBody {
 
 #[derive(Serialize, Deserialize)]
 struct DesignMeshBodyWire {
-    scope_record_index: u32,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_scope_record_index"
+    )]
+    scope_record_index: Option<u32>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -1305,6 +1326,7 @@ struct DesignMeshBodyWire {
 }
 
 cadmpeg_core::named_optional_field!(deserialize_scope_body_ordinal, u32, "scope_body_ordinal");
+cadmpeg_core::named_optional_field!(deserialize_scope_record_index, u32, "scope_record_index");
 cadmpeg_core::named_optional_field!(
     deserialize_face_group_metadata,
     DesignMeshFaceGroups,
@@ -2068,8 +2090,14 @@ impl DesignMeshFeature {
         if collection.body_count() != u64::from(body_count) {
             return Err("bodies count must match collection_record.frame_length".into());
         }
-        if scopes.is_empty() {
-            return Err("a mesh collection must name at least one scope".into());
+        if scopes.is_empty() && bodies.iter().any(|body| body.scope_record_index.is_some()) {
+            return Err("a mesh collection with a scoped body must name its scope".into());
+        }
+        if bodies
+            .iter()
+            .any(|body| body.scope_record_index.is_none() && body.scope_body_ordinal.is_some())
+        {
+            return Err("a body without a scope carries no scope ordinal".into());
         }
         let mut scope_ids = std::collections::HashSet::new();
         for owner in &scopes {
@@ -2079,7 +2107,7 @@ impl DesignMeshFeature {
             }
             let mut ordinals = bodies
                 .iter()
-                .filter(|body| body.scope_record_index == index)
+                .filter(|body| body.scope_record_index == Some(index))
                 .map(|body| {
                     body.scope_body_ordinal
                         .ok_or("collection body must carry a scope ordinal")
@@ -2115,10 +2143,10 @@ impl DesignMeshFeature {
                 return Err("flagged entries must reference distinct collection bodies".into());
             }
         }
-        if bodies
-            .iter()
-            .any(|body| !scope_ids.contains(&body.scope_record_index))
-        {
+        if bodies.iter().any(|body| {
+            body.scope_record_index
+                .is_some_and(|index| !scope_ids.contains(&index))
+        }) {
             return Err("each body must name a collection scope".into());
         }
         Ok(Self {
@@ -2178,7 +2206,7 @@ impl DesignMeshFeature {
         self.bodies.iter().filter_map(|body| {
             let owner = self
                 .scopes()
-                .find(|scope| scope.record().record_index() == body.scope_record_index)?;
+                .find(|scope| Some(scope.record().record_index()) == body.scope_record_index)?;
             Some(
                 owner.record().byte_offset()
                     + owner.prefix_len()
@@ -2327,8 +2355,14 @@ cadmpeg_core::named_optional_field!(
 impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
     type Error = String;
     fn try_from(wire: DesignMeshFeatureWire) -> Result<Self, Self::Error> {
-        if wire.scope_body_reference_offsets.len() != wire.bodies.len() {
-            return Err("scope_body_reference_offsets must match bodies".into());
+        if wire.scope_body_reference_offsets.len()
+            != wire
+                .bodies
+                .iter()
+                .filter(|body| body.scope_record_index.is_some())
+                .count()
+        {
+            return Err("scope_body_reference_offsets must match the scoped bodies".into());
         }
         if wire.collection_body_reference_offsets.len() != wire.bodies.len() {
             return Err("collection_body_reference_offsets must match bodies".into());
@@ -2399,7 +2433,7 @@ impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
         )?;
         feature.operation_bodies = wire.operation_bodies;
         if feature.operation_bodies.iter().any(|operation| {
-            operation.body.scope_record_index != operation.scope.record.record_index()
+            operation.body.scope_record_index != Some(operation.scope.record.record_index())
                 || operation.body.scope_body_ordinal.is_some()
         }) {
             return Err("operation bodies must name their operation scope without a collection-scope ordinal".into());

@@ -131,8 +131,8 @@ mod tests {
         let projected =
             cadmpeg_ir::schema::structural::project(&ctx, &id, "project native identity").unwrap();
         assert_eq!(
-            *projected,
-            serde_value::Value::String("f3d:asm:edge-continuity#1".into())
+            projected,
+            serde_json::Value::String("f3d:asm:edge-continuity#1".into())
         );
         assert_eq!(id.to_string(), namespace.id("edge-continuity", 1));
         drop(projected);

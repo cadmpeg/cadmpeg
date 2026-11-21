@@ -97,7 +97,8 @@ fn endpoint_address(
         }
         AllocationReferenceEncoding::OwnedChild
         | AllocationReferenceEncoding::TaggedU8
-        | AllocationReferenceEncoding::TaggedU16 => {
+        | AllocationReferenceEncoding::TaggedU16
+        | AllocationReferenceEncoding::TaggedU24 => {
             base.checked_add(u64::from(value))?.checked_add(1)?
         }
         AllocationReferenceEncoding::Selector2 => return None,
@@ -124,7 +125,8 @@ fn curve_record<'a>(
         AllocationReferenceEncoding::OwnedChild => journal.resolve_owned_child(origin, value),
         AllocationReferenceEncoding::Selector2
         | AllocationReferenceEncoding::TaggedU8
-        | AllocationReferenceEncoding::TaggedU16 => None,
+        | AllocationReferenceEncoding::TaggedU16
+        | AllocationReferenceEncoding::TaggedU24 => None,
     }?;
     (record.family() == ConsolidatedFamily::B && record.class() == 0x25).then_some(record)
 }
