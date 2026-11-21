@@ -67,15 +67,41 @@ pub(crate) fn a5_torus_bound_edge_stream() -> Vec<u8> {
     bytes
 }
 
+/// Two sphere-bound jets on the radius-5 `b2_sphere_stream` carrier. Jet
+/// coordinates are azimuth and latitude multiplied by the sphere radius.
 pub(crate) fn a5_sphere_bound_edge_stream() -> Vec<u8> {
-    let u = [0.0, std::f64::consts::FRAC_PI_2];
+    const SPHERE_RADIUS: f64 = 5.0;
+    let u = [0.0, SPHERE_RADIUS * std::f64::consts::FRAC_PI_2];
+    sphere_bound_edge_stream(u, [[6.0, 2.0, 3.0], [1.0, 7.0, 3.0]])
+}
+
+/// The same carrier with an equatorial arc of a sixth of a turn, whose end
+/// azimuth differs from the stored coordinate modulo a full turn.
+pub(crate) fn a5_sphere_bound_sixth_turn_stream() -> Vec<u8> {
+    const SPHERE_RADIUS: f32 = 5.0;
+    let azimuth = std::f32::consts::FRAC_PI_3;
+    let u = [0.0, f64::from(SPHERE_RADIUS * azimuth)];
+    sphere_bound_edge_stream(
+        u,
+        [
+            [6.0, 2.0, 3.0],
+            [
+                1.0 + SPHERE_RADIUS * azimuth.cos(),
+                2.0 + SPHERE_RADIUS * azimuth.sin(),
+                3.0,
+            ],
+        ],
+    )
+}
+
+fn sphere_bound_edge_stream(u: [f64; 2], vertices: [[f32; 3]; 2]) -> Vec<u8> {
     let v = [0.0, 0.0];
     let mut bytes = a5_pcurve_stream_with_uv(u, v);
     bytes.extend_from_slice(&a5_pcurve_stream_with_uv(u, v));
     bytes.extend_from_slice(&b2_edge_parameter_stream_for(0.0, 1.0));
     bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
     bytes.extend_from_slice(&b2_sphere_stream());
-    for point in [[6.0f32, 2.0, 3.0], [1.0, 7.0, 3.0]] {
+    for point in vertices {
         bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
         for value in point {
             bytes.extend_from_slice(&value.to_le_bytes());
