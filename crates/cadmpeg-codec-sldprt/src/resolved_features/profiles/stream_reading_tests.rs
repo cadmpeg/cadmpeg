@@ -193,7 +193,15 @@ struct Decoded {
 /// sketch feature bound to the profile-stream sketch `bound`, whose marker
 /// records draw the box, and one revolve that consumes the sketch feature.
 fn decode(streams: Vec<(Sketch, Vec<SketchEntity>)>, bound: &SketchId) -> Decoded {
-    let (markers, payload) = box_markers();
+    decode_markers(streams, bound, box_markers())
+}
+
+/// `decode` with the marker records `markers` in place of the box's.
+fn decode_markers(
+    streams: Vec<(Sketch, Vec<SketchEntity>)>,
+    bound: &SketchId,
+    (markers, payload): (Vec<SketchInputEntity>, Vec<u8>),
+) -> Decoded {
     let histories = vec![FeatureHistory {
         id: "history".into(),
         part_name: None,
@@ -373,16 +381,41 @@ fn the_stream_box_a_signature_binding_left_unbound_is_a_second_reading() {
     assert!(decoded.sketches.iter().any(|sketch| sketch.id == circle_id));
 }
 
-/// A stream sketch bound to the feature whose loops repeat those of the
-/// feature's marker sketch gives the binding to the marker sketch and is
-/// named its second reading.
+/// A bound stream sketch that is no lone circle keeps the binding, also
+/// where the marker records draw the same box, and the marker pass adds no
+/// sketch.
 #[test]
-fn a_bound_stream_box_that_repeats_the_marker_box_is_its_second_reading() {
+fn a_bound_stream_box_keeps_the_binding_beside_the_marker_box() {
     let box_id = stream_id(0);
     let sides = rectangle(&box_id);
     let decoded = decode(vec![stream_sketch(&box_id, None, &[&sides])], &box_id);
-    assert_eq!(bound_sketch(&decoded.features), Some(&marker_sketch_id()));
-    assert_eq!(second_readings(&decoded.losses).len(), 1);
+    assert_eq!(bound_sketch(&decoded.features), Some(&box_id));
+    assert!(decoded
+        .sketches
+        .iter()
+        .all(|sketch| sketch.id != marker_sketch_id()));
+    assert!(second_readings(&decoded.losses).is_empty());
+}
+
+/// A marker sketch with an entity that has no planar geometry does not take
+/// the binding from a stream circle.
+#[test]
+fn a_marker_sketch_with_an_unread_handle_leaves_the_stream_circle_bound() {
+    let circle_id = stream_id(0);
+    let circle = circle(&circle_id, "circle", 40.0);
+    let (mut markers, mut payload) = box_markers();
+    let stray = u64::try_from(payload.len()).unwrap();
+    payload.extend([0; 16]);
+    let mut handle =
+        SketchInputEntity::new("stray", LANE, 99, stray, SketchInputKind::LineOrCircle);
+    handle.feature_ref = Some("feature-native".into());
+    markers.push(handle);
+    let decoded = decode_markers(
+        vec![stream_sketch(&circle_id, Some(NAME), &[&[circle]])],
+        &circle_id,
+        (markers, payload),
+    );
+    assert_eq!(bound_sketch(&decoded.features), Some(&circle_id));
 }
 
 /// A stream sketch that closes more loops than the feature's marker records

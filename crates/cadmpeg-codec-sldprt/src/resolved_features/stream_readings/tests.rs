@@ -71,38 +71,48 @@ fn half(id: &str, radius: f64, start: f64) -> SketchEntity {
     )
 }
 
-/// A circle read as two half arcs repeats the circle, wherever each reading
-/// places it: a marker reading of the split circle and a hole binds in place
-/// of a stream reading of the whole circle and the hole, and a marker reading
-/// of the split circle alone does not.
+fn square(id: &str, side: f64) -> [SketchEntity; 4] {
+    let corners = [[0.0, 0.0], [side, 0.0], [side, side], [0.0, side]];
+    std::array::from_fn(|index| {
+        let [start, end] = [corners[index], corners[(index + 1) % 4]];
+        entity(
+            &format!("{id}-{index}"),
+            SketchGeometryDefinition::Line {
+                start: Point2::new(start[0], start[1]),
+                end: Point2::new(end[0], end[1]),
+            },
+        )
+    })
+}
+
+/// A marker reading of another loop binds in place of a stream reading of
+/// one circle; a marker reading that repeats the circle, as two half arcs
+/// placed elsewhere, does not.
 #[test]
-fn two_half_arcs_repeat_the_circle_they_split() {
+fn a_marker_reading_binds_in_place_of_a_lone_circle_it_does_not_repeat() {
     let whole = circle("whole", [5.0, 5.0], 10.0);
     let upper = half("upper", 10.0, 0.0);
     let lower = half("lower", 10.0, std::f64::consts::PI);
-    let hole = circle("hole", [0.0, 0.0], 4.0);
-    let stream_hole = circle("stream-hole", [5.0, 5.0], 4.0);
-    let entities = EntityIndex::new([&whole, &upper, &lower, &hole, &stream_hole]);
-    let stream = sketch("stream", &[&[&whole], &[&stream_hole]]);
-    let marker = sketch("marker", &[&[&upper, &lower], &[&hole]]);
-    assert!(marker_reading_binds(&marker, &stream, &entities));
-    let split_only = sketch("split", &[&[&upper, &lower]]);
-    assert!(!marker_reading_binds(&split_only, &stream, &entities));
+    let sides = square("side", 3.0);
+    let entities = EntityIndex::new(sides.iter().chain([&whole, &upper, &lower]));
+    let stream = sketch("stream", &[&[&whole]]);
+    let split = sketch("split", &[&[&upper, &lower]]);
+    let boxed = sketch("box", &[&sides.iter().collect::<Vec<_>>()]);
+    assert!(!marker_reading_binds(&split, &stream, &entities));
+    assert!(marker_reading_binds(&boxed, &stream, &entities));
 }
 
-/// A marker reading with fewer loops than a stream reading of other loops
-/// leaves the stream reading bound; a marker reading with more loops binds.
+/// A stream reading of anything but one circle keeps its binding, whatever
+/// the marker reading holds.
 #[test]
-fn loop_count_decides_between_readings_of_different_loops() {
+fn a_stream_reading_that_is_not_one_circle_keeps_its_binding() {
     let outer = circle("outer", [0.0, 0.0], 9.0);
     let inner = circle("inner", [0.0, 0.0], 4.0);
-    let other = circle("other", [0.0, 0.0], 7.0);
-    let spare = circle("spare", [0.0, 0.0], 2.0);
-    let entities = EntityIndex::new([&outer, &inner, &other, &spare]);
+    let sides = square("side", 3.0);
+    let entities = EntityIndex::new(sides.iter().chain([&outer, &inner]));
     let ring = sketch("ring", &[&[&outer], &[&inner]]);
-    let pair = sketch("pair", &[&[&other], &[&spare]]);
-    let single = sketch("single", &[&[&other]]);
-    assert!(marker_reading_binds(&ring, &single, &entities));
-    assert!(!marker_reading_binds(&single, &ring, &entities));
-    assert!(!marker_reading_binds(&ring, &pair, &entities));
+    let boxed = sketch("box", &[&sides.iter().collect::<Vec<_>>()]);
+    let stream_box = sketch("stream-box", &[&sides.iter().collect::<Vec<_>>()]);
+    assert!(!marker_reading_binds(&ring, &stream_box, &entities));
+    assert!(!marker_reading_binds(&boxed, &ring, &entities));
 }

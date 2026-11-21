@@ -39,17 +39,22 @@ pub(super) struct BoundMarker {
 }
 
 /// Whether `marker`, the sketch a feature's own marker records give, binds in
-/// place of `stream`, the profile-stream sketch bound to the feature: it
-/// closes more loops, `stream` is one circle, or its loops repeat those of
-/// `stream`.
+/// place of `stream`, the profile-stream sketch bound to the feature:
+/// `stream` is one circle whose loop `marker` does not repeat, and every
+/// entity of `marker` has planar geometry.
 pub(super) fn marker_reading_binds(
     marker: &Sketch,
     stream: &Sketch,
     entities: &EntityIndex<'_>,
 ) -> bool {
-    marker.profiles.as_slice().len() > stream.profiles.as_slice().len()
-        || is_one_circle(stream, entities)
-        || same_loops(marker, stream, entities)
+    entities.0.values().all(|entity| {
+        entity.sketch != marker.id
+            || !matches!(
+                entity.geometry.definition(),
+                SketchGeometryDefinition::Native { .. }
+            )
+    }) && is_one_circle(stream, entities)
+        && !same_loops(marker, stream, entities)
 }
 
 /// The profile-stream sketches that no feature binds and whose loops repeat
