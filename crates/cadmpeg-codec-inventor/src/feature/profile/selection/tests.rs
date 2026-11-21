@@ -26,6 +26,22 @@ fn complete_open_path_retains_its_endpoints_with_reversed_edge_carriers() {
 }
 
 #[test]
+fn spatial_corner_path_retains_its_connected_endpoints() {
+    let start = Point3::new(0.0, 0.0, 0.0);
+    let corner = Point3::new(20.0, 0.0, 0.0);
+    for height in [10.0, 15.0] {
+        let end = Point3::new(20.0, 20.0, height);
+        let mut first = edge(0.0, 20.0);
+        first.start = corner;
+        first.end = start;
+        let mut second = edge(0.0, 20.0);
+        second.start = end;
+        second.end = corner;
+        assert_eq!(path_endpoints(&[first, second]), Some([start, end]));
+    }
+}
+
+#[test]
 fn whole_sketch_requires_one_complete_closed_profile_and_resolved_plane() {
     use cadmpeg_ir::features::profiles::SketchProfileRegion;
     use cadmpeg_ir::math::{Point2, Vector3};

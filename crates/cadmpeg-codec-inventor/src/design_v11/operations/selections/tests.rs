@@ -4,6 +4,7 @@ use cadmpeg_ir::features::evaluation::{FeatureInputTopology, HistoricalEdgeGeome
 use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::ids::{BodyId, FeatureInputTopologyId, HistoricalEdgeId};
+use cadmpeg_ir::sketches::{SketchEntityId, SketchId};
 use cadmpeg_ir::units::UnitVector3;
 
 #[test]
@@ -78,4 +79,48 @@ fn historical_edges_keep_samples_and_require_one_input_state() {
     );
     assert!(edge(&source, &[]).is_err());
     assert!(edge(&source, &[input.clone(), input]).is_err());
+}
+
+#[test]
+fn selected_path_curves_keep_source_order_at_the_input_state() {
+    let sketch = SketchId::mint("test:design:sketch#path").expect("sketch");
+    let curves = ["last", "first", "middle"]
+        .map(|name| SketchEntityId::mint(format!("test:design:entity#{name}")).expect("entity"));
+    let source = cadmpeg_ir::features::profiles::PathRef::SketchCurves {
+        sketch,
+        curves: curves.to_vec().try_into().expect("curves"),
+    };
+    let selected = path(&source).expect("selected path");
+    assert_eq!(selected.at, Anchor::Input);
+    let Picks::Named(members) = selected.picks else {
+        panic!("named path members");
+    };
+    assert_eq!(
+        members
+            .as_slice()
+            .iter()
+            .map(|member| member.target.clone())
+            .collect::<Vec<_>>(),
+        curves
+            .iter()
+            .cloned()
+            .map(PickTarget::SketchEntity)
+            .collect::<Vec<_>>()
+    );
+    assert!(selected.native.is_none());
+}
+
+#[test]
+fn native_path_keeps_the_complete_operand_at_the_input_state() {
+    let text = "inventor:pmdc:property#path";
+    let selected = path(&cadmpeg_ir::features::profiles::PathRef::Native(
+        text.to_owned(),
+    ))
+    .expect("native path");
+    assert_eq!(selected.at, Anchor::Input);
+    assert!(matches!(selected.picks, Picks::Unread));
+    assert_eq!(
+        selected.native.expect("native reference").as_slice(),
+        [text]
+    );
 }

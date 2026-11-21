@@ -21,13 +21,24 @@ pub(crate) mod validation;
 pub(crate) fn retained_control_losses<'a>(
     definitions: impl IntoIterator<Item = &'a cadmpeg_ir::features::FeatureDefinition>,
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    use cadmpeg_ir::features::profiles::PathRef;
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, NativeFeatureKind};
     use slots::Family;
 
     let mut sweeps = 0_usize;
+    let mut native_paths = 0_usize;
     let mut lofts = 0_usize;
     let mut surface_lofts = 0_usize;
     for definition in definitions {
+        if matches!(
+            definition,
+            FeatureDefinition::Operation(FeatureOperation::Sweep {
+                path: Some(PathRef::Native(_)),
+                ..
+            })
+        ) {
+            native_paths += 1;
+        }
         if let FeatureDefinition::Operation(FeatureOperation::Native {
             kind: NativeFeatureKind::Other(kind),
             ..
@@ -46,6 +57,11 @@ pub(crate) fn retained_control_losses<'a>(
     if sweeps != 0 {
         losses.push(crate::loss::InventorLossCode::FeatureSweepControlsUnresolved.note(format!(
             "Retained {sweeps} native Inventor sweep feature(s): the operands, controls, or complete per-feature result topology do not close the neutral sweep construction."
+        )));
+    }
+    if native_paths != 0 {
+        losses.push(crate::loss::InventorLossCode::FeatureSweepPathNative.note(format!(
+            "Retained {native_paths} native Inventor sweep path(s): the selected wire requires a complete directed sketch curve or input body edge join (DE-06)."
         )));
     }
     if lofts != 0 {

@@ -234,6 +234,8 @@ pub(crate) enum InventorLossCode {
     FeatureRevolveControlUnresolved,
     /// Sweep construction controls have no exact neutral interpretation.
     FeatureSweepControlsUnresolved,
+    /// A sweep retains its path identity for a directed source curve join.
+    FeatureSweepPathNative,
     /// Loft construction controls and section conditions have no exact neutral interpretation.
     FeatureLoftControlsUnresolved,
     /// Section scalar operands do not close a positional loft construction.
@@ -457,6 +459,7 @@ impl InventorLossCode {
         Self::FeatureRevolveDirectionNative,
         Self::FeatureRevolveControlUnresolved,
         Self::FeatureSweepControlsUnresolved,
+        Self::FeatureSweepPathNative,
         Self::FeatureLoftControlsUnresolved,
         Self::FeatureLoftSectionScalarsNative,
         Self::FeatureLoftOperandsNative,
@@ -654,6 +657,7 @@ impl InventorLossCode {
             Self::FeatureRevolveDirectionNative => "feature.revolve-direction-native",
             Self::FeatureRevolveControlUnresolved => "feature.revolve-control-unresolved",
             Self::FeatureSweepControlsUnresolved => "feature.sweep-controls-unresolved",
+            Self::FeatureSweepPathNative => "feature.sweep-path-native",
             Self::FeatureLoftControlsUnresolved => "feature.loft-controls-unresolved",
             Self::FeatureLoftSectionScalarsNative => "feature.loft-section-scalars-native",
             Self::FeatureLoftOperandsNative => "feature.loft-operands-native",
@@ -821,6 +825,7 @@ impl InventorLossCode {
             | Self::FeatureRevolveDirectionNative
             | Self::FeatureRevolveControlUnresolved
             | Self::FeatureSweepControlsUnresolved
+            | Self::FeatureSweepPathNative
             | Self::FeatureLoftControlsUnresolved
             | Self::FeatureLoftSectionScalarsNative
             | Self::FeatureLoftOperandsNative
@@ -1021,6 +1026,7 @@ mod tests {
                 "feature.revolve-direction-native",
                 "feature.revolve-control-unresolved",
                 "feature.sweep-controls-unresolved",
+                "feature.sweep-path-native",
                 "feature.loft-controls-unresolved",
                 "feature.loft-section-scalars-native",
                 "feature.loft-operands-native",

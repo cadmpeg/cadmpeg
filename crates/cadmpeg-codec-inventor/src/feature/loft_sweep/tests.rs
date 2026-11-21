@@ -48,6 +48,50 @@ fn retained_features_report_unresolved_construction_controls_by_family() {
     assert!(retained_control_losses(&definitions[4..]).is_empty());
 }
 
+#[test]
+fn decoded_sweeps_report_native_paths_separately_from_native_controls() {
+    use cadmpeg_ir::features::profiles::PathRef;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::sketches::SketchId;
+
+    let definition = |path: PathRef| {
+        let operation: FeatureOperation = serde_json::from_value(serde_json::json!({
+            "kind": "sweep",
+            "value": {
+                "shape": {
+                    "kind": "solid", "op": "new_body",
+                    "section": {"kind": "profile", "value": {
+                        "kind": "native", "value": "test:pmdc:profile#section"
+                    }},
+                    "sections": []
+                },
+                "path": path,
+                "path_tangent": false,
+                "linearize": false
+            }
+        }))
+        .expect("sweep operands");
+        FeatureDefinition::Operation(operation)
+    };
+    let definitions = [
+        definition(PathRef::Native("test:pmdc:path#first".to_owned())),
+        definition(PathRef::Native("test:pmdc:path#second".to_owned())),
+        definition(PathRef::Sketch(
+            SketchId::mint("test:design:sketch#path").expect("sketch"),
+        )),
+    ];
+    let losses = retained_control_losses(&definitions);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::InventorLossCode::FeatureSweepPathNative.kind()
+    );
+    assert!(losses[0]
+        .message
+        .starts_with("Retained 2 native Inventor sweep path"));
+    assert!(retained_control_losses(&definitions[2..]).is_empty());
+}
+
 fn header(version: u8) -> Vec<u8> {
     let stamps: &[i32] = match version {
         15..=22 => &[],
