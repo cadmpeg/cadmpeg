@@ -3497,3 +3497,39 @@ pub(crate) mod pmark_record_head {
     /// Offset of `form_word` (`u32`, little-endian). Spec §3.4.
     pub(crate) const FORM_WORD: usize = 8;
 }
+
+/// Byte offsets for the `units_length_unit_compound_three_word` record.
+///
+/// Spec §Configuration objects. Record length 46 B.
+///
+/// ```text
+/// A `moLengthUserUnits_c` object after its class declaration, through its unit code, with the three-word base of a compound document. The table's `moNumberUserUnits_c` object is 44 bytes long.
+/// ```
+pub(crate) mod units_length_unit_compound_three_word {
+    /// Offset of `unit_code` (`u16`, little-endian). Spec §Configuration objects.
+    pub(crate) const UNIT_CODE: usize = 44;
+}
+
+/// Byte offsets for the `units_length_unit_compound_four_word` record.
+///
+/// Spec §Configuration objects. Record length 50 B.
+///
+/// ```text
+/// A `moLengthUserUnits_c` object after its class declaration, through its unit code, with the four-word base of a compound document. The table's `moNumberUserUnits_c` object is 48 bytes long.
+/// ```
+pub(crate) mod units_length_unit_compound_four_word {
+    /// Offset of `unit_code` (`u16`, little-endian). Spec §Configuration objects.
+    pub(crate) const UNIT_CODE: usize = 48;
+}
+
+/// Byte offsets for the `units_length_unit_block` record.
+///
+/// Spec §Configuration objects. Record length 64 B.
+///
+/// ```text
+/// A `moLengthUserUnits_c` object after its class declaration, through its unit code, in a block-container document. The table's `moNumberUserUnits_c` object is 62 bytes long.
+/// ```
+pub(crate) mod units_length_unit_block {
+    /// Offset of `unit_code` (`u16`, little-endian). Spec §Configuration objects.
+    pub(crate) const UNIT_CODE: usize = 62;
+}

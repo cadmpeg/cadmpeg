@@ -1166,13 +1166,13 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Conflict.** One dimensioned circle can be one of several concentric profile circles. A whole-sketch profile from that circle alone fills the region inside the outer circle.
 
-### DI-72. Length unit codes and the three-word unit base
+### DI-72. Length unit codes above `3`
 
-**Question.** Which length units do the codes other than `0`, `1` and `3` of the `moLengthUserUnits_c` unit word name, and is the u16 after a 44-byte base that word?
+**Question.** Which length units do the `moLengthUserUnits_c` unit codes above `3` name?
 
-**Known.** Code `0` is millimetre, `1` centimetre and `3` inch: each agrees with the quotient of a stored length and its Keywords display in every document that stores both. Some compound documents write three u32 words where the base holds four, so the base is 44 bytes, a u16 follows it, then the dual length unit object, whose first u32 is `2`; those documents store no length beside its display.
+**Known.** `sldprt.md` §2.3 gives the codes `0` to `3`. The decoder states no length unit for a document that writes another code.
 
-**Need.** Documents of each form that store a length scalar beside its Keywords display, so the quotient names the unit.
+**Need.** A document with no length unit gives its length dimensions no value.
 
 
 ### DI-77. The +17 value of a sketch curve record

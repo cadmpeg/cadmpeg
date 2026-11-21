@@ -4003,6 +4003,73 @@ Parsed by:
 | 4 | 4 | `form` | `u32` | little | spec | the form, a little-endian u32 at +4 |
 | 8 | 4 | `form_word` | `u32` | little | spec | the form word, a little-endian u32 at +8 |
 
+## `units_length_unit_compound_three_word`
+
+Spec §Configuration objects · layout: byte offsets · size: 46 B
+
+A `moLengthUserUnits_c` object after its class declaration, through its unit code, with the three-word base of a compound document. The table's `moNumberUserUnits_c` object is 44 bytes long.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/design_v11/units.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `kind` | `u32` | little | spec | u32 kind |
+| 8 | 8 | `value` | `f64` | little | spec | f64 value |
+| 16 | 4 | `decimal_places` | `u32` | little | spec | u32 decimal places |
+| 32 | 12 | `words` | `u32[3]` | little | spec | three or four u32 words |
+| 44 | 2 | `unit_code` | `u16` | little | spec | The u16 a `moLengthUserUnits_c` adds after its base is the unit in which the document displays lengths |
+
+Unstated regions:
+
+- `4..8` (4 B): The u32 after the kind; the specification gives it no meaning.
+- `20..32` (12 B): A u32 and an f64 that the specification gives no meaning.
+
+## `units_length_unit_compound_four_word`
+
+Spec §Configuration objects · layout: byte offsets · size: 50 B
+
+A `moLengthUserUnits_c` object after its class declaration, through its unit code, with the four-word base of a compound document. The table's `moNumberUserUnits_c` object is 48 bytes long.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/design_v11/units.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `kind` | `u32` | little | spec | u32 kind |
+| 8 | 8 | `value` | `f64` | little | spec | f64 value |
+| 16 | 4 | `decimal_places` | `u32` | little | spec | u32 decimal places |
+| 32 | 16 | `words` | `u32[4]` | little | spec | three or four u32 words |
+| 48 | 2 | `unit_code` | `u16` | little | spec | The u16 a `moLengthUserUnits_c` adds after its base is the unit in which the document displays lengths |
+
+Unstated regions:
+
+- `4..8` (4 B): The u32 after the kind; the specification gives it no meaning.
+- `20..32` (12 B): A u32 and an f64 that the specification gives no meaning.
+
+## `units_length_unit_block`
+
+Spec §Configuration objects · layout: byte offsets · size: 64 B
+
+A `moLengthUserUnits_c` object after its class declaration, through its unit code, in a block-container document. The table's `moNumberUserUnits_c` object is 62 bytes long.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/design_v11/units.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `kind` | `u32` | little | spec | u32 kind |
+| 8 | 8 | `value` | `f64` | little | spec | f64 value |
+| 16 | 4 | `decimal_places` | `u32` | little | spec | u32 decimal places |
+| 32 | 16 | `words` | `u32[4]` | little | spec | three or four u32 words |
+| 62 | 2 | `unit_code` | `u16` | little | spec | The u16 a `moLengthUserUnits_c` adds after its base is the unit in which the document displays lengths |
+
+Unstated regions:
+
+- `4..8` (4 B): The u32 after the kind; the specification gives it no meaning.
+- `20..32` (12 B): A u32 and an f64 that the specification gives no meaning.
+- `48..62` (14 B): The f64, u32 and u16 that follow the four words in a block-container document.
+
 ## Not tabulated
 
 | Area | Spec | Reason |
