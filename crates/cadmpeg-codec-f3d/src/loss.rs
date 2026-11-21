@@ -729,6 +729,7 @@ pub(crate) enum F3dLossCode {
     FeatureSketchProfileFlagsAssumed,
     /// Extrude profile selections skipped the sketch arrangement search at a local cap.
     FeatureProfileArrangementCapped,
+    FeatureProfileCrossingRunsCapped,
     /// Extrude profile selections skipped a certified profile test at a local cap.
     FeatureProfileDensificationCapped,
     /// Extrude profile selections skipped a self-crossing loop split at a local cap.
@@ -740,6 +741,9 @@ pub(crate) enum F3dLossCode {
     /// Extrude profile selections joined stored loops to faces through the assumed reading of their first entry operand.
     FeatureProfileLoopFlagsAssumed,
     FeatureProfileCoincidentDirectionAssumed,
+    FeatureProfileCoincidentBoundaryAssumed,
+    FeatureProfileCrossingRunsAssumed,
+    FeatureProfilePartialEntryAssumed,
     /// Extrude profile selections took regions from the faces a cut changed, at one point per region.
     FeatureProfileCutRegionsAssumed,
     /// A stored Cut transition certifies regions with stale curve identities.
@@ -1726,10 +1730,14 @@ impl F3dLossCode {
         Self::FeatureExtrudeProfileFaceCurved,
         Self::FeatureSketchProfileFlagsAssumed,
         Self::FeatureProfileArrangementCapped,
+        Self::FeatureProfileCrossingRunsCapped,
         Self::FeatureProfileDensificationCapped,
         Self::FeatureProfileCrossingLoopCapped,
         Self::FeatureProfileCrossingLoopAssumed,
         Self::FeatureProfileCoincidentDirectionAssumed,
+        Self::FeatureProfileCoincidentBoundaryAssumed,
+        Self::FeatureProfileCrossingRunsAssumed,
+        Self::FeatureProfilePartialEntryAssumed,
         Self::FeatureProfileLoopFlagsAssumed,
         Self::FeatureProfileCutRegionsAssumed,
         Self::FeatureProfileRegionIdentitiesStale,
@@ -2711,6 +2719,7 @@ impl F3dLossCode {
             Self::FeatureExtrudeProfileFaceCurved => "feature.extrude-profile-face-curved",
             Self::FeatureProfileSelectionNative => "feature.profile-selection-native",
             Self::FeatureProfileArrangementCapped => "feature.profile-arrangement-capped",
+            Self::FeatureProfileCrossingRunsCapped => "feature.profile-crossing-runs-capped",
             Self::FeatureProfileDensificationCapped => "feature.profile-densification-capped",
             Self::FeatureProfileCrossingLoopCapped => "feature.profile-crossing-loop-capped",
             Self::FeatureProfileCrossingLoopAssumed => "feature.profile-crossing-loop-assumed",
@@ -2718,6 +2727,11 @@ impl F3dLossCode {
             Self::FeatureProfileCoincidentDirectionAssumed => {
                 "feature.profile-coincident-direction-assumed"
             }
+            Self::FeatureProfileCoincidentBoundaryAssumed => {
+                "feature.profile-coincident-boundary-assumed"
+            }
+            Self::FeatureProfileCrossingRunsAssumed => "feature.profile-crossing-runs-assumed",
+            Self::FeatureProfilePartialEntryAssumed => "feature.profile-partial-entry-assumed",
             Self::FeatureProfileRegionIdentitiesStale => "feature.profile-region-identities-stale",
             Self::FeatureProfileTextGlyphsAssumed => "feature.profile-text-glyphs-assumed",
             Self::FeatureProfileTextGlyphsNative => "feature.profile-text-glyphs-native",
@@ -3676,10 +3690,14 @@ impl F3dLossCode {
             | Self::FeatureExtrudeProfileFaceCurved
             | Self::FeatureSketchProfileFlagsAssumed
             | Self::FeatureProfileArrangementCapped
+            | Self::FeatureProfileCrossingRunsCapped
             | Self::FeatureProfileDensificationCapped
             | Self::FeatureProfileCrossingLoopCapped
             | Self::FeatureProfileCrossingLoopAssumed
             | Self::FeatureProfileCoincidentDirectionAssumed
+            | Self::FeatureProfileCoincidentBoundaryAssumed
+            | Self::FeatureProfileCrossingRunsAssumed
+            | Self::FeatureProfilePartialEntryAssumed
             | Self::FeatureProfileLoopFlagsAssumed
             | Self::FeatureProfileRegionIdentitiesStale
             | Self::FeatureProfileTextGlyphsAssumed
@@ -4389,10 +4407,14 @@ impl F3dLossCode {
             | Self::FeatureExtrudeProfileFaceCurved
             | Self::FeatureSketchProfileFlagsAssumed
             | Self::FeatureProfileArrangementCapped
+            | Self::FeatureProfileCrossingRunsCapped
             | Self::FeatureProfileDensificationCapped
             | Self::FeatureProfileCrossingLoopCapped
             | Self::FeatureProfileCrossingLoopAssumed
             | Self::FeatureProfileCoincidentDirectionAssumed
+            | Self::FeatureProfileCoincidentBoundaryAssumed
+            | Self::FeatureProfileCrossingRunsAssumed
+            | Self::FeatureProfilePartialEntryAssumed
             | Self::FeatureProfileLoopFlagsAssumed
             | Self::FeatureProfileRegionIdentitiesStale
             | Self::FeatureProfileTextGlyphsAssumed
@@ -5214,10 +5236,14 @@ mod tests {
                 "feature.extrude-profile-face-curved",
                 "feature.sketch-profile-flags-assumed",
                 "feature.profile-arrangement-capped",
+                "feature.profile-crossing-runs-capped",
                 "feature.profile-densification-capped",
                 "feature.profile-crossing-loop-capped",
                 "feature.profile-crossing-loop-assumed",
                 "feature.profile-coincident-direction-assumed",
+                "feature.profile-coincident-boundary-assumed",
+                "feature.profile-crossing-runs-assumed",
+                "feature.profile-partial-entry-assumed",
                 "feature.profile-loop-flags-assumed",
                 "feature.profile-cut-regions-assumed",
                 "feature.profile-region-identities-stale",

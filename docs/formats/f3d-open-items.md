@@ -565,9 +565,9 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Question.** Which sketch curves does a typed profile loop list when the selected region has a curve that ends inside it, or two coincident curves along one boundary interval?
 
-**Known.** `f3d.md` "When the loops of a typed or compact profile group join the Sketch exactly" gives the transition reading. It requires every stored curve to bound a selected atomic region. A loop that lists a line ending inside a circle, or a line coincident with part of another listed line, names a curve that bounds no selected region in that reading. The selection stays native with `feature.profile-selection-native`.
+**Known.** `f3d.md` "When the loops of a typed or compact profile group join the Sketch exactly" gives the transition reading. Each stored entry has a decoded piece on a selected atomic boundary, or a line or circle with a shared boundary interval under `feature.profile-coincident-boundary-assumed`. A loop that lists a line ending inside a circle can name a curve that contributes no boundary interval. The selection stays native with `feature.profile-selection-native`. Two coincident lines listed as separate entries resolve under the transition reading: the alias line takes its certified boundary interval and charges `feature.profile-coincident-boundary-assumed`, and an entry with several pieces, or a piece with no identity use in the selected boundary, also charges `feature.profile-partial-entry-assumed`. A Cut whose stored transition inserts, deletes, and updates no face has no changed plane and no certificate, so its selection stays native.
 
-**Need.** Controlled Extrudes of one region with a line that ends inside it, and of two regions separated by two coincident lines, with the stored loops and the resulting end caps, to state when a listed curve contributes no boundary interval.
+**Need.** Controlled Extrudes of one region with a line that ends inside it, with the stored loops and the resulting end caps, to state when a listed curve contributes no boundary interval.
 
 **Conflict.** None.
 
@@ -3700,11 +3700,11 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 ### DR-706. Cut Extrude with atomic regions that have no sample point
 
-**Question.** How are the atomic regions of a Cut `Extrude` found when the arrangement has a region that holds no sample point of the grid?
+**Question.** How are the atomic regions of a Cut `Extrude` found when the arrangement has a region with no point more than one model tolerance from its boundary?
 
-**Known.** A public Cut `Extrude` has a Sketch of 54 profiles and a counted selection of eight rings of three curves. The arrangement has 72 faces. Sampling the atomic regions finds no interior point for at least one region, so no removed-region candidate forms. The rings come in pairs of the same three curves in opposite order.
+**Known.** A public Cut `Extrude` has a Sketch of 54 profiles and a counted selection of eight rings of three curves. The arrangement has 72 faces. The sampler rule of the cap certificate (`f3d.md`) reads a narrow region through a grid point or a row midpoint. A region narrower than two tolerances has no sample, and no removed-region candidate forms for it. The rings come in pairs of the same three curves in opposite order.
 
-**Need.** An interior point rule for narrow regions, or a certificate that does not sample.
+**Need.** A certificate that does not sample regions narrower than two tolerances.
 
 **Note.** The selection stays native with `feature.profile-selection-native`.
 
@@ -3880,16 +3880,17 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Need.** Controlled saves that vary the auxiliary references and settings while keeping the selected cells and tools fixed.
 
-### DR-820. Region member lists across a crossing curve that leaves the arrangement
+### DR-740. Unbound Extrude profile members
 
-**Question.** Does a node where a curve crosses a profile curve split that profile curve into two fragments of a counted member list when the crossing curve leaves the arrangement?
+**Question.** Which carrier binds an Extrude construction member to its Sketch boundary when its indexed references have no paired loop identity record?
 
-**Known.** `f3d.md` §3.1 "The member list of a counted region names a neutral profile" makes every point where two curves meet a node, and a walk counts a curve once for each fragment. A line that ends on a rectangle side splits that side into two fragments, and the member list names the side twice. One local corpus file stores a planar Extrude whose counted member list names five curves once each. In the arrangement, a non-construction line crosses one of these curves inside the selected face; both parts of the crossing line leave the arrangement. The walk of the face holds the crossed curve as two fragments, so the list matches no walk. The final B-rep of the Extrude matches the face that the five curves bound.
+**Known.** `f3d.md` "A typed-reference profile selection is a construction-operand group member" gives the loop carrier. In one public design, group 3229 lists unbound members 3232, 3236, 3240, and 3244. In another, group 204 lists unbound member 214.
 
-**Need.** Further designs where a curve crosses, not ends on, a selected profile curve and leaves the arrangement, with the stored member multiplicity of the crossed curve.
+**Need.** The relation from the asset-qualified member to a Sketch boundary, with the selected region proved against its Extrude end caps.
 
-**Note.** The profile stays native and the decoder reports `feature.profile-selection-native`.
+**Conflict.** None.
 
+**Note.** These selections retain their native construction groups and `feature.profile-selection-native` losses.
 ### DR-819. Opaque word in a typed one-sided distance Extrude
 
 **Question.** What does a nonzero opaque distance word encode in the direct typed-reference scope?
@@ -3909,6 +3910,18 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 **Need.** Paired saves with different property targets or entry widths, and the corresponding final body geometry.
 
 **Note.** The decoder retains positional pairing with `feature.owned-body-pairing-assumed` for the typed body runs.
+
+### DR-820. Region member lists across a crossing curve that leaves the arrangement
+
+**Question.** Which stored relation selects one member per fragment or one member per curve run at an interior crossing whose other curve leaves the arrangement?
+
+**Known.** The counted list in the planar Extrude names five curves once each. A non-construction line crosses one listed curve inside the selected face. Both arms of the crossing line leave the cycle graph. The final B-rep agrees with the face bounded by the five named curves. The decoder retains exact fragment matches and reads a unique boundary run across a pruned transverse interior crossing with `feature.profile-crossing-runs-assumed`. `f3d.md` §3.1 "The member list of a counted region names a neutral profile" makes every point where two curves meet a node, and a walk counts a curve once for each fragment. A line that ends on a rectangle side splits that side into two fragments, and the member list names the side twice. One local corpus file stores a planar Extrude whose counted member list names five curves once each. In the arrangement, a non-construction line crosses one of these curves inside the selected face; both parts of the crossing line leave the arrangement. The walk of the face holds the crossed curve as two fragments, so the list matches no walk. The final B-rep of the Extrude matches the face that the five curves bound.
+
+**Need.** Paired saves with the same profile and a changed crossing-curve endpoint, tangent, or cycle connection, with the corresponding counted member lists.
+
+**Conflict.** None.
+
+**Note.** Endpoint splits retain their fragment multiplicities.
 
 ### DR-890. Tail marker of the two-opaque-byte planar curve tail
 
