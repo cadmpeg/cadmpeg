@@ -458,6 +458,8 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-sldprt`   | `src/brep/fit.rs`                                  | `MAX_SPANS`                               | `4096`                                                  | 4    | Spans of one fitted curve on a support. A fit that needs more leaves the curve without a cache. |
 | `cadmpeg-codec-sldprt`   | `src/brep/index.rs`                                | `MAX_BLEND_NESTING`                       | `3`                                                     | 4    | Blends a rolling-ball support may nest within. A deeper support leaves the blend without a cache. |
 | `cadmpeg-codec-sldprt` | `src/history/extrude_direction.rs` | `MAX_WITNESS_WORK` | `2_000_000` | 4 | Cap, mesh and profile-sample tests of the implicit extrusion travel witness. Past it the remaining features get no witness and keep their decoded direction. |
+| `cadmpeg-codec-sldprt` | `src/design_v11/equations/translate.rs` | `MAX_DEPTH` | `64` | 2 | Nesting of parentheses and unary minus in one equation-manager line. A deeper line has no neutral tree and its expression is `Source`. |
+| `cadmpeg-codec-sldprt` | `src/design_v11/equations/translate.rs` | `MAX_TOKENS` | `256` | 2 | Tokens of one equation-manager line, which bound its tree's depth. A longer line has no neutral tree and its expression is `Source`. |
 | `cadmpeg-codec-catia`    | `src/families/standard/topology.rs`                | `MAX_DUPLICATE_FACE_OPERATIONS`           | `65_536`                                                | 4    | Branch operations of the duplicate-face edge search; its depth stops at the budget's recursion guard. Exhaustion also exhausts the enclosing topology `WorkBudget`, so the decode reports the topology search failure. |
 | `cadmpeg-codec-catia` | `src/families/consolidated/records/class25.rs` | `MAX_SAMPLE_PAIRS` | `32` | 2 | Paired samples stored in a typed scalar map. A larger array leaves the record untyped. |
 | `cadmpeg-codec-catia` | `src/families/consolidated/records/class25.rs` | `MAX_B_SAMPLE_PAIRS` | `12` | 1 | The one-byte B-family payload length permits at most twelve source and target pairs after the fixed fields. |
@@ -572,16 +574,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 350.
+Production `MAX_*` constants: 352.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 42    |
-| 2    | Per-input bound            | 78    |
+| 2    | Per-input bound            | 80    |
 | 3    | Session ceiling            | 0     |
 | 4    | Local work cap             | 175   |
 | N    | Not a decode bound         | 55    |
-|      | Total                      | 350   |
+|      | Total                      | 352   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -590,7 +592,7 @@ By crate: `cadmpeg-core` 3, `cadmpeg-ir` 19, `cadmpeg-parasolid` 1, `cadmpeg-mea
 `cadmpeg-protein` 3, `cadmpeg` 4, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 8,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 30,
-`cadmpeg-codec-nx` 27, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 38,
+`cadmpeg-codec-nx` 27, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 40,
 `cadmpeg-codec-catia` 80, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
 `cadmpeg-tessellate` 4.
 
