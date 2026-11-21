@@ -4,6 +4,10 @@
 
 The central-directory file header is 46 bytes in little-endian order. Its signature is `0x02014b50` at offset 0. The producer version, extraction version, and general flags are 16-bit words at offsets 4, 6, and 8. The 16-bit compression code is at offset 10. Time and date words are at offsets 12 and 14. CRC-32, compressed length, and expanded length occupy offsets 16, 20, and 24. Name, extra-data, and comment lengths are 16-bit words at offsets 28, 30, and 32. Starting disk and internal attributes are words at offsets 34 and 36. External attributes and the local-header position are 32-bit words at offsets 38 and 42. The name, extra data, and comment follow the fixed header, in that order. [PKWARE APPNOTE §4.3.12](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT).
 
+The effective member name uses UTF-8 when general flag bit 11 is set and CP437 otherwise. A Unicode Path extra field (`0x7075`) with a matching raw-name CRC-32 and valid UTF-8 content supplies the effective name. Repeated names are compared by effective name.
+
+Timestamp, Unicode Comment, and alignment extra fields carry optional metadata. Their values are independent of the effective member name, payload sizes, and local-header position.
+
 Encryption, compression support, payload checksum, and expansion validity concern a member's readable contents. They do not change its central-directory identity or bounded stored extent. An unreadable member has no admitted expanded payload. ZIP structural extents and unique entry identities must remain available before any member is interpreted.
 
 ## 2. Local member frames

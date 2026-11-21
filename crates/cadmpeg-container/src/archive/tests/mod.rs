@@ -30,6 +30,12 @@ fn indexed_names_preserve_cp437_and_utf8_identity() {
             ArchiveSnapshot::contains_matching_name(&ctx, root, |name| name == expected)
                 .expect("name probe")
         );
+        let repeated =
+            ArchiveSnapshot::with_repeated_names(&ctx, root).expect("permissive snapshot");
+        assert_eq!(
+            repeated.open(&ctx, expected).expect("member").window(),
+            b"payload"
+        );
         let archive = ArchiveSnapshot::new(&ctx, root).expect("snapshot");
         assert_eq!(archive.entries().len(), 1);
         assert_eq!(
@@ -183,6 +189,7 @@ fn descriptor_crc_equal_to_optional_signature_keeps_unsigned_layout() {
         }),
         utf8_name: false,
         local_header_error: None,
+        metadata_error: None,
         unreadable_range: None,
     };
     assert_eq!(
@@ -601,22 +608,25 @@ fn snapshot_opens_entries_from_a_nonzero_root_view() {
     let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
         .expect("outer bytes fit root policy");
     let nested = root.child(start, end).expect("archive child range");
-    let snapshot = ArchiveSnapshot::new(&ctx, nested).expect("nested archive snapshots");
-
-    let zstd_plain = zip_fixture::zstd_golden_plaintext();
-    for (name, expected) in [
-        ("stored.bin", b"stored".as_slice()),
-        ("deflated.bin", b"deflated payload".as_slice()),
-        ("zstd.bin", zstd_plain.as_slice()),
+    for snapshot in [
+        ArchiveSnapshot::new(&ctx, nested).expect("nested archive snapshots"),
+        ArchiveSnapshot::with_repeated_names(&ctx, nested).expect("nested repeated-name snapshot"),
     ] {
-        let entry = snapshot.entry(name).expect("entry exists");
-        assert_eq!(
-            snapshot
-                .open(&ctx, &entry.name)
-                .expect("nested entry opens")
-                .window(),
-            expected
-        );
+        let zstd_plain = zip_fixture::zstd_golden_plaintext();
+        for (name, expected) in [
+            ("stored.bin", b"stored".as_slice()),
+            ("deflated.bin", b"deflated payload".as_slice()),
+            ("zstd.bin", zstd_plain.as_slice()),
+        ] {
+            let entry = snapshot.entry(name).expect("entry exists");
+            assert_eq!(
+                snapshot
+                    .open(&ctx, &entry.name)
+                    .expect("nested entry opens")
+                    .window(),
+                expected
+            );
+        }
     }
 }
 
@@ -656,3 +666,27 @@ fn nested_archive_members_keep_distinct_address_spaces() {
 }
 
 mod compression;
+
+#[test]
+fn repeated_names_are_opt_in_and_lookup_keeps_the_first_declaration() {
+    let bytes = zip_fixture::archive(&[
+        RawEntry::stored("optional.txt", b"first"),
+        RawEntry::stored("optional.txt", b"second"),
+    ]);
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("root context");
+    assert!(ArchiveSnapshot::new(&ctx, root).is_err());
+    let snapshot =
+        ArchiveSnapshot::with_repeated_names(&ctx, root).expect("repeated-name snapshot");
+    assert_eq!(snapshot.entries().len(), 2);
+    assert_eq!(
+        snapshot
+            .open(&ctx, "optional.txt")
+            .expect("first member")
+            .window(),
+        b"first"
+    );
+}
+
+mod repeated_names;
