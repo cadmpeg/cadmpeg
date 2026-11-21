@@ -67,12 +67,15 @@ pub(super) fn write_canonical_json<T: Serialize + ?Sized>(
     write_json(admission, Floats::Canonical, None, writer, value)
 }
 
-/// Receives the structs a [`write_serde_json`] walk writes, in writing order.
+/// Receives the structs and maps a [`write_serde_json`] walk writes, in
+/// writing order.
 pub(crate) trait Structs {
     /// A struct named `name` begins: its JSON text follows.
     fn begin(&self, name: &'static str);
     /// The innermost struct that began has ended: its JSON text precedes.
     fn end(&self);
+    /// A map begins: its JSON text follows.
+    fn map(&self) {}
 }
 
 /// Writes `value` as the pretty JSON `serde_json::to_writer_pretty` produces,
@@ -480,6 +483,9 @@ impl<'guard, S: Serializer, A: Admission> Serializer for FiniteSerializer<'guard
     fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
         let depth = self.guard.enter::<S::Error>()?;
         let guard = self.guard;
+        if let Some(structs) = guard.structs {
+            structs.map();
+        }
         self.inner
             .serialize_map(len)
             .map(|inner| FiniteCompound::new(inner, guard, depth, None))
