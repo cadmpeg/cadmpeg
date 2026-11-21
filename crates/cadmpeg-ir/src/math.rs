@@ -163,7 +163,7 @@ impl Vector3 {
         if self.norm() <= f64::EPSILON {
             return None;
         }
-        crate::features::FiniteVector3::new(self)?.unit_nonzero()
+        crate::features::geometry::FiniteVector3::new(self)?.unit_nonzero()
     }
 }
 

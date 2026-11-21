@@ -11,7 +11,8 @@ use crate::history_records::{
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use cadmpeg_ir::features::edge_treatments::{ChamferGroup, ChamferSpec};
-use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureId, FeatureOperation};
+use cadmpeg_ir::features::selections::EdgeSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveLength;
 
@@ -79,6 +80,7 @@ fn line_at(topology: &mut AsmHistoricalTopology, edge: i64, at: Point3, directio
         edge,
         interior: at,
         tangent: Some(direction),
+        carrier: None,
     });
 }
 
@@ -298,7 +300,10 @@ fn group() -> DesignConstructionOperandGroup {
 
 fn chamfer(edges: EdgeSelection, spec: ChamferSpec) -> FeatureDefinition {
     FeatureDefinition::Operation(FeatureOperation::Chamfer {
-        groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup { edges, spec }),
+        groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(ChamferGroup {
+            edges,
+            spec,
+        }),
         flip_direction: false,
     })
 }

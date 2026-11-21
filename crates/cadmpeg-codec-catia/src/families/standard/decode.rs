@@ -30,7 +30,7 @@ use crate::families::standard::records::{AnalyticSurfaceKind, StandardSurfaceRec
 use cadmpeg_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, EntityRewrite};
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsPoleGrid, NurbsSurface},
     pcurve::{Pcurve, PcurveGeometry},
@@ -525,7 +525,7 @@ mod consolidated_revolution_binding_tests {
                 .expect("identity grammar");
             ir.geometry.points.push(Point::new(
                 point_id.clone(),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(7.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(7.0, 0.0, 0.0))
                     .expect("finite endpoint"),
                 None,
             ));
@@ -645,7 +645,7 @@ mod consolidated_revolution_binding_tests {
                 .expect("identity grammar");
             ir.geometry.points.push(Point::new(
                 point.clone(),
-                cadmpeg_ir::features::FinitePoint3::new(position)
+                cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                     .expect("a finite position is a point"),
                 None,
             ));
@@ -788,7 +788,7 @@ mod consolidated_revolution_binding_tests {
         let mut ir = CadIr::empty();
         ir.geometry.points.push(Point::new(
             PointId::mint("catia:test:point#revolution-limit").expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
                 .expect("finite point"),
             None,
         ));
@@ -1180,7 +1180,7 @@ fn attach_free_vertices(
     }
     if free_vertices.is_empty() {
         return Err(cadmpeg_core::CodecError::malformed(
-            cadmpeg_ir::features::BodySelectionError::Empty,
+            cadmpeg_ir::features::selections::BodySelectionError::Empty,
         ));
     }
     let shell = Shell::with_members(
@@ -6460,7 +6460,7 @@ fn emit_standard_topology(
                 let vertex = standard_id("v", format_args!("{point}"), VertexId::mint)?;
                 vertices.push(vertex);
             }
-            let vertices: cadmpeg_ir::features::NonEmptyMembers<VertexId> =
+            let vertices: cadmpeg_ir::features::selections::NonEmptyMembers<VertexId> =
                 vertices.try_into().map_err(CodecError::malformed)?;
             let mut coedges = Vec::new();
             let mut vertex_uses = Vec::new();

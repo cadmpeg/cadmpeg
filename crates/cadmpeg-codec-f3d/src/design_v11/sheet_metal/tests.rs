@@ -6,7 +6,9 @@ use crate::records::feature::{
     sheet_metal::DesignBaseFlangeOperation,
 };
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, OperationFamily};
-use cadmpeg_ir::features::{DistinctMembers, FeatureContent, FeatureEvaluation, FeatureId};
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::selections::DistinctMembers;
+use cadmpeg_ir::features::{FeatureContent, FeatureId};
 use cadmpeg_ir::scalar::PositiveReal;
 
 const STREAM: &str = "f3d:test/Design1/BulkStream.dat";
@@ -217,9 +219,9 @@ fn base_flange_profile_binds_its_preceding_sketch_feature() {
                     };
                     *profile = PlanarProfileRef::SketchSelection {
                         sketch: cadmpeg_ir::sketches::SketchId::mint("f3d:model:sketch#1").unwrap(),
-                        selections: cadmpeg_ir::features::NativeSelections::try_from(vec![
-                            native.clone()
-                        ])
+                        selections: cadmpeg_ir::features::selections::NativeSelections::try_from(
+                            vec![native.clone()],
+                        )
                         .unwrap(),
                     };
                 });
@@ -269,7 +271,7 @@ fn base_flange_profile_binds_its_preceding_sketch_feature() {
                 profile
                     .native
                     .as_ref()
-                    .map(cadmpeg_ir::features::NativeSelections::as_slice),
+                    .map(cadmpeg_ir::features::selections::NativeSelections::as_slice),
                 selected.then_some([native].as_slice())
             );
         });

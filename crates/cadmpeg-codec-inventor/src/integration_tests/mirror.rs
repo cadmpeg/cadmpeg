@@ -266,7 +266,7 @@ fn mirror_plane_without_a_proving_reference_has_no_plane_dependency() {
     assert!(matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::MirrorShape {
-            plane_reference: Some(cadmpeg_ir::features::FaceSelection::Native(_)),
+            plane_reference: Some(cadmpeg_ir::features::selections::FaceSelection::Native(_)),
             ..
         })
     ));
@@ -295,7 +295,7 @@ fn mirror_plane_supplied_by_an_unplaced_or_later_work_plane_stays_native() {
         assert!(matches!(
             feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::MirrorShape {
-                plane_reference: Some(cadmpeg_ir::features::FaceSelection::Native(_)),
+                plane_reference: Some(cadmpeg_ir::features::selections::FaceSelection::Native(_)),
                 ..
             })
         ));

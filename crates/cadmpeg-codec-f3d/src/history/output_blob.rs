@@ -28,7 +28,8 @@ pub(super) fn output_blob_history_pair<'a>(
 /// The BREP blob that holds every body a feature outputs, or that a Base
 /// Feature resolves, when there is exactly one.
 fn output_brep_source(feature: &cadmpeg_ir::features::Feature) -> Option<&str> {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let outputs = feature.evaluation.outputs();
     let bodies: Vec<&str> = if outputs.is_empty() {
         let (FeatureDefinition::Operation(FeatureOperation::BaseFeature {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
-use cadmpeg_ir::features::BodySelection;
+use cadmpeg_ir::features::selections::BodySelection;
 
 fn body_pattern(version: u8, second: bool) -> PmDcPatternFeature {
     let original = pattern(version, second);

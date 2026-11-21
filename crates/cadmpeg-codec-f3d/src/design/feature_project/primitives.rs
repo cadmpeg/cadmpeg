@@ -10,16 +10,19 @@ pub(super) fn project_solid_primitive(
     placements: &[crate::records::placement_construction::DesignPlacementConstruction],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, PrimitiveSolid, PrimitiveSolidKind,
-    };
+    use cadmpeg_ir::features::primitives::{PrimitiveSolid, PrimitiveSolidKind};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::scalar::{Angle, Length};
     let operation = |operation| match operation {
-        DesignExtrudeOperation::Join => cadmpeg_ir::features::BooleanOp::Join,
-        DesignExtrudeOperation::Cut => cadmpeg_ir::features::BooleanOp::Cut,
-        DesignExtrudeOperation::Intersect => cadmpeg_ir::features::BooleanOp::Intersect,
-        DesignExtrudeOperation::NewBody => cadmpeg_ir::features::BooleanOp::NewBody,
+        DesignExtrudeOperation::Join => cadmpeg_ir::features::operation_settings::BooleanOp::Join,
+        DesignExtrudeOperation::Cut => cadmpeg_ir::features::operation_settings::BooleanOp::Cut,
+        DesignExtrudeOperation::Intersect => {
+            cadmpeg_ir::features::operation_settings::BooleanOp::Intersect
+        }
+        DesignExtrudeOperation::NewBody => {
+            cadmpeg_ir::features::operation_settings::BooleanOp::NewBody
+        }
     };
     Some(match &scope.payload() {
         crate::records::feature::scope::DesignScopePayload::BoxPrimitive(Some(
@@ -84,7 +87,7 @@ pub(super) fn project_solid_primitive(
                         let support = cadmpeg_ir::transform::Transform::affine(
                             [x, y, z].map(|[x, y, z, translation]| [x, y, z, translation * 10.0]),
                         )?;
-                        cadmpeg_ir::features::FeatureRigidPlacement::new(support)?;
+                        cadmpeg_ir::features::geometry::FeatureRigidPlacement::new(support)?;
                         Some((support.compose(local).ok()?, flags_assumed))
                     })();
                     match support {
@@ -120,7 +123,9 @@ pub(super) fn project_solid_primitive(
                     cadmpeg_ir::scalar::PositiveLength::new(width.get() * 10.0)?,
                     cadmpeg_ir::scalar::PositiveLength::new(height.get() * 10.0)?,
                 ]),
-                placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::new(placement)?),
+                placement: Some(cadmpeg_ir::features::geometry::FeatureRigidPlacement::new(
+                    placement,
+                )?),
                 op: operation(*result),
             });
             if let Some((code, assumption)) = support_assumption {
@@ -157,7 +162,7 @@ pub(super) fn project_solid_primitive(
                         let [x, y, z, translation] = rows[index];
                         [x, y * direction, z * direction, translation * 10.0]
                     };
-                    Some(cadmpeg_ir::features::FeatureRigidPlacement::new(
+                    Some(cadmpeg_ir::features::geometry::FeatureRigidPlacement::new(
                         cadmpeg_ir::transform::Transform::affine([row(0), row(1), row(2)])?,
                     )?)
                 }
@@ -187,7 +192,7 @@ pub(super) fn project_solid_primitive(
                     * 10.0
             });
             FeatureDefinition::Operation(FeatureOperation::Sphere {
-                center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                center: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
                     center[0], center[1], center[2],
                 ))?,
                 radius: cadmpeg_ir::scalar::PositiveLength::new(diameter.get() * 5.0)?,
@@ -203,7 +208,7 @@ pub(super) fn project_solid_primitive(
                 ..
             },
         )) => FeatureDefinition::Operation(FeatureOperation::Torus {
-            center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+            center: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
                 transform[0][3] * 10.0,
                 transform[1][3] * 10.0,
                 transform[2][3] * 10.0,

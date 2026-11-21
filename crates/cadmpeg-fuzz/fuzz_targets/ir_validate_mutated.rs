@@ -33,7 +33,7 @@ fuzz_target!(|data: &[u8]| {
     match strategy % 13 {
         0 => {
             // Drive vertex positions to the finite extremes; a point refuses anything else.
-            let Some(extreme) = cadmpeg_ir::features::FinitePoint3::new(
+            let Some(extreme) = cadmpeg_ir::features::geometry::FinitePoint3::new(
                 cadmpeg_ir::math::Point3::new(f64::MAX, f64::MIN, f64::MIN_POSITIVE),
             ) else {
                 return;

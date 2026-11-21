@@ -7,7 +7,8 @@ use super::surface_rows::{Carrier, StateRows};
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
 use crate::records::recipes::ConstructionRecipeKind;
 use crate::records::topology::face::DesignFaceOperand;
-use cadmpeg_ir::features::{FaceMotion, FaceSelection};
+use cadmpeg_ir::features::direct_edit::FaceMotion;
+use cadmpeg_ir::features::selections::FaceSelection;
 use cadmpeg_ir::math::Vector3;
 use std::collections::{BTreeSet, HashSet};
 

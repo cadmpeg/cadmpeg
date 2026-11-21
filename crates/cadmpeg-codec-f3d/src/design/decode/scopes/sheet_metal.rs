@@ -1004,7 +1004,7 @@ fn hem_gap_length_operation_at(
     }
 
     Some(DesignHemOperation {
-        bend_position: cadmpeg_ir::features::SheetMetalHemBendPosition::Adjacent,
+        bend_position: cadmpeg_ir::features::sheet_metal_forms::SheetMetalHemBendPosition::Adjacent,
         flipped,
         edge_wrapper_record_index,
         edge_group_record_index: edge_group_record_index.try_into().ok()?,
@@ -1073,7 +1073,7 @@ fn hem_radius_angle_operation_at(
     }
 
     Some(DesignHemOperation {
-        bend_position: cadmpeg_ir::features::SheetMetalHemBendPosition::Adjacent,
+        bend_position: cadmpeg_ir::features::sheet_metal_forms::SheetMetalHemBendPosition::Adjacent,
         flipped,
         edge_wrapper_record_index,
         edge_group_record_index: edge_group_record_index.try_into().ok()?,
@@ -1138,7 +1138,7 @@ fn hem_gap_length_radius_operation_at(
     }
 
     Some(DesignHemOperation {
-        bend_position: cadmpeg_ir::features::SheetMetalHemBendPosition::Adjacent,
+        bend_position: cadmpeg_ir::features::sheet_metal_forms::SheetMetalHemBendPosition::Adjacent,
         flipped,
         edge_wrapper_record_index,
         edge_group_record_index: edge_group_record_index.try_into().ok()?,

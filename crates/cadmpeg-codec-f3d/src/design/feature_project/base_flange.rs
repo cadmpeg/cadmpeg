@@ -7,9 +7,9 @@ use super::{
 };
 use crate::loss::F3dLossCode;
 use crate::records::sheet_metal_settings::DesignSheetMetalSettings;
-use cadmpeg_ir::features::{
-    FeatureDefinition, FeatureOperation, PlanarProfileRef, SheetMetalThicknessSide,
-};
+use cadmpeg_ir::features::profiles::PlanarProfileRef;
+use cadmpeg_ir::features::sheet_metal_forms::SheetMetalThicknessSide;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::PositiveLength;
 
@@ -51,7 +51,7 @@ pub(super) fn project(
             })?;
             let sketch = crate::ids::neutral_sketch_id(placement);
             if operation.is_none() && profile.region_selection.is_some() {
-                let selections = cadmpeg_ir::features::NativeSelections::try_from(vec![scope.id.clone()]).ok()?;
+                let selections = cadmpeg_ir::features::selections::NativeSelections::try_from(vec![scope.id.clone()]).ok()?;
                 losses.push(F3dLossCode::BaseFlangeProfileUnresolved.note(format!(
                     "Base flange {} retains its selected profile regions in the source scope (DR-67).",
                     scope.id

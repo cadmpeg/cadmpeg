@@ -15,9 +15,9 @@ use cadmpeg_ir::design::ops::sheet_metal::{
 use cadmpeg_ir::design::selection::{
     Anchor, Members, NativeOwner, PickTarget, Picked, Picks, Selection,
 };
-use cadmpeg_ir::features::{
-    FeatureOperation as LegacyOperation, PlanarProfileRef, SheetMetalThicknessSide,
-};
+use cadmpeg_ir::features::profiles::PlanarProfileRef;
+use cadmpeg_ir::features::sheet_metal_forms::SheetMetalThicknessSide;
+use cadmpeg_ir::features::FeatureOperation as LegacyOperation;
 use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::PositiveLength;
@@ -176,8 +176,10 @@ pub(super) fn project(
                 at: Anchor::Input,
                 picks: Picks::Unread,
                 native: Some(
-                    cadmpeg_ir::features::NativeSelections::try_from(vec![profile_name.to_owned()])
-                        .map_err(|error| CodecError::malformed(error.to_string()))?,
+                    cadmpeg_ir::features::selections::NativeSelections::try_from(vec![
+                        profile_name.to_owned(),
+                    ])
+                    .map_err(|error| CodecError::malformed(error.to_string()))?,
                 ),
             }
         } else {
