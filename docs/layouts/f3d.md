@@ -83,7 +83,7 @@ Parsed by:
 | 16 | 3 | `padding` | `bytes[3]` | little | spec | followed by a counted associated-reference list, three zero bytes |
 | 19 | 11 | `first_reference` | `bytes[11]` | little | spec | the required references at offsets 19, 51 and 65 |
 | 30 | 1 | `middle_reference` | `u8` | little | spec | the middle reference at offset 30 |
-| 31 | 4 | `opaque_word` | `u32` | little | spec | the opaque word at offset 31 |
+| 31 | 4 | `previous_history_state_id` | `u32` | little | spec | the preceding history-state identity at offset 31 |
 | 35 | 4 | `lane_word` | `u32` | little | spec | the repeated word at offsets 35 and 47 |
 | 39 | 8 | `lane_scalar` | `f64` | little | spec | the scalar at offset 39 |
 | 47 | 4 | `repeated_word` | `u32` | little | spec | the repeated word at offsets 35 and 47 |
@@ -3653,6 +3653,18 @@ Offsets are relative to the N+3 selection header. The first selected region's lo
 | 32 | 4 | `region_count` | `u32` | little | spec | a nonzero u32 region count |
 | 36 | 4 | `loop_count` | `u32` | little | spec | Each selected region starts with a nonzero u32 loop count. |
 
+## `sketch_profile_text_selection`
+
+Spec §3.1 · layout: byte offsets · size: 29 B
+
+Offsets are relative to the N+3 selection header. The next indexed header starts at offset 29.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | its eleven-byte indexed header |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | ten zero bytes |
+| 21 | 8 | `text_record_index` | `u64` | little | spec | the u64 record index of a Sketch text entity |
+
 ## `sketch_profile_region_member`
 
 Spec §3.1 · layout: byte offsets · size: 40 B
@@ -4029,8 +4041,8 @@ Offsets are relative to the byte after the two parallel 15-byte body-entry runs 
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 1 | `null_reference_marker` | `u8` | little | spec | The marked null reference is `u8 1`, a zero u64 |
 | 1 | 8 | `null_reference` | `bytes[8]` | little | spec | The marked null reference is `u8 1`, a zero u64 |
-| 9 | 1 | `null_reference_flag` | `u8` | little | spec | a flag byte of `0` or `1`, and a zero byte |
-| 10 | 1 | `null_reference_zero` | `u8` | little | spec | a flag byte of `0` or `1`, and a zero byte |
+| 9 | 1 | `null_reference_flag` | `u8` | little | spec | a flag byte of `0` or `1`, and a terminal byte |
+| 10 | 1 | `null_reference_terminal` | `u8` | little | spec | a flag byte of `0` or `1`, and a terminal byte |
 | 11 | 4 | `body_count` | `u32` | little | spec | The ordinary form then stores a marked null reference, u32 `N` |
 
 ## `base_feature_suffix_result_body`
@@ -4050,8 +4062,8 @@ Offsets are relative to the primary indexed header. The LP-UTF16 scope kind payl
 | 33 | 6 | `body_field` | `bytes[6]` | little | spec | an ordinary local 15-byte body-entity element |
 | 39 | 1 | `null_reference_marker` | `u8` | little | spec | the marked null reference at offset 39 |
 | 40 | 8 | `null_reference` | `bytes[8]` | little | spec | the marked null reference at offset 39 |
-| 48 | 1 | `null_reference_flag` | `u8` | little | spec | a flag byte of `0` or `1`, and a zero byte |
-| 49 | 1 | `null_reference_zero` | `u8` | little | spec | a flag byte of `0` or `1`, and a zero byte |
+| 48 | 1 | `null_reference_flag` | `u8` | little | spec | a flag byte of `0` or `1`, and a terminal byte |
+| 49 | 1 | `null_reference_terminal` | `u8` | little | spec | a flag byte of `0` or `1`, and a terminal byte |
 | 50 | 4 | `repeated_count` | `u32` | little | spec | u32 `1` at offset 50 |
 | 54 | 1 | `repeated_marker` | `u8` | little | spec | repeats as a marked u32 value at offset 54 |
 | 55 | 4 | `repeated_body_entity_suffix` | `u32` | little | spec | repeats as a marked u32 value at offset 54 |
@@ -5321,6 +5333,183 @@ Parsed by:
 | 0 | 4 | `target_scope_reference_ordinal` | `u32` | little | spec | A u32 zero-based scope-reference ordinal immediately after the seventh slot |
 | 4 | 1 | `zero_separator` | `u8` | little | spec | one zero byte follows the ordinal |
 | 5 | 4 | `first_side_extent` | `u32` | little | spec | the first-side value `2` follows that byte |
+
+## `sketch_extrude_scope_frame`
+
+Spec §Records of a sketch-driven Extrude · layout: byte offsets · size: 349 B
+
+Offsets are relative to the scope's primary indexed header. The feature item tail of 78 + 2L bytes starts at offset 349.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/extrude.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The indexed header is followed by nine zero bytes |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | The indexed header is followed by nine zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 20 | 1 | `flag` | `u8` | little | spec | nine zero bytes, the byte `1`, six zero bytes · value `1` |
+| 21 | 6 | `zero_run_6` | `bytes[6]` | little | spec | nine zero bytes, the byte `1`, six zero bytes · value `[0, 0, 0, 0, 0, 0]` |
+| 28 | 42 | `operation_fields` | `bytes[42]` | little | spec | The layout `current_extrude_operation_fields`: operation 4, direction 1, face-extend option 2, direction reversal 0, geometry kind 1, start support 0, three zero bytes, and the unit profile normal. |
+| 70 | 2 | `absent_slots_0_1` | `bytes[2]` | little | spec | two absent slots · value `[0, 0]` |
+| 72 | 11 | `along_distance_owner` | `bytes[11]` | little | spec | the `AlongDistance` owner, the start record, an absent slot |
+| 83 | 11 | `start_record` | `bytes[11]` | little | spec | the `AlongDistance` owner, the start record, an absent slot |
+| 94 | 1 | `absent_slot_4` | `u8` | little | spec | the `AlongDistance` owner, the start record, an absent slot · value `0` |
+| 95 | 11 | `taper_angle_owner` | `bytes[11]` | little | spec | the `TaperAngle` owner, and an absent slot |
+| 106 | 1 | `absent_slot_6` | `u8` | little | spec | the `TaperAngle` owner, and an absent slot · value `0` |
+| 107 | 17 | `extent_fields` | `bytes[17]` | little | spec | The layout `current_extrude_non_target_extent_pair`: first-side extent 1, five zero bytes, target option 0, and second-side extent 0. |
+| 124 | 23 | `zero_run_23` | `bytes[23]` | little | spec | Then come twenty-three zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 147 | 4 | `profile_group_count` | `u32` | little | spec | the profile-group count `1` and the profile group · value `1` |
+| 151 | 11 | `profile_group` | `bytes[11]` | little | spec | the profile-group count `1` and the profile group |
+| 162 | 4 | `zero_word_162` | `u32` | little | spec | a zero u32, the result-body node count `1` · value `0` |
+| 166 | 4 | `body_node_count` | `u32` | little | spec | the result-body node count `1` and the browser-node member of the result body · value `1` |
+| 170 | 11 | `body_node` | `bytes[11]` | little | spec | the result-body node count `1` and the browser-node member of the result body |
+| 181 | 4 | `zero_word_181` | `u32` | little | spec | a zero u32, the body-operand group count `0` · value `0` |
+| 185 | 4 | `body_operand_group_count` | `u32` | little | spec | the body-operand group count `0` · value `0` |
+| 189 | 4 | `zero_guid_length` | `u32` | little | spec | the LP-UTF16 zero GUID `00000000-0000-0000-0000-000000000000` · value `36` |
+| 193 | 72 | `zero_guid_utf16` | `u16[36]` | little | spec | the LP-UTF16 zero GUID `00000000-0000-0000-0000-000000000000` |
+| 265 | 3 | `zero_run_3` | `bytes[3]` | little | spec | three zero bytes, the scope-reference count `5` · value `[0, 0, 0]` |
+| 268 | 4 | `scope_reference_count` | `u32` | little | spec | the scope-reference count `5` · value `5` |
+| 272 | 55 | `scope_references` | `bytes[55]` | little | spec | Five eleven-byte references. |
+| 327 | 4 | `current_history_state` | `u32` | little | spec | the current history-state identity |
+| 331 | 4 | `family_name_length` | `u32` | little | spec | the LP-UTF16 family name `Extrude` · value `7` |
+| 335 | 14 | `family_name_utf16` | `u16[7]` | little | spec | the LP-UTF16 family name `Extrude` |
+
+Unstated regions:
+
+- `27..28` (1 B): One byte between the six zero bytes and the operation fields.
+
+## `sketch_extrude_start_record`
+
+Spec §Records of a sketch-driven Extrude · layout: byte offsets · size: 100 B
+
+Offsets are relative to the start record's primary indexed header. The paired indexed header starts at offset 100.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | After ten zero bytes it stores a reference to the `Extrude` scope, u32 `1` |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | After ten zero bytes it stores a reference to the `Extrude` scope, u32 `1` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 11 | `extrude_scope` | `bytes[11]` | little | spec | After ten zero bytes it stores a reference to the `Extrude` scope, u32 `1` |
+| 32 | 4 | `one` | `u32` | little | spec | After ten zero bytes it stores a reference to the `Extrude` scope, u32 `1` · value `1` |
+| 36 | 11 | `selection_identity` | `bytes[11]` | little | spec | a reference to its persistent selection identity (type `C46D3EEB-40E1-43FA-83DC-9CB204335417`) |
+| 47 | 4 | `epoch` | `u32` | little | spec | the evaluation epoch, the f64 evaluation duration, the second evaluation epoch, a reference to its item-tail companion (type |
+| 51 | 8 | `duration` | `f64` | little | spec | the evaluation epoch, the f64 evaluation duration, the second evaluation epoch, a reference to its item-tail companion (type |
+| 59 | 4 | `second_epoch` | `u32` | little | spec | the evaluation epoch, the f64 evaluation duration, the second evaluation epoch, a reference to its item-tail companion (type |
+| 63 | 11 | `companion` | `bytes[11]` | little | spec | a reference to its item-tail companion (type `5FBE538E-139B-46D4-BCAF-CC796D1E1F78`) |
+| 74 | 3 | `flags` | `bytes[3]` | little | spec | the bytes `01 00 00`, a reference to its record-timestamp table (type · value `[1, 0, 0]` |
+| 77 | 11 | `timestamp_table` | `bytes[11]` | little | spec | a reference to its record-timestamp table (type `6CCF41D5-40BE-48ED-A834-18F3EAED6C57`) |
+| 88 | 1 | `zero` | `u8` | little | spec | a zero byte, and a second reference to the `Extrude` scope · value `0` |
+| 89 | 11 | `extrude_scope_repeat` | `bytes[11]` | little | spec | a zero byte, and a second reference to the `Extrude` scope |
+
+## `sketch_extrude_profile_group`
+
+Spec §Records of a sketch-driven Extrude · layout: byte offsets · size: 124 B
+
+Offsets are relative to the profile group's primary indexed header. The paired indexed header starts at offset 124.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | After ten zero bytes it stores the member count `1`, a reference to the profile selection |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | After ten zero bytes it stores the member count `1`, a reference to the profile selection · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 4 | `member_count` | `u32` | little | spec | After ten zero bytes it stores the member count `1`, a reference to the profile selection · value `1` |
+| 25 | 11 | `profile_selection` | `bytes[11]` | little | spec | After ten zero bytes it stores the member count `1`, a reference to the profile selection |
+| 36 | 2 | `zero_run_2` | `bytes[2]` | little | spec | a reference to the profile selection, two zero bytes, u32 `1`, a reference to its identity wrapper · value `[0, 0]` |
+| 38 | 4 | `one` | `u32` | little | spec | a reference to the profile selection, two zero bytes, u32 `1`, a reference to its identity wrapper · value `1` |
+| 42 | 11 | `identity_wrapper` | `bytes[11]` | little | spec | a reference to the profile selection, two zero bytes, u32 `1`, a reference to its identity wrapper |
+| 53 | 8 | `operand_role` | `u64` | little | spec | the u64 operand role `0x0000004100000000` (profile), ten zero bytes · value `279172874240` |
+| 61 | 10 | `zero_run_10_after_role` | `bytes[10]` | little | spec | the u64 operand role `0x0000004100000000` (profile), ten zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 71 | 4 | `epoch` | `u32` | little | spec | the second evaluation epoch, a reference to its item-tail companion, the bytes `01 00 00`, a reference to its record-timestamp table, a zero byte, and a reference to the `Extrude` scope |
+| 75 | 8 | `duration` | `f64` | little | spec | the second evaluation epoch, a reference to its item-tail companion, the bytes `01 00 00`, a reference to its record-timestamp table, a zero byte, and a reference to the `Extrude` scope |
+| 83 | 4 | `second_epoch` | `u32` | little | spec | the second evaluation epoch, a reference to its item-tail companion, the bytes `01 00 00`, a reference to its record-timestamp table, a zero byte, and a reference to the `Extrude` scope |
+| 87 | 11 | `companion` | `bytes[11]` | little | spec | the second evaluation epoch, a reference to its item-tail companion, the bytes `01 00 00`, a reference to its record-timestamp table, a zero byte, and a reference to the `Extrude` scope |
+| 98 | 3 | `flags` | `bytes[3]` | little | spec | the second evaluation epoch, a reference to its item-tail companion, the bytes `01 00 00`, a reference to its record-timestamp table, a zero byte, and a reference to the `Extrude` scope · value `[1, 0, 0]` |
+| 101 | 11 | `timestamp_table` | `bytes[11]` | little | spec | the second evaluation epoch, a reference to its item-tail companion, the bytes `01 00 00`, a reference to its record-timestamp table, a zero byte, and a reference to the `Extrude` scope |
+| 112 | 1 | `zero` | `u8` | little | spec | the second evaluation epoch, a reference to its item-tail companion, the bytes `01 00 00`, a reference to its record-timestamp table, a zero byte, and a reference to the `Extrude` scope · value `0` |
+| 113 | 11 | `extrude_scope` | `bytes[11]` | little | spec | the second evaluation epoch, a reference to its item-tail companion, the bytes `01 00 00`, a reference to its record-timestamp table, a zero byte, and a reference to the `Extrude` scope |
+
+## `sketch_extrude_profile_selection_tail`
+
+Spec §Records of a sketch-driven Extrude · layout: byte offsets · size: 94 B
+
+Offsets are relative to the end of the owner text, at selection offset 116 + 2c for an owner text of c code units. The paired indexed header starts at offset 94.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `one_first` | `u32` | little | spec | It stores u32 `1`, u32 `0`, u32 `1`, a reference to its persistent selection identity · value `1` |
+| 4 | 4 | `zero_word` | `u32` | little | spec | It stores u32 `1`, u32 `0`, u32 `1`, a reference to its persistent selection identity · value `0` |
+| 8 | 4 | `one_second` | `u32` | little | spec | It stores u32 `1`, u32 `0`, u32 `1`, a reference to its persistent selection identity · value `1` |
+| 12 | 11 | `selection_identity` | `bytes[11]` | little | spec | It stores u32 `1`, u32 `0`, u32 `1`, a reference to its persistent selection identity |
+| 23 | 8 | `operand_role` | `u64` | little | spec | the u64 operand role `0x0000004100000000` (profile), ten zero bytes · value `279172874240` |
+| 31 | 10 | `zero_run_10` | `bytes[10]` | little | spec | the u64 operand role `0x0000004100000000` (profile), ten zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 41 | 4 | `epoch` | `u32` | little | spec | the second evaluation epoch, a reference to its item-tail companion `N + 2` |
+| 45 | 8 | `duration` | `f64` | little | spec | the second evaluation epoch, a reference to its item-tail companion `N + 2` |
+| 53 | 4 | `second_epoch` | `u32` | little | spec | the second evaluation epoch, a reference to its item-tail companion `N + 2` |
+| 57 | 11 | `companion` | `bytes[11]` | little | spec | the second evaluation epoch, a reference to its item-tail companion `N + 2` |
+| 68 | 3 | `flags` | `bytes[3]` | little | spec | the bytes `01 00 00`, a reference to its record-timestamp table `N + 1` · value `[1, 0, 0]` |
+| 71 | 11 | `timestamp_table` | `bytes[11]` | little | spec | a reference to its record-timestamp table `N + 1`, a zero byte, and a reference to the `Extrude` scope |
+| 82 | 1 | `zero` | `u8` | little | spec | a reference to its record-timestamp table `N + 1`, a zero byte, and a reference to the `Extrude` scope · value `0` |
+| 83 | 11 | `extrude_scope` | `bytes[11]` | little | spec | a reference to its record-timestamp table `N + 1`, a zero byte, and a reference to the `Extrude` scope |
+
+## `sketch_extrude_parameter_owner_tail`
+
+Spec §Records of a sketch-driven Extrude · layout: byte offsets · size: 65 B
+
+Offsets are relative to the scalar envelope, which starts at owner offset 39 after `design_parameter_owner_prefix`. The paired indexed header starts at offset 65.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `envelope_marker` | `u8` | little | spec | the direct `00 + f64` scalar envelope · value `0` |
+| 1 | 8 | `scalar` | `f64` | little | spec | The scalar is the distance in centimetres or the taper angle in radians |
+| 9 | 11 | `parameter` | `bytes[11]` | little | spec | The tail stores the scalar envelope, a reference to the owner's parameter, the owned ordinal, four zero bytes |
+| 20 | 4 | `owned_ordinal` | `u32` | little | spec | The tail stores the scalar envelope, a reference to the owner's parameter, the owned ordinal, four zero bytes |
+| 24 | 4 | `zero_run_4` | `bytes[4]` | little | spec | The tail stores the scalar envelope, a reference to the owner's parameter, the owned ordinal, four zero bytes · value `[0, 0, 0, 0]` |
+| 28 | 11 | `repeated_scope` | `bytes[11]` | little | spec | the repeated scope field with marker `01`, variant `0`, and flag byte `0` |
+| 39 | 1 | `variant_marker` | `u8` | little | spec | the repeated scope field with marker `01`, variant `0`, and flag byte `0` · value `1` |
+| 40 | 1 | `variant` | `u8` | little | spec | the repeated scope field with marker `01`, variant `0`, and flag byte `0` · value `0` |
+| 41 | 1 | `flag` | `u8` | little | spec | the repeated scope field with marker `01`, variant `0`, and flag byte `0` · value `0` |
+| 42 | 11 | `companion` | `bytes[11]` | little | spec | a reference to the companion and one zero byte, and a reference to the `Extrude` scope |
+| 53 | 1 | `zero` | `u8` | little | spec | a reference to the companion and one zero byte, and a reference to the `Extrude` scope · value `0` |
+| 54 | 11 | `extrude_scope` | `bytes[11]` | little | spec | a reference to the companion and one zero byte, and a reference to the `Extrude` scope |
+
+## `sketch_extrude_body_presentation_owner_prefix`
+
+Spec §Records of a sketch-driven Extrude · layout: byte offsets · size: 25 B
+
+Offsets are relative to the body-presentation owner's primary indexed header. The name code units start at offset 25.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | ends with the code-unit count of its LP-UTF16 name |
+| 21 | 4 | `name_length` | `u32` | little | spec | ends with the code-unit count of its LP-UTF16 name |
+
+Unstated regions:
+
+- `11..21` (10 B): Ten bytes between the indexed header and the name.
+
+## `sketch_extrude_body_owner`
+
+Spec §Records of a sketch-driven Extrude · layout: byte offsets · size: 103 B
+
+Offsets are relative to the `Body` owner's primary indexed header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | After eleven zero bytes it stores u32 `1`, u32 `1`, a reference to the body-presentation owner |
+| 11 | 11 | `zero_run_11` | `bytes[11]` | little | spec | After eleven zero bytes it stores u32 `1`, u32 `1`, a reference to the body-presentation owner · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 22 | 4 | `first_count` | `u32` | little | spec | After eleven zero bytes it stores u32 `1`, u32 `1`, a reference to the body-presentation owner · value `1` |
+| 26 | 4 | `second_count` | `u32` | little | spec | After eleven zero bytes it stores u32 `1`, u32 `1`, a reference to the body-presentation owner · value `1` |
+| 30 | 11 | `presentation_owner` | `bytes[11]` | little | spec | After eleven zero bytes it stores u32 `1`, u32 `1`, a reference to the body-presentation owner |
+| 41 | 1 | `body_map_companion_marker` | `u8` | little | spec | the byte `1`, a reference to the snapshot body-map companion · value `1` |
+| 42 | 11 | `body_map_companion` | `bytes[11]` | little | spec | the byte `1`, a reference to the snapshot body-map companion |
+| 53 | 11 | `body_map` | `bytes[11]` | little | spec | a reference to the body map (type `74CA4562-59F8-4C97-8AD1-F8297C21F9AA`) |
+| 64 | 1 | `component_record_marker` | `u8` | little | spec | the byte `1`, a reference to a 42-byte record of type `372234A0-2A6C-4122-8047-E74DBA04F326` · value `1` |
+| 65 | 11 | `component_record` | `bytes[11]` | little | spec | the byte `1`, a reference to a 42-byte record of type `372234A0-2A6C-4122-8047-E74DBA04F326` |
+| 76 | 1 | `zero` | `u8` | little | spec | a zero byte, u32 `1`, a reference to the body-presentation owner, and a reference to the component aggregate · value `0` |
+| 77 | 4 | `third_count` | `u32` | little | spec | a zero byte, u32 `1`, a reference to the body-presentation owner, and a reference to the component aggregate · value `1` |
+| 81 | 11 | `presentation_owner_repeat` | `bytes[11]` | little | spec | a zero byte, u32 `1`, a reference to the body-presentation owner, and a reference to the component aggregate |
+| 92 | 11 | `component_aggregate` | `bytes[11]` | little | spec | a zero byte, u32 `1`, a reference to the body-presentation owner, and a reference to the component aggregate |
 
 ## `early_distance_extrude_absent_prefix`
 
@@ -10447,7 +10636,7 @@ Body-reference record of type `D3937028-C20C-4E65-B010-94AD418A5C20`, type versi
 | 301 | 1 | `constant_flag` | `u8` | little | spec | appearance-entry count `k`: `0` \| \| u32 \| `0x00236810` \| \| u8 \| `1` \| · value `1` |
 | 302 | 1 | `design_flag` | `u8` | little | spec | `1` in the design body-reference record, `0` in the parameter body-reference record |
 | 303 | 32 | `minus_one` | `f64[4]` | little | spec | \| 4 × f64 \| `-1.0` \| |
-| 335 | 4 | `unit_scale` | `f32` | little | spec | \| 4 × f64 \| `-1.0` \| \| f32 \| `1.0` \| |
+| 335 | 4 | `unit_scale` | `f32` | little | spec | \| 4 × f64 \| `-1.0` \| \| f32 \| `1.0` \| · value `1.0` |
 | 339 | 10 | `zero_run` | `bytes[10]` | little | spec | \| 10 × u8 \| zero \| · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
 | 349 | 4 | `node_guid_length` | `u32` | little | spec | node GUID in the design body-reference record, parameter GUID in the parameter body-reference record · value `36` |
 | 353 | 72 | `node_guid_code_units` | `bytes[72]` | little | spec | node GUID in the design body-reference record, parameter GUID in the parameter body-reference record |
@@ -10474,7 +10663,7 @@ Body-reference record of type `D3937028-C20C-4E65-B010-94AD418A5C20`, type versi
 | 841 | 4 | `appearance_name_length` | `u32` | little | spec | appearance `PrismOpaque` · value `11` |
 | 845 | 22 | `appearance_name_code_units` | `bytes[22]` | little | spec | appearance `PrismOpaque` |
 | 867 | 4 | `tail_word` | `u32` | little | spec | appearance `PrismOpaque` \| \| u32 \| `0` \| · value `0` |
-| 871 | 4 | `tail_scale` | `f32` | little | spec | appearance `PrismOpaque` \| \| u32 \| `0` \| \| f32 \| `1.0` \| |
+| 871 | 4 | `tail_scale` | `f32` | little | spec | appearance `PrismOpaque` \| \| u32 \| `0` \| \| f32 \| `1.0` \| · value `1.0` |
 | 875 | 1 | `tail_flag` | `u8` | little | spec | \| f32 \| `1.0` \| \| u8 \| `1` \| \| u32 \| `0` \| \| reference \| the `Body` owner of the first presentation envelope \| · value `1` |
 | 876 | 4 | `tail_zero` | `u32` | little | spec | \| u8 \| `1` \| \| u32 \| `0` \| \| reference \| the `Body` owner of the first presentation envelope \| · value `0` |
 | 880 | 11 | `body_owner_repeat` | `bytes[11]` | little | spec | the `Body` owner of the first presentation envelope |
@@ -10524,7 +10713,7 @@ Component aggregate of type `E03784ED-5E19-4E14-B9F2-3B07017018CD`, type version
 | 20 | 4 | `word_one` | `u32` | little | spec | \| u8 \| `0` \| \| u32 \| `1` \| · value `1` |
 | 24 | 1 | `flag_a` | `u8` | little | spec | \| u32 \| `1` \| \| u8 \| `0` \| \| u8 \| `1` \| · value `0` |
 | 25 | 1 | `flag_b` | `u8` | little | spec | \| u8 \| `0` \| \| u8 \| `1` \| \| f32 \| `1.0` \| · value `1` |
-| 26 | 4 | `scale` | `f32` | little | spec | \| u8 \| `1` \| \| f32 \| `1.0` \| |
+| 26 | 4 | `scale` | `f32` | little | spec | \| u8 \| `1` \| \| f32 \| `1.0` \| · value `1.0` |
 | 30 | 11 | `record_8ef00d65` | `bytes[11]` | little | spec | records of types `8EF00D65-F18D-4179-A644-FE0CA39943D6` |
 | 41 | 11 | `record_878c70a7` | `bytes[11]` | little | spec | records of types `8EF00D65-F18D-4179-A644-FE0CA39943D6` |
 | 52 | 11 | `record_1e650ea7` | `bytes[11]` | little | spec | records of types `8EF00D65-F18D-4179-A644-FE0CA39943D6` |
@@ -10626,8 +10815,8 @@ Origin record with the shared head and tail of the origin records and its geomet
 | 120 | 8 | `zero_b` | `bytes[8]` | little | spec | `00 00 01` \| \| 8 × u8 \| zero \| · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
 | 128 | 11 | `asset_settings` | `bytes[11]` | little | spec | the `AssetSettings` record (type `23FD63FB-4EBE-4c85-A42B-5D9809AA3499`) |
 | 139 | 2 | `zero_c` | `bytes[2]` | little | spec | \| 2 × u8 \| zero \| · value `[0, 0]` |
-| 141 | 4 | `scale_a` | `f32` | little | spec | \| 2 × u8 \| zero \| \| f32 \| `1.0` \| |
-| 145 | 4 | `scale_b` | `f32` | little | spec | `1.0` for the point and the planes, `1.3` for the axes |
+| 141 | 4 | `scale_a` | `f32` | little | spec | \| 2 × u8 \| zero \| \| f32 \| `1.0` \| · value `1.0` |
+| 145 | 4 | `scale_b` | `f32` | little | spec | `1.0` for the point and the planes, `1.3` for the axes · value `1.0` |
 | 149 | 5 | `zero_d` | `bytes[5]` | little | spec | \| 5 × u8 \| zero \| \| reference \| the origin container \| · value `[0, 0, 0, 0, 0]` |
 | 154 | 11 | `origin_container` | `bytes[11]` | little | spec | \| 5 × u8 \| zero \| \| reference \| the origin container \| |
 
@@ -10650,8 +10839,8 @@ Origin record with the shared head and tail of the origin records and its geomet
 | 69 | 8 | `property_value` | `u64` | little | spec | `IntrinsicMetaTypeuint64` \| \| u64 \| `0` \| · value `0` |
 | 77 | 24 | `origin` | `f64[3]` | little | spec | f64 origin `(0, 0, 0)`, f64 unit direction |
 | 101 | 24 | `direction` | `f64[3]` | little | spec | f64 unit direction, f64 `0.175` |
-| 125 | 8 | `scalar_a` | `f64` | little | spec | f64 unit direction, f64 `0.175`, f64 `2.25` |
-| 133 | 8 | `scalar_b` | `f64` | little | spec | f64 `0.175`, f64 `2.25` |
+| 125 | 8 | `scalar_a` | `f64` | little | spec | f64 unit direction, f64 `0.175`, f64 `2.25` · value `0.175` |
+| 133 | 8 | `scalar_b` | `f64` | little | spec | f64 `0.175`, f64 `2.25` · value `2.25` |
 | 141 | 5 | `geometry_end_zero` | `bytes[5]` | little | spec | the geometry of the record \| \| 5 × u8 \| zero \| · value `[0, 0, 0, 0, 0]` |
 | 146 | 4 | `word` | `u32` | little | spec | `0xffffffff` · value `4294967295` |
 | 150 | 1 | `name_flag` | `u8` | little | spec | `0xffffffff` \| \| u8 \| `1` \| · value `1` |
@@ -10661,8 +10850,8 @@ Origin record with the shared head and tail of the origin records and its geomet
 | 160 | 8 | `zero_b` | `bytes[8]` | little | spec | `00 00 01` \| \| 8 × u8 \| zero \| · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
 | 168 | 11 | `asset_settings` | `bytes[11]` | little | spec | the `AssetSettings` record (type `23FD63FB-4EBE-4c85-A42B-5D9809AA3499`) |
 | 179 | 2 | `zero_c` | `bytes[2]` | little | spec | \| 2 × u8 \| zero \| · value `[0, 0]` |
-| 181 | 4 | `scale_a` | `f32` | little | spec | \| 2 × u8 \| zero \| \| f32 \| `1.0` \| |
-| 185 | 4 | `scale_b` | `f32` | little | spec | `1.0` for the point and the planes, `1.3` for the axes |
+| 181 | 4 | `scale_a` | `f32` | little | spec | \| 2 × u8 \| zero \| \| f32 \| `1.0` \| · value `1.0` |
+| 185 | 4 | `scale_b` | `f32` | little | spec | `1.0` for the point and the planes, `1.3` for the axes · value `1.3` |
 | 189 | 5 | `zero_d` | `bytes[5]` | little | spec | \| 5 × u8 \| zero \| \| reference \| the origin container \| · value `[0, 0, 0, 0, 0]` |
 | 194 | 11 | `origin_container` | `bytes[11]` | little | spec | \| 5 × u8 \| zero \| \| reference \| the origin container \| |
 
@@ -10684,14 +10873,14 @@ Origin record with the shared head and tail of the origin records and its geomet
 | 46 | 23 | `property_type` | `bytes[23]` | little | spec | `IntrinsicMetaTypeuint64` · value `"IntrinsicMetaTypeuint64"` |
 | 69 | 8 | `property_value` | `u64` | little | spec | `IntrinsicMetaTypeuint64` \| \| u64 \| `0` \| · value `0` |
 | 77 | 4 | `geometry_word` | `u32` | little | spec | u32 `0`, f64 `0.25`, f64 `0.25`, u8 `0` · value `0` |
-| 81 | 8 | `scalar_a` | `f64` | little | spec | u32 `0`, f64 `0.25`, f64 `0.25` |
-| 89 | 8 | `scalar_b` | `f64` | little | spec | u32 `0`, f64 `0.25`, f64 `0.25` |
+| 81 | 8 | `scalar_a` | `f64` | little | spec | u32 `0`, f64 `0.25`, f64 `0.25` · value `0.25` |
+| 89 | 8 | `scalar_b` | `f64` | little | spec | u32 `0`, f64 `0.25`, f64 `0.25` · value `0.25` |
 | 97 | 1 | `flag` | `u8` | little | spec | f64 `0.25`, u8 `0`, f64 origin `(0, 0, 0)` · value `0` |
 | 98 | 24 | `origin` | `f64[3]` | little | spec | u8 `0`, f64 origin `(0, 0, 0)`, f64 unit u direction |
 | 122 | 24 | `u_direction` | `f64[3]` | little | spec | f64 unit u direction |
 | 146 | 24 | `v_direction` | `f64[3]` | little | spec | f64 unit v direction |
-| 170 | 8 | `scalar_c` | `f64` | little | spec | f64 unit v direction, f64 `2.0`, f64 `2.0` |
-| 178 | 8 | `scalar_d` | `f64` | little | spec | f64 unit v direction, f64 `2.0`, f64 `2.0` |
+| 170 | 8 | `scalar_c` | `f64` | little | spec | f64 unit v direction, f64 `2.0`, f64 `2.0` · value `2.0` |
+| 178 | 8 | `scalar_d` | `f64` | little | spec | f64 unit v direction, f64 `2.0`, f64 `2.0` · value `2.0` |
 | 186 | 5 | `geometry_end_zero` | `bytes[5]` | little | spec | the geometry of the record \| \| 5 × u8 \| zero \| · value `[0, 0, 0, 0, 0]` |
 | 191 | 4 | `word` | `u32` | little | spec | `0xffffffff` · value `4294967295` |
 | 195 | 1 | `name_flag` | `u8` | little | spec | `0xffffffff` \| \| u8 \| `1` \| · value `1` |
@@ -10701,8 +10890,8 @@ Origin record with the shared head and tail of the origin records and its geomet
 | 207 | 8 | `zero_b` | `bytes[8]` | little | spec | `00 00 01` \| \| 8 × u8 \| zero \| · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
 | 215 | 11 | `asset_settings` | `bytes[11]` | little | spec | the `AssetSettings` record (type `23FD63FB-4EBE-4c85-A42B-5D9809AA3499`) |
 | 226 | 2 | `zero_c` | `bytes[2]` | little | spec | \| 2 × u8 \| zero \| · value `[0, 0]` |
-| 228 | 4 | `scale_a` | `f32` | little | spec | \| 2 × u8 \| zero \| \| f32 \| `1.0` \| |
-| 232 | 4 | `scale_b` | `f32` | little | spec | `1.0` for the point and the planes, `1.3` for the axes |
+| 228 | 4 | `scale_a` | `f32` | little | spec | \| 2 × u8 \| zero \| \| f32 \| `1.0` \| · value `1.0` |
+| 232 | 4 | `scale_b` | `f32` | little | spec | `1.0` for the point and the planes, `1.3` for the axes · value `1.0` |
 | 236 | 5 | `zero_d` | `bytes[5]` | little | spec | \| 5 × u8 \| zero \| \| reference \| the origin container \| · value `[0, 0, 0, 0, 0]` |
 | 241 | 11 | `origin_container` | `bytes[11]` | little | spec | \| 5 × u8 \| zero \| \| reference \| the origin container \| |
 
@@ -13920,15 +14109,121 @@ Offsets are relative to the relation's indexed header. The `m` member entries fo
 
 Spec §Records of a Sketch item · layout: byte offsets · size: 39 B
 
-Offsets are relative to the frame's indexed header. The measured members follow.
+Offsets are relative to the frame's indexed header and hold when the references use the eleven-byte same-segment form (DR-910). The measured members follow at 39.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A dimension frame stores its measured members after a 39-byte head |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | a dimension frame stores, in order: the indexed header, eight zero bytes, `u8 1`, the u32 operand count `n` |
+| 11 | 8 | `zero_run` | `bytes[8]` | little | spec | a dimension frame stores, in order: the indexed header, eight zero bytes, `u8 1`, the u32 operand count `n` · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+| 19 | 1 | `marker` | `u8` | little | spec | a dimension frame stores, in order: the indexed header, eight zero bytes, `u8 1`, the u32 operand count `n` · value `1` |
+| 20 | 4 | `operand_count` | `u32` | little | spec | a dimension frame stores, in order: the indexed header, eight zero bytes, `u8 1`, the u32 operand count `n` |
+| 24 | 11 | `null_locus` | `bytes[11]` | little | spec | The first operand is the null locus: the eleven-byte reference to record index `0` |
+| 35 | 4 | `null_locus_ordinal` | `u32` | little | spec | DR-917 the ordinal of the null locus |
 
-Unstated regions:
+## `sketch_item_dimension_frame_linear`
 
-- `11..39` (28 B): The specification states no field in this range.
+Spec §Records of a Sketch item · layout: byte offsets · size: 129 B
+
+Offsets are relative to the first byte after the property block.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 24 | `dimension_line_start` | `f64[3]` | little | spec | the dimension-line ends `P0` and `P1` |
+| 24 | 24 | `dimension_line_end` | `f64[3]` | little | spec | the dimension-line ends `P0` and `P1` |
+| 48 | 24 | `second_anchor` | `f64[3]` | little | spec | the second anchor `A2` |
+| 72 | 24 | `fourth_point` | `f64[3]` | little | spec | a fourth point, the offset flag |
+| 96 | 1 | `offset_flag` | `u8` | little | spec | a fourth point, the offset flag |
+| 97 | 8 | `value` | `f64` | little | spec | the f64 measured value, and the first anchor `A1` |
+| 105 | 24 | `first_anchor` | `f64[3]` | little | spec | the f64 measured value, and the first anchor `A1` |
+
+## `sketch_item_dimension_frame_radial`
+
+Spec §Records of a Sketch item · layout: byte offsets · size: 153 B
+
+Offsets are relative to the first byte after the property block.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 96 | `curve_payload` | `f64[12]` | little | spec | the 96-byte analytic payload of the measured circular curve |
+| 96 | 24 | `centre` | `f64[3]` | little | spec | the centre of that curve, the attach point |
+| 120 | 24 | `attach_point` | `f64[3]` | little | spec | the centre of that curve, the attach point |
+| 144 | 1 | `flag` | `u8` | little | spec | a flag byte, and the f64 radius |
+| 145 | 8 | `radius` | `f64` | little | spec | a flag byte, and the f64 radius |
+
+## `sketch_item_dimension_frame_angular`
+
+Spec §Records of a Sketch item · layout: byte offsets · size: 146 B
+
+Offsets are relative to the first byte after the property block.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `angle` | `f64` | little | spec | the f64 angle, the u32 quadrant |
+| 8 | 4 | `quadrant` | `u32` | little | spec | the f64 angle, the u32 quadrant |
+| 12 | 2 | `zero_run` | `bytes[2]` | little | spec | the u32 quadrant, two zero bytes · value `[0, 0]` |
+| 14 | 4 | `quadrant_2` | `u32` | little | spec | a second u32 quadrant word |
+| 18 | 24 | `first_line_end` | `f64[3]` | little | spec | the two point positions of the first measured line |
+| 42 | 24 | `first_line_start` | `f64[3]` | little | spec | the two point positions of the first measured line |
+| 66 | 24 | `second_line_end` | `f64[3]` | little | spec | the two point positions of the second measured line |
+| 90 | 24 | `second_line_start` | `f64[3]` | little | spec | the two point positions of the second measured line |
+| 114 | 24 | `arc_point` | `f64[3]` | little | spec | the arc point, and the f64 arc radius |
+| 138 | 8 | `arc_radius` | `f64` | little | spec | the arc point, and the f64 arc radius |
+
+## `sketch_item_dimension_frame_text`
+
+Spec §Records of a Sketch item · layout: byte offsets · size: 91 B
+
+Offsets are relative to the first byte after the measurement. The LP-UTF16 prefix follows at 91.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `style_byte` | `u8` | little | spec | a style byte and four f32 style values |
+| 1 | 16 | `style_values` | `f32[4]` | little | spec | a style byte and four f32 style values |
+| 17 | 1 | `marker` | `u8` | little | spec | a byte `1` or `0`, a zero byte |
+| 18 | 1 | `zero_byte` | `u8` | little | spec | a byte `1` or `0`, a zero byte · value `0` |
+| 19 | 24 | `origin` | `f64[3]` | little | spec | an origin, and two unit axes |
+| 43 | 24 | `x_axis` | `f64[3]` | little | spec | an origin, and two unit axes |
+| 67 | 24 | `y_axis` | `f64[3]` | little | spec | an origin, and two unit axes |
+
+## `sketch_item_dimension_frame_linear_kind`
+
+Spec §Records of a Sketch item · layout: byte offsets · size: 52 B
+
+Offsets are relative to the first byte after the LP-UTF16 text.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 24 | `text_position` | `f64[3]` | little | spec | the text position, u32 `2` |
+| 24 | 4 | `word` | `u32` | little | spec | the text position, u32 `2` · value `2` |
+| 28 | 16 | `values` | `f64[2]` | little | spec | two f64 values (DR-917) |
+| 44 | 8 | `kind_mask` | `u64` | little | spec | and the u64 kind mask |
+
+## `sketch_item_dimension_frame_kind`
+
+Spec §Records of a Sketch item · layout: byte offsets · size: 32 B
+
+Offsets are relative to the first byte after the LP-UTF16 text.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 24 | `text_position` | `f64[3]` | little | spec | the text position and the u64 kind mask |
+| 24 | 8 | `kind_mask` | `u64` | little | spec | the text position and the u64 kind mask |
+
+## `sketch_item_dimension_frame_paired`
+
+Spec §Records of a Sketch item · layout: byte offsets · size: 59 B
+
+Offsets are relative to the paired indexed header. The offsets hold when both references are the eleven-byte same-segment form (DR-910).
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `paired_header` | `bytes[11]` | little | spec | the paired indexed header, eight zero bytes, the sketch container reference |
+| 11 | 8 | `zero_run` | `bytes[8]` | little | spec | the paired indexed header, eight zero bytes, the sketch container reference · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+| 19 | 11 | `container` | `bytes[11]` | little | spec | the paired indexed header, eight zero bytes, the sketch container reference |
+| 30 | 12 | `zero_run_2` | `bytes[12]` | little | spec | twelve zero bytes, the f32 `1.0`, two zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 42 | 4 | `scale` | `f32` | little | spec | twelve zero bytes, the f32 `1.0`, two zero bytes · value `1.0` |
+| 46 | 2 | `zero_run_3` | `bytes[2]` | little | spec | twelve zero bytes, the f32 `1.0`, two zero bytes · value `[0, 0]` |
+| 48 | 11 | `container_closing` | `bytes[11]` | little | spec | two zero bytes, and the sketch container reference |
 
 ## `sketch_item_dimension_owner`
 
@@ -14162,7 +14457,7 @@ Record 34.
 | 32 | 8 | `zero_b` | `bytes[8]` | little | spec | `base_feature_record_34` · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
 | 40 | 1 | `flag_a` | `u8` | little | spec | `base_feature_record_34` · value `1` |
 | 41 | 1 | `flag_b` | `u8` | little | spec | `base_feature_record_34` · value `1` |
-| 42 | 4 | `scale` | `f32` | little | spec | `base_feature_record_34` |
+| 42 | 4 | `scale` | `f32` | little | spec | `base_feature_record_34` · value `1.0` |
 | 46 | 11 | `paired_header` | `bytes[11]` | little | spec | `base_feature_record_34` |
 | 57 | 12 | `zero_c` | `bytes[12]` | little | spec | `base_feature_record_34` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
 | 69 | 11 | `aggregate` | `bytes[11]` | little | spec | `base_feature_record_34` |
@@ -14178,7 +14473,7 @@ Record 36.
 | 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_record_36` |
 | 11 | 10 | `zero_a` | `bytes[10]` | little | spec | `base_feature_record_36` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
 | 21 | 1 | `flag` | `u8` | little | spec | `base_feature_record_36` · value `1` |
-| 22 | 4 | `scale` | `f32` | little | spec | `base_feature_record_36` |
+| 22 | 4 | `scale` | `f32` | little | spec | `base_feature_record_36` · value `1.0` |
 | 26 | 11 | `paired_header` | `bytes[11]` | little | spec | `base_feature_record_36` |
 | 37 | 12 | `zero_b` | `bytes[12]` | little | spec | `base_feature_record_36` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
 | 49 | 11 | `aggregate` | `bytes[11]` | little | spec | `base_feature_record_36` |
@@ -14382,13 +14677,13 @@ Records 164, 166, 168, and 170. Values are stated where every camera of every de
 | 29 | 4 | `word_c` | `u32` | little | spec | `base_feature_camera` · value `64` |
 | 33 | 4 | `word_d` | `u32` | little | spec | `base_feature_camera` · value `0` |
 | 37 | 2 | `zero_b` | `bytes[2]` | little | spec | `base_feature_camera` · value `[0, 0]` |
-| 39 | 4 | `scale` | `f32` | little | spec | `base_feature_camera` |
+| 39 | 4 | `scale` | `f32` | little | spec | `base_feature_camera` · value `12.0` |
 | 43 | 8 | `extent_0` | `f64` | little | spec | `base_feature_camera` |
 | 51 | 8 | `extent_1` | `f64` | little | spec | `base_feature_camera` |
-| 59 | 4 | `unit_scale` | `f32` | little | spec | `base_feature_camera` |
+| 59 | 4 | `unit_scale` | `f32` | little | spec | `base_feature_camera` · value `1.0` |
 | 63 | 4 | `word_e` | `u32` | little | spec | `base_feature_camera` · value `0` |
 | 67 | 2 | `zero_c` | `bytes[2]` | little | spec | `base_feature_camera` · value `[0, 0]` |
-| 69 | 8 | `field_of_view` | `f64` | little | spec | `base_feature_camera` |
+| 69 | 8 | `field_of_view` | `f64` | little | spec | `base_feature_camera` · value `0.39479111969976155` |
 | 77 | 24 | `eye` | `f64[3]` | little | spec | `base_feature_camera` |
 | 101 | 4 | `marker` | `u32` | little | spec | `base_feature_camera` · value `1` |
 | 105 | 24 | `target` | `f64[3]` | little | spec | `base_feature_camera` |
@@ -14418,27 +14713,27 @@ Record 172.
 | 21 | 36 | `name` | `bytes[36]` | little | spec | `base_feature_lighting_environment` |
 | 57 | 12 | `zero_b` | `bytes[12]` | little | spec | `base_feature_lighting_environment` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
 | 69 | 12 | `colour` | `f32[3]` | little | spec | `base_feature_lighting_environment` |
-| 81 | 4 | `alpha` | `f32` | little | spec | `base_feature_lighting_environment` |
+| 81 | 4 | `alpha` | `f32` | little | spec | `base_feature_lighting_environment` · value `1.0` |
 | 85 | 4 | `word_a` | `u32` | little | spec | `base_feature_lighting_environment` · value `0` |
-| 89 | 4 | `range` | `f32` | little | spec | `base_feature_lighting_environment` |
+| 89 | 4 | `range` | `f32` | little | spec | `base_feature_lighting_environment` · value `1000.0` |
 | 93 | 4 | `word_b` | `u32` | little | spec | `base_feature_lighting_environment` · value `2` |
 | 97 | 25 | `zero_c` | `bytes[25]` | little | spec | `base_feature_lighting_environment` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
-| 122 | 4 | `angle` | `f32` | little | spec | `base_feature_lighting_environment` |
-| 126 | 4 | `height` | `f32` | little | spec | `base_feature_lighting_environment` |
-| 130 | 4 | `intensity` | `f32` | little | spec | `base_feature_lighting_environment` |
+| 122 | 4 | `angle` | `f32` | little | spec | `base_feature_lighting_environment` · value `-2.3561945` |
+| 126 | 4 | `height` | `f32` | little | spec | `base_feature_lighting_environment` · value `9.5` |
+| 130 | 4 | `intensity` | `f32` | little | spec | `base_feature_lighting_environment` · value `1.0` |
 | 134 | 1 | `slot` | `u8` | little | spec | `base_feature_lighting_environment` · value `0` |
 | 135 | 11 | `record_0` | `bytes[11]` | little | spec | `base_feature_lighting_environment` |
 | 146 | 2 | `zero_d` | `bytes[2]` | little | spec | `base_feature_lighting_environment` · value `[0, 0]` |
 | 148 | 18 | `environment` | `bytes[18]` | little | spec | `base_feature_lighting_environment` |
 | 166 | 5 | `zero_e` | `bytes[5]` | little | spec | `base_feature_lighting_environment` · value `[0, 0, 0, 0, 0]` |
-| 171 | 4 | `exposure` | `f32` | little | spec | `base_feature_lighting_environment` |
+| 171 | 4 | `exposure` | `f32` | little | spec | `base_feature_lighting_environment` · value `1.6973956` |
 | 175 | 11 | `entry_175` | `bytes[11]` | little | spec | `base_feature_lighting_environment` |
 | 186 | 11 | `entry_176` | `bytes[11]` | little | spec | `base_feature_lighting_environment` |
 | 197 | 11 | `entry_173` | `bytes[11]` | little | spec | `base_feature_lighting_environment` |
 | 208 | 11 | `entry_174` | `bytes[11]` | little | spec | `base_feature_lighting_environment` |
 | 219 | 21 | `zero_f` | `bytes[21]` | little | spec | `base_feature_lighting_environment` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
-| 240 | 8 | `distance` | `f64` | little | spec | `base_feature_lighting_environment` |
-| 248 | 4 | `scale` | `f32` | little | spec | `base_feature_lighting_environment` |
+| 240 | 8 | `distance` | `f64` | little | spec | `base_feature_lighting_environment` · value `150.0` |
+| 248 | 4 | `scale` | `f32` | little | spec | `base_feature_lighting_environment` · value `0.1` |
 | 252 | 9 | `zero_g` | `bytes[9]` | little | spec | `base_feature_lighting_environment` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
 
 ## `base_feature_archive_entry_name`
@@ -14801,9 +15096,9 @@ Record 0. Values are stated where every design agrees; the view block and the sc
 | 270 | 24 | `up_a` | `f64[3]` | little | spec | `base_feature_asset_settings` |
 | 294 | 1 | `flag_a` | `u8` | little | spec | `base_feature_asset_settings` · value `0` |
 | 295 | 1 | `flag_b` | `u8` | little | spec | `base_feature_asset_settings` · value `1` |
-| 296 | 8 | `grid` | `f64` | little | spec | `base_feature_asset_settings` |
+| 296 | 8 | `grid` | `f64` | little | spec | `base_feature_asset_settings` · value `1.8` |
 | 304 | 37 | `zero_d` | `bytes[37]` | little | spec | `base_feature_asset_settings` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
-| 341 | 8 | `grid_scale` | `f64` | little | spec | `base_feature_asset_settings` |
+| 341 | 8 | `grid_scale` | `f64` | little | spec | `base_feature_asset_settings` · value `1.0` |
 | 349 | 1 | `null_slot` | `u8` | little | spec | `base_feature_asset_settings` · value `0` |
 | 350 | 11 | `named_views` | `bytes[11]` | little | spec | `base_feature_asset_settings` |
 | 361 | 6 | `zero_e` | `bytes[6]` | little | spec | `base_feature_asset_settings` · value `[0, 0, 0, 0, 0, 0]` |
