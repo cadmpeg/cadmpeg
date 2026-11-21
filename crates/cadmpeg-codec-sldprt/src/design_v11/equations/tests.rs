@@ -358,7 +358,9 @@ fn equation_manager_lines_link_the_parameters_they_assign() {
             "\"D5@Boss\" = \"missing@Boss\" * 2",
             "\"D6@Boss\" = \"D1@Boss\" * 3",
             "\"nowhere@Boss\" = \"D1@Boss\"",
-            "\"wall\" = 5",
+            "\"thickness\" = 2.5 'minted",
+            "\"wall\" = \"thickness\" * 2",
+            "\"label\" = \"missing\"",
         ]),
     )]);
     let d1 = parameter(&ir, "D1");
@@ -398,10 +400,24 @@ fn equation_manager_lines_link_the_parameters_they_assign() {
         ],
         "a reading whose evaluation disagrees with the stored value stays source"
     );
+    let thickness = parameter(&ir, "thickness");
+    assert_eq!(thickness.owner, None);
+    assert_eq!(thickness.kind, ValueKind::Quantity(Quantity::REAL));
+    assert_eq!(neutral_text(thickness).0, "2.5");
     assert_eq!(
-        neutral_text(parameter(&ir, "wall")).0,
-        "5",
-        "a literal line keeps its dimension's reading"
+        thickness.value,
+        Some(ParameterValue::Number(FiniteReal::new(2.5).unwrap()))
+    );
+    assert_eq!(thickness.comment.as_deref(), Some("minted"));
+    assert_eq!(
+        neutral_text(parameter(&ir, "wall")),
+        ("$0 * 2".to_owned(), vec![reference_to(thickness)])
+    );
+    let label = parameter(&ir, "label");
+    assert_eq!(label.value, None);
+    assert_eq!(
+        source_tokens(label),
+        [ExpressionToken::Text("\"missing\"".into())]
     );
 
     let unread = messages(&losses, SldprtLossCode::DesignEquationUnread);
@@ -410,7 +426,7 @@ fn equation_manager_lines_link_the_parameters_they_assign() {
         "{unread:?}"
     );
     let kept = messages(&losses, SldprtLossCode::DesignEquationSource);
-    for name in ["D4", "D5", "D6"] {
+    for name in ["D4", "D5", "D6", "label"] {
         let id = parameter(&ir, name).id.as_str().to_owned();
         assert!(
             kept.iter().any(|message| message.contains(&id)),

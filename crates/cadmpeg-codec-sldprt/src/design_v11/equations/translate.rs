@@ -50,6 +50,32 @@ pub(super) fn tree(expression: &str, typing: &Typing<'_>) -> Option<Node<Paramet
     (found == quantity).then_some(node)
 }
 
+/// The tree, quantity, and canonical value of an expression that is one
+/// number, negated or not, with or without a unit: a bare number is
+/// dimensionless.
+pub(super) fn literal(expression: &str) -> Option<(Node<ParameterRef>, Quantity, f64)> {
+    let mut rest = expression.trim();
+    let negative = match rest.strip_prefix('-') {
+        Some(after) => {
+            rest = after.trim_start();
+            true
+        }
+        None => false,
+    };
+    let (Token::Number(value, unit), after) = number(rest)? else {
+        return None;
+    };
+    if !after.trim().is_empty() {
+        return None;
+    }
+    let (quantity, scale) = match unit {
+        Some(unit) => canonical(unit)?,
+        None => (Quantity::REAL, 1.0),
+    };
+    let signed = if negative { -value } else { value };
+    Some((number_node(signed, unit)?, quantity, signed * scale))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Token {
     Number(f64, Option<UnitSymbol>),

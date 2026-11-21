@@ -124,6 +124,7 @@ pub(crate) fn project(
         &mut parameters,
         &equations::Linking {
             managers: &managers,
+            scope: &definition,
             active: equations::active_slot(histories, ir.source.as_ref()),
             features: &timeline.features,
             length_unit: length,

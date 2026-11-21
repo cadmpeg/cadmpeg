@@ -11,7 +11,11 @@
 //! reference is under Rule H1 and is stated only where the document's caches
 //! agree with its evaluation. Any other line is a `Source` expression of the
 //! `SolidWorks` dialect. A parameter's kind and value are the ones its
-//! dimension states; a line changes its definition and comment only.
+//! dimension states; a line changes its definition and comment only. A
+//! global variable that a line assigns and that names no parameter is a
+//! user parameter of the scope (§5.12): dimensionless, or of the quantity
+//! its literal's unit states, with the literal's value where the line is
+//! one literal.
 
 mod line;
 mod translate;
@@ -19,6 +23,7 @@ mod translate;
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::View;
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
 use cadmpeg_ir::design::edit::{evaluate, Value};
 use cadmpeg_ir::design::expr::{
@@ -30,7 +35,10 @@ use cadmpeg_ir::design::parameter::{
 };
 use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
 use cadmpeg_ir::document::SourceMeta;
+use cadmpeg_ir::features::ParameterId;
+use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::units::Tolerances;
 
 use self::line::{Line, Parsed, Segment};
@@ -230,6 +238,8 @@ pub(super) fn active_slot(
 /// What the lines are read against.
 pub(super) struct Linking<'a> {
     pub(super) managers: &'a Managers,
+    /// The scope's definition, which a minted global variable belongs to.
+    pub(super) scope: &'a ProductDefinitionId,
     /// The active configuration's stream slot.
     pub(super) active: Option<usize>,
     /// The timeline's features, whose names qualify their dimensions.
@@ -298,7 +308,7 @@ impl Kept {
 /// Reads the active configuration's equation-manager lines into the
 /// expressions of the parameters they assign, and returns the loss notes of
 /// the lines not read and of those stated as `Source`.
-pub(super) fn link(parameters: &mut [DesignParameter], linking: &Linking<'_>) -> Vec<LossNote> {
+pub(super) fn link(parameters: &mut Vec<DesignParameter>, linking: &Linking<'_>) -> Vec<LossNote> {
     let lines = match active_lines(linking) {
         Ok(lines) => lines,
         Err(why) => {
@@ -309,8 +319,11 @@ pub(super) fn link(parameters: &mut [DesignParameter], linking: &Linking<'_>) ->
         }
     };
     let mut unread = Losses::default();
-    let names = Names::new(parameters, linking.features);
     let mut kept = Losses::default();
+    for minted in mint(parameters, &lines, linking.scope) {
+        kept.push(Kept::Untranslated, parameters[minted].id.as_str());
+    }
+    let names = Names::new(parameters, linking.features);
     let mut stated = Vec::new();
     for line in lines {
         let line = match line {
@@ -366,6 +379,80 @@ pub(super) fn link(parameters: &mut [DesignParameter], linking: &Linking<'_>) ->
     unread.notes(&kept)
 }
 
+/// Mints a user parameter for each global variable a line assigns that no
+/// parameter is named, ignoring letter case, and returns the positions of
+/// those whose line is neither one literal nor reads a name: their
+/// expression is the line's text.
+fn mint(
+    parameters: &mut Vec<DesignParameter>,
+    lines: &[LineResult],
+    scope: &ProductDefinitionId,
+) -> Vec<usize> {
+    let known = Names::new(parameters, &[]);
+    let mut minted_names = HashSet::new();
+    let mut textual = Vec::new();
+    for (index, line) in lines.iter().enumerate() {
+        let Ok(line) = line else {
+            continue;
+        };
+        if line.name.contains('@')
+            || known.knows(&line.name)
+            || !minted_names.insert(line.name.to_lowercase())
+        {
+            continue;
+        }
+        let Some(name) = NonBlankString::new(line.name.clone()) else {
+            continue;
+        };
+        let id = ParameterId::compose(
+            &cadmpeg_ir::identity_namespace!("sldprt", "model", "parameter"),
+            cadmpeg_ir::identity_key!("equation:").then(index),
+        );
+        let (kind, expression, value) = match translate::literal(&line.expression) {
+            Some((node, quantity, value)) => (
+                ValueKind::Quantity(quantity),
+                Expression::Neutral(Neutral(node)),
+                FiniteReal::new(value).map(ParameterValue::Number),
+            ),
+            None => {
+                if !line
+                    .segments
+                    .iter()
+                    .any(|segment| matches!(segment, Segment::Name(_)))
+                {
+                    textual.push(parameters.len());
+                }
+                (
+                    ValueKind::Quantity(Quantity::REAL),
+                    Expression::Source {
+                        dialect: ExpressionDialect::SolidWorks,
+                        tokens: vec![ExpressionToken::Text(line.expression.clone())],
+                    },
+                    None,
+                )
+            }
+        };
+        parameters.push(DesignParameter {
+            id,
+            scope: scope.clone(),
+            owner: None,
+            name: Some(name),
+            kind,
+            unit: None,
+            definition: ParameterDefinition::Expression(expression),
+            value,
+            display: None,
+            tolerance: None,
+            decimals: None,
+            comment: line.comment.clone(),
+            native_options: cadmpeg_ir::design::options::NativeOptions::new(),
+            source_settings: cadmpeg_ir::design::options::NativeOptions::new(),
+            native_ref: None,
+        });
+    }
+    textual
+}
+
 /// A line's expression before the cycle check.
 struct Stated {
     target: usize,
@@ -382,11 +469,9 @@ type LineResult = Result<Line, (Unread, String)>;
 /// read, why.
 fn active_lines(linking: &Linking<'_>) -> Result<Vec<LineResult>, Unread> {
     let managers = &linking.managers.0;
-    let with_lines = managers
-        .iter()
-        .filter(|manager| manager.lines.lines().is_none_or(|lines| !lines.is_empty()))
-        .collect::<Vec<_>>();
-    if with_lines.is_empty() {
+    let holds_lines =
+        |manager: &&Manager| manager.lines.lines().is_none_or(|lines| !lines.is_empty());
+    if !managers.iter().any(|manager| holds_lines(&manager)) {
         return Ok(Vec::new());
     }
     let active = if managers.len() == 1 {
@@ -406,7 +491,7 @@ fn active_lines(linking: &Linking<'_>) -> Result<Vec<LineResult>, Unread> {
     let others = managers
         .iter()
         .filter(|manager| !std::ptr::eq(*manager, active))
-        .filter(|manager| manager.lines.lines().is_none_or(|lines| !lines.is_empty()))
+        .filter(holds_lines)
         .map(|manager| {
             manager.lines.lines().map(|lines| {
                 lines
@@ -816,6 +901,11 @@ impl Names {
             insert(&mut names.exact, key, position);
         }
         names
+    }
+
+    /// Whether a parameter, or two, bear `name`, ignoring letter case.
+    fn knows(&self, name: &str) -> bool {
+        self.folded.contains_key(&name.to_lowercase())
     }
 
     pub(super) fn resolve(&self, name: &str) -> Option<usize> {
