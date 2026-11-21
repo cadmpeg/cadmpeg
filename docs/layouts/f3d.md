@@ -9552,7 +9552,7 @@ Parsed by:
 | 87 | 11 | `u_distance` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
 | 98 | 11 | `v_distance` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
 | 109 | 1 | `symmetric` | `u8` | little | spec | Offset 109 stores the symmetric byte of direction one |
-| 110 | 1 | `zero_after_symmetric` | `u8` | little | spec | Offset 110 is zero. |
+| 110 | 1 | `symmetric_two` | `u8` | little | spec | Offset 110 stores the symmetric byte of direction two |
 | 111 | 11 | `v_count_repeat` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
 | 122 | 11 | `u_direction` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
 

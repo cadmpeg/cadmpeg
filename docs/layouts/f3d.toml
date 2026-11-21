@@ -31280,11 +31280,11 @@ source = "spec"
 anchor = "Offset 109 stores the symmetric byte of direction one"
 
 [[record.field]]
-name = "zero_after_symmetric"
+name = "symmetric_two"
 offset = 110
 type = "u8"
 source = "spec"
-anchor = "Offset 110 is zero."
+anchor = "Offset 110 stores the symmetric byte of direction two"
 
 [[record.field]]
 name = "v_count_repeat"
