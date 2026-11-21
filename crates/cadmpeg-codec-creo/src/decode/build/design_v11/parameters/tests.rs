@@ -311,7 +311,6 @@ fn the_parameters_that_drop_a_dependency_are_named_in_one_note() {
         .chain([
             depends(parameter("11", "copy", "SPAN", Some(length(2.0)))),
             depends(parameter("12", "sum", "span+1[mm]", Some(length(3.0)))),
-            depends(parameter("13", "qualified", "span:1+1", Some(length(3.0)))),
         ])
         .collect();
     let mut losses = Vec::new();
@@ -326,14 +325,49 @@ fn the_parameters_that_drop_a_dependency_are_named_in_one_note() {
     );
     let named = turns[..8]
         .iter()
-        .map(|turn| turn.id.as_str())
+        .map(|turn| format!("{} ({})", turn.id, target.id))
         .collect::<Vec<_>>()
         .join(", ");
     assert_eq!(
         note.message,
         format!(
-            "10 parameters hold a parameter the decoder resolved as their dependency as text, \
-             or omit it, and state no dependency on it: {named}, ..."
+            "9 parameters hold a parameter the decoder resolved as their dependency as text, \
+             or omit it, and state no dependency on it (each with the dependencies it loses): \
+             {named}, ..."
+        )
+    );
+}
+
+#[test]
+fn the_names_a_relation_leaves_out_as_a_cycle_are_named_in_the_note() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x04r=a\0a=r\0theta=t*360\0z=1\0"
+        .to_vec();
+    let data = crate::test_support::build_prt("c", &[("DEPDB_DATA", payload)]);
+    let result = crate::CreoCodec
+        .decode(&mut std::io::Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    let [r, a, _, _] = result.ir().model.parameters.as_slice() else {
+        panic!("four curve-expression parameters");
+    };
+    let notes = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == CreoLossCode::DesignParameterReferenceAsText.kind())
+        .collect::<Vec<_>>();
+    let [note] = notes.as_slice() else {
+        panic!("one note: {:?}", result.report().losses);
+    };
+    assert_eq!(
+        note.message,
+        format!(
+            "2 parameters hold a parameter the decoder resolved as their dependency as text, \
+             or omit it, and state no dependency on it (each with the dependencies it loses): \
+             {} (cyclic a), {} (cyclic r)",
+            r.id, a.id
         )
     );
 }

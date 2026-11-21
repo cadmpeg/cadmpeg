@@ -8,7 +8,8 @@
 //! parameter of the same kind, which is that reference. The decode report
 //! names, in one `design.parameter-reference-as-text` note, each parameter
 //! whose expression holds no reference to a dependency the decoder resolved
-//! for it.
+//! for it, or to a name the decoder left out of its dependencies because it
+//! closes a cycle, with what it loses.
 
 use std::collections::BTreeMap;
 use std::num::NonZeroI8;
@@ -73,8 +74,9 @@ pub(super) fn project(
         ctx.charge_entities(1, "project Creo v11 parameter")?;
         let design = project_parameter(parameter, definition, &names, &kinds);
         if let ParameterDefinition::Expression(expression) = &design.definition {
-            if drops_dependency(parameter, expression) {
-                dropped.push(parameter.id.as_str());
+            let lost = dropped_dependencies(parameter, expression, &names);
+            if !lost.is_empty() {
+                dropped.push(format!("{} ({})", parameter.id, lost.join(", ")));
             }
         }
         projected.push(design);
@@ -87,12 +89,13 @@ pub(super) fn project(
         };
         losses.push(CreoLossCode::DesignParameterReferenceAsText.note(format!(
             "{} parameters hold a parameter the decoder resolved as their dependency as text, \
-             or omit it, and state no dependency on it: {}{more}",
+             or omit it, and state no dependency on it (each with the dependencies it loses): \
+             {}{more}",
             dropped.len(),
             dropped
                 .iter()
                 .take(NAMED_INSTANCES_PER_NOTE)
-                .copied()
+                .map(String::as_str)
                 .collect::<Vec<_>>()
                 .join(", ")
         )));
@@ -382,9 +385,15 @@ fn whole_reference(
     }
 }
 
-/// Whether `expression` holds no reference to a dependency the decoder
-/// resolved for `parameter`.
-fn drops_dependency(parameter: &LegacyParameter, expression: &Expression) -> bool {
+/// The dependencies the decoder resolved for `parameter` that `expression`
+/// holds no reference to, by id, and each name of its `cyclic_dependencies`
+/// (an edge the decoder left out of `dependencies` because it closes a
+/// cycle) that `expression` holds no reference to, as `cyclic <name>`.
+fn dropped_dependencies(
+    parameter: &LegacyParameter,
+    expression: &Expression,
+    names: &BTreeMap<ParameterId, &str>,
+) -> Vec<String> {
     let held = match expression {
         Expression::Neutral(Neutral(tree)) => {
             expr::print(tree).map_or_else(|_| Vec::new(), |wire| wire.refs)
@@ -397,11 +406,30 @@ fn drops_dependency(parameter: &LegacyParameter, expression: &Expression) -> boo
             })
             .collect(),
     };
-    parameter.dependencies.iter().any(|dependency| {
-        !held.iter().any(
-            |reference| matches!(&reference.target, RefTarget::Parameter(id) if id == dependency),
-        )
-    })
+    let held = held
+        .iter()
+        .filter_map(|reference| match &reference.target {
+            RefTarget::Parameter(id) => Some(id),
+            RefTarget::External { .. } => None,
+        })
+        .collect::<Vec<_>>();
+    let resolved = parameter
+        .dependencies
+        .iter()
+        .filter(|dependency| !held.contains(dependency))
+        .map(ToString::to_string);
+    let cyclic = property(parameter, "cyclic_dependencies")
+        .into_iter()
+        .flat_map(|list| list.split(','))
+        .filter(|name| {
+            !held.iter().any(|id| {
+                names
+                    .get(*id)
+                    .is_some_and(|target| target.eq_ignore_ascii_case(name))
+            })
+        })
+        .map(|name| format!("cyclic {name}"));
+    resolved.chain(cyclic).collect()
 }
 
 /// A literal whose unit the file states, written in brackets or declared

@@ -219,35 +219,40 @@ fn a_formula_whose_tree_disagrees_with_its_stored_value_keeps_its_source_text() 
 }
 
 #[test]
-fn a_formula_that_is_one_text_input_is_its_reference() {
-    let result = decode(
-        standard_catpart_with_typed_formula_inputs_and_object_payload(
-            4,
-            false,
-            &[("#1_", "String", "Value", "#1_", 1.0)],
-            "String",
-            None,
-            "#1_",
-            (&[0xfe], Some(0)),
-        ),
+fn a_formula_that_is_one_text_or_integer_input_is_its_reference() {
+    let text = standard_catpart_with_typed_formula_inputs_and_object_payload(
+        4,
+        false,
+        &[("#1_", "String", "Value", "#1_", 1.0)],
+        "String",
+        None,
+        "#1_",
+        (&[0xfe], Some(0)),
     );
-    let [input, formula] = result.ir().model.parameters.as_slice() else {
-        panic!("an input and a formula");
-    };
-    let output = result
-        .ir()
-        .design
-        .parameters
-        .iter()
-        .find(|parameter| parameter.id == formula.id)
-        .unwrap();
-    assert_eq!(output.kind, ValueKind::Text);
-    assert_eq!(
-        output.definition,
-        ParameterDefinition::Expression(Expression::Neutral(Neutral(Node::Reference(reference(
-            &input.id
-        )))))
+    let integer = standard_catpart_with_typed_formula_relation(
+        4, false, "Integer", "Integer", 2.0, 2.0, "#1_ /2",
     );
+    for (bytes, kind) in [(text, ValueKind::Text), (integer, ValueKind::Integer)] {
+        let result = decode(bytes);
+        let [input, formula] = result.ir().model.parameters.as_slice() else {
+            panic!("an input and a formula");
+        };
+        let output = result
+            .ir()
+            .design
+            .parameters
+            .iter()
+            .find(|parameter| parameter.id == formula.id)
+            .unwrap();
+        assert_eq!(output.kind, kind);
+        assert_eq!(
+            output.definition,
+            ParameterDefinition::Expression(Expression::Neutral(Neutral(Node::Reference(
+                reference(&input.id)
+            ))))
+        );
+        assert!(dropped_input_notes(&result).is_empty(), "{kind:?}");
+    }
 }
 
 #[test]
@@ -289,30 +294,62 @@ fn dropped_input_notes(result: &EditableDecodeResult) -> Vec<&cadmpeg_ir::report
         .collect()
 }
 
+/// The decoder admits only a formula whose type its signature declares, so
+/// no decode reaches a whole-text input with no neutral reading. The
+/// projection is run on decoded records whose output is retyped as a length,
+/// which a dimensionless integer input cannot be.
 #[test]
 fn a_formula_that_is_one_input_with_no_neutral_reading_is_named_as_dropping_it() {
     let result = decode(standard_catpart_with_typed_formula_relation(
         4, false, "Integer", "Integer", 2.0, 2.0, "#1_ /2",
     ));
-    let output = parameter(&result, "Result");
-    assert_eq!(output.kind, ValueKind::Integer);
+    let scope = parameter(&result, "Result").scope.clone();
+    let mut ir = result.ir().clone();
+    ir.design.parameters.clear();
+    let [input, output] = ir.model.parameters.as_mut_slice() else {
+        panic!("an input and a formula");
+    };
+    let input = input.id.clone();
+    let kind = output
+        .properties
+        .iter_mut()
+        .find(|(key, _)| key.as_str() == "value_type")
+        .map(|(_, kind)| kind)
+        .unwrap();
+    *kind = "LENGTH".into();
+    let output = output.id.clone();
+    let mut losses = Vec::new();
+    crate::test_support::with_service_context(|ctx| {
+        super::project(ctx, &mut ir, &scope, &mut losses)
+    })
+    .unwrap();
+    let projected = ir
+        .design
+        .parameters
+        .iter()
+        .find(|parameter| parameter.id == output)
+        .unwrap();
+    assert_eq!(projected.kind, ValueKind::Quantity(Quantity::LENGTH));
     assert_eq!(
-        output.definition,
+        projected.definition,
         ParameterDefinition::Expression(Expression::Source {
             dialect: ExpressionDialect::Catia,
             tokens: vec![ExpressionToken::Text("#1_ /2".into())],
         })
     );
-    let notes = dropped_input_notes(&result);
-    let [note] = notes.as_slice() else {
-        panic!("one note: {:?}", result.report().losses);
+    let [note] = losses.as_slice() else {
+        panic!("one note: {losses:?}");
     };
+    assert_eq!(
+        note.code,
+        crate::loss::CatiaLossCode::DesignParameterReferenceAsText.kind()
+    );
     assert_eq!(
         note.message,
         format!(
             "1 parameters hold an input parameter the decoder resolved as text, or omit it, and \
-             state no dependency on that parameter: {}",
-            output.id
+             state no dependency on that parameter (each with the inputs it loses): \
+             {output} ({input})"
         )
     );
 }
@@ -338,7 +375,8 @@ fn an_expression_drops_an_input_where_it_holds_no_reference_to_it() {
         .iter()
         .find(|parameter| !parameter.dependencies.is_empty())
         .unwrap();
-    let width = reference(&parameter(&result, "Width").id);
+    let width_id = &parameter(&result, "Width").id;
+    let width = reference(width_id);
     let source = |tokens| Expression::Source {
         dialect: ExpressionDialect::Catia,
         tokens,
@@ -354,13 +392,20 @@ fn an_expression_drops_an_input_where_it_holds_no_reference_to_it() {
         tree("$0 + 1[mm]", &[width]),
     ];
     for expression in &held {
-        assert!(!super::drops_input(formula, expression), "{expression:?}");
+        assert!(
+            super::dropped_inputs(formula, expression).is_empty(),
+            "{expression:?}"
+        );
     }
     let dropped = [
         source(vec![ExpressionToken::Text("#1_ /2+1mm".into())]),
         tree("13[mm]", &[]),
     ];
     for expression in &dropped {
-        assert!(super::drops_input(formula, expression), "{expression:?}");
+        assert_eq!(
+            super::dropped_inputs(formula, expression),
+            [width_id],
+            "{expression:?}"
+        );
     }
 }

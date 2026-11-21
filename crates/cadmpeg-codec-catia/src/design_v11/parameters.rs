@@ -3,7 +3,7 @@
 //!
 //! The decode report names, in one `design.parameter-reference-as-text`
 //! note, each parameter whose expression holds no reference to an input the
-//! decoder resolved for it.
+//! decoder resolved for it, with the inputs it loses.
 
 use std::collections::BTreeMap;
 use std::num::NonZeroI8;
@@ -55,8 +55,16 @@ pub(super) fn project(
         ctx.charge_entities(1, "project a CATIA v11 parameter")?;
         let kind = kind(parameter)?;
         let expression = expression(parameter, &user, &kind);
-        if drops_input(parameter, &expression) {
-            dropped.push(&parameter.id);
+        let lost = dropped_inputs(parameter, &expression);
+        if !lost.is_empty() {
+            dropped.push(format!(
+                "{} ({})",
+                parameter.id,
+                lost.iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
         }
         projected.push(DesignParameter {
             id: parameter.id.clone(),
@@ -79,7 +87,7 @@ pub(super) fn project(
     if !dropped.is_empty() {
         losses.push(CatiaLossCode::DesignParameterReferenceAsText.note(format!(
             "{} parameters hold an input parameter the decoder resolved as text, or omit it, \
-             and state no dependency on that parameter: {}",
+             and state no dependency on that parameter (each with the inputs it loses): {}",
             dropped.len(),
             identity_statement(&dropped)
         )));
@@ -89,9 +97,12 @@ pub(super) fn project(
     Ok(())
 }
 
-/// Whether `expression` holds no reference to an input the decoder resolved
-/// for `parameter`.
-fn drops_input(parameter: &LegacyParameter, expression: &Expression) -> bool {
+/// The inputs the decoder resolved for `parameter` that `expression` holds no
+/// reference to.
+fn dropped_inputs<'a>(
+    parameter: &'a LegacyParameter,
+    expression: &Expression,
+) -> Vec<&'a ParameterId> {
     let held = match expression {
         Expression::Neutral(Neutral(tree)) => {
             expr::print(tree).map_or_else(|_| Vec::new(), |wire| wire.refs)
@@ -104,11 +115,15 @@ fn drops_input(parameter: &LegacyParameter, expression: &Expression) -> bool {
             })
             .collect(),
     };
-    parameter.dependencies.iter().any(|input| {
-        !held
-            .iter()
-            .any(|reference| matches!(&reference.target, RefTarget::Parameter(id) if id == input))
-    })
+    parameter
+        .dependencies
+        .iter()
+        .filter(|input| {
+            !held.iter().any(
+                |reference| matches!(&reference.target, RefTarget::Parameter(id) if id == *input),
+            )
+        })
+        .collect()
 }
 
 fn property<'a>(parameter: &'a LegacyParameter, key: &str) -> Option<&'a str> {
@@ -405,10 +420,12 @@ fn formula(
     }
 }
 
-/// A formula whose whole text is one resolved input of the same `Boolean` or
-/// `Text` kind, which [`agrees`] cannot evaluate, is that reference. Any other
-/// such formula keeps its text whole: a `Source` expression holds a `Text`
-/// token (part 10), and [`drops_input`] names the parameter.
+/// A formula whose whole text is one resolved input of the same `Boolean`,
+/// `Integer` or `Text` kind, which [`agrees`] cannot evaluate, is that
+/// reference (§5.13: an integer expression is dimensionless and evaluates to
+/// an integer). Any other such formula keeps its text whole: a `Source`
+/// expression holds a `Text` token (part 10), and [`dropped_inputs`] names
+/// the parameter.
 fn whole_reference(
     reference: &ParameterRef,
     text: &str,
@@ -419,7 +436,11 @@ fn whole_reference(
         RefTarget::Parameter(id) => parameters.get(id).copied().and_then(kind_of),
         RefTarget::External { .. } => None,
     };
-    if matches!(kind, ValueKind::Boolean | ValueKind::Text) && input_kind.as_ref() == Some(kind) {
+    if matches!(
+        kind,
+        ValueKind::Boolean | ValueKind::Integer | ValueKind::Text
+    ) && input_kind.as_ref() == Some(kind)
+    {
         return Expression::Neutral(Neutral(Node::Reference(reference.clone())));
     }
     Expression::Source {
