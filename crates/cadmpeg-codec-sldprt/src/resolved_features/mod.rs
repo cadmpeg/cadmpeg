@@ -128,6 +128,8 @@ mod sketch_lists;
 
 pub(crate) mod sketch_projection;
 
+pub(crate) mod sketch_supports;
+
 mod sketch_write;
 
 pub(crate) mod terminations;

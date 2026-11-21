@@ -290,7 +290,7 @@ fn notes(
     };
     report_design_projection_gaps(
         &mut report,
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         native,
     )

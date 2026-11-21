@@ -124,12 +124,11 @@ fn nested(depth: usize) -> CadIr {
 
 /// The deepest folder nesting the rule admits.
 fn deepest() -> usize {
-    (1..READER_JSON_DEPTH)
-        .take_while(|&depth| {
-            RECORD_PREFIX_DEPTH + walk(&nested(depth).process.setups[0]).depth <= READER_JSON_DEPTH
-        })
-        .last()
-        .unwrap()
+    let depths = (1..READER_JSON_DEPTH).collect::<Vec<_>>();
+    let admitted = depths.partition_point(|&depth| {
+        RECORD_PREFIX_DEPTH + walk(&nested(depth).process.setups[0]).depth <= READER_JSON_DEPTH
+    });
+    depths[admitted - 1]
 }
 
 /// The nesting rule refuses exactly the documents the reader refuses, so a

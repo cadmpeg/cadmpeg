@@ -10,7 +10,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 #[doc = "Resolved tessellations or retained mesh source selections."]
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -86,7 +86,7 @@ pub enum MeshFaceDistribution {
 }
 
 #[doc = "Quantity that bounds a mesh reduction."]
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MeshReduceTarget {
@@ -119,7 +119,7 @@ pub enum MeshRebuildMode {
 }
 
 #[doc = "Repair applied to a mesh."]
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MeshRepair {
@@ -244,7 +244,7 @@ cadmpeg_core::named_optional_field!(deserialize_cut_fill, MeshPlaneCutFill, "fil
 cadmpeg_core::named_optional_field!(deserialize_cut_side, MeshPlaneCutSide, "retained_side");
 
 #[doc = "Change that a mesh operation applies to its source."]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MeshModification {
@@ -334,7 +334,7 @@ pub enum MeshSeparationMethod {
 }
 
 #[doc = "Face groups selected for mesh separation, independently of the source meshes."]
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MeshSeparationGroups {

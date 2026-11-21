@@ -7,8 +7,8 @@ spec = "docs/formats/protein.md"
 endianness = "little"
 note = """
 Covers the 16-byte instance-stream header (§2) and the three 136-byte page
-kinds (§3). Schema XML, ZIP members, and the schema-driven property value
-block are listed under "Not tabulated". The Inventor compound-stream
+kinds (§3). Schema XML, ZIP members, the table of contents, and the
+schema-driven property value block are listed under "Not tabulated". The Inventor compound-stream
 `protein_header` envelope is tabulated in `docs/layouts/inventor.toml`.
 """
 
@@ -53,11 +53,31 @@ offset = 0
 type = "u32"
 source = "spec"
 anchor = "The first header word is the little-endian u32 page size and equals `0x88`"
+value = 0x88
 
-[[record.gap]]
+[[record.field]]
+name = "word_1"
 offset = 4
-size = 12
-note = "The remaining twelve header bytes are retained; the specification states no field in that region."
+type = "i32"
+source = "spec"
+anchor = "Bytes 4 through 11 hold two little-endian i32 words, each `-1`"
+value = -1
+
+[[record.field]]
+name = "word_2"
+offset = 8
+type = "i32"
+source = "spec"
+anchor = "Bytes 4 through 11 hold two little-endian i32 words, each `-1`"
+value = -1
+
+[[record.field]]
+name = "word_3"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "Bytes 12 through 15 hold the little-endian u32 `0`"
+value = 0
 
 
 # --- §3 Pages --------------------------------------------------------------
@@ -85,10 +105,12 @@ type = "bytes[128]"
 source = "spec"
 anchor = "Bytes 8 through 135 are the 128-byte page body"
 
-[[record.gap]]
+[[record.field]]
+name = "next_page"
 offset = 0
-size = 4
-note = "Bytes 0 through 3 are a prefix; the specification states no field there."
+type = "i32"
+source = "spec"
+anchor = "Bytes 0 through 3 are the little-endian i32 index of the next page of the same record"
 
 
 
@@ -115,10 +137,12 @@ type = "bytes[128]"
 source = "spec"
 anchor = "Bytes 8 through 135 are the 128-byte page body"
 
-[[record.gap]]
+[[record.field]]
+name = "next_page"
 offset = 0
-size = 4
-note = "Bytes 0 through 3 are a prefix; the specification states no field there."
+type = "i32"
+source = "spec"
+anchor = "Bytes 0 through 3 are the little-endian i32 index of the next page of the same record"
 
 
 [[record]]
@@ -151,10 +175,12 @@ type = "bytes[128]"
 source = "spec"
 anchor = "Bytes 8 through 135 are the 128-byte page body"
 
-[[record.gap]]
+[[record.field]]
+name = "record_start"
 offset = 6
-size = 2
-note = "Bytes 6 through 7 are a suffix; the specification states no field there."
+type = "u16"
+source = "spec"
+anchor = "Bytes 6 through 7 hold the record-start flag: `1` when the terminal page is the only page of its record"
 
 
 # --- Not tabulated ---------------------------------------------------------
@@ -170,3 +196,9 @@ area = "Logical-record value block"
 reason = "Schema-driven variable-length carriers and connection blocks. Field position depends on the inherited property set."
 section = "4"
 anchor = "Property order, carriers, connection blocks, and omitted inherited members are schema-driven"
+
+[[not_applicable]]
+area = "Table of contents"
+reason = "A sequence of variable-length entries of length-prefixed strings and two page indices; entry positions depend on the string lengths."
+section = "6"
+anchor = "Entries have variable length and no fixed byte offsets"

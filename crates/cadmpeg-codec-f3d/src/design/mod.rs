@@ -23,6 +23,7 @@ pub(crate) mod profile_select;
 mod relation_kinds;
 pub(crate) mod sketch_names;
 pub(crate) mod sketch_project;
+pub(crate) mod sketch_text_extrude;
 #[cfg(test)]
 pub(crate) mod test_support;
 #[cfg(test)]

@@ -81,7 +81,7 @@ fn null_locus_native_retained_limit_refuses_before_owned_wire_conversion() {
     namespace.arenas_mut().clear();
     native
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut namespace,
         )
         .unwrap();
@@ -93,7 +93,7 @@ fn native_load_refuses_orphan_history_row_with_child_and_parent() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     crate::native::F3dNative::default()
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut namespace,
         )
         .unwrap();
@@ -108,7 +108,7 @@ fn native_load_refuses_orphan_history_row_with_child_and_parent() {
     namespace.arenas_mut().insert(
         "asm_bulletin_boards".into(),
         cadmpeg_ir::native::arena_from(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             [Ok::<_, cadmpeg_ir::NativeConvertError>(board)],
         )
         .unwrap(),
@@ -150,7 +150,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
     let mut round_trip = cadmpeg_ir::NativeNamespace::default();
     typed
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut round_trip,
         )
         .unwrap();
@@ -188,7 +188,7 @@ fn store_emits_every_pinned_arena_name() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     crate::native::F3dNative::default()
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut namespace,
         )
         .unwrap();
@@ -715,8 +715,10 @@ fn stamped_law_intcurve_round_trips_byte_exactly() {
     crate::writer::generate::native_geometry::native_procedural_curve(
         &mut regenerated,
         decoded.ir(),
+        &crate::writer::generate::native_geometry::ProceduralOwners::new(decoded.ir()),
         owner,
         &solved,
+        false,
     )
     .expect("regenerate stamped law curve");
     let inner = regenerated.iter().position(|&b| b == 0x0f).unwrap();
@@ -790,8 +792,10 @@ fn legacy_law_intcurve_round_trips_byte_exactly() {
     crate::writer::generate::native_geometry::native_procedural_curve(
         &mut regenerated,
         decoded.ir(),
+        &crate::writer::generate::native_geometry::ProceduralOwners::new(decoded.ir()),
         owner,
         &solved,
+        false,
     )
     .expect("regenerate legacy law curve");
     let inner = regenerated.iter().position(|&b| b == 0x0f).unwrap();
@@ -844,7 +848,11 @@ fn generated_cache_first_spring_decodes_and_writes_source_less() {
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
@@ -905,7 +913,11 @@ fn generated_cache_first_parametric_curve_decodes_and_writes_source_less() {
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
@@ -981,7 +993,11 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec

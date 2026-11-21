@@ -78,7 +78,8 @@
           "sketches": [],
           "source_name": "Part",
           "storage": {
-            "kind": "embedded"
+            "document": {},
+            "kind": "file"
           },
           "tessellations": []
         }
@@ -132,6 +133,14 @@
     },
     "source": {
       "attributes": {
+        "file_description.description.0": "edition 3 sections",
+        "file_description.implementation_level": "4;2",
+        "file_name.author.0": "cadmpeg",
+        "file_name.name": "sections",
+        "file_name.organization.0": "cadmpeg",
+        "file_name.preprocessor_version": "cadmpeg-step",
+        "file_name.time_stamp": "2026-07-14T00:00:00",
+        "file_schema.schema_identifiers.0": "AP242",
         "schema": "AP242"
       },
       "identity": {

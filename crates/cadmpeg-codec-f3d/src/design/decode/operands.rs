@@ -56,6 +56,7 @@ use crate::layout::sheet_metal_region_carrier_scalar_lane as region_scalar;
 use crate::layout::sheet_metal_region_identity_reference as region_reference;
 use crate::layout::sketch_profile_region_member as region_member;
 use crate::layout::sketch_profile_region_selection_prefix as region_selection;
+use crate::layout::sketch_profile_text_selection as text_selection;
 use crate::layout::split_body_compact_group_prefix as split_group;
 use crate::layout::typed_reference_extrude_selection_group_prefix as typed_group;
 use crate::layout::typed_reference_profile_chain_record as typed_chain;
@@ -1958,12 +1959,97 @@ pub(crate) fn edge_operand_candidate_faces(
     faces
 }
 
-/// Resolve the unique sketch-profile frame named by profile-based scopes.
+/// The Sketch text record index named by the text selection `N+3` of the
+/// sketch-profile operand with record index `N`.
+fn sketch_profile_text_target(
+    bytes: &[u8],
+    profile_record_index: u32,
+    paired_byte_offset: u64,
+) -> Option<u32> {
+    let paired_at = usize::try_from(paired_byte_offset).ok()?;
+    let next_header = |position: usize, expected: u32| {
+        let at = next_indexed_record_offset(bytes, position)?;
+        (indexed_record_header_at(bytes, at)?.record_index == expected).then_some(at)
+    };
+    let nested_one_at = next_header(
+        paired_at.checked_add(indexed_header::LEN)?,
+        profile_record_index.checked_add(1)?,
+    )?;
+    let nested_two_at = next_header(
+        nested_one_at.checked_add(indexed_header::LEN)?,
+        profile_record_index.checked_add(2)?,
+    )?;
+    let selection_at = next_header(
+        nested_two_at.checked_add(indexed_header::LEN)?,
+        profile_record_index.checked_add(3)?,
+    )?;
+    let zeros_at = selection_at.checked_add(text_selection::ZERO_RUN_10)?;
+    let text_at = selection_at.checked_add(text_selection::TEXT_RECORD_INDEX)?;
+    let end = selection_at.checked_add(text_selection::LEN)?;
+    if bytes.get(zeros_at..text_at)?.iter().any(|&byte| byte != 0) {
+        return None;
+    }
+    let text_record = View::u64_le_at(bytes, text_at)?;
+    match next_indexed_record_offset(bytes, zeros_at) {
+        Some(next) if next == end => {}
+        None if bytes.len() == end => {}
+        _ => return None,
+    }
+    u32::try_from(text_record).ok()
+}
+
+/// The text picks of an Extrude whose every sketch-profile operand carries a
+/// text selection, in operand order.
+fn sketch_profile_text_picks(
+    bytes: &[u8],
+    profiles: &[DesignSketchProfileOperand],
+) -> Option<Vec<crate::design::sketch_text_extrude::SketchTextPick>> {
+    let picks = profiles
+        .iter()
+        .map(|profile| {
+            Some(crate::design::sketch_text_extrude::SketchTextPick {
+                sketch_entity: profile.entity_id.suffix(),
+                text_record: sketch_profile_text_target(
+                    bytes,
+                    profile.record_index,
+                    profile.paired_byte_offset(),
+                )?,
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    (!picks.is_empty()).then_some(picks)
+}
+
+pub(crate) fn unresolved_profile_group_loss(
+    profile_count: usize,
+) -> cadmpeg_ir::report::loss::LossNote {
+    crate::loss::F3dLossCode::FeatureExtrudeProfileGroupNative.note(format!(
+        "{profile_count} Sketch-profile operands remain native because their group composition is unresolved.",
+    ))
+}
+
+/// Several Sketch-profile operands of one Extrude are one selection when they
+/// name the same Sketch and each carries a region selection.
+pub(crate) fn composable_sketch_profiles(profiles: &[DesignSketchProfileOperand]) -> bool {
+    let Some(first) = profiles.first() else {
+        return false;
+    };
+    profiles.len() > 1
+        && profiles.iter().all(|profile| {
+            profile.entity_id == first.entity_id && profile.region_selection.is_some()
+        })
+}
+
+/// Resolve the unique sketch-profile frame named by profile-based scopes, and
+/// record the Extrudes whose operands carry text selections.
 pub(crate) fn bind_sketch_profiles(
     scan: &ContainerScan,
     scopes: &mut [DesignParameterScope],
     headers: &[DesignRecordHeader],
     entities: &[DesignEntityHeader],
+    text_extrude_candidates: &mut Vec<
+        crate::design::sketch_text_extrude::SketchTextExtrudeCandidate,
+    >,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
     let headers = indexed_operand_headers(headers);
     let mut losses = Vec::new();
@@ -2037,12 +2123,22 @@ pub(crate) fn bind_sketch_profiles(
             }
         }
         if profiles.len() > 1 {
+            let scope_id = scope.id.clone();
             if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot) =
                 scope.payload_mut()
             {
-                losses.push(crate::loss::F3dLossCode::FeatureExtrudeProfileGroupNative.note(
-                    format!("{} Sketch-profile operands remain native because their group composition is unresolved.", profiles.len()),
-                ));
+                match sketch_profile_text_picks(bytes, &profiles) {
+                    Some(picks) => text_extrude_candidates.push(
+                        crate::design::sketch_text_extrude::SketchTextExtrudeCandidate {
+                            scope_id,
+                            picks,
+                        },
+                    ),
+                    None if !composable_sketch_profiles(&profiles) => {
+                        losses.push(unresolved_profile_group_loss(profiles.len()));
+                    }
+                    None => {}
+                }
                 slot.get_or_insert_with(Default::default)
                     .extrude_native_profiles = Some(profiles);
             }
@@ -2051,6 +2147,16 @@ pub(crate) fn bind_sketch_profiles(
         let Some(profile) = profiles.pop() else {
             continue;
         };
+        if is_extrude {
+            if let Some(picks) = sketch_profile_text_picks(bytes, std::slice::from_ref(&profile)) {
+                text_extrude_candidates.push(
+                    crate::design::sketch_text_extrude::SketchTextExtrudeCandidate {
+                        scope_id: scope.id.clone(),
+                        picks,
+                    },
+                );
+            }
+        }
         losses.extend(profile.flags_assumption_loss());
         if scope.kind() == crate::records::feature::scope::DesignFeatureKind::BaseFlange {
             if let crate::records::feature::scope::DesignScopePayloadMut::BaseFlange(slot) =
@@ -8030,4 +8136,128 @@ pub(crate) fn construction_closing_flag_losses(
             ))
         })
         .collect()
+}
+
+/// Chain-record bytes after its fourteen zero bytes and before the typed
+/// reference back to the selection record of a sketchless chain record.
+const SKETCHLESS_PROFILE_CHAIN_MARKER: [u8; 6] = [1, 1, 0, 0, 0, 0];
+
+/// The asset GUID of the typed-reference profile selection at `header` when
+/// its chain record is sketchless.
+fn sketchless_profile_selection_asset(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    header: &DesignRecordHeader,
+) -> Option<String> {
+    use crate::layout::typed_reference_sketchless_profile_chain_record as sketchless_chain;
+    let start = usize::try_from(header.byte_offset).ok()?;
+    let record_index = header.record_index;
+    let chain_index = record_index.checked_add(1)?;
+    let identity_index = record_index.checked_add(3)?;
+    let typed_target = |at: usize| {
+        let mut end = at;
+        let reference = take_reference(bytes, &mut end)?;
+        let (target, inline_type) = reference.local()?;
+        inline_type.is_some().then_some((target, end))
+    };
+    let (target, after_reference) = typed_target(start + typed_selection::IDENTITY_REFERENCE)?;
+    if bytes.get(start + typed_selection::ZERO_RUN_10..start + typed_selection::IDENTITY_REFERENCE)
+        != Some(&[0; 10][..])
+        || target != u64::from(identity_index)
+        || after_reference != start + typed_selection::CONSTANT_ONE
+        || View::u32_le_at(bytes, start + typed_selection::CONSTANT_ONE) != Some(1)
+    {
+        return None;
+    }
+    let (asset_guid, after_asset) = lp_utf16_bounded(bytes, start + typed_selection::LEN, 36..=36)?;
+    let (owner_text, _) = lp_utf16_bounded(bytes, after_asset, 1..=20)?;
+    if !owner_text.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let &chain_at = records.offsets(chain_index).first()?;
+    if bytes
+        .get(chain_at + sketchless_chain::ZERO_RUN_14..chain_at + sketchless_chain::CHAIN_MARKER)
+        != Some(&[0; 14][..])
+        || bytes.get(
+            chain_at + sketchless_chain::CHAIN_MARKER
+                ..chain_at + sketchless_chain::SELECTION_REFERENCE,
+        ) != Some(&SKETCHLESS_PROFILE_CHAIN_MARKER[..])
+        || typed_target(chain_at + sketchless_chain::SELECTION_REFERENCE)?.0
+            != u64::from(record_index)
+    {
+        return None;
+    }
+    Some(asset_guid)
+}
+
+/// The `feature.extrude-profile-sketch-absent` note for selection record
+/// `selection_record` of Extrude scope record `scope_record`.
+fn sketchless_profile_selection_loss(
+    selection_record: u32,
+    scope_record: u32,
+    asset_guid: &str,
+    design_asset_guid: Option<&str>,
+) -> LossNote {
+    let foreign =
+        design_asset_guid.is_some_and(|design_guid| !design_guid.eq_ignore_ascii_case(asset_guid));
+    let message = if foreign {
+        format!(
+            "Profile selection record {selection_record} of Extrude scope record {scope_record} has a chain record that names no Sketch; its asset GUID {asset_guid} is not the Design's asset GUID, and the profile stays native."
+        )
+    } else {
+        format!(
+            "Profile selection record {selection_record} of Extrude scope record {scope_record} has a chain record that names no Sketch, and the profile stays native."
+        )
+    };
+    crate::loss::F3dLossCode::FeatureExtrudeProfileSketchAbsent.note(message)
+}
+
+/// One `feature.extrude-profile-sketch-absent` note for each Extrude profile
+/// member whose typed-reference selection has a sketchless chain record.
+pub(crate) fn sketchless_profile_selection_losses(
+    scan: &ContainerScan,
+    scopes: &[DesignParameterScope],
+    groups: &[DesignConstructionOperandGroup],
+    headers: &[DesignRecordHeader],
+) -> Result<Vec<LossNote>, CodecError> {
+    let headers = indexed_operand_headers(headers);
+    let extrude_scopes = scopes
+        .iter()
+        .filter(|scope| design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude))
+        .filter_map(|scope| Some((native_stream(&scope.id)?, scope.record_index)))
+        .collect::<HashSet<_>>();
+    let mut records_by_stream = HashMap::new();
+    let mut losses = Vec::new();
+    for group in groups {
+        let Some(stream) = native_stream(&group.id) else {
+            continue;
+        };
+        if !extrude_scopes.contains(&(stream, group.scope_record_index)) {
+            continue;
+        }
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        for member in group.members() {
+            let Some(header) = headers.get(&(stream, member.value)) else {
+                continue;
+            };
+            let records = records_by_stream
+                .entry(stream)
+                .or_insert_with(|| IndexedRecordOffsets::build(bytes));
+            let Some(asset_guid) = sketchless_profile_selection_asset(bytes, records, header)
+            else {
+                continue;
+            };
+            losses.push(sketchless_profile_selection_loss(
+                header.record_index,
+                group.scope_record_index,
+                &asset_guid,
+                scan.design_asset_guid(),
+            ));
+        }
+    }
+    Ok(losses)
 }

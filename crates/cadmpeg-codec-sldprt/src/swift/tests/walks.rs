@@ -150,7 +150,7 @@ fn first_occurrences(values: &[PositiveReal]) -> Vec<PositiveReal> {
 
 #[test]
 fn diameter_walk_keeps_the_per_path_first_visit_order() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let features = layered(SHALLOW_LAYERS, 1.0, 0.5, true);
     let index = FeatureIndex::new(map(&features));
     let Walk::Done(values) =
@@ -172,7 +172,7 @@ fn diameter_walk_keeps_the_per_path_first_visit_order() {
 
 #[test]
 fn diameter_walk_over_doubling_paths_stays_linear() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let features = layered(DEEP_LAYERS, 1.0, 0.0, false);
     let index = FeatureIndex::new(map(&features));
     let two = PositiveReal::new(2.0).unwrap();
@@ -186,7 +186,7 @@ fn diameter_walk_over_doubling_paths_stays_linear() {
 
 #[test]
 fn reachability_over_doubling_paths_stays_linear() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let features = layered(DEEP_LAYERS, 1.0, 0.0, false);
     let index = FeatureIndex::new(map(&features));
     assert_eq!(
@@ -202,7 +202,7 @@ fn reachability_over_doubling_paths_stays_linear() {
 
 #[test]
 fn measurement_walk_matches_the_per_path_walk() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut cyclic = layered(SHALLOW_LAYERS, 1.0, 0.0, false);
     cyclic.push((
         "loop".to_owned(),
@@ -238,7 +238,7 @@ fn measurement_walk_matches_the_per_path_walk() {
 
 #[test]
 fn measurement_walk_over_doubling_paths_stays_linear() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let features = layered(DEEP_LAYERS, 1.0, 0.0, false);
     let index = FeatureIndex::new(map(&features));
     assert_eq!(
@@ -279,7 +279,7 @@ fn pattern_expansion_over_doubling_paths_stays_linear() {
     features.push((format!("a{DEEP_LAYERS}"), cylinder(1.0)));
     features.push((format!("b{DEEP_LAYERS}"), cylinder(1.0)));
     let index = FeatureIndex::new(map(&features));
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut annotation = entity("GdtPosition");
     annotation
         .features
@@ -296,7 +296,7 @@ fn pattern_expansion_over_doubling_paths_stays_linear() {
 
 #[test]
 fn walk_work_cap_reports_the_unknown() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let features = layered(DEEP_LAYERS, 1.0, 0.0, false);
     let index = FeatureIndex::with_work_limit(map(&features), 4);
     assert_eq!(

@@ -585,7 +585,8 @@ impl DesignNamedScopeReferences {
                 (
                     &self.middle,
                     u64_from_index(
-                        named_scope_tail::CLOSING_REFERENCE - named_scope_tail::OPAQUE_WORD,
+                        named_scope_tail::CLOSING_REFERENCE
+                            - named_scope_tail::PREVIOUS_HISTORY_STATE_ID,
                     ),
                 ),
                 (&self.closing, 1),

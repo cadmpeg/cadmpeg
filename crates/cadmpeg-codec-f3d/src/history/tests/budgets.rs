@@ -76,7 +76,7 @@ fn history_binding_skips_a_chain_past_its_retained_byte_allowance() {
     let unbounded = insert_only_chain();
     assert_eq!(
         admit_history_binding(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &unbounded,
             &mut { u64::MAX }
         )
@@ -90,7 +90,7 @@ fn history_binding_skips_a_chain_past_its_retained_byte_allowance() {
     let at_bound = insert_only_chain();
     assert_eq!(
         admit_history_binding(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &at_bound,
             &mut allowance
         )
@@ -104,7 +104,7 @@ fn history_binding_skips_a_chain_past_its_retained_byte_allowance() {
     let past_bound = insert_only_chain();
     assert_eq!(
         admit_history_binding(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &past_bound,
             &mut allowance
         )
@@ -124,7 +124,7 @@ fn history_streams_of_one_decode_share_the_remaining_retained_bytes() {
 
     assert_eq!(
         admit_history_binding(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &first,
             &mut allowance
         )
@@ -134,7 +134,7 @@ fn history_streams_of_one_decode_share_the_remaining_retained_bytes() {
     assert_eq!(allowance, bytes - 1);
     assert_eq!(
         admit_history_binding(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &second,
             &mut allowance
         )
