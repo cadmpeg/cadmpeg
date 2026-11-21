@@ -1,15 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The matching rule of §5.7 in a stored state: a name matches each entity
-//! whose table entry carries it; a `Bounded` name also matches the edges the
-//! state's adjacency places between faces matching its `faces`, narrowed by
-//! `ends` among several; a `Meeting` name the vertices where faces matching
-//! its `faces` meet; and a pick's `index` narrows the match to the entities
-//! whose entries state the same index, where any of them states one.
+//! The matching rule of §5.7 in a stored state. A name matches each entity
+//! whose table entry carries it. A `Bounded` name also matches the edges the
+//! state's adjacency places between faces matching its `faces`, and a
+//! `Meeting` name the vertices where faces matching its `faces` meet. Names
+//! match with every `index` left out, at any depth, and the entities so
+//! matched are the candidates. Each index the pick states then keeps, at its
+//! place in the name, the candidates whose entries state the same index
+//! there; each place is judged against all the candidates, and names of one
+//! set that are equal with their indexes left out are one place. A `Bounded`
+//! name's `ends` narrows the candidates its indexes keep.
 //!
-//! Whether an `index` nested inside a name compares exactly or narrows as the
-//! outer one does is not stated (inventory gap 20261118-XV3-2). Each name is
-//! matched under both readings: a pick is lost only where it matches nothing
-//! under either, and an entity is selected only where both select it.
+//! Interim: this module matches each name under two readings, and only the
+//! outer `index` narrows. Under `Loose` every index is left out of the
+//! comparison; under `Exact` a nested name compares whole, its index
+//! included. A pick is lost only where it matches nothing under either
+//! reading, and an entity is selected only where both readings select it.
+//! `ends` narrows a `Bounded` name's adjacency candidates before the outer
+//! index narrows.
 
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet};

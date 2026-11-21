@@ -1,16 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The kinds a construction input's reference holds (§5.9, part 10
-//! "Constructions"): a `Built` reference's kind fits its relation as a pick
-//! of that kind would; the measuring origin, the second pick of an
-//! `AtParameter` or `Coordinates` reference, is a point; and a `Fold`
-//! reference picks straight edges.
+//! The kinds a construction input's reference holds (§5.9, What a relation
+//! reads; part 10 "Constructions"). §5.9 tabulates what each relation reads
+//! and the kinds of reference that cannot supply it, and what each `Built`
+//! kind and each pick target supplies. A `Built` construction fits as a pick
+//! of its kind would. A pick whose target does not state its kind (a body, a
+//! feature result, a sketch) and a `Native` pick fit every relation. The
+//! measuring origin, the second pick of an `AtParameter` or `Coordinates`
+//! reference, is a point, and a `Fold` input picks four straight edges.
 //!
-//! §5.9 states no table of the kinds each relation takes (inventory gap
-//! 20261118-XV3-1). A `Built` kind is refused only where the relation's
-//! definition reads what that kind lacks: a position (a direction has none)
-//! or a direction (a point has none), a frame for `Coordinates`, and a curve
-//! for `Center`, `AxisOf`, and the Frenet relations. A pick is refused only
-//! where its target is known to be of another kind.
+//! This module checks a `Built` reference's kind against the table, that the
+//! measuring origin may be a point, and that each pick of a `Fold` reference
+//! may be a straight edge.
+//!
+//! Interim: a `Built` `Axis` fits `PrincipalNormal` and `Binormal`, and a
+//! `Built` `Direction` fits `Coincident`, where the table refuses both. Of a
+//! reference's picks, the module reads only the measuring origin and the
+//! picks of a `Fold` input. Those two checks refuse a name of kind `Body` and
+//! a `Sketch` target, which §5.9 lists among the targets that fit every
+//! relation.
 
 use crate::design::construction::{AnyConstruction, InputReference, Relation};
 use crate::design::names::NameKind;
