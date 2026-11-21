@@ -363,6 +363,59 @@ fn an_open_line_edge_against_its_line_is_written_with_its_ends_exchanged() {
 }
 
 #[test]
+fn an_open_nurbs_edge_against_its_curve_is_written_with_its_ends_exchanged() {
+    // The curve runs from `(20,0,0)` to `(-10,0,0)` over `[0, 3]`, past both
+    // vertices: the edge's start `(0,0,0)` lies at 2 and its end `(10,0,0)`
+    // at 1.
+    let mut ir = cube_with_unranged_edge(Point3::new(10.0, 0.0, 0.0));
+    let edge = ir.geometry.edges[0].id.to_string();
+    let curve = ir.geometry.edges[0].curve().cloned().expect("edge curve");
+    ir.geometry
+        .curves
+        .iter_mut()
+        .find(|row| row.id == curve)
+        .expect("edge curve row")
+        .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 3.0, 3.0],
+            vec![Point3::new(20.0, 0.0, 0.0), Point3::new(-10.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("a straight NURBS against the edge"),
+    ));
+    assert_eq!(edge_errors(&ir), Vec::<String>::new());
+    let (report, decoded) = write(&ir);
+    assert!(
+        !record_invalid_names(&report, &edge),
+        "{:#?}",
+        report.losses
+    );
+    let written = &decoded.geometry.edges[0];
+    let [start, end] = written.param_range().expect("the edge is written").get();
+    assert!((start - 1.0).abs() < EPS_PARAMETER && (end - 2.0).abs() < EPS_PARAMETER);
+    let first = written.ends.as_ref().expect("edge ends").start.clone();
+    let point = &decoded
+        .geometry
+        .vertices
+        .iter()
+        .find(|vertex| vertex.id == first)
+        .expect("start vertex")
+        .point;
+    let position = decoded
+        .geometry
+        .points
+        .iter()
+        .find(|row| row.id == *point)
+        .expect("start point")
+        .position()
+        .get();
+    assert!(position.distance(Point3::new(10.0, 0.0, 0.0)) < EPS_PARAMETER);
+    assert_eq!(edge_errors(&decoded), Vec::<String>::new());
+}
+
+#[test]
 fn an_open_edge_off_its_curve_is_ranged_between_the_feet_with_a_loss() {
     let ir = cube_with_unranged_edge(Point3::new(10.0, 5.0, 0.0));
     let edge = ir.geometry.edges[0].id.to_string();

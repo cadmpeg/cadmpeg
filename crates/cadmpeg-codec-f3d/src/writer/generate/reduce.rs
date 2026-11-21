@@ -594,7 +594,8 @@ impl<'a> Reduction<'a> {
     /// against. A vertex farther from its carrier than its own allowance
     /// (f3d.md §2: the edge's, its own and the cache-fit tolerances) is raised
     /// to that distance, with `geometry.vertex-tolerance-widened` naming it.
-    /// An edge that runs against its line is written with its ends exchanged.
+    /// An edge that runs against its line, or against a bounded curve other
+    /// than a conic, is written with its ends exchanged.
     /// A line or conic carrier that a vertex lies beyond the edge's allowance
     /// from is ranged between the vertices' feet on it, with a loss naming the
     /// distance and, because the output's validation finds the vertex off its
@@ -715,7 +716,7 @@ impl<'a> Reduction<'a> {
                 if last <= first && conic {
                     range[1] += std::f64::consts::TAU;
                 }
-                let exchange = line && last < first;
+                let exchange = (line || (domain.is_some() && !conic)) && last < first;
                 if exchange {
                     if self.names_edge_uses(edge) {
                         continue;
