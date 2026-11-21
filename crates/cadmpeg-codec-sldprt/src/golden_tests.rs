@@ -12,10 +12,10 @@ use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult};
 use cadmpeg_ir::features::{ExtrudeExtent, FeatureDefinition, FeatureOperation, LinearTermination};
 use cadmpeg_ir::report::export::WritePath;
-use cadmpeg_measure::test_support::round_trip::{measures_agree, measures_decide};
+use cadmpeg_measure::test_support::round_trip::{measures_agree_with, measures_decide};
 use cadmpeg_test_support::golden::{
     elide_local_digests, snapshot_text, snapshots_agree, Branch, Harness,
 };
@@ -112,17 +112,25 @@ const SECTION_SCOPED_IDENTIFIERS: [&str; 6] = [
 /// Compare neutral semantics after mapping source section positions through
 /// their unique admitted member names. Native and source metadata are excluded.
 fn neutral_document(bytes: &[u8]) -> String {
-    let value =
-        match SldprtCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
-            Ok(result) => {
-                let scan = crate::test_support::container::scan(bytes);
-                let sections =
-                    section_identities(&scan).expect("unique admitted source member identities");
-                normalized_document(result.ir(), &sections)
-            }
-            Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
-        };
+    neutral_text(bytes, &decode_container(bytes))
+}
+
+/// [`neutral_document`] of `bytes` from their decode `decoded`.
+fn neutral_text(bytes: &[u8], decoded: &Result<DecodeResult, DecodeFailure>) -> String {
+    let value = match decoded {
+        Ok(result) => {
+            let scan = crate::test_support::container::scan(bytes);
+            let sections =
+                section_identities(&scan).expect("unique admitted source member identities");
+            normalized_document(result.ir(), &sections)
+        }
+        Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
+    };
     snapshot_text(&value)
+}
+
+fn decode_container(bytes: &[u8]) -> Result<DecodeResult, DecodeFailure> {
+    SldprtCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
 }
 
 /// Every committed golden still matches what the codec produces.
@@ -172,8 +180,8 @@ fn fixtures_survive_the_semantic_write_path() {
             });
             continue;
         }
-        let expected = neutral_document(&bytes);
-        let source = bytes.clone();
+        let source = decode_container(&bytes);
+        let expected = neutral_text(&bytes, &source);
         semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| match outcome {
             SemanticOutcome::Written { report, bytes, .. } => {
                 written_count += 1;
@@ -181,10 +189,11 @@ fn fixtures_survive_the_semantic_write_path() {
                     matches!(report.write_path(), WritePath::Patched { .. }),
                     "fixture `{name}`: retained records fed the write, so it patched rather than synthesized"
                 );
-                if let Err(mismatch) = snapshots_agree(&expected, &neutral_document(bytes)) {
+                let written = decode_container(bytes);
+                if let Err(mismatch) = snapshots_agree(&expected, &neutral_text(bytes, &written)) {
                     panic!("fixture `{name}`: the semantically written container decodes to a different document: {mismatch}");
                 }
-                if written_measures_agree(&name, &source, bytes) {
+                if written_measures_agree(&name, &source, &written) {
                     measured_count += 1;
                 }
             }
@@ -212,20 +221,21 @@ fn fixtures_survive_the_semantic_write_path() {
 /// authored cylinder, sphere and NURBS solids among them.
 const MEASURED_FIXTURE_FLOOR: usize = 16;
 
-/// Decodes `source` and `written` and, when the source measures a
-/// comparable body, asserts that both measure the same. Returns whether the
+/// When the decoded `source` measures a comparable body, asserts that the
+/// decoded `written` container measures the same. Returns whether the
 /// source measures a comparable body.
-fn written_measures_agree(name: &str, source: &[u8], written: &[u8]) -> bool {
-    let decode = |bytes: &[u8]| {
-        SldprtCodec
-            .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
-            .unwrap_or_else(|_| panic!("fixture `{name}`: a container does not decode"))
+fn written_measures_agree(
+    name: &str,
+    source: &Result<DecodeResult, DecodeFailure>,
+    written: &Result<DecodeResult, DecodeFailure>,
+) -> bool {
+    let (Ok(before), Ok(after)) = (source, written) else {
+        panic!("fixture `{name}`: a container does not decode");
     };
-    let before = decode(source);
-    if !measures_decide(name, before.ir()).expect("the fixture is measured") {
+    let Some(report) = measures_decide(name, before.ir()).expect("the fixture is measured") else {
         return false;
-    }
-    measures_agree(name, before.ir(), decode(written).ir())
+    };
+    measures_agree_with(name, before.ir(), report, after.ir())
         .expect("the round trip keeps its measured geometry");
     true
 }
@@ -696,7 +706,7 @@ fn normalized_document(
     ir: &cadmpeg_ir::CadIr,
     sections: &BTreeMap<u64, String>,
 ) -> serde_json::Value {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let original_geometry =
         serde_json::to_value(&ir.geometry).expect("serialize original geometry");
     let original_model = serde_json::to_value(&ir.model).expect("serialize original model");

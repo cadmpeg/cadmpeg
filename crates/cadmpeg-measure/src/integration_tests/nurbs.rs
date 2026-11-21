@@ -12,7 +12,7 @@ use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{BodyKind, Sense};
 use cadmpeg_ir::CadIr;
 
-use crate::reason::{CaveatCode, UnavailableReason};
+use crate::reason::CaveatCode;
 use crate::report::{FaceMeasures, MeasureReport, RegionRule, WitnessKind};
 use crate::select::Selection;
 use crate::test_support::builders::{
@@ -396,7 +396,8 @@ fn a_solid_on_a_patch_with_fewer_u_spans_encloses_its_volume() {
 /// `x = 26`. That side passes within the allowance of the centre between
 /// two samples at every sample count up to the cap, where its parameter
 /// image turns by about half a period. The side splits at the centre, and
-/// the loop reaches the region rule for a periodic NURBS domain.
+/// the face, on a domain periodic in `u` alone, measures the triangle's
+/// area.
 #[test]
 fn a_side_grazing_a_collapsed_nurbs_side_between_samples_splits_there() {
     let radius = 50.0;
@@ -456,7 +457,9 @@ fn a_side_grazing_a_collapsed_nurbs_side_between_samples_splits_there() {
     let area = only_face(&report)
         .measures()
         .area()
-        .unavailable()
-        .expect("unavailable area");
-    assert_eq!(area.reason(), UnavailableReason::RegionDomainUnsupported);
+        .measured()
+        .expect("measured area");
+    let triangle = 0.5 * 50.0 * (20.0 - 0.005);
+    let allowed = area.numeric_error().get() + area.model_uncertainty().get();
+    assert!((area.value().value.get() - triangle).abs() <= allowed);
 }

@@ -45,9 +45,23 @@
         {
           "definition": {
             "operation": {
-              "kind": "unresolved",
+              "kind": "extrude",
               "value": {
-                "family": "extrude"
+                "native_options": {},
+                "output": {
+                  "boolean": {
+                    "kind": "new_body"
+                  }
+                },
+                "profile": {
+                  "at": {
+                    "kind": "input"
+                  },
+                  "picks": {
+                    "kind": "unread"
+                  }
+                },
+                "source_settings": {}
               }
             }
           },

@@ -1381,7 +1381,7 @@ impl TryFrom<OffsetPcurveWire> for OffsetPcurve {
 }
 
 /// The shape of a parameter-space (u, v) curve on a surface.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PcurveGeometry {
@@ -2343,7 +2343,7 @@ impl Pcurve {
 }
 
 /// Source-specific pcurve parameterization metadata.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum PcurveMetadata {

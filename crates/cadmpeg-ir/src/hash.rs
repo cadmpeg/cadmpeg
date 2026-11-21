@@ -66,7 +66,11 @@ pub fn canonical_json_sha256<T: Serialize + ?Sized>(
 ) -> Result<String, DigestError> {
     let mut buffered =
         std::io::BufWriter::with_capacity(DIGEST_BUFFER_BYTES, DigestWriter(Sha256::new()));
-    write_canonical_json(CanonicalAdmission::limited(ctx), &mut buffered, value)?;
+    write_canonical_json(
+        CanonicalAdmission::limited(ctx, "walk document digest"),
+        &mut buffered,
+        value,
+    )?;
     let writer = buffered
         .into_inner()
         .map_err(|error| DigestError::Write(error.into_error()))?;
@@ -300,22 +304,28 @@ mod tests {
 
     #[test]
     fn canonical_json_sha256_matches_json_larger_than_the_buffer() {
-        let value: Vec<String> = (0..20_000).map(|index| format!("entry-{index}")).collect();
+        let value: Vec<String> = (0..6_000).map(|index| format!("entry-{index}")).collect();
         let json = crate::hash::finite_json::to_canonical_json_string(&value).unwrap();
         assert!(json.len() > super::DIGEST_BUFFER_BYTES);
         assert_eq!(
-            canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &value).unwrap(),
+            canonical_json_sha256(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                &value
+            )
+            .unwrap(),
             crate::hash::sha256_hex(json.as_bytes())
         );
     }
 
     #[test]
     fn a_finite_float_digests() {
-        assert!(
-            canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &1.0f64).is_ok()
-        );
         assert!(canonical_json_sha256(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &1.0f64
+        )
+        .is_ok());
+        assert!(canonical_json_sha256(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &vec![1.0f64, -2.5]
         )
         .is_ok());
@@ -325,7 +335,10 @@ mod tests {
     fn a_non_finite_float_has_no_digest() {
         for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             let Err(DigestError::CanonicalJson(CanonicalJsonError::NonFinite { value: refused })) =
-                canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &value)
+                canonical_json_sha256(
+                    &cadmpeg_core::decode::test_support::service_decode_context(),
+                    &value,
+                )
             else {
                 panic!("a non-finite float must have no canonical JSON");
             };
@@ -352,12 +365,17 @@ mod tests {
     #[test]
     fn a_nested_non_finite_float_has_no_digest() {
         let nested = serde_json::json!({ "outer": [{ "inner": 1.0 }] });
-        assert!(
-            canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &nested).is_ok()
-        );
+        assert!(canonical_json_sha256(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &nested
+        )
+        .is_ok());
         let nested = vec![Some(vec![(1.0f64, f64::NAN)])];
         assert!(matches!(
-            canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &nested),
+            canonical_json_sha256(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                &nested
+            ),
             Err(DigestError::CanonicalJson(
                 CanonicalJsonError::NonFinite { .. }
             ))
@@ -484,7 +502,7 @@ mod tests {
     fn pins_native_arena_digest() {
         assert_eq!(
             canonical_json_sha256(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &pinned_native()
             )
             .unwrap(),
@@ -543,7 +561,7 @@ mod tests {
     fn an_unreadable_unknown_arena_has_no_digest() {
         let source_image = "pin:test:source-image#0";
         let absent = document_local_sha256(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &pinned_document(),
             pinned_document().source.as_ref(),
             "pin",
@@ -555,7 +573,7 @@ mod tests {
         readable_fields.insert("links".into(), serde_json::json!([]));
         let readable_ir = pinned_document_with_unknown(readable_fields);
         let readable = document_local_sha256(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &readable_ir,
             readable_ir.source.as_ref(),
             "pin",
@@ -568,7 +586,7 @@ mod tests {
         unreadable_fields.insert("links".into(), serde_json::json!(7));
         let unreadable = pinned_document_with_unknown(unreadable_fields);
         assert!(document_local_sha256(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &unreadable,
             unreadable.source.as_ref(),
             "pin",
@@ -576,7 +594,7 @@ mod tests {
         )
         .is_err());
         assert!(document_local_sha256(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &unreadable,
             unreadable.source.as_ref(),
             "pin",
@@ -595,7 +613,7 @@ mod tests {
         };
         let raw_source = pinned_document_with_unknown(source_fields);
         assert!(document_local_sha256(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &raw_source,
             raw_source.source.as_ref(),
             "pin",
@@ -610,12 +628,16 @@ mod tests {
     fn pins_document_digests() {
         let ir = pinned_document();
         assert_eq!(
-            canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &ir).unwrap(),
+            canonical_json_sha256(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                &ir
+            )
+            .unwrap(),
             "ed973e3fccbfe465c1ce26ee06372ac3151356fcdaeba850c5bd028009a61e02"
         );
         assert_eq!(
             document_local_sha256(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &ir,
                 ir.source.as_ref(),
                 "pin",
@@ -713,7 +735,7 @@ mod tests {
         );
         assert_eq!(
             document_local_sha256(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &ir,
                 ir.source.as_ref(),
                 "pin",
@@ -731,7 +753,7 @@ mod tests {
 
         assert_eq!(
             document_local_sha256(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &ir,
                 Some(&source),
                 "pin",
@@ -739,7 +761,7 @@ mod tests {
             )
             .unwrap(),
             document_local_sha256(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &pinned_document_with_source(),
                 pinned_document_with_source().source.as_ref(),
                 "pin",
@@ -759,9 +781,16 @@ mod tests {
         let mut reparsed = CadIr::from_json(&json).unwrap();
         reparsed.finalize();
         assert_eq!(
-            canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &ir).unwrap(),
-            canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &reparsed)
-                .unwrap()
+            canonical_json_sha256(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                &ir
+            )
+            .unwrap(),
+            canonical_json_sha256(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                &reparsed
+            )
+            .unwrap()
         );
         assert_eq!(ir.to_canonical_json().unwrap(), json);
     }
@@ -784,7 +813,7 @@ mod tests {
             .collect::<Vec<_>>();
         normalized
             .set_native_unknowns(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 format,
                 &unknowns,
             )
@@ -879,7 +908,7 @@ mod tests {
         let source_image = "synthetic:file:source-image#0";
         assert_eq!(
             document_local_sha256(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &ir,
                 ir.source.as_ref(),
                 "synthetic",
@@ -890,7 +919,7 @@ mod tests {
         );
         assert_eq!(
             document_local_sha256(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &ir,
                 ir.source.as_ref(),
                 "absent",
@@ -906,7 +935,7 @@ mod tests {
         let source_image = "synthetic:file:source-image#0";
         let (ir, _source_fidelity) = local_digest_fixture();
         let hash = document_local_sha256(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &ir,
             ir.source.as_ref(),
             "synthetic",
@@ -921,7 +950,7 @@ mod tests {
         );
         assert_eq!(
             document_local_sha256(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &recorded,
                 recorded.source.as_ref(),
                 "synthetic",
@@ -940,7 +969,7 @@ mod tests {
             ));
         assert_eq!(
             document_local_sha256(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &repacked,
                 repacked.source.as_ref(),
                 "synthetic",

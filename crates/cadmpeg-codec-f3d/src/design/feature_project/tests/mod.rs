@@ -46,6 +46,7 @@ mod surface_untrim;
 mod sweep;
 mod symmetric_extrude;
 mod thread_extent;
+mod thread_nominal_diameter;
 mod timeline;
 mod treatments;
 mod work_plane;

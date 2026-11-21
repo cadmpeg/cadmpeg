@@ -205,7 +205,7 @@ fn entity_schema_registry_covers_arenas_and_unit_cube_references_resolve() {
         }
         Ok(())
     };
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     macro_rules! visit_arenas {
         ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
             $(for entity in &ir.$home.$field {
@@ -552,7 +552,7 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
     assert_eq!(serde_json::from_value::<CadIr>(value).unwrap(), ir);
 
     let mut rewritten = Topology::default();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     rewritten
         .extend_rewritten(ir.geometry, &mut TypedIdentity(&ctx))
         .unwrap();
@@ -1266,6 +1266,7 @@ fn a_model_reference_into_the_design_outside_the_scope_is_refused() {
         target,
         name: "Part Number".into(),
         values,
+        native_ref: None,
     };
     let configuration =
         crate::features::ConfigurationId::mint("synthetic:test:configuration#large").unwrap();
@@ -1283,9 +1284,9 @@ fn a_model_reference_into_the_design_outside_the_scope_is_refused() {
         ),
         attribute(
             AttributeTarget::Document.into(),
-            vec![AttributeValue::Parameter(
+            vec![Some(AttributeValue::Parameter(
                 crate::features::ParameterId::mint("synthetic:test:parameter#depth").unwrap(),
-            )],
+            ))],
         ),
         attribute(
             InstanceTarget {

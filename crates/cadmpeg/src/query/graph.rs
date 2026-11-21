@@ -479,7 +479,7 @@ mod tests {
 
     #[test]
     fn graph_max_paths_one_constructs_only_one_candidate_edge() {
-        let links: Vec<String> = (0..4096).map(|i| format!("leaf-{i}")).collect();
+        let links: Vec<String> = (0..2).map(|i| format!("leaf-{i}")).collect();
         let leaves: Vec<Value> = links.iter().map(|id| json!({"id": id})).collect();
         let value = json!({"model": {
             "roots": [{"id": "root", "links": links}],

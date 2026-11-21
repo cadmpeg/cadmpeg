@@ -63,7 +63,22 @@
       "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "step:product:product#document",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
       "rigid_bodies": [],
       "semantic_annotations": [],
       "sketch_constraints": [],
@@ -98,6 +113,11 @@
     },
     "source": {
       "attributes": {
+        "file_description.description.0": "noncanonical unit order",
+        "file_description.implementation_level": "2;1",
+        "file_name.name": "noncanonical-unit",
+        "file_name.originating_system": "cadmpeg",
+        "file_schema.schema_identifiers.0": "AUTOMOTIVE_DESIGN_CC2",
         "schema": "AUTOMOTIVE_DESIGN_CC2"
       },
       "identity": {
