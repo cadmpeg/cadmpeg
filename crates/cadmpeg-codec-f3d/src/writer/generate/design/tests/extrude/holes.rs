@@ -142,10 +142,6 @@ fn profiles_outside_one_region_with_circular_holes_are_refused() {
             "its profile has several regions",
         ),
         (
-            with_circles(&id, &sketch, &[], &[([0.0, 0.0], 2.0), ([1.5, 0.0], 1.0)]),
-            "its profile has several regions",
-        ),
-        (
             with_circles(
                 &id,
                 &sketch,
@@ -185,6 +181,89 @@ fn profiles_outside_one_region_with_circular_holes_are_refused() {
     assert_eq!(
         profile(&arc, TOLERANCE),
         Err("a loop of its profile has an arc")
+    );
+}
+
+/// Two loops whose boundaries cross or touch bound a region whose boundary
+/// is no loop of whole curves, so "Profile with circular holes" does not
+/// describe it.
+#[test]
+fn loops_that_cross_or_touch_are_refused() {
+    let id = feature_id("meet");
+    let sketch = sketch_id("meet");
+    let (a, b, c, d) = ([-5.0, -5.0], [5.0, -5.0], [5.0, 5.0], [-5.0, 5.0]);
+    let square = [(a, b), (b, c), (c, d), (d, a)];
+    let outer = ([0.0, 0.0], 10.0);
+    let holes_meet = [
+        // Two holes that cross.
+        with_circles(
+            &id,
+            &sketch,
+            &[],
+            &[outer, ([-1.0, 0.0], 2.0), ([1.0, 0.0], 2.0)],
+        ),
+        // Two holes that touch.
+        with_circles(
+            &id,
+            &sketch,
+            &[],
+            &[outer, ([-2.0, 0.0], 2.0), ([2.0, 0.0], 2.0)],
+        ),
+        // Two holes that touch within the tolerance.
+        with_circles(
+            &id,
+            &sketch,
+            &[],
+            &[
+                outer,
+                ([-2.0, 0.0], 2.0),
+                ([2.0 + TOLERANCE / 2.0, 0.0], 2.0),
+            ],
+        ),
+        // The same hole twice.
+        with_circles(
+            &id,
+            &sketch,
+            &[],
+            &[outer, ([1.0, 0.0], 2.0), ([1.0, 0.0], 2.0)],
+        ),
+        // Two holes of a square that cross.
+        with_circles(
+            &id,
+            &sketch,
+            &square,
+            &[([-1.0, 0.0], 2.0), ([1.0, 0.0], 2.0)],
+        ),
+    ];
+    let loops_meet = [
+        // A hole that touches the outer circle from inside.
+        with_circles(&id, &sketch, &[], &[([0.0, 0.0], 5.0), ([3.0, 0.0], 2.0)]),
+        // A hole closer to the outer circle than the tolerance.
+        with_circles(
+            &id,
+            &sketch,
+            &[],
+            &[([0.0, 0.0], 5.0), ([3.0 - TOLERANCE / 2.0, 0.0], 2.0)],
+        ),
+        // A hole that crosses the outer circle.
+        with_circles(&id, &sketch, &[], &[([0.0, 0.0], 2.0), ([1.5, 0.0], 1.0)]),
+        // A hole that touches an edge of the square.
+        with_circles(&id, &sketch, &square, &[([3.0, 0.0], 2.0)]),
+        // A hole that crosses an edge of the square.
+        with_circles(&id, &sketch, &square, &[([4.0, 0.0], 2.0)]),
+    ];
+    let refusals = |cases: &[PlannedSketch<'_>]| {
+        cases
+            .iter()
+            .map(|case| profile(case, TOLERANCE))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        (refusals(&holes_meet), refusals(&loops_meet)),
+        (
+            vec![Err("holes of its profile meet"); holes_meet.len()],
+            vec![Err("loops of its profile meet"); loops_meet.len()]
+        )
     );
 }
 
