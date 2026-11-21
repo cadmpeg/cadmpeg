@@ -4087,6 +4087,49 @@ impl DesignParameterScope {
                 .is_some_and(|fixed| fixed.along_distance.is_some())
     }
 
+    pub(crate) fn is_legacy_class_330_blind_cut(&self) -> bool {
+        use crate::layout::legacy_class_330_blind_cut_extrude_frame as layout;
+
+        self.class_tag.as_str() == "330"
+            && self.paired_class_tag.as_str() == "262"
+            && self.frame_length == u64_from_index(layout::LEN)
+            && self.reference_count_offset.checked_sub(self.byte_offset)
+                == Some(u64_from_index(layout::REFERENCE_COUNT))
+            && self.reference_members.len() == index_from_u32(layout::REFERENCE_COUNT_VALUE)
+            && self.extrude_prologue().is_some_and(|prologue| {
+                DesignExtrudePrologue::legacy_class_330_blind_cut(
+                    self.byte_offset,
+                    prologue.direction_reversed(),
+                ) == Some(prologue)
+            })
+    }
+
+    pub(crate) fn legacy_class_330_body_recipe_close(
+        &self,
+        group_record: u32,
+        operand_record: u32,
+    ) -> Option<u32> {
+        if !self.is_legacy_class_330_blind_cut() {
+            return None;
+        }
+        let mut members = self.reference_members.values().copied();
+        if members.next()? != group_record || members.next()? != operand_record {
+            return None;
+        }
+        let closing = members.next()?;
+        (operand_record.checked_add(3) == Some(closing)).then_some(closing)
+    }
+
+    pub(crate) fn legacy_class_330_profile_member_ordinal(&self) -> Option<u32> {
+        if self.is_legacy_class_330_symmetric_distance() {
+            Some(1)
+        } else if self.is_legacy_class_330_blind_cut() {
+            Some(3)
+        } else {
+            None
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn extrude_prologue_mut(&mut self) -> Option<&mut DesignExtrudePrologue> {
         self.extrude_mut()
