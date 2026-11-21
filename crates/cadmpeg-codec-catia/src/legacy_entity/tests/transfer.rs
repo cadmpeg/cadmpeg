@@ -381,7 +381,7 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_parameter() {
     assert_eq!(parameter.name, "Width");
     assert_eq!(
         parameter.value,
-        Some(cadmpeg_ir::ParameterValue::Length(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(12.5).unwrap()
         ))
     );
@@ -434,7 +434,7 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_string() {
     assert_eq!(parameter.name, "Responsible");
     assert_eq!(
         parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::String(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::String(
             "Cilas Evans".to_string()
         ))
     );
@@ -517,7 +517,9 @@ fn decode_transfers_an_input_bound_legacy_string_formula() {
         .expect("legacy formula result parameter");
     assert_eq!(
         result.value,
-        Some(cadmpeg_ir::ParameterValue::String("left-right".to_string()))
+        Some(cadmpeg_ir::features::parameters::ParameterValue::String(
+            "left-right".to_string()
+        ))
     );
     assert_eq!(result.expression, "#1_ + \"-\" + #2_");
     let dependency_names = result
@@ -575,7 +577,9 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_integer() {
     assert_eq!(parameter.name, "Count");
     assert_eq!(
         parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::Integer(11))
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Integer(
+            11
+        ))
     );
     assert_eq!(parameter.expression, "11");
     assert_eq!(
@@ -705,7 +709,7 @@ fn decode_transfers_intrinsically_typed_evaluated_string_and_integer_parameters(
     assert_eq!(string.name, "Revision");
     assert_eq!(
         string.value,
-        Some(cadmpeg_ir::features::ParameterValue::String(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::String(
             "Revision-1".to_string()
         ))
     );
@@ -714,7 +718,9 @@ fn decode_transfers_intrinsically_typed_evaluated_string_and_integer_parameters(
     assert_eq!(integer.name, "Search");
     assert_eq!(
         integer.value,
-        Some(cadmpeg_ir::features::ParameterValue::Integer(-7))
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Integer(
+            -7
+        ))
     );
     assert_eq!(integer.properties["value_type"], "Integer");
     assert_eq!(
@@ -837,7 +843,7 @@ fn decode_resolves_only_an_acyclic_unique_legacy_type_selector_chain() {
         .expect("decode selected legacy type");
     assert_eq!(
         decoded.ir().model.parameters[0].value,
-        Some(cadmpeg_ir::ParameterValue::Length(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(8.0).unwrap()
         ))
     );
@@ -1028,7 +1034,7 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
     assert_eq!(parameter.expression, "true ? 5 ; 1 / 0");
     assert_eq!(
         parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(5.0).unwrap()
         ))
     );
@@ -1219,7 +1225,9 @@ fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
     );
     assert_eq!(
         parameter.value,
-        Some(cadmpeg_ir::ParameterValue::String("Easy Evans".to_string()))
+        Some(cadmpeg_ir::features::parameters::ParameterValue::String(
+            "Easy Evans".to_string()
+        ))
     );
     assert_eq!(
         wire::coverage_count(
@@ -1273,7 +1281,9 @@ fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
     );
     assert_eq!(
         parameter.value,
-        Some(cadmpeg_ir::ParameterValue::String("ied".to_string()))
+        Some(cadmpeg_ir::features::parameters::ParameterValue::String(
+            "ied".to_string()
+        ))
     );
     assert_eq!(
         wire::coverage_count(

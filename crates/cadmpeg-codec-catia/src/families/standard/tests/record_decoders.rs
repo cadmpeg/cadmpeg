@@ -1421,7 +1421,7 @@ fn standard_face_witness_requires_an_analytic_marker() {
     }
     assert_eq!(
         crate::families::standard::records::standard_face_witness(&record, 5)
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
     );
     record[6] = 0x32;

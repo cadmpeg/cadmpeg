@@ -16,9 +16,11 @@ use crate::decode::sketch_transfer::skamp_constraints::sketch_constraint_loci_co
 use crate::decode::sweep::circular::circular_section_profile_from_cylinder;
 use crate::decode::sweep::profiles::connected_sketch_profile_vertices;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
 use cadmpeg_ir::features::{
-    BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition as IrFeatureDefinition,
-    FeatureOperation as IrFeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
+    FeatureDefinition as IrFeatureDefinition, FeatureOperation as IrFeatureOperation,
 };
 use cadmpeg_ir::geometry::analytic::CylinderSurface;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -67,9 +69,11 @@ fn circular_sweep_projects_profile_direction_and_extent() {
             profile: ProfileRef::Planar(PlanarProfileRef::Sketch(
                 SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture")
             )),
-            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
-                vector: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, -1.0))
-                    .expect("valid direction fixture"),
+            direction: cadmpeg_ir::features::extents::ExtrudeDirection::Explicit {
+                vector: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                    0.0, 0.0, -1.0
+                ))
+                .expect("valid direction fixture"),
                 source: None,
             },
             extent: ExtrudeExtent::OneSided {
@@ -82,7 +86,7 @@ fn circular_sweep_projects_profile_direction_and_extent() {
                 },
             },
             op: BooleanOp::Join,
-            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
+            start: cadmpeg_ir::features::extents::ExtrudeStart::ProfilePlane {},
             solid: Some(true),
             face_maker: None,
             inner_wire_taper: None,

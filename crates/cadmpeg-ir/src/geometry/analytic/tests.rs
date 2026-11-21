@@ -513,7 +513,7 @@ fn an_admitted_sphere_radius_builds_the_sphere_that_the_raw_radius_admits() {
 /// equal scaled radii of an ordered source pair are admitted.
 #[test]
 fn an_ellipse_from_source_radii_reads_the_order_before_scaling() {
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::scalar::PositiveReal;
     use crate::units::OrthonormalFrame3;
 

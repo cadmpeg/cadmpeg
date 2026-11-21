@@ -238,7 +238,7 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
             parameter
         )
         .ok()
-        .map(crate::features::FiniteVector3::get),
+        .map(crate::features::geometry::FiniteVector3::get),
         Some(Vector3::new(
             -3.0 * parameter.portable_cos(),
             -3.0 * parameter.portable_sin(),
@@ -323,7 +323,7 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
             0.5
         )
         .ok()
-        .map(crate::features::FiniteVector3::get),
+        .map(crate::features::geometry::FiniteVector3::get),
         Some(Vector3::new(1.0, 0.0, 0.0))
     );
     assert_eq!(

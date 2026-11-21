@@ -7,9 +7,8 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::mesh::{MeshConversion, MeshConversionMethod, MeshSelection};
-use cadmpeg_ir::features::{
-    Feature, FeatureDefinition, FeatureOperation, NativeSelections, SelectionReference,
-};
+use cadmpeg_ir::features::selections::{NativeSelections, SelectionReference};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::HashMap;
 

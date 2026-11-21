@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Right-handed frames and rigid motions for CSG primitives.
 
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::units::UnitVector3;
 

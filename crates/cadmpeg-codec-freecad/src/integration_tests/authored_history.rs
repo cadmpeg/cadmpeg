@@ -2,10 +2,13 @@
 
 use std::io::Cursor;
 
-use cadmpeg_ir::features::{
-    edge_treatments::RadiusSpec, BooleanOp, EdgeSelection, ExtrudeExtent, FeatureDefinition,
-    FeatureOperation, LinearTermination, ParameterValue, PlanarProfileRef, ProfileRef,
-};
+use cadmpeg_ir::features::edge_treatments::RadiusSpec;
+use cadmpeg_ir::features::extents::{ExtrudeExtent, LinearTermination};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::parameters::ParameterValue;
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::selections::EdgeSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::ids::OccurrenceId;
 use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
@@ -315,7 +318,8 @@ fn authored_design_history_keeps_sketches_constraints_and_operations() {
 
 #[test]
 fn authored_core_product_keeps_primitive_dimensions_and_results() {
-    use cadmpeg_ir::features::{BooleanKind, PrimitiveSolidKind};
+    use cadmpeg_ir::features::operation_settings::BooleanKind;
+    use cadmpeg_ir::features::primitives::PrimitiveSolidKind;
     use cadmpeg_measure::report::RowPlacement;
 
     let bytes =

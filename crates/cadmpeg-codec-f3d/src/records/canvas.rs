@@ -5,7 +5,7 @@ use cadmpeg_ir::native::bytes::NativeBytes;
 use cadmpeg_core::decode::u64_from_index;
 
 use super::references::DesignClassTag;
-use cadmpeg_ir::features::{FeatureImageBounds, FeatureUnitPlaneFrame, FinitePoint3};
+use cadmpeg_ir::features::geometry::{FeatureImageBounds, FeatureUnitPlaneFrame, FinitePoint3};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::units::UnitVector3;

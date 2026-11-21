@@ -4,9 +4,10 @@ use std::collections::BTreeMap;
 use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{
-    DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
-    FeatureOperation, SketchFeatureBinding,
+    Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation, SketchFeatureBinding,
 };
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::topology::BodyKind;

@@ -4,7 +4,7 @@
 use cadmpeg_ir::design::selection::{
     Anchor, MemberOrder, Members, OrderedSelection, PickTarget, Picked, Picks, Selection,
 };
-use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
 
 use super::Stated;
 
