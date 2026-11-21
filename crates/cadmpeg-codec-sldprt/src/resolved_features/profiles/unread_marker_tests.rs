@@ -723,23 +723,41 @@ fn a_skipped_marker_whose_curve_record_reads_takes_the_record_line() {
     assert_eq!(side.endpoint_refs, ["corner1", "corner2"]);
 }
 
-/// Each compact-record sketch that a marker-record sketch superseded charges
-/// one loss naming both sketches, once over the passes of every
-/// configuration.
+/// A marker that the marker layouts skip, admitted because its record reads,
+/// whose record then gives no entity in the sketch, here a point record
+/// beyond the integer grid of the sketch's marker transform, gives no entity
+/// and charges one loss naming the sketch and the marker.
 #[test]
-fn a_superseded_compact_sketch_is_named() {
-    let compact = SketchId::mint("synthetic:test:id#compact").unwrap();
-    let markers = SketchId::mint("synthetic:test:id#markers").unwrap();
-    let mut losses = Vec::new();
-    for _ in 0..2 {
-        let mut held = HeldMarkerGeometry::default();
-        held.superseded.push((compact.clone(), markers.clone()));
-        finalize_unread_marker_entities(&mut Vec::new(), held, &mut losses);
-    }
-    let [loss] = losses.as_slice() else {
-        panic!("one loss: {losses:?}");
+fn a_skipped_marker_whose_record_then_gives_no_entity_is_named() {
+    let mut corners = SQUARE.to_vec();
+    corners.push([1.0e9, 0.0]);
+    let (payload, points, _) =
+        framed_line_sketch(&corners, &[(0, 1, 4), (1, 2, 4), (2, 3, 4), (3, 0, 4)]);
+    let mut markers = corner_markers(&points);
+    markers.push(marker_at(
+        "far",
+        4,
+        points[4],
+        SketchInputKind::Relation(SketchRelationKind::Vertical),
+        None,
+    ));
+    let (sketches, mut entities, held) = projection(markers, payload);
+    let [sketch] = sketches.as_slice() else {
+        panic!("one sketch: {sketches:?}");
     };
-    assert_eq!(loss.code, SldprtLossCode::SketchReadingSuperseded.kind());
-    assert!(loss.message.contains(compact.as_str()));
-    assert!(loss.message.contains(markers.as_str()));
+    assert!(entities
+        .iter()
+        .all(|entity| entity.native_ref.as_deref() != Some("far")));
+    let mut losses = Vec::new();
+    finalize_unread_marker_entities(&mut entities, held, &mut losses);
+    let unread = losses
+        .iter()
+        .filter(|loss| loss.code == SldprtLossCode::SketchMarkerRecordUnread.kind())
+        .collect::<Vec<_>>();
+    let [loss] = unread.as_slice() else {
+        panic!("one unread marker: {losses:?}");
+    };
+    assert!(loss.message.contains(sketch.id.as_str()));
+    assert!(loss.message.contains("marker far,"));
+    assert!(loss.message.contains("no point or curve"));
 }

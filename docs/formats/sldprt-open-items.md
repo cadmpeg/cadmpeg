@@ -1094,7 +1094,7 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Question.** Which placement of a sketch's point records makes its arc records end on their endpoint point records when the marker transform of the sketch scales one sketch axis more than the other?
 
-**Known.** The decoder places the point records of a framed `sgSketch` object through the marker transform of its sketch (`sldprt.md` §2, "A marker whose record is a point record or a curve record"). When that transform scales the two sketch axes differently, an arc record's arc, placed through it, ends off one of its endpoint point records by more than the linear resolution. The decoder gives such a record no geometry, keeps the line or handle that the other §2 rules give its marker, and charges `sketch.arc-record-conflict`. A profile that runs through the arc stays open.
+**Known.** The decoder places the point records of a framed `sgSketch` object through the marker transform of its sketch (`sldprt.md` §2, "A marker whose record is a point record or a curve record"). When that transform scales the two sketch axes differently, an arc record's arc, placed through it, ends off one of its endpoint point records by more than the linear resolution. The decoder gives such a record no geometry, keeps the line or handle that the other §2 rules give its marker, and charges `sketch.arc-record-conflict`. A marker that the §2 layouts skip has no other reading: it gives no entity, and the decoder charges `sketch.marker-record-unread`. A profile that runs through the arc stays open.
 
 **Need.** The frame of such a sketch's point records, checked against the circular edges and side faces of the feature that consumes the sketch.
 
