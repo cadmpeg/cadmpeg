@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 pub mod curve_driven;
 
 /// One geometric selection repeated or reflected by a pattern operation.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -799,7 +799,7 @@ fn valid_increasing_locations(locations: impl Iterator<Item = f64>) -> bool {
 }
 
 /// Fixed locus for a progressive pattern scale.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]

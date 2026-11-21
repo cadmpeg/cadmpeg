@@ -1232,7 +1232,8 @@ fn problems(index: &Index) -> Vec<String> {
         let metas = serde_metas(&decl.attrs);
         let writes =
             derives(&decl.attrs, "Serialize") && !has(&metas, "into") && !has(&metas, "remote");
-        let reads = derives(&decl.attrs, "Deserialize")
+        let reads = (derives(&decl.attrs, "Deserialize")
+            || derives(&decl.attrs, "DeserializeTagged"))
             && !has(&metas, "from")
             && !has(&metas, "try_from")
             && !has(&metas, "remote");

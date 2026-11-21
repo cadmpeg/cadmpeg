@@ -249,6 +249,7 @@ version = "0.6.12"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-measure",
  "cadmpeg-test-support",
  "memchr",
  "serde",
@@ -501,7 +502,6 @@ dependencies = [
  "proptest",
  "schemars",
  "serde",
- "serde-value",
  "serde_json",
  "sha2",
  "syn 3.0.9",
