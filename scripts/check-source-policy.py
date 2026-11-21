@@ -1624,23 +1624,39 @@ PRODUCTION_DEPENDENCY_HEADER = re.compile(
     r"^\s*\[\s*(?:target\.[^\]]+?\.)?(?:build-)?dependencies\s*(?:\.|\])"
 )
 TABLE_HEADER = re.compile(r"^\s*\[")
+DEPENDENCY_KEY = re.compile(r"^\s*([A-Za-z0-9_-]+)\s*[.=]")
 
 
-def dependency_packages(table: object) -> set[str]:
-    """The package names a dependency table lists, following `package` renames."""
+def dependency_package(key: str, value: object, workspace: dict[str, str]) -> str:
+    """The package one dependency entry names: its `package`, else the package of the
+    `[workspace.dependencies]` entry it inherits, else its key."""
+    if isinstance(value, dict):
+        package = value.get("package")
+        if isinstance(package, str):
+            return package
+        if value.get("workspace") is True:
+            return workspace.get(key, key)
+    return key
+
+
+def workspace_packages() -> dict[str, str]:
+    """The package each key of the root manifest's `[workspace.dependencies]` names."""
+    try:
+        data = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8", errors="replace"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return {}
+    workspace = data.get("workspace")
+    table = workspace.get("dependencies") if isinstance(workspace, dict) else None
     if not isinstance(table, dict):
-        return set()
-    packages = set()
-    for key, value in table.items():
-        package = value.get("package") if isinstance(value, dict) else None
-        packages.add(package if isinstance(package, str) else key)
-    return packages
+        return {}
+    return {key: dependency_package(key, value, {}) for key, value in table.items()}
 
 
 def scan_measurement_dependency() -> list[Finding]:
     """Report a production dependency on the measurement crate outside MEASUREMENT_CONSUMERS,
     and one the writer crate renames, which `measurement_use` would not see."""
     findings: list[Finding] = []
+    workspace = workspace_packages()
     for manifest in sorted((ROOT / "crates").glob("*/Cargo.toml")):
         crate = manifest.parent.name
         text = manifest.read_text(encoding="utf-8", errors="replace")
@@ -1654,11 +1670,11 @@ def scan_measurement_dependency() -> list[Finding]:
             for target in targets.values():
                 if isinstance(target, dict):
                     tables += [target.get(name) for name in ("dependencies", "build-dependencies")]
-        if not any(MEASUREMENT_CRATE in dependency_packages(table) for table in tables):
+        keys = {key for table in tables if isinstance(table, dict) for key, value in table.items()
+                if dependency_package(key, value, workspace) == MEASUREMENT_CRATE}
+        if not keys:
             continue
-        renamed = crate == MEASUREMENT_WRITER_CRATE and any(
-            key != MEASUREMENT_CRATE and dependency_packages({key: value}) == {MEASUREMENT_CRATE}
-            for table in tables if isinstance(table, dict) for key, value in table.items())
+        renamed = crate == MEASUREMENT_WRITER_CRATE and keys != {MEASUREMENT_CRATE}
         if crate in MEASUREMENT_CONSUMERS and not renamed:
             continue
         line = 1
@@ -1666,7 +1682,8 @@ def scan_measurement_dependency() -> list[Finding]:
         for number, content in enumerate(text.splitlines(), start=1):
             if TABLE_HEADER.match(content):
                 production = bool(PRODUCTION_DEPENDENCY_HEADER.match(content))
-            if production and MEASUREMENT_CRATE in content:
+            entry = DEPENDENCY_KEY.match(content)
+            if production and (MEASUREMENT_CRATE in content or entry and entry.group(1) in keys):
                 line = number
                 break
         findings.append(Finding(

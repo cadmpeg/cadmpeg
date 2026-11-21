@@ -6,7 +6,7 @@ use std::collections::{BTreeSet, HashMap};
 
 use cadmpeg_core::decode::ResourceLimit;
 use cadmpeg_ir::source_fidelity::SourceFidelity;
-use cadmpeg_ir::topology::{Face, LoopBoundary};
+use cadmpeg_ir::topology::Face;
 
 mod pole;
 mod readings;
@@ -784,7 +784,7 @@ impl<'ir> FaceInput<'_, 'ir> {
             tau_b,
             hull,
         } = basis;
-        let gate_passes = region.is_ok() || (!gated && self.boundary_records_resolve(face));
+        let gate_passes = region.is_ok() || (!gated && resolved_cleanly(boundary));
         match (chart, region) {
             (Ok(Chart::Plane(_) | Chart::Cylinder(_) | Chart::Extrusion(_)), _) if gate_passes => {
                 self.boundary_box(
@@ -860,25 +860,6 @@ impl<'ir> FaceInput<'_, 'ir> {
             ),
             (Err(missing), _) | (_, Err(missing)) => (missing.quantity(), None),
         }
-    }
-
-    /// Whether every loop, ring coedge, coedge edge and vertex-loop point
-    /// the face names resolves.
-    fn boundary_records_resolve(&self, face: &Face) -> bool {
-        face.loops.iter().all(|loop_id| {
-            self.owners
-                .loop_(loop_id.as_str())
-                .is_some_and(|face_loop| match &face_loop.boundary {
-                    LoopBoundary::Vertex { vertex, .. } => {
-                        self.owners.vertex_position(vertex.as_str()).is_some()
-                    }
-                    LoopBoundary::Ring(ring) => ring.coedges().iter().all(|id| {
-                        self.owners
-                            .coedge(id.as_str())
-                            .is_some_and(|coedge| self.edges.contains_key(coedge.edge.as_str()))
-                    }),
-                })
-        })
     }
 
     /// The edge boxes and vertex-loop points of a face, and the largest
@@ -1190,6 +1171,21 @@ fn face_flux(
     })
 }
 
+/// Whether the boundary resolution of a face reported no diagnostic: the
+/// face's loops all resolved, and every loop chained into a closed ring or
+/// is a vertex loop with a point. Any reason a loop records, now or later,
+/// fails it, so the boundary pieces are then not known to be the whole
+/// boundary.
+fn resolved_cleanly(boundary: &Outcome<Boundary<'_>>) -> bool {
+    boundary.as_ref().is_ok_and(|boundary| {
+        boundary
+            .resolved
+            .loops
+            .iter()
+            .all(|resolution| resolution.outcome.is_ok())
+    })
+}
+
 /// What the box of a face on a plane, cylinder, cone or NURBS carrier
 /// reads.
 #[derive(Clone, Copy)]
@@ -1198,9 +1194,9 @@ struct PlainBox<'a, 'ir> {
     region: &'a Outcome<Region>,
     /// Whether a plane, cylinder, extrusion or NURBS face needs a region to
     /// have a box. A box pass boxes such a face from its boundary pieces
-    /// also when its region does not classify, provided every loop, coedge
-    /// and edge record of its boundary resolves; otherwise the face has the
-    /// region's unavailable reason, as in a full pass.
+    /// also when its region does not classify, provided its boundary
+    /// resolved with no diagnostic ([`resolved_cleanly`]); otherwise the face
+    /// has the region's unavailable reason, as in a full pass.
     gated: bool,
     tau_b: f64,
     hull: Option<Result<Aabb, UnavailableReason>>,

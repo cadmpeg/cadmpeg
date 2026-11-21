@@ -78,7 +78,8 @@ CPU affinity mask, capped by `PYTHON_CPU_COUNT` when it is set. Set
   `[build-dependencies]` or a `[target.*]` dependency table
   (`measurement_dependency`). Other crates list it only in
   `[dev-dependencies]`. The registry composes document checks. The Fusion writer may write measured body
-  boxes; `cadmpeg-codec-f3d` lists the crate under no other name. A decoder or encoder selects its layout, carrier,
+  boxes; `cadmpeg-codec-f3d` lists the crate under no other name. The rule follows a `package` rename,
+  also one in the root `[workspace.dependencies]` that a crate inherits. A decoder or encoder selects its layout, carrier,
   sense, units, and interpretation from format semantics. Codec round-trip
   tests use measurement as an oracle.
 - Production code of a codec crate names `cadmpeg_measure` only under

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Body boxes from the box pass, against the body rows of a full pass.
 
-use cadmpeg_ir::topology::{BodyKind, LoopBoundary, Sense};
+use cadmpeg_ir::topology::{BodyKind, EdgeCarrier, LoopBoundary, Sense};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
@@ -20,6 +20,24 @@ use crate::value::{Quantity, Reading};
 
 fn json<T: serde::Serialize>(value: &T) -> serde_json::Value {
     serde_json::to_value(value).expect("a quantity serializes")
+}
+
+/// The full pass gives the one body of `ir` no box, and the box pass gives
+/// the same unavailable box; the full pass's message.
+fn no_box_in_either_pass(ir: &CadIr, label: &str) -> String {
+    let report = measure(ir, &Selection::default());
+    let [row] = report.bodies().as_slice() else {
+        panic!("{label}: one body row");
+    };
+    let Quantity::Unavailable(missing) = row.bbox() else {
+        panic!("{label}: the full pass gives no box");
+    };
+    let boxes = body_boxes(ir).expect("the box pass completes");
+    let [body_box] = boxes.as_slice() else {
+        panic!("{label}: one body box");
+    };
+    assert_eq!(json(row.bbox()), json(body_box.bbox()), "{label}");
+    missing.message().to_owned()
 }
 
 #[test]
@@ -167,17 +185,59 @@ fn the_box_pass_gives_no_box_for_a_face_with_a_missing_boundary_record() {
         ("coedge", without_coedge),
         ("edge", without_edge),
     ] {
-        let report = measure(&ir, &Selection::default());
-        let [row] = report.bodies().as_slice() else {
-            panic!("one body row");
-        };
-        let boxes = body_boxes(&ir).expect("the box pass completes");
-        let [body_box] = boxes.as_slice() else {
-            panic!("one body box");
-        };
-        assert!(body_box.bbox().measured().is_none(), "{label}");
-        assert_eq!(json(row.bbox()), json(body_box.bbox()), "{label}");
+        no_box_in_either_pass(&ir, label);
     }
+}
+
+/// The cylinder face's ring leaves out the last of its four coedges, every
+/// record still present: the ring does not close by vertex identity. The
+/// box pass gives no box, as the full pass does, rather than the box of the
+/// three coedges that remain.
+#[test]
+fn the_box_pass_gives_no_box_for_a_ring_that_leaves_out_a_coedge() {
+    let mut ir = cylinder_solid(5.0, 10.0);
+    let side = ir.geometry.faces[0]
+        .loops
+        .iter()
+        .next()
+        .expect("one loop")
+        .clone();
+    let face_loop = ir
+        .geometry
+        .loops
+        .iter_mut()
+        .find(|face_loop| face_loop.id == side)
+        .expect("the loop resolves");
+    let (coedges, vertex_uses) = {
+        let LoopBoundary::Ring(ring) = &face_loop.boundary else {
+            panic!("a ring");
+        };
+        let coedges = ring.coedges();
+        assert_eq!(coedges.len(), 4);
+        (coedges[..3].to_vec(), ring.vertex_uses().to_vec())
+    };
+    face_loop
+        .replace_ring(coedges, vertex_uses)
+        .expect("three distinct coedges");
+    let message = no_box_in_either_pass(&ir, "open ring");
+    assert!(message.ends_with("boundary.ring-chain-failed"), "{message}");
+}
+
+/// The first square's first side states half its length: its piece ends
+/// 5 mm short of the next side's start, so the ring closes by vertex
+/// identity but not in space. The box pass gives no box, as the full pass
+/// does.
+#[test]
+fn the_box_pass_gives_no_box_for_a_ring_that_does_not_close() {
+    let mut ir = side_by_side_squares();
+    let side = &mut ir.geometry.edges[0];
+    let EdgeCarrier::Bounded(curve, _) = &side.carrier else {
+        panic!("a bounded line");
+    };
+    side.carrier =
+        EdgeCarrier::new(Some(curve.clone()), Some([0.0, 5.0])).expect("a bounded carrier");
+    let message = no_box_in_either_pass(&ir, "short side");
+    assert!(message.ends_with("boundary.not-closed"), "{message}");
 }
 
 /// The elbow's face rests on its declared orientation, which no witness
