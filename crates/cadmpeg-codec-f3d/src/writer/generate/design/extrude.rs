@@ -48,6 +48,10 @@ pub(super) struct ExtrudePlan<'a> {
     /// The loops of the profile region in stored order: the exterior loop
     /// in ring order from the curve of side token `3`, then the holes.
     pub(super) profile: Vec<ProfileLoop>,
+    /// Whether the extrude travels against its sketch's normal: its
+    /// `AlongDistance` is negative and its side tokens run against each
+    /// loop's ring (f3d.md §3.1, "Side-face walk").
+    pub(super) reversed: bool,
     pub(super) along: OwnedParameter,
     pub(super) taper: OwnedParameter,
     pub(super) body: &'a BodyId,
@@ -64,16 +68,25 @@ impl ExtrudePlan<'_> {
     /// Each loop entry with its loop and its position in the loop, in
     /// side-token order.
     pub(super) fn entries(&self) -> impl Iterator<Item = (&ProfileLoop, usize)> {
-        entries(&self.profile)
+        entries(&self.profile, self.reversed)
     }
 }
 
-/// Each entry of `profile` with its loop and its position in the loop: the
-/// loops in stored order, each loop's entries in run order.
-fn entries(profile: &[ProfileLoop]) -> impl Iterator<Item = (&ProfileLoop, usize)> {
-    profile
-        .iter()
-        .flat_map(|profile_loop| (0..profile_loop.entries.len()).map(move |at| (profile_loop, at)))
+/// Each entry of `profile` with its loop and its position in the loop, in
+/// side-token order: the loops in stored order, each loop's entries from its
+/// first in run order, or against it where `reversed`.
+fn entries(profile: &[ProfileLoop], reversed: bool) -> impl Iterator<Item = (&ProfileLoop, usize)> {
+    profile.iter().flat_map(move |profile_loop| {
+        let count = profile_loop.entries.len();
+        (0..count).map(move |step| {
+            let at = if reversed {
+                (count - step) % count
+            } else {
+                step
+            };
+            (profile_loop, at)
+        })
+    })
 }
 
 /// What the design writes for the scope's extrude.
@@ -200,7 +213,8 @@ impl<'a> Input<'a, '_> {
         if planned.mirrored {
             return Err("its sketch is written mirrored on its origin plane");
         }
-        self.direction()?;
+        let reversed = self.direction()?;
+        let sign = if reversed { -1.0 } else { 1.0 };
         let amount = self.amount()?;
         let distance = match amount {
             Amount::Literal(distance) => distance,
@@ -213,7 +227,7 @@ impl<'a> Input<'a, '_> {
         }
         self.output()?;
         let faces = Faces::new(target, &body.id, linear, target.tolerances.angular.get())
-            .matched(planned, &loops, distance)
+            .matched(planned, &loops, distance, reversed)
             .ok_or("its faces do not match its profile")?;
         let taper_ordinal = ordinal
             .checked_add(1)
@@ -223,12 +237,25 @@ impl<'a> Input<'a, '_> {
         let along = match amount {
             Amount::Literal(distance) => parameters.owned(
                 ordinal,
-                expression::quantity_literal(distance, Some(UnitSymbol::Mm))
+                expression::quantity_literal(sign * distance, Some(UnitSymbol::Mm))
                     .ok_or("its depth has no Fusion literal")?,
                 UnitSymbol::Mm,
-                distance / MM_PER_CM,
+                sign * distance / MM_PER_CM,
                 false,
             ),
+            Amount::Parameter(parameter) if reversed => {
+                let named = parameters
+                    .name(parameter)
+                    .ok_or("its depth parameter is not written as a length")?;
+                let negated = format!("-({named})");
+                parameters.owned(
+                    ordinal,
+                    negated,
+                    UnitSymbol::Mm,
+                    -distance / MM_PER_CM,
+                    true,
+                )
+            }
             Amount::Parameter(parameter) => {
                 match parameters.claim(parameter, Quantity::LENGTH, ordinal) {
                     Some(claimed) => claimed,
@@ -248,6 +275,7 @@ impl<'a> Input<'a, '_> {
             sketch,
             after,
             profile: loops,
+            reversed,
             along,
             taper,
             body: &body.id,
@@ -348,29 +376,29 @@ impl<'a> Input<'a, '_> {
         Ok((index, after))
     }
 
-    /// Row 7: along the profile normal from the profile plane, with no
-    /// draft, fit, outside region or sheet-metal cut.
-    fn direction(&self) -> Result<(), &'static str> {
+    /// Row 7: along or against the profile normal from the profile plane,
+    /// with no draft, fit, outside region or sheet-metal cut. Returns
+    /// whether it runs against the normal.
+    fn direction(&self) -> Result<bool, &'static str> {
         let extrude = self.extrude;
-        let normal = match &extrude.direction {
-            None => true,
-            Some(ExtrudeDirection::ProfileNormal { reversed }) => {
-                matches!(reversed, None | Some(Dimension::Literal(false)))
-            }
-            Some(ExtrudeDirection::Along { .. }) => false,
+        let reversed = match &extrude.direction {
+            None => Some(false),
+            Some(ExtrudeDirection::ProfileNormal { reversed }) => match reversed {
+                None => Some(false),
+                Some(Dimension::Literal(reversed)) => Some(*reversed),
+                Some(Dimension::Parameter(_) | Dimension::Negated(_)) => None,
+            },
+            Some(ExtrudeDirection::Along { .. }) => None,
         };
-        let plane = matches!(extrude.origin, None | Some(ExtrudeOrigin::ProfilePlane));
-        if normal
-            && plane
+        let established = matches!(extrude.origin, None | Some(ExtrudeOrigin::ProfilePlane))
             && extrude.loops.is_none()
             && extrude.draft.is_none()
             && extrude.fit.is_none()
             && extrude.outside.is_none()
-            && extrude.sheet_cut.is_none()
-        {
-            Ok(())
-        } else {
-            Err("its direction, start or draft is not established")
+            && extrude.sheet_cut.is_none();
+        match reversed {
+            Some(reversed) if established => Ok(reversed),
+            _ => Err("its direction, start or draft is not established"),
         }
     }
 
@@ -527,19 +555,23 @@ impl<'a> Faces<'a> {
         }
     }
 
-    /// Row 10: the start cap, the end cap at `distance` mm and one side face
-    /// per loop entry of the sketch on its origin plane, each the one face
-    /// of its shape (a plane for a line, a cylinder for a circle or an
-    /// arc); where several faces have the shape of a line or an arc, the
-    /// one whose edge on the start cap runs between the curve's ends.
-    /// `None` where a face is missing, ambiguous or left over.
+    /// Row 10: the start cap on the sketch's origin plane, the end cap
+    /// `distance` mm along the travel (the plane's normal, or against it
+    /// where `reversed`) and one side face per loop entry in side-token
+    /// order, each the one face of its shape (a plane for a line, a cylinder
+    /// for a circle or an arc); where several faces have the shape of a line
+    /// or an arc, the one whose edge on the start cap runs between the
+    /// curve's ends. `None` where a face is missing, ambiguous or left over.
     fn matched(
         &self,
         sketch: &PlannedSketch<'_>,
         profile: &[ProfileLoop],
         distance: f64,
+        reversed: bool,
     ) -> Option<Matched<'a>> {
         let [u_axis, v_axis, normal] = sketch.plane.axes();
+        let sign = if reversed { -1.0 } else { 1.0 };
+        let travel = scale(normal, sign);
         let model = |index: usize| {
             let [u, v] = *sketch.points.get(index)?;
             Some(add(
@@ -557,8 +589,8 @@ impl<'a> Faces<'a> {
                 Shape::Cylinder { .. } | Shape::Other => false,
             })
         };
-        let start_cap = cap(scale(normal, -1.0), 0.0)?;
-        let end_cap = cap(normal, distance)?;
+        let start_cap = cap(scale(travel, -1.0), 0.0)?;
+        let end_cap = cap(travel, sign * distance)?;
         let mut on_start_cap = HashMap::<&'a FaceId, Vec<&'a EdgeId>>::new();
         for (edge, coedges) in &self.edges {
             if coedges.iter().any(|(_, face)| *face == start_cap) {
@@ -584,7 +616,7 @@ impl<'a> Faces<'a> {
             })
         };
         let mut sides = Vec::new();
-        for (profile_loop, at) in entries(profile) {
+        for (profile_loop, at) in entries(profile, reversed) {
             let curve = sketch.curves.get(profile_loop.entries[at].curve)?;
             let (shaped, ends) = match curve.geometry {
                 CurveGeometry::Line { start, end } => {

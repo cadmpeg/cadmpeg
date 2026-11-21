@@ -14,7 +14,7 @@ use super::arcs::{extruded, Side, Stroke};
 use super::{kinds, TOLERANCE};
 
 /// The model points of the vertices of the face named `token`.
-fn corners(decoded: &CadIr, token: &str) -> Vec<[f64; 3]> {
+pub(super) fn corners(decoded: &CadIr, token: &str) -> Vec<[f64; 3]> {
     let native = crate::test_support::native_test::f3d_native(decoded);
     let Some(AttributeTarget::Face(face)) = native
         .persistent_subentity_tags
@@ -48,7 +48,7 @@ fn corners(decoded: &CadIr, token: &str) -> Vec<[f64; 3]> {
 
 /// Whether the side face named by each token has corners at both ends of
 /// its curve on the start cap, `z = 0`.
-fn sides_follow_curves(decoded: &CadIr, expected: &[(u64, [f64; 2], [f64; 2])]) {
+pub(super) fn sides_follow_curves(decoded: &CadIr, expected: &[(u64, [f64; 2], [f64; 2])]) {
     for (token, a, b) in expected {
         let corners = corners(decoded, &token.to_string());
         let holds = |end: [f64; 2]| {
@@ -63,7 +63,7 @@ fn sides_follow_curves(decoded: &CadIr, expected: &[(u64, [f64; 2], [f64; 2])]) 
 }
 
 /// The closed polygon through `corners` as source lines.
-fn lines(corners: &[[f64; 2]]) -> Vec<Stroke> {
+pub(super) fn lines(corners: &[[f64; 2]]) -> Vec<Stroke> {
     corners
         .iter()
         .zip(corners.iter().cycle().skip(1))
@@ -72,7 +72,7 @@ fn lines(corners: &[[f64; 2]]) -> Vec<Stroke> {
 }
 
 /// A prism loop of lines through `corners`.
-fn flat(corners: &[[f64; 2]]) -> Vec<([f64; 2], Side)> {
+pub(super) fn flat(corners: &[[f64; 2]]) -> Vec<([f64; 2], Side)> {
     corners.iter().map(|corner| (*corner, Side::Line)).collect()
 }
 

@@ -27,7 +27,7 @@ const MAX_WITNESS_WORK: usize = 2_000_000;
 pub(crate) fn contradicted_features(ir: &CadIr) -> HashSet<FeatureId> {
     if !ir.model.features.iter().any(|feature| {
         candidate(feature)
-            .and_then(|(profile, _, _)| profile_sketch(&ir.model, profile))
+            .and_then(|(profile, _, _, _)| profile_sketch(&ir.model, profile))
             .is_some_and(|sketch| sketch.resolved_placement().is_some())
     }) {
         return HashSet::new();
@@ -80,7 +80,10 @@ fn retain(definition: &mut FeatureDefinition) {
     }
 }
 
-fn candidate(feature: &Feature) -> Option<(&PlanarProfileRef, f64, f64)> {
+/// The planar profile of `feature`'s one-sided blind extrusion from the
+/// profile plane, its depth, its operation sign (`-1` for a cut) and its
+/// travel along the profile normal (`-1` for a reversed extrusion).
+fn candidate(feature: &Feature) -> Option<(&PlanarProfileRef, f64, f64, f64)> {
     if feature.suppressed != Some(false) {
         return None;
     }
@@ -88,11 +91,16 @@ fn candidate(feature: &Feature) -> Option<(&PlanarProfileRef, f64, f64)> {
         FeatureOperation::Extrude {
             profile: ProfileRef::Planar(profile),
             start: ExtrudeStart::ProfilePlane {},
-            direction: ExtrudeDirection::ProfileNormal {} | ExtrudeDirection::Unresolved {},
+            direction,
             extent: ExtrudeExtent::OneSided { side },
             op,
             ..
         } => {
+            let travel = match direction {
+                ExtrudeDirection::ProfileNormal {} | ExtrudeDirection::Unresolved {} => 1.0,
+                ExtrudeDirection::ReversedProfileNormal {} => -1.0,
+                ExtrudeDirection::Explicit { .. } => return None,
+            };
             let LinearTermination::Blind { length } = side.termination else {
                 return None;
             };
@@ -101,7 +109,7 @@ fn candidate(feature: &Feature) -> Option<(&PlanarProfileRef, f64, f64)> {
                 BooleanOp::NewBody | BooleanOp::Join => 1.0,
                 _ => return None,
             };
-            Some((profile, length.get(), sign))
+            Some((profile, length.get(), sign, travel))
         }
         _ => None,
     }
@@ -275,7 +283,7 @@ fn samples(entity: &SketchEntity) -> Option<Vec<Point2>> {
 }
 
 fn contradicts(model: &Model, feature: &Feature, caps: &[Cap], work: &WorkBudget) -> bool {
-    let Some((profile, length, operation_sign)) = candidate(feature) else {
+    let Some((profile, length, operation_sign, travel)) = candidate(feature) else {
         return false;
     };
     let Some(sketch) = profile_sketch(model, profile) else {
@@ -304,8 +312,8 @@ fn contradicts(model: &Model, feature: &Feature, caps: &[Cap], work: &WorkBudget
                     .any(|point| cap.supports(point.translated(normal, length * travel), work))
         })
     };
-    let decoded = end(1.0);
-    let opposite = end(-1.0);
+    let decoded = end(travel);
+    let opposite = end(-travel);
     !decoded && opposite && work.charge()
 }
 

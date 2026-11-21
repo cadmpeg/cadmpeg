@@ -654,18 +654,18 @@ pub(super) enum Side {
     },
 }
 
-/// A prism from `z = 0` to [`SIDE`] mm whose section is bounded by `loops`.
-/// Each loop lists its corners in run order with the material on the left
-/// (the exterior counterclockwise, holes clockwise), each with its side to
-/// the next corner; one corner with an arc side is a whole circle.
-fn prism(loops: &[Vec<([f64; 2], Side)>]) -> CadIr {
-    let height = SIDE;
+/// A prism from `z = bottom` to `z = top` mm whose section is bounded by
+/// `loops`. Each loop lists its corners in run order with the material on
+/// the left (the exterior counterclockwise, holes clockwise), each with its
+/// side to the next corner; one corner with an arc side is a whole circle.
+fn prism(loops: &[Vec<([f64; 2], Side)>], [bottom, top]: [f64; 2]) -> CadIr {
+    let height = top - bottom;
     let z_axis = Vector3::new(0.0, 0.0, 1.0);
     let x_axis = Vector3::new(1.0, 0.0, 0.0);
     let at = |p: [f64; 2], z: f64| Point3::new(p[0], p[1], z);
     let mut ir = CadIr::empty();
     let mut surfaces = Vec::new();
-    for (key, z) in [("bottom", 0.0), ("top", height)] {
+    for (key, z) in [("bottom", bottom), ("top", top)] {
         surfaces.push((
             key.to_owned(),
             SolvedSurfaceGeometry::Plane(
@@ -682,7 +682,7 @@ fn prism(loops: &[Vec<([f64; 2], Side)>]) -> CadIr {
         let n = corners.len();
         let name = |part: &str| format!("l{l}-{part}");
         for (i, (corner, _)) in corners.iter().enumerate() {
-            for (level, z) in [("b", 0.0), ("t", height)] {
+            for (level, z) in [("b", bottom), ("t", top)] {
                 let key = name(&format!("c{i}{level}"));
                 ir.geometry.points.push(Point::new(
                     mint(PointId::mint, "point", &key),
@@ -700,7 +700,7 @@ fn prism(loops: &[Vec<([f64; 2], Side)>]) -> CadIr {
             edges.push((
                 key.clone(),
                 SolvedCurveGeometry::Line(
-                    LineCurve::try_new(at(*corner, 0.0), z_axis).expect("a line"),
+                    LineCurve::try_new(at(*corner, bottom), z_axis).expect("a line"),
                 ),
                 Some([0.0, height]),
                 [name(&format!("c{i}b")), name(&format!("c{i}t"))],
@@ -727,7 +727,7 @@ fn prism(loops: &[Vec<([f64; 2], Side)>]) -> CadIr {
                             PlaneSurface::try_new(at(*from, 0.0), outward, along).expect("a plane"),
                         ),
                     ));
-                    for (level, z) in [("b", 0.0), ("t", height)] {
+                    for (level, z) in [("b", bottom), ("t", top)] {
                         edges.push((
                             name(&format!("s{i}{level}")),
                             SolvedCurveGeometry::Line(
@@ -766,7 +766,7 @@ fn prism(loops: &[Vec<([f64; 2], Side)>]) -> CadIr {
                                 .expect("a cylinder"),
                         ),
                     ));
-                    for (level, z) in [("b", 0.0), ("t", height)] {
+                    for (level, z) in [("b", bottom), ("t", top)] {
                         edges.push((
                             name(&format!("s{i}{level}")),
                             SolvedCurveGeometry::Circle(
@@ -976,6 +976,15 @@ pub(super) enum Stroke {
 /// `strokes` as the extrude's sketch `c0`, `c1`, ... over the prism of
 /// `loops`, extruded [`SIDE`] mm.
 pub(super) fn extruded(strokes: &[Stroke], loops: &[Vec<([f64; 2], Side)>]) -> CadIr {
+    extruded_between(strokes, loops, [0.0, SIDE])
+}
+
+/// [`extruded`] with the prism from `z = levels[0]` to `z = levels[1]` mm.
+pub(super) fn extruded_between(
+    strokes: &[Stroke],
+    loops: &[Vec<([f64; 2], Side)>],
+    levels: [f64; 2],
+) -> CadIr {
     let mut source = Source::new(
         "profile",
         picked(principal(PrincipalEntity::XyPlane)),
@@ -1003,7 +1012,7 @@ pub(super) fn extruded(strokes: &[Stroke], loops: &[Vec<([f64; 2], Side)>]) -> C
         source.entity(&format!("c{index}"), curve, &[]);
     }
     let mut ir = sketch_and_extrude_of(source, blind(), false);
-    let solid = prism(loops);
+    let solid = prism(loops, levels);
     let body = solid.geometry.bodies[0].id.clone();
     ir.geometry = solid.geometry;
     ir.design.scopes[0].current[0].bodies = vec![body];
