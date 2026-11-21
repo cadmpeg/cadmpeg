@@ -125,8 +125,20 @@ pub(crate) enum SldprtLossCode {
     /// A sketch line handle keeps its marker role because its two read
     /// endpoints coincide.
     SketchLineDegenerate,
+    /// A sketch line keeps the chord its marker reading gives although its
+    /// `sgSketch` curve record states an arc or another form.
+    SketchArcRecordConflict,
+    /// A sketch handle takes its `sgSketch` curve record's geometry by
+    /// point-record position, a reading the format does not establish for a
+    /// line with an identifier trailer and that the handle's own read
+    /// endpoints contradict when they coincide.
+    SketchHandleReadingAssumed,
     /// A compact sketch profile failed neutral profile admission.
     SketchProfileRejected,
+    /// A list line with profile role 1 is marked construction from selector bit 3 (DI-77).
+    SketchListedLineConstructionAssumed,
+    /// A framed list curve drops a constraint-owning reading of +17 (DI-77).
+    SketchListedCurveRelationDropped,
     /// Native sketch relation has no projected neutral constraint.
     SketchRelationUnprojected,
     /// Native sketch relation is claimed by multiple neutral objects.
@@ -322,6 +334,18 @@ pub(crate) enum SldprtLossCode {
     AssemblyEmbeddedDocumentsNotTransferred,
     /// An occurrence's exclusion from the bill of materials is not transferred.
     AssemblyBomExclusionNotTransferred,
+    /// Design features whose operation the decoder typed in its own records
+    /// state their family without operands.
+    DesignFeatureUnresolved,
+    /// A feature folder whose members regeneration order does not keep in
+    /// one run is not stated.
+    DesignFolderDropped,
+    /// Parameters whose literal and value are their dimension's displayed
+    /// number, which Keywords rounds to the display precision.
+    DesignParameterDisplayRounded,
+    /// Extrudes whose blind depth is bound to their record's only dimension,
+    /// whose name is neither `Depth` nor `D1`.
+    DesignExtrudeDepthAssumed,
 }
 
 impl SldprtLossCode {
@@ -375,7 +399,11 @@ impl SldprtLossCode {
         Self::SketchNativeGeometry,
         Self::SketchHandleUnresolved,
         Self::SketchLineDegenerate,
+        Self::SketchArcRecordConflict,
+        Self::SketchHandleReadingAssumed,
         Self::SketchProfileRejected,
+        Self::SketchListedLineConstructionAssumed,
+        Self::SketchListedCurveRelationDropped,
         Self::SketchRelationUnprojected,
         Self::SketchRelationMultiplyProjected,
         Self::FeatureNativeKindRetained,
@@ -459,6 +487,10 @@ impl SldprtLossCode {
         Self::AssemblyConfigurationsNotTransferred,
         Self::AssemblyEmbeddedDocumentsNotTransferred,
         Self::AssemblyBomExclusionNotTransferred,
+        Self::DesignFeatureUnresolved,
+        Self::DesignFolderDropped,
+        Self::DesignParameterDisplayRounded,
+        Self::DesignExtrudeDepthAssumed,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -507,8 +539,12 @@ impl SldprtLossCode {
             Self::SketchNativeConstraint => "sketch.native-constraint",
             Self::SketchNativeGeometry => "sketch.native-geometry",
             Self::SketchProfileRejected => "sketch.profile-rejected",
+            Self::SketchListedLineConstructionAssumed => "sketch.listed-line-construction-assumed",
+            Self::SketchListedCurveRelationDropped => "sketch.listed-curve-relation-dropped",
             Self::SketchHandleUnresolved => "sketch.handle-unresolved",
             Self::SketchLineDegenerate => "sketch.line-degenerate",
+            Self::SketchArcRecordConflict => "sketch.arc-record-conflict",
+            Self::SketchHandleReadingAssumed => "sketch.handle-reading-assumed",
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
             Self::SketchRelationMultiplyProjected => "sketch.relation-multiply-projected",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
@@ -618,6 +654,10 @@ impl SldprtLossCode {
                 "assembly.embedded-documents-not-transferred"
             }
             Self::AssemblyBomExclusionNotTransferred => "assembly.bom-exclusion-not-transferred",
+            Self::DesignFeatureUnresolved => "design.feature-unresolved",
+            Self::DesignFolderDropped => "design.folder-dropped",
+            Self::DesignParameterDisplayRounded => "design.parameter-display-rounded",
+            Self::DesignExtrudeDepthAssumed => "design.extrude-depth-assumed",
         }
     }
 
@@ -675,7 +715,11 @@ impl SldprtLossCode {
             | Self::SketchNativeGeometry
             | Self::SketchHandleUnresolved
             | Self::SketchLineDegenerate
+            | Self::SketchArcRecordConflict
+            | Self::SketchHandleReadingAssumed
             | Self::SketchProfileRejected
+            | Self::SketchListedLineConstructionAssumed
+            | Self::SketchListedCurveRelationDropped
             | Self::SketchRelationUnprojected
             | Self::SketchRelationMultiplyProjected
             | Self::FeatureNativeKindRetained
@@ -748,13 +792,17 @@ impl SldprtLossCode {
             Self::MetadataMassPropertiesNotCompared => Severity::Warning,
             Self::AssemblyMatesNotTransferred
             | Self::AssemblyVirtualComponentsNotTransferred
-            | Self::AssemblyEmbeddedDocumentsNotTransferred => Severity::Warning,
+            | Self::AssemblyEmbeddedDocumentsNotTransferred
+            | Self::DesignFolderDropped
+            | Self::DesignParameterDisplayRounded
+            | Self::DesignExtrudeDepthAssumed => Severity::Warning,
             Self::AssemblyStructureNotTransferred => Severity::Blocking,
             Self::AssemblyPlacementUnresolved => Severity::Error,
             Self::AssemblyComponentsExternal
             | Self::AssemblySuppressedComponentsOmitted
             | Self::AssemblyConfigurationsNotTransferred
             | Self::AssemblyBomExclusionNotTransferred
+            | Self::DesignFeatureUnresolved
             | Self::HistoryRollbackMarkClassInferred => Severity::Info,
         }
     }
@@ -799,6 +847,11 @@ impl SldprtLossCode {
             | Self::AssemblyConfigurationsNotTransferred
             | Self::AssemblyBomExclusionNotTransferred => {
                 LossTaxonomy::AssemblyPlacementsNotTransferred
+            }
+            Self::DesignFeatureUnresolved => LossTaxonomy::RecordNotTyped,
+            Self::DesignFolderDropped => LossTaxonomy::MetadataNotTransferred,
+            Self::DesignParameterDisplayRounded | Self::DesignExtrudeDepthAssumed => {
+                LossTaxonomy::DecodeDiagnostic
             }
             Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
             Self::TopologyFaceUnclaimed
@@ -883,7 +936,11 @@ impl SldprtLossCode {
             | Self::SketchNativeGeometry
             | Self::SketchHandleUnresolved
             | Self::SketchLineDegenerate
+            | Self::SketchArcRecordConflict
+            | Self::SketchHandleReadingAssumed
             | Self::SketchProfileRejected
+            | Self::SketchListedLineConstructionAssumed
+            | Self::SketchListedCurveRelationDropped
             | Self::SketchRelationUnprojected
             | Self::SketchRelationMultiplyProjected
             | Self::FeatureNativeKindRetained
@@ -1111,7 +1168,11 @@ mod tests {
                 "sketch.native-geometry",
                 "sketch.handle-unresolved",
                 "sketch.line-degenerate",
+                "sketch.arc-record-conflict",
+                "sketch.handle-reading-assumed",
                 "sketch.profile-rejected",
+                "sketch.listed-line-construction-assumed",
+                "sketch.listed-curve-relation-dropped",
                 "sketch.relation-unprojected",
                 "sketch.relation-multiply-projected",
                 "feature.native-kind-retained",
@@ -1195,6 +1256,10 @@ mod tests {
                 "assembly.configurations-not-transferred",
                 "assembly.embedded-documents-not-transferred",
                 "assembly.bom-exclusion-not-transferred",
+                "design.feature-unresolved",
+                "design.folder-dropped",
+                "design.parameter-display-rounded",
+                "design.extrude-depth-assumed",
             ]
         );
     }

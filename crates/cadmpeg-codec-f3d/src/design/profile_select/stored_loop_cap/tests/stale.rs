@@ -5,6 +5,7 @@ use super::super::super::{EntitySelectionPathResolution, ScopedExtrudeProfileRes
 use super::{divided_rectangle, xy_sketch, TOLERANCE};
 use crate::design::geometry::ProfileGeometryWork;
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
+use crate::loss::F3dLossCode;
 use crate::records::sketch_geometry::SketchCurveIdentity;
 use crate::records::sketch_placement::DesignSketchPlacement;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
@@ -155,7 +156,7 @@ fn selection() -> DesignProfileCurveSelection {
 fn select(
     mutate: impl FnOnce(&mut DesignProfileCurveSelection, &mut Vec<SketchCurveIdentity>),
     width: f64,
-) -> Option<PlanarProfileRef> {
+) -> Option<(PlanarProfileRef, Vec<F3dLossCode>)> {
     let mut group = group();
     group
         .try_set_members(vec![crate::records::identity::Located {
@@ -291,7 +292,11 @@ fn select(
 
 #[test]
 fn surviving_typed_members_require_the_complete_certified_union_boundary() {
-    let selected = select(|_, _| {}, 2.0).expect("certified union");
+    let (selected, losses) = select(|_, _| {}, 2.0).expect("certified union");
+    assert_eq!(
+        losses,
+        vec![F3dLossCode::FeatureProfileRegionIdentitiesStale]
+    );
     let PlanarProfileRef::SketchRegions { regions, .. } = selected else {
         panic!("trimmed regions")
     };
