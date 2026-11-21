@@ -620,6 +620,9 @@ pub(crate) fn project_configuration_sketch_states(
     for (configuration_index, lane_index) in
         configuration_lane_assignments(&ir.model.configurations, lanes)
     {
+        let held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::after_finalized(
+            &ir.model.sketch_entities,
+        );
         let surfaces = configuration_surface_carriers(ir, configuration_index);
         let scoped_lanes = &lanes[lane_index..=lane_index];
         let states = &ir.model.configurations[configuration_index].feature_states;
@@ -719,7 +722,7 @@ pub(crate) fn project_configuration_sketch_states(
                 scoped_lanes,
                 &mut losses,
             )?;
-            let mut held_handles = Vec::new();
+            let mut held_handles = held_handles;
             crate::resolved_features::profiles::project_marker_backed_sketches(
                 ctx,
                 &mut features,

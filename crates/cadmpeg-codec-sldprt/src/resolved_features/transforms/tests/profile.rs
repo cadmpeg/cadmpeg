@@ -14,7 +14,9 @@ use crate::resolved_features::curves::closed_marker_profiles;
 use crate::resolved_features::curves::fitted_marker_circle;
 use crate::resolved_features::curves::resolve_connected_marker_arcs;
 use crate::resolved_features::dimensions::project_marker_dimensioned_circles;
-use crate::resolved_features::profiles::{project_marker_backed_sketches, MarkerSketchEntities};
+use crate::resolved_features::profiles::{
+    project_marker_backed_sketches, HeldMarkerGeometry, MarkerSketchEntities,
+};
 use crate::resolved_features::projections::project_compact_edge_selections;
 use crate::resolved_features::relation_loci::doubled_profile_distance_loci;
 use crate::resolved_features::relation_loci::relation_operand_marker;
@@ -579,7 +581,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         &mut sketches,
         MarkerSketchEntities {
             projected: &mut entities,
-            held: &mut Vec::new(),
+            held: &mut HeldMarkerGeometry::default(),
         },
         &histories,
         &lanes,
@@ -633,7 +635,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         &mut sketches,
         MarkerSketchEntities {
             projected: &mut entities,
-            held: &mut Vec::new(),
+            held: &mut HeldMarkerGeometry::default(),
         },
         &histories,
         &lanes,
@@ -677,7 +679,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         &mut replacement_sketches,
         MarkerSketchEntities {
             projected: &mut replacement_entities,
-            held: &mut Vec::new(),
+            held: &mut HeldMarkerGeometry::default(),
         },
         &histories,
         &lanes,
@@ -769,7 +771,7 @@ fn marker_backed_sketch_preserves_geometry_when_placement_is_unresolved() {
         &mut sketches,
         MarkerSketchEntities {
             projected: &mut entities,
-            held: &mut Vec::new(),
+            held: &mut HeldMarkerGeometry::default(),
         },
         &histories,
         &lanes,

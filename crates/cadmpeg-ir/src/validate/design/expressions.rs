@@ -107,7 +107,7 @@ pub(super) fn check_expressions(index: &DesignRecords<'_>, findings: &mut Vec<Fi
             feature_owned: false,
             variables: ExpressionSite::BendAllowance,
         };
-        if let Ok(wire) = serde_json::to_value(rule) {
+        if let Ok(wire) = crate::hash::finite_json::to_json_value(rule) {
             for expression in wire_expressions(&wire) {
                 check_expression(index, site, &expression, findings);
             }
@@ -510,7 +510,7 @@ fn check_feature_expressions(
     feature: &Feature,
     findings: &mut Vec<Finding>,
 ) {
-    let Ok(wire) = serde_json::to_value(&feature.definition.operation) else {
+    let Ok(wire) = crate::hash::finite_json::to_json_value(&feature.definition.operation) else {
         return;
     };
     let entity = feature.id.as_str();

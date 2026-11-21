@@ -10,7 +10,8 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::sketches::{SketchEntity, SketchGeometry, SketchGeometryDefinition};
 
 use super::{
-    marker_is_construction, project_marker_backed_sketches, MarkerSketchEntities, SketchRecordLists,
+    marker_is_construction, project_marker_backed_sketches, HeldMarkerGeometry,
+    MarkerSketchEntities, SketchRecordLists,
 };
 use crate::loss::SldprtLossCode;
 use crate::records::{
@@ -170,7 +171,7 @@ fn projected_curve(
     }];
     let mut sketches = Vec::new();
     let mut entities = Vec::new();
-    let mut held = Vec::new();
+    let mut held = HeldMarkerGeometry::default();
     let mut losses = Vec::new();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
@@ -194,7 +195,7 @@ fn projected_curve(
     .expect("projection fits service policy");
     let entity = entities
         .into_iter()
-        .chain(held)
+        .chain(held.handles)
         .find(|entity| entity.native_ref.as_deref() == Some(marker_id.as_str()));
     (kind, entity, losses)
 }

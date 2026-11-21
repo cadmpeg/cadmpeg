@@ -312,5 +312,7 @@ mod borrowed_serialization;
 
 mod wire_form_census;
 
-#[cfg(feature = "schema")]
 mod repro;
+
+#[cfg(feature = "schema")]
+mod json_schema;

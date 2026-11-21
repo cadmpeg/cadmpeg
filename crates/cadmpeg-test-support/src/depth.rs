@@ -214,7 +214,8 @@ fn compare(
 /// The document as JSON without its scope, design and process arenas, native
 /// namespaces, and local-digest source attributes.
 fn outside_design(ir: &CadIr) -> Value {
-    let mut value = serde_json::to_value(ir).expect("serialize decoded document");
+    let mut value =
+        cadmpeg_ir::hash::finite_json::to_json_value(ir).expect("serialize decoded document");
     let Value::Object(document) = &mut value else {
         panic!("a document serializes as a JSON object");
     };

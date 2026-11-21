@@ -1498,11 +1498,63 @@ fn closed_edge_start(
     Ok(Some((first.get(), [low, high])))
 }
 
-/// The model positions of the vertices a walked face's coedges start at.
 /// Share of the ball radius a fitted blend cache may miss a face vertex by;
 /// a larger miss is another branch of the rolling ball.
 const BLEND_VERTEX_MISS_RADIUS_FRACTION: f64 = 0.25;
 
+/// Least distance, besides its fit tolerance, a blend cache may pass from
+/// its face's vertices and edge samples and still bound the face: the
+/// departure a rolling-ball fit keeps at its deepest split.
+const BLEND_VERTEX_MISS_FLOOR_MM: f64 = 1.0e-3;
+
+/// How far, besides its fit tolerance, a blend cache may pass from the
+/// vertices and edge samples of `face` and still bound it: the largest
+/// tolerance the face's edges state, and no less than
+/// [`BLEND_VERTEX_MISS_FLOOR_MM`].
+fn blend_vertex_allowance(
+    t: &topology::Tables,
+    face: &WalkedFace,
+    edge_tolerances: &HashMap<EdgeId, f64>,
+) -> f64 {
+    face.loops
+        .iter()
+        .flat_map(|(_, ring)| ring)
+        .filter_map(|coedge| t.coedges().get(coedge).map(|coedge| coedge.refs[6]))
+        .filter_map(|edge| edge_tolerances.get(&id_edge(edge)).copied())
+        .fold(BLEND_VERTEX_MISS_FLOOR_MM, f64::max)
+}
+
+/// Why the rolling-ball fit of a blend has no side, by side.
+const BLEND_SIDE_UNRESOLVED: [&str; 2] = [
+    "support 0 is not an analytic surface, a pair of them or a rolling ball",
+    "support 1 is not an analytic surface, a pair of them or a rolling ball",
+];
+
+/// What one fit step did for a blend left without a cache.
+enum BlendStep {
+    /// The step did not run, for the reason given.
+    NotRun(&'static str),
+    /// The step ran and found no cache, for the reason given.
+    NoCache(String),
+    /// The step's cache missed a face vertex by `miss` millimetres, more
+    /// than the `allowed` quarter of the radius.
+    Missed { miss: f64, allowed: f64 },
+}
+
+impl std::fmt::Display for BlendStep {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotRun(why) => write!(f, "not run, {why}"),
+            Self::NoCache(why) => f.write_str(why),
+            Self::Missed { miss, allowed } => write!(
+                f,
+                "its cache misses a face vertex by {miss} mm, more than the {allowed} mm a quarter of the radius allows"
+            ),
+        }
+    }
+}
+
+/// The model positions of the vertices a walked face's coedges start at.
 fn face_vertex_positions(t: &topology::Tables, face: &WalkedFace) -> Vec<cadmpeg_ir::math::Point3> {
     let mut positions = Vec::new();
     for (_, ring) in &face.loops {
@@ -2160,7 +2212,7 @@ fn blend_boundary(
 
 /// Distance within which a curve end lies at a vertex without a stored
 /// tolerance: the stream's linear resolution, `1e-8` m.
-pub(super) const LINEAR_RESOLUTION_MM: f64 = 1.0e-5;
+pub(crate) const LINEAR_RESOLUTION_MM: f64 = 1.0e-5;
 
 /// Whether an edge runs against an open NURBS curve that stores no range, from
 /// the parameters of its two vertices on the curve (spec §7.2). `None` on a
@@ -4373,6 +4425,13 @@ fn decode_graph_inner(
             .count();
         faces.retain(|face| bridge_group.contains_key(&face.bridge_attr));
     }
+    // The tolerance each emitted edge states: a blend cache bounds the face
+    // the edge bounds within that distance.
+    let edge_tolerances = out
+        .edges
+        .iter()
+        .filter_map(|edge| Some((edge.id.clone(), edge.tolerance?.get())))
+        .collect::<HashMap<_, _>>();
     let mut face_edges_by_surface_carrier = HashMap::<u32, Vec<HashSet<u32>>>::new();
     for face in &faces {
         let mut edges = HashSet::new();
@@ -4648,12 +4707,16 @@ fn decode_graph_inner(
                             attr,
                         )
                     };
+                    let mut sections = BlendStep::NotRun("the spine curve does not resolve");
                     let solved = match (
                         carriers.curve(blend.spine),
                         support_geometry(support_attrs[0])?,
                         support_geometry(support_attrs[1])?,
                     ) {
                         (Some(spine_carrier), Some(first_geometry), Some(second_geometry)) => {
+                            sections = BlendStep::NoCache(
+                                "no sections fit over the face's spine stretch".into(),
+                            );
                             blend_surface::solve(
                                 ctx,
                                 &blend_surface::BlendInputs {
@@ -4668,16 +4731,33 @@ fn decode_graph_inner(
                                 },
                             )?
                         }
-                        _ => None,
+                        (Some(_), None, _) => {
+                            sections = BlendStep::NotRun("support 0 states no solved surface");
+                            None
+                        }
+                        (Some(_), _, None) => {
+                            sections = BlendStep::NotRun("support 1 states no solved surface");
+                            None
+                        }
+                        (None, _, _) => None,
                     };
                     let (cache, off_vertex) = match solved {
                         Some(solved) if solved.holds => (Some(solved.cache), None),
-                        Some(solved) => (None, Some(solved.cache)),
+                        Some(solved) => {
+                            sections = BlendStep::NoCache(
+                                "its cache does not pass through every face vertex within its fit tolerance"
+                                    .into(),
+                            );
+                            (None, Some(solved.cache))
+                        }
                         None => (None, None),
                     };
-                    // Fallback for blends `blend_surface::solve` leaves without a cache.
+                    let mut rolling = BlendStep::NotRun("the spine curve does not resolve");
+                    // The kept cache and the fit tolerance it was fitted to,
+                    // with a fallback for blends `blend_surface::solve` leaves
+                    // without a cache.
                     let cache = match (cache, carriers.curve(blend.spine)) {
-                        (Some(cache), _) => Some(cache),
+                        (Some(cache), _) => Some((cache.fit_tolerance, cache)),
                         (None, Some(spine)) => {
                             let blend_memo: super::index::BlendMemo<'_, '_> =
                                 std::cell::RefCell::new(HashMap::new());
@@ -4701,43 +4781,111 @@ fn decode_graph_inner(
                                 };
                             }
                             let fitted = match sides {
-                                [Some(first), Some(second)] => super::blend_fit::fit(
+                                [Some(first), Some(second)] => match super::blend_fit::fit(
                                     ctx,
                                     &spine.carrier().geometry,
                                     [first, second],
                                     blend.signed_radius,
                                     &vertices,
-                                )?
-                                .map(|fit| blend_surface::BlendCache {
-                                    surface: fit.surface,
-                                    fit_tolerance: fit.fit_tolerance,
-                                }),
-                                _ => None,
+                                )? {
+                                    Ok(fit) => Some(blend_surface::BlendCache {
+                                        surface: fit.surface,
+                                        fit_tolerance: fit.fit_tolerance,
+                                    }),
+                                    Err(failure) => {
+                                        rolling = BlendStep::NoCache(failure.to_string());
+                                        None
+                                    }
+                                },
+                                [None, _] => {
+                                    rolling = BlendStep::NotRun(BLEND_SIDE_UNRESOLVED[0]);
+                                    None
+                                }
+                                [_, None] => {
+                                    rolling = BlendStep::NotRun(BLEND_SIDE_UNRESOLVED[1]);
+                                    None
+                                }
                             };
                             // The cache states its largest vertex miss; a miss of
                             // a sizeable share of the radius is another branch.
+                            let step = if fitted.is_some() {
+                                &mut rolling
+                            } else {
+                                &mut sections
+                            };
                             match fitted.or(off_vertex) {
-                                Some(mut cache) => match blend_surface::vertex_miss(
-                                    ctx,
-                                    &cache,
-                                    &spine.carrier().geometry,
-                                    &vertices,
-                                )? {
-                                    Some(miss)
-                                        if miss
-                                            <= blend.signed_radius.abs()
-                                                * BLEND_VERTEX_MISS_RADIUS_FRACTION =>
-                                    {
-                                        cache.fit_tolerance = cache.fit_tolerance.max(miss);
-                                        Some(cache)
+                                Some(mut cache) => {
+                                    let branch = blend.signed_radius.abs()
+                                        * BLEND_VERTEX_MISS_RADIUS_FRACTION;
+                                    match blend_surface::vertex_miss(
+                                        ctx,
+                                        &cache,
+                                        &spine.carrier().geometry,
+                                        &vertices,
+                                    )? {
+                                        Some(miss) if miss <= branch => {
+                                            let fitted = cache.fit_tolerance;
+                                            cache.fit_tolerance = fitted.max(miss);
+                                            Some((fitted, cache))
+                                        }
+                                        Some(miss) => {
+                                            *step = BlendStep::Missed {
+                                                miss,
+                                                allowed: branch,
+                                            };
+                                            None
+                                        }
+                                        None => {
+                                            *step = BlendStep::NoCache(
+                                                "the face's vertices do not invert onto the spine"
+                                                    .into(),
+                                            );
+                                            None
+                                        }
                                     }
-                                    _ => None,
-                                },
+                                }
                                 None => None,
                             }
                         }
                         (None, None) => None,
                     };
+                    match (&cache, carriers.curve(blend.spine)) {
+                        (Some((fitted, cache)), Some(spine)) => {
+                            let spine = &spine.carrier().geometry;
+                            let allowed = (blend.signed_radius.abs()
+                                * BLEND_VERTEX_MISS_RADIUS_FRACTION)
+                                .min(blend_vertex_allowance(t, f, &edge_tolerances) + fitted);
+                            if blend_surface::covers(ctx, cache, spine, &boundary, allowed)?
+                                == Some(false)
+                            {
+                                let vertex = blend_surface::vertex_miss(ctx, cache, spine, &vertices)?
+                                    .unwrap_or(0.0);
+                                let edge = blend_surface::vertex_miss(ctx, cache, spine, &boundary)?
+                                    .unwrap_or(0.0);
+                                let (miss, at) = if vertex >= edge {
+                                    (vertex, "a face vertex")
+                                } else {
+                                    (edge, "a point sampled on the face's edges")
+                                };
+                                out.losses.push(
+                                    crate::loss::SldprtLossCode::GeometryCarrierApproximated.note(format!(
+                                        "{}: the cache of the rolling-ball blend of radius {} mm misses {at} by {miss} mm, more than the {allowed} mm allowed (its edges' tolerance plus its fit tolerance, at most a quarter of the radius); the face keeps the cache.",
+                                        id_face(f.bridge_attr).as_str(),
+                                        blend.signed_radius.abs(),
+                                    )),
+                                );
+                            }
+                        }
+                        (Some(_), None) => {}
+                        (None, _) => out.losses.push(
+                            crate::loss::SldprtLossCode::GeometryBlendCacheUnsolved.note(format!(
+                                "{}: the rolling-ball blend of radius {} mm has no solved cache and keeps its construction alone; section solve: {sections}; rolling-ball fit: {rolling}",
+                                id_face(f.bridge_attr).as_str(),
+                                blend.signed_radius.abs(),
+                            )),
+                        ),
+                    }
+                    let cache = cache.map(|(_, cache)| cache);
                     let admitted_payload = BlendRadiusLaw::constant(blend.signed_radius)
                         .and_then(|radius| {
                             cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
@@ -6648,12 +6796,37 @@ fn meridian_line(
     }
 }
 
+fn has_sphere_surface(surfaces: &[Surface]) -> bool {
+    surfaces.iter().any(|surface| {
+        matches!(
+            surface.geometry.solved(),
+            Some(SolvedSurfaceGeometry::Sphere(_))
+        )
+    })
+}
+
+fn vertex_positions<'a>(vertices: &'a [Vertex], points: &[Point]) -> HashMap<&'a VertexId, Point3> {
+    let mut point_positions = HashMap::with_capacity(points.len());
+    for point in points {
+        point_positions
+            .entry(&point.id)
+            .or_insert(point.position().get());
+    }
+    vertices
+        .iter()
+        .filter_map(|vertex| Some((&vertex.id, *point_positions.get(&vertex.point)?)))
+        .collect()
+}
+
 fn derive_spherical_pcurves(
     ctx: &DecodeContext<'_>,
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    if !has_sphere_surface(&out.surfaces) {
+        return Ok(());
+    }
     let loop_faces = out
         .loops
         .iter()
@@ -6679,14 +6852,7 @@ fn derive_spherical_pcurves(
         .iter()
         .map(|curve| (&curve.id, curve))
         .collect::<std::collections::HashMap<_, _>>();
-    let vertex_points = out
-        .vertices
-        .iter()
-        .filter_map(|vertex| {
-            let point = out.points.iter().find(|point| point.id == vertex.point)?;
-            Some((&vertex.id, point.position().get()))
-        })
-        .collect::<std::collections::HashMap<_, _>>();
+    let vertex_points = vertex_positions(&out.vertices, &out.points);
     let mut derived = Vec::new();
     for coedge in &out.coedges {
         if !coedge.pcurves.is_empty() {
@@ -8817,6 +8983,95 @@ fn ruled_surface_line_pcurve(
     }))
 }
 
+/// One closed circle of a complete cylindrical face and its vertex.
+struct SeamEnd {
+    edge: EdgeId,
+    vertex: VertexId,
+    center: Point3,
+    radius: f64,
+    /// `center - ref_direction * radius` of the cylinder (§6).
+    reference_point: Point3,
+}
+
+/// A complete cylindrical face whose two closed circles a derived seam joins.
+struct SeamCandidate {
+    face: FaceId,
+    loops: [LoopId; 2],
+    circles: [CoedgeId; 2],
+    ends: [SeamEnd; 2],
+    axis: cadmpeg_ir::math::Vector3,
+}
+
+/// The seam's two endpoints, and for each end whether its vertex keeps its
+/// position.
+///
+/// A circle vertex is fixed when the file stores its point or another edge
+/// also ends at it, and a fixed vertex keeps its position. When a fixed vertex
+/// lies off its reference point, the seam is the ruling through it; `None`
+/// when another fixed vertex lies off that ruling.
+fn seam_endpoints(
+    candidate: &SeamCandidate,
+    vertex_edges: &HashMap<VertexId, Vec<EdgeId>>,
+    vertex_position: impl Fn(&VertexId) -> Option<Point3>,
+    stored: impl Fn(&VertexId) -> bool,
+) -> Option<([Point3; 2], [bool; 2])> {
+    let fixed = candidate.ends.each_ref().map(|end| {
+        stored(&end.vertex)
+            || vertex_edges
+                .get(&end.vertex)
+                .is_some_and(|edges| edges.iter().any(|edge| *edge != end.edge))
+    });
+    let positions = candidate
+        .ends
+        .each_ref()
+        .map(|end| vertex_position(&end.vertex));
+    let anchor = candidate
+        .ends
+        .iter()
+        .zip(positions.iter().zip(fixed))
+        .find_map(|(end, (position, fixed))| {
+            let position = (*position).filter(|_| fixed)?;
+            (position.distance(end.reference_point) > LINEAR_RESOLUTION_MM)
+                .then_some((end, position))
+        });
+    let Some((anchor_end, anchor)) = anchor else {
+        return Some((
+            candidate.ends.each_ref().map(|end| end.reference_point),
+            fixed,
+        ));
+    };
+    let offset = anchor.vector_from(anchor_end.center);
+    let ruling = (offset + candidate.axis.scale(-offset.dot(candidate.axis))).unit()?;
+    let seam = candidate
+        .ends
+        .each_ref()
+        .map(|end| end.center.translated(ruling, end.radius));
+    let off_ruling =
+        positions
+            .iter()
+            .zip(seam.iter().zip(fixed))
+            .any(|(position, (point, fixed))| {
+                fixed
+                    && position
+                        .is_some_and(|position| position.distance(*point) > LINEAR_RESOLUTION_MM)
+            });
+    (!off_ruling).then_some((seam, fixed))
+}
+
+/// Whether the annotations state a point's position as read from the file.
+fn position_is_stored(annotations: &Annotations, point: &PointId) -> bool {
+    annotations
+        .exactness()
+        .get(point.as_str())
+        .is_none_or(|note| {
+            note.fields()
+                .get("position")
+                .copied()
+                .unwrap_or_else(|| note.entity())
+                == Exactness::ByteExact
+        })
+}
+
 fn synthesize_cylinder_seams(
     ctx: &DecodeContext<'_>,
     out: &mut Brep,
@@ -8883,7 +9138,7 @@ fn synthesize_cylinder_seams(
         let Some(eb) = edges.get(&cb.edge) else {
             continue;
         };
-        let seam_point = |edge: &Edge| {
+        let seam_end = |edge: &Edge| {
             if edge.ends.as_ref().is_none_or(|ends| ends.start != ends.end) {
                 return None;
             }
@@ -8893,47 +9148,88 @@ fn synthesize_cylinder_seams(
             };
             let center = circle_curve.center().get();
             let radius = circle_curve.radius().get();
-            Some(cadmpeg_ir::math::Point3::new(
-                center.x - ref_direction.x * radius,
-                center.y - ref_direction.y * radius,
-                center.z - ref_direction.z * radius,
-            ))
+            Some(SeamEnd {
+                edge: edge.id.clone(),
+                vertex: edge.start()?.clone(),
+                center,
+                radius,
+                reference_point: cadmpeg_ir::math::Point3::new(
+                    center.x - ref_direction.x * radius,
+                    center.y - ref_direction.y * radius,
+                    center.z - ref_direction.z * radius,
+                ),
+            })
         };
-        if let (Some(pa), Some(pb), Some(va), Some(vb)) =
-            (seam_point(ea), seam_point(eb), ea.start(), eb.start())
-        {
-            candidates.push((
-                face.id.clone(),
-                a.id.clone(),
-                b.id.clone(),
-                ca.id.clone(),
-                cb.id.clone(),
-                va.clone(),
-                vb.clone(),
-                pa,
-                pb,
-            ));
+        if let (Some(end_a), Some(end_b)) = (seam_end(ea), seam_end(eb)) {
+            candidates.push(SeamCandidate {
+                face: face.id.clone(),
+                loops: [a.id.clone(), b.id.clone()],
+                circles: [ca.id.clone(), cb.id.clone()],
+                ends: [end_a, end_b],
+                axis: *cylinder_surface.frame().axis().as_raw(),
+            });
         }
     }
 
+    let mut vertex_edges = HashMap::<VertexId, Vec<EdgeId>>::new();
+    for edge in &out.edges {
+        if let Some(ends) = &edge.ends {
+            for vertex in [&ends.start, &ends.end] {
+                vertex_edges
+                    .entry(vertex.clone())
+                    .or_default()
+                    .push(edge.id.clone());
+            }
+        }
+    }
+    let mut point_indices = HashMap::new();
+    for (index, point) in out.points.iter().enumerate() {
+        point_indices.entry(&point.id).or_insert(index);
+    }
+    let mut vertex_points = HashMap::<VertexId, usize>::new();
+    for vertex in &out.vertices {
+        if let Some(&index) = point_indices.get(&vertex.point) {
+            vertex_points.entry(vertex.id.clone()).or_insert(index);
+        }
+    }
     let mut removed = HashSet::new();
     let mut coedge_indices = HashMap::new();
     for (index, coedge) in out.coedges.iter().enumerate() {
         let id = coedge.id.clone();
         coedge_indices.insert(id, index);
     }
-    for (face_id, loop_a, loop_b, circle_a, circle_b, vertex_a, vertex_b, pa, pb) in candidates {
-        for (vertex_id, position) in [(&vertex_a, pa), (&vertex_b, pb)] {
-            let Some(point_id) = out
-                .vertices
-                .iter()
-                .find(|vertex| vertex.id == *vertex_id)
-                .map(|vertex| &vertex.point)
-            else {
+    for candidate in candidates {
+        let vertex_position = |vertex_id: &VertexId| {
+            vertex_points
+                .get(vertex_id)
+                .map(|&index| out.points[index].position().get())
+        };
+        let stored = |vertex_id: &VertexId| {
+            vertex_points.get(vertex_id).is_some_and(|&index| {
+                position_is_stored(annotations.annotations(), &out.points[index].id)
+            })
+        };
+        let Some((seam, kept)) = seam_endpoints(&candidate, &vertex_edges, vertex_position, stored)
+        else {
+            continue;
+        };
+        let SeamCandidate {
+            face: face_id,
+            loops: [loop_a, loop_b],
+            circles: [circle_a, circle_b],
+            ends: [end_a, end_b],
+            ..
+        } = candidate;
+        let (vertex_a, vertex_b) = (end_a.vertex, end_b.vertex);
+        let [pa, pb] = seam;
+        for ((vertex_id, position), kept) in
+            [(&vertex_a, pa), (&vertex_b, pb)].into_iter().zip(kept)
+        {
+            if kept {
                 continue;
-            };
-            if let Some(point) = out.points.iter_mut().find(|point| point.id == *point_id) {
-                point.set_position(
+            }
+            if let Some(&index) = vertex_points.get(vertex_id) {
+                out.points[index].set_position(
                     cadmpeg_ir::features::FinitePoint3::new(position).ok_or_else(|| {
                         cadmpeg_core::CodecError::Malformed(Point::NON_FINITE_POSITION.into())
                     })?,
@@ -8984,6 +9280,12 @@ fn synthesize_cylinder_seams(
             )),
             native_ref: None,
         });
+        for vertex in [&vertex_a, &vertex_b] {
+            vertex_edges
+                .entry(vertex.clone())
+                .or_default()
+                .push(edge_id.clone());
+        }
         admit_brep_entity(ctx)?;
         out.edges.push(Edge {
             id: edge_id.clone(),
@@ -9055,6 +9357,9 @@ fn synthesize_sphere_seams(
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    if !has_sphere_surface(&out.surfaces) {
+        return Ok(());
+    }
     let surface_geometry = out
         .surfaces
         .iter()
@@ -9081,16 +9386,7 @@ fn synthesize_sphere_seams(
         .iter()
         .map(|curve| (&curve.id, &curve.geometry))
         .collect::<std::collections::HashMap<_, _>>();
-    let vertex_points = out
-        .vertices
-        .iter()
-        .filter_map(|vertex| {
-            out.points
-                .iter()
-                .find(|point| point.id == vertex.point)
-                .map(|point| (&vertex.id, point.position().get()))
-        })
-        .collect::<std::collections::HashMap<_, _>>();
+    let vertex_points = vertex_positions(&out.vertices, &out.points);
     let mut existing = Vec::new();
     for face in &out.faces {
         let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))) =

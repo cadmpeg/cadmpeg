@@ -18,6 +18,7 @@ mod attributes;
 mod index;
 mod native_bytes;
 pub(crate) mod native_geometry;
+pub(in crate::writer) mod pcurve_supports;
 mod preconditions;
 mod presentation;
 mod records;
