@@ -110,4 +110,45 @@ fn ambiguous_base_feature_histories_use_the_blob_of_its_body_entity_suffix() {
     };
     assert_eq!(bind(&[binding(80, "second")])[&scope.id], histories[1].id);
     assert!(!bind(&[binding(90, "second")]).contains_key(&scope.id));
+
+    // A partial suffix match (suffix 80 resolves, suffix 81 does not) must not bind.
+    let DesignScopePayloadMut::BaseFeature(slot) = scope.payload_mut() else {
+        panic!("Base Feature payload");
+    };
+    *slot = Some(
+        serde_json::from_value(serde_json::json!({
+            "body_entity_fields": ["000000000000", "000000000000"],
+            "body_entity_suffix_offsets": [24, 32],
+            "body_entity_suffixes": [80, 81],
+            "body_reference_fields": ["000000000000", "000000000000"],
+            "body_reference_record_offsets": [39, 47],
+            "body_reference_records": [90, 91],
+            "metadata_field": "000000000000",
+            "metadata_record": 104,
+            "metadata_record_offset": 81,
+            "repeated_reference_fields": ["000000000000", "000000000000"],
+            "result_fields": ["000000000000", "000000000000"],
+            "result_record_offsets": [100, 108],
+            "result_records": [108, 109]
+        }))
+        .unwrap(),
+    );
+    let partial_bound = bind_scope_histories(
+        std::slice::from_ref(&scope),
+        &[binding(80, "second")],
+        &[],
+        Default::default(),
+        &histories,
+        &mut Vec::new(),
+    );
+    assert!(!partial_bound.contains_key(&scope.id));
+    let both_bound = bind_scope_histories(
+        std::slice::from_ref(&scope),
+        &[binding(80, "second"), binding(81, "second")],
+        &[],
+        Default::default(),
+        &histories,
+        &mut Vec::new(),
+    );
+    assert_eq!(both_bound[&scope.id], histories[1].id);
 }
