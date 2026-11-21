@@ -18,7 +18,7 @@ use crate::test_support::builders::{assert_measured, measure, Builder};
 
 const BOX_TOLERANCE: f64 = 1.0e-8;
 
-fn oblique_extrusion(unknown_cache: bool) -> CadIr {
+pub(super) fn oblique_extrusion(unknown_cache: bool) -> CadIr {
     let mut builder = Builder::new();
     let vertices = [
         [0.0, 0.0, 0.0],
