@@ -237,9 +237,6 @@ fn arc_arc_gap(a: Arc, b: Arc) -> f64 {
         .fold(f64::INFINITY, f64::min);
     let apart = distance(a.center, b.center);
     if apart == 0.0 {
-        if a.spans(b.point(b.angles[0])) || b.spans(a.point(a.angles[0])) {
-            gap = gap.min((a.radius - b.radius).abs());
-        }
         return gap;
     }
     let unit = [
