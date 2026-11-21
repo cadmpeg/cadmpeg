@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Positional solid-loft operand admission.
 
-use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, ParameterValue};
+use cadmpeg_ir::features::parameters::ParameterValue;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 use crate::design::PmDcParameter;
 use crate::feature::{
@@ -196,7 +197,7 @@ pub(crate) fn matches_definition(definition: &FeatureDefinition) -> bool {
         FeatureDefinition::Operation(FeatureOperation::Loft {
             sections,
             guidance: cadmpeg_ir::features::LoftGuidance::Guides(guides),
-            op: cadmpeg_ir::features::BooleanOp::NewBody,
+            op: cadmpeg_ir::features::operation_settings::BooleanOp::NewBody,
             closed: false,
             solid: true,
             ruled: false,

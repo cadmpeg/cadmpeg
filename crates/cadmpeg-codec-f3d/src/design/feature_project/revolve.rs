@@ -26,10 +26,10 @@ pub(in crate::design) fn project_fixed_revolve_with_entities(
     (placements, curve_identities): (&[DesignSketchPlacement], &[SketchCurveIdentity]),
     design_types: &[crate::records::entity_header::SegmentType],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{
-        AngularTermination, FeatureDefinition, FeatureOperation, PlanarProfileRef, RevolutionAxis,
-        RevolveConstruction, RevolveExtent,
-    };
+    use cadmpeg_ir::features::extents::AngularTermination;
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
+    use cadmpeg_ir::features::revolve::{RevolutionAxis, RevolveConstruction, RevolveExtent};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let crate::records::feature::scope::DesignScopePayload::Revolve(Some(
         crate::records::feature::path_features::DesignRevolveConstruction {
@@ -86,7 +86,7 @@ pub(in crate::design) fn project_fixed_revolve_with_entities(
                 None => (
                     Some(RevolveExtent::OneSided {
                         termination: AngularTermination::ToShape {
-                            target: cadmpeg_ir::features::FaceSelection::Native(
+                            target: cadmpeg_ir::features::selections::FaceSelection::Native(
                                 side_one.id.clone(),
                             ),
                         },
@@ -131,8 +131,8 @@ pub(in crate::design) fn project_fixed_revolve_with_entities(
     let axis = if let (Some(axis_operand), None) = (first, second) {
         axis_operand.resolved_axis.map(|axis| RevolutionAxis {
             origin: axis.origin,
-            direction: cadmpeg_ir::features::FeatureDirection3::from(axis.direction),
-            reference: Some(cadmpeg_ir::features::PathRef::Native(
+            direction: cadmpeg_ir::features::geometry::FeatureDirection3::from(axis.direction),
+            reference: Some(cadmpeg_ir::features::profiles::PathRef::Native(
                 axis_operand.id.clone(),
             )),
         })
@@ -170,7 +170,7 @@ pub(in crate::design) fn project_fixed_revolve_with_entities(
     } else {
         return None;
     };
-    let revolve_profile: cadmpeg_ir::features::PlanarProfileRef =
+    let revolve_profile: cadmpeg_ir::features::profiles::PlanarProfileRef =
         PlanarProfileRef::Native(profile.id.clone());
     let extent = match (travel, second_side) {
         (crate::records::feature::path_features::DesignRevolveTravel::ToTargets(_), _) => {
@@ -211,7 +211,7 @@ pub(in crate::design) fn project_fixed_revolve_with_entities(
                 allow_multi_profile_faces: None,
             },
             None => RevolveConstruction::Unresolved(
-                cadmpeg_ir::features::PartialRevolveConstruction::Axis {
+                cadmpeg_ir::features::revolve::PartialRevolveConstruction::Axis {
                     profile: revolve_profile,
                     extent: Some(extent),
                     solid: *solid,
@@ -270,9 +270,10 @@ pub(crate) fn orient_revolve_axes(
     sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
     (linear_tolerance, angular_tolerance): (f64, f64),
 ) {
-    use cadmpeg_ir::features::{
-        AngularTermination, FeatureDefinition, FeatureOperation, PlanarProfileRef, RevolveExtent,
-    };
+    use cadmpeg_ir::features::extents::AngularTermination;
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
+    use cadmpeg_ir::features::revolve::RevolveExtent;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     for feature in features {
         let reversed = scopes.iter().any(|scope| {
@@ -338,10 +339,10 @@ pub(crate) fn orient_revolve_axes(
 }
 
 pub(super) fn selected_revolve_profile_entities<'a>(
-    profile: &'a cadmpeg_ir::features::PlanarProfileRef,
+    profile: &'a cadmpeg_ir::features::profiles::PlanarProfileRef,
     sketch: &'a cadmpeg_ir::sketches::Sketch,
 ) -> Option<Vec<&'a cadmpeg_ir::sketches::SketchEntityId>> {
-    use cadmpeg_ir::features::{PlanarProfileRef, SketchProfileRegion};
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, SketchProfileRegion};
     let mut entities = Vec::new();
     let mut add_loop = |index: u32| {
         let loop_ = sketch.profiles.get(usize::try_from(index).ok()?)?;
@@ -396,13 +397,13 @@ pub(super) fn selected_revolve_profile_entities<'a>(
 /// `None` when the axis is not parallel to the sketch plane or the profile does
 /// not lie on one side of the axis.
 pub(super) fn oriented_revolve_axis(
-    axis: &cadmpeg_ir::features::RevolutionAxis,
+    axis: &cadmpeg_ir::features::revolve::RevolutionAxis,
     sketch: &cadmpeg_ir::sketches::Sketch,
-    profile: &cadmpeg_ir::features::PlanarProfileRef,
+    profile: &cadmpeg_ir::features::profiles::PlanarProfileRef,
     sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
     reversed: bool,
     (linear_tolerance, angular_tolerance): (f64, f64),
-) -> Option<cadmpeg_ir::features::RevolutionAxis> {
+) -> Option<cadmpeg_ir::features::revolve::RevolutionAxis> {
     let (origin, normal, u_axis) = sketch.resolved_placement()?;
     let normal = normal.get().unit()?;
     let u_axis = u_axis.get().unit()?;
@@ -434,10 +435,10 @@ pub(super) fn oriented_revolve_axis(
             }
         }
     }
-    Some(cadmpeg_ir::features::RevolutionAxis {
+    Some(cadmpeg_ir::features::revolve::RevolutionAxis {
         direction: if positive_side? == reversed {
             // Reversing a zero component gives -0.0; keep it a plain zero.
-            cadmpeg_ir::features::FeatureDirection3::from_unit_without_small_components(
+            cadmpeg_ir::features::geometry::FeatureDirection3::from_unit_without_small_components(
                 cadmpeg_ir::units::UnitVector3::normalized(axis.direction.reversed().get())?,
             )
         } else {
@@ -587,7 +588,9 @@ pub(crate) fn bind_revolve_face_axes(
                 _ => None,
             };
             construction.set_axis(axis.map(|mut axis| {
-                axis.reference = Some(cadmpeg_ir::features::PathRef::Native(group.id.clone()));
+                axis.reference = Some(cadmpeg_ir::features::profiles::PathRef::Native(
+                    group.id.clone(),
+                ));
                 axis
             }));
         });
@@ -598,7 +601,7 @@ pub(super) fn analytic_axis_for_face(
     face_id: &cadmpeg_ir::ids::FaceId,
     faces: &[cadmpeg_ir::topology::Face],
     surfaces: &[cadmpeg_ir::geometry::Surface],
-) -> Option<cadmpeg_ir::features::RevolutionAxis> {
+) -> Option<cadmpeg_ir::features::revolve::RevolutionAxis> {
     let face = unique_feature_match(faces.iter().filter(|face| &face.id == face_id))?;
     let surface =
         unique_feature_match(surfaces.iter().filter(|surface| surface.id == face.surface))?;
@@ -607,7 +610,7 @@ pub(super) fn analytic_axis_for_face(
 
 pub(super) fn analytic_surface_axis(
     geometry: &cadmpeg_ir::geometry::SurfaceGeometry,
-) -> Option<cadmpeg_ir::features::RevolutionAxis> {
+) -> Option<cadmpeg_ir::features::revolve::RevolutionAxis> {
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
     let (origin, direction) = match geometry {
@@ -625,9 +628,9 @@ pub(super) fn analytic_surface_axis(
         }
         _ => return None,
     };
-    Some(cadmpeg_ir::features::RevolutionAxis {
+    Some(cadmpeg_ir::features::revolve::RevolutionAxis {
         origin,
-        direction: cadmpeg_ir::features::FeatureDirection3::from(direction),
+        direction: cadmpeg_ir::features::geometry::FeatureDirection3::from(direction),
         reference: None,
     })
 }
@@ -644,7 +647,7 @@ pub(super) fn design_geometry_axis_selection(
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     placements: &[DesignSketchPlacement],
     design_types: &[crate::records::entity_header::SegmentType],
-) -> Option<cadmpeg_ir::features::RevolutionAxis> {
+) -> Option<cadmpeg_ir::features::revolve::RevolutionAxis> {
     let stream = native_stream(&scope.id)?;
     let selection = unique_feature_match(entity_selection_operands.iter().filter(|operand| {
         native_stream(&operand.id) == Some(stream)
@@ -675,10 +678,12 @@ pub(super) fn design_geometry_axis_selection(
         2 => cadmpeg_ir::units::UnitVector3::Z_AXIS,
         _ => return None,
     };
-    Some(cadmpeg_ir::features::RevolutionAxis {
-        origin: cadmpeg_ir::features::FinitePoint3::ZERO,
-        direction: cadmpeg_ir::features::FeatureDirection3::from(direction),
-        reference: Some(cadmpeg_ir::features::PathRef::Native(selection.id.clone())),
+    Some(cadmpeg_ir::features::revolve::RevolutionAxis {
+        origin: cadmpeg_ir::features::geometry::FinitePoint3::ZERO,
+        direction: cadmpeg_ir::features::geometry::FeatureDirection3::from(direction),
+        reference: Some(cadmpeg_ir::features::profiles::PathRef::Native(
+            selection.id.clone(),
+        )),
     })
 }
 
@@ -689,7 +694,7 @@ pub(super) fn resolve_sketch_axis_selection(
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     placements: &[DesignSketchPlacement],
     curve_identities: &[SketchCurveIdentity],
-) -> Option<cadmpeg_ir::features::RevolutionAxis> {
+) -> Option<cadmpeg_ir::features::revolve::RevolutionAxis> {
     let stream = native_stream(&scope.id)?;
     let selection = unique_feature_match(entity_selection_operands.iter().filter(|operand| {
         native_stream(&operand.id) == Some(stream)
@@ -742,11 +747,13 @@ pub(super) fn resolve_sketch_axis_selection(
             + placement.transform()[2][1] * direction.y
             + placement.transform()[2][2] * direction.z,
     );
-    Some(cadmpeg_ir::features::RevolutionAxis {
-        origin: cadmpeg_ir::features::FinitePoint3::new(origin)?,
-        direction: cadmpeg_ir::features::FeatureDirection3::from(
+    Some(cadmpeg_ir::features::revolve::RevolutionAxis {
+        origin: cadmpeg_ir::features::geometry::FinitePoint3::new(origin)?,
+        direction: cadmpeg_ir::features::geometry::FeatureDirection3::from(
             cadmpeg_ir::units::UnitVector3::normalized_by_reciprocal(direction)?,
         ),
-        reference: Some(cadmpeg_ir::features::PathRef::Native(selection.id.clone())),
+        reference: Some(cadmpeg_ir::features::profiles::PathRef::Native(
+            selection.id.clone(),
+        )),
     })
 }

@@ -15,10 +15,9 @@ pub(crate) fn bind_sketch_feature_geometry(
     sketches: &[cadmpeg_ir::sketches::Sketch],
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
 ) -> Result<(), CodecError> {
-    use cadmpeg_ir::features::{
-        DatumPointConstruction, FeatureDefinition, FeatureOperation, LoftSection, PathRef,
-        PlanarProfileRef, ProfileRef, SketchPointSelection,
-    };
+    use cadmpeg_ir::features::datums::{DatumPointConstruction, SketchPointSelection};
+    use cadmpeg_ir::features::profiles::{LoftSection, PathRef, PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     for feature in features.iter_mut() {
         let mut display_name_to_apply = None;
@@ -239,8 +238,8 @@ pub(crate) fn bind_sketch_feature_geometry(
                         .and_then(planar_profile_dependency),
                 )?;
                 match shape {
-                    cadmpeg_ir::features::SweepShape::Unresolved { sections, .. }
-                    | cadmpeg_ir::features::SweepShape::Surface { sections, .. } => {
+                    cadmpeg_ir::features::sweeps::SweepShape::Unresolved { sections, .. }
+                    | cadmpeg_ir::features::sweeps::SweepShape::Surface { sections, .. } => {
                         for section in sections {
                             add_dependency(
                                 section
@@ -249,7 +248,7 @@ pub(crate) fn bind_sketch_feature_geometry(
                             )?;
                         }
                     }
-                    cadmpeg_ir::features::SweepShape::Solid { sections, .. } => {
+                    cadmpeg_ir::features::sweeps::SweepShape::Solid { sections, .. } => {
                         for section in sections {
                             add_dependency(
                                 section

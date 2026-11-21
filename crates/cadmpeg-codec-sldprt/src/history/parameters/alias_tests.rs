@@ -23,10 +23,10 @@ use crate::history::write::parameters::{
 use crate::records::FeatureContent;
 use crate::records::FeatureHistory;
 use crate::records::FeatureSource;
-use cadmpeg_ir::features::DesignParameter;
+use cadmpeg_ir::features::parameters::DesignParameter;
+use cadmpeg_ir::features::parameters::ParameterValue;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::features::ParameterId;
-use cadmpeg_ir::features::ParameterValue;
 use cadmpeg_ir::scalar::Length;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -137,7 +137,7 @@ fn layered_parameter_aliases_match_materialized_precedence() {
             expression: "1".into(),
             display: None,
             value: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -151,7 +151,7 @@ fn layered_parameter_aliases_match_materialized_precedence() {
             expression: "2".into(),
             display: None,
             value: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: None,

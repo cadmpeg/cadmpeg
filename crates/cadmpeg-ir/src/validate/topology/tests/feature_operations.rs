@@ -2,13 +2,23 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::examples::unit_cube;
+use crate::features::profiles::PlanarProfileRef;
+use crate::features::selections::DistinctMembers;
+use crate::features::selections::EdgeSelection;
+use crate::features::sheet_metal_forms::SheetMetalCornerEffect;
+use crate::features::sheet_metal_forms::SheetMetalRelief;
+use crate::features::sheet_metal_forms::SheetMetalReliefForm;
+use crate::features::sheet_metal_forms::SheetMetalThicknessSide;
+use crate::features::sheet_metal_forms::SheetMetalTransition;
+use crate::features::sheet_metal_forms::SheetMetalTransitionForm;
 use crate::validate::validate_neutral;
 
 #[test]
 fn separation_sources_validate_dangling_tessellations_and_real_feature_anchors() {
+    use crate::features::evaluation::FeatureEvaluation;
+    use crate::features::selections::DistinctMembers;
     use crate::features::{
-        DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
-        FeatureOperation,
+        Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
     };
     let mut ir = crate::CadIr::empty();
     for (ordinal, source) in [
@@ -78,12 +88,12 @@ fn mesh_face_group_and_conversion_sources_validate_meshes_and_originating_featur
                 ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
                 name: None,
                 suppressed: Some(false),
-                dependencies: crate::features::DistinctMembers::default(),
+                dependencies: crate::features::selections::DistinctMembers::default(),
                 source_properties: std::collections::BTreeMap::new(),
                 source_tag: None,
                 source_text: None,
                 source_content: crate::features::FeatureContent::default(),
-                evaluation: crate::features::FeatureEvaluation::from_definition(
+                evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(operation),
                 ),
                 native_ref: None,
@@ -118,19 +128,20 @@ fn feature_operation_geometry_is_validated() {
             .unwrap(),
         )),
         FeatureDefinition::Operation(FeatureOperation::Thicken {
-            faces: crate::features::FaceSelection::Native("thicken:faces".into()),
+            faces: crate::features::selections::FaceSelection::Native("thicken:faces".into()),
             thickness: None,
             side: None,
-            result: Some(crate::features::SolidFeatureResult::Boolean {
-                operation: crate::features::BooleanKind::Cut,
-                targets: crate::features::BodySelection::Bodies(
-                    crate::features::DistinctMembers::try_from(vec![crate::ids::BodyId::mint(
-                        "synthetic:test:body#missing",
-                    )
-                    .unwrap()])
-                    .unwrap(),
-                ),
-            }),
+            result: Some(
+                crate::features::operation_settings::SolidFeatureResult::Boolean {
+                    operation: crate::features::operation_settings::BooleanKind::Cut,
+                    targets: crate::features::selections::BodySelection::Bodies(
+                        crate::features::selections::DistinctMembers::try_from(vec![
+                            crate::ids::BodyId::mint("synthetic:test:body#missing").unwrap(),
+                        ])
+                        .unwrap(),
+                    ),
+                },
+            ),
             tangent_chain: Some(false),
         }),
     ];
@@ -147,13 +158,13 @@ fn feature_operation_geometry_is_validated() {
             ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
             name: None,
             suppressed: Some(false),
-            dependencies: crate::features::DistinctMembers::default(),
+            dependencies: crate::features::selections::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: crate::features::FeatureContent::default(),
 
-            evaluation: crate::features::FeatureEvaluation::from_definition(definition),
+            evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
     }
@@ -170,10 +181,10 @@ fn feature_operation_geometry_is_validated() {
 
 #[test]
 fn a_two_sided_draft_needs_a_neutral_plane_pull() {
-    use crate::features::{
-        DraftAnchor, DraftPull, DraftSecondSide, FaceSelection, FeatureDefinition,
-        FeatureDirection3, FeatureOperation,
-    };
+    use crate::features::direct_edit::{DraftAnchor, DraftPull, DraftSecondSide};
+    use crate::features::geometry::FeatureDirection3;
+    use crate::features::selections::FaceSelection;
+    use crate::features::{FeatureDefinition, FeatureOperation};
 
     let pull = DraftPull::new(
         FeatureDirection3::new(crate::math::Vector3::new(0.0, 0.0, 1.0)).unwrap(),
@@ -235,10 +246,10 @@ fn a_two_sided_draft_needs_a_neutral_plane_pull() {
 
 #[test]
 fn a_draft_pull_frame_normal_is_parallel_to_its_direction() {
-    use crate::features::{
-        DraftAnchor, DraftPull, FaceSelection, FeatureDefinition, FeatureDirection3,
-        FeatureOperation, FeatureSupportPlaneFrame,
-    };
+    use crate::features::direct_edit::{DraftAnchor, DraftPull};
+    use crate::features::geometry::{FeatureDirection3, FeatureSupportPlaneFrame};
+    use crate::features::selections::FaceSelection;
+    use crate::features::{FeatureDefinition, FeatureOperation};
     use crate::math::{Point3, Vector3};
 
     let message = "draft pull plane frame normal is not parallel to the pull direction";
@@ -334,12 +345,12 @@ fn feature(
         ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
         name: None,
         suppressed: Some(false),
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
-        evaluation: crate::features::FeatureEvaluation::from_definition(definition),
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(definition),
         native_ref: None,
     }
 }
@@ -373,7 +384,7 @@ fn many_block_instances_resolve_their_definitions_in_linear_time() {
         plane,
         1,
         FeatureDefinition::Operation(FeatureOperation::DatumPlane {
-            frame: crate::features::FeatureDatumPlaneFrame::new(
+            frame: crate::features::geometry::FeatureDatumPlaneFrame::new(
                 crate::math::Point3::new(0.0, 0.0, 0.0),
                 crate::math::Vector3::new(0.0, 0.0, 1.0),
                 crate::math::Vector3::new(1.0, 0.0, 0.0),
@@ -407,7 +418,8 @@ fn many_block_instances_resolve_their_definitions_in_linear_time() {
 
 #[test]
 fn many_datum_plane_cycles_are_each_reported_once_in_linear_time() {
-    use crate::features::{DatumPlaneReference, FeatureDefinition, FeatureOperation};
+    use crate::features::datums::DatumPlaneReference;
+    use crate::features::{FeatureDefinition, FeatureOperation};
     // A comparison with every reported cycle would be 2^31 steps.
     const CYCLES: usize = 1 << 15;
     let id = |cycle: usize, side: usize| format!("synthetic:test:feature#plane-{cycle}-{side}");
@@ -438,11 +450,13 @@ fn many_datum_plane_cycles_are_each_reported_once_in_linear_time() {
 
 #[test]
 fn attached_plate_and_bend_validate_profiles_edges_and_history() {
-    use crate::features::{
-        EdgeSelection, FeatureDefinition, FeatureId, FeatureOperation, PlanarProfileRef,
+    use crate::features::profiles::PlanarProfileRef;
+    use crate::features::selections::EdgeSelection;
+    use crate::features::sheet_metal_forms::{
         SheetMetalRelief, SheetMetalReliefForm, SheetMetalThicknessSide, SheetMetalTransition,
         SheetMetalTransitionForm,
     };
+    use crate::features::{FeatureDefinition, FeatureId, FeatureOperation};
     use crate::scalar::{NonNegativeLength, PositiveLength};
     let relief = SheetMetalRelief {
         form: SheetMetalReliefForm::StyleDefault,
@@ -625,10 +639,10 @@ fn captured_component_positions_validate_resolved_occurrences() {
     let definition = |occurrence| {
         crate::features::FeatureDefinition::Operation(
             crate::features::FeatureOperation::CapturedComponentPositions {
-                positions: vec![crate::features::CapturedComponentPosition {
+                positions: vec![crate::features::tree::CapturedComponentPosition {
                     selector: crate::ids::NativeId::mint("synthetic:test:selector#pose").unwrap(),
                     occurrence,
-                    transform: crate::features::CapturedPositionTransform::Affine {
+                    transform: crate::features::tree::CapturedPositionTransform::Affine {
                         transform: crate::transform::Transform::identity(),
                     },
                 }],
@@ -688,12 +702,12 @@ fn plane_cut_unresolved_sources_validate_actual_anchors_including_self() {
             ordinal: 0,
             name: None,
             suppressed: None,
-            dependencies: crate::features::DistinctMembers::default(),
+            dependencies: crate::features::selections::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: crate::features::FeatureContent::default(),
-            evaluation: crate::features::FeatureEvaluation::from_definition(
+            evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(operation),
             ),
             native_ref: None,

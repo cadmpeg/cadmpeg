@@ -12,10 +12,9 @@ use crate::records::feature::fixed_parameters::{
 use crate::records::feature::scope::{DesignParameterScope, DesignScopePayload};
 use crate::records::sketch_placement::DesignSketchPlacement;
 use crate::records::topology::sketch_profile::DesignSketchProfileOperand;
-use cadmpeg_ir::features::{
-    ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureOperation, LinearTermination,
-    PlanarProfileRef, ProfileRef,
-};
+use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 fn distance(
     value: f64,
@@ -301,7 +300,7 @@ fn two_sided_distance_with_a_zero_side_travels_the_other_side() {
     };
     assert_eq!(
         direction,
-        cadmpeg_ir::features::ExtrudeDirection::ReversedProfileNormal {}
+        cadmpeg_ir::features::extents::ExtrudeDirection::ReversedProfileNormal {}
     );
     assert!(
         matches!(side.termination, LinearTermination::Blind { length } if length.get() == 12.0)

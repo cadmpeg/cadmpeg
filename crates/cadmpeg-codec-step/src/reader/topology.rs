@@ -1245,7 +1245,7 @@ fn build_wire_set(
     if wire_edges.is_empty() {
         losses.push(StepLossCode::DecodeWarning.note(format!(
             "CONNECTED_EDGE_SET #{set_id}: {}",
-            cadmpeg_ir::features::BodySelectionError::Empty
+            cadmpeg_ir::features::selections::BodySelectionError::Empty
         )));
         return Ok(None);
     }
@@ -1528,7 +1528,7 @@ fn build_shell_wire_set(
     if wire_edges.is_empty() && free_vertex_ids.is_empty() {
         losses.push(StepLossCode::DecodeWarning.note(format!(
             "wire shell #{shell_id}: {}",
-            cadmpeg_ir::features::BodySelectionError::Empty
+            cadmpeg_ir::features::selections::BodySelectionError::Empty
         )));
         return Ok(None);
     }
@@ -2099,7 +2099,7 @@ fn stage_boundary_loop(
         let vertex_id = VertexId::from(ids::data(kind!("vertex"), vertex_key));
         parts.points.push(cadmpeg_ir::topology::Point::new(
             point_id.clone(),
-            cadmpeg_ir::features::FinitePoint3::new(start)?,
+            cadmpeg_ir::features::geometry::FinitePoint3::new(start)?,
             None,
         ));
         parts.vertices.push(Vertex {
@@ -4263,7 +4263,7 @@ fn poly_segment_curve(
 ) -> Option<(cadmpeg_ir::geometry::Curve, f64)> {
     let length = end.vector_from(start).norm();
     let direction = UnitVector3::normalized(end.vector_from(start))?;
-    let origin = cadmpeg_ir::features::FinitePoint3::new(start)?;
+    let origin = cadmpeg_ir::features::geometry::FinitePoint3::new(start)?;
     Some((
         cadmpeg_ir::geometry::Curve {
             id,
@@ -4437,7 +4437,7 @@ fn implicit_face_plane(
         }
     }
     let u_axis = u_axis?;
-    let origin = cadmpeg_ir::features::FinitePoint3::new(origin)?;
+    let origin = cadmpeg_ir::features::geometry::FinitePoint3::new(origin)?;
     let frame = OrthonormalFrame3::from_units(normal, u_axis)?;
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::analytic::PlaneSurface::new(origin, frame),

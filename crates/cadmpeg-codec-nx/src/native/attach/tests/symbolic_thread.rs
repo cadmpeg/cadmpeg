@@ -2,7 +2,8 @@
 
 use crate::native::attach::feature_projection::non_boolean_feature_definition;
 use crate::native::attach::feature_projection::symbolic_thread_feature_definition;
-use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 #[test]
 fn nx_symbolic_thread_retains_cosmetic_family_without_roles() {

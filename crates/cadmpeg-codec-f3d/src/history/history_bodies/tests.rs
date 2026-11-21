@@ -6,10 +6,9 @@ use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 use cadmpeg_ir::attributes::{AttributeTarget, SourceAttribute};
-use cadmpeg_ir::features::{
-    BodySelection, DistinctMembers, FeatureContent, FeatureDefinition, FeatureEvaluation,
-    FeatureId, FeatureOperation,
-};
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::selections::{BodySelection, DistinctMembers};
+use cadmpeg_ir::features::{FeatureContent, FeatureDefinition, FeatureId, FeatureOperation};
 
 fn feature(native: &str) -> Feature {
     Feature {
@@ -711,10 +710,10 @@ fn consumed_fixture(
 #[test]
 fn initial_cut_snapshot_requires_one_input_body_and_an_unbuilt_component() {
     use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
-    use cadmpeg_ir::features::{
+    use cadmpeg_ir::features::extents::{
         ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
-        PlanarProfileRef, ProfileRef,
     };
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
     let bytes = carrier_bytes(RefWidth::Eight, true);
     let arena = DecodeArena::new();
     let (ctx, _) =
@@ -1190,8 +1189,10 @@ fn admission_rejects_a_reference_closed_nest_with_displaced_endpoints() {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut candidate = cube_candidate();
     candidate.topology.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(10.0, 10.0, 10.0))
-            .expect("finite position"),
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            10.0, 10.0, 10.0,
+        ))
+        .expect("finite position"),
     );
     assert!(!escapes(&ctx, &candidate.topology).expect("references"));
     assert!(admit(&ctx, candidate, &feature("base"))
@@ -1359,8 +1360,8 @@ fn split_fixture() -> (Feature, DesignParameterScope, AsmHistory) {
         .set_definition(FeatureDefinition::Operation(FeatureOperation::SplitBody {
             extend_tool: None,
             targets,
-            tool: cadmpeg_ir::features::SplitBodyTool::Faces(
-                cadmpeg_ir::features::FaceSelection::Unresolved,
+            tool: cadmpeg_ir::features::direct_edit::SplitBodyTool::Faces(
+                cadmpeg_ir::features::selections::FaceSelection::Unresolved,
             ),
         }));
     let state = |state_id, node_index, next_ref| {
@@ -1707,8 +1708,8 @@ fn identity_split_fixture() -> (Feature, Inputs<'static>) {
         .set_definition(FeatureDefinition::Operation(FeatureOperation::SplitBody {
             extend_tool: None,
             targets: BodySelection::Native(group_id.into()),
-            tool: cadmpeg_ir::features::SplitBodyTool::Faces(
-                cadmpeg_ir::features::FaceSelection::Unresolved,
+            tool: cadmpeg_ir::features::direct_edit::SplitBodyTool::Faces(
+                cadmpeg_ir::features::selections::FaceSelection::Unresolved,
             ),
         }));
     let group = DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
@@ -1894,8 +1895,8 @@ fn a_native_split_target_names_its_body_by_the_recipe_identity() {
                 "f3d:test:scope#split".to_owned(),
             )
             .unwrap(),
-            tool: cadmpeg_ir::features::SplitBodyTool::Faces(
-                cadmpeg_ir::features::FaceSelection::Unresolved,
+            tool: cadmpeg_ir::features::direct_edit::SplitBodyTool::Faces(
+                cadmpeg_ir::features::selections::FaceSelection::Unresolved,
             ),
         }));
     assert!(split_identity_target(&historical, inputs).is_none());

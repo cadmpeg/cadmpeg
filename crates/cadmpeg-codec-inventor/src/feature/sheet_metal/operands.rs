@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Attached-plate dimensions and retained construction controls.
 
-use cadmpeg_ir::features::{
+use cadmpeg_ir::features::sheet_metal_forms::{
     SheetMetalRelief, SheetMetalReliefForm, SheetMetalThicknessSide, SheetMetalTransition,
     SheetMetalTransitionForm,
 };

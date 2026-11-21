@@ -4,9 +4,11 @@
 
 use crate::history::FeatureBodySelectionInputs;
 use crate::history_records::{AsmDeltaState, AsmEntityVersion, AsmHistoricalTopology};
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::operation_settings::{BooleanKind, CombineDestination};
+use cadmpeg_ir::features::selections::BodySelection;
 use cadmpeg_ir::features::{
-    BodySelection, BooleanKind, CombineDestination, CombineOperands, Feature, FeatureDefinition,
-    FeatureEvaluation, FeatureId, FeatureOperation,
+    CombineOperands, Feature, FeatureDefinition, FeatureId, FeatureOperation,
 };
 use cadmpeg_ir::report::loss::LossNote;
 
@@ -28,7 +30,7 @@ fn combine_case(
     later_update: bool,
 ) -> (
     Feature,
-    Vec<cadmpeg_ir::features::FeatureResultTopology>,
+    Vec<cadmpeg_ir::features::evaluation::FeatureResultTopology>,
     Vec<LossNote>,
 ) {
     let scope = |index: u32, state: i64, previous: i64| {

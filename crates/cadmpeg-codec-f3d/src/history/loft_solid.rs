@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Solid setting of projected Lofts from the kinds of their output bodies.
 
-use cadmpeg_ir::features::{BooleanOp, Feature, FeatureDefinition, FeatureId, FeatureOperation};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind};
 use std::collections::HashMap;

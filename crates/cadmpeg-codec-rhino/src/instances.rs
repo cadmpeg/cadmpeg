@@ -1378,7 +1378,7 @@ pub(crate) fn parse_reference(
 /// Converts source-unit translation coefficients to canonical millimeters.
 pub(crate) fn scale_translation(transform: Transform, scale: MillimeterScale) -> Option<Transform> {
     let rows = transform.affine_rows();
-    let translation = cadmpeg_ir::features::FiniteVector3::from_components(
+    let translation = cadmpeg_ir::features::geometry::FiniteVector3::from_components(
         crate::wire::scaled_coordinate(rows[0][3], scale)?,
         crate::wire::scaled_coordinate(rows[1][3], scale)?,
         crate::wire::scaled_coordinate(rows[2][3], scale)?,

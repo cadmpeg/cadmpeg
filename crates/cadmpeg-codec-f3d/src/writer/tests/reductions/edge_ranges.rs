@@ -5,7 +5,7 @@
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::decode::surface_point_solved;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{DegenerateCurve, LineCurve};
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry, PcurveMetadata, PcurveNurbs};

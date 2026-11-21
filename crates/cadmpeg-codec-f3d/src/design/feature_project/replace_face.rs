@@ -9,7 +9,8 @@ use crate::records::topology::{
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::replace_face::ReplaceFaceOperands;
-use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 
 fn selection(

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Admission of native, historical and generated body selections.
 
-use super::{
+use super::SewBodySelection;
+use crate::features::selections::{
     BodySelection, BodySelectionError, GeneratedBodyRef, NativeSelections, SelectionMembers,
-    SewBodySelection,
 };
 use crate::ids::{FeatureInputTopologyId, HistoricalBodyId};
 

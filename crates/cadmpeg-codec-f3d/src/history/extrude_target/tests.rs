@@ -2,9 +2,10 @@
 use super::*;
 use crate::history_records::{AsmDeltaState, AsmEntityVersion, AsmHistoricalCarrierBinding};
 use crate::records::dimensions::DesignRecipeReference;
-use cadmpeg_ir::features::{
-    BooleanOp, ExtrudeSide, FeatureEvaluation, PlanarProfileRef, ProfileRef,
-};
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::extents::ExtrudeSide;
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
 use cadmpeg_ir::sketches::{SketchId, SketchPlacement};
 
 const LINEAR_TOLERANCE: f64 = 1.0e-8;
