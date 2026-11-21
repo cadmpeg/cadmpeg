@@ -621,7 +621,7 @@ pub(crate) enum F3dLossCode {
     ConfigurationScopeWithoutActiveRow,
     /// Configuration properties the design does not state.
     ConfigurationPropertyUnprojected,
-    /// The rollback marker of a timeline is not read; the timeline is stated built through its last item.
+    /// The rollback marker of a timeline is not read, or an unread item follows a rolled-back item; the marker is stated at its most likely position.
     HistoryRollbackUnread,
     /// An unread timeline item precedes the first rolled-back item; the rollback marker can stand before it.
     HistoryRollbackBoundUnread,

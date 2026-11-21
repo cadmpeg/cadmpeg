@@ -305,6 +305,16 @@ fn an_unread_item_before_the_rolled_back_items_charges_the_marker_bound_loss() {
 }
 
 #[test]
+fn an_unread_item_after_the_first_rolled_back_item_charges_the_rollback_loss() {
+    let (rollback, members, losses) = rollback_of(&[10, 20], &[(10, true)]);
+    assert_eq!(rollback, Rollback::Before(members[0].clone()));
+    assert_eq!(
+        losses,
+        [crate::loss::F3dLossCode::HistoryRollbackUnread.kind()]
+    );
+}
+
+#[test]
 fn a_timeline_whose_items_are_all_read_and_built_ends_after_its_last_item() {
     let (rollback, _, losses) = rollback_of(&[10, 20], &[(10, false), (20, false)]);
     assert_eq!(rollback, Rollback::End);
