@@ -441,6 +441,179 @@ fn history_with_another_formats_native_references_is_written() {
     assert_eq!(decoded.model.sketches.len(), 1);
 }
 
+/// `cube_with_foreign_history` plus a fillet whose edges are stated in its
+/// input topology, with a tangency weight and an owned radius parameter `d7`.
+fn cube_with_foreign_fillet() -> cadmpeg_ir::CadIr {
+    use cadmpeg_ir::features::edge_treatments::{FilletGroup, RadiusSpec};
+    use cadmpeg_ir::features::{
+        DesignParameter, DistinctMembers, EdgeSelection, Feature, FeatureDefinition, FeatureId,
+        FeatureInputTopology, FeatureOperation, NonEmptyMembers, ParameterId, ParameterValue,
+    };
+    use cadmpeg_ir::ids::{FeatureInputTopologyId, HistoricalEdgeId};
+
+    let mut ir = cube_with_foreign_history();
+    let id = FeatureId::mint("other:model:feature#round").unwrap();
+    let state = FeatureInputTopologyId::mint("other:history-input:state#round").unwrap();
+    let edge = HistoricalEdgeId::mint("other:history-input:edge#round:1").unwrap();
+    ir.model
+        .feature_input_topologies
+        .push(FeatureInputTopology {
+            id: state.clone(),
+            input_of: id.clone(),
+            bodies: DistinctMembers::default(),
+            faces: DistinctMembers::default(),
+            edges: DistinctMembers::try_from(vec![edge.clone()]).unwrap(),
+            vertices: DistinctMembers::default(),
+            edge_geometry: Vec::new(),
+            native_ref: None,
+        });
+    ir.model.features.push(Feature {
+        product_definition: None,
+        id: id.clone(),
+        ordinal: 2,
+        name: Some("Round".into()),
+        suppressed: Some(false),
+        dependencies: DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Fillet {
+                groups: NonEmptyMembers::one(FilletGroup {
+                    edges: EdgeSelection::historical(
+                        state,
+                        vec![edge],
+                        "other:design:edge-operand#round".into(),
+                    )
+                    .unwrap(),
+                    radius: RadiusSpec::Constant {
+                        radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
+                    },
+                    tangency_weight: cadmpeg_ir::scalar::FiniteReal::new(1.0),
+                }),
+            }),
+        ),
+        native_ref: None,
+    });
+    ir.model.parameters.push(DesignParameter {
+        product_definition: None,
+        id: ParameterId::mint("other:model:parameter#d7").unwrap(),
+        owner: Some(id),
+        ordinal: 0,
+        name: "d7".into(),
+        expression: "2 mm".into(),
+        display: None,
+        value: Some(ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(2.0).unwrap(),
+        )),
+        dependencies: DistinctMembers::default(),
+        properties: std::collections::BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    });
+    ir
+}
+
+#[test]
+fn a_fillet_on_input_topology_edges_is_written_with_its_radius_and_named() {
+    let ir = cube_with_foreign_fillet();
+    let losses = plan_losses(&ir);
+    assert!(
+        loss(&losses, "writer.features-omitted").is_none(),
+        "{losses:#?}"
+    );
+    for (code, named) in [
+        (
+            "writer.selection-identities-omitted",
+            "other:model:feature#round",
+        ),
+        ("writer.feature-fields-omitted", "other:model:feature#round"),
+        (
+            "writer.parameters-renamed",
+            "other:model:parameter#d7 (d7 as D1)",
+        ),
+    ] {
+        let note = loss(&losses, code).unwrap_or_else(|| panic!("{code}: {losses:#?}"));
+        assert!(note.message.contains(named), "{}", note.message);
+    }
+
+    let decoded = crate::test_support::ir::encode_decode(&ir);
+    let fillet = decoded
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Round"))
+        .expect("the fillet decodes back");
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Fillet { groups },
+    ) = fillet.evaluation.definition()
+    else {
+        panic!("{:?}", fillet.evaluation.definition());
+    };
+    let [group] = &**groups else {
+        panic!("{groups:?}");
+    };
+    assert_eq!(
+        group.edges,
+        cadmpeg_ir::features::EdgeSelection::Native("other:design:edge-operand#round".into())
+    );
+    assert!(
+        matches!(
+            group.radius,
+            cadmpeg_ir::features::edge_treatments::RadiusSpec::Constant { radius }
+                if radius.get() == 2.0
+        ),
+        "{:?}",
+        group.radius
+    );
+    let radius = decoded
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.owner.as_ref() == Some(&fillet.id))
+        .expect("the radius parameter decodes back");
+    assert_eq!(radius.name, "D1");
+    assert_eq!(
+        radius.value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(2.0).unwrap()
+        ))
+    );
+}
+
+#[test]
+fn a_fillet_the_history_drop_removes_is_named_by_that_drop_alone() {
+    let mut ir = cube_with_foreign_fillet();
+    let fillet = ir.model.features.last_mut().unwrap();
+    fillet.evaluation.edit(|definition, _| {
+        let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Fillet { groups },
+        ) = definition
+        else {
+            panic!("fillet");
+        };
+        let group = groups[0].clone();
+        *groups =
+            cadmpeg_ir::features::NonEmptyMembers::try_from(vec![group.clone(), group]).unwrap();
+    });
+    let losses = plan_losses(&ir);
+    let dropped = loss(&losses, "writer.features-omitted").expect("named drop");
+    assert!(
+        dropped.message.contains("other:model:feature#round")
+            && dropped.message.contains("other:model:parameter#d7"),
+        "{}",
+        dropped.message
+    );
+    for code in [
+        "writer.selection-identities-omitted",
+        "writer.feature-fields-omitted",
+        "writer.parameters-renamed",
+    ] {
+        assert!(loss(&losses, code).is_none(), "{code}: {losses:#?}");
+    }
+}
+
 #[test]
 fn a_sketch_curve_outside_every_profile_is_left_out_and_its_sketch_is_written() {
     use cadmpeg_ir::math::Point2;

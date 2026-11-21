@@ -220,6 +220,158 @@ impl DisplayedValues {
     }
 }
 
+/// Rewrite each fillet of another format into what a Keywords fillet record
+/// holds (§3.4):
+/// - an edge selection stated in a feature input topology, which `sldprt.md`
+///   gives no record, is written by its native selection token, as a
+///   historical vertex selection already is;
+/// - a tangency weight, for which the record has no field, is not written;
+/// - the one owned parameter whose length is a constant radius is written as
+///   `D1`, the positional dimension the fillet record's radius is read from
+///   (`sldprt.md`, Keywords history), unless the feature owns a `D1` or a
+///   `Radius` already.
+///
+/// Runs after [`equations_as_displayed_values`], so no expression names the
+/// renamed parameter. The rewrites come back as [`FilletRewrites`], named once
+/// the write knows which records it keeps.
+pub(super) fn fillets_as_keywords_records(ir: &mut CadIr) -> FilletRewrites {
+    use cadmpeg_ir::features::edge_treatments::RadiusSpec;
+    use cadmpeg_ir::features::{EdgeSelection, ParameterValue};
+
+    let mut rewrites = FilletRewrites::default();
+    let mut radii = Vec::new();
+    for feature in &mut ir.model.features {
+        let id = feature.id.as_str().to_owned();
+        feature.evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) = definition
+            else {
+                return;
+            };
+            for group in groups.iter_mut() {
+                if let EdgeSelection::Historical { native, .. }
+                | EdgeSelection::HistoricalPartial { native, .. } = &group.edges
+                {
+                    let native = native.as_str().to_owned();
+                    group.edges = EdgeSelection::Native(native);
+                    rewrites.identities.insert(id.clone());
+                }
+                if group.tangency_weight.take().is_some() {
+                    rewrites.weights.insert(id.clone());
+                }
+            }
+            if let [group] = &**groups {
+                if let RadiusSpec::Constant { radius } = group.radius {
+                    radii.push((id.clone(), radius.get()));
+                }
+            }
+        });
+    }
+    for (feature, radius) in radii {
+        let owned = |parameter: &&mut cadmpeg_ir::features::DesignParameter| {
+            parameter
+                .owner
+                .as_ref()
+                .is_some_and(|owner| owner.as_str() == feature)
+        };
+        let mut owned = ir
+            .model
+            .parameters
+            .iter_mut()
+            .filter(owned)
+            .collect::<Vec<_>>();
+        if owned
+            .iter()
+            .any(|parameter| matches!(parameter.name.as_str(), "D1" | "Radius"))
+        {
+            continue;
+        }
+        owned.retain(|parameter| {
+            matches!(parameter.value, Some(ParameterValue::Length(length)) if length.get() == radius)
+        });
+        let [parameter] = owned.as_mut_slice() else {
+            continue;
+        };
+        rewrites.renamed.push((
+            parameter.id.as_str().to_owned(),
+            format!("{} ({} as D1)", parameter.id.as_str(), parameter.name),
+        ));
+        parameter.name = "D1".into();
+    }
+    rewrites
+}
+
+/// The fillets [`fillets_as_keywords_records`] rewrote: the features whose
+/// edges are written by their native token, the features whose tangency
+/// weight is left out, and each renamed parameter's id and the text that
+/// names it.
+#[derive(Default)]
+pub(super) struct FilletRewrites {
+    identities: BTreeSet<String>,
+    weights: BTreeSet<String>,
+    renamed: Vec<(String, String)>,
+}
+
+impl FilletRewrites {
+    /// The notes naming the rewritten records that `ir` still holds. A record
+    /// a later drop removed is named by that drop.
+    pub(super) fn notes(self, ir: &CadIr) -> Vec<LossNote> {
+        let features: BTreeSet<&str> = ir
+            .model
+            .features
+            .iter()
+            .map(|feature| feature.id.as_str())
+            .collect();
+        let parameters: BTreeSet<&str> = ir
+            .model
+            .parameters
+            .iter()
+            .map(|parameter| parameter.id.as_str())
+            .collect();
+        let kept = |ids: BTreeSet<String>| {
+            ids.into_iter()
+                .filter(|id| features.contains(id.as_str()))
+                .collect::<Vec<_>>()
+        };
+        let identities = kept(self.identities);
+        let weights = kept(self.weights);
+        let renamed = self
+            .renamed
+            .into_iter()
+            .filter(|(id, _)| parameters.contains(id.as_str()))
+            .map(|(_, text)| text)
+            .collect::<Vec<_>>();
+        let mut notes = Vec::new();
+        if !identities.is_empty() {
+            notes.push(
+                SldprtLossCode::WriterSelectionIdentitiesOmitted.note(format!(
+                    "the SLDPRT history writer writes the edges of {} fillet(s) by their native \
+                 selection token, without the input-topology edges they state, which sldprt.md \
+                 gives no record: {}",
+                    identities.len(),
+                    identities.join(", ")
+                )),
+            );
+        }
+        if !weights.is_empty() {
+            notes.push(SldprtLossCode::WriterFeatureFieldsOmitted.note(format!(
+                "the SLDPRT history writer writes {} fillet(s) without their tangency weight, \
+                 which the SLDPRT fillet record has no field for: {}",
+                weights.len(),
+                weights.join(", ")
+            )));
+        }
+        if !renamed.is_empty() {
+            notes.push(SldprtLossCode::WriterParametersRenamed.note(format!(
+                "the SLDPRT history writer writes {} parameter(s) as D1, the positional \
+                 dimension a fillet record's radius is read from: {}",
+                renamed.len(),
+                renamed.join(", ")
+            )));
+        }
+        notes
+    }
+}
+
 /// Drop each `Native` operation of another format, with every record that
 /// needs it, and name them: only the operation's own codec writes it (§3.4).
 pub(super) fn foreign_native_operations(ir: &mut CadIr) -> Vec<LossNote> {

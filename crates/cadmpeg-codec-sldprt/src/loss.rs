@@ -339,6 +339,15 @@ pub(crate) enum SldprtLossCode {
     /// Export writes the named faces with a loop whose coedges do not meet end
     /// to end, which the ring order cannot state.
     WriterFaceLoopsUnchained,
+    /// Export writes the named feature selections by their native selection
+    /// token, without the input-topology identities they state.
+    WriterSelectionIdentitiesOmitted,
+    /// Export writes the named features without a construction field their
+    /// SLDPRT record has no field for.
+    WriterFeatureFieldsOmitted,
+    /// Export writes the named parameters under the positional dimension name
+    /// from which the SLDPRT record's construction value is read.
+    WriterParametersRenamed,
     SourceDialectDisplaced,
     /// A source record states a property whose key holds no non-whitespace
     /// character, so the property cannot be keyed and is not transferred.
@@ -523,6 +532,9 @@ impl SldprtLossCode {
         Self::WriterParameterExpressionsOmitted,
         Self::WriterCacheTolerancesOmitted,
         Self::WriterFaceLoopsUnchained,
+        Self::WriterSelectionIdentitiesOmitted,
+        Self::WriterFeatureFieldsOmitted,
+        Self::WriterParametersRenamed,
         Self::SourceDialectDisplaced,
         Self::SourcePropertyKeyBlank,
         Self::AssemblyStructureNotTransferred,
@@ -684,6 +696,9 @@ impl SldprtLossCode {
             Self::WriterParameterExpressionsOmitted => "writer.parameter-expressions-omitted",
             Self::WriterCacheTolerancesOmitted => "writer.cache-tolerances-omitted",
             Self::WriterFaceLoopsUnchained => "writer.face-loops-unchained",
+            Self::WriterSelectionIdentitiesOmitted => "writer.selection-identities-omitted",
+            Self::WriterFeatureFieldsOmitted => "writer.feature-fields-omitted",
+            Self::WriterParametersRenamed => "writer.parameters-renamed",
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::SourcePropertyKeyBlank => "source.property-key-blank",
             Self::MetadataPartRootUnsupported => "metadata.part-root-unsupported",
@@ -743,6 +758,9 @@ impl SldprtLossCode {
             Self::WriterParameterExpressionsOmitted => Severity::Warning,
             Self::WriterCacheTolerancesOmitted => Severity::Warning,
             Self::WriterFaceLoopsUnchained => Severity::Warning,
+            Self::WriterSelectionIdentitiesOmitted => Severity::Warning,
+            Self::WriterFeatureFieldsOmitted => Severity::Warning,
+            Self::WriterParametersRenamed => Severity::Warning,
             Self::WriterUnboundAppearancesOmitted => Severity::Warning,
             Self::WriterMaterialsOmitted => Severity::Warning,
             Self::WriterAttributesOmitted => Severity::Warning,
@@ -901,6 +919,9 @@ impl SldprtLossCode {
             Self::WriterParameterExpressionsOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterCacheTolerancesOmitted => LossTaxonomy::ProceduralReduced,
             Self::WriterFaceLoopsUnchained => LossTaxonomy::TopologyNotTransferred,
+            Self::WriterSelectionIdentitiesOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterFeatureFieldsOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterParametersRenamed => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterUnboundAppearancesOmitted => LossTaxonomy::AppearanceReduced,
             Self::WriterMaterialsOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
@@ -1348,6 +1369,9 @@ mod tests {
                 "writer.parameter-expressions-omitted",
                 "writer.cache-tolerances-omitted",
                 "writer.face-loops-unchained",
+                "writer.selection-identities-omitted",
+                "writer.feature-fields-omitted",
+                "writer.parameters-renamed",
                 "target.source-dialect-displaced",
                 "source.property-key-blank",
                 "assembly.structure-not-transferred",

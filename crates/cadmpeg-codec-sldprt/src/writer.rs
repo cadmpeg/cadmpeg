@@ -173,11 +173,13 @@ pub(crate) fn write_semantic_with_records(
     losses.extend(history_drop::foreign_native_operations(&mut normalized));
     let reducible = history_drop::HistoryDrop::applies(&normalized);
     let mut displayed_values = history_drop::DisplayedValues::default();
+    let mut fillet_rewrites = history_drop::FilletRewrites::default();
     if reducible {
         history_drop::clear_foreign_native_refs(&mut normalized, native.as_ref());
         let (displayed, notes) = history_drop::equations_as_displayed_values(&mut normalized);
         displayed_values = displayed;
         losses.extend(notes);
+        fillet_rewrites = history_drop::fillets_as_keywords_records(&mut normalized);
     }
     let mut dropped_history = history_drop::HistoryDrop::default();
     let feature_input_renames = loop {
@@ -206,6 +208,7 @@ pub(crate) fn write_semantic_with_records(
     };
     losses.extend(dropped_history.finish());
     losses.extend(displayed_values.note(&normalized));
+    losses.extend(fillet_rewrites.notes(&normalized));
     let ir = &normalized;
     let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new())?;
     losses.extend(reduce::invalid_records(ir, &validation));
