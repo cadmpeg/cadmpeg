@@ -697,3 +697,22 @@ fn a_failure_in_the_dimension_records_keeps_the_sketches() {
         .iter()
         .any(|parameter| parameter.name == "Side" && parameter.owner.is_none()));
 }
+
+#[test]
+fn the_residual_note_names_the_ordinals_suffixes_and_angular_point_order() {
+    let (report, _) = write(&on_xy());
+    let notes = loss(&report, "export/record.residual-unavailable")
+        .into_iter()
+        .filter(|message| message.contains("DR-917"))
+        .collect::<Vec<_>>();
+    let [note] = notes.as_slice() else {
+        panic!("one sketch dimension note: {:#?}", report.losses);
+    };
+    for named in [
+        "each angular line's point positions, end then start",
+        "relation ordinals",
+        "the dimension suffix 2 for a sketch's first dimension of a kind",
+    ] {
+        assert!(note.contains(named), "{named}: {note}");
+    }
+}
