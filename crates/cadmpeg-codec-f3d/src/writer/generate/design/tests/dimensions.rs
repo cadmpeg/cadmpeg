@@ -11,7 +11,7 @@ use cadmpeg_ir::design::expr::{BinaryOp, Node};
 use cadmpeg_ir::design::ops::sketch::{
     AngleOperands, DefiningRole, DistanceAxis, Planar, PlanarCurve, RadialMeasure, SketchRelation,
 };
-use cadmpeg_ir::design::parameter::DesignParameter;
+use cadmpeg_ir::design::parameter::{DesignParameter, ParameterDefinition};
 use cadmpeg_ir::design::refs::Member;
 use cadmpeg_ir::design::selection::PrincipalEntity;
 use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
@@ -376,6 +376,8 @@ struct WrittenFrame {
     prefix: String,
     text: String,
     measurement: Vec<u8>,
+    /// The text frame's style byte and four style values.
+    style: (u8, [f32; 4]),
 }
 
 fn utf16(bytes: &[u8], at: &mut usize) -> String {
@@ -421,7 +423,15 @@ fn written_frames(design: &Segment) -> Vec<WrittenFrame> {
             assert_eq!(bytes[at], 0, "record {index}: no property block");
             at += 1;
             let measured = bytes[at..at + measurement].to_vec();
-            at += measurement + 91;
+            at += measurement;
+            let style = (
+                bytes[at],
+                [0, 1, 2, 3].map(|value| {
+                    let from = at + 1 + 4 * value;
+                    f32::from_le_bytes(bytes[from..from + 4].try_into().expect("four bytes"))
+                }),
+            );
+            at += 91;
             let prefix = utf16(bytes, &mut at);
             let text = utf16(bytes, &mut at);
             frames.push(WrittenFrame {
@@ -429,6 +439,7 @@ fn written_frames(design: &Segment) -> Vec<WrittenFrame> {
                 prefix,
                 text,
                 measurement: measured,
+                style,
             });
         }
     }
@@ -724,4 +735,116 @@ fn the_residual_note_names_the_ordinals_suffixes_and_angular_point_order() {
     ] {
         assert!(note.contains(named), "{named}: {note}");
     }
+}
+
+/// The driven state of each decoded constraint bound to a parameter, by the
+/// parameter's name.
+fn driving(decoded: &CadIr) -> BTreeMap<String, Option<bool>> {
+    decoded
+        .model
+        .sketch_constraints
+        .iter()
+        .filter_map(|constraint| {
+            let (_, id) = binding(constraint.definition.kind())?;
+            let name = decoded
+                .model
+                .parameters
+                .iter()
+                .find(|parameter| &parameter.id == id)?
+                .name
+                .clone();
+            Some((name, constraint.driving))
+        })
+        .collect()
+}
+
+fn drive(ir: &mut CadIr, key: &str) {
+    ir.design
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.id == parameter_id(key))
+        .expect("the parameter")
+        .definition = ParameterDefinition::Driven;
+}
+
+#[test]
+fn driven_and_driving_dimensions_read_back_with_their_state() {
+    // `Gap` (an aligned distance of 20 mm) and `Hole` (a diameter of 8 mm)
+    // are driven; the other five dimensions are driving.
+    let mut ir = on_xy();
+    drive(&mut ir, "gap");
+    drive(&mut ir, "hole");
+    let (report, decoded, bytes) = write_bytes(&ir);
+    let omitted = omitted(&report);
+    for (constraint, _) in DIMENSIONS {
+        assert!(
+            !omitted.contains(constraint_id(SKETCH, constraint).as_str()),
+            "{omitted}"
+        );
+    }
+    assert!(
+        loss(
+            &report,
+            &F3dLossCode::WriterParameterOmitted.kind().to_string()
+        )
+        .is_empty(),
+        "{:#?}",
+        report.losses
+    );
+    let states = driving(&decoded);
+    for (_, name) in DIMENSIONS {
+        let expected = matches!(name, "Gap" | "Hole").then_some(false);
+        assert_eq!(states.get(name), Some(&expected), "{name}: {states:#?}");
+    }
+    for (name, millimetres) in [("Gap", 20.0), ("Hole", 8.0)] {
+        let parameter = decoded
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name == name)
+            .unwrap_or_else(|| panic!("{name}"));
+        assert_eq!(
+            Some(parameter.expression.as_str()),
+            super::super::expression::quantity_literal(millimetres, Some(UnitSymbol::Mm))
+                .as_deref(),
+            "{name}"
+        );
+    }
+    let frames = written_frames(&segment(&bytes, "FusionDesignSegmentType1"));
+    let driven = frames
+        .iter()
+        .filter(|frame| frame.style.0 == 1)
+        .map(|frame| (frame.mask, frame.prefix.as_str(), frame.text.as_str()))
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        driven,
+        BTreeSet::from([(0x4000, "", "20.00 mm"), (0x1_0000, "\u{d8}", "8.00 mm")])
+    );
+    for frame in &frames {
+        let values = if frame.style.0 == 1 {
+            [0.25, 0.25, 0.25, 1.0]
+        } else {
+            [0.0, 0.0, 0.0, 1.0]
+        };
+        assert_eq!(frame.style.1, values, "mask {:#x}", frame.mask);
+    }
+    assert_eq!(frames.len(), DIMENSIONS.len());
+}
+
+#[test]
+fn a_dimension_whose_parameter_is_not_in_the_design_is_named_unknown() {
+    let mut ir = on_xy();
+    ir.design
+        .parameters
+        .retain(|parameter| parameter.id != parameter_id("up"));
+    let (report, decoded) = write(&ir);
+    let omitted = omitted(&report);
+    assert!(
+        omitted.contains(&format!(
+            "{}: its parameter is not in the design, so whether it is driven is unknown",
+            constraint_id(SKETCH, "up")
+        )),
+        "{omitted}"
+    );
+    assert!(driving(&decoded).contains_key("Gap"));
 }
