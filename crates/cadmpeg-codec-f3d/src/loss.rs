@@ -413,6 +413,7 @@ pub(crate) enum F3dLossCode {
     FeatureHistoryBodyBounded,
     FeatureHistoryBodyUndecoded,
     FeatureHistoryBodyConsumedWithheld,
+    FeatureHistoricalEdgeTopologyUnbound,
     FeatureOwnedBodyPairingAssumed,
     /// A Base Feature has no complete unique body binding.
     FeatureStoredBodiesUnbound,
@@ -1529,6 +1530,7 @@ impl F3dLossCode {
         Self::FeatureHistoryBodyBounded,
         Self::FeatureHistoryBodyUndecoded,
         Self::FeatureHistoryBodyConsumedWithheld,
+        Self::FeatureHistoricalEdgeTopologyUnbound,
         Self::FeatureOwnedBodyPairingAssumed,
         Self::FeatureStoredBodiesUnbound,
         Self::FeatureDerivedInstanceComponentInsertAssumed,
@@ -2276,6 +2278,9 @@ impl F3dLossCode {
             Self::FeatureStoredBodiesEmpty => "feature.stored-bodies-empty",
             Self::FeatureHistoryBodyBounded => "feature.history-body-bounded",
             Self::FeatureHistoryBodyUndecoded => "feature.history-body-undecoded",
+            Self::FeatureHistoricalEdgeTopologyUnbound => {
+                "feature.historical-edge-topology-unbound"
+            }
             Self::FeatureHistoryBodyConsumedWithheld => "feature.history-body-consumed-withheld",
             Self::FeatureOwnedBodyPairingAssumed => "feature.owned-body-pairing-assumed",
             Self::FeatureStoredBodiesRecipeAbsent => "feature.stored-bodies-recipe-absent",
@@ -3402,6 +3407,7 @@ impl F3dLossCode {
             | Self::FeatureHistoryBodyBounded
             | Self::FeatureHistoryBodyUndecoded
             | Self::FeatureHistoryBodyConsumedWithheld
+            | Self::FeatureHistoricalEdgeTopologyUnbound
             | Self::FeatureOwnedBodyPairingAssumed
             | Self::FeatureOutputBodyUnbound
             | Self::FeatureOutputStateChainUnbound
@@ -4109,6 +4115,7 @@ impl F3dLossCode {
             | Self::FeatureHistoryBodyBounded
             | Self::FeatureHistoryBodyUndecoded
             | Self::FeatureHistoryBodyConsumedWithheld
+            | Self::FeatureHistoricalEdgeTopologyUnbound
             | Self::FeatureOwnedBodyPairingAssumed
             | Self::FeatureOutputBodyUnbound
             | Self::FeatureOutputStateChainUnbound
@@ -5011,6 +5018,7 @@ mod tests {
                 "feature.history-body-bounded",
                 "feature.history-body-undecoded",
                 "feature.history-body-consumed-withheld",
+                "feature.historical-edge-topology-unbound",
                 "feature.owned-body-pairing-assumed",
                 "feature.stored-bodies-unbound",
                 "feature.derived-instance-component-insert-assumed",

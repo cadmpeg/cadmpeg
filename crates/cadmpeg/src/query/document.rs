@@ -28,6 +28,7 @@ pub(in crate::query) struct Arena {
 pub(super) struct RecordRef {
     arena: usize,
     rec: usize,
+    nested: bool,
 }
 
 /// CADIR document arenas and optional graph identity lookup.
@@ -36,6 +37,7 @@ pub(super) struct CadirDocument {
     arenas: Vec<Arena>,
     /// Exact ID to each record location that carries it, populated for graph walks.
     by_id: BTreeMap<String, Vec<RecordRef>>,
+    nested: Vec<(String, Value)>,
 }
 
 /// Which records of an arena a query selects.
@@ -171,23 +173,46 @@ impl CadirDocument {
             }
         }
 
+        let mut nested = Vec::new();
+        for arena in &arenas {
+            if arena.target.dotted() != "model.history_bodies" {
+                continue;
+            }
+            for body in &arena.records {
+                let Some(id) = record_id(body) else { continue };
+                let Some(topology) = body.get("topology").and_then(Value::as_object) else {
+                    continue;
+                };
+                for (name, value) in topology {
+                    let records = value
+                        .as_array()
+                        .map_or_else(|| vec![value], |records| records.iter().collect());
+                    for record in records {
+                        if record_id(record).is_some() {
+                            nested.push((
+                                format!("model.history_bodies#{id}.topology.{name}"),
+                                record.clone(),
+                            ));
+                        }
+                    }
+                }
+            }
+        }
         Self {
             arenas,
             by_id: BTreeMap::new(),
+            nested,
         }
     }
 
     pub(super) fn index_ids(&mut self) {
         self.by_id.clear();
-        for (ai, arena) in self.arenas.iter().enumerate() {
-            for (ri, rec) in arena.records.iter().enumerate() {
-                if let Some(id) = record_id(rec) {
-                    self.by_id
-                        .entry(id.to_owned())
-                        .or_default()
-                        .push(RecordRef { arena: ai, rec: ri });
-                }
-            }
+        let locations = self
+            .records()
+            .filter_map(|(location, record)| record_id(record).map(|id| (id.to_owned(), location)))
+            .collect::<Vec<_>>();
+        for (id, location) in locations {
+            self.by_id.entry(id).or_default().push(location);
         }
     }
 
@@ -226,22 +251,48 @@ impl CadirDocument {
 
     /// Returns each record with its indexed location.
     pub(super) fn records(&self) -> impl Iterator<Item = (RecordRef, &Value)> {
-        self.arenas.iter().enumerate().flat_map(|(ai, arena)| {
-            arena
-                .records
-                .iter()
-                .enumerate()
-                .map(move |(ri, record)| (RecordRef { arena: ai, rec: ri }, record))
-        })
+        self.arenas
+            .iter()
+            .enumerate()
+            .flat_map(|(ai, arena)| {
+                arena.records.iter().enumerate().map(move |(ri, record)| {
+                    (
+                        RecordRef {
+                            arena: ai,
+                            rec: ri,
+                            nested: false,
+                        },
+                        record,
+                    )
+                })
+            })
+            .chain(self.nested.iter().enumerate().map(|(rec, (_, value))| {
+                (
+                    RecordRef {
+                        arena: 0,
+                        rec,
+                        nested: true,
+                    },
+                    value,
+                )
+            }))
     }
 
     /// Returns a record using a location constructed by this document only.
     pub(super) fn record(&self, location: RecordRef) -> &Value {
-        &self.arenas[location.arena].records[location.rec]
+        if location.nested {
+            &self.nested[location.rec].1
+        } else {
+            &self.arenas[location.arena].records[location.rec]
+        }
     }
 
     /// Formats a location constructed by this document only.
     pub(super) fn locator(&self, location: RecordRef) -> String {
+        if location.nested {
+            let (path, record) = &self.nested[location.rec];
+            return format!("{path}#{}", record_id(record).unwrap_or(""));
+        }
         let arena = &self.arenas[location.arena];
         match record_id(self.record(location)) {
             Some(id) => format!("{}#{id}", arena.target.dotted()),
@@ -265,18 +316,29 @@ impl CadirDocument {
             RecordSelection::Head(head) => {
                 let end = (*head).min(arena.records.len());
                 return Ok((
-                    (0..end).map(|rec| RecordRef { arena: ai, rec }).collect(),
+                    (0..end)
+                        .map(|rec| RecordRef {
+                            arena: ai,
+                            rec,
+                            nested: false,
+                        })
+                        .collect(),
                     Vec::new(),
                 ));
             }
             RecordSelection::Ids(ids) => ids.as_slice(),
         };
 
-        let indexed = arena
-            .records
-            .iter()
-            .enumerate()
-            .map(|(rec, value)| (record_id(value), RecordRef { arena: ai, rec }));
+        let indexed = arena.records.iter().enumerate().map(|(rec, value)| {
+            (
+                record_id(value),
+                RecordRef {
+                    arena: ai,
+                    rec,
+                    nested: false,
+                },
+            )
+        });
 
         let mut records = Vec::new();
         let mut errors = Vec::new();

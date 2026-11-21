@@ -94,13 +94,12 @@ pub(in crate::feature) fn project(
             let edge = HistoricalEdgeId::mint(format!("inventor:input-edge#{token}-{source}"))
                 .map_err(CodecError::malformed)?;
             geometry.push(HistoricalEdgeGeometry {
-                edge: edge.clone(),
                 start: Some(sample.start),
                 end: Some(sample.end),
-                interior: sample.interior,
                 tangent: Some(sample.tangent),
                 faces: DistinctMembers::default(),
                 supports: Vec::new(),
+                ..HistoricalEdgeGeometry::new(edge.clone(), sample.interior)
             });
             edges.push(edge);
         }

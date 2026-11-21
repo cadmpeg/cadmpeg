@@ -36845,6 +36845,10 @@
               "type": "null"
             }
           ]
+        },
+        "topology": {
+          "description": "Exact topology in the consumed history-body nest.",
+          "$ref": "#/$defs/HistoricalEdgeTopologyRef"
         }
       },
       "additionalProperties": false,
@@ -36859,9 +36863,102 @@
       "type": "string",
       "pattern": "^[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+(?![\\s\\S])"
     },
+    "HistoricalEdgePath": {
+      "description": "Exact edge or ordered coedge ring inside one history-body nest.",
+      "oneOf": [
+        {
+          "description": "One edge and its admitted carrier interval.",
+          "type": "object",
+          "properties": {
+            "edge": {
+              "description": "Edge in the selected nest.",
+              "$ref": "#/$defs/EdgeId",
+              "x-cadir-reference": "history_body.topology.edges"
+            },
+            "kind": {
+              "type": "string",
+              "const": "edge"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "edge"
+          ]
+        },
+        {
+          "description": "One closed ordered ring.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "loop"
+            },
+            "loop_id": {
+              "description": "Loop in the selected nest.",
+              "$ref": "#/$defs/LoopId",
+              "x-cadir-reference": "history_body.topology.loops"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "loop_id"
+          ]
+        }
+      ]
+    },
+    "HistoricalEdgeTopologyRef": {
+      "description": "Exact carrier path and adjacent-face correspondence in a consumed body.",
+      "type": "object",
+      "properties": {
+        "faces": {
+          "description": "Correspondence of state-local support faces to nest faces.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HistoricalFaceTopologyRef"
+          }
+        },
+        "history_body": {
+          "description": "Body that holds the selected input state.",
+          "$ref": "#/$defs/HistoryBodyId",
+          "x-cadir-reference": "model.history_bodies"
+        },
+        "path": {
+          "description": "Exact edge or ordered outline.",
+          "$ref": "#/$defs/HistoricalEdgePath"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "history_body",
+        "path",
+        "faces"
+      ]
+    },
     "HistoricalFaceId": {
       "type": "string",
       "pattern": "^[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+(?![\\s\\S])"
+    },
+    "HistoricalFaceTopologyRef": {
+      "description": "Topology faces that represent one historical adjacent face.",
+      "type": "object",
+      "properties": {
+        "face": {
+          "description": "Face in the owning input state.",
+          "$ref": "#/$defs/HistoricalFaceId"
+        },
+        "topology_faces": {
+          "description": "Faces in the selected history-body nest.",
+          "$ref": "#/$defs/NonEmptyMembers16",
+          "x-cadir-reference": "history_body.topology.faces"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "face",
+        "topology_faces"
+      ]
     },
     "HistoricalVertexId": {
       "type": "string",
@@ -50425,6 +50522,14 @@
       "type": "array",
       "items": {
         "$ref": "#/$defs/BoundaryFillCell"
+      },
+      "minItems": 1
+    },
+    "NonEmptyMembers16": {
+      "description": "A nonempty sequence of members in source order.\n\nThe members stay contiguous: the sequence is read through slice patterns\nand slice methods. The mint refuses an empty list, `push` only grows, and\n`DerefMut` hands out `&mut [T]`, which cannot shorten the sequence, so no\nreader has to ask whether a member is there.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/FaceId"
       },
       "minItems": 1
     },

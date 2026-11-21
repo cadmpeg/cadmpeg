@@ -172,15 +172,14 @@ pub(crate) fn project<'a>(
                 .map_err(CodecError::malformed)?,
             vertices: DistinctMembers::default(),
             edge_geometry: vec![HistoricalEdgeGeometry {
-                edge: joined.edge,
                 start: Some(joined.geometry.start),
                 end: Some(joined.geometry.end),
-                interior: joined.geometry.interior,
                 tangent: Some(joined.geometry.tangent),
                 faces: vec![joined.face]
                     .try_into()
                     .map_err(CodecError::malformed)?,
                 supports: Vec::new(),
+                ..HistoricalEdgeGeometry::new(joined.edge, joined.geometry.interior)
             }],
             native_ref: Some(source.id()),
         });
