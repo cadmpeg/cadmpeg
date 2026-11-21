@@ -16,9 +16,9 @@ use std::collections::HashMap;
 
 use crate::history::classify::{extrude_feature_op, is_legacy_history_extrusion, source_depth};
 use crate::history::literals::{
-    parse_angle_rad, parse_bool, parse_boolean_op, parse_bounded_angle_rad,
-    parse_dimension_display_length, parse_point3_mm, parse_positive_dimension_length_mm,
-    parse_positive_length_mm, parse_vector3, strip_diameter_modifier, valid_direction,
+    parse_angle_rad, parse_boolean_op, parse_bounded_angle_rad, parse_dimension_display_length,
+    parse_point3_mm, parse_positive_dimension_length_mm, parse_positive_length_mm, parse_vector3,
+    strip_diameter_modifier, valid_direction,
 };
 
 pub(super) fn project_extrude(
@@ -189,12 +189,14 @@ pub(super) fn project_extrude(
                 source: None,
             }
         }
-        None if feature
-            .properties
-            .get("Reverse")
-            .map(String::as_str)
-            .and_then(parse_bool)
-            == Some(true) =>
+        // The end-spec reversal flag is the travel of a one-sided extrusion
+        // that adds material (sldprt.md §2). A cut keeps the normal, as the
+        // flag does not give its side, and a two-direction extrusion keeps it
+        // until its end caps confirm the reversal
+        // (`extrude_direction::retain_contradicted_directions`).
+        None if crate::history::extrude_direction::reversal_flag(&feature.properties)
+            && matches!(op, BooleanOp::Join | BooleanOp::NewBody)
+            && matches!(extent, ExtrudeExtent::OneSided { .. }) =>
         {
             cadmpeg_ir::features::ExtrudeDirection::ReversedProfileNormal {}
         }

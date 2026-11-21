@@ -15,6 +15,7 @@ use super::selections::{
     is_component_vector_selector_for_role, COMPACT_EDGE_VECTOR_MARKER,
 };
 use crate::classification::{native_object_class, NativeClassKind};
+use crate::layout::extrusion_end_spec_header as end_spec;
 use crate::records::{FeatureInputComponentPathEntry, FeatureInputLane};
 use cadmpeg_core::decode::View;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
@@ -423,7 +424,9 @@ pub(crate) fn enrich_history_extrusion_terminations(
                         }))
                     })()?;
                 if let Some(candidate) = candidate {
-                    let reversed = View::u32_le_at(&lane.native_payload, offset + 12) == Some(1);
+                    let reversed =
+                        View::u32_le_at(&lane.native_payload, offset + end_spec::REVERSAL)
+                            == Some(1);
                     candidates.push((candidate, Some(reversed)));
                 }
             }

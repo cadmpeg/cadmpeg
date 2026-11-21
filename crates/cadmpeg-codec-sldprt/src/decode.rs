@@ -4251,10 +4251,9 @@ fn build_geometry_ir(
     }
     crate::metadata::mass_properties::append(ctx, &mut ir, &mut pmi_losses)?;
     let retained = crate::history::extrude_direction::retain_contradicted_directions(&mut ir);
-    if retained.reversals > 0 {
+    for extrusion in &retained.reversals {
         pmi_losses.push(SldprtLossCode::FeatureExtrudeReversalContradicted.note(format!(
-            "{} extrusion(s) travel along the profile normal, as their start and end caps show, against the reversal flag of their end spec.",
-            retained.reversals
+            "Extrusion {extrusion} travels along the profile normal, as its solid shows, against the reversal flag of its end spec."
         )));
     }
     if retained.changed {

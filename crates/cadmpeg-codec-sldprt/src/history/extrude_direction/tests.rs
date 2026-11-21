@@ -69,6 +69,16 @@ fn remove_cap(geometry: &mut Topology, z: f64) {
     geometry.faces.retain(|face| !ids.contains(&face.surface));
 }
 
+fn set_direction(ir: &mut CadIr, travel: ExtrudeDirection) {
+    ir.model.features[0].evaluation.edit(|definition, _| {
+        if let FeatureDefinition::Operation(FeatureOperation::Extrude { direction, .. }) =
+            definition
+        {
+            *direction = travel;
+        }
+    });
+}
+
 #[test]
 fn opposite_caps_contradict_implicit_travel_with_mirrored_controls() {
     for (start, normal, contradicted) in [
@@ -117,24 +127,27 @@ fn opposite_caps_contradict_reversed_travel() {
         (0.0, -1.0, false),
     ] {
         let mut ir = model(start, normal);
-        ir.model.features[0].evaluation.edit(|definition, _| {
-            if let FeatureDefinition::Operation(FeatureOperation::Extrude { direction, .. }) =
-                definition
-            {
-                *direction = ExtrudeDirection::ReversedProfileNormal {};
-            }
-        });
+        set_direction(&mut ir, ExtrudeDirection::ReversedProfileNormal {});
         assert_eq!(
             contradicted_features(&ir).contains(&ir.model.features[0].id),
             contradicted
         );
+        let label = format!("\"Extrude\" ({})", ir.model.features[0].id.as_str());
         let retained = retain_contradicted_directions(&mut ir);
         assert_eq!(
             retained,
             Retained {
                 changed: contradicted,
-                reversals: usize::from(contradicted),
+                reversals: if contradicted {
+                    vec![label]
+                } else {
+                    Vec::new()
+                },
             }
+        );
+        assert_eq!(
+            reversal_unread(&ir.model.features[0].source_properties),
+            contradicted
         );
         let FeatureOperation::Extrude { direction, .. } =
             ir.model.features[0].evaluation.definition().operation()
@@ -203,7 +216,7 @@ fn through_all_and_explicit_travel_preserve_their_definitions() {
 fn decoded_side_cap_prevents_a_contradiction() {
     let ir = model(10.0, 1.0);
     let work = WorkBudget::new(MAX_WITNESS_WORK);
-    let mut caps = caps(&ir, &work).expect("finite caps");
+    let mut witness = evidence(&ir, &work, true).expect("finite caps");
     let mut decoded = Cap {
         origin: Point3::new(0.0, 0.0, 20.0),
         normal: Vector3::new(0.0, 0.0, 1.0),
@@ -223,8 +236,13 @@ fn decoded_side_cap_prevents_a_contradiction() {
             .iter()
             .copied(),
     );
-    caps.push(decoded);
-    assert!(!contradicts(&ir.model, &ir.model.features[0], &caps, &work));
+    witness.caps.push(decoded);
+    assert!(!contradicts(
+        &ir.model,
+        &ir.model.features[0],
+        &witness,
+        &work
+    ));
 }
 
 #[test]
@@ -337,7 +355,7 @@ fn bounded_planar_meshes_supply_finite_cap_witnesses() {
     assert!(!contradicts(
         &ir.model,
         &ir.model.features[0],
-        &caps(&ir, &WorkBudget::new(MAX_WITNESS_WORK)).expect("finite caps"),
+        &evidence(&ir, &WorkBudget::new(MAX_WITNESS_WORK), true).expect("finite caps"),
         &WorkBudget::new(0)
     ));
 }
@@ -366,5 +384,128 @@ fn mesh_work_counts_each_face_and_triangle_vertex() {
         .map(|face| face.id.clone())
         .collect();
     ir.model.tessellations.push(mesh);
-    assert!(caps(&ir, &WorkBudget::new(4000)).is_none());
+    assert!(evidence(&ir, &WorkBudget::new(4000), true).is_none());
+}
+
+/// A reversal whose whole solid lies on the profile normal's side of the
+/// profile plane travels along the normal, though no start cap holds the
+/// profile (a later feature removed a corner of it).
+#[test]
+fn a_solid_along_the_normal_contradicts_a_reversal_without_its_start_cap() {
+    let mut ir = model(0.0, 1.0);
+    set_direction(&mut ir, ExtrudeDirection::ReversedProfileNormal {});
+    // The profile's corners at x = 13 lie off the start cap.
+    ir.model.sketches[0].placement = cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+        Point3::new(5.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+    )
+    .expect("translated profile");
+    let work = WorkBudget::new(MAX_WITNESS_WORK);
+    let caps_only = Witness {
+        caps: evidence(&ir, &work, true).expect("finite caps").caps,
+        solid: Solid::default(),
+    };
+    assert!(!contradicts(
+        &ir.model,
+        &ir.model.features[0],
+        &caps_only,
+        &work
+    ));
+    assert!(contradicted_features(&ir).contains(&ir.model.features[0].id));
+    let retained = retain_contradicted_directions(&mut ir);
+    assert_eq!(retained.reversals.len(), 1);
+    let FeatureOperation::Extrude { direction, .. } =
+        ir.model.features[0].evaluation.definition().operation()
+    else {
+        panic!("extrude");
+    };
+    assert_eq!(direction, &ExtrudeDirection::ProfileNormal {});
+    assert!(reversal_unread(&ir.model.features[0].source_properties));
+    // A solid against the normal keeps the reversal.
+    let mut ir = model(10.0, 1.0);
+    set_direction(&mut ir, ExtrudeDirection::ReversedProfileNormal {});
+    ir.model.sketches[0].placement = cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+        Point3::new(5.0, 0.0, 10.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+    )
+    .expect("translated profile");
+    assert!(contradicted_features(&ir).is_empty());
+}
+
+/// A circle reaches its radius across the direction; an edge of unknown
+/// extent leaves the span unknown.
+#[test]
+fn the_solid_span_bounds_circles_and_refuses_unknown_edges() {
+    let mut solid = Solid {
+        points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 10.0)],
+        circles: vec![(Point3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0), 2.0)],
+        unknown: false,
+    };
+    let z = Vector3::new(0.0, 0.0, 1.0);
+    assert_eq!(
+        solid.span(Point3::new(0.0, 0.0, 0.0), z),
+        Some((-1.0, 10.0))
+    );
+    solid.unknown = true;
+    assert_eq!(solid.span(Point3::new(0.0, 0.0, 0.0), z), None);
+}
+
+/// A two-direction join over a reversal flag the projection left unread
+/// travels against the normal only where its end caps confirm it.
+#[test]
+fn end_caps_confirm_a_two_direction_reversal() {
+    for (start, first, second, confirmed) in [
+        (4.0, 4.0, 6.0, true),
+        (4.0, 6.0, 4.0, false),
+        (5.0, 5.0, 5.0, false),
+    ] {
+        let mut ir = model(start, 1.0);
+        let feature = &mut ir.model.features[0];
+        feature.evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Extrude { extent, .. }) = definition
+            else {
+                panic!("extrude");
+            };
+            let side = |length: f64| cadmpeg_ir::features::ExtrudeSide {
+                termination: LinearTermination::Blind {
+                    length: cadmpeg_ir::scalar::NonZeroLength::new(length).expect("a depth"),
+                },
+                draft: None,
+            };
+            *extent = ExtrudeExtent::TwoSided {
+                first: side(first),
+                second: side(second),
+            };
+        });
+        feature.source_properties.insert(
+            cadmpeg_core::nonblank_literal!("Reverse"),
+            "true".to_owned(),
+        );
+        mark_unread_reversal(feature);
+        assert!(reversal_unread(&feature.source_properties));
+        let retained = retain_contradicted_directions(&mut ir);
+        assert_eq!(
+            retained,
+            Retained {
+                changed: confirmed,
+                reversals: Vec::new(),
+            },
+            "{first} {second}"
+        );
+        let feature = &ir.model.features[0];
+        let FeatureOperation::Extrude { direction, .. } =
+            feature.evaluation.definition().operation()
+        else {
+            panic!("extrude");
+        };
+        let expected = if confirmed {
+            ExtrudeDirection::ReversedProfileNormal {}
+        } else {
+            ExtrudeDirection::ProfileNormal {}
+        };
+        assert_eq!(direction, &expected);
+        assert_eq!(reversal_unread(&feature.source_properties), !confirmed);
+    }
 }

@@ -247,7 +247,8 @@ impl<'a> Input<'a, '_> {
                 let named = parameters
                     .name(parameter)
                     .ok_or("its depth parameter is not written as a length")?;
-                let negated = format!("-({named})");
+                // `-D1`, the form Fusion files hold (f3d.md §3.1).
+                let negated = format!("-{named}");
                 parameters.owned(
                     ordinal,
                     negated,

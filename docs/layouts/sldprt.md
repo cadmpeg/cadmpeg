@@ -3873,6 +3873,26 @@ Parsed by:
 | 34 | 2 | `final_token` | `u16` | little | spec | a nonzero u16 final token |
 | 36 | 4 | `zero_tail` | `bytes[4]` | little | spec | four zero tail bytes |
 
+## `extrusion_end_spec_header`
+
+Spec §2 · layout: byte offsets · size: 26 B
+
+Offsets from the end-spec anchor: the class token, or the final `_c` bytes of a direct `moEndSpec_c` declaration. The compact blind form omits the second-direction word and begins its display-distance dimension child at +22; the other forms begin their continuation at +26.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/terminations.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `class` | `bytes[2]` | little | spec | The direct form uses the declaration's final `_c` bytes as its anchor |
+| 2 | 2 | `zero_after_class` | `bytes[2]` | little | spec | Anchor +2 is zero |
+| 4 | 4 | `direction_count` | `u32` | little | spec | The little-endian u32 at anchor +4 is the direction count |
+| 8 | 4 | `boolean_word` | `u32` | little | spec | Anchor +8 is a little-endian u32 Boolean word |
+| 12 | 4 | `reversal` | `u32` | little | spec | anchor +12 is the little-endian u32 reversal flag |
+| 16 | 2 | `zero_before_codes` | `u16` | little | spec | anchor +16 is a zero u16 · value `0` |
+| 18 | 4 | `first_code` | `u32` | little | spec | The little-endian u32 first-direction termination code is at anchor +18 |
+| 22 | 4 | `second_code` | `u32` | little | spec | the little-endian u32 second-direction termination code is at anchor +22 |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
