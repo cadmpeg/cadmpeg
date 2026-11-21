@@ -477,7 +477,7 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
     if let ContextValue::Chosen { value, outside } = &ctx.timeline_value {
         notes.extend(record_residual_unavailable(
             "F3D",
-            "writes the timeline context value where f3d.md §3.1 states it for a Base Feature design and for a timeline of Sketch items, or Sketch and Extrude items, whose every parameter is named d<n>, and f3d-open-items.md DR-882 leaves the value of other designs open",
+            "writes the timeline context value where f3d.md §3.1 states it (\"Records the timeline context names\" and \"Design records of Sketch items\"), and f3d-open-items.md DR-882 leaves the value of other designs open",
             [format!("record {CONTEXT} (timeline context: context value {value}, the largest source ordinal of an owned parameter; {outside})")],
         ));
     }
