@@ -367,10 +367,21 @@ fn live_seed_binding(
             .states()
             .iter()
             .find(|state| state.state_id == current)?;
-        let bodies = &state.transition.as_ref()?.topology.bodies;
+        let delta = &state.transition.as_ref()?.topology;
         if slots
             .iter()
-            .any(|slot| bodies.updated.contains(slot) || bodies.deleted.contains(slot))
+            .any(|slot| delta.bodies.updated.contains(slot) || delta.bodies.deleted.contains(slot))
+            || [
+                &delta.regions,
+                &delta.shells,
+                &delta.faces,
+                &delta.loops,
+                &delta.coedges,
+                &delta.edges,
+                &delta.vertices,
+            ]
+            .into_iter()
+            .any(|family| !family.updated.is_empty() || !family.deleted.is_empty())
         {
             return None;
         }

@@ -838,6 +838,166 @@ fn a_seed_body_updated_after_the_pattern_state_stays_historical() {
 }
 
 #[test]
+fn a_seed_body_with_a_face_updated_after_the_pattern_state_stays_historical() {
+    use crate::history_records::{AsmDeltaState, AsmEntityVersion, AsmHistoricalTopology};
+    use cadmpeg_ir::features::{
+        patterns::{PatternKind, PatternSeed},
+        BodySelection, Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
+    };
+
+    let mut body = cadmpeg_ir::examples::unit_cube()
+        .unwrap()
+        .geometry
+        .bodies
+        .remove(0);
+    body.id = cadmpeg_ir::ids::BodyId::mint("f3d:brep:entity#1").unwrap();
+    let scope = |index: u32, state: i64, previous: i64| {
+        let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
+            &format!("f3d:Design/BulkStream.dat:design-parameter-scope#{index}"),
+            crate::records::feature::scope::DesignFeatureKind::Move,
+            index,
+        );
+        scope
+            .try_edit(|draft| {
+                draft.history_state_id = Some(state);
+                draft.previous_history_state_id = Some(previous);
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        scope
+    };
+    let scopes = [scope(5, 79, 2), scope(8, 80, 79)];
+    let feature = |id: &str, scope: &str, definition| Feature {
+        product_definition: None,
+        id: FeatureId::mint(id).unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: FeatureEvaluation::from_definition(definition),
+        native_ref: Some(scope.to_owned()),
+    };
+    let pattern_id = FeatureId::mint("f3d:test:feature#mirror").unwrap();
+    let group_id = "f3d:Design/BulkStream.dat:design-construction-operand-group#20";
+    let seed_body =
+        crate::ids::history_input_body_id(&crate::ids::feature_input_prefix(&pattern_id, 79), 1);
+    let seed = BodySelection::historical(
+        crate::ids::history_input_state_id(&crate::ids::feature_input_prefix(&pattern_id, 79)),
+        vec![seed_body],
+        group_id.to_owned(),
+    )
+    .unwrap();
+    let mut features = vec![
+        feature(
+            "f3d:test:feature#extrude",
+            &scopes[0].id,
+            FeatureDefinition::Operation(FeatureOperation::Pattern {
+                seeds: Vec::new(),
+                pattern: PatternKind::UNRESOLVED_CIRCULAR,
+            }),
+        ),
+        feature(
+            pattern_id.as_str(),
+            &scopes[1].id,
+            FeatureDefinition::Operation(FeatureOperation::Pattern {
+                seeds: vec![PatternSeed::Bodies(seed)],
+                pattern: PatternKind::UNRESOLVED_CIRCULAR,
+            }),
+        ),
+    ];
+    features[1].ordinal = 1;
+    let groups = [body_operand_group(group_id, 8)];
+    let operands = [body_recipe_operand(8)];
+    let mk_state = |state_id: i64,
+                    body_version: i64,
+                    face_version: Option<i64>,
+                    bodies: Vec<i64>|
+     -> crate::test_support::history::State {
+        let mut versions: Vec<AsmEntityVersion> = bodies
+            .iter()
+            .map(|b| AsmEntityVersion {
+                entity_ref: *b,
+                record_ref: body_version,
+            })
+            .collect();
+        let faces = if let Some(fv) = face_version {
+            versions.push(AsmEntityVersion {
+                entity_ref: 100,
+                record_ref: fv,
+            });
+            vec![100]
+        } else {
+            Vec::new()
+        };
+        (
+            AsmDeltaState {
+                id: format!("f3d:history:asm-delta-state#{state_id}"),
+                parent: "history".into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref: None,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(AsmHistoricalTopology {
+                bodies,
+                faces,
+                ..AsmHistoricalTopology::default()
+            }),
+            versions,
+        )
+    };
+    // State 81 updates face 100 (version 79 -> 81) while keeping body 1 at version 79.
+    let histories = [crate::test_support::history::history(
+        "f3d:Assets/BREP.source.smbh:asm-history#0".into(),
+        0,
+        None,
+        false,
+        vec![
+            mk_state(81, 79, Some(81), vec![1]),
+            mk_state(80, 79, Some(79), vec![1]),
+            mk_state(79, 79, Some(79), vec![1]),
+            mk_state(2, 2, None, Vec::new()),
+        ],
+    )];
+    let inputs = FeatureBodySelectionInputs {
+        scopes: &scopes,
+        groups: &groups,
+        body_recipe_operands: &operands,
+        construction_recipes: &[],
+        persistent_design_links: &[],
+        histories: &histories,
+        bodies: std::slice::from_ref(&body),
+        regions: &[],
+        shells: &[],
+        faces: &[],
+    };
+    crate::history::bind_generated_body_selections(
+        &mut features,
+        &inputs,
+        &std::collections::HashMap::new(),
+        None,
+        &mut Vec::new(),
+    );
+    assert!(matches!(
+        features[1].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. })
+            if matches!(seeds.as_slice(), [PatternSeed::Bodies(BodySelection::Historical { .. })])
+    ));
+}
+
+#[test]
 fn a_removed_body_the_final_model_omits_is_generated_by_the_feature_that_inserts_it() {
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
     let (remove, results) = generated_case(&[], true, "history", 79, false);
