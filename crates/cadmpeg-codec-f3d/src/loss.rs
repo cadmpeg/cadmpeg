@@ -5197,6 +5197,7 @@ mod tests {
                 "feature.profile-cap-carrier-assumed",
                 "feature.profile-hole-boundary-inferred",
                 "feature.profile-region-hole-inferred",
+                "feature.profile-body-circle-rings-assumed",
                 "feature.spatial-profile-transition-assumed",
                 "feature.path-selection-native",
                 "feature.face-selection-native",
