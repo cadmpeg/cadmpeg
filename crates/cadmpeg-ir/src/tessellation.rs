@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::assets::AssetId;
 use crate::design::refs::StateRef;
-use crate::features::{FinitePoint3, FiniteVector3};
+use crate::features::geometry::{FinitePoint3, FiniteVector3};
 use crate::ids::{BodyId, FaceId};
 use crate::math::{Point3, Vector3};
 use crate::provenance::SourceObjectAssociation;
@@ -806,7 +806,7 @@ fn admit_normal(normal: Vector3) -> Result<FiniteVector3, TessellationError> {
 /// The domain is the wire's tag, so the selector table exists only on the two
 /// domains that address one: vertex-order addressing has no `indices` key to
 /// leave empty and none to refuse.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]

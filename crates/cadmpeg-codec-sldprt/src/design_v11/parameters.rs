@@ -11,11 +11,18 @@
 //! that stores it in a stated unit.
 //!
 //! Keywords displays a dimension's number in the document's length unit or
-//! in degrees, with no unit (`docs/formats/sldprt.md`). The root definition
-//! states no authoring unit, so such a display is no cache (§5.13). A
-//! dimension's kind is the quantity its stored record states: the archive
-//! class of the `ResolvedFeatures` scalar it is bound to, or the kind the
-//! decoder's own parameter took from a record, a relation, or the feature.
+//! in degrees, with no unit (`docs/formats/sldprt.md`). Where the root
+//! definition states its length unit, a length dimension whose text is such
+//! a display is a literal in that unit, and an angle dimension's a literal
+//! in degrees (§5.12): the stored value where a record stores one, else the
+//! displayed number, which Keywords rounds to the display precision and the
+//! `design.parameter-display-rounded` note names. Where it states none, a
+//! length display is no cache (§5.13). A parameter that a reference
+//! dimension binds is `Driven` and keeps its value (§6.1). A dimension's kind is the quantity its stored record states: the
+//! archive class of the `ResolvedFeatures` scalar it is bound to, the kind
+//! the decoder's own parameter took from a record, a relation, or the
+//! feature, or the quantity of the sketch or feature dimension that binds
+//! it.
 
 use std::collections::{HashMap, HashSet};
 use std::num::NonZeroI8;
@@ -33,6 +40,7 @@ use cadmpeg_ir::design::parameter::{
 use cadmpeg_ir::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKind};
 use cadmpeg_ir::features::{FeatureId, ParameterId};
 use cadmpeg_ir::ids::ProductDefinitionId;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
 
 use super::tree::Timeline;
@@ -42,6 +50,7 @@ use crate::history::parameters::{
     expression_identifier_tokens, native_parameter_is_length, parse_native_parameter_literal,
 };
 use crate::history::project::{neutral_parameter_id, projected_parameter_names};
+use crate::loss::{NamedCount, SldprtLossCode};
 use crate::records::{ArchiveParameterClass, Feature, FeatureHistory, FeatureInputLane};
 
 /// The kind of a dimension whose quantity the decoder has not read: a bare
@@ -57,13 +66,13 @@ const EPS_DISPLAY_READING: f64 = 1.0e-12;
 /// id, and the archive class of each `ResolvedFeatures` scalar by id (`None`
 /// where two lanes give one id two classes).
 pub(super) struct Decoded<'a> {
-    pub(super) parameters: HashMap<&'a str, &'a cadmpeg_ir::features::DesignParameter>,
+    pub(super) parameters: HashMap<&'a str, &'a cadmpeg_ir::features::parameters::DesignParameter>,
     pub(super) classes: HashMap<&'a str, Option<ArchiveParameterClass>>,
 }
 
 impl<'a> Decoded<'a> {
     pub(super) fn new(
-        parameters: &'a [cadmpeg_ir::features::DesignParameter],
+        parameters: &'a [cadmpeg_ir::features::parameters::DesignParameter],
         lanes: &'a [FeatureInputLane],
     ) -> Self {
         let mut classes = HashMap::new();
@@ -101,7 +110,7 @@ impl<'a> Decoded<'a> {
         name: &str,
         display: Option<f64>,
     ) -> Option<(ValueKind, Option<ParameterValue>)> {
-        use cadmpeg_ir::features::ParameterValue as V10;
+        use cadmpeg_ir::features::parameters::ParameterValue as V10;
         let parameter = self
             .parameters
             .get(id.as_str())
@@ -139,8 +148,8 @@ impl<'a> Decoded<'a> {
 
 /// Whether the decoder's `value` is the display's number read in a unit the
 /// display does not state: as millimetres, metres, or radians, or as itself.
-fn reads_display(value: &cadmpeg_ir::features::ParameterValue, display: f64) -> bool {
-    use cadmpeg_ir::features::ParameterValue as V10;
+fn reads_display(value: &cadmpeg_ir::features::parameters::ParameterValue, display: f64) -> bool {
+    use cadmpeg_ir::features::parameters::ParameterValue as V10;
     let number = match value {
         V10::Length(length) => length.get(),
         V10::Angle(angle) => angle.get(),
@@ -161,9 +170,9 @@ fn reads_display(value: &cadmpeg_ir::features::ParameterValue, display: f64) -> 
 /// where the value is not of that kind.
 fn typed_cache(
     kind: &ValueKind,
-    value: cadmpeg_ir::features::ParameterValue,
+    value: cadmpeg_ir::features::parameters::ParameterValue,
 ) -> Option<ParameterValue> {
-    use cadmpeg_ir::features::ParameterValue as V10;
+    use cadmpeg_ir::features::parameters::ParameterValue as V10;
     let number = |value: f64| FiniteReal::new(value).map(ParameterValue::Number);
     match (kind, value) {
         (ValueKind::Quantity(Quantity::LENGTH), V10::Length(length)) => number(length.get()),
@@ -219,13 +228,96 @@ struct Entry<'a> {
     text: &'a str,
 }
 
-/// The parameters of the timeline's features and of the equations folders.
-pub(super) fn parameters(
-    histories: &[FeatureHistory],
+/// What the decoder read beside a parameter's text: its own parameters and
+/// scalar classes, the definition's length unit, and the quantity of each
+/// dimension that binds a parameter.
+pub(super) struct Readings<'a> {
+    pub(super) decoded: Decoded<'a>,
+    pub(super) length_unit: Option<UnitSymbol>,
+    pub(super) bound: HashMap<ParameterId, Quantity>,
+    /// The parameters a radius or diameter dimension binds, by what it
+    /// measures: such a parameter states no display of that measure.
+    pub(super) measured: HashMap<ParameterId, DimensionDisplay>,
+    /// The parameters a reference dimension binds.
+    pub(super) driven: HashSet<ParameterId>,
+}
+
+/// The parameters of the timeline's features and of the equations folders,
+/// before their expressions are read.
+pub(super) struct Entries<'a> {
+    list: Vec<Entry<'a>>,
+    by_owner: HashMap<(FeatureId, String), ParameterId>,
+    ids: HashSet<ParameterId>,
+}
+
+impl<'a> Entries<'a> {
+    pub(super) fn new(
+        histories: &'a [FeatureHistory],
+        timeline: &Timeline,
+    ) -> Result<Self, CodecError> {
+        let entries = entries(histories, timeline)?;
+        let by_owner = entries
+            .iter()
+            .filter_map(|entry| {
+                Some((
+                    (entry.owner.clone()?, entry.name.as_str().to_owned()),
+                    entry.id.clone(),
+                ))
+            })
+            .collect();
+        let ids = entries.iter().map(|entry| entry.id.clone()).collect();
+        Ok(Self {
+            list: entries,
+            by_owner,
+            ids,
+        })
+    }
+
+    /// The parameter of `owner` named `name`.
+    pub(super) fn owned(&self, owner: &FeatureId, name: &str) -> Option<&ParameterId> {
+        self.by_owner.get(&(owner.clone(), name.to_owned()))
+    }
+
+    /// Whether `id` is one of these parameters.
+    pub(super) fn contains(&self, id: &ParameterId) -> bool {
+        self.ids.contains(id)
+    }
+
+    /// The parameters, their expressions read, and the note naming those
+    /// whose literal is a rounded display.
+    pub(super) fn parameters(
+        &self,
+        scope: &ProductDefinitionId,
+        readings: &Readings<'_>,
+    ) -> (Vec<DesignParameter>, Option<LossNote>) {
+        let aliases = Aliases::new(&self.list);
+        let mut rounded = NamedCount::default();
+        let parameters = self
+            .list
+            .iter()
+            .map(|entry| {
+                let reading = read(entry, &aliases, readings);
+                if reading.rounded {
+                    rounded.push(entry.id.as_str());
+                }
+                parameter(entry, reading, scope, readings)
+            })
+            .collect();
+        let loss = (!rounded.is_empty()).then(|| {
+            SldprtLossCode::DesignParameterDisplayRounded.note(format!(
+                "{} parameters hold their dimension's displayed number, rounded to the display \
+                 precision, as their literal and value: {rounded}",
+                rounded.count()
+            ))
+        });
+        (parameters, loss)
+    }
+}
+
+fn entries<'a>(
+    histories: &'a [FeatureHistory],
     timeline: &Timeline,
-    scope: &ProductDefinitionId,
-    decoded: &Decoded<'_>,
-) -> Result<Vec<DesignParameter>, CodecError> {
+) -> Result<Vec<Entry<'a>>, CodecError> {
     let mut entries = Vec::new();
     let mut user_names = HashSet::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
@@ -253,20 +345,15 @@ pub(super) fn parameters(
             });
         }
     }
-    let aliases = Aliases::new(&entries);
-    Ok(entries
-        .iter()
-        .map(|entry| parameter(entry, &aliases, scope, decoded))
-        .collect())
+    Ok(entries)
 }
 
 fn parameter(
     entry: &Entry<'_>,
-    aliases: &Aliases,
+    reading: Reading,
     scope: &ProductDefinitionId,
-    decoded: &Decoded<'_>,
+    readings: &Readings<'_>,
 ) -> DesignParameter {
-    let reading = read(entry, aliases, decoded);
     DesignParameter {
         id: entry.id.clone(),
         scope: scope.clone(),
@@ -274,7 +361,11 @@ fn parameter(
         name: Some(entry.name.clone()),
         kind: reading.kind,
         unit: None,
-        definition: ParameterDefinition::Expression(reading.expression),
+        definition: if readings.driven.contains(&entry.id) {
+            ParameterDefinition::Driven
+        } else {
+            ParameterDefinition::Expression(reading.expression)
+        },
         value: reading.value,
         display: reading.display,
         tolerance: None,
@@ -291,9 +382,12 @@ struct Reading {
     expression: Expression,
     value: Option<ParameterValue>,
     display: Option<DimensionDisplay>,
+    /// The literal and value are a display's rounded number.
+    rounded: bool,
 }
 
-fn read(entry: &Entry<'_>, aliases: &Aliases, decoded: &Decoded<'_>) -> Reading {
+fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Reading {
+    let decoded = &readings.decoded;
     let user = entry.owner.is_none();
     let (feature, name, text) = (entry.feature, entry.name.as_str(), entry.text);
     if let Some((node, kind, value)) = literal(text, user) {
@@ -302,6 +396,7 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, decoded: &Decoded<'_>) -> Reading 
             expression: Expression::Neutral(Neutral(node)),
             value: Some(value),
             display: None,
+            rounded: false,
         };
     }
     let tokens = source_tokens(text, entry.owner.as_ref(), aliases);
@@ -320,6 +415,7 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, decoded: &Decoded<'_>) -> Reading 
             expression: Expression::Neutral(Neutral(Node::Text(text.to_owned()))),
             value: Some(ParameterValue::Text(text.to_owned())),
             display: None,
+            rounded: false,
         };
     }
     let stored = feature
@@ -334,10 +430,11 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, decoded: &Decoded<'_>) -> Reading 
     let parsed = parsed.filter(|value| {
         user || !matches!(
             value,
-            cadmpeg_ir::features::ParameterValue::Integer(_)
-                | cadmpeg_ir::features::ParameterValue::Real(_)
+            cadmpeg_ir::features::parameters::ParameterValue::Integer(_)
+                | cadmpeg_ir::features::parameters::ParameterValue::Real(_)
         )
     });
+    let bound = readings.bound.get(&entry.id).copied();
     let (kind, value) = match parsed.and_then(cache) {
         Some((kind, value)) => (kind, Some(value)),
         None if user => (ValueKind::Quantity(Quantity::REAL), None),
@@ -346,18 +443,37 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, decoded: &Decoded<'_>) -> Reading 
             None if native_parameter_is_length(feature, name, Some(text)) => {
                 (ValueKind::Quantity(Quantity::LENGTH), None)
             }
-            None => (
-                ValueKind::Native(cadmpeg_core::nonblank_const!(UNREAD_KIND)),
-                None,
-            ),
+            None => match bound {
+                Some(quantity) => (ValueKind::Quantity(quantity), None),
+                None => (
+                    ValueKind::Native(cadmpeg_core::nonblank_const!(UNREAD_KIND)),
+                    None,
+                ),
+            },
         },
     };
     let display = display
         .filter(|_| kind == ValueKind::Quantity(Quantity::LENGTH))
         .map(|display| match display {
-            cadmpeg_ir::features::DimensionDisplay::Diameter => DimensionDisplay::Diameter,
-            cadmpeg_ir::features::DimensionDisplay::Radius => DimensionDisplay::Radius,
-        });
+            cadmpeg_ir::features::parameters::DimensionDisplay::Diameter => {
+                DimensionDisplay::Diameter
+            }
+            cadmpeg_ir::features::parameters::DimensionDisplay::Radius => DimensionDisplay::Radius,
+        })
+        .filter(|display| readings.measured.get(&entry.id) != Some(display));
+    if let Some(number) = bare.filter(|_| !user && !references) {
+        if let Some((node, literal)) =
+            displayed_literal(number, &kind, value.as_ref(), readings.length_unit)
+        {
+            return Reading {
+                kind,
+                expression: Expression::Neutral(Neutral(node)),
+                rounded: value.is_none(),
+                value: Some(literal),
+                display,
+            };
+        }
+    }
     Reading {
         kind,
         expression: Expression::Source {
@@ -366,14 +482,79 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, decoded: &Decoded<'_>) -> Reading 
         },
         value,
         display,
+        rounded: false,
     }
+}
+
+/// The literal of a dimension whose text is the bare display `number`, and
+/// its value: a length in the definition's length unit `length_unit`, an
+/// angle in degrees. The literal's number is the stored value `cache` in that
+/// unit, to 15 significant digits, where a record stores one, else the
+/// displayed number (§5.12).
+fn displayed_literal(
+    number: f64,
+    kind: &ValueKind,
+    cache: Option<&ParameterValue>,
+    length_unit: Option<UnitSymbol>,
+) -> Option<(Node<ParameterRef>, ParameterValue)> {
+    let symbol = match kind {
+        ValueKind::Quantity(Quantity::LENGTH) => length_unit?,
+        ValueKind::Quantity(Quantity::ANGLE) => UnitSymbol::Deg,
+        _ => return None,
+    };
+    let (_, scale) = canonical(symbol)?;
+    let (number, value) = match cache {
+        Some(ParameterValue::Number(value)) => (significant(value.get() / scale)?, value.get()),
+        Some(_) => return None,
+        None => (number, number * scale),
+    };
+    Some((
+        number_node(number, Some(symbol))?,
+        ParameterValue::Number(FiniteReal::new(value)?),
+    ))
+}
+
+/// Significant decimal digits of a literal read from a stored value (§5.12).
+const LITERAL_DIGITS: usize = 15;
+
+/// `value` rounded to [`LITERAL_DIGITS`] significant decimal digits.
+fn significant(value: f64) -> Option<f64> {
+    format!("{value:.*e}", LITERAL_DIGITS - 1)
+        .parse::<f64>()
+        .ok()
+        .filter(|rounded| rounded.is_finite())
+}
+
+/// The tree of the literal `signed` with the unit `symbol`.
+fn number_node(signed: f64, symbol: Option<UnitSymbol>) -> Option<Node<ParameterRef>> {
+    let unit = match symbol {
+        Some(symbol) => Unit(vec![UnitFactor {
+            symbol,
+            power: NonZeroI8::new(1)?,
+        }]),
+        None => Unit::default(),
+    };
+    let number = Node::Number {
+        value: NonNegativeReal::new(signed.abs())?,
+        unit,
+    };
+    Some(if signed.is_sign_negative() && signed != 0.0 {
+        Node::Unary {
+            op: UnaryOp::Negate,
+            operand: Box::new(number),
+        }
+    } else {
+        number
+    })
 }
 
 /// The kind and canonical cache of a value the v10 literal reader parsed. A
 /// bare number reaches here only for a global variable, which has no
 /// declared quantity, so a whole number is a dimensionless real.
-fn cache(value: cadmpeg_ir::features::ParameterValue) -> Option<(ValueKind, ParameterValue)> {
-    use cadmpeg_ir::features::ParameterValue as Parsed;
+fn cache(
+    value: cadmpeg_ir::features::parameters::ParameterValue,
+) -> Option<(ValueKind, ParameterValue)> {
+    use cadmpeg_ir::features::parameters::ParameterValue as Parsed;
     let number = |quantity, value: f64| {
         Some((
             ValueKind::Quantity(quantity),
@@ -448,7 +629,6 @@ fn literal(text: &str, user: bool) -> Option<(Node<ParameterRef>, ValueKind, Par
         .parse::<f64>()
         .ok()
         .filter(|value| value.is_finite())?;
-    let magnitude = NonNegativeReal::new(signed.abs())?;
     let (kind, value) = match unit {
         Some(symbol) => {
             let (quantity, scale) = canonical(symbol)?;
@@ -463,26 +643,7 @@ fn literal(text: &str, user: bool) -> Option<(Node<ParameterRef>, ValueKind, Par
         ),
         None => return None,
     };
-    let unit = match unit {
-        Some(symbol) => Unit(vec![UnitFactor {
-            symbol,
-            power: NonZeroI8::new(1)?,
-        }]),
-        None => Unit::default(),
-    };
-    let number = Node::Number {
-        value: magnitude,
-        unit,
-    };
-    let node = if signed.is_sign_negative() && signed != 0.0 {
-        Node::Unary {
-            op: UnaryOp::Negate,
-            operand: Box::new(number),
-        }
-    } else {
-        number
-    };
-    Some((node, kind, value))
+    Some((number_node(signed, unit)?, kind, value))
 }
 
 /// Millimetres in one nanometre.

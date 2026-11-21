@@ -11,7 +11,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use super::super::super::frames::DesignRecords;
 use super::super::super::sketch::dimensions::{DimensionKind, Measure, PlannedDimension};
 use super::super::super::types;
-use super::super::owned::{Owned, Trailer, DISCRIMINATOR};
+use super::super::owned::{Owned, DISCRIMINATOR};
 use super::super::{count, Context};
 use super::{curve_payload, Item};
 use crate::writer::generate::presentation::TypeRow;
@@ -132,7 +132,6 @@ impl Item<'_> {
                     scope: records.scope,
                     local,
                     kind: &kind,
-                    trailer: Trailer::Owned,
                     value: &dimension.parameter,
                 },
             )?;

@@ -2,7 +2,8 @@
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::features::{FeatureDefinition, FeatureEvaluation, FeatureOperation};
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::Severity;
 
 use crate::{loss::InventorLossCode, InventorCodec};
@@ -191,7 +192,7 @@ fn offset_bytes_use_the_selection_dimension_and_validate_signed_motion() {
         .expect("synthetic offset decode")
         .into_parts();
     let FeatureDefinition::Operation(FeatureOperation::MoveFace {
-        motion: cadmpeg_ir::features::FaceMotion::Offset { distance },
+        motion: cadmpeg_ir::features::direct_edit::FaceMotion::Offset { distance },
         ..
     }) = ir.model.features[0].evaluation.definition()
     else {
@@ -244,7 +245,7 @@ fn offset_bytes_use_the_selection_dimension_and_validate_signed_motion() {
         == "Inventor neutral thicken operands do not match their PmDc slots"));
     let mut definition = ir.model.features[0].evaluation.definition().clone();
     let FeatureDefinition::Operation(FeatureOperation::MoveFace {
-        motion: cadmpeg_ir::features::FaceMotion::Offset { distance },
+        motion: cadmpeg_ir::features::direct_edit::FaceMotion::Offset { distance },
         ..
     }) = &mut definition
     else {
@@ -329,7 +330,7 @@ fn offset_slot_16_pair_changes_the_boolean_and_preserves_the_length() {
         if forward {
             assert!(matches!(ir.model.features[0].evaluation.definition(),
                 FeatureDefinition::Operation(FeatureOperation::MoveFace {
-                    motion: cadmpeg_ir::features::FaceMotion::Offset { distance }, ..
+                    motion: cadmpeg_ir::features::direct_edit::FaceMotion::Offset { distance }, ..
                 }) if distance.get() == 4.0));
         } else {
             assert!(matches!(ir.model.features[0].evaluation.definition(),
@@ -454,7 +455,7 @@ fn forward_offset_validation_rejects_the_opposite_sign_at_equal_magnitude() {
     );
     let mut definition = ir.model.features[0].evaluation.definition().clone();
     let FeatureDefinition::Operation(FeatureOperation::MoveFace {
-        motion: cadmpeg_ir::features::FaceMotion::Offset { distance },
+        motion: cadmpeg_ir::features::direct_edit::FaceMotion::Offset { distance },
         ..
     }) = &mut definition
     else {

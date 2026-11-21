@@ -61,9 +61,10 @@ fn reference_ellipse_conic_yields_one_carrier() {
         entity_id: 7,
         type_id: super::super::ConicType::Ellipse,
         flip: 1,
-        start: cadmpeg_ir::features::FinitePoint3::new([-3.0, 2.0, 4.0].into())
+        start: cadmpeg_ir::features::geometry::FinitePoint3::new([-3.0, 2.0, 4.0].into())
             .expect("finite start"),
-        end: cadmpeg_ir::features::FinitePoint3::new([2.0, 4.0, 4.0].into()).expect("finite end"),
+        end: cadmpeg_ir::features::geometry::FinitePoint3::new([2.0, 4.0, 4.0].into())
+            .expect("finite end"),
         parameter_start: None,
         parameter_end: None,
         coefficient_1: cadmpeg_ir::scalar::FiniteReal::new(-5.0).expect("finite coefficient"),

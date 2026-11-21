@@ -54,7 +54,9 @@ fn geometric_vertex_indexes_keep_last_duplicate_and_skip_missing_points() {
         .find(|point| point.id == vertex.point)
         .unwrap()
         .clone();
-    point.set_position(crate::features::FinitePoint3::new(Point3::new(7.0, 8.0, 9.0)).unwrap());
+    point.set_position(
+        crate::features::geometry::FinitePoint3::new(Point3::new(7.0, 8.0, 9.0)).unwrap(),
+    );
     ir.geometry.points.push(point);
     let mut missing = vertex.clone();
     missing.point = "test:model:point#missing".try_into().unwrap();

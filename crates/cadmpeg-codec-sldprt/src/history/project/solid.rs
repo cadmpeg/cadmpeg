@@ -4,14 +4,13 @@
 use crate::classification::{classify, native_object_class, FeatureClass, NativeClassKind};
 use crate::records::{Feature, FeatureContent};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::{
-    features::{
-        holes::{HoleBottom, HoleConstruction, HoleKind},
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition, FeatureOperation,
-        LinearTermination, PlanarProfileRef, ProfileRef, VertexSelection,
-    },
-    scalar::{NonZeroLength, PositiveLength},
-};
+use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+use cadmpeg_ir::features::holes::{HoleBottom, HoleConstruction, HoleKind};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::selections::{FaceSelection, VertexSelection};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::scalar::{NonZeroLength, PositiveLength};
 use std::collections::HashMap;
 
 use crate::history::classify::{extrude_feature_op, is_legacy_history_extrusion, source_depth};
@@ -182,9 +181,9 @@ pub(super) fn project_extrude(
     )?;
     let direction = match feature.properties.get("Direction") {
         Some(value) => {
-            let vector =
-                parse_vector3(value).and_then(cadmpeg_ir::features::FeatureDirection3::new)?;
-            cadmpeg_ir::features::ExtrudeDirection::Explicit {
+            let vector = parse_vector3(value)
+                .and_then(cadmpeg_ir::features::geometry::FeatureDirection3::new)?;
+            cadmpeg_ir::features::extents::ExtrudeDirection::Explicit {
                 vector,
                 source: None,
             }
@@ -199,11 +198,11 @@ pub(super) fn project_extrude(
             && !matches!(op, BooleanOp::Cut | BooleanOp::Intersect)
             && matches!(extent, ExtrudeExtent::OneSided { .. }) =>
         {
-            cadmpeg_ir::features::ExtrudeDirection::ReversedProfileNormal {}
+            cadmpeg_ir::features::extents::ExtrudeDirection::ReversedProfileNormal {}
         }
-        None => cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
+        None => cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {},
     };
-    if matches!(direction, cadmpeg_ir::features::ExtrudeDirection::Explicit { vector, .. } if !valid_direction(vector.get()))
+    if matches!(direction, cadmpeg_ir::features::extents::ExtrudeDirection::Explicit { vector, .. } if !valid_direction(vector.get()))
     {
         return None;
     }
@@ -299,7 +298,7 @@ pub(super) fn project_hole(
             .and_then(|(position, direction)| {
                 Some(vec![cadmpeg_ir::features::holes::HolePlacement::Directed {
                     position,
-                    direction: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
+                    direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(direction)?,
                 }])
             }),
         shape,

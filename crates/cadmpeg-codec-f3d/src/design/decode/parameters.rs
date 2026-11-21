@@ -7,7 +7,7 @@ use cadmpeg_core::container::ContainerRole;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 use crate::design::decode::body::decode_stream;
-use crate::design::decode::dimension_frames::companion_owned_interval;
+use crate::design::decode::dimension_frames::CompanionBounds;
 use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOffsets};
 use crate::design::decode::text::design_record_id;
 use crate::ids::{self, native_stream};
@@ -15,13 +15,15 @@ use crate::layout::design_parameter_comment_discriminated_prefix as comment_pref
 use crate::layout::design_parameter_comment_expression_trailer as comment_trailer;
 use crate::layout::design_parameter_compact_null_owner_prefix as null_owner;
 use crate::layout::design_parameter_compact_owned_expression_trailer as compact_trailer;
+use crate::layout::design_parameter_discriminated_expression_trailer as nine_trailer;
+use crate::layout::design_parameter_discriminated_prefix as prefix;
+use crate::layout::design_parameter_discriminated_text_expression_trailer as ten_trailer;
 use crate::layout::design_parameter_legacy_287_prefix as legacy_287;
 use crate::layout::design_parameter_owner_legacy_68 as legacy_owner_68;
 use crate::layout::design_parameter_owner_legacy_88 as legacy_owner_88;
 use crate::layout::design_parameter_owner_prefix as owner_prefix;
 use crate::layout::design_parameter_tail as parameter_tail;
 use crate::layout::design_parameter_typed_compact_owned_prefix as typed;
-use crate::layout::design_parameter_wide_discriminated_prefix as wide_prefix;
 use crate::layout::design_parameter_wide_expression_trailer as wide_trailer;
 use crate::layout::indexed_companion_record_prefix as companion_prefix;
 use crate::layout::indexed_design_record_header as indexed_header;
@@ -88,7 +90,8 @@ pub(crate) struct DecodedParameters {
     pub(crate) parameters: Vec<DesignParameter>,
     /// Per-stream counts of parameter frames that match no grammar.
     pub(crate) unparsed: Vec<UnparsedParameterRecords>,
-    /// Per-stream counts of decoded parameters with a set opaque trailer flag.
+    /// Per-stream counts of decoded parameters with a set uninterpreted
+    /// expression-trailer flag.
     pub(crate) trailer_flags: Vec<StreamParameterCount>,
     /// Per-stream counts of decoded compact null-owner parameters.
     pub(crate) null_owners: Vec<StreamParameterCount>,
@@ -132,13 +135,13 @@ pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameter
                 }
 
                 let record_index = parsed.record_index;
-                let compact_flag = parsed.compact_flag;
+                let uninterpreted_trailer_flag = parsed.uninterpreted_trailer_flag;
                 let compact_null_owner = parsed.compact_null_owner;
                 match locate_design_parameter(parsed, &entry.name, at) {
                     Some(parameter) => {
                         emitted_record_indices.insert(record_index);
                         out.push(parameter);
-                        trailer_flag_count += usize::from(compact_flag);
+                        trailer_flag_count += usize::from(uninterpreted_trailer_flag);
                         null_owner_count += usize::from(compact_null_owner);
                     }
                     None => unparsed_count = next_unparsed_count(unparsed_count)?,
@@ -204,8 +207,10 @@ pub(in crate::design) struct ParsedDesignParameter {
     comment: Option<ParsedParameterUnit>,
     flags: crate::records::parameters::DesignParameterFlags,
     text_value: Option<ParsedParameterUnit>,
-    /// Whether the compact expression trailer sets its opaque flag.
-    compact_flag: bool,
+    /// Whether the expression trailer sets a flag the decoder does not
+    /// interpret: the compact opaque flag, or one of the four flag bytes of a
+    /// nine-byte or ten-byte trailer before its document flag.
+    uninterpreted_trailer_flag: bool,
     /// Whether the frame is the compact null-owner form.
     compact_null_owner: bool,
 }
@@ -286,8 +291,6 @@ impl ParsedDesignParameter {
     }
 }
 
-/// Frame-relative offset of the parameter family discriminator.
-const DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET: usize = 22;
 /// Further zero bytes before the discriminator in the wide discriminated form.
 const WIDE_DISCRIMINATED_SHIFT: usize = 4;
 
@@ -323,7 +326,9 @@ pub(in crate::design) fn parse_design_parameter(
     payload: &[u8],
 ) -> Result<Option<ParsedDesignParameter>, CodecError> {
     let parsed = (|| {
-        if View::u32_le_at(payload, 0) != Some(3) || payload.get(11..22) != Some(&[0; 11]) {
+        if View::u32_le_at(payload, 0) != Some(3)
+            || payload.get(prefix::ZERO_RUN_11..prefix::FAMILY_DISCRIMINATOR) != Some(&[0; 11])
+        {
             return None;
         }
         let raw_tag = payload.get(4..7)?;
@@ -353,19 +358,32 @@ pub(in crate::design) fn parse_design_parameter(
             && payload.get(35..41) == Some(&[0; 6]);
         let discriminated = !compact_owned && payload.get(30) == Some(&0);
         let header = if compact_owned || discriminated {
-            parse_header_form(payload, class_tag.clone(), record_index, discriminated, 0).or_else(
-                || {
-                    wide_discriminated_parameter(payload).then(|| {
-                        parse_header_form(
-                            payload,
-                            class_tag.clone(),
-                            record_index,
-                            true,
-                            WIDE_DISCRIMINATED_SHIFT,
-                        )
-                    })?
-                },
-            )
+            let read = |shift, trailer| {
+                parse_header_form(
+                    payload,
+                    class_tag.clone(),
+                    record_index,
+                    discriminated || shift == WIDE_DISCRIMINATED_SHIFT,
+                    shift,
+                    trailer,
+                )
+            };
+            read(0, DiscriminatedTrailerLength::Nine)
+                .or_else(|| {
+                    discriminated
+                        .then(|| read(0, DiscriminatedTrailerLength::Ten))
+                        .flatten()
+                })
+                .or_else(|| {
+                    wide_discriminated_parameter(payload)
+                        .then(|| {
+                            read(WIDE_DISCRIMINATED_SHIFT, DiscriminatedTrailerLength::Nine)
+                                .or_else(|| {
+                                    read(WIDE_DISCRIMINATED_SHIFT, DiscriminatedTrailerLength::Ten)
+                                })
+                        })
+                        .flatten()
+                })
         } else {
             match parse_legacy_design_parameter(payload, class_tag.clone(), record_index) {
                 Ok(value) => value.map(Ok),
@@ -386,15 +404,62 @@ pub(in crate::design) fn parse_design_parameter(
     parsed.transpose()
 }
 
-/// Index of the expression-trailer flag byte that marks a document parameter.
-const DOCUMENT_TRAILER_FLAG: usize = 8;
+/// Length of the expression trailer a discriminated frame is read with.
+#[derive(Clone, Copy)]
+enum DiscriminatedTrailerLength {
+    /// Four zero bytes and five flag bytes.
+    Nine,
+    /// The text flag, four zero bytes, and five flag bytes.
+    Ten,
+}
 
-/// Whether a discriminated expression trailer is four zero bytes followed by
-/// five flag bytes that are each zero or one.
-fn is_flagged_expression_trailer(trailer: &[u8]) -> bool {
-    trailer.len() == DOCUMENT_TRAILER_FLAG + 1
-        && trailer[..4] == [0; 4]
-        && trailer[4..].iter().all(|byte| *byte <= 1)
+/// Flags of a nine-byte or ten-byte discriminated expression trailer.
+#[derive(Clone, Copy)]
+struct DiscriminatedTrailer {
+    len: usize,
+    text: bool,
+    /// Whether one of the four flag bytes before the document flag is set.
+    uninterpreted: bool,
+    document: bool,
+}
+
+/// The discriminated expression trailer of `length` that starts `bytes`.
+fn discriminated_trailer(
+    bytes: &[u8],
+    length: DiscriminatedTrailerLength,
+) -> Option<DiscriminatedTrailer> {
+    let (len, text, zero_run, flags, document) = match length {
+        DiscriminatedTrailerLength::Nine => (
+            nine_trailer::LEN,
+            None,
+            nine_trailer::ZERO_RUN_4,
+            nine_trailer::FLAGS,
+            nine_trailer::DOCUMENT,
+        ),
+        DiscriminatedTrailerLength::Ten => (
+            ten_trailer::LEN,
+            Some(ten_trailer::TEXT),
+            ten_trailer::ZERO_RUN_4,
+            ten_trailer::FLAGS,
+            ten_trailer::DOCUMENT,
+        ),
+    };
+    if bytes.get(zero_run..flags) != Some(&[0; 4][..]) {
+        return None;
+    }
+    let mut uninterpreted = false;
+    for at in flags..document {
+        uninterpreted |= trailer_flag(bytes, at)?;
+    }
+    Some(DiscriminatedTrailer {
+        len,
+        text: match text {
+            Some(at) => trailer_flag(bytes, at)?,
+            None => false,
+        },
+        uninterpreted,
+        document: trailer_flag(bytes, document)?,
+    })
 }
 
 fn trailer_flag(bytes: &[u8], at: usize) -> Option<bool> {
@@ -444,108 +509,84 @@ fn compact_owned_trailer_flags(trailer: &[u8]) -> Option<(bool, bool)> {
 }
 
 /// Parse the discriminated or ordinary compact owned form. `shift` counts the
-/// further zero bytes before the discriminator of the wide discriminated form.
+/// further zero bytes before the discriminator of the wide discriminated form,
+/// and `trailer` selects the expression trailer of a discriminated frame
+/// without the wide expression trailer.
 fn parse_header_form(
     payload: &[u8],
     class_tag: crate::records::references::DesignClassTag,
     record_index: u32,
     discriminated: bool,
     shift: usize,
+    trailer: DiscriminatedTrailerLength,
 ) -> Option<Result<ParsedDesignParameter, CodecError>> {
-    let discriminator_at = DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET + shift;
-    let comment = if discriminated && shift == WIDE_DISCRIMINATED_SHIFT {
-        Some(wide_parameter_comment(payload)?)
+    let discriminator_at = prefix::FAMILY_DISCRIMINATOR + shift;
+    let comment = if discriminated {
+        Some(parameter_comment(payload, shift)?)
     } else {
         None
     };
-    let field_shift = shift
-        + comment
-            .as_ref()
-            .map_or(0, |(_, end)| end - wide_prefix::LEN);
-    let (family_discriminator, source_ordinal, owner_record_index, expression_at, trailer_len) =
-        if discriminated {
-            let discriminator = if comment.is_some() {
-                u64::from(View::u32_le_at(payload, wide_prefix::FAMILY_DISCRIMINATOR)?)
-            } else {
-                View::u64_le_at(payload, discriminator_at)?
-            };
-            let discriminator =
-                crate::records::parameters::DesignParameterDiscriminator::try_from(discriminator)
-                    .ok()?;
-            let owner = match payload.get(35 + field_shift)? {
-                0 => (None, 36 + field_shift, 9),
-                1 if payload.get(40 + field_shift..46 + field_shift) == Some(&[0; 6]) => (
-                    Some(View::u32_le_at(payload, 36 + field_shift)?),
-                    46 + field_shift,
-                    9,
-                ),
-                _ => return None,
-            };
-            (
-                Some(discriminator),
-                View::u32_le_at(payload, 31 + field_shift)?,
-                owner.0,
-                owner.1,
-                owner.2,
-            )
-        } else {
-            (
-                None,
-                View::u32_le_at(payload, 26)?,
-                Some(View::u32_le_at(payload, 31)?),
-                41,
-                compact_trailer::LEN,
-            )
+    let field_shift = comment.as_ref().map_or(shift, |(_, end)| end - prefix::LEN);
+    let (family_discriminator, source_ordinal, owner_record_index, expression_at) = if discriminated
+    {
+        let discriminator = u64::from(View::u32_le_at(payload, discriminator_at)?);
+        let discriminator =
+            crate::records::parameters::DesignParameterDiscriminator::try_from(discriminator)
+                .ok()?;
+        let owner = match payload.get(35 + field_shift)? {
+            0 => (None, 36 + field_shift),
+            1 if payload.get(40 + field_shift..46 + field_shift) == Some(&[0; 6]) => (
+                Some(View::u32_le_at(payload, 36 + field_shift)?),
+                46 + field_shift,
+            ),
+            _ => return None,
         };
+        (
+            Some(discriminator),
+            View::u32_le_at(payload, 31 + field_shift)?,
+            owner.0,
+            owner.1,
+        )
+    } else {
+        (
+            None,
+            View::u32_le_at(payload, 26)?,
+            Some(View::u32_le_at(payload, 31)?),
+            41,
+        )
+    };
     let (expression, expression_end) = parameter_text!(payload, expression_at, 1..=256);
-    let expression_trailer = payload.get(expression_end..expression_end + trailer_len)?;
-    let long_document_trailer = discriminated
-        && owner_record_index.is_none()
-        && payload.get(expression_end..expression_end + 10)
-            == Some(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
+    let expression_trailer = payload.get(expression_end..)?;
     let wide_flags = (shift == WIDE_DISCRIMINATED_SHIFT
         && family_discriminator.is_some_and(|value| matches!(value.code(), 0 | 4 | 5 | 6)))
-    .then(|| wide_expression_trailer_flags(payload.get(expression_end..)?))
+    .then(|| wide_expression_trailer_flags(expression_trailer))
     .flatten()
     .filter(|wide| wide.document == owner_record_index.is_none());
-    let compact_flags = if discriminated {
-        None
-    } else {
-        compact_owned_trailer_flags(expression_trailer)
-    };
-    let valid_expression_trailer = if discriminated {
-        long_document_trailer
-            || wide_flags.is_some()
-            || is_flagged_expression_trailer(expression_trailer)
-    } else {
-        compact_flags.is_some()
-    };
-    if !valid_expression_trailer {
-        return None;
-    }
-    let prefixed_kind = if long_document_trailer
-        || (discriminated
-            && owner_record_index.is_some()
-            && payload.get(expression_end..expression_end + 10) == Some(&[0; 10]))
-    {
-        lp_utf16_bounded(payload, expression_end + 10, 1..=256)
-    } else {
-        None
-    };
     let extended_kind = if wide_flags.is_some() {
         lp_utf16_bounded(payload, expression_end + wide_trailer::LEN, 1..=256)
     } else {
         None
     };
     let wide_flags = wide_flags.filter(|_| extended_kind.is_some());
-    let source_kind_at = if prefixed_kind.is_some() {
-        expression_end + 10
-    } else if extended_kind.is_some() {
-        expression_end + wide_trailer::LEN
+    let flagged = if discriminated && wide_flags.is_none() {
+        Some(discriminated_trailer(expression_trailer, trailer)?)
     } else {
-        expression_end + trailer_len
+        None
     };
-    let (source_kind, source_kind_end) = match prefixed_kind.or(extended_kind) {
+    let compact_flags = if discriminated {
+        None
+    } else {
+        Some(compact_owned_trailer_flags(
+            expression_trailer.get(..compact_trailer::LEN)?,
+        )?)
+    };
+    let source_kind_at = expression_end
+        + match (flagged, compact_flags) {
+            (Some(flagged), _) => flagged.len,
+            (None, Some(_)) => compact_trailer::LEN,
+            (None, None) => wide_trailer::LEN,
+        };
+    let (source_kind, source_kind_end) = match extended_kind {
         Some(value) => value,
         None => parameter_text!(payload, source_kind_at, 1..=256),
     };
@@ -553,14 +594,14 @@ fn parse_header_form(
     if compact_flag && source_kind != "Side1Offset" {
         return None;
     }
-    let document_flag = match wide_flags {
-        Some(wide) => wide.document,
-        None => expression_trailer.get(DOCUMENT_TRAILER_FLAG) == Some(&1),
+    let (document_flag, text) = match (wide_flags, flagged) {
+        (Some(wide), _) => (wide.document, wide.text),
+        (None, Some(flagged)) => (flagged.document, flagged.text),
+        (None, None) => (false, false),
     };
-    if discriminated
-        && !long_document_trailer
-        && document_flag != crate::records::parameters::is_document_source_kind(&source_kind)
-    {
+    // The document flag selects a document parameter whatever its
+    // `source_kind`, and a document parameter has no owner.
+    if discriminated && document_flag && owner_record_index.is_some() {
         return None;
     }
     let flags = match (wide_flags, compact_flags) {
@@ -576,7 +617,6 @@ fn parse_header_form(
     } else {
         (String::new(), source_kind_end)
     };
-    let text = wide_flags.is_some_and(|wide| wide.text);
     if !text && !text_value.is_empty() {
         return None;
     }
@@ -614,7 +654,7 @@ fn parse_header_form(
         record_index,
         source_ordinal,
         source_kind,
-        document: None,
+        document: discriminated.then_some(document_flag),
         owner_record_index,
         family_discriminator,
         discriminator_offset: u64_from_index(discriminator_at),
@@ -630,14 +670,15 @@ fn parse_header_form(
             .filter(|(text, _)| !text.is_empty())
             .map(|(value, _)| ParsedParameterUnit {
                 value,
-                offset: FrameRelative(i128::from(u64_from_index(wide_prefix::LEN))),
+                offset: FrameRelative(i128::from(u64_from_index(prefix::LEN + shift))),
             }),
         flags,
         text_value: text.then(|| ParsedParameterUnit {
             value: text_value,
             offset: FrameRelative(i128::from(u64_from_index(source_kind_end + 4))),
         }),
-        compact_flag,
+        uninterpreted_trailer_flag: compact_flag
+            || flagged.is_some_and(|flagged| flagged.uninterpreted),
         compact_null_owner: false,
     }))
 }
@@ -738,7 +779,7 @@ fn parse_comment_discriminated_parameter(
         }),
         flags,
         text_value: None,
-        compact_flag: false,
+        uninterpreted_trailer_flag: false,
         compact_null_owner: false,
     }))
 }
@@ -748,20 +789,22 @@ fn parse_comment_discriminated_parameter(
 /// at offset 26, and a parameter comment follows. Discriminator 0 leaves offsets
 /// 22 through 29 zero, which also read as a discriminator at offset 22.
 fn wide_discriminated_parameter(payload: &[u8]) -> bool {
-    payload.get(wide_prefix::ZERO_RUN_15..wide_prefix::FAMILY_DISCRIMINATOR) == Some(&[0; 15])
-        && View::u32_le_at(payload, wide_prefix::FAMILY_DISCRIMINATOR).is_some_and(|value| {
+    let discriminator_at = prefix::FAMILY_DISCRIMINATOR + WIDE_DISCRIMINATED_SHIFT;
+    payload.get(prefix::ZERO_RUN_11..discriminator_at) == Some(&[0; 15])
+        && View::u32_le_at(payload, discriminator_at).is_some_and(|value| {
             crate::records::parameters::DesignParameterDiscriminator::try_from(u64::from(value))
                 .is_ok()
         })
-        && wide_parameter_comment(payload).is_some()
+        && parameter_comment(payload, WIDE_DISCRIMINATED_SHIFT).is_some()
 }
 
-/// The LP-UTF16 comment of a wide discriminated parameter and the offset after it.
-fn wide_parameter_comment(payload: &[u8]) -> Option<(String, usize)> {
-    if *payload.get(wide_prefix::RESERVED_30)? != wide_prefix::RESERVED_30_VALUE {
+/// The LP-UTF16 comment of a discriminated parameter whose prefix starts
+/// `shift` further zero bytes on, and the offset after it.
+fn parameter_comment(payload: &[u8], shift: usize) -> Option<(String, usize)> {
+    if *payload.get(prefix::RESERVED_26 + shift)? != prefix::RESERVED_26_VALUE {
         return None;
     }
-    lp_utf16_bounded(payload, wide_prefix::COMMENT_LENGTH, 0..=4096)
+    lp_utf16_bounded(payload, prefix::COMMENT_LENGTH + shift, 0..=4096)
 }
 
 /// Parse the class-287 owned parameter family.
@@ -884,7 +927,7 @@ fn compact_trailer_parameter(
         comment: None,
         flags: crate::records::parameters::DesignParameterFlags::default(),
         text_value: None,
-        compact_flag,
+        uninterpreted_trailer_flag: compact_flag,
         compact_null_owner: owner_record_index.is_none(),
     }))
 }
@@ -911,8 +954,7 @@ impl ParameterTailTargets {
         parameter_tail_collection(frame).is_some_and(|target| {
             let target = u64::from(target);
             if self.collections.is_empty() {
-                frame.get(indexed_header::LEN..DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET)
-                    == Some(&[0; 11])
+                frame.get(prefix::ZERO_RUN_11..prefix::FAMILY_DISCRIMINATOR) == Some(&[0; 11])
                     && !self.others.contains(&target)
             } else {
                 self.collections.contains(&target)
@@ -1107,7 +1149,7 @@ fn parse_typed_compact_design_parameter(
             comment: None,
             flags: crate::records::parameters::DesignParameterFlags::default(),
             text_value: None,
-            compact_flag: false,
+            uninterpreted_trailer_flag: false,
             compact_null_owner: false,
         }))
     })();
@@ -1166,7 +1208,7 @@ fn parse_legacy_design_parameter(
             comment: None,
             flags: crate::records::parameters::DesignParameterFlags::default(),
             text_value: None,
-            compact_flag: false,
+            uninterpreted_trailer_flag: false,
             compact_null_owner: false,
         }))
     })();
@@ -2120,9 +2162,15 @@ pub(crate) fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
     companions: Vec<DesignParameterCompanion>,
     inputs: &ParameterCompanionInputs<'_, S>,
 ) -> Result<Vec<DesignParameterCompanion>, CodecError> {
+    let bounds = CompanionBounds::new(
+        inputs.parameters,
+        inputs.owners,
+        inputs.scopes,
+        inputs.headers,
+    );
     let mut bound = Vec::new();
     for companion in companions {
-        bound.push(match companion_payload(&companion, inputs)? {
+        bound.push(match companion_payload(&companion, inputs, &bounds)? {
             Some(payload) => companion.bound(payload),
             None => companion,
         });
@@ -2134,15 +2182,14 @@ pub(crate) fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
 fn companion_payload<S: std::hash::BuildHasher>(
     companion: &DesignParameterCompanion,
     inputs: &ParameterCompanionInputs<'_, S>,
+    bounds: &CompanionBounds<'_>,
 ) -> Result<Option<crate::records::parameters::DesignCompanionPayload>, CodecError> {
     let ParameterCompanionInputs {
-        parameters,
-        owners,
         scopes,
         entities,
-        headers,
         recipes,
         stream_lengths,
+        ..
     } = inputs;
     let Some(stream) = native_stream(companion.id()) else {
         return Ok(None);
@@ -2150,14 +2197,7 @@ fn companion_payload<S: std::hash::BuildHasher>(
     let Some(stream_length) = stream_lengths.get(stream).copied() else {
         return Ok(None);
     };
-    let Some((start, mut end)) = companion_owned_interval(
-        companion,
-        parameters.iter(),
-        owners,
-        scopes,
-        headers,
-        stream_length,
-    ) else {
+    let Some((start, mut end)) = bounds.interval(companion, stream_length) else {
         return Ok(None);
     };
     // Entity headers precede their owning scope record. A parameter companion

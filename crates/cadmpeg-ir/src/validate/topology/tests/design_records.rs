@@ -26,23 +26,25 @@ fn missing(home: Home) -> Vec<String> {
     ir.set_scope(ContentScope::design()).unwrap();
     match home {
         Home::Model => {
-            ir.model.parameters.push(crate::features::DesignParameter {
-                product_definition: None,
-                id: parameter.clone(),
-                owner: None,
-                ordinal: 0,
-                name: "Mass".into(),
-                expression: "1".into(),
-                display: None,
-                value: None,
-                dependencies: crate::features::DistinctMembers::default(),
-                properties: BTreeMap::new(),
-                pmi: None,
-                native_ref: None,
-            });
+            ir.model
+                .parameters
+                .push(crate::features::parameters::DesignParameter {
+                    product_definition: None,
+                    id: parameter.clone(),
+                    owner: None,
+                    ordinal: 0,
+                    name: "Mass".into(),
+                    expression: "1".into(),
+                    display: None,
+                    value: None,
+                    dependencies: crate::features::selections::DistinctMembers::default(),
+                    properties: BTreeMap::new(),
+                    pmi: None,
+                    native_ref: None,
+                });
             ir.model
                 .configurations
-                .push(crate::features::DesignConfiguration {
+                .push(crate::features::parameters::DesignConfiguration {
                     id: configuration.clone(),
                     ordinal: 0,
                     active: true,
@@ -97,7 +99,8 @@ fn missing(home: Home) -> Vec<String> {
         id: AttributeId::mint("test:model:attribute#part-number").unwrap(),
         target: AttributeTarget::Configuration(configuration).into(),
         name: "Part Number".into(),
-        values: vec![AttributeValue::Parameter(parameter)],
+        values: vec![Some(AttributeValue::Parameter(parameter))],
+        native_ref: None,
     });
     validate_neutral(&ir, Vec::new())
         .unwrap()

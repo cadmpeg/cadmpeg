@@ -6,7 +6,7 @@
 //! frame readers in `analytic.rs`.
 
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::units::UnitVector3;

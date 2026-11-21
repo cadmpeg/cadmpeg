@@ -622,7 +622,7 @@ fn checked_knots_and_vectors_hand_out_finite_reals_without_a_check() {
 
 #[test]
 fn a_vector_charts_by_the_binade_of_its_largest_component() {
-    use crate::features::FiniteVector3;
+    use crate::features::geometry::FiniteVector3;
     use crate::math::Vector3;
 
     // 4 lies in [2^2, 2^3), so the chart divides by 8.
@@ -644,7 +644,7 @@ fn a_vector_charts_by_the_binade_of_its_largest_component() {
 
 #[test]
 fn a_unit_component_below_the_normal_range_is_one_quotient_of_its_component() {
-    use crate::features::FiniteVector3;
+    use crate::features::geometry::FiniteVector3;
     use crate::math::Vector3;
 
     // The chart halves (1, 1e-320, 0): 1e-320 charts below the normal range,

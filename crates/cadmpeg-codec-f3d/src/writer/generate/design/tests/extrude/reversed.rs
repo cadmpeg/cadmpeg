@@ -10,10 +10,11 @@ use cadmpeg_ir::design::ops::shared::{Limit, Span};
 use cadmpeg_ir::design::ops::sketch::SketchPlane;
 use cadmpeg_ir::design::ops::swept::ExtrudeDirection;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{
-    ExtrudeDirection as DecodedDirection, ExtrudeExtent, FeatureDefinition,
-    FeatureOperation as DecodedOperation, LinearTermination, ParameterValue,
+use cadmpeg_ir::features::extents::{
+    ExtrudeDirection as DecodedDirection, ExtrudeExtent, LinearTermination,
 };
+use cadmpeg_ir::features::parameters::ParameterValue;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation as DecodedOperation};
 use cadmpeg_ir::scalar::Length;
 
 use super::super::sketch::{frame, sketch_id};

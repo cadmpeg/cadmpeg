@@ -201,7 +201,9 @@ fn projected_document(
 ) -> (Vec<SheetMetalRule>, Vec<LossNote>) {
     use crate::design::{PmDcParameter, PmDcParameterPayload};
     use crate::pmdc::PmDcContentHeader;
-    use cadmpeg_ir::features::{DesignParameter, DistinctMembers, ParameterId};
+    use cadmpeg_ir::features::parameters::DesignParameter;
+    use cadmpeg_ir::features::selections::DistinctMembers;
+    use cadmpeg_ir::features::ParameterId;
 
     let mut ir = root_part_ir();
     let null = PmDcReference::from_packed(0);
@@ -360,7 +362,9 @@ fn sheet_metal_no_unfold_rule_with_unresolved_style_k_parameter_is_a_conflict() 
 fn sheet_metal_projection_joins_parameter_literals_and_retains_unread_fields() {
     use crate::design::{PmDcParameter, PmDcParameterPayload};
     use crate::pmdc::PmDcContentHeader;
-    use cadmpeg_ir::features::{DesignParameter, DistinctMembers, ParameterId};
+    use cadmpeg_ir::features::parameters::DesignParameter;
+    use cadmpeg_ir::features::selections::DistinctMembers;
+    use cadmpeg_ir::features::ParameterId;
 
     let mut ir = root_part_ir();
     let null = PmDcReference::from_packed(0);

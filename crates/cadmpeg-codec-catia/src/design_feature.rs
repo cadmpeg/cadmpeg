@@ -313,13 +313,13 @@ fn transfer_principal_plane(
         ordinal: object.first_field_byte_offset,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: Some(source_tag),
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane {
                 plane: candidate.plane,
             }),
@@ -356,13 +356,13 @@ fn transfer_reference_plane(
         ordinal: object.first_field_byte_offset,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: Some(source_tag),
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::DatumPlane,
             }),
@@ -415,13 +415,13 @@ fn transfer_sketch(
         ordinal: object.first_field_byte_offset,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: Some(source_tag),
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(binding_sketch_id)),
             }),

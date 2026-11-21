@@ -7,9 +7,10 @@ use cadmpeg_asm::brep::records::BodyNativeKey;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{Model, Topology};
+use cadmpeg_ir::features::patterns::PatternSeed;
+use cadmpeg_ir::features::selections::BodySelection;
 use cadmpeg_ir::features::{
-    patterns::PatternSeed, BodySelection, CombineOperands, FeatureDefinition, FeatureOperation,
-    TrimBodyOperands,
+    CombineOperands, FeatureDefinition, FeatureOperation, TrimBodyOperands,
 };
 use cadmpeg_ir::ids::BodyId;
 use serde::{Deserialize, Serialize};
@@ -358,14 +359,46 @@ pub(crate) fn split_matches(
 }
 
 pub(crate) struct ProducerRecords<'a> {
-    pub(crate) features: &'a [super::PmDcFeature],
-    pub(crate) labels: &'a [super::PmDcFeatureLabel],
-    pub(crate) properties: &'a [PmDcFeatureProperty],
+    sources: HashMap<String, Option<&'a super::PmDcFeature>>,
+    labels: HashMap<(&'a str, Option<u32>), Option<&'a super::PmDcFeatureLabel>>,
+    properties: HashMap<(&'a str, u32), Option<&'a PmDcFeatureProperty>>,
+}
+
+impl<'a> ProducerRecords<'a> {
+    pub(crate) fn new(
+        features: &'a [super::PmDcFeature],
+        labels: &'a [super::PmDcFeatureLabel],
+        properties: &'a [PmDcFeatureProperty],
+    ) -> Self {
+        Self {
+            sources: cadmpeg_core::decode::unique_index(
+                features.iter().map(|source| (source.id(), source)),
+            ),
+            labels: cadmpeg_core::decode::unique_index(labels.iter().map(|label| {
+                (
+                    (
+                        label.identity.segment_token.as_str(),
+                        label.header.owner.record_ordinal(),
+                    ),
+                    label,
+                )
+            })),
+            properties: cadmpeg_core::decode::unique_index(properties.iter().map(|property| {
+                (
+                    (
+                        property.identity.segment_token.as_str(),
+                        property.identity.record_ordinal,
+                    ),
+                    property,
+                )
+            })),
+        }
+    }
 }
 
 pub(crate) fn produced_before(
     features: &[cadmpeg_ir::features::Feature],
-    results: &[cadmpeg_ir::features::FeatureResultTopology],
+    results: &[cadmpeg_ir::features::evaluation::FeatureResultTopology],
     feature: &cadmpeg_ir::features::Feature,
     records: &ProducerRecords<'_>,
 ) -> HashSet<String> {
@@ -383,31 +416,9 @@ pub(crate) fn produced_before(
     let mut wrappers = results
         .iter()
         .filter(|result| ids.contains(&result.output_of))
-        .flat_map(cadmpeg_ir::features::FeatureResultTopology::bodies)
+        .flat_map(cadmpeg_ir::features::evaluation::FeatureResultTopology::bodies)
         .map(|wrapper| wrapper.as_str().to_owned())
         .collect::<HashSet<_>>();
-    let sources = cadmpeg_core::decode::unique_index(
-        records.features.iter().map(|source| (source.id(), source)),
-    );
-    let properties =
-        cadmpeg_core::decode::unique_index(records.properties.iter().map(|property| {
-            (
-                (
-                    property.identity.segment_token.as_str(),
-                    property.identity.record_ordinal,
-                ),
-                property,
-            )
-        }));
-    let labels = cadmpeg_core::decode::unique_index(records.labels.iter().map(|label| {
-        (
-            (
-                label.identity.segment_token.as_str(),
-                label.header.owner.record_ordinal(),
-            ),
-            label,
-        )
-    }));
     for producer in producers {
         if !matches!(
             producer.evaluation.definition(),
@@ -418,13 +429,14 @@ pub(crate) fn produced_before(
         let Some(source) = producer
             .native_ref
             .as_deref()
-            .and_then(|id| sources.get(id))
+            .and_then(|id| records.sources.get(id))
             .and_then(Option::as_ref)
         else {
             continue;
         };
         let token = source.identity.segment_token.as_str();
-        let Some(label) = labels
+        let Some(label) = records
+            .labels
             .get(&(token, Some(source.identity.record_ordinal)))
             .and_then(Option::as_ref)
         else {
@@ -437,7 +449,8 @@ pub(crate) fn produced_before(
             continue;
         }
         if let Some((_, output)) = base::wrappers(source, label.class_id(), |ordinal| {
-            properties
+            records
+                .properties
                 .get(&(token, ordinal))
                 .and_then(Option::as_ref)
                 .copied()
@@ -577,9 +590,9 @@ pub(crate) fn tools_group(
 
 pub(crate) fn outputs(
     feature: &cadmpeg_ir::features::FeatureId,
-    results: &[cadmpeg_ir::features::FeatureResultTopology],
+    results: &[cadmpeg_ir::features::evaluation::FeatureResultTopology],
     bodies: &HashMap<String, BodyId>,
-) -> Option<cadmpeg_ir::features::DistinctMembers<BodyId>> {
+) -> Option<cadmpeg_ir::features::selections::DistinctMembers<BodyId>> {
     let mut matches = results.iter().filter(|result| &result.output_of == feature);
     let result = matches.next()?;
     if matches.next().is_some() {
@@ -596,7 +609,7 @@ pub(crate) fn outputs(
 
 pub(crate) fn outputs_match(
     feature: &cadmpeg_ir::features::Feature,
-    results: &[cadmpeg_ir::features::FeatureResultTopology],
+    results: &[cadmpeg_ir::features::evaluation::FeatureResultTopology],
     bodies: &HashMap<String, BodyId>,
 ) -> bool {
     match outputs(&feature.id, results, bodies) {
@@ -613,11 +626,10 @@ pub(crate) fn project(
     bodies: &HashMap<String, BodyId>,
     inventory: &FeatureInventory,
 ) {
-    let sources = cadmpeg_core::decode::unique_index(
-        inventory
-            .features
-            .iter()
-            .map(|source| (source.id(), source)),
+    let records = ProducerRecords::new(
+        &inventory.features,
+        &inventory.labels,
+        &inventory.properties,
     );
     let features = ir.model.features.clone();
     for feature in &mut ir.model.features {
@@ -629,28 +641,36 @@ pub(crate) fn project(
             feature
                 .native_ref
                 .as_deref()
-                .and_then(|native| sources.get(native))
+                .and_then(|native| records.sources.get(native))
                 .and_then(Option::as_ref)
                 .and_then(|source| tools_group(source, &inventory.properties))
         })
         .flatten();
-        let earlier = produced_before(
-            &features,
-            &ir.model.feature_result_topologies,
-            feature,
-            &ProducerRecords {
-                features: &inventory.features,
-                labels: &inventory.labels,
-                properties: &inventory.properties,
-            },
-        );
+        let earlier = if matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(
+                FeatureOperation::Combine { .. }
+                    | FeatureOperation::TrimBodies { .. }
+                    | FeatureOperation::TrimBodiesAtPlane { .. }
+                    | FeatureOperation::SplitBody { .. }
+            )
+        ) {
+            produced_before(
+                &features,
+                &ir.model.feature_result_topologies,
+                feature,
+                &records,
+            )
+        } else {
+            HashSet::new()
+        };
         let qualified_target = matches!(
             feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::SplitBody { .. })
         ) && feature
             .native_ref
             .as_deref()
-            .and_then(|native| sources.get(native))
+            .and_then(|native| records.sources.get(native))
             .and_then(Option::as_ref)
             .is_some_and(|source| qualified_split_target(source, &inventory.properties));
         feature.evaluation.edit(|value, _| {
@@ -729,7 +749,7 @@ pub(crate) fn native_losses(
     let result_count = model
         .feature_result_topologies
         .iter()
-        .flat_map(cadmpeg_ir::features::FeatureResultTopology::bodies)
+        .flat_map(cadmpeg_ir::features::evaluation::FeatureResultTopology::bodies)
         .filter(|wrapper| !bodies.contains_key(wrapper.as_str()))
         .count();
     let selection_count = model

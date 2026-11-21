@@ -200,7 +200,7 @@ fn through_all_and_explicit_travel_preserve_their_definitions() {
                 side.termination = LinearTermination::ThroughAll {};
             } else {
                 *direction = ExtrudeDirection::Explicit {
-                    vector: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                    vector: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
                         0.0, 0.0, 1.0,
                     ))
                     .expect("unit vector"),
@@ -285,7 +285,7 @@ fn active_state_retention_preserves_inactive_configuration_travel() {
     let mut ir = model(10.0, 1.0);
     let feature = &ir.model.features[0];
     for active in [true, false] {
-        let mut configuration: cadmpeg_ir::features::DesignConfiguration =
+        let mut configuration: cadmpeg_ir::features::parameters::DesignConfiguration =
             serde_json::from_value(json!({
                 "id":format!("synthetic:travel:configuration#{active}"),"active":active,
                 "ordinal":0,"feature_states":{},"parameter_overrides":{},"parameter_values":{},
@@ -481,7 +481,7 @@ fn end_caps_confirm_a_two_direction_reversal() {
             else {
                 panic!("extrude");
             };
-            let side = |length: f64| cadmpeg_ir::features::ExtrudeSide {
+            let side = |length: f64| cadmpeg_ir::features::extents::ExtrudeSide {
                 termination: LinearTermination::Blind {
                     length: cadmpeg_ir::scalar::NonZeroLength::new(length).expect("a depth"),
                 },

@@ -735,7 +735,7 @@ Parsed by:
 
 Spec §6.6 · layout: byte offsets · size: 141 B
 
-Tail-relative offsets. The generic 133-byte and 142-byte surface tails share the prefix through offset 71.
+Fixed terminal-span production in section 6.6, with one-byte identifiers and a six-byte suffix. The surface_owned_tail slot layout in section 6.1 describes sheet-owned tails: compact identifier widths shift the following fields, and descriptor widths determine the suffix length.
 
 Parsed by:
 - `crates/cadmpeg-codec-catia/src/families/a5a8/records.rs`
@@ -747,6 +747,23 @@ Parsed by:
 | 68 | 3 | `flags` | `bytes[3]` | little | spec | Preserve the fixed flag, continuation and suffix bytes. |
 | 71 | 64 | `continuation` | `bytes[64]` | little | spec | eight zero `f64le` values |
 | 135 | 6 | `suffix` | `bytes[6]` | little | spec | 01 00 01 00 07 07 |
+
+## `surface_owned_tail`
+
+Spec §6.1 · layout: ordered slots (no stated byte offsets) · size: not stated
+
+Variable total length. The fixed surface_terminal_span_tail record is the terminal-span production in section 6.6.
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/a5a8/records.rs`
+
+| # | Slot | Type | Endian | Src | Meaning |
+| -: | ---- | ---- | ------ | --- | ------- |
+| 0 | `patch_identifiers` | `token_stream` | little | spec | The four terminal patch identifiers also use compact unsigned integers. |
+| 1 | `parameters` | `f64[8]` | little | spec | The eight parameter values follow the fourth identifier. |
+| 2 | `flags` | `bytes[3]` | little | spec | then three flags |
+| 3 | `continuation` | `array` | little | spec | The continuation has seven zero f64 values in the 133-byte form and eight finite f64 values in the other forms. |
+| 4 | `axis_descriptors_and_terminal` | `token_stream` | little | spec | The sheet-owned tail suffix stores one extrapolation descriptor per axis in U, V order, followed by `07 07`. |
 
 ## `b5_cone_payload`
 
@@ -1451,6 +1468,143 @@ Parsed by:
 | 4 | 4 | `identity` | `u32` | big | spec | Each counted record starts |
 | 8 | 2 | `value_type` | `u16` | big | spec | Each counted record starts |
 | 10 | 4 | `value_bytes` | `u32` | big | spec | Each counted record starts |
+
+## `surface_weight_row_prefix`
+
+Spec §6.1 · layout: byte offsets · size: 3 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/a5a8/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `command` | `u8` | little | spec | row command `01` or `05` |
+| 1 | 2 | `mirror` | `u16` | little | spec | row control |
+
+## `surface_weight_repeat_row_prefix`
+
+Spec §6.1 · layout: byte offsets · size: 5 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/a5a8/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `command` | `u8` | little | spec | row command `01` or `05` · value `5` |
+| 1 | 2 | `mirror` | `u16` | little | spec | row control |
+| 3 | 2 | `leading_repeats` | `u16` | little | spec | leading-repeat count for command `05` |
+
+## `surface_weight_symmetric_03_prefix`
+
+Spec §6.1 · layout: byte offsets · size: 3 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/a5a8/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `command` | `u8` | little | spec | Command `01` with row control `0003` or `0007` · value `1` |
+| 1 | 2 | `control` | `u16` | little | spec | Command `01` with row control `0003` or `0007` · value `3` |
+
+## `surface_weight_symmetric_07_prefix`
+
+Spec §6.1 · layout: byte offsets · size: 3 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/a5a8/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `command` | `u8` | little | spec | Command `01` with row control `0003` or `0007` · value `1` |
+| 1 | 2 | `control` | `u16` | little | spec | Command `01` with row control `0003` or `0007` · value `7` |
+
+## `consolidated_vertex_wide_roster`
+
+Spec §6.4 · layout: byte offsets · size: 5 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/stations.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | \| `+0` \| `u8` \| wide roster-reference marker `0e` \| · value `14` |
+| 1 | 3 | `ordinal` | `u24` | little | spec | \| `+1` \| `u24le` \| forward allocation ordinal \| |
+| 4 | 1 | `terminal` | `u8` | little | spec | \| `+4` \| `u8` \| roster-reference terminal `00` \| · value `0` |
+
+## `consolidated_packed_plane_full_u_payload`
+
+Spec §6.3 · layout: byte offsets · size: 67 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/sheet_carrier.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | packed marker `08` · value `8` |
+| 1 | 2 | `control` | `u16` | little | spec | a two-byte little-endian control word · value `6400` |
+| 3 | 24 | `origin` | `f64[3]` | little | spec | origin `(x,y,z)` |
+| 27 | 24 | `u_axis` | `f64[3]` | little | spec | Control `1900` stores all three U components |
+| 51 | 16 | `v_yz` | `f64[2]` | little | spec | `u_x,u_y,u_z,v_y,v_z` \| 67 \| |
+
+## `sheet_plane_signed_v_payload`
+
+Spec §6.3 · layout: byte offsets · size: 35 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/sheet_carrier.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 3 | `header` | `u8[3]` | little | spec | Selector `08 68 1d` stores origin XYZ |
+| 3 | 24 | `origin` | `f64[3]` | little | spec | Selector `08 68 1d` stores origin XYZ |
+| 27 | 8 | `direction_v_y` | `f64` | little | spec | Selector `08 68 1d` stores origin XYZ |
+
+## `sheet_plane_implicit_v_payload`
+
+Spec §6.3 · layout: byte offsets · size: 74 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/sheet_carrier.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `header` | `u8[2]` | little | spec | Selector `d4 a0` stores origin XYZ |
+| 2 | 24 | `origin` | `f64[3]` | little | spec | Selector `d4 a0` stores origin XYZ |
+| 26 | 8 | `direction_u_x` | `f64` | little | spec | Selector `d4 a0` stores origin XYZ |
+| 34 | 8 | `direction_u_z` | `f64` | little | spec | Selector `d4 a0` stores origin XYZ |
+| 42 | 32 | `bounds` | `f64[4]` | little | spec | Selector `d4 a0` stores origin XYZ |
+
+## `sheet_plane_explicit_v_payload`
+
+Spec §6.3 · layout: byte offsets · size: 82 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/sheet_carrier.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `header` | `u8[2]` | little | spec | Selector `d4 20` adds V's signed Y component |
+| 2 | 24 | `origin` | `f64[3]` | little | spec | Selector `d4 20` adds V's signed Y component |
+| 26 | 8 | `direction_u_x` | `f64` | little | spec | Selector `d4 20` adds V's signed Y component |
+| 34 | 8 | `direction_u_z` | `f64` | little | spec | Selector `d4 20` adds V's signed Y component |
+| 42 | 8 | `direction_v_y` | `f64` | little | spec | Selector `d4 20` adds V's signed Y component |
+| 50 | 32 | `bounds` | `f64[4]` | little | spec | Selector `d4 20` adds V's signed Y component |
+
+## `sheet_plane_explicit_v_a0_payload`
+
+Spec §6.3 · layout: byte offsets · size: 82 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/sheet_carrier.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `header` | `u8[2]` | little | spec | The 82-byte `d4 a0` form stores V's signed Y component |
+| 2 | 24 | `origin` | `f64[3]` | little | spec | The 82-byte `d4 a0` form stores V's signed Y component |
+| 26 | 8 | `direction_u_x` | `f64` | little | spec | The 82-byte `d4 a0` form stores V's signed Y component |
+| 34 | 8 | `direction_u_z` | `f64` | little | spec | The 82-byte `d4 a0` form stores V's signed Y component |
+| 42 | 8 | `direction_v_y` | `f64` | little | spec | The 82-byte `d4 a0` form stores V's signed Y component |
+| 50 | 32 | `bounds` | `f64[4]` | little | spec | The 82-byte `d4 a0` form stores V's signed Y component |
 
 ## Not tabulated
 

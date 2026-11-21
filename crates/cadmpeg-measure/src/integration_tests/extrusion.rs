@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_ir::features::FiniteVector3;
+use cadmpeg_ir::features::geometry::FiniteVector3;
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoles3};
 use cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction;
 use cadmpeg_ir::geometry::{
@@ -18,7 +18,7 @@ use crate::test_support::builders::{assert_measured, measure, Builder};
 
 const BOX_TOLERANCE: f64 = 1.0e-8;
 
-fn oblique_extrusion(unknown_cache: bool) -> CadIr {
+pub(super) fn oblique_extrusion(unknown_cache: bool) -> CadIr {
     let mut builder = Builder::new();
     let vertices = [
         [0.0, 0.0, 0.0],

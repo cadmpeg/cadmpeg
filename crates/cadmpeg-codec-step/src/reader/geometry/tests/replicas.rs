@@ -333,7 +333,7 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
             &CurveId::mint("step:data:curve#9").expect("identity grammar"),
             0.0
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(6.0, 0.0, 0.0))
     );
     assert_eq!(
@@ -343,7 +343,7 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
             &CurveId::mint("step:data:curve#9").expect("identity grammar"),
             2.0
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(12.0, 0.0, 0.0))
     );
 
@@ -522,7 +522,7 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
             0.0,
             0.0
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(0.0, 0.0, 0.0))
     );
     assert_eq!(
@@ -533,7 +533,7 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
             1.0,
             1.0
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(4.0, 4.0, 0.0))
     );
 
@@ -882,7 +882,7 @@ fn replicas_retain_bounded_parent_relations() {
             &CurveId::mint("step:data:curve#9").expect("identity grammar"),
             0.0
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(3.0, 0.0, 0.0))
     );
     assert_eq!(
@@ -893,7 +893,7 @@ fn replicas_retain_bounded_parent_relations() {
             0.0,
             0.0
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(3.0, 9.0, 0.0))
     );
 

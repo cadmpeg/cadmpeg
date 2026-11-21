@@ -154,7 +154,7 @@ fn a_refused_polygonal_vertex_edit_keeps_the_prior_vertices() {
 
 #[test]
 fn sampled_carriers_hold_their_admitted_chordal_deflection_and_vertices() {
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::geometry::sampled::{PolygonalSurface, PolylineCurve, PolylineSamples};
     use crate::scalar::NonNegativeReal;
 
@@ -208,7 +208,7 @@ fn sampled_carriers_hold_their_admitted_chordal_deflection_and_vertices() {
 
 #[test]
 fn scaled_deflection_constructors_preserve_output_and_refusal_order() {
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::geometry::sampled::{PolygonalSurface, PolylineCurve, PolylineSamples};
     use crate::scalar::{NonNegativeReal, PositiveReal};
 
@@ -266,7 +266,7 @@ fn scaled_deflection_constructors_preserve_output_and_refusal_order() {
 
 #[test]
 fn admitted_polygonal_surface_path_preserves_geometry_and_layout_refusal() {
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::geometry::sampled::PolygonalSurface;
     use crate::scalar::{NonNegativeReal, PositiveReal};
 
@@ -317,7 +317,7 @@ fn admitted_polygonal_surface_path_preserves_geometry_and_layout_refusal() {
 
 #[test]
 fn admitted_polyline_path_keeps_samples_and_checks_parameter_order() {
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::geometry::sampled::{
         GeometryLayoutError, PolylineCurve, PolylineSamples, PolylineVertex,
     };
@@ -397,7 +397,7 @@ fn admitted_polyline_path_keeps_samples_and_checks_parameter_order() {
 
 #[test]
 fn a_polyline_holds_its_admitted_samples() {
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::geometry::sampled::{PolylineCurve, PolylineSamples, PolylineVertex};
     use crate::scalar::FiniteReal;
     let samples = PolylineSamples::Parameterized {
@@ -443,7 +443,7 @@ fn a_polyline_holds_its_admitted_samples() {
 
 #[test]
 fn checked_polyline_samples_keep_parameter_order_and_deflection_rules() {
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::geometry::sampled::{PolylineCurve, PolylineSamples, PolylineVertex};
     use crate::scalar::FiniteReal;
 

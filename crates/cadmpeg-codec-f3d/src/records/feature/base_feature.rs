@@ -1642,6 +1642,7 @@ impl DesignBaseFeatureConstruction {
     }
 
     /// Return passive body-reference records for forms that carry them.
+    #[cfg(test)]
     pub(crate) fn body_reference_records(&self) -> impl Iterator<Item = u32> + '_ {
         let (results, legacy, single) = match self {
             Self::ResultBodies { bodies, .. } => (Some(bodies), &[][..], None),

@@ -16,13 +16,13 @@ use cadmpeg_ir::design::refs::Member;
 use cadmpeg_ir::design::selection::PrincipalEntity;
 use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::ParameterValue;
+use cadmpeg_ir::features::parameters::ParameterValue;
 use cadmpeg_ir::report::export::ExportReport;
 use cadmpeg_ir::scalar::{Angle, PositiveLength};
 use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Kind;
 
 use super::roster::{segment, Segment};
-use super::sketch::{constraint_id, frame, picked, point2, principal, Source};
+use super::sketch::{constraint_id, fixed_clock_tables, frame, picked, point2, principal, Source};
 use super::{
     loss, neutral, number, parameter, parameter_id, reference, scoped_cube, u32_at, u64_at, write,
     write_bytes,
@@ -668,6 +668,15 @@ fn the_container_scope_and_collections_list_the_dimensions() {
         at += 4 + usize::try_from(u32_at(context, at)).expect("length") + 8;
     }
     assert_eq!(u64_at(context, at), 7);
+}
+
+#[test]
+fn the_fixed_clock_note_names_each_dimension_table() {
+    let (report, _, bytes) = write_bytes(&on_xy());
+    let frames = written_frames(&segment(&bytes, "FusionDesignSegmentType1")).len();
+    // The component and Base Feature tables, three of the sketch and one
+    // of each dimension's parameter.
+    assert_eq!(fixed_clock_tables(&report, &bytes).len(), 3 + 3 + frames);
 }
 
 #[test]

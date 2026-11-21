@@ -57,7 +57,7 @@ fn profile_roster_construction_axis_test(
     profile_native: &str,
     sketch: &Sketch,
     surfaces: &[Surface],
-) -> Option<cadmpeg_ir::features::RevolutionAxis> {
+) -> Option<cadmpeg_ir::features::revolve::RevolutionAxis> {
     profile_roster_construction_axis(lane, profile_native, sketch, surfaces, &[])
 }
 
@@ -550,10 +550,13 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
 
     assert_eq!(
         profile_roster_construction_axis_test(&lane, "profile-native", &sketch, &[]),
-        Some(cadmpeg_ir::features::RevolutionAxis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 19.5)).unwrap(),
-            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
+        Some(cadmpeg_ir::features::revolve::RevolutionAxis {
+            origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 19.5))
                 .unwrap(),
+            direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                1.0, 0.0, 0.0
+            ))
+            .unwrap(),
             reference: None,
         })
     );
@@ -584,10 +587,13 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
     lane.sketch_entities[3].reclassify(SketchInputKind::Relation(SketchRelationKind::Horizontal));
     assert_eq!(
         profile_roster_construction_axis_test(&lane, "profile-native", &sketch, &[]),
-        Some(cadmpeg_ir::features::RevolutionAxis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 19.5)).unwrap(),
-            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
+        Some(cadmpeg_ir::features::revolve::RevolutionAxis {
+            origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 19.5))
                 .unwrap(),
+            direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                1.0, 0.0, 0.0
+            ))
+            .unwrap(),
             reference: None,
         })
     );
@@ -609,10 +615,13 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
     lane.sketch_entities[3].reclassify(SketchInputKind::Relation(SketchRelationKind::Vertical));
     assert_eq!(
         profile_roster_construction_axis_test(&lane, "profile-native", &sketch, &[]),
-        Some(cadmpeg_ir::features::RevolutionAxis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 19.5)).unwrap(),
-            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
+        Some(cadmpeg_ir::features::revolve::RevolutionAxis {
+            origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 19.5))
                 .unwrap(),
+            direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                1.0, 0.0, 0.0
+            ))
+            .unwrap(),
             reference: None,
         })
     );
@@ -640,10 +649,13 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
     lane.sketch_entities[3].reclassify(SketchInputKind::Relation(SketchRelationKind::Horizontal));
     assert_eq!(
         profile_roster_construction_axis_test(&lane, "profile-native", &sketch, &[]),
-        Some(cadmpeg_ir::features::RevolutionAxis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 19.5)).unwrap(),
-            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
+        Some(cadmpeg_ir::features::revolve::RevolutionAxis {
+            origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 19.5))
                 .unwrap(),
+            direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                1.0, 0.0, 0.0
+            ))
+            .unwrap(),
             reference: None,
         })
     );
@@ -723,10 +735,13 @@ fn compact_profile_construction_role_places_a_revolution_axis() {
 
     assert_eq!(
         profile_roster_construction_axis_test(&lane, "profile-native", &sketch, &[]),
-        Some(cadmpeg_ir::features::RevolutionAxis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 19.5)).unwrap(),
-            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
+        Some(cadmpeg_ir::features::revolve::RevolutionAxis {
+            origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 19.5))
                 .unwrap(),
+            direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                1.0, 0.0, 0.0
+            ))
+            .unwrap(),
             reference: None,
         })
     );
@@ -813,10 +828,13 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
 
     assert_eq!(
         profile_roster_construction_axis_test(&lane, "profile-native", &sketch, &[]),
-        Some(cadmpeg_ir::features::RevolutionAxis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
-            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+        Some(cadmpeg_ir::features::revolve::RevolutionAxis {
+            origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                 .unwrap(),
+            direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                0.0, 0.0, 1.0
+            ))
+            .unwrap(),
             reference: None,
         })
     );
@@ -908,10 +926,13 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
         .push(marker("axis-end", 460, None, Some([0.0, 0.02])));
     assert_eq!(
         profile_roster_construction_axis_test(&lane, "profile-native", &sketch, &[]),
-        Some(cadmpeg_ir::features::RevolutionAxis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
-            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+        Some(cadmpeg_ir::features::revolve::RevolutionAxis {
+            origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                 .unwrap(),
+            direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                0.0, 0.0, 1.0
+            ))
+            .unwrap(),
             reference: None,
         })
     );
@@ -925,10 +946,13 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
     lane.native_payload[curve + 58..curve + 60].copy_from_slice(&2u16.to_le_bytes());
     assert_eq!(
         profile_roster_construction_axis_test(&lane, "profile-native", &sketch, &[]),
-        Some(cadmpeg_ir::features::RevolutionAxis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
-            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+        Some(cadmpeg_ir::features::revolve::RevolutionAxis {
+            origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                 .unwrap(),
+            direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                0.0, 0.0, 1.0
+            ))
+            .unwrap(),
             reference: None,
         })
     );
@@ -938,10 +962,13 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
     lane.native_payload[curve + 58..curve + 60].copy_from_slice(&3u16.to_le_bytes());
     assert_eq!(
         profile_roster_construction_axis_test(&lane, "profile-native", &sketch, &[]),
-        Some(cadmpeg_ir::features::RevolutionAxis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
-            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+        Some(cadmpeg_ir::features::revolve::RevolutionAxis {
+            origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                 .unwrap(),
+            direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                0.0, 0.0, 1.0
+            ))
+            .unwrap(),
             reference: None,
         })
     );
@@ -972,10 +999,13 @@ fn generated_revolution_axis_requires_multiple_coaxial_surfaces() {
     );
     assert_eq!(
         common_generated_surface_axis(&[first.clone(), second]),
-        Some(cadmpeg_ir::features::RevolutionAxis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
-            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
+        Some(cadmpeg_ir::features::revolve::RevolutionAxis {
+            origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                 .unwrap(),
+            direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                1.0, 0.0, 0.0
+            ))
+            .unwrap(),
             reference: None,
         })
     );

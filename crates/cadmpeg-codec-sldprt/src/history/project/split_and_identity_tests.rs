@@ -12,16 +12,16 @@ use crate::history::project::project_semantic_notes;
 use crate::history::tests::feature;
 use crate::records::Configuration;
 use crate::records::FeatureHistory;
-use cadmpeg_ir::features::BooleanOp;
-use cadmpeg_ir::features::DatumPlaneReference;
-use cadmpeg_ir::features::EdgeSelection;
-use cadmpeg_ir::features::FaceSelection;
+use cadmpeg_ir::features::datums::DatumPlaneReference;
+use cadmpeg_ir::features::direct_edit::SplitFaceTool;
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::revolve::RibConstruction;
+use cadmpeg_ir::features::selections::EdgeSelection;
+use cadmpeg_ir::features::selections::FaceSelection;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::features::FeatureOperation;
-use cadmpeg_ir::features::PathRef;
-use cadmpeg_ir::features::RibConstruction;
-use cadmpeg_ir::features::SplitFaceTool;
 use std::collections::BTreeMap;
 
 #[test]
@@ -166,7 +166,7 @@ fn configuration_projection_preserves_writer_projection() {
     let projected = project_configurations(&histories).expect("configuration projection");
     assert_eq!(
         projected,
-        vec![cadmpeg_ir::features::DesignConfiguration {
+        vec![cadmpeg_ir::features::parameters::DesignConfiguration {
             id: cadmpeg_ir::features::ConfigurationId::mint(
                 "sldprt:model:configuration#name%20%23%25%20µ"
             )
@@ -474,7 +474,7 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
     assert!(matches!(
         projected[7].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::FilledSurface {
-            boundary: cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Unresolved),
+            boundary: cadmpeg_ir::features::surface_inputs::SurfaceBoundary::Edges(EdgeSelection::Unresolved),
             support_faces: FaceSelection::Unresolved,
             ref continuity,
             merge_result: None,
@@ -486,7 +486,7 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
         FeatureDefinition::Operation(FeatureOperation::TrimSurface {
             faces: FaceSelection::Unresolved,
             tool: PathRef::Unresolved(_),
-            keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+            keep: cadmpeg_ir::features::surface_inputs::TrimRegion::Unresolved,
             ..
         })
     ));
@@ -495,14 +495,14 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
         FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
             faces: FaceSelection::Unresolved,
             distance: None,
-            method: cadmpeg_ir::features::SurfaceExtension::Unresolved,
+            method: cadmpeg_ir::features::surface_inputs::SurfaceExtension::Unresolved,
         })
     ));
     assert!(matches!(
         projected[10].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Draft {
             faces: FaceSelection::Unresolved,
-            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+            anchor: cadmpeg_ir::features::direct_edit::DraftAnchor::NeutralPlane {
                 plane: FaceSelection::Unresolved,
                 pull: None,
             },

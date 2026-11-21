@@ -24,8 +24,9 @@ fn spatial_vertex_patch_preserves_record_shape_and_order() {
     assert_eq!(
         spatial_vertex_coordinates(&payload),
         vec![
-            cadmpeg_ir::features::FinitePoint3::new(replacement).expect("finite replacement"),
-            cadmpeg_ir::features::FinitePoint3::new(second).expect("finite second point"),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(replacement)
+                .expect("finite replacement"),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(second).expect("finite second point"),
         ]
     );
     assert_eq!(payload.len(), 138);

@@ -3,11 +3,13 @@
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::u64_from_index;
-use cadmpeg_ir::features::{
-    BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, Feature,
-    FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation, LinearTermination,
-    PlanarProfileRef, ProfileRef,
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::extents::{
+    ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
 };
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::NonZeroLength;
@@ -1248,7 +1250,7 @@ fn extrude_from(
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,

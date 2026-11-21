@@ -17,7 +17,6 @@ use cadmpeg_ir::products::{
     AssemblyJoint, DriveAxis, DriveMode, FrameAxis, JointConnector, JointId, JointLimits,
     JointOperands, OperandContainer, PairedJointKind,
 };
-use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
@@ -675,7 +674,45 @@ impl Writer<'_> {
             } => &["transZ", "rotX", "rotY"],
             _ => &[],
         };
-        for axis in limit_axes {
+        let limit =
+            |limits: &Option<JointLimits>, convert: &dyn Fn(f64) -> f64| -> [Option<f64>; 2] {
+                match limits {
+                    None => [None, None],
+                    Some(JointLimits::Minimum { minimum }) => [Some(convert(minimum.get())), None],
+                    Some(JointLimits::Maximum { maximum }) => [None, Some(convert(maximum.get()))],
+                    Some(JointLimits::Range(range)) => [
+                        Some(convert(range.minimum().get())),
+                        Some(convert(range.maximum().get())),
+                    ],
+                }
+            };
+        let degrees = |value: f64| value * (180.0 / std::f64::consts::PI);
+        let millimetres_per_unit = self.millimetres_per_unit;
+        let length = |value: f64| value / millimetres_per_unit;
+        // The limits of the degrees of freedom a generic joint leaves free.
+        let free_limits: Vec<(&str, [Option<f64>; 2])> = match joint.operands() {
+            JointOperands::Pair {
+                kind:
+                    PairedJointKind::Cylindrical {
+                        angular_limits,
+                        linear_limits,
+                        ..
+                    },
+                ..
+            } => [
+                ("rotZ", limit(angular_limits, &degrees)),
+                ("transZ", limit(linear_limits, &length)),
+            ]
+            .into_iter()
+            .filter(|(_, bounds)| bounds.iter().any(Option::is_some))
+            .collect(),
+            _ => Vec::new(),
+        };
+        for axis in limit_axes
+            .iter()
+            .copied()
+            .chain(free_limits.iter().map(|(axis, _)| *axis))
+        {
             applied.push(format!("PhysicsLimitAPI:{axis}"));
         }
         let (settings_schemas, settings_lines) = self
@@ -717,30 +754,14 @@ impl Writer<'_> {
             self.out.line("bool physics:jointEnabled = 0");
         }
         self.coupling_lines(joint);
-        let limit =
-            |limits: &Option<JointLimits>, convert: &dyn Fn(f64) -> f64| -> [Option<f64>; 2] {
-                match limits {
-                    None => [None, None],
-                    Some(JointLimits::Minimum { minimum }) => [Some(convert(minimum.get())), None],
-                    Some(JointLimits::Maximum { maximum }) => [None, Some(convert(maximum.get()))],
-                    Some(JointLimits::Range(range)) => [
-                        Some(convert(range.minimum().get())),
-                        Some(convert(range.maximum().get())),
-                    ],
-                }
-            };
         let (axis_limits, distance) = match joint.operands() {
             JointOperands::Pair { kind, .. } => match kind {
-                PairedJointKind::Revolute { angular_limits, .. } => (
-                    limit(angular_limits, &|value| {
-                        value * (180.0 / std::f64::consts::PI)
-                    }),
-                    None,
-                ),
-                PairedJointKind::Slider { linear_limits, .. } => (
-                    limit(linear_limits, &|value| value / self.millimetres_per_unit),
-                    None,
-                ),
+                PairedJointKind::Revolute { angular_limits, .. } => {
+                    (limit(angular_limits, &degrees), None)
+                }
+                PairedJointKind::Slider { linear_limits, .. } => {
+                    (limit(linear_limits, &length), None)
+                }
                 PairedJointKind::Distance { distance } => ([None, None], *distance),
                 _ => ([None, None], None),
             },
@@ -770,6 +791,18 @@ impl Writer<'_> {
                 .line(&format!("float limit:{axis}:physics:low = 1"));
             self.out
                 .line(&format!("float limit:{axis}:physics:high = -1"));
+        }
+        for (axis, [low, high]) in &free_limits {
+            if let Some(low) = low {
+                self.out
+                    .line(&format!("float limit:{axis}:physics:low = {}", float(*low)));
+            }
+            if let Some(high) = high {
+                self.out.line(&format!(
+                    "float limit:{axis}:physics:high = {}",
+                    float(*high)
+                ));
+            }
         }
         for (instance, drive) in drives {
             let rotation = matches!(drive.axis, DriveAxis::Rotation { .. });
@@ -851,7 +884,9 @@ impl Writer<'_> {
                 ratio,
                 coupled_joints,
             } => (
-                ratio.map(PositiveReal::get).or_else(|| {
+                // PhysX turns the second hinge the other way for a positive
+                // ratio.
+                ratio.map(|ratio| -ratio.get()).or_else(|| {
                     let (first, second) = ((*distance)?.get(), (*distance2)?.get());
                     (second != 0.0).then(|| (first / second).abs())
                 }),
