@@ -117,7 +117,7 @@ pub(in crate::design::profile_select) fn selection_agrees(
                 )
             }) =>
         {
-            let Some(selected) = trimmed_indices(regions, &sampled) else {
+            let Some(selected) = trimmed_indices(regions, &sampled, tolerance) else {
                 return Ok(false);
             };
             selected
@@ -502,6 +502,7 @@ pub(super) fn split_piece(
 fn trimmed_indices(
     regions: &[cadmpeg_ir::features::SketchProfileRegion],
     sampled: &[super::Sampled<'_>],
+    tolerance: f64,
 ) -> Option<Vec<usize>> {
     let mut selected = Vec::new();
     for region in regions {
@@ -519,7 +520,7 @@ fn trimmed_indices(
         selected.push(index);
     }
     let Some(ResolvedProfileSelection::Regions(expected)) =
-        super::trimmed_selection(sampled, &selected)
+        super::trimmed_selection(sampled, &selected, tolerance)
     else {
         return None;
     };
@@ -579,7 +580,7 @@ pub(in crate::design::profile_select) fn removed_candidate(
         .map(|(index, _)| index)
         .collect();
     let Some(ResolvedProfileSelection::Regions(regions)) =
-        super::trimmed_selection(&sampled, &selected)
+        super::trimmed_selection(&sampled, &selected, tolerance)
     else {
         return Ok(None);
     };

@@ -514,7 +514,7 @@ mod tests {
                 PairedJointKind::Gears {
                     distance: None,
                     distance2: None,
-                    ratio: crate::scalar::PositiveReal::new(2.0),
+                    ratio: crate::scalar::NonZeroReal::new(-2.0),
                     coupled_joints: coupled,
                 },
                 [

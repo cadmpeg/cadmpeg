@@ -3,6 +3,7 @@
 
 mod acceptance;
 mod aggregates;
+mod body_boxes;
 mod boundaries;
 mod closed_nurbs;
 mod compare;

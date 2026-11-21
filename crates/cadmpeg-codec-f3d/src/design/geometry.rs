@@ -51,6 +51,8 @@ const CERTIFIED_SWEEP_BOUNDS_SLACK: f64 = 1.0e-9;
 /// of one decode. An exhausted cap skips the arrangement.
 pub(crate) const MAX_ARRANGEMENT_WALK_WORK: usize = 50_000_000;
 
+const MAX_CROSSING_RUN_MATCH_WORK: usize = 50_000_000;
+
 /// Local cap on the certified tubes of one NURBS span. A span that needs
 /// more skips the certification that uses it.
 const MAX_SUBDIVISIONS: f64 = 100_000.0;
@@ -60,6 +62,9 @@ const MAX_SUBDIVISIONS: f64 = 100_000.0;
 pub(crate) struct ProfileGeometryWork {
     join_envelope_limit: Cell<Option<usize>>,
     arrangement: WorkBudget,
+    crossing_run_matches: WorkBudget,
+    crossing_run_skipped: Cell<bool>,
+    crossing_run_skipped_selections: Cell<usize>,
     arrangement_skipped: Cell<bool>,
     densification_skipped: Cell<bool>,
     arrangement_skipped_selections: Cell<usize>,
@@ -88,6 +93,8 @@ pub(crate) struct ProfileGeometryWork {
     spatial_transition_assumed_selections: Cell<usize>,
     hole_boundary_inferred_selections: Cell<usize>,
     region_hole_inferred_selections: Cell<usize>,
+    crossing_runs_assumed: Cell<bool>,
+    crossing_runs_assumed_selections: Cell<usize>,
     unresolved_profile_groups: Cell<usize>,
     composed_profile_groups: Cell<usize>,
     body_circle_rings_assumed_selections: Cell<usize>,
@@ -144,6 +151,9 @@ impl ProfileGeometryWork {
         Self {
             join_envelope_limit: Cell::new(None),
             arrangement: WorkBudget::new(limit),
+            crossing_run_matches: WorkBudget::new(MAX_CROSSING_RUN_MATCH_WORK),
+            crossing_run_skipped: Cell::new(false),
+            crossing_run_skipped_selections: Cell::new(0),
             arrangement_skipped: Cell::new(false),
             densification_skipped: Cell::new(false),
             arrangement_skipped_selections: Cell::new(0),
@@ -172,6 +182,8 @@ impl ProfileGeometryWork {
             spatial_transition_assumed_selections: Cell::new(0),
             hole_boundary_inferred_selections: Cell::new(0),
             region_hole_inferred_selections: Cell::new(0),
+            crossing_runs_assumed: Cell::new(false),
+            crossing_runs_assumed_selections: Cell::new(0),
             unresolved_profile_groups: Cell::new(0),
             composed_profile_groups: Cell::new(0),
             body_circle_rings_assumed_selections: Cell::new(0),
@@ -349,7 +361,7 @@ impl ProfileGeometryWork {
         self.region_hole_inferred_selections.set(counts.1);
     }
 
-    pub(crate) fn assumed_flags(&self) -> [bool; 9] {
+    pub(crate) fn assumed_flags(&self) -> [bool; 10] {
         [
             self.crossing_loop_assumed.get(),
             self.loop_flags_assumed.get(),
@@ -360,10 +372,11 @@ impl ProfileGeometryWork {
             self.polyline_side_assumed.get(),
             self.cap_outline_assumed.get(),
             self.cap_carrier_assumed.get(),
+            self.crossing_runs_assumed.get(),
         ]
     }
 
-    pub(crate) fn set_assumed_flags(&self, flags: [bool; 9]) {
+    pub(crate) fn set_assumed_flags(&self, flags: [bool; 10]) {
         self.crossing_loop_assumed.set(flags[0]);
         self.loop_flags_assumed.set(flags[1]);
         self.coincident_direction_assumed.set(flags[2]);
@@ -373,12 +386,21 @@ impl ProfileGeometryWork {
         self.polyline_side_assumed.set(flags[6]);
         self.cap_outline_assumed.set(flags[7]);
         self.cap_carrier_assumed.set(flags[8]);
+        self.crossing_runs_assumed.set(flags[9]);
     }
 
     /// Close one profile selection. Count it against each cap that skipped a
     /// search since the previous selection closed.
     pub(crate) fn finish_selection(&self) {
         for (skipped, selections) in [
+            (
+                &self.crossing_run_skipped,
+                &self.crossing_run_skipped_selections,
+            ),
+            (
+                &self.crossing_runs_assumed,
+                &self.crossing_runs_assumed_selections,
+            ),
             (
                 &self.arrangement_skipped,
                 &self.arrangement_skipped_selections,
@@ -442,6 +464,10 @@ impl ProfileGeometryWork {
     /// stored loop split by curve-use counts.
     pub(crate) fn note_crossing_loop_assumed(&self) {
         self.crossing_loop_assumed.set(true);
+    }
+
+    pub(crate) fn note_crossing_runs_assumed(&self) {
+        self.crossing_runs_assumed.set(true);
     }
 
     /// Record that the member flags of an edge of coincident curves decided
@@ -604,6 +630,18 @@ impl ProfileGeometryWork {
                 "{region_hole_inferred} extrude profile selection(s) assume that an inserted region's holes belong to the selected profile."
             )));
         }
+        let crossing_capped = self.crossing_run_skipped_selections.get();
+        if crossing_capped != 0 {
+            losses.push(F3dLossCode::FeatureProfileCrossingRunsCapped.note(format!(
+                "{crossing_capped} profile selection(s) skipped crossing-run member matching at MAX_CROSSING_RUN_MATCH_WORK ({MAX_CROSSING_RUN_MATCH_WORK})."
+            )));
+        }
+        let crossing_runs = self.crossing_runs_assumed_selections.get();
+        if crossing_runs != 0 {
+            losses.push(F3dLossCode::FeatureProfileCrossingRunsAssumed.note(format!(
+                "{crossing_runs} profile selection(s) count consecutive pieces of a curve across a pruned interior crossing as one member use. The reading assumes that this crossing preserves the stored member multiplicity."
+            )));
+        }
         let unresolved_groups = self.unresolved_profile_groups.get();
         if unresolved_groups != 0 {
             losses.push(F3dLossCode::FeatureExtrudeProfileGroupNative.note(format!(
@@ -640,6 +678,7 @@ struct SketchArrangementEdge {
 /// at a synthetic circle split node are one fragment.
 #[derive(Clone)]
 struct ArrangementFragment {
+    crossing_join: bool,
     /// The fragment's curve and traversal direction.
     curve: cadmpeg_ir::sketches::SketchEntityUse,
     /// Curves of coincident edges merged into the fragment's edges, each
@@ -666,6 +705,55 @@ struct ArrangementRing {
 }
 
 impl ArrangementRing {
+    fn crossing_runs(&self, work: &ProfileGeometryWork) -> Option<Self> {
+        if !self.fragments.iter().any(|fragment| fragment.crossing_join) {
+            return None;
+        }
+        let charged = self
+            .boundary
+            .len()
+            .checked_add(self.fragments.len())
+            .is_some_and(|count| work.crossing_run_matches.charge_by(count));
+        if !charged {
+            work.crossing_run_skipped.set(true);
+            return None;
+        }
+        let mut fragments = Vec::<ArrangementFragment>::new();
+        for fragment in &self.fragments {
+            match fragments.last_mut() {
+                Some(previous)
+                    if fragment.crossing_join && previous.curve.entity == fragment.curve.entity =>
+                {
+                    for other in &fragment.coincident {
+                        if !merge_coincident(&mut previous.coincident, other.clone()) {
+                            return None;
+                        }
+                    }
+                }
+                _ => {
+                    let mut fragment = fragment.clone();
+                    fragment.crossing_join = false;
+                    fragments.push(fragment);
+                }
+            }
+        }
+        if self.fragments.first()?.crossing_join
+            && fragments.len() > 1
+            && fragments.first()?.curve.entity == fragments.last()?.curve.entity
+        {
+            let last = fragments.pop()?;
+            for other in last.coincident {
+                if !merge_coincident(&mut fragments[0].coincident, other) {
+                    return None;
+                }
+            }
+        }
+        Some(Self {
+            boundary: self.boundary.clone(),
+            fragments,
+        })
+    }
+
     /// The fragment and coincident curves of the ring.
     fn curves(&self) -> impl Iterator<Item = &cadmpeg_ir::sketches::SketchEntityId> {
         self.fragments.iter().flat_map(|fragment| {
@@ -731,6 +819,7 @@ impl ArrangementRing {
                 .filter(|use_| !unnamed.contains(&use_.entity))
                 .cloned();
             fragments.push(ArrangementFragment {
+                crossing_join: fragment.crossing_join,
                 curve: named.next()?,
                 coincident: named.collect(),
             });
@@ -1192,54 +1281,166 @@ pub(super) fn arrangement_regions_matching_member_rings(
         Some((sketch, entities)) => (sketch, entities.as_slice()),
         None => (sketch, entities),
     };
-    let faces = geometric!(curve_arrangement_faces(
-        sketch, entities, tolerance, work, ctx, true
+    let faces = geometric!(curve_arrangement_faces_with_mode(
+        sketch,
+        entities,
+        tolerance,
+        work,
+        ctx,
+        ArrangementMode::CrossingRuns
     )?);
+    if let Some(selected) = match_member_rings(&faces, rings, unnamed, work, false)? {
+        return Ok(Some(selected));
+    }
+    if work.arrangement.exhausted()
+        || !faces.iter().any(|face| {
+            std::iter::once(&face.ring)
+                .chain(face.holes.iter().flatten())
+                .any(|ring| ring.fragments.iter().any(|fragment| fragment.crossing_join))
+        })
+    {
+        return Ok(None);
+    }
+    match_member_rings(&faces, rings, unnamed, work, true)
+}
+
+struct MemberRingCandidate<'a> {
+    face: usize,
+    hole: Option<usize>,
+    ring: std::borrow::Cow<'a, ArrangementRing>,
+    curves: usize,
+}
+
+fn member_ring_candidates<'a>(
+    faces: &'a [SketchArrangementFace],
+    unnamed: &HashSet<cadmpeg_ir::sketches::SketchEntityId>,
+    work: &ProfileGeometryWork,
+    crossing: bool,
+) -> Option<Vec<MemberRingCandidate<'a>>> {
     let mut candidates = Vec::new();
     for (index, face) in faces.iter().enumerate() {
-        if let Some(ring) = face.ring.without_unnamed(unnamed) {
+        for (hole, ring) in std::iter::once((None, &face.ring)).chain(
+            face.holes
+                .iter()
+                .flatten()
+                .enumerate()
+                .map(|(hole, ring)| (Some(hole), ring)),
+        ) {
+            let ring = if crossing {
+                if !ring.fragments.iter().any(|fragment| fragment.crossing_join) {
+                    continue;
+                }
+                let alternative = ring.crossing_runs(work)?;
+                let Some(filtered) = alternative.without_unnamed(unnamed) else {
+                    continue;
+                };
+                std::borrow::Cow::Owned(filtered.into_owned())
+            } else {
+                let Some(filtered) = ring.without_unnamed(unnamed) else {
+                    continue;
+                };
+                filtered
+            };
             let curves = ring.curves().count();
-            candidates.push((index, None, ring, curves));
-        }
-        for (hole, ring) in face.holes.iter().flatten().enumerate() {
-            if let Some(ring) = ring.without_unnamed(unnamed) {
-                let curves = ring.curves().count();
-                candidates.push((index, Some(hole), ring, curves));
-            }
+            candidates.push(MemberRingCandidate {
+                face: index,
+                hole,
+                ring,
+                curves,
+            });
         }
     }
+    Some(candidates)
+}
+
+fn match_member_rings(
+    faces: &[SketchArrangementFace],
+    rings: &[Vec<cadmpeg_ir::sketches::SketchEntityUse>],
+    unnamed: &HashSet<cadmpeg_ir::sketches::SketchEntityId>,
+    work: &ProfileGeometryWork,
+    fallback: bool,
+) -> Result<Option<MemberRingRegions>, CodecError> {
+    if fallback {
+        let count = faces
+            .iter()
+            .flat_map(|face| std::iter::once(&face.ring).chain(face.holes.iter().flatten()))
+            .try_fold(0usize, |count, ring| {
+                count
+                    .checked_add(ring.boundary.len())?
+                    .checked_add(ring.fragments.len())
+            });
+        if !count.is_some_and(|count| work.crossing_run_matches.charge_by(count)) {
+            work.crossing_run_skipped.set(true);
+            return Ok(None);
+        }
+    }
+    let candidates = geometric!(member_ring_candidates(faces, unnamed, work, false));
+    let mut alternatives = None;
     let mut outers = Vec::new();
     let mut holes = Vec::new();
+    let mut crossing_runs = false;
     let mut coincident = false;
     let mut identity_unique = true;
     for members in rings {
-        let mut identity_matches = 0usize;
         let mut found = None;
-        for (index, hole, ring, curves) in &candidates {
-            if *curves != members.len() {
-                continue;
+        for crossing in [false, true] {
+            if crossing && !fallback {
+                break;
             }
-            let charged = members
-                .len()
-                .checked_mul(members.len())
-                .and_then(|count| count.checked_mul(ring.shared_fragments().checked_add(2)?))
-                .is_some_and(|count| work.arrangement.charge_by(count));
-            if !charged {
-                work.arrangement_skipped.set(true);
-                return Ok(None);
-            }
-            let has_curves = ring.has_curves(members);
-            identity_matches += usize::from(has_curves);
-            coincident |= ring.shared_fragments() != 0 && has_curves;
-            if !ring.matches_members(members) {
-                continue;
+            let source: &[MemberRingCandidate<'_>] = if crossing {
+                geometric!(alternatives
+                    .get_or_insert_with(|| member_ring_candidates(faces, unnamed, work, true))
+                    .as_deref())
+            } else {
+                &candidates
+            };
+            let mut identity_matches = 0usize;
+            for MemberRingCandidate {
+                face: index,
+                hole,
+                ring,
+                curves,
+            } in source
+            {
+                if *curves != members.len() {
+                    continue;
+                }
+                let charged = members
+                    .len()
+                    .checked_mul(members.len())
+                    .and_then(|count| count.checked_mul(ring.shared_fragments().checked_add(2)?))
+                    .is_some_and(|count| {
+                        if fallback {
+                            work.crossing_run_matches.charge_by(count)
+                        } else {
+                            work.arrangement.charge_by(count)
+                        }
+                    });
+                if !charged {
+                    if fallback {
+                        work.crossing_run_skipped.set(true);
+                    } else {
+                        work.arrangement_skipped.set(true);
+                    }
+                    return Ok(None);
+                }
+                let has_curves = ring.has_curves(members);
+                identity_matches += usize::from(has_curves);
+                coincident |= ring.shared_fragments() != 0 && has_curves;
+                if !ring.matches_members(members) {
+                    continue;
+                }
+                if found.is_some() {
+                    return Ok(None);
+                }
+                found = Some((*index, *hole));
             }
             if found.is_some() {
-                return Ok(None);
+                identity_unique &= identity_matches == 1;
+                crossing_runs |= crossing;
+                break;
             }
-            found = Some((*index, *hole));
         }
-        identity_unique &= identity_matches == 1;
         let (face, hole) = geometric!(found);
         match hole {
             None if !outers.contains(&face) => outers.push(face),
@@ -1274,6 +1475,11 @@ pub(super) fn arrangement_regions_matching_member_rings(
         ));
     }
     Ok(Some(MemberRingRegions {
+        multiplicity: if crossing_runs {
+            MemberRingMultiplicity::CrossingRuns
+        } else {
+            MemberRingMultiplicity::Fragments
+        },
         identity_unique,
         regions,
         coincident,
@@ -1281,8 +1487,14 @@ pub(super) fn arrangement_regions_matching_member_rings(
     }))
 }
 
+enum MemberRingMultiplicity {
+    Fragments,
+    CrossingRuns,
+}
+
 /// The regions that counted member rings select.
 pub(super) struct MemberRingRegions {
+    multiplicity: MemberRingMultiplicity,
     pub(super) identity_unique: bool,
     pub(super) regions: Vec<cadmpeg_ir::features::SketchProfileRegion>,
     /// Keep coincident-edge matches for the selection loss policy.
@@ -1290,6 +1502,12 @@ pub(super) struct MemberRingRegions {
     /// Whether a curve outside the arrangement can lie inside a selected
     /// face, so that its region assumes that the curve makes no island in it.
     pub(super) island_absence: bool,
+}
+
+impl MemberRingRegions {
+    pub(super) fn crossing_runs_assumed(&self) -> bool {
+        matches!(self.multiplicity, MemberRingMultiplicity::CrossingRuns)
+    }
 }
 
 /// Whether the arrangement of every curve holds `entity`: a line, circle,
@@ -1440,6 +1658,13 @@ fn bounds_meet(left: [Point2; 2], right: [Point2; 2], tolerance: f64) -> bool {
         && right[0].v <= left[1].v + tolerance
 }
 
+#[derive(Clone, Copy)]
+enum ArrangementMode {
+    ProfileLoops,
+    AllCurves,
+    CrossingRuns,
+}
+
 /// The bounded faces of the arrangement of the non-construction lines,
 /// circles, circular arcs, bounded ellipses, and nonperiodic NURBS of
 /// `sketch` when `all_curves` holds or the sketch has no profile loop, and
@@ -1456,6 +1681,22 @@ fn curve_arrangement_faces(
     work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
     all_curves: bool,
+) -> Result<Option<Vec<SketchArrangementFace>>, CodecError> {
+    let mode = if all_curves {
+        ArrangementMode::AllCurves
+    } else {
+        ArrangementMode::ProfileLoops
+    };
+    curve_arrangement_faces_with_mode(sketch, entities, tolerance, work, ctx, mode)
+}
+
+fn curve_arrangement_faces_with_mode(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    tolerance: f64,
+    work: &ProfileGeometryWork,
+    ctx: &DecodeContext<'_>,
+    mode: ArrangementMode,
 ) -> Result<Option<Vec<SketchArrangementFace>>, CodecError> {
     let segments = entities
         .iter()
@@ -1496,7 +1737,7 @@ fn curve_arrangement_faces(
             }
         }
     }
-    sketch_arrangement_faces_with_nodes(sketch, entities, tolerance, work, ctx, nodes, all_curves)
+    sketch_arrangement_faces_with_nodes(sketch, entities, tolerance, work, ctx, nodes, mode)
 }
 
 /// A region that one arrangement face bounds.
@@ -1533,7 +1774,15 @@ fn sketch_arrangement_faces(
     work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<SketchArrangementFace>>, CodecError> {
-    sketch_arrangement_faces_with_nodes(sketch, entities, tolerance, work, ctx, Vec::new(), false)
+    sketch_arrangement_faces_with_nodes(
+        sketch,
+        entities,
+        tolerance,
+        work,
+        ctx,
+        Vec::new(),
+        ArrangementMode::ProfileLoops,
+    )
 }
 
 /// One bounded face of the arrangement every non-construction curve of a
@@ -1594,7 +1843,13 @@ pub(super) fn atomic_sketch_regions(
         }
     }
     let faces = geometric!(sketch_arrangement_faces_with_nodes(
-        sketch, entities, tolerance, work, ctx, nodes, true
+        sketch,
+        entities,
+        tolerance,
+        work,
+        ctx,
+        nodes,
+        ArrangementMode::AllCurves
     )?);
     Ok(Some(
         faces
@@ -1747,11 +2002,14 @@ fn sketch_arrangement_faces_with_nodes(
     work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
     mut nodes: Vec<Point2>,
-    all_curves: bool,
+    mode: ArrangementMode,
 ) -> Result<Option<Vec<SketchArrangementFace>>, CodecError> {
     use cadmpeg_ir::features::SketchProfileBoundaryUse;
     use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometryDefinition};
 
+    let all_curves = !matches!(mode, ArrangementMode::ProfileLoops);
+    let intersection_count = nodes.len();
+    let mut endpoint_nodes = HashSet::new();
     let mut pending = Vec::<SketchProfileBoundaryUse>::new();
     let mut circles = Vec::new();
     let mut candidate_uses = Vec::new();
@@ -1792,7 +2050,7 @@ fn sketch_arrangement_faces_with_nodes(
             geometric!(sketch_geometry_point(&entity.geometry, range[0], ctx)?),
             geometric!(sketch_geometry_point(&entity.geometry, range[1], ctx)?),
         ] {
-            arrangement_node(&mut nodes, point, tolerance);
+            endpoint_nodes.insert(arrangement_node(&mut nodes, point, tolerance));
         }
         let id = entity.id().clone();
         pending.push(SketchProfileBoundaryUse {
@@ -1927,7 +2185,24 @@ fn sketch_arrangement_faces_with_nodes(
         }
         edges.push(edge);
     }
+    let crossing_nodes = if matches!(mode, ArrangementMode::CrossingRuns) {
+        interior_crossing_nodes(&edges, intersection_count, &endpoint_nodes, entities)
+    } else {
+        HashSet::new()
+    };
     arrangement_retain_cycle_edges(&mut edges, nodes.len(), &work.arrangement, ctx)?;
+    let mut crossing_joins = HashSet::new();
+    for node in crossing_nodes {
+        let mut incident = edges.iter().filter(|edge| edge.nodes.contains(&node));
+        if matches!(
+            (incident.next(), incident.next(), incident.next()),
+            (Some(first), Some(second), None)
+                if first.boundary.entity == second.boundary.entity
+                    && first.coincident.is_empty() && second.coincident.is_empty()
+        ) {
+            crossing_joins.insert(node);
+        }
+    }
     if work.arrangement.exhausted() {
         work.arrangement_skipped.set(true);
         return Ok(None);
@@ -2098,6 +2373,7 @@ fn sketch_arrangement_faces_with_nodes(
                         }
                     }
                     _ => runs.push(ArrangementFragment {
+                        crossing_join: crossing_joins.contains(&joint),
                         curve: cadmpeg_ir::sketches::SketchEntityUse {
                             entity: use_.entity.clone(),
                             reversed: use_.reversed,
@@ -2136,6 +2412,7 @@ fn sketch_arrangement_faces_with_nodes(
                 && synthetic_nodes.contains(&edges[edge_index].nodes[usize::from(reversed)])
             {
                 if let Some(last) = runs.pop() {
+                    runs[0].crossing_join = last.crossing_join;
                     for other in last.coincident {
                         if !merge_coincident(&mut runs[0].coincident, other) {
                             return Ok(None);
@@ -3188,6 +3465,60 @@ fn arrangement_cycle_work(edge_count: usize, node_count: usize) -> Option<usize>
         })
 }
 
+fn interior_crossing_nodes(
+    edges: &[SketchArrangementEdge],
+    intersection_count: usize,
+    endpoints: &HashSet<usize>,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+) -> HashSet<usize> {
+    let mut incident = HashMap::<usize, Vec<&SketchArrangementEdge>>::new();
+    for edge in edges {
+        for node in edge.nodes {
+            if node < intersection_count && !endpoints.contains(&node) {
+                incident.entry(node).or_default().push(edge);
+            }
+        }
+    }
+    incident
+        .into_iter()
+        .filter_map(|(node, arms)| {
+            if arms.len() != 4 || arms.iter().any(|edge| !edge.coincident.is_empty()) {
+                return None;
+            }
+            let first = arms[0];
+            let same = arms
+                .iter()
+                .filter(|edge| edge.boundary.entity == first.boundary.entity)
+                .count();
+            let other = *arms
+                .iter()
+                .find(|edge| edge.boundary.entity != first.boundary.entity)?;
+            if same != 2
+                || arms
+                    .iter()
+                    .filter(|edge| edge.boundary.entity == other.boundary.entity)
+                    .count()
+                    != 2
+            {
+                return None;
+            }
+            let a = arrangement_departure(first, first.nodes[1] == node, entities)?;
+            let b = arrangement_departure(other, other.nodes[1] == node, entities)?;
+            if matches!(
+                a.curvature,
+                DepartureCurvature::Unknown | DepartureCurvature::Sign(_)
+            ) || matches!(
+                b.curvature,
+                DepartureCurvature::Unknown | DepartureCurvature::Sign(_)
+            ) || (a.angle - b.angle).sin().abs() <= ARRANGEMENT_TANGENT_TOLERANCE
+            {
+                return None;
+            }
+            Some(node)
+        })
+        .collect()
+}
+
 /// Remove curve fragments that cannot bound a planar face.
 ///
 /// A sketch can contain construction-like open branches in the solved entity
@@ -3699,6 +4030,47 @@ pub(super) fn boundary_use_carrier(
             sweep: to - from,
         }),
         _ => None,
+    }
+}
+
+pub(super) fn curve_overlaps_boundary_use(
+    curve: &cadmpeg_ir::sketches::SketchEntity,
+    use_: &cadmpeg_ir::features::SketchProfileBoundaryUse,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    tolerance: f64,
+) -> bool {
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+
+    let Some(carrier) = boundary_use_carrier(use_, entities) else {
+        return false;
+    };
+    match (curve.geometry.definition(), carrier) {
+        (
+            SketchGeometryDefinition::Line { start, end },
+            BoundaryCarrier::Line { start: a, end: b },
+        ) => collinear_line_segments(
+            &ProfileBoundarySegment::Line {
+                start: start.get(),
+                end: end.get(),
+            },
+            &ProfileBoundarySegment::Line { start: a, end: b },
+            tolerance,
+        )
+        .is_some_and(|overlap| overlap > tolerance),
+        (
+            SketchGeometryDefinition::Circle { center, radius },
+            BoundaryCarrier::Arc {
+                center: other,
+                radius: other_radius,
+                sweep,
+                ..
+            },
+        ) => {
+            point_distance(center.get(), other) <= tolerance
+                && (radius.get() - other_radius).abs() <= tolerance
+                && sweep.abs() * other_radius > tolerance
+        }
+        _ => false,
     }
 }
 
