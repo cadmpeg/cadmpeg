@@ -719,8 +719,12 @@ The generated cells and the profile prose answer different questions. A cell is 
 
 ## Solid Edge `.par`, `.psm`, and `.asm`
 
-Detected by compound-file content. The reader lists streams. Body decoding is pending.
-The codec is read-only. Feature history and assembly placements are pending.
+Detected by compound-file content. The reader lists streams and reads primary
+Parasolid partitions from part and sheet-metal documents into body topology,
+analytic carriers, and NURBS.
+Unreadable partitions and unresolved carriers produce losses. The primary-state
+selection carries an assumption loss.
+The codec is read-only. Feature history, display attributes, and assembly placements are pending.
 
 See [`formats/solidedge.md`](formats/solidedge.md) and
 [`formats/solidedge-open-items.md`](formats/solidedge-open-items.md).
