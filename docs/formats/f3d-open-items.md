@@ -1956,6 +1956,16 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 **Note.** The neutral Combine retains the new-component request, and the native operation retains the first created-body node as its destination browser node and the complete created-body list. The decoder reports `feature.combine-component-destination-assumed` for the unresolved destination placement and assumes the input component frame.
 
+### DR-924. Further operation entries of an operand-list Combine
+
+**Question.** What do the operation entries after the first one of an operand-list `Combine` prologue identify, and which selections make Fusion store them?
+
+**Known.** `f3d.md` §3.1 gives the operation-entry count and the entry form. Five local `Combine` frames store two entries. In each frame the first entry has a null reference, the second entry names a record that names the `Combine` scope, and the u64 value of the second entry is one less than the value of the first. In each frame one tool selection names the browser node of an earlier tool selection through a different occurrence-list record, and the consumed-body list names that node once. Frames with one entry and distinct tool nodes are the other observed form.
+
+**Need.** Controlled saves of a `Combine` whose tools are a rectangular-pattern seed body and its copies, selected once each and with the seed selected through the pattern feature and directly, with the readback of each tool body, the consumed bodies and the result.
+
+**Note.** The decoder reads every entry and keeps no value from the entries. Tool selections that repeat a browser node stay in the native operation, and the history binding refuses a tool set whose slots repeat.
+
 ### DR-560. Prologue of a Combine with an expanded named tail
 
 **Question.** Does an expanded named tail select the complete operand-list prologue whenever its fixed prefix also matches the standard prologue?

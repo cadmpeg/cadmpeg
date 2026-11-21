@@ -40,6 +40,8 @@ const MARKED_REFERENCE_LEN: usize = 11;
 const COMBINE_CLAUSE_LEN: usize = 12;
 /// An empty property block is its u32 entry count.
 const EMPTY_PROPERTY_BLOCK_LEN: usize = 4;
+/// A null reference and its u64 operation-identity value.
+const OPERATION_ENTRY_MIN_LEN: usize = 9;
 
 pub(super) fn exact_combine_operation(
     bytes: &[u8],
@@ -246,14 +248,23 @@ fn operand_list_prologue(prologue: &[u8], start: usize) -> Option<CombinePrologu
     let companions = take_marked_records(prologue, &mut cursor, companion_limit)?;
     let shift = cursor.checked_sub(start.checked_add(combine_lists::KEEP_TOOLS)?)?;
     let field = |offset: usize| start.checked_add(offset)?.checked_add(shift);
-    if View::u32_le_at(prologue, field(combine_lists::CONSTANT_ONE)?) != Some(1) {
+    let entries = usize::try_from(View::u32_le_at(
+        prologue,
+        field(combine_lists::ENTRY_COUNT)?,
+    )?)
+    .ok()?;
+    let mut cursor = field(combine_lists::REFERENCE_MARKER)?;
+    if entries == 0 || entries > prologue.len().checked_sub(cursor)? / OPERATION_ENTRY_MIN_LEN {
         return None;
     }
-    let mut reference_end = field(combine_lists::REFERENCE_MARKER)?;
-    match take_reference(prologue, &mut reference_end)? {
-        Reference::Null => {}
-        Reference::Local { target, .. } if target != 0 => {}
-        _ => return None,
+    for _ in 0..entries {
+        match take_reference(prologue, &mut cursor)? {
+            Reference::Null => {}
+            Reference::Local { target, .. } if target != 0 => {}
+            _ => return None,
+        }
+        View::u64_le_at(prologue, cursor)?;
+        cursor = cursor.checked_add(combine_lists::TOOL_COUNT - combine_lists::STAMP)?;
     }
     Some(CombinePrologue {
         form: DesignCombineForm::OperandLists,
@@ -262,8 +273,7 @@ fn operand_list_prologue(prologue: &[u8], start: usize) -> Option<CombinePrologu
             .checked_add(property_block)?,
         keep_tools_offset: field(combine_lists::KEEP_TOOLS)?,
         lists: Some(OperandLists {
-            tool_count_offset: reference_end
-                .checked_add(combine_lists::TOOL_COUNT - combine_lists::STAMP)?,
+            tool_count_offset: cursor,
             companions,
             new_component: *prologue.get(field(combine_lists::NEW_COMPONENT)?)?,
         }),
@@ -592,8 +602,9 @@ fn created_list_holds(
 }
 
 /// Whether `consumed` names distinct tool nodes in tool order: none when the
-/// tools are kept, every tool without a companion, and fewer than every tool
-/// beside a companion.
+/// tools are kept, every tool body without a companion, and fewer than every
+/// tool body beside a companion. Tools that name one browser node are one
+/// tool body.
 fn consumed_list_holds(
     consumed: &[u32],
     keep_tools: bool,
@@ -603,13 +614,25 @@ fn consumed_list_holds(
     if keep_tools {
         return consumed.is_empty();
     }
+    let nodes = tool_nodes
+        .iter()
+        .copied()
+        .collect::<Option<Vec<_>>>()
+        .map(|nodes| {
+            let mut seen = HashSet::new();
+            nodes
+                .into_iter()
+                .filter(|node| seen.insert(*node))
+                .collect::<Vec<_>>()
+        });
+    let tool_bodies = nodes.as_ref().map_or(tool_nodes.len(), Vec::len);
     if !distinct(consumed)
-        || consumed.len() > tool_nodes.len()
-        || (consumed.len() == tool_nodes.len()) == has_companion
+        || consumed.len() > tool_bodies
+        || (consumed.len() == tool_bodies) == has_companion
     {
         return false;
     }
-    let Some(nodes) = tool_nodes.iter().copied().collect::<Option<Vec<_>>>() else {
+    let Some(nodes) = nodes else {
         return true;
     };
     let mut remaining = nodes.iter();

@@ -9388,7 +9388,7 @@ kind = "byte"
 section = "3.1"
 anchor = "It stores nine zero bytes at offsets 11 through 19 and the property-block presence byte at offset 20"
 size = 58
-note = "Offsets are relative to the primary indexed scope header, without a property block or companion references, and with an ordinary present local reference. An empty property block moves later fields four bytes on; each companion advances later fields by its complete reference width. The tool list count is the last fixed field; the lists after it have variable length."
+note = "Offsets are relative to the primary indexed scope header, without a property block or companion references, and with one operation entry whose ordinary local reference is present. An empty property block moves later fields four bytes on; each companion advances later fields by its complete reference width. The tool list count is the last fixed field; the lists after it have variable length."
 
 [[record.field]]
 name = "indexed_header"
@@ -9440,11 +9440,11 @@ source = "spec"
 anchor = "the new-component Boolean at offset 30"
 
 [[record.field]]
-name = "constant_one"
+name = "entry_count"
 offset = 31
 type = "u32"
 source = "spec"
-anchor = "u32 one at offset 31, a marked nonzero"
+anchor = "the operation-entry count u32 at offset 31"
 
 [[record.field]]
 name = "reference_marker"
