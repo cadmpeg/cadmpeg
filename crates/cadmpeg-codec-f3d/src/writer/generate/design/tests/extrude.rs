@@ -315,6 +315,59 @@ fn an_extrude_design_charges_a_hidden_body_and_every_fixed_clock_table() {
 }
 
 #[test]
+fn an_extrude_design_names_no_base_feature_in_its_notes() {
+    let mut ir = sketch_and_extrude(blind(), false);
+    let guid = "11111111-2222-3333-4444-555555555555";
+    ir.model.appearances = vec![cadmpeg_ir::appearance::Appearance {
+        id: cadmpeg_ir::ids::AppearanceId::mint("generated:test:appearance#0")
+            .expect("identity grammar"),
+        name: Some("Prism-Generated".into()),
+        asset_guid: Some(guid.into()),
+        library_id: None,
+        visual_guid: Some(guid.into()),
+        physical_token: Some("PrismMaterial-Generated".into()),
+        schema: Some("GenericSchema".into()),
+        category: Some("Plastic/Generated".into()),
+        base_color: Some(
+            cadmpeg_ir::topology::Color::new(0.15, 0.35, 0.75, 1.0).expect("valid color"),
+        ),
+        properties: std::collections::BTreeMap::from([(
+            cadmpeg_core::nonblank_literal!("refraction_index"),
+            cadmpeg_ir::scalar::FiniteReal::new(1.5).expect("finite scalar"),
+        )]),
+        textures: Vec::new(),
+        native_ref: None,
+    }];
+    let (report, decoded) = write(&ir);
+    assert_eq!(
+        kinds(&decoded),
+        ["sketch", "extrude"],
+        "{:#?}",
+        report.losses
+    );
+    let messages = report
+        .losses
+        .iter()
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    // The appearance and Sketch-item notes, each of which named a Base
+    // Feature in an Extrude design.
+    for charged in [
+        "the one Protein package its asset manager names",
+        "record 199 (owner collection: the order of the Sketch and Extrude members)",
+        "as the Extrude item tail)",
+    ] {
+        assert!(
+            messages.iter().any(|message| message.contains(charged)),
+            "{charged}: {messages:#?}"
+        );
+    }
+    for message in messages {
+        assert!(!message.contains("Base Feature"), "{message}");
+    }
+}
+
+#[test]
 fn the_distance_is_an_owned_parameter_of_the_extrude() {
     let (_, decoded) = write(&sketch_and_extrude(blind(), false));
     let extrude = decoded_extrude(&decoded).id.clone();

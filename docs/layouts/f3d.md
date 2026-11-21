@@ -84,11 +84,11 @@ Parsed by:
 | 19 | 11 | `first_reference` | `bytes[11]` | little | spec | the required references at offsets 19, 51 and 65 |
 | 30 | 1 | `middle_reference` | `u8` | little | spec | the middle reference at offset 30 |
 | 31 | 4 | `previous_history_state_id` | `u32` | little | spec | the preceding history-state identity at offset 31 |
-| 35 | 4 | `lane_word` | `u32` | little | spec | the repeated word at offsets 35 and 47 |
-| 39 | 8 | `lane_scalar` | `f64` | little | spec | the scalar at offset 39 |
-| 47 | 4 | `repeated_word` | `u32` | little | spec | the repeated word at offsets 35 and 47 |
+| 35 | 4 | `evaluation_epoch` | `u32` | little | spec | the evaluation epochs at offsets 35 and 47 |
+| 39 | 8 | `evaluation_duration` | `f64` | little | spec | the evaluation duration at offset 39 |
+| 47 | 4 | `second_evaluation_epoch` | `u32` | little | spec | the evaluation epochs at offsets 35 and 47 |
 | 51 | 11 | `second_reference` | `bytes[11]` | little | spec | the required references at offsets 19, 51 and 65 |
-| 62 | 3 | `lane_flags` | `bytes[3]` | little | spec | the three flags at offset 62 |
+| 62 | 3 | `lane_flags` | `bytes[3]` | little | spec | the three flag bytes at offset 62 |
 | 65 | 11 | `third_reference` | `bytes[11]` | little | spec | the required references at offsets 19, 51 and 65 |
 | 76 | 1 | `closing_reference` | `u8` | little | spec | the closing reference at offset 76 |
 | 77 | 1 | `final_zero` | `u8` | little | spec | the final zero at offset 77 |
@@ -500,6 +500,37 @@ Parsed by:
 | 9 | 1 | `reserved_9` | `u8` | little | spec | The wide expression trailer is eleven bytes · value `0` |
 | 10 | 1 | `document` | `u8` | little | spec | The wide expression trailer is eleven bytes |
 
+## `design_parameter_discriminated_expression_trailer`
+
+Spec §3.1 · layout: byte offsets · size: 9 B
+
+This trailer is relative to the end of the variable LP-UTF16 expression of a discriminated parameter. DR-144 gives the four flag bytes before the document flag.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `zero_run_4` | `bytes[4]` | little | spec | The nine-byte trailer is four zero bytes and five flag bytes |
+| 4 | 4 | `flags` | `bytes[4]` | little | spec | DR-144 gives the other four flag bytes |
+| 8 | 1 | `document` | `u8` | little | spec | The last flag byte is `1` exactly for a document parameter |
+
+## `design_parameter_discriminated_text_expression_trailer`
+
+Spec §3.1 · layout: byte offsets · size: 10 B
+
+This trailer is relative to the end of the variable LP-UTF16 expression of a discriminated parameter. DR-144 gives the four flag bytes before the document flag.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `text` | `u8` | little | spec | The text flag is `1` exactly for a text parameter |
+| 1 | 4 | `zero_run_4` | `bytes[4]` | little | spec | The ten-byte trailer is the text flag, four zero bytes, and five flag bytes |
+| 5 | 4 | `flags` | `bytes[4]` | little | spec | DR-144 gives the other four flag bytes |
+| 9 | 1 | `document` | `u8` | little | spec | The last flag byte is `1` exactly for a document parameter |
+
 ## `design_parameter_compact_owned_expression_trailer`
 
 Spec §3.1 · layout: byte offsets · size: 5 B
@@ -761,7 +792,8 @@ Parsed by:
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A chamfer set is one indexed record |
 | 11 | 10 | `zero_run_10_at_11` | `bytes[10]` | little | spec | Every byte that the form does not name is zero |
 | 21 | 1 | `flag` | `u8` | little | spec | `+21: u8 flag` |
-| 22 | 2 | `zero_run_2_at_22` | `bytes[2]` | little | spec | Every byte that the form does not name is zero |
+| 22 | 1 | `distance_reversed` | `u8` | little | spec | `+22: u8 distance reversal` |
+| 23 | 1 | `zero_at_23` | `u8` | little | spec | Every byte that the form does not name is zero |
 | 24 | 11 | `first_distance_owner_reference` | `bytes[11]` | little | spec | `+24: first distance owner reference` |
 | 35 | 11 | `second_distance_owner_reference` | `bytes[11]` | little | spec | `+35: second distance owner reference` |
 | 46 | 4 | `spec_kind` | `u32` | little | spec | `+46: u32 spec kind 2` · value `2` |
@@ -3653,6 +3685,18 @@ Offsets are relative to the N+3 selection header. The first selected region's lo
 | 32 | 4 | `region_count` | `u32` | little | spec | a nonzero u32 region count |
 | 36 | 4 | `loop_count` | `u32` | little | spec | Each selected region starts with a nonzero u32 loop count. |
 
+## `sketch_profile_text_selection`
+
+Spec §3.1 · layout: byte offsets · size: 29 B
+
+Offsets are relative to the N+3 selection header. The next indexed header starts at offset 29.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | its eleven-byte indexed header |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | ten zero bytes |
+| 21 | 8 | `text_record_index` | `u64` | little | spec | the u64 record index of a Sketch text entity |
+
 ## `sketch_profile_region_member`
 
 Spec §3.1 · layout: byte offsets · size: 40 B
@@ -5695,6 +5739,25 @@ Unstated regions:
 - `114..252` (138 B): The remainder of the scope prefix precedes the ordered reference table.
 - `256..420` (164 B): The ordered references and common scope tail precede the paired header.
 
+## `legacy_class_330_blind_cut_extrude_frame`
+
+Spec §3.1 · layout: byte offsets · size: 438 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/extrude.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 102 | 4 | `first_side_extent` | `u32` | little | spec | The extent words are `[1, 0]` at offsets 102 and 106 |
+| 106 | 4 | `second_side_extent` | `u32` | little | spec | The extent words are `[1, 0]` at offsets 102 and 106 |
+| 248 | 4 | `reference_count` | `u32` | little | spec | The reference count is at offset 248 · value `7` |
+
+Unstated regions:
+
+- `0..102` (102 B): The unshifted prologue and seven nullable reference slots precede the extent words.
+- `110..248` (138 B): The remainder of the scope prefix precedes the ordered reference table.
+- `252..438` (186 B): The ordered references and common scope tail precede the paired header.
+
 ## `shifted_reference_aware_extrude_class_323_tail`
 
 Spec §3.1 · layout: byte offsets · size: 288 B
@@ -6798,7 +6861,7 @@ Offsets are relative to the Move scope's primary indexed header. The marked refe
 | 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | primary bytes 11 through 20 are zero |
 | 21 | 11 | `transform_reference` | `bytes[11]` | little | spec | a marked reference to its rigid-transform record at offset 21 |
 | 32 | 4 | `reference_flag` | `u32` | little | spec | u32 `1` at offset 32 |
-| 36 | 11 | `first_reference` | `bytes[11]` | little | spec | a marked reference to its first ordered reference at offset 36 |
+| 36 | 11 | `group_reference` | `bytes[11]` | little | spec | a marked reference to its whole-body construction group at offset 36 |
 
 ## `move_transform_frame_253`
 
@@ -9509,7 +9572,7 @@ Parsed by:
 | 87 | 11 | `u_distance` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
 | 98 | 11 | `v_distance` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
 | 109 | 1 | `symmetric` | `u8` | little | spec | Offset 109 stores the symmetric byte of direction one |
-| 110 | 1 | `zero_after_symmetric` | `u8` | little | spec | Offset 110 is zero. |
+| 110 | 1 | `symmetric_two` | `u8` | little | spec | Offset 110 stores the symmetric byte of direction two |
 | 111 | 11 | `v_count_repeat` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
 | 122 | 11 | `u_direction` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
 
@@ -9611,6 +9674,31 @@ Unstated regions:
 - `0..43` (43 B): Prefix before the owner count.
 - `73..163` (90 B): Scope fields before the reference table.
 - `266..378` (112 B): Scope suffix after the reference table.
+
+## `assembly_as_built_scope_381_403_prefix`
+
+Spec §Assembly operands · layout: byte offsets · size: 171 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_alignment.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 20 | 1 | `property_presence` | `u8` | little | spec | byte of one at offset 20 · value `1` |
+| 21 | 4 | `property_count` | `u32` | little | spec | zero u32 property count at offset 21 · value `0` |
+| 47 | 4 | `additional_owner_count` | `u32` | little | spec | zero u32 additional-owner count is at offset 47 · value `0` |
+| 51 | 4 | `locator_count` | `u32` | little | spec | u32 locator count is two at · value `2` |
+| 55 | 11 | `first_locator_reference` | `bytes[11]` | little | spec | two marked locator references at offsets 55 and 66 |
+| 66 | 11 | `second_locator_reference` | `bytes[11]` | little | spec | two marked locator references at offsets 55 and 66 |
+| 77 | 11 | `joint_reference` | `bytes[11]` | little | spec | marked joint reference at offset 77 |
+| 167 | 4 | `reference_count` | `u32` | little | spec | u32 reference count at offset 167 |
+
+Unstated regions:
+
+- `0..20` (20 B): Prefix before the property block.
+- `25..47` (22 B): Two marked references before the owner count.
+- `88..167` (79 B): Scope fields before the reference table.
 
 ## `assembly_as_built_scope_422`
 
@@ -12188,21 +12276,41 @@ Parsed by:
 
 ## `constructed_plane_entity_prefix`
 
-Spec §3.1 · layout: byte offsets · size: 134 B
+Spec §3.1 · layout: byte offsets · size: 21 B
 
-Offsets are relative to the plane entity's primary indexed header through the LP-UTF16 entity ID code-unit count.
+Offsets are relative to the plane entity's primary indexed header. The property block follows the presence byte, then `constructed_plane_entity_body`.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/placement_construction/work_planes.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 130 | 4 | `entity_id_code_unit_count` | `u32` | little | spec | an LP-UTF16 Design entity ID begins at offset 130 from the indexed header |
+| 20 | 1 | `property_presence` | `u8` | little | spec | A constructed plane entity stores the property-block presence byte at offset 20 |
 
 Unstated regions:
 
 - `0..11` (11 B): The indexed Design record header (indexed_design_record_header).
-- `11..130` (119 B): The specification states no field in this range.
+- `11..20` (9 B): The specification states no field in this range.
+
+## `constructed_plane_entity_body`
+
+Spec §3.1 · layout: byte offsets · size: 113 B
+
+Offsets are relative to the end of the property block: offset 21 when the presence byte is `0`, 25 for an empty block, and 77 for the one property `EntityGenesis`. The LP-UTF16 code units of the Design entity ID follow.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/placement_construction/work_planes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `plane_kind` | `u32` | little | spec | The u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow the property block |
+| 4 | 16 | `lower_corner` | `f64[2]` | little | spec | The u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow the property block |
+| 20 | 1 | `zero_byte` | `u8` | little | spec | The u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow the property block · value `0` |
+| 21 | 24 | `origin` | `f64[3]` | little | spec | The u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow the property block |
+| 45 | 24 | `u_direction` | `f64[3]` | little | spec | The u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow the property block |
+| 69 | 24 | `v_direction` | `f64[3]` | little | spec | The u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow the property block |
+| 93 | 16 | `upper_corner` | `f64[2]` | little | spec | The u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow the property block |
+| 109 | 4 | `entity_id_code_unit_count` | `u32` | little | spec | The u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow the property block |
 
 ## `derived_instance_prefix`
 
@@ -12453,7 +12561,7 @@ Parsed by:
 | 21 | 4 | `zero_word` | `u32` | little | spec | A marker-one `Move` prologue stores nine zero bytes · value `0` |
 | 25 | 11 | `transform_reference` | `bytes[11]` | little | spec | A marker-one `Move` prologue stores nine zero bytes |
 | 36 | 4 | `reference_flag` | `u32` | little | spec | A marker-one `Move` prologue stores nine zero bytes · value `1` |
-| 40 | 11 | `first_reference` | `bytes[11]` | little | spec | A marker-one `Move` prologue stores nine zero bytes |
+| 40 | 11 | `group_reference` | `bytes[11]` | little | spec | A marker-one `Move` prologue stores nine zero bytes |
 
 ## `move_transform_null_reference_prefix`
 
@@ -14161,11 +14269,11 @@ Offsets are relative to the first byte after the property block.
 
 Spec §Records of a Sketch item · layout: byte offsets · size: 91 B
 
-Offsets are relative to the first byte after the measurement. The LP-UTF16 prefix follows at 91.
+Offsets are relative to the first byte after the measurement. The LP-UTF16 prefix follows at 91. A legacy annotated dimension frame in a segment whose serializer magic is neither 1234 nor 134225558 or more stores offsets 0 to 17 only, and its LP-UTF16 prefix follows at 18.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 1 | `style_byte` | `u8` | little | spec | a style byte and four f32 style values |
+| 0 | 1 | `style_byte` | `u8` | little | spec | The frame of a driven dimension stores the style byte `1` |
 | 1 | 16 | `style_values` | `f32[4]` | little | spec | a style byte and four f32 style values |
 | 17 | 1 | `marker` | `u8` | little | spec | a byte `1` or `0`, a zero byte |
 | 18 | 1 | `zero_byte` | `u8` | little | spec | a byte `1` or `0`, a zero byte · value `0` |
@@ -14241,6 +14349,165 @@ Offsets are relative to the owner's indexed header, for the 104-byte form; the p
 | 104 | 11 | `paired_header` | `bytes[11]` | little | spec | The paired indexed header, eight zero bytes, and the owner collection reference follow |
 | 115 | 8 | `paired_zero_run` | `bytes[8]` | little | spec | The paired indexed header, eight zero bytes, and the owner collection reference follow |
 | 123 | 11 | `owner_collection` | `bytes[11]` | little | spec | The paired indexed header, eight zero bytes, and the owner collection reference follow |
+
+## `workplane_item_scope`
+
+Spec §Records of a construction-plane item · layout: byte offsets · size: 322 B
+
+Offsets are relative to the scope's indexed header. The paired scope record follows the item tail at 292. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | the indexed header, nine zero bytes, the property-block presence byte `0`, `u8 1`, the u32 construction word |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | the indexed header, nine zero bytes, the property-block presence byte `0`, `u8 1`, the u32 construction word · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 20 | 1 | `property_presence` | `u8` | little | spec | the indexed header, nine zero bytes, the property-block presence byte `0`, `u8 1`, the u32 construction word · value `0` |
+| 21 | 1 | `marker` | `u8` | little | spec | the indexed header, nine zero bytes, the property-block presence byte `0`, `u8 1`, the u32 construction word · value `1` |
+| 22 | 4 | `construction_word` | `u32` | little | spec | An offset plane stores `refType` `2` and construction word `0` · value `0` |
+| 26 | 11 | `extra_offset_owner` | `bytes[11]` | little | spec | the `ExtraOffset` owner reference, `u8 1`, the plane entity reference, the placement reference |
+| 37 | 1 | `plane_marker` | `u8` | little | spec | the `ExtraOffset` owner reference, `u8 1`, the plane entity reference, the placement reference · value `1` |
+| 38 | 11 | `plane_entity` | `bytes[11]` | little | spec | the `ExtraOffset` owner reference, `u8 1`, the plane entity reference, the placement reference |
+| 49 | 11 | `placement` | `bytes[11]` | little | spec | the `ExtraOffset` owner reference, `u8 1`, the plane entity reference, the placement reference |
+| 60 | 1 | `guid_marker` | `u8` | little | spec | the placement reference, `u8 1`, the zero GUID · value `1` |
+| 61 | 76 | `zero_guid` | `bytes[76]` | little | spec | The zero GUID is an LP-UTF16 string of 36 code units |
+| 137 | 3 | `zero_bytes` | `bytes[3]` | little | spec | the zero GUID, three zero bytes, the u32 reference count `4` · value `[0, 0, 0]` |
+| 140 | 4 | `reference_count` | `u32` | little | spec | the zero GUID, three zero bytes, the u32 reference count `4` · value `4` |
+| 144 | 11 | `along_distance_owner` | `bytes[11]` | little | spec | The ordered reference table holds the `AlongDistance` owner, the placement path, the placement, and the `ExtraOffset` owner |
+| 155 | 11 | `placement_path` | `bytes[11]` | little | spec | The ordered reference table holds the `AlongDistance` owner, the placement path, the placement, and the `ExtraOffset` owner |
+| 166 | 11 | `placement_entry` | `bytes[11]` | little | spec | The ordered reference table holds the `AlongDistance` owner, the placement path, the placement, and the `ExtraOffset` owner |
+| 177 | 11 | `extra_offset_entry` | `bytes[11]` | little | spec | The ordered reference table holds the `AlongDistance` owner, the placement path, the placement, and the `ExtraOffset` owner |
+| 188 | 4 | `current_state` | `u32` | little | spec | The current history-state identity `0xffffffff`, the LP-UTF16 family name `WorkPlane`, the 78-byte feature item tail, and the paired scope record end the scope · value `4294967295` |
+| 192 | 22 | `family_name` | `bytes[22]` | little | spec | The current history-state identity `0xffffffff`, the LP-UTF16 family name `WorkPlane`, the 78-byte feature item tail, and the paired scope record end the scope |
+| 214 | 78 | `item_tail` | `bytes[78]` | little | spec | The current history-state identity `0xffffffff`, the LP-UTF16 family name `WorkPlane`, the 78-byte feature item tail, and the paired scope record end the scope |
+| 292 | 11 | `paired_header` | `bytes[11]` | little | spec | The current history-state identity `0xffffffff`, the LP-UTF16 family name `WorkPlane`, the 78-byte feature item tail, and the paired scope record end the scope |
+| 303 | 8 | `paired_zero_run` | `bytes[8]` | little | spec | The current history-state identity `0xffffffff`, the LP-UTF16 family name `WorkPlane`, the 78-byte feature item tail, and the paired scope record end the scope · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+| 311 | 11 | `owner_collection` | `bytes[11]` | little | spec | The current history-state identity `0xffffffff`, the LP-UTF16 family name `WorkPlane`, the 78-byte feature item tail, and the paired scope record end the scope |
+
+## `workplane_item_plane_head`
+
+Spec §Records of a construction-plane item · layout: byte offsets · size: 190 B
+
+Offsets are relative to the plane entity's indexed header, for property-block presence byte `1`. The `L` code units of the Design entity ID follow at 190, then `workplane_item_plane_tail`.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | It stores, in order: the indexed header, nine zero bytes, the property-block presence byte `1` |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | It stores, in order: the indexed header, nine zero bytes, the property-block presence byte `1` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 20 | 1 | `property_presence` | `u8` | little | spec | It stores, in order: the indexed header, nine zero bytes, the property-block presence byte `1` · value `1` |
+| 21 | 4 | `property_count` | `u32` | little | spec | the property count `1`, the property `EntityGenesis` of type `IntrinsicMetaTypeuint64` with u64 value `0`, the u32 plane kind `1` · value `1` |
+| 25 | 17 | `property_name` | `bytes[17]` | little | spec | the property count `1`, the property `EntityGenesis` of type `IntrinsicMetaTypeuint64` with u64 value `0`, the u32 plane kind `1` |
+| 42 | 27 | `property_type` | `bytes[27]` | little | spec | the property count `1`, the property `EntityGenesis` of type `IntrinsicMetaTypeuint64` with u64 value `0`, the u32 plane kind `1` |
+| 69 | 8 | `property_value` | `u64` | little | spec | the property count `1`, the property `EntityGenesis` of type `IntrinsicMetaTypeuint64` with u64 value `0`, the u32 plane kind `1` · value `0` |
+| 77 | 4 | `plane_kind` | `u32` | little | spec | the property count `1`, the property `EntityGenesis` of type `IntrinsicMetaTypeuint64` with u64 value `0`, the u32 plane kind `1` · value `1` |
+| 81 | 16 | `lower_corner` | `f64[2]` | little | spec | A display corner is an f64 pair of plane coordinates in centimetres |
+| 97 | 1 | `zero_byte` | `u8` | little | spec | the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and the LP-UTF16 Design entity ID · value `0` |
+| 98 | 24 | `origin` | `f64[3]` | little | spec | the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and the LP-UTF16 Design entity ID |
+| 122 | 24 | `u_direction` | `f64[3]` | little | spec | the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and the LP-UTF16 Design entity ID |
+| 146 | 24 | `v_direction` | `f64[3]` | little | spec | the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and the LP-UTF16 Design entity ID |
+| 170 | 16 | `upper_corner` | `f64[2]` | little | spec | A display corner is an f64 pair of plane coordinates in centimetres |
+| 186 | 4 | `entity_id_code_unit_count` | `u32` | little | spec | The Design entity ID is the digit `0`, `_`, and the decimal record index of the plane entity |
+
+## `workplane_item_plane_tail`
+
+Spec §Records of a construction-plane item · layout: byte offsets · size: 78 B
+
+Offsets are relative to the end of the Design entity ID, for an empty display name. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `construction_collection` | `bytes[11]` | little | spec | After the entity ID follow the construction collection reference |
+| 11 | 4 | `family_ordinal` | `u32` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, the LP-UTF16 display name, u32 `0`, a flag byte `0` or `1`, twelve zero bytes |
+| 15 | 5 | `zero_run` | `bytes[5]` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, the LP-UTF16 display name, u32 `0`, a flag byte `0` or `1`, twelve zero bytes · value `[0, 0, 0, 0, 0]` |
+| 20 | 11 | `scope` | `bytes[11]` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, the LP-UTF16 display name, u32 `0`, a flag byte `0` or `1`, twelve zero bytes |
+| 31 | 1 | `zero_byte` | `u8` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, the LP-UTF16 display name, u32 `0`, a flag byte `0` or `1`, twelve zero bytes · value `0` |
+| 32 | 1 | `marker` | `u8` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, the LP-UTF16 display name, u32 `0`, a flag byte `0` or `1`, twelve zero bytes · value `1` |
+| 33 | 4 | `text_length` | `u32` | little | spec | The layout table gives the tail for an empty display name · value `0` |
+| 37 | 4 | `zero_word` | `u32` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, the LP-UTF16 display name, u32 `0`, a flag byte `0` or `1`, twelve zero bytes · value `0` |
+| 41 | 1 | `flag` | `u8` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, the LP-UTF16 display name, u32 `0`, a flag byte `0` or `1`, twelve zero bytes |
+| 42 | 12 | `zero_run_b` | `bytes[12]` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, the LP-UTF16 display name, u32 `0`, a flag byte `0` or `1`, twelve zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 54 | 4 | `scale_a` | `f32` | little | spec | the f32 values `1.0` and `1.0`, five zero bytes, and the construction collection reference · value `1.0` |
+| 58 | 4 | `scale_b` | `f32` | little | spec | the f32 values `1.0` and `1.0`, five zero bytes, and the construction collection reference · value `1.0` |
+| 62 | 5 | `zero_run_c` | `bytes[5]` | little | spec | the f32 values `1.0` and `1.0`, five zero bytes, and the construction collection reference · value `[0, 0, 0, 0, 0]` |
+| 67 | 11 | `construction_collection_again` | `bytes[11]` | little | spec | the f32 values `1.0` and `1.0`, five zero bytes, and the construction collection reference |
+
+## `workplane_item_placement`
+
+Spec §Records of a construction-plane item · layout: byte offsets · size: 259 B
+
+Offsets are relative to the placement's indexed header, through the one `values` reference. The base level `sketch_item_placement_base` follows at 259. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | uses the version-14 member grammar of "Sketch placement" in §3.1 with these values |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | uses the version-14 member grammar of "Sketch placement" in §3.1 with these values · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 1 | `linear_offset_on_periodic_face` | `u8` | little | spec | `LinearOffsetOnPeriodicFace = 0` · value `0` |
+| 22 | 24 | `align_up_direction` | `f64[3]` | little | spec | `alignUpDirection = (0, 0, 0)` |
+| 46 | 8 | `arc_length_for_periodic_face` | `f64` | little | spec | `arcLengthForPeriodicFace = 0` · value `0.0` |
+| 54 | 1 | `axis_flipped` | `u8` | little | spec | `axisFlipped = 0` · value `0` |
+| 55 | 1 | `use_u_direction` | `u8` | little | spec | `bUseUDirection = 1` · value `1` |
+| 56 | 1 | `definer_creator` | `u8` | little | spec | a null `definerCreator` · value `0` |
+| 57 | 11 | `extra_offset` | `bytes[11]` | little | spec | `extraOffset` naming the `ExtraOffset` owner |
+| 68 | 4 | `global_references` | `bytes[4]` | little | spec | null references for the four class members `globalParamU` through `globalReorientParam1` · value `[0, 0, 0, 0]` |
+| 72 | 3 | `axis_states` | `bytes[3]` | little | spec | the three axis-state bytes `0` · value `[0, 0, 0]` |
+| 75 | 1 | `identity_marker` | `u8` | little | spec | identity marker `0` and the matrix · value `0` |
+| 76 | 128 | `matrix` | `f64[16]` | little | spec | The matrix columns 0, 1, and 2 are the u direction, the v direction, and the normal of the plane entity |
+| 204 | 8 | `old_rotation` | `f64` | little | spec | `oldRotation = 0` · value `0.0` |
+| 212 | 16 | `pickpoint` | `f64[2]` | little | spec | `pickpoint = (0, 0)` |
+| 228 | 4 | `edge_reference_count` | `u32` | little | spec | no edge reference · value `0` |
+| 232 | 1 | `origin_reference` | `u8` | little | spec | null `rOrigin` · value `0` |
+| 233 | 4 | `plane_reference_count` | `u32` | little | spec | no plane reference · value `0` |
+| 237 | 1 | `x_axis_reference` | `u8` | little | spec | null `rXAxis` and `rZAxis` · value `0` |
+| 238 | 1 | `z_axis_reference` | `u8` | little | spec | null `rXAxis` and `rZAxis` · value `0` |
+| 239 | 4 | `ref_type` | `u32` | little | spec | `refType = 2` · value `2` |
+| 243 | 1 | `resize_type` | `u8` | little | spec | `resizeType = 0` · value `0` |
+| 244 | 4 | `value_count` | `u32` | little | spec | a `values` list that names the `AlongDistance` owner · value `1` |
+| 248 | 11 | `along_distance_owner` | `bytes[11]` | little | spec | a `values` list that names the `AlongDistance` owner |
+
+## `workplane_item_placement_tracking_flag`
+
+Spec §Records of a construction-plane item · layout: byte offsets · size: 24 B
+
+Offsets are relative to the tracking flag's indexed header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The placement tracking flag that the base level references stores the indexed header, ten zero bytes, and the flag bytes `01 01 00` |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | The placement tracking flag that the base level references stores the indexed header, ten zero bytes, and the flag bytes `01 01 00` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 3 | `flags` | `bytes[3]` | little | spec | The placement tracking flag that the base level references stores the indexed header, ten zero bytes, and the flag bytes `01 01 00` · value `[1, 1, 0]` |
+
+## `workplane_item_placement_path_words`
+
+Spec §Records of a construction-plane item · layout: byte offsets · size: 41 B
+
+Offsets are relative to the u32 `2` that follows the component GUID, at offset 188 of `sketch_item_placement_path`. The other fields of the path are those of `sketch_item_placement_path`. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `word_2` | `u32` | little | spec | After the component GUID, the path stores u32 `2`, u32 `0`, u32 `1`, the placement transform reference, u32 `0`, u32 `0x21`, u32 `0`, and six zero bytes · value `2` |
+| 4 | 4 | `word_after_2` | `u32` | little | spec | After the component GUID, the path stores u32 `2`, u32 `0`, u32 `1`, the placement transform reference, u32 `0`, u32 `0x21`, u32 `0`, and six zero bytes · value `0` |
+| 8 | 4 | `transform_count` | `u32` | little | spec | After the component GUID, the path stores u32 `2`, u32 `0`, u32 `1`, the placement transform reference, u32 `0`, u32 `0x21`, u32 `0`, and six zero bytes · value `1` |
+| 12 | 11 | `transform` | `bytes[11]` | little | spec | After the component GUID, the path stores u32 `2`, u32 `0`, u32 `1`, the placement transform reference, u32 `0`, u32 `0x21`, u32 `0`, and six zero bytes |
+| 23 | 4 | `zero_word` | `u32` | little | spec | After the component GUID, the path stores u32 `2`, u32 `0`, u32 `1`, the placement transform reference, u32 `0`, u32 `0x21`, u32 `0`, and six zero bytes · value `0` |
+| 27 | 4 | `word_21` | `u32` | little | spec | After the component GUID, the path stores u32 `2`, u32 `0`, u32 `1`, the placement transform reference, u32 `0`, u32 `0x21`, u32 `0`, and six zero bytes · value `33` |
+| 31 | 4 | `word_after_21` | `u32` | little | spec | After the component GUID, the path stores u32 `2`, u32 `0`, u32 `1`, the placement transform reference, u32 `0`, u32 `0x21`, u32 `0`, and six zero bytes · value `0` |
+| 35 | 6 | `zero_run_6` | `bytes[6]` | little | spec | After the component GUID, the path stores u32 `2`, u32 `0`, u32 `1`, the placement transform reference, u32 `0`, u32 `0x21`, u32 `0`, and six zero bytes · value `[0, 0, 0, 0, 0, 0]` |
+
+## `construction_collection_counters`
+
+Spec §Records of a construction-plane item · layout: byte offsets · size: 34 B
+
+Offsets are relative to the end of the first run of `N` entity references. The second run of `N` references and the component aggregate reference follow at 34. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `work_axis_counter` | `u32` | little | spec | the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, a byte `0` or `1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N` |
+| 4 | 4 | `work_plane_counter` | `u32` | little | spec | the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, a byte `0` or `1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N` |
+| 8 | 4 | `work_point_counter` | `u32` | little | spec | the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, a byte `0` or `1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N` |
+| 12 | 4 | `zero_word` | `u32` | little | spec | the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, a byte `0` or `1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N` · value `0` |
+| 16 | 1 | `marker_a` | `u8` | little | spec | the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, a byte `0` or `1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N` |
+| 17 | 1 | `marker_b` | `u8` | little | spec | the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, a byte `0` or `1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N` · value `1` |
+| 18 | 11 | `record_47c245a2` | `bytes[11]` | little | spec | the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, a byte `0` or `1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N` |
+| 29 | 1 | `zero_byte` | `u8` | little | spec | the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, a byte `0` or `1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N` · value `0` |
+| 30 | 4 | `entity_count` | `u32` | little | spec | the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, a byte `0` or `1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N` |
 
 ## `base_feature_zero_record`
 
@@ -15212,165 +15479,6 @@ Browser record 0 through the component-node reference; the entry-map pairs are i
 | 57 | 4 | `entry_count` | `u32` | little | spec | `base_feature_browser_root_prefix` · value `24` |
 | 61 | 624 | `entry_pairs` | `bytes[624]` | little | spec | `base_feature_browser_root_prefix` |
 | 685 | 11 | `component_node` | `bytes[11]` | little | spec | `base_feature_browser_root_prefix` |
-
-## `workplane_item_scope`
-
-Spec §Records of a construction-plane item · layout: byte offsets · size: 322 B
-
-Offsets are relative to the scope's indexed header. The paired scope record follows the item tail at 292. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
-
-| Offset | Size | Field | Type | Endian | Src | Meaning |
-| -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | the indexed header, nine zero bytes, the property-block presence byte `0`, `u8 1`, the u32 construction word |
-| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | the indexed header, nine zero bytes, the property-block presence byte `0`, `u8 1`, the u32 construction word · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
-| 20 | 1 | `property_presence` | `u8` | little | spec | the indexed header, nine zero bytes, the property-block presence byte `0`, `u8 1`, the u32 construction word · value `0` |
-| 21 | 1 | `marker` | `u8` | little | spec | the indexed header, nine zero bytes, the property-block presence byte `0`, `u8 1`, the u32 construction word · value `1` |
-| 22 | 4 | `construction_word` | `u32` | little | spec | An offset plane stores `refType` `2` and construction word `0` · value `0` |
-| 26 | 11 | `extra_offset_owner` | `bytes[11]` | little | spec | the `ExtraOffset` owner reference, `u8 1`, the plane entity reference, the placement reference |
-| 37 | 1 | `plane_marker` | `u8` | little | spec | the `ExtraOffset` owner reference, `u8 1`, the plane entity reference, the placement reference · value `1` |
-| 38 | 11 | `plane_entity` | `bytes[11]` | little | spec | the `ExtraOffset` owner reference, `u8 1`, the plane entity reference, the placement reference |
-| 49 | 11 | `placement` | `bytes[11]` | little | spec | the `ExtraOffset` owner reference, `u8 1`, the plane entity reference, the placement reference |
-| 60 | 1 | `guid_marker` | `u8` | little | spec | the placement reference, `u8 1`, the zero GUID · value `1` |
-| 61 | 76 | `zero_guid` | `bytes[76]` | little | spec | The zero GUID is an LP-UTF16 string of 36 code units |
-| 137 | 3 | `zero_bytes` | `bytes[3]` | little | spec | the zero GUID, three zero bytes, the u32 reference count `4` · value `[0, 0, 0]` |
-| 140 | 4 | `reference_count` | `u32` | little | spec | the zero GUID, three zero bytes, the u32 reference count `4` · value `4` |
-| 144 | 11 | `along_distance_owner` | `bytes[11]` | little | spec | The ordered reference table holds the `AlongDistance` owner, the placement path, the placement, and the `ExtraOffset` owner |
-| 155 | 11 | `placement_path` | `bytes[11]` | little | spec | The ordered reference table holds the `AlongDistance` owner, the placement path, the placement, and the `ExtraOffset` owner |
-| 166 | 11 | `placement_entry` | `bytes[11]` | little | spec | The ordered reference table holds the `AlongDistance` owner, the placement path, the placement, and the `ExtraOffset` owner |
-| 177 | 11 | `extra_offset_entry` | `bytes[11]` | little | spec | The ordered reference table holds the `AlongDistance` owner, the placement path, the placement, and the `ExtraOffset` owner |
-| 188 | 4 | `current_state` | `u32` | little | spec | The current history-state identity `0xffffffff`, the LP-UTF16 family name `WorkPlane`, the 78-byte feature item tail, and the paired scope record end the scope · value `4294967295` |
-| 192 | 22 | `family_name` | `bytes[22]` | little | spec | The current history-state identity `0xffffffff`, the LP-UTF16 family name `WorkPlane`, the 78-byte feature item tail, and the paired scope record end the scope |
-| 214 | 78 | `item_tail` | `bytes[78]` | little | spec | The current history-state identity `0xffffffff`, the LP-UTF16 family name `WorkPlane`, the 78-byte feature item tail, and the paired scope record end the scope |
-| 292 | 11 | `paired_header` | `bytes[11]` | little | spec | The current history-state identity `0xffffffff`, the LP-UTF16 family name `WorkPlane`, the 78-byte feature item tail, and the paired scope record end the scope |
-| 303 | 8 | `paired_zero_run` | `bytes[8]` | little | spec | The current history-state identity `0xffffffff`, the LP-UTF16 family name `WorkPlane`, the 78-byte feature item tail, and the paired scope record end the scope · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
-| 311 | 11 | `owner_collection` | `bytes[11]` | little | spec | The current history-state identity `0xffffffff`, the LP-UTF16 family name `WorkPlane`, the 78-byte feature item tail, and the paired scope record end the scope |
-
-## `workplane_item_plane_head`
-
-Spec §Records of a construction-plane item · layout: byte offsets · size: 190 B
-
-Offsets are relative to the plane entity's indexed header. The `L` code units of the entity name follow at 190, then `workplane_item_plane_tail`.
-
-| Offset | Size | Field | Type | Endian | Src | Meaning |
-| -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | It stores, in order: the indexed header, nine zero bytes, the property-block presence byte `1` |
-| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | It stores, in order: the indexed header, nine zero bytes, the property-block presence byte `1` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
-| 20 | 1 | `property_presence` | `u8` | little | spec | It stores, in order: the indexed header, nine zero bytes, the property-block presence byte `1` · value `1` |
-| 21 | 4 | `property_count` | `u32` | little | spec | the property count `1`, the property `EntityGenesis` of type `IntrinsicMetaTypeuint64` with u64 value `0`, the u32 plane kind `1` · value `1` |
-| 25 | 17 | `property_name` | `bytes[17]` | little | spec | the property count `1`, the property `EntityGenesis` of type `IntrinsicMetaTypeuint64` with u64 value `0`, the u32 plane kind `1` |
-| 42 | 27 | `property_type` | `bytes[27]` | little | spec | the property count `1`, the property `EntityGenesis` of type `IntrinsicMetaTypeuint64` with u64 value `0`, the u32 plane kind `1` |
-| 69 | 8 | `property_value` | `u64` | little | spec | the property count `1`, the property `EntityGenesis` of type `IntrinsicMetaTypeuint64` with u64 value `0`, the u32 plane kind `1` · value `0` |
-| 77 | 4 | `plane_kind` | `u32` | little | spec | the property count `1`, the property `EntityGenesis` of type `IntrinsicMetaTypeuint64` with u64 value `0`, the u32 plane kind `1` · value `1` |
-| 81 | 16 | `lower_corner` | `f64[2]` | little | spec | A display corner is an f64 pair of plane coordinates in centimetres |
-| 97 | 1 | `zero_byte` | `u8` | little | spec | the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and the LP-UTF16 entity name · value `0` |
-| 98 | 24 | `origin` | `f64[3]` | little | spec | the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and the LP-UTF16 entity name |
-| 122 | 24 | `u_direction` | `f64[3]` | little | spec | the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and the LP-UTF16 entity name |
-| 146 | 24 | `v_direction` | `f64[3]` | little | spec | the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and the LP-UTF16 entity name |
-| 170 | 16 | `upper_corner` | `f64[2]` | little | spec | A display corner is an f64 pair of plane coordinates in centimetres |
-| 186 | 4 | `name_length` | `u32` | little | spec | The entity name is the digit `0`, `_`, and the decimal record index of the plane entity |
-
-## `workplane_item_plane_tail`
-
-Spec §Records of a construction-plane item · layout: byte offsets · size: 78 B
-
-Offsets are relative to the end of the entity name, for an empty text. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
-
-| Offset | Size | Field | Type | Endian | Src | Meaning |
-| -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `construction_collection` | `bytes[11]` | little | spec | After the name follow the construction collection reference |
-| 11 | 4 | `family_ordinal` | `u32` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, an LP-UTF16 text, u32 `0`, a flag byte `0` or `1`, twelve zero bytes |
-| 15 | 5 | `zero_run` | `bytes[5]` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, an LP-UTF16 text, u32 `0`, a flag byte `0` or `1`, twelve zero bytes · value `[0, 0, 0, 0, 0]` |
-| 20 | 11 | `scope` | `bytes[11]` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, an LP-UTF16 text, u32 `0`, a flag byte `0` or `1`, twelve zero bytes |
-| 31 | 1 | `zero_byte` | `u8` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, an LP-UTF16 text, u32 `0`, a flag byte `0` or `1`, twelve zero bytes · value `0` |
-| 32 | 1 | `marker` | `u8` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, an LP-UTF16 text, u32 `0`, a flag byte `0` or `1`, twelve zero bytes · value `1` |
-| 33 | 4 | `text_length` | `u32` | little | spec | The layout table gives the tail for an empty text · value `0` |
-| 37 | 4 | `zero_word` | `u32` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, an LP-UTF16 text, u32 `0`, a flag byte `0` or `1`, twelve zero bytes · value `0` |
-| 41 | 1 | `flag` | `u8` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, an LP-UTF16 text, u32 `0`, a flag byte `0` or `1`, twelve zero bytes |
-| 42 | 12 | `zero_run_b` | `bytes[12]` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, an LP-UTF16 text, u32 `0`, a flag byte `0` or `1`, twelve zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
-| 54 | 4 | `scale_a` | `f32` | little | spec | the f32 values `1.0` and `1.0`, five zero bytes, and the construction collection reference · value `1.0` |
-| 58 | 4 | `scale_b` | `f32` | little | spec | the f32 values `1.0` and `1.0`, five zero bytes, and the construction collection reference · value `1.0` |
-| 62 | 5 | `zero_run_c` | `bytes[5]` | little | spec | the f32 values `1.0` and `1.0`, five zero bytes, and the construction collection reference · value `[0, 0, 0, 0, 0]` |
-| 67 | 11 | `construction_collection_again` | `bytes[11]` | little | spec | the f32 values `1.0` and `1.0`, five zero bytes, and the construction collection reference |
-
-## `workplane_item_placement`
-
-Spec §Records of a construction-plane item · layout: byte offsets · size: 259 B
-
-Offsets are relative to the placement's indexed header, through the one `values` reference. The base level `sketch_item_placement_base` follows at 259. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
-
-| Offset | Size | Field | Type | Endian | Src | Meaning |
-| -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | uses the version-14 member grammar of "Sketch placement" in §3.1 with these values |
-| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | uses the version-14 member grammar of "Sketch placement" in §3.1 with these values · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
-| 21 | 1 | `linear_offset_on_periodic_face` | `u8` | little | spec | `LinearOffsetOnPeriodicFace = 0` · value `0` |
-| 22 | 24 | `align_up_direction` | `f64[3]` | little | spec | `alignUpDirection = (0, 0, 0)` |
-| 46 | 8 | `arc_length_for_periodic_face` | `f64` | little | spec | `arcLengthForPeriodicFace = 0` · value `0.0` |
-| 54 | 1 | `axis_flipped` | `u8` | little | spec | `axisFlipped = 0` · value `0` |
-| 55 | 1 | `use_u_direction` | `u8` | little | spec | `bUseUDirection = 1` · value `1` |
-| 56 | 1 | `definer_creator` | `u8` | little | spec | a null `definerCreator` · value `0` |
-| 57 | 11 | `extra_offset` | `bytes[11]` | little | spec | `extraOffset` naming the `ExtraOffset` owner |
-| 68 | 4 | `global_references` | `bytes[4]` | little | spec | null references for the four class members `globalParamU` through `globalReorientParam1` · value `[0, 0, 0, 0]` |
-| 72 | 3 | `axis_states` | `bytes[3]` | little | spec | the three axis-state bytes `0` · value `[0, 0, 0]` |
-| 75 | 1 | `identity_marker` | `u8` | little | spec | identity marker `0` and the matrix · value `0` |
-| 76 | 128 | `matrix` | `f64[16]` | little | spec | The matrix columns 0, 1, and 2 are the u direction, the v direction, and the normal of the plane entity |
-| 204 | 8 | `old_rotation` | `f64` | little | spec | `oldRotation = 0` · value `0.0` |
-| 212 | 16 | `pickpoint` | `f64[2]` | little | spec | `pickpoint = (0, 0)` |
-| 228 | 4 | `edge_reference_count` | `u32` | little | spec | no edge reference · value `0` |
-| 232 | 1 | `origin_reference` | `u8` | little | spec | null `rOrigin` · value `0` |
-| 233 | 4 | `plane_reference_count` | `u32` | little | spec | no plane reference · value `0` |
-| 237 | 1 | `x_axis_reference` | `u8` | little | spec | null `rXAxis` and `rZAxis` · value `0` |
-| 238 | 1 | `z_axis_reference` | `u8` | little | spec | null `rXAxis` and `rZAxis` · value `0` |
-| 239 | 4 | `ref_type` | `u32` | little | spec | `refType = 2` · value `2` |
-| 243 | 1 | `resize_type` | `u8` | little | spec | `resizeType = 0` · value `0` |
-| 244 | 4 | `value_count` | `u32` | little | spec | a `values` list that names the `AlongDistance` owner · value `1` |
-| 248 | 11 | `along_distance_owner` | `bytes[11]` | little | spec | a `values` list that names the `AlongDistance` owner |
-
-## `workplane_item_placement_tracking_flag`
-
-Spec §Records of a construction-plane item · layout: byte offsets · size: 24 B
-
-Offsets are relative to the tracking flag's indexed header.
-
-| Offset | Size | Field | Type | Endian | Src | Meaning |
-| -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The placement tracking flag that the base level references stores the indexed header, ten zero bytes, and the flag bytes `01 01 00` |
-| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | The placement tracking flag that the base level references stores the indexed header, ten zero bytes, and the flag bytes `01 01 00` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
-| 21 | 3 | `flags` | `bytes[3]` | little | spec | The placement tracking flag that the base level references stores the indexed header, ten zero bytes, and the flag bytes `01 01 00` · value `[1, 1, 0]` |
-
-## `workplane_item_placement_path_words`
-
-Spec §Records of a construction-plane item · layout: byte offsets · size: 41 B
-
-Offsets are relative to the u32 `2` that follows the component GUID, at offset 188 of `sketch_item_placement_path`. The other fields of the path are those of `sketch_item_placement_path`. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
-
-| Offset | Size | Field | Type | Endian | Src | Meaning |
-| -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 4 | `word_2` | `u32` | little | spec | After the component GUID, the path stores u32 `2`, u32 `0`, u32 `1`, the placement transform reference, u32 `0`, u32 `0x21`, u32 `0`, and six zero bytes · value `2` |
-| 4 | 4 | `word_after_2` | `u32` | little | spec | After the component GUID, the path stores u32 `2`, u32 `0`, u32 `1`, the placement transform reference, u32 `0`, u32 `0x21`, u32 `0`, and six zero bytes · value `0` |
-| 8 | 4 | `transform_count` | `u32` | little | spec | After the component GUID, the path stores u32 `2`, u32 `0`, u32 `1`, the placement transform reference, u32 `0`, u32 `0x21`, u32 `0`, and six zero bytes · value `1` |
-| 12 | 11 | `transform` | `bytes[11]` | little | spec | After the component GUID, the path stores u32 `2`, u32 `0`, u32 `1`, the placement transform reference, u32 `0`, u32 `0x21`, u32 `0`, and six zero bytes |
-| 23 | 4 | `zero_word` | `u32` | little | spec | After the component GUID, the path stores u32 `2`, u32 `0`, u32 `1`, the placement transform reference, u32 `0`, u32 `0x21`, u32 `0`, and six zero bytes · value `0` |
-| 27 | 4 | `word_21` | `u32` | little | spec | After the component GUID, the path stores u32 `2`, u32 `0`, u32 `1`, the placement transform reference, u32 `0`, u32 `0x21`, u32 `0`, and six zero bytes · value `33` |
-| 31 | 4 | `word_after_21` | `u32` | little | spec | After the component GUID, the path stores u32 `2`, u32 `0`, u32 `1`, the placement transform reference, u32 `0`, u32 `0x21`, u32 `0`, and six zero bytes · value `0` |
-| 35 | 6 | `zero_run_6` | `bytes[6]` | little | spec | After the component GUID, the path stores u32 `2`, u32 `0`, u32 `1`, the placement transform reference, u32 `0`, u32 `0x21`, u32 `0`, and six zero bytes · value `[0, 0, 0, 0, 0, 0]` |
-
-## `construction_collection_counters`
-
-Spec §Records of a construction-plane item · layout: byte offsets · size: 34 B
-
-Offsets are relative to the end of the first run of `N` entity references. The second run of `N` references and the component aggregate reference follow at 34. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
-
-| Offset | Size | Field | Type | Endian | Src | Meaning |
-| -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 4 | `work_axis_counter` | `u32` | little | spec | the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, a byte `0` or `1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N` |
-| 4 | 4 | `work_plane_counter` | `u32` | little | spec | the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, a byte `0` or `1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N` |
-| 8 | 4 | `work_point_counter` | `u32` | little | spec | the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, a byte `0` or `1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N` |
-| 12 | 4 | `zero_word` | `u32` | little | spec | the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, a byte `0` or `1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N` · value `0` |
-| 16 | 1 | `marker_a` | `u8` | little | spec | the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, a byte `0` or `1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N` |
-| 17 | 1 | `marker_b` | `u8` | little | spec | the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, a byte `0` or `1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N` · value `1` |
-| 18 | 11 | `record_47c245a2` | `bytes[11]` | little | spec | the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, a byte `0` or `1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N` |
-| 29 | 1 | `zero_byte` | `u8` | little | spec | the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, a byte `0` or `1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N` · value `0` |
-| 30 | 4 | `entity_count` | `u32` | little | spec | the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, a byte `0` or `1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N` |
 
 ## `sketch_item_sketches_root_head`
 
