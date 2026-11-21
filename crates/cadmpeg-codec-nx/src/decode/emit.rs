@@ -23,7 +23,7 @@ use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::eval::finite_or_refusal;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveMetadata};
 use cadmpeg_ir::geometry::{
     pcurve::Pcurve, Curve, CurveGeometry, FitTolerance, IntcurveSupportContext,
@@ -357,7 +357,7 @@ pub(super) fn emit_topology(
 
         if shell_faces.is_empty() {
             return Err(cadmpeg_core::CodecError::Malformed(
-                cadmpeg_ir::features::BodySelectionError::Empty.to_string(),
+                cadmpeg_ir::features::selections::BodySelectionError::Empty.to_string(),
             ));
         }
         ir.geometry

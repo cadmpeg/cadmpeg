@@ -503,7 +503,7 @@ pub(super) fn ensure_feature_dependencies_precede(
 /// Order every owner scope's parameters and return how many scopes exceeded
 /// [`PARAMETER_ORDER_WORK`].
 pub(super) fn normalize_parameter_ordinals(
-    parameters: &mut [cadmpeg_ir::features::DesignParameter],
+    parameters: &mut [cadmpeg_ir::features::parameters::DesignParameter],
     owners: &HashMap<cadmpeg_ir::features::ParameterId, Option<cadmpeg_ir::features::FeatureId>>,
 ) -> Result<usize, CodecError> {
     let mut groups = HashMap::<Option<cadmpeg_ir::features::FeatureId>, Vec<usize>>::new();
@@ -541,7 +541,7 @@ pub(super) fn normalize_parameter_ordinals(
 /// `parameter.order-budget-exceeded` and the dropped edges as unbound
 /// expression symbols.
 pub(super) fn order_parameter_scope(
-    parameters: &mut [cadmpeg_ir::features::DesignParameter],
+    parameters: &mut [cadmpeg_ir::features::parameters::DesignParameter],
     owners: &HashMap<cadmpeg_ir::features::ParameterId, Option<cadmpeg_ir::features::FeatureId>>,
     owner: Option<&cadmpeg_ir::features::FeatureId>,
     indices: &[usize],
@@ -656,7 +656,7 @@ pub(super) fn order_parameter_scope(
 /// Strongly connected components of the unresolved parameter graph that contain a cycle.
 /// Each component retains one member separately from its remaining members.
 pub(super) fn cyclic_parameter_components(
-    parameters: &[cadmpeg_ir::features::DesignParameter],
+    parameters: &[cadmpeg_ir::features::parameters::DesignParameter],
     unresolved: &HashSet<usize>,
 ) -> Vec<(usize, Vec<usize>)> {
     enum Visit {

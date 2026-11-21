@@ -6,10 +6,10 @@ use crate::history_records::{
 };
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::topology::construction::DesignConstructionOperandGroup;
-use cadmpeg_ir::features::{
-    FaceSelection, Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureInputTopology,
-    FeatureOperation, ShellMode,
-};
+use cadmpeg_ir::features::evaluation::{FeatureEvaluation, FeatureInputTopology};
+use cadmpeg_ir::features::operation_settings::ShellMode;
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 const SCOPE_ID: &str = "f3d:Design/BulkStream.dat:scope#42";
@@ -215,10 +215,10 @@ fn bind_group(
     let mut input_topologies = vec![FeatureInputTopology {
         id: crate::ids::feature_input_topology_id(&feature_id, 1),
         input_of: feature_id,
-        bodies: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
-        faces: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
-        edges: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
-        vertices: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+        bodies: cadmpeg_ir::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
+        faces: cadmpeg_ir::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
+        edges: cadmpeg_ir::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
+        vertices: cadmpeg_ir::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
         edge_geometry: Vec::new(),
         native_ref: None,
     }];

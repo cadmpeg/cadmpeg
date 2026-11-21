@@ -124,7 +124,8 @@ fn decode_binds_profile_stream_by_feature_object_interval() {
 
 #[test]
 fn decode_binds_uniquely_enclosed_profile_stream_to_sweep() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef};
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_nested_sketch_profile(&triangle_body());
     source.extend(make_block(
@@ -201,7 +202,8 @@ fn sweep_with_enclosed_general_curve_profiles(count: usize, alternate: bool) -> 
 
 #[test]
 fn decode_binds_owned_general_curve_wrapper_to_unique_enclosed_profile() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef};
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let source = sweep_with_enclosed_general_curve_profiles(1, false);
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -223,7 +225,8 @@ fn decode_binds_owned_general_curve_wrapper_to_unique_enclosed_profile() {
 
 #[test]
 fn decode_preserves_general_curve_wrapper_when_enclosed_profiles_are_ambiguous() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef};
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let source = sweep_with_enclosed_general_curve_profiles(2, false);
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -243,7 +246,8 @@ fn decode_preserves_general_curve_wrapper_when_enclosed_profiles_are_ambiguous()
 
 #[test]
 fn decode_keeps_enclosed_sweep_profile_configuration_local() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef};
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let source = sweep_with_enclosed_general_curve_profiles(1, true);
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -296,7 +300,8 @@ fn decode_does_not_bind_ambiguous_enclosed_profile_streams_to_sweep() {
 
 #[test]
 fn decode_binds_uniquely_enclosed_profile_stream_to_extrusion() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_nested_sketch_profile(&triangle_body());
     source.extend(make_block(
@@ -359,7 +364,8 @@ fn decode_binds_configuration_sketch_state_after_geometry_projection() {
 
 #[test]
 fn decode_does_not_bind_ambiguous_enclosed_profile_streams_to_extrusion() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_nested_sketch_profiles(&triangle_body(), 2);
     source.extend(make_block(
@@ -411,12 +417,12 @@ fn decode_binds_unique_sketch_history_to_profile_consumers() {
     )));
     assert!(decoded.ir().model.features.iter().any(|feature| matches!(
         feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Rib {
-            construction: cadmpeg_ir::features::RibConstruction {
+            construction: cadmpeg_ir::features::revolve::RibConstruction {
                 profile,
                 ..
             },
             ..
-        }) if matches!((profile.as_ref(),), (Some(cadmpeg_ir::features::PlanarProfileRef::Sketch(value)),) if value == &sketch_id))));
+        }) if matches!((profile.as_ref(),), (Some(cadmpeg_ir::features::profiles::PlanarProfileRef::Sketch(value)),) if value == &sketch_id))));
     let validation =
         cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:?}", validation.findings);
@@ -447,10 +453,10 @@ fn decode_binds_unique_sketch_history_to_profile_consumers() {
 fn matching_numbered_sketch_alias_binds_the_base_geometry() {
     use std::collections::BTreeMap;
 
-    use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureId, FeatureOperation,
-        LinearTermination, PlanarProfileRef, ProfileRef,
-    };
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::sketches::{Sketch, SketchId};
 
@@ -485,12 +491,14 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
             ordinal: 0,
             name: Some(name.into()),
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: Some("Sketch".into()),
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+                definition,
+            ),
             native_ref: Some(native_ref.into()),
         };
     let mut features = vec![
@@ -524,8 +532,8 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
             "native-consumer",
             FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(PlanarProfileRef::Native("native-alias".into())),
-                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
-                start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
+                direction: cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {},
+                start: cadmpeg_ir::features::extents::ExtrudeStart::ProfilePlane {},
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Unresolved {},
@@ -605,7 +613,8 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
 
 #[test]
 fn decode_binds_multiple_sketch_history_nodes_by_exact_name() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef, PlanarProfileRef};
+    use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_nested_nurbs_sketches(&triangle_body());
     source.extend(make_block(
@@ -774,10 +783,10 @@ fn bound_sketch_and_consumer(
 ) -> Vec<cadmpeg_ir::features::Feature> {
     use std::collections::BTreeMap;
 
-    use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureId, FeatureOperation,
-        LinearTermination, PlanarProfileRef, ProfileRef,
-    };
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
 
     let neutral = |id: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {
         product_definition: None,
@@ -785,12 +794,14 @@ fn bound_sketch_and_consumer(
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            definition,
+        ),
         native_ref: Some(native_ref.into()),
     };
     vec![
@@ -808,8 +819,8 @@ fn bound_sketch_and_consumer(
                 profile: ProfileRef::Planar(PlanarProfileRef::Feature(
                     FeatureId::mint("synthetic:test:id#sketch-feature").expect("identity grammar"),
                 )),
-                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
-                start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
+                direction: cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {},
+                start: cadmpeg_ir::features::extents::ExtrudeStart::ProfilePlane {},
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Unresolved {},
@@ -851,8 +862,8 @@ fn sketch_with_profiles(
 
 #[test]
 fn feature_profile_takes_the_profiled_sketch_of_its_bound_sketch_feature() {
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
     use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
-    use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
     use cadmpeg_ir::sketches::{SketchEntityId, SketchEntityUse, SketchId};
 
     let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
@@ -882,8 +893,8 @@ fn feature_profile_takes_the_profiled_sketch_of_its_bound_sketch_feature() {
 
 #[test]
 fn feature_profile_keeps_the_feature_when_the_bound_sketch_has_no_profile() {
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
-    use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
     use cadmpeg_ir::sketches::SketchId;
 
     let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();

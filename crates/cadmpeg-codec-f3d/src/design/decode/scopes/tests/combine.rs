@@ -233,7 +233,7 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
         operation,
         DesignCombineOperation {
             form: DesignCombineForm::Standard,
-            operation: cadmpeg_ir::features::BooleanKind::Join,
+            operation: cadmpeg_ir::features::operation_settings::BooleanKind::Join,
             operation_offset: 20,
             keep_tools: true,
             keep_tools_offset: 25,
@@ -267,10 +267,10 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Combine {
                 operands: cadmpeg_ir::features::CombineOperands::new(
-                    cadmpeg_ir::features::BodySelection::Native(
+                    cadmpeg_ir::features::selections::BodySelection::Native(
                         "Design1/BulkStream.dat:design-record#96".into(),
                     ),
-                    cadmpeg_ir::features::BodySelection::NativeSet(
+                    cadmpeg_ir::features::selections::BodySelection::NativeSet(
                         vec![
                             "Design1/BulkStream.dat:design-record#92".into(),
                             "Design1/BulkStream.dat:design-record#94".into(),
@@ -281,10 +281,11 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
                 )
                 .unwrap(),
 
-                op: cadmpeg_ir::features::BooleanKind::Join,
+                op: cadmpeg_ir::features::operation_settings::BooleanKind::Join,
                 keep_tools: true,
 
-                destination: cadmpeg_ir::features::CombineDestination::default(),
+                destination: cadmpeg_ir::features::operation_settings::CombineDestination::default(
+                ),
             }
         ))
     );
@@ -321,7 +322,10 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     )
     .unwrap()
     .expect("compact Combine construction");
-    assert_eq!(compact.operation, cadmpeg_ir::features::BooleanKind::Join);
+    assert_eq!(
+        compact.operation,
+        cadmpeg_ir::features::operation_settings::BooleanKind::Join
+    );
     assert_eq!(compact.operation_offset, 21);
     assert!(!compact.keep_tools);
     assert_eq!(compact.form, DesignCombineForm::Compact);
@@ -471,7 +475,10 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
             .unwrap()
             .expect("extended-reference Combine construction");
     assert_eq!(operation.form, DesignCombineForm::ExtendedReference);
-    assert_eq!(operation.operation, cadmpeg_ir::features::BooleanKind::Cut);
+    assert_eq!(
+        operation.operation,
+        cadmpeg_ir::features::operation_settings::BooleanKind::Cut
+    );
     assert_eq!(operation.operation_offset, 31);
     assert!(operation.keep_tools);
     assert_eq!(operation.keep_tools_offset, 30);
@@ -908,7 +915,7 @@ fn decode_combine_frame_with(
 
 #[test]
 fn operand_list_prologue_reads_zero_based_operation_and_keep_tools() {
-    use cadmpeg_ir::features::BooleanKind;
+    use cadmpeg_ir::features::operation_settings::BooleanKind;
     for (code, expected) in [
         (0, BooleanKind::Join),
         (1, BooleanKind::Cut),
@@ -1042,7 +1049,10 @@ fn operand_list_keeps_its_operation_when_a_browser_node_is_not_exact() {
     trailing_bytes.node_trailing_bytes = 1;
     for fixture in [invalid_flag, two_entries, no_entry, trailing_bytes] {
         let operation = fixture.decode().expect("operand-list Combine");
-        assert_eq!(operation.operation, cadmpeg_ir::features::BooleanKind::Cut);
+        assert_eq!(
+            operation.operation,
+            cadmpeg_ir::features::operation_settings::BooleanKind::Cut
+        );
         assert_eq!(operation.target_body_node, None);
         assert_eq!(operation.tools.first.body_node, None);
     }
@@ -1055,7 +1065,7 @@ fn byte_twenty_of_the_operand_list_prologue_is_the_property_block_presence() {
     let operation = empty_block.decode().expect("operand-list Combine");
     assert_eq!(
         operation.operation,
-        cadmpeg_ir::features::BooleanKind::Intersect
+        cadmpeg_ir::features::operation_settings::BooleanKind::Intersect
     );
     assert_eq!(operation.operation_offset, 25);
     assert_eq!(operation.keep_tools_offset, 33);
@@ -1088,7 +1098,10 @@ fn operand_list_companions_remove_the_tools_of_a_consuming_combine() {
             .decode()
             .expect("Combine with companions");
         assert_eq!(operation.form, DesignCombineForm::OperandLists);
-        assert_eq!(operation.operation, cadmpeg_ir::features::BooleanKind::Join);
+        assert_eq!(
+            operation.operation,
+            cadmpeg_ir::features::operation_settings::BooleanKind::Join
+        );
         assert_eq!(operation.operation_offset, operation_offset);
         assert!(!operation.keep_tools);
         assert_eq!(operation.keep_tools_offset, keep_tools_offset);
@@ -1233,7 +1246,7 @@ fn an_intersect_names_its_extra_result_bodies_and_its_consumed_tool() {
     let operation = operation.expect("operand-list Intersect");
     assert_eq!(
         operation.operation,
-        cadmpeg_ir::features::BooleanKind::Intersect
+        cadmpeg_ir::features::operation_settings::BooleanKind::Intersect
     );
     assert!(!operation.keep_tools);
     assert_eq!(operation.created_body_nodes, [600, 601]);
@@ -1292,7 +1305,10 @@ fn a_byte_twenty_frame_reports_the_prologue_it_assumes() {
     let (operation, losses) = fixture.decode_with_losses();
     let operation = operation.expect("operand-list reading");
     assert_eq!(operation.form, DesignCombineForm::OperandLists);
-    assert_eq!(operation.operation, cadmpeg_ir::features::BooleanKind::Cut);
+    assert_eq!(
+        operation.operation,
+        cadmpeg_ir::features::operation_settings::BooleanKind::Cut
+    );
     assert!(!operation.keep_tools);
     assert!(losses.is_empty(), "{losses:?}");
 
@@ -1315,7 +1331,10 @@ fn a_byte_twenty_frame_reports_the_prologue_it_assumes() {
     let (operation, losses) = fixture.decode_with_losses();
     let operation = operation.expect("standard reading");
     assert_eq!(operation.form, DesignCombineForm::Standard);
-    assert_eq!(operation.operation, cadmpeg_ir::features::BooleanKind::Join);
+    assert_eq!(
+        operation.operation,
+        cadmpeg_ir::features::operation_settings::BooleanKind::Join
+    );
     assert!(operation.keep_tools);
     assert_eq!(
         codes(losses),
@@ -1389,7 +1408,10 @@ fn a_combine_that_places_its_result_in_a_new_component_names_its_created_bodies(
     let (operation, losses) = kept_tools.decode_with_losses();
     let operation = operation.expect("operand-list reading");
     assert_eq!(operation.form, DesignCombineForm::OperandLists);
-    assert_eq!(operation.operation, cadmpeg_ir::features::BooleanKind::Cut);
+    assert_eq!(
+        operation.operation,
+        cadmpeg_ir::features::operation_settings::BooleanKind::Cut
+    );
     assert!(operation.keep_tools);
     assert_eq!(
         operation.destination,
@@ -1427,7 +1449,7 @@ fn a_combine_that_places_its_result_in_a_new_component_names_its_created_bodies(
         let operation = operation.expect("readable component request");
         assert_eq!(
             operation.operation,
-            cadmpeg_ir::features::BooleanKind::Join,
+            cadmpeg_ir::features::operation_settings::BooleanKind::Join,
             "{name}"
         );
         assert_eq!(
@@ -1454,7 +1476,8 @@ fn a_combine_that_places_its_result_in_a_new_component_names_its_created_bodies(
             project_combine(&scope, "f3d:Design/BulkStream.dat"),
             Some(cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::Combine {
-                    destination: cadmpeg_ir::features::CombineDestination::NewComponent,
+                    destination:
+                        cadmpeg_ir::features::operation_settings::CombineDestination::NewComponent,
                     keep_tools: false,
                     ..
                 }
@@ -1470,7 +1493,7 @@ fn a_combine_that_places_its_result_in_a_new_component_names_its_created_bodies(
 
 #[test]
 fn combine_two_middle_lists_preserve_consumed_tools_in_source_order() {
-    use cadmpeg_ir::features::BooleanKind;
+    use cadmpeg_ir::features::operation_settings::BooleanKind;
 
     for (code, expected) in [
         (0, BooleanKind::Join),
@@ -1592,7 +1615,10 @@ fn named_combine_tail_keeps_component_reference_separate_from_destination_node()
     let operation = exact_combine_operation(&bytes, &records, &scope, &HashMap::new(), &mut losses)
         .unwrap()
         .unwrap();
-    assert_eq!(operation.operation, cadmpeg_ir::features::BooleanKind::Join);
+    assert_eq!(
+        operation.operation,
+        cadmpeg_ir::features::operation_settings::BooleanKind::Join
+    );
     assert_eq!(
         operation.destination,
         crate::records::feature::combine::DesignCombineDestination::NewComponent {
@@ -1609,7 +1635,8 @@ fn named_combine_tail_keeps_component_reference_separate_from_destination_node()
         project_combine(&scope, "f3d:Design/BulkStream.dat"),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Combine {
-                destination: cadmpeg_ir::features::CombineDestination::NewComponent,
+                destination:
+                    cadmpeg_ir::features::operation_settings::CombineDestination::NewComponent,
                 keep_tools: true,
                 ..
             }
@@ -1645,7 +1672,7 @@ fn combine_operand_lists_accept_null_and_typed_local_references() {
                 assert_eq!(operation.form, DesignCombineForm::OperandLists);
                 assert_eq!(
                     operation.operation,
-                    cadmpeg_ir::features::BooleanKind::Intersect
+                    cadmpeg_ir::features::operation_settings::BooleanKind::Intersect
                 );
                 assert!(!operation.keep_tools);
                 assert_eq!(operation.operation_offset, 21);

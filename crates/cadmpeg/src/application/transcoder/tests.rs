@@ -204,8 +204,10 @@ fn rhino_omitted_product_structure_is_rejected_by_the_shared_plan_gate() {
     let mut ir = CadIr::empty();
     ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         cadmpeg_ir::ids::PointId::mint("cadir:model:point#pin").expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))
-            .expect("finite position"),
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            0.0, 0.0, 0.0,
+        ))
+        .expect("finite position"),
         None,
     ));
     ir.model

@@ -417,7 +417,7 @@ pub(crate) struct AsmHistoricalEdgeSample {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_edge_sample_carrier"
     )]
-    pub(crate) carrier: Option<cadmpeg_ir::features::HistoricalEdgeCarrier>,
+    pub(crate) carrier: Option<cadmpeg_ir::features::evaluation::HistoricalEdgeCarrier>,
 }
 
 /// Ordered stable entity-slot relation in a historical B-rep.
@@ -1089,7 +1089,7 @@ cadmpeg_core::named_optional_field!(deserialize_edge_sample_tangent, Vector3, "t
 cadmpeg_core::named_optional_field!(deserialize_edge_sample_bounds, [Point3; 2], "bounds");
 cadmpeg_core::named_optional_field!(
     deserialize_edge_sample_carrier,
-    cadmpeg_ir::features::HistoricalEdgeCarrier,
+    cadmpeg_ir::features::evaluation::HistoricalEdgeCarrier,
     "carrier"
 );
 cadmpeg_core::named_optional_field!(deserialize_history_entry_count, i64, "history_entry_count");

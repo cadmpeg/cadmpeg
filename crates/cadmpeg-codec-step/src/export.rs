@@ -4091,7 +4091,7 @@ impl<'a> Builder<'a> {
                 uv.u,
                 uv.v,
             ))
-            .map(|point| point.map(cadmpeg_ir::features::FinitePoint3::get))
+            .map(|point| point.map(cadmpeg_ir::features::geometry::FinitePoint3::get))
         };
         let (Some(at_first), Some(at_second)) = (lift(first)?, lift(second)?) else {
             return Ok(None);

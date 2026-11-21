@@ -14,7 +14,8 @@ use crate::records::topology::construction::{
     DesignConstructionOperandGroupFrame, DesignConstructionOperandGroupFrameDraft,
     DesignConstructionOperandRole,
 };
-use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 pub(super) fn scope() -> DesignParameterScope {
     scope_with_extent(DesignExtrudeExtent::OneSidedDistance)
@@ -229,7 +230,7 @@ fn extrude_projects_with_selected_face_group() {
 #[test]
 fn legacy_to_face_projects_with_only_an_inactive_zero_distance() {
     use crate::records::feature::scope::DesignScopePayloadMut;
-    use cadmpeg_ir::features::{ExtrudeExtent, LinearTermination};
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, LinearTermination};
     let mut scope = scope_with_extent(DesignExtrudeExtent::OneSidedToFace);
     let DesignScopePayloadMut::Extrude(Some(extrude)) = scope.payload_mut() else {
         panic!("Extrude scope");
@@ -303,7 +304,7 @@ fn extrude_projects_with_target_shape_group() {
 
 #[test]
 fn distance_and_through_all_retains_auxiliary_selection() {
-    use cadmpeg_ir::features::{ExtrudeExtent, LinearTermination};
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, LinearTermination};
     let scope = scope_with_extent(DesignExtrudeExtent::TwoSidedDistanceThroughAll);
     let profile = profile_group(100, 0);
     let mut auxiliary = profile_group(101, 1);
@@ -342,7 +343,8 @@ fn distance_and_through_all_retains_auxiliary_selection() {
 
 #[test]
 fn target_first_and_distance_second_travel_the_parameter_magnitude() {
-    use cadmpeg_ir::features::{ExtrudeExtent, FaceSelection, LinearTermination};
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, LinearTermination};
+    use cadmpeg_ir::features::selections::FaceSelection;
     let scope = scope_with_extent(DesignExtrudeExtent::TwoSidedTargetToDistanceOptionZero);
     let profile = profile_group(100, 0);
     let mut target = profile_group(101, 1);
@@ -398,7 +400,8 @@ fn target_first_and_distance_second_travel_the_parameter_magnitude() {
 
 #[test]
 fn two_native_targets_keep_their_side_order() {
-    use cadmpeg_ir::features::{ExtrudeExtent, FaceSelection, LinearTermination};
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, LinearTermination};
+    use cadmpeg_ir::features::selections::FaceSelection;
     let mut draft =
         scope_with_extent(DesignExtrudeExtent::TwoSidedToTargetsOptionZero).into_draft();
     draft.reference_members = crate::records::identity::ReferenceRun::from_columns(
@@ -460,7 +463,7 @@ fn two_native_targets_keep_their_side_order() {
 
 #[test]
 fn through_all_and_face_use_opposite_sides() {
-    use cadmpeg_ir::features::{ExtrudeExtent, LinearTermination};
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, LinearTermination};
     let mut draft = scope_with_extent(DesignExtrudeExtent::TwoSidedThroughAllToFace).into_draft();
     draft.reference_members = crate::records::identity::ReferenceRun::from_columns(
         vec![100, 101, 102],
@@ -521,7 +524,7 @@ fn through_all_and_face_use_opposite_sides() {
 #[test]
 fn surface_extrude_retains_the_role_43_group_as_its_native_profile() {
     use crate::records::topology::extrude_selection::DesignOperandRole;
-    use cadmpeg_ir::features::{ExtrudeExtent, LinearTermination};
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, LinearTermination};
     let mut scope = scope();
     if let Some(DesignExtrudePrologue::ReferenceAware {
         solid_operation, ..
@@ -554,7 +557,7 @@ fn surface_extrude_retains_the_role_43_group_as_its_native_profile() {
 
 #[test]
 fn negative_distance_reverses_the_sweep() {
-    use cadmpeg_ir::features::{ExtrudeDirection, ExtrudeExtent, LinearTermination};
+    use cadmpeg_ir::features::extents::{ExtrudeDirection, ExtrudeExtent, LinearTermination};
     let scope = scope();
     let group = profile_group(100, 0);
     let along = parse_design_parameter_record(&parameter_record(
@@ -586,7 +589,7 @@ fn negative_distance_reverses_the_sweep() {
 
 #[test]
 fn wall_thickness_stays_native_while_the_extrude_distance_projects() {
-    use cadmpeg_ir::features::{ExtrudeExtent, LinearTermination};
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, LinearTermination};
     let scope = scope();
     let group = profile_group(100, 0);
     let params = parameters();
@@ -617,7 +620,7 @@ fn wall_thickness_stays_native_while_the_extrude_distance_projects() {
 
 #[test]
 fn selected_face_start_without_a_start_group_reads_the_offset_plane() {
-    use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeStart, LinearTermination};
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeStart, LinearTermination};
     let mut draft = scope_with_start(
         DesignExtrudeExtent::OneSidedToFace,
         DesignExtrudeStart::FromFace,
@@ -679,7 +682,8 @@ fn selected_face_start_without_a_start_group_reads_the_offset_plane() {
 
 #[test]
 fn blind_new_body_retains_the_offset_of_an_unresolved_start_face() {
-    use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeStart, FaceSelection, LinearTermination};
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeStart, LinearTermination};
+    use cadmpeg_ir::features::selections::FaceSelection;
 
     let scope = scope_with_start(
         DesignExtrudeExtent::OneSidedDistance,
@@ -736,7 +740,8 @@ fn blind_new_body_retains_the_offset_of_an_unresolved_start_face() {
 fn slotted_extrude_targets_keep_their_signed_side_offsets() {
     use crate::design::decode::operands::assign_slotted_extrude_face_targets;
     use crate::records::topology::extrude_selection::DesignOperandRole;
-    use cadmpeg_ir::features::{ExtrudeExtent, FaceSelection, LinearTermination};
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, LinearTermination};
+    use cadmpeg_ir::features::selections::FaceSelection;
 
     let mut draft =
         scope_with_extent(DesignExtrudeExtent::TwoSidedToTargetsOptionZero).into_draft();
