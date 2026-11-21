@@ -1780,13 +1780,25 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Question.** Which native relation binds a parameter scope to its ASM history when several histories contain the same endpoint pair and the scope has no unique body-map or whole-body recipe binding?
 
-**Known.** Current and preceding state identities are local to one ASM history. Independent history graphs can contain the same endpoint pair and complete predecessor chain. A result body-map carrier, whole-body recipe candidate faces, or agreement of all qualified face candidates from the scope's own edge recipes can bind a scope to one BREP basename. Copied feature groups can retain the same endpoint pairs in separate histories. Each component's bodies live in their own BREP blob, and a history's id names its blob. When a scope has no such binding, the decoder reads the feature's history properties and output transition interval from the one history of the BREP blob that holds every body the feature outputs, or that a Base Feature resolves, when exactly one history of that blob holds the pair, and reports `history.output-blob-history-inferred`.
+**Known.** Current and preceding state identities are local to one ASM history. Independent history graphs can contain the same endpoint pair and complete predecessor chain. A result body-map carrier, whole-body recipe candidate faces, or agreement of all qualified face candidates from the scope's own edge recipes can bind a scope to one BREP basename. Copied feature groups can retain the same endpoint pairs in separate histories. Each component's bodies live in their own BREP blob, and a history's id names its blob. The decoder first uses the scope-history binding map. For a scope without a map entry, it uses the unique history with the state pair, with direct transitions before intervals. When the preceding state is unavailable, it uses the unique history with the result state. If the output interval remains unbound, the decoder reads the feature's history properties and output transition interval from the one history of the BREP blob that holds every body the feature outputs, or that a Base Feature resolves, when exactly one history of that blob holds the pair, and reports `history.output-blob-history-inferred`.
 
 **Need.** The native reference chain from each copied scope to its history or BREP basename. Files that change the copied scope's source component while they retain its endpoint pair.
 
 **Conflict.** None.
 
 **Note.** An ambiguous interval retains its native scope, ordered references, state identities, and candidate histories with `feature.output-state-chain-unbound`.
+
+### DR-1008. Generated-body selections with an unresolved history
+
+**Question.** Which native relation selects the history of a body-pattern seed or `RemoveBody` operand when scope-history bindings and state identities leave several candidate histories?
+
+**Known.** Generated-body selections use the scope-history map and state tests in DR-150. When every selected slot is absent from the live bodies and the selecting history stays unresolved, the decoder takes, for each slot, the one state of any history that inserts it and the one same-stream scope with that state as the producer, and reports `feature.generated-body-history-unresolved` with the selecting feature, the body slots and that assumption. Without such a state and scope, it retains the Historical pattern seed or native `RemoveBody` group with the same loss.
+
+**Need.** Controlled designs with repeated endpoint pairs and one omitted seed body, with the native reference chain from the selecting scope to its history.
+
+**Conflict.** None.
+
+**Note.** The producer rule is in `f3d.md` §3.1.
 
 ### DR-151. Result ownership of copied feature scopes
 

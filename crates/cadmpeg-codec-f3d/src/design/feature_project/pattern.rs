@@ -11,6 +11,7 @@ use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::face::DesignFaceOperand;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
+use std::collections::HashMap;
 
 /// Largest difference, in radians, between a circular pattern's total angle
 /// and a full turn for which the pattern still spans the full turn.
@@ -26,6 +27,7 @@ pub(super) fn project_circular_pattern(
     face_operands: &[DesignFaceOperand],
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     scopes: &[DesignParameterScope],
+    authored_ordinals: &HashMap<(&str, u32), u64>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
@@ -49,6 +51,8 @@ pub(super) fn project_circular_pattern(
         face_operands,
         entity_selection_operands,
         scopes,
+        authored_ordinals,
+        losses,
     );
     let axis_origin = cadmpeg_ir::features::geometry::FinitePoint3::new(axis_origin)?;
     let axis_dir = cadmpeg_ir::features::geometry::FeatureDirection3::new(axis_dir)?;
@@ -131,6 +135,7 @@ pub(super) fn project_rectangular_pattern_scalars(
     face_operands: &[DesignFaceOperand],
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     scopes: &[DesignParameterScope],
+    authored_ordinals: &HashMap<(&str, u32), u64>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
@@ -159,18 +164,21 @@ pub(super) fn project_rectangular_pattern_scalars(
                 .ok()?,
             )),
         });
-    let group_seed = pattern_seed_group(scope, groups).map(|group| {
-        pattern_group_seeds(
-            scope,
-            group,
-            face_operands,
-            entity_selection_operands,
-            scopes,
-        )
-    });
     let seeds = component_seed
         .map(|seed| vec![seed])
-        .or(group_seed)
+        .or_else(|| {
+            pattern_seed_group(scope, groups).map(|group| {
+                pattern_group_seeds(
+                    scope,
+                    group,
+                    face_operands,
+                    entity_selection_operands,
+                    scopes,
+                    authored_ordinals,
+                    losses,
+                )
+            })
+        })
         .unwrap_or_default();
     if let Some(note) = distribution.and_then(|distribution| {
         pattern_seeds::distribution_seed_conflict(scope, distribution, &seeds)
