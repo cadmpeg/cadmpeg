@@ -492,6 +492,35 @@ fn an_open_edge_against_a_periodic_nurbs_curve_keeps_its_stand_in_and_is_named()
 }
 
 #[test]
+fn an_open_edge_ending_where_its_nurbs_curve_crosses_itself_keeps_its_stand_in_and_is_named() {
+    // The curve passes (10,0,0) at 0.5 and again at 2.5, and ends at (0,0,0)
+    // at 3. Seeded from the curve's end, the edge's end inverts to 2.5 and the
+    // edge would run against the curve from 3; seeded from its start, to 0.5
+    // on the other arc. The writer cannot tell which arc the edge runs over.
+    let ir = cube_with_unranged_nurbs_edge(
+        vec![0.0, 0.0, 1.0, 2.0, 3.0, 3.0],
+        vec![
+            Point3::new(10.0, -10.0, 0.0),
+            Point3::new(10.0, 10.0, 0.0),
+            Point3::new(20.0, 0.0, 0.0),
+            Point3::new(0.0, 0.0, 0.0),
+        ],
+        false,
+    );
+    let edge = ir.geometry.edges[0].id.to_string();
+    let (report, decoded) = write(&ir);
+    assert!(record_invalid_names(&report, &edge), "{:#?}", report.losses);
+    assert!(start_position(&decoded, 0).distance(Point3::new(0.0, 0.0, 0.0)) < EPS_PARAMETER);
+    if let Some(range) = decoded.geometry.edges[0].param_range() {
+        let [start, end] = range.get();
+        assert!(
+            (start - 2.5).abs() > EPS_PARAMETER || (end - 3.0).abs() > EPS_PARAMETER,
+            "[{start}, {end}]"
+        );
+    }
+}
+
+#[test]
 fn an_open_edge_off_its_curve_is_ranged_between_the_feet_with_a_loss() {
     let ir = cube_with_unranged_edge(Point3::new(10.0, 5.0, 0.0));
     let edge = ir.geometry.edges[0].id.to_string();

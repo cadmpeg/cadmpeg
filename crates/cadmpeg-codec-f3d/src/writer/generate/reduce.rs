@@ -664,18 +664,21 @@ impl<'a> Reduction<'a> {
                 // unranged edge at: on a curve shorter than the allowance, or
                 // closed, the end would otherwise invert to the start's parameter.
                 let domain = cadmpeg_ir::eval::bounded_curve_domain(carrier);
+                let invert = |point: Point3, seed: f64, tolerance: f64| {
+                    cadmpeg_ir::eval::model_curve_parameter_near_point_in_index_with_tolerance(
+                        &ctx, &index, curve, point, seed, tolerance,
+                    )
+                    .map(|parameter| parameter.map(cadmpeg_ir::scalar::FiniteReal::get))
+                };
                 let parameters = |tolerance| -> Result<Option<[f64; 2]>, CodecError> {
-                    let invert = |point, seed| {
-                        cadmpeg_ir::eval::model_curve_parameter_near_point_in_index_with_tolerance(
-                            &ctx, &index, curve, point, seed, tolerance,
-                        )
-                        .map(|parameter| parameter.map(cadmpeg_ir::scalar::FiniteReal::get))
-                    };
-                    let Some(first) = invert(start, domain.map_or(0.0, |[low, _]| low))? else {
+                    let Some(first) = invert(start, domain.map_or(0.0, |[low, _]| low), tolerance)?
+                    else {
                         return Ok(None);
                     };
-                    Ok(invert(end, domain.map_or(first, |[_, high]| high))?
-                        .map(|last| [first, last]))
+                    Ok(
+                        invert(end, domain.map_or(first, |[_, high]| high), tolerance)?
+                            .map(|last| [first, last]),
+                    )
                 };
                 let gap = |point: Point3, parameter| match cadmpeg_ir::eval::model_curve_point_by_id(
                     EvaluationAdmission::Decode(&ctx),
@@ -719,7 +722,23 @@ impl<'a> Reduction<'a> {
                 }
                 let exchange = (line || aperiodic_nurbs) && last < first;
                 if exchange {
-                    if self.names_edge_uses(edge) {
+                    // A self-crossing curve passes a point on two arcs, and
+                    // the seed picks the witness: each end inverts from the
+                    // other end's seed as well, and an edge whose witnesses
+                    // lie on different arcs keeps no range.
+                    let tolerance = if within { allowance } else { f64::MAX };
+                    let mut one_arc = true;
+                    for (point, seed, witness) in [
+                        (start, domain.map_or(first, |[_, high]| high), first),
+                        (end, domain.map_or(0.0, |[low, _]| low), last),
+                    ] {
+                        one_arc &= match invert(point, seed, tolerance)? {
+                            Some(other) => gap(point, 0.5 * witness + 0.5 * other)?
+                                .is_some_and(|distance| distance <= tolerance),
+                            None => false,
+                        };
+                    }
+                    if !one_arc || self.names_edge_uses(edge) {
                         continue;
                     }
                     range = [last, first];
