@@ -6,9 +6,10 @@ use std::collections::{BTreeMap, HashMap};
 use cadmpeg_core::decode::{work_units, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::Model;
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{
-    DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
-    FeatureOperation,
+    Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
 };
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::report::loss::LossNote;
