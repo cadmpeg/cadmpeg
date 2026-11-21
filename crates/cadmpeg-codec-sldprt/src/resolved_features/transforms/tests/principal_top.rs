@@ -5,9 +5,9 @@ use crate::resolved_features::transforms::{
     component_sketch_marker_transform, feature_sketch_marker_transform,
     record_component_marker_coordinates,
 };
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::{
-    Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation, PrincipalPlane,
-    SketchFeatureBinding,
+    Feature, FeatureDefinition, FeatureId, FeatureOperation, PrincipalPlane, SketchFeatureBinding,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
@@ -79,7 +79,7 @@ fn top_coordinate_provenance_follows_the_sketch_binding() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
@@ -130,7 +130,7 @@ fn right_component_markers_are_sketch_coordinates_on_the_right_plane() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,

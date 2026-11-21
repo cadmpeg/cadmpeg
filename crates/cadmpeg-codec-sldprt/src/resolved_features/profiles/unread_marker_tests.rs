@@ -10,7 +10,7 @@ use cadmpeg_ir::sketches::{
 
 use super::{
     finalize_unread_marker_entities, project_marker_backed_sketches, ChordConflict,
-    HeldMarkerGeometry, PlaneAssumedCause,
+    HeldMarkerGeometry, MarkerSketchEntities, PlaneAssumedCause,
 };
 use crate::loss::SldprtLossCode;
 use crate::records::{
@@ -98,12 +98,12 @@ fn projected_entities(
         ordinal: 0,
         name: Some("generated-profile".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
             }),
@@ -140,10 +140,13 @@ fn projected_entities(
         &ctx,
         &mut features,
         &mut sketches,
-        &mut entities,
-        &mut held,
+        MarkerSketchEntities {
+            projected: &mut entities,
+            held: &mut held,
+        },
         &histories,
         &lanes,
+        &mut Vec::new(),
     )
     .expect("marker profile projection fits service policy");
     (entities, held)
@@ -429,8 +432,15 @@ fn sensed_arc_sketch() -> (Vec<u8>, [u64; 3], u64) {
 /// its arc record, linked to the two named point markers.
 fn sensed_arc_projection(
     endpoints: [&str; 2],
+    selector: u16,
+    sense: i32,
 ) -> (Vec<SketchEntity>, Vec<cadmpeg_ir::report::loss::LossNote>) {
-    let (payload, points, arc) = sensed_arc_sketch();
+    let (mut payload, points, arc) = sensed_arc_sketch();
+    let arc_offset = usize::try_from(arc).unwrap();
+    let selector_at = arc_offset + crate::layout::sketch_record_head::SELECTOR;
+    payload[selector_at..selector_at + 2].copy_from_slice(&selector.to_le_bytes());
+    let sense_at = arc_offset + crate::layout::sketch_arc_record::SENSE;
+    payload[sense_at..sense_at + 4].copy_from_slice(&sense.to_le_bytes());
     let mut markers = Vec::new();
     for (ordinal, ((id, offset), coordinates)) in ["p0", "p1", "p2"]
         .into_iter()
@@ -482,7 +492,7 @@ fn a_curve_marker_takes_the_arc_of_its_record() {
 }
 
 fn a_curve_marker_takes_the_arc_of_its_record_with_links(links: [&str; 2]) {
-    let (entities, losses) = sensed_arc_projection(links);
+    let (entities, losses) = sensed_arc_projection(links, 68, 1);
     let position = |marker: &str| match marker_entity(&entities, marker).geometry.definition() {
         SketchGeometryDefinition::Point { position } => position.get(),
         other => panic!("marker {marker} is not a point: {other:?}"),
@@ -711,4 +721,26 @@ fn each_remaining_sketch_on_the_retained_front_fallback_charges_one_assumed_plan
         "{message}"
     );
     assert!(!message.contains("more than one plane"), "{message}");
+}
+
+#[test]
+fn a_roster_curve_precedes_marker_links_and_keeps_its_clockwise_sense() {
+    let (entities, losses) = sensed_arc_projection(["p0", "p1"], 12, -1);
+    let curve = marker_entity(&entities, "curve");
+    let SketchGeometryDefinition::Arc {
+        radius,
+        start_angle,
+        end_angle,
+        ..
+    } = curve.geometry.definition()
+    else {
+        panic!("the roster record gives its arc before the linked chord");
+    };
+    assert!(curve.construction);
+    assert!((radius.get() - 10.0).abs() < EPS_TEST_MM);
+    assert!(
+        (end_angle.get() - start_angle.get() - 3.0 * std::f64::consts::FRAC_PI_2).abs()
+            < super::super::SKETCH_ANGLE_TOLERANCE
+    );
+    assert!(losses.is_empty(), "{losses:?}");
 }

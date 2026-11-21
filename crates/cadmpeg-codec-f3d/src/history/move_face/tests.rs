@@ -7,7 +7,8 @@ use crate::history_records::{
     AsmHistoricalCarrierBinding, AsmHistoricalCylinder, AsmHistoricalPlane, AsmHistoricalTopology,
 };
 use crate::records::topology::face::DesignFaceOperand;
-use cadmpeg_ir::features::{FaceMotion, FeatureDirection3};
+use cadmpeg_ir::features::direct_edit::FaceMotion;
+use cadmpeg_ir::features::geometry::FeatureDirection3;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::Length;
 use std::collections::BTreeSet;
@@ -353,7 +354,8 @@ fn a_zero_offset_states_no_selection() {
 #[test]
 fn a_rotation_states_no_selection() {
     let rotation = FaceMotion::Rotate {
-        axis_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+        axis_origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+            .unwrap(),
         axis_dir: FeatureDirection3::Z_AXIS,
         angle: cadmpeg_ir::scalar::Angle::new(1.0).unwrap(),
     };

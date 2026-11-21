@@ -3133,7 +3133,8 @@ mod tests {
         for i in 0..1000 {
             ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
                 cadmpeg_ir::ids::PointId::mint(format!("nx:model:point#{i}")).expect("identity"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0., 0., 0.)).expect("point"),
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0., 0., 0.))
+                    .expect("point"),
                 None,
             ));
         }

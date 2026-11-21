@@ -557,7 +557,7 @@ fn grip_layout_admits_cyclic_arity_before_cage_construction() {
 
 #[test]
 fn subd_carriers_hold_their_admitted_points_axes_and_weights() {
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::units::UnitVector3;
 
     let point = Point3::new(-1.0, 2.0, 3.0);

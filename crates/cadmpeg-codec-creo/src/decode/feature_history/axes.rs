@@ -10,10 +10,10 @@ use crate::vecmath::unit_length;
 use crate::vecmath::{cross, dot};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{
-    AngularTermination, FeatureId as IrFeatureId, PlanarProfileRef, ProfileRef, RevolutionAxis,
-    RevolveExtent,
-};
+use cadmpeg_ir::features::extents::AngularTermination;
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::revolve::{RevolutionAxis, RevolveExtent};
+use cadmpeg_ir::features::FeatureId as IrFeatureId;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, BTreeSet};
@@ -56,8 +56,10 @@ pub(in super::super) fn resolved_revolution_axis(
             let end = section_point_in_model(transform, *end);
             let direction = normalize(std::array::from_fn(|axis| end[axis] - start[axis]))?;
             Some(RevolutionAxis {
-                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::from(start))?,
-                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::from(direction))?,
+                origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::from(start))?,
+                direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::from(
+                    direction,
+                ))?,
                 reference: None,
             })
         });
@@ -209,10 +211,10 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
             return None;
         }
     }
-    cadmpeg_ir::features::FinitePoint3::new(Point3::from(origin))
-        .zip(cadmpeg_ir::features::FeatureDirection3::new(Vector3::from(
-            direction,
-        )))
+    cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::from(origin))
+        .zip(cadmpeg_ir::features::geometry::FeatureDirection3::new(
+            Vector3::from(direction),
+        ))
         .map(|(origin, direction)| RevolutionAxis {
             origin,
             direction,
@@ -224,7 +226,8 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
 mod full_turn_carrier_tests {
     use super::full_turn_revolution_carrier_axis;
     use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::features::{AngularTermination, RevolveExtent};
+    use cadmpeg_ir::features::extents::AngularTermination;
+    use cadmpeg_ir::features::revolve::RevolveExtent;
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
     use cadmpeg_ir::ids::SurfaceId;
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -553,8 +556,8 @@ mod profile_ref_tests {
         let profile = unresolved_feature_profile_ref(50);
         assert_eq!(
             profile,
-            cadmpeg_ir::features::ProfileRef::Planar(
-                cadmpeg_ir::features::PlanarProfileRef::Unresolved(
+            cadmpeg_ir::features::profiles::ProfileRef::Planar(
+                cadmpeg_ir::features::profiles::PlanarProfileRef::Unresolved(
                     "creo:model:feature#50".to_owned()
                 )
             )

@@ -47,6 +47,7 @@ fn decode_keeps_section_and_model_entity_admission_additive() {
         + design.containers.len()
         + design.features.len()
         + design.parameters.len();
+    let name_entries = design.names.entries().len();
     assert_eq!(decoded.ir().model.product_definitions.len(), 1);
     assert_eq!(decoded.ir().entity_count() - design_records, 3);
 
@@ -91,7 +92,7 @@ fn decode_keeps_section_and_model_entity_admission_additive() {
         "{error:?}"
     );
 
-    options.policy.limits.max_entities = 4 + u64::try_from(design_records).unwrap();
+    options.policy.limits.max_entities = 4 + u64::try_from(design_records + name_entries).unwrap();
     CreoCodec
         .decode(&mut Cursor::new(fixture), &options)
         .expect("the exact additive entity limit must admit the fixture");
@@ -604,7 +605,7 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             groups,
         }) if matches!(groups.as_slice(), [group]
-            if matches!(group.edges, cadmpeg_ir::features::EdgeSelection::Unresolved)
+            if matches!(group.edges, cadmpeg_ir::features::selections::EdgeSelection::Unresolved)
                 && group.radius.is_unresolved())
     ));
     assert_eq!(

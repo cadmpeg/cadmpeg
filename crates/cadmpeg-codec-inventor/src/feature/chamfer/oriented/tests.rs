@@ -6,11 +6,11 @@ use crate::feature::{
     tests::{test_feature, test_property},
     PmDcFeatureEnumFamily, PmDcFeaturePropertyKind,
 };
-use cadmpeg_ir::{
-    features::{edge_treatments::ChamferGroup, FeatureEvaluation, NonEmptyMembers},
-    math::Point3,
-    units::UnitVector3,
-};
+use cadmpeg_ir::features::edge_treatments::ChamferGroup;
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::selections::NonEmptyMembers;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::units::UnitVector3;
 
 /// Lengths of slots 2 and 3; the first is the larger one.
 const SLOT_FIRST: f64 = 3.0;
@@ -19,8 +19,8 @@ const EDGE_SOURCE: u32 = 9;
 const FACE_SOURCE: u32 = 9;
 const EDGE_FACES: [i64; 2] = [21, 22];
 
-fn point(x: f64) -> cadmpeg_ir::features::FinitePoint3 {
-    cadmpeg_ir::features::FinitePoint3::new(Point3::new(x, 0.0, 0.0)).expect("point")
+fn point(x: f64) -> cadmpeg_ir::features::geometry::FinitePoint3 {
+    cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(x, 0.0, 0.0)).expect("point")
 }
 
 fn context() -> DecodeContext<'static> {
@@ -512,11 +512,15 @@ fn whole_projection(inventory: FeatureInventory) -> crate::feature::FeatureProje
     let neutral = [
         neutral_parameter(
             &raw[0],
-            cadmpeg_ir::features::ParameterValue::Length(Length::new(SLOT_FIRST).expect("length")),
+            cadmpeg_ir::features::parameters::ParameterValue::Length(
+                Length::new(SLOT_FIRST).expect("length"),
+            ),
         ),
         neutral_parameter(
             &raw[1],
-            cadmpeg_ir::features::ParameterValue::Length(Length::new(SLOT_SECOND).expect("length")),
+            cadmpeg_ir::features::parameters::ParameterValue::Length(
+                Length::new(SLOT_SECOND).expect("length"),
+            ),
         ),
     ];
     crate::feature::fillet::tests::project_inventory_fixture(inventory, raw, &neutral)

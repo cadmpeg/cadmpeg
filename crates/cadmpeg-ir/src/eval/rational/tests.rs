@@ -5,7 +5,7 @@ use proptest::{prop_assert_eq, proptest};
 use super::Homogeneous;
 use crate::eval::admission::{EvaluationAdmission, EvaluationRefusal};
 use crate::eval::decode::Scratch;
-use crate::features::FinitePoint3;
+use crate::features::geometry::FinitePoint3;
 
 mod separate_traversals;
 
@@ -33,7 +33,7 @@ fn homogeneous_weights_preserve_early_missing_and_empty_input() {
 #[test]
 fn homogeneous_sum_projects_unit_weight_poles_and_keeps_exact_cancellation() {
     use super::finite_lanes;
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::math::Point3;
     for (points, expected) in [
         (

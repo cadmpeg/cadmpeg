@@ -17,7 +17,8 @@ pub(super) fn project_reverse_normal(
     design_types: &[SegmentType],
     losses: &mut Vec<LossNote>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let operation = scope.reverse_normal_operation()?;
     let group = single_operand_group(groups, scope, DesignOperandRole::BODIES_A)?;

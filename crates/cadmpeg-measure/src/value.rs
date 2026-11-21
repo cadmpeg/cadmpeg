@@ -7,7 +7,7 @@
 //! non-negative; a value that is not finite becomes unavailable with
 //! `evaluation.non-finite`.
 
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
 use serde::Serialize;

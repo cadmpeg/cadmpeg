@@ -9,7 +9,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{
     CircleCurve, ConeSurface, CylinderSurface, EllipseCurve, HyperbolaCurve, LineCurve,
     ParabolaCurve, PlaneSurface, SphereSurface, TorusSurface,
@@ -964,6 +964,7 @@ impl super::Builder<'_, '_, '_, '_> {
                         object_type: None,
                         visible: None,
                         channels: BTreeMap::new(),
+                        native_ref: None,
                     });
                 self.admit("usd_appearance")?;
             }
@@ -995,6 +996,7 @@ impl super::Builder<'_, '_, '_, '_> {
                 object_type: None,
                 visible: None,
                 channels: BTreeMap::new(),
+                native_ref: None,
             });
         self.admit("usd_appearance")
     }

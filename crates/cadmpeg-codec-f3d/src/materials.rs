@@ -703,6 +703,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
                 base_color: None,
                 properties: BTreeMap::new(),
                 textures: Vec::new(),
+                native_ref: None,
             });
         }
     }
@@ -755,6 +756,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
                 ),
                 act_channels.get(&over.entity_suffix),
             )?,
+            native_ref: None,
         });
     }
     let face_assignments = decode_face_appearance_assignments(scan)?;
@@ -853,6 +855,7 @@ fn appearances_from_schema_records(
                 properties,
             )?,
             textures: connected,
+            native_ref: None,
         };
         appearances.push(appearance);
     }
@@ -1556,6 +1559,7 @@ fn bind_bodies(
                 ),
                 act_channels.get(&assignment.entity_id.suffix()),
             )?,
+            native_ref: None,
         });
     }
     Ok(out)
@@ -2113,6 +2117,7 @@ fn decode_fixed_record(record: &[u8]) -> Result<Option<Appearance>, CodecError> 
         base_color: color,
         properties,
         textures: Vec::new(),
+        native_ref: None,
     }))
 }
 

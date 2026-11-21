@@ -4,7 +4,7 @@
 use crate::records::identity::Located;
 use crate::records::mesh::{DesignOccurrenceKey, DesignRelaxedGuidText};
 use crate::records::sketch_placement::SketchPlacementMatrix;
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::units::UnitVector3;
@@ -138,7 +138,7 @@ pub(crate) enum DesignCircularPatternAxis {
     /// Axis selected through wrappers of one persistent historical topology identity.
     HistoricalEdge {
         /// Referenced wrappers and the offsets of their shared identity.
-        wrappers: cadmpeg_ir::features::NonEmptyMembers<DesignPatternAxisWrapper>,
+        wrappers: cadmpeg_ir::features::selections::NonEmptyMembers<DesignPatternAxisWrapper>,
         /// Persistent ASM identity shared by the wrappers.
         persistent_identity: u64,
         /// Resolved model-space axis, when exact.
@@ -506,6 +506,8 @@ pub(crate) struct DesignRectangularPatternDistribution {
     pub(crate) record_index: u32,
     /// Direction one places its instances on both sides of the seed.
     pub(crate) symmetric: Located<bool>,
+    /// Direction two places its instances on both sides of the seed.
+    pub(crate) symmetric_two: Located<bool>,
     /// Each distance owner stores the seed-to-final-instance extent; adjacent spacing otherwise.
     pub(crate) total_extent: Located<bool>,
     /// Compute option: `0` Optimized, `1` Identical, `2` Adjust.
@@ -1202,9 +1204,9 @@ mod tests {
             .unwrap(),
             persistent_identity: 7,
             resolved: resolved.then(|| DesignAxis {
-                origin: cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
-                    0.0, 0.0, 0.0,
-                ))
+                origin: cadmpeg_ir::features::geometry::FinitePoint3::new(
+                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                )
                 .unwrap(),
                 direction: cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::new(
                     0.0, 0.0, 1.0,
@@ -1370,6 +1372,10 @@ mod tests {
             symmetric: Located {
                 value: true,
                 offset: 109,
+            },
+            symmetric_two: Located {
+                value: false,
+                offset: 110,
             },
             total_extent: Located {
                 value: false,

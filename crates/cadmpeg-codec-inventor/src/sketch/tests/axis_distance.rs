@@ -82,7 +82,7 @@ fn a_projected_distance_to_an_axis_line_is_counted_native() {
             cadmpeg_ir::identity_key!("segment"),
             2,
         );
-        let parameter = cadmpeg_ir::features::DesignParameter {
+        let parameter = cadmpeg_ir::features::parameters::DesignParameter {
             product_definition: None,
             id: cadmpeg_ir::features::ParameterId::mint("inventor:test:parameter#4")
                 .expect("parameter id"),
@@ -92,7 +92,7 @@ fn a_projected_distance_to_an_axis_line_is_counted_native() {
             expression: "1".into(),
             display: None,
             value: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: Some("inventor:pmdc:parameter#segment-4".into()),

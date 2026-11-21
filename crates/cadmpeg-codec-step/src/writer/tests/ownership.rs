@@ -103,7 +103,8 @@ fn independent_curve_preserves_its_active_parameter_interval() {
         id: CurveId::mint("test:model:curve#active").unwrap(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::new(
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .unwrap(),
                 cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
             ),
         )),
@@ -336,7 +337,8 @@ fn standalone_subset_curve_does_not_export_its_untrimmed_basis_as_a_root() {
         source_object: None,
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::new(
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .unwrap(),
                 cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
             ),
         )),
@@ -397,7 +399,8 @@ fn failed_composite_curve_does_not_export_its_children_as_roots() {
             source_object: None,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::new(
-                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                        .unwrap(),
                     cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(1.0, 0.0, 0.0))
                         .unwrap(),
                 ),

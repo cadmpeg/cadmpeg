@@ -50,11 +50,14 @@ fn start_binder_fixture(
     Vec<Face>,
     Vec<Surface>,
 ) {
-    use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection,
-        Feature, FeatureDefinition, FeatureEvaluation, FeatureOperation, LinearTermination,
-        PlanarProfileRef, ProfileRef,
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::extents::{
+        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
     };
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
     let (nested_operand, mut group, faces) = start_geometry_fixture();
     group.operand_role = crate::records::topology::construction::DesignConstructionOperandRole::ExtrudeFaces {
         encoding: crate::records::topology::extrude_selection::DesignExtrudeFaceEncoding::SelectedStart,
@@ -99,7 +102,7 @@ fn start_binder_fixture(
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
@@ -132,7 +135,9 @@ fn start_binder_fixture(
 }
 
 fn assert_start_binder_binds_face(nested: bool) {
-    use cadmpeg_ir::features::{ExtrudeStart, FaceSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::extents::ExtrudeStart;
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let (feature, sketch, group, operand, faces, surfaces) = start_binder_fixture(nested);
     let run = || {
@@ -178,10 +183,9 @@ fn extrude_start_binds_coincident_selected_face() {
 
 #[test]
 fn extrude_target_face_binds_resolved_face() {
-    use cadmpeg_ir::features::{
-        ExtrudeExtent, ExtrudeStart, FaceSelection, FeatureDefinition, FeatureOperation,
-        LinearTermination,
-    };
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeStart, LinearTermination};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let (mut feature, sketch, mut group, operand, faces, mut surfaces) =
         start_binder_fixture(false);
@@ -235,7 +239,7 @@ fn extrude_target_face_binds_resolved_face() {
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
-                side: cadmpeg_ir::features::ExtrudeSide {
+                side: cadmpeg_ir::features::extents::ExtrudeSide {
                     termination: LinearTermination::ToFace {
                         face: FaceSelection::Resolved { .. },
                         ..

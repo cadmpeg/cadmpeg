@@ -3,7 +3,7 @@
 
 use super::super::literals::{format_angle_rad, format_length_mm, format_length_number};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::scalar::{Angle, Length};
 
 const EPS_DEGREE_ROUND: f64 = 1.0e-12;

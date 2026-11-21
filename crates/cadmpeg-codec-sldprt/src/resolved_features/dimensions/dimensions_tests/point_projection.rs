@@ -5,15 +5,11 @@ use crate::records::{
     FeatureInputReference, FeatureInputRelationFamily, FeatureInputRelationInstance,
     SketchInputEntity, SketchInputKind,
 };
+use cadmpeg_ir::features::parameters::{DesignParameter, DimensionDisplay, ParameterValue};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId};
 use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometryDefinition, SketchId};
-use cadmpeg_ir::{
-    features::{
-        DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, FeatureOperation,
-        ParameterId, ParameterValue,
-    },
-    scalar::Length,
-};
 use std::collections::BTreeMap;
 
 fn explicit_point_circle_input() -> (
@@ -94,12 +90,12 @@ fn explicit_point_circle_input() -> (
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
             }),
@@ -115,7 +111,7 @@ fn explicit_point_circle_input() -> (
         expression: "<MOD-DIAM>4".into(),
         display: Some(DimensionDisplay::Diameter),
         value: Some(ParameterValue::Length(Length::new(4.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),

@@ -4,7 +4,7 @@
 use crate::records::{FeatureContent, FeatureHistory};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{DesignConfiguration, DesignParameter};
+use cadmpeg_ir::features::parameters::{DesignConfiguration, DesignParameter};
 use serde::Serialize;
 
 /// The digest of one record set's canonical JSON.
@@ -62,7 +62,8 @@ struct FeatureHashView<'a> {
     name: Option<&'a str>,
     suppressed: Option<bool>,
     parent: Option<&'a cadmpeg_ir::features::FeatureId>,
-    dependencies: &'a cadmpeg_ir::features::DistinctMembers<cadmpeg_ir::features::FeatureId>,
+    dependencies:
+        &'a cadmpeg_ir::features::selections::DistinctMembers<cadmpeg_ir::features::FeatureId>,
     source_properties: &'a std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     source_tag: Option<&'a str>,
     source_text: Option<&'a str>,
