@@ -705,13 +705,12 @@ pub(super) fn losses(
             ));
         }
         if plan.profile.iter().any(|profile_loop| {
-            profile_loop.entries.len() > 1
-                && profile_loop.entries.iter().any(|entry| {
-                    ctx.sketches
-                        .get(plan.sketch)
-                        .and_then(|sketch| sketch.curves.get(entry.curve))
-                        .is_some_and(|curve| matches!(curve.geometry, CurveGeometry::Arc { .. }))
-                })
+            profile_loop.entries.iter().any(|entry| {
+                ctx.sketches
+                    .get(plan.sketch)
+                    .and_then(|sketch| sketch.curves.get(entry.curve))
+                    .is_some_and(|curve| matches!(curve.geometry, CurveGeometry::Arc { .. }))
+            })
         }) {
             entries.push(format!(
                 "record {} and the side tokens of each loop that holds an arc (the walk of a loop of lines, with C the loop curve of the largest record index, gives the entry order and the curve of the loop's lowest token, f3d-open-items.md DR-883)",
