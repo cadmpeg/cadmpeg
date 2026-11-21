@@ -96,6 +96,11 @@ cadmpeg_core::named_optional_field!(
 cadmpeg_core::named_optional_field!(deserialize_display_name, String, "display_name");
 cadmpeg_core::named_optional_field!(deserialize_tail_flags, DesignScopeTailFlags, "tail_flags");
 cadmpeg_core::named_optional_field!(
+    deserialize_tail_flags_envelope_offset,
+    u64,
+    "envelope_offset"
+);
+cadmpeg_core::named_optional_field!(
     deserialize_deleted_members,
     super::deleted_members::DesignDeletedMembers,
     "deleted_members"
@@ -549,6 +554,14 @@ pub(crate) struct DesignScopeTailFlags {
     pub(crate) rolled_back: bool,
     /// Byte offset of the suppressed flag; the rolled-back flag follows it.
     pub(crate) suppressed_offset: u64,
+    /// Byte offset of the earlier same-index envelope that stores the flags,
+    /// where this envelope stores none.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_tail_flags_envelope_offset"
+    )]
+    pub(crate) envelope_offset: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -2753,7 +2766,13 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             }
         }
         if wire.tail_flags.is_some_and(|flags| {
-            flags.suppressed_offset < admitted.feature_ordinal_offset
+            let after_start = match flags.envelope_offset {
+                None => flags.suppressed_offset >= admitted.feature_ordinal_offset,
+                Some(envelope) => {
+                    envelope < admitted.byte_offset && envelope < flags.suppressed_offset
+                }
+            };
+            !after_start
                 || flags.suppressed_offset.checked_add(1) >= Some(admitted.paired_byte_offset)
         }) {
             return Err(DesignParameterScopePayloadError(

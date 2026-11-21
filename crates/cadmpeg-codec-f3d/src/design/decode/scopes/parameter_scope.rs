@@ -1085,8 +1085,9 @@ pub(crate) fn design_primary_frame_offsets(
 /// envelope is authoritative. Otherwise, the later envelope is authoritative
 /// when the envelopes are equivalent and none is history-bound; else the
 /// primary-indexed envelope; else, with none history-bound, the later envelope
-/// when the envelopes differ only in their tail flags. An unresolved group
-/// remains an error.
+/// when the envelopes differ only in their tail flags. Where that later
+/// envelope stores no flags, it takes the flags of the latest earlier envelope
+/// that stores them. An unresolved group remains an error.
 pub(crate) fn admit_history_bound_scope_variants(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scopes: &mut Vec<DesignParameterScope>,
@@ -1095,6 +1096,7 @@ pub(crate) fn admit_history_bound_scope_variants(
 ) -> Result<SupersededScopeEnvelopes, CodecError> {
     let mut admitted = vec![true; scopes.len()];
     let mut superseded = SupersededScopeEnvelopes::default();
+    let mut carried_flags = Vec::new();
     let mut groups = HashMap::<(&str, u32), Vec<usize>>::new();
     for (index, scope) in scopes.iter().enumerate() {
         let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
@@ -1199,10 +1201,9 @@ pub(crate) fn admit_history_bound_scope_variants(
                 keep
             }
             (None, false, None, EnvelopeComparison::TailFlags) => {
-                superseded.tail_flags = superseded
-                    .tail_flags
-                    .checked_add(envelopes_differing_from(ctx, scopes, indices, later, None)?)
-                    .ok_or_else(count_overflow)?;
+                let (carried, note) = flags_only_group(scopes, indices, later);
+                superseded.tail_flags.push(note);
+                carried_flags.extend(carried.map(|flags| (later, flags)));
                 later
             }
             _ => {
@@ -1217,6 +1218,9 @@ pub(crate) fn admit_history_bound_scope_variants(
     }
 
     drop(groups);
+    for (index, flags) in carried_flags {
+        scopes[index].tail_flags = Some(flags);
+    }
 
     let mut retained = Vec::new();
     for (index, scope) in std::mem::take(scopes).into_iter().enumerate() {
@@ -1228,30 +1232,104 @@ pub(crate) fn admit_history_bound_scope_variants(
     Ok(superseded)
 }
 
+/// The flags that the `keep` envelope of a group that differs only in its tail
+/// flags takes from the latest earlier envelope that stores them, where `keep`
+/// stores none, and the loss note of the group.
+fn flags_only_group(
+    scopes: &[DesignParameterScope],
+    indices: &[usize],
+    keep: usize,
+) -> (
+    Option<crate::records::feature::scope::DesignScopeTailFlags>,
+    String,
+) {
+    let kept = &scopes[keep];
+    let kept_at = kept.byte_offset();
+    let carried = match kept.tail_flags {
+        Some(_) => None,
+        None => indices
+            .iter()
+            .map(|index| &scopes[*index])
+            .filter(|scope| scope.byte_offset() < kept_at)
+            .filter_map(|scope| scope.tail_flags.map(|flags| (scope.byte_offset(), flags)))
+            .max_by_key(|(at, _)| *at),
+    };
+    let values = |flags: Option<crate::records::feature::scope::DesignScopeTailFlags>| {
+        flags.map(|flags| (flags.suppressed, flags.rolled_back))
+    };
+    let spell = |(suppressed, rolled_back): (bool, bool)| {
+        format!("suppressed={suppressed}, rolled-back={rolled_back}")
+    };
+    let kept_flags = values(kept.tail_flags.or(carried.map(|(_, flags)| flags)));
+    let kept_clause = match (kept.tail_flags, carried) {
+        (Some(flags), _) => format!(
+            "the decoder kept {} from its later envelope at byte {kept_at}",
+            spell((flags.suppressed, flags.rolled_back))
+        ),
+        (None, Some((at, flags))) => format!(
+            "its later envelope at byte {kept_at} stores no suppressed or rolled-back flags, so the decoder kept {} from the earlier envelope at byte {at}",
+            spell((flags.suppressed, flags.rolled_back))
+        ),
+        (None, None) => format!(
+            "its later envelope at byte {kept_at} and the envelopes before it store no suppressed or rolled-back flags"
+        ),
+    };
+    let differing = indices
+        .iter()
+        .filter(|index| **index != keep)
+        .map(|index| &scopes[*index])
+        .filter(|scope| values(scope.tail_flags) != kept_flags)
+        .map(|scope| {
+            let flags = values(scope.tail_flags).map_or_else(|| "none".to_owned(), spell);
+            format!("at byte {}, {flags}", scope.byte_offset())
+        })
+        .collect::<Vec<_>>();
+    let others = if differing.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " {} other envelope(s) store different flags, which were not decoded: {}.",
+            differing.len(),
+            differing.join("; ")
+        )
+    };
+    let note = format!(
+        "Feature scope {} (record {}): {kept_clause} (open item DR-1005).{others}",
+        kept.id, kept.record_index
+    );
+    let carried = carried.map(
+        |(at, flags)| crate::records::feature::scope::DesignScopeTailFlags {
+            envelope_offset: Some(at),
+            ..flags
+        },
+    );
+    (carried, note)
+}
+
 /// Duplicate scope envelopes that admission did not decode.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub(crate) struct SupersededScopeEnvelopes {
     /// Envelopes not decoded because the primary-indexed envelope of their
     /// record was, and that differ from it in payload or, where several are
     /// history-bound, in their current or effective preceding history state.
     pub(crate) primary_indexed: usize,
-    /// Earlier envelopes that differ from the later envelope of their record
-    /// only in their suppressed or rolled-back flags.
-    pub(crate) tail_flags: usize,
+    /// One note for each record whose envelopes differ only in their
+    /// suppressed or rolled-back flags.
+    pub(crate) tail_flags: Vec<String>,
 }
 
 impl SupersededScopeEnvelopes {
-    pub(crate) fn losses(self) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> {
+    pub(crate) fn losses(&self) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> + '_ {
         let code = crate::loss::F3dLossCode::FeatureScopeEnvelopeSuperseded;
         let primary_indexed = (self.primary_indexed != 0).then(|| code.note(format!(
             "{} duplicate feature scope envelope(s) differ from the primary-indexed envelope of their record and were not decoded.",
             self.primary_indexed
         )));
-        let tail_flags = (self.tail_flags != 0).then(|| code.note(format!(
-            "{} duplicate feature scope envelope(s) differ from the later envelope of their record only in their suppressed or rolled-back flags; the later envelope's flags were decoded and theirs were not.",
+        primary_indexed.into_iter().chain(
             self.tail_flags
-        )));
-        primary_indexed.into_iter().chain(tail_flags)
+                .iter()
+                .map(move |note| code.note(note.clone())),
+        )
     }
 }
 
@@ -2179,6 +2257,7 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                 suppressed: *bytes.get(at)? == 1,
                 rolled_back: *bytes.get(at.checked_add(1)?)? == 1,
                 suppressed_offset: u64_from_index(at),
+                envelope_offset: None,
             })
         });
         let named_references = named

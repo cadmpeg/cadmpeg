@@ -213,6 +213,7 @@ fn tail_flags(
         suppressed,
         rolled_back,
         suppressed_offset: u64_from_index(offset),
+        envelope_offset: None,
     }
 }
 
@@ -330,6 +331,59 @@ fn scope_wire_refuses_tail_flags_outside_the_tail() {
             serde_json::from_value::<crate::records::feature::scope::DesignParameterScope>(moved)
                 .is_err(),
             "offset {offset}"
+        );
+    }
+}
+
+/// A scope reads flags that an earlier envelope of its record stores when they
+/// lie after the start of that envelope and before its own paired header.
+#[test]
+fn scope_wire_admits_the_flags_of_an_earlier_envelope() {
+    use crate::records::feature::scope::{DesignParameterScope, DesignScopeTailFlags};
+
+    let (frame, _) = plain_labeled_frame(&PlainTail {
+        flags: (1, 1),
+        ..PlainTail::default()
+    });
+    let bytes = [frame.as_slice(), frame.as_slice()].concat();
+    let earlier = parse_plain(&bytes).expect("earlier envelope");
+    let later = crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        12,
+        &crate::records::references::DesignClassTag::try_from("378".to_owned()).unwrap(),
+        u64_from_index(frame.len()),
+    )
+    .unwrap()
+    .expect("later envelope");
+    let flags = earlier.tail_flags.expect("earlier flags");
+    let carried = |envelope_offset: u64, suppressed_offset: u64| {
+        let mut wire = serde_json::to_value(&later).unwrap();
+        wire["tail_flags"] = serde_json::to_value(DesignScopeTailFlags {
+            suppressed_offset,
+            envelope_offset: Some(envelope_offset),
+            ..flags
+        })
+        .unwrap();
+        serde_json::from_value::<DesignParameterScope>(wire)
+    };
+    assert_eq!(
+        carried(earlier.byte_offset(), flags.suppressed_offset)
+            .expect("flags of the earlier envelope")
+            .tail_flags,
+        Some(DesignScopeTailFlags {
+            envelope_offset: Some(earlier.byte_offset()),
+            ..flags
+        })
+    );
+    for (envelope_offset, suppressed_offset) in [
+        (later.byte_offset(), flags.suppressed_offset),
+        (flags.suppressed_offset, flags.suppressed_offset),
+        (earlier.byte_offset(), later.paired_byte_offset() - 1),
+    ] {
+        assert!(
+            carried(envelope_offset, suppressed_offset).is_err(),
+            "envelope {envelope_offset}, flags {suppressed_offset}"
         );
     }
 }
