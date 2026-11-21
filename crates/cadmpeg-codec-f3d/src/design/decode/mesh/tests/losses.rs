@@ -136,8 +136,8 @@ fn stream_and_face_group_emitters_name_each_retained_record() {
     assert_eq!(
         notes(mesh_component_flag_losses(&features)),
         note(
-            "mesh.component-flag-assumed",
-            "mesh body 104 stream v reads its components flagged Z: true as unflagged f32 components; the native record retains the flag"
+            "mesh.component-flag-uninterpreted",
+            "mesh body 104 stream v stores the component flag Z: true with no settled meaning; the native record retains the flag"
         )
     );
     assert_eq!(

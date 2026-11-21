@@ -876,7 +876,27 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             }
         }
     }
+    let loft_result_kinds = crate::history::history_bodies::loft_result_kinds(
+        ctx,
+        scan,
+        crate::history::history_bodies::Inputs {
+            features: &model.features,
+            scopes: &design.design_parameter_scopes,
+            histories: &design.asm_histories,
+            bindings: &scope_histories,
+            primary_brep: geometry.primary_brep,
+            groups: &design.design_construction_operand_groups,
+            operands: &design.design_body_recipe_operands,
+            recipes: &prereqs.construction_recipes,
+        },
+        &mut losses,
+    );
     crate::history::bind_sweep_result_modes(&mut model.features, geometry.bodies);
+    losses.extend(crate::history::loft_solid::bind(
+        &mut model.features,
+        &loft_result_kinds,
+        geometry.bodies,
+    ));
     losses.extend(crate::design::feature_project::sweep_fallback::project(
         &mut model.features,
         &crate::design::feature_project::sweep_fallback::Inputs {

@@ -8,6 +8,7 @@ mod body_recipe;
 mod body_recipe_selections;
 mod body_selection;
 mod budgets;
+mod combine_producer_bodies;
 mod component_spaces;
 mod delete_face;
 mod draft;
