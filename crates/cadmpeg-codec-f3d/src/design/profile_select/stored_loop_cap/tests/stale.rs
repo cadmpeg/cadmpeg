@@ -4,7 +4,7 @@ use super::super::super::cap_regions::compact::{tests::prism_over, Sweep};
 use super::super::super::{EntitySelectionPathResolution, ScopedExtrudeProfileResolution};
 use super::{divided_rectangle, xy_sketch, TOLERANCE};
 use crate::design::geometry::ProfileGeometryWork;
-use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
+use crate::history_records::{AsmDeltaState, AsmEntityVersion, AsmHistoricalTopology};
 use crate::loss::F3dLossCode;
 use crate::records::sketch_geometry::SketchCurveIdentity;
 use crate::records::sketch_placement::DesignSketchPlacement;
@@ -18,7 +18,7 @@ use cadmpeg_ir::features::{
     BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
     PlanarProfileRef,
 };
-use cadmpeg_ir::scalar::NonZeroLength;
+use cadmpeg_ir::scalar::{NonZeroLength, SlopeAngle};
 
 fn group() -> DesignConstructionOperandGroup {
     DesignConstructionOperandGroup::try_from(
@@ -153,9 +153,99 @@ fn selection() -> DesignProfileCurveSelection {
     selection
 }
 
+fn join(length: f64, draft: Option<SlopeAngle>) -> ExtrudeExtent {
+    ExtrudeExtent::OneSided {
+        side: ExtrudeSide {
+            termination: LinearTermination::Blind {
+                length: NonZeroLength::new(length).unwrap(),
+            },
+            draft,
+        },
+    }
+}
+
 fn select(
     mutate: impl FnOnce(&mut DesignProfileCurveSelection, &mut Vec<SketchCurveIdentity>),
     width: f64,
+) -> Option<(PlanarProfileRef, Vec<F3dLossCode>)> {
+    select_through(
+        mutate,
+        added(prism_over(width)),
+        BooleanOp::Join,
+        &join(2.0, None),
+    )
+}
+
+type Versioned = (AsmHistoricalTopology, Vec<AsmEntityVersion>);
+
+/// A transition from no body to `after`.
+fn added(after: AsmHistoricalTopology) -> (Versioned, Versioned) {
+    (
+        (AsmHistoricalTopology::default(), Vec::new()),
+        (after, Vec::new()),
+    )
+}
+
+/// A Cut from the sketch plane that removes the rectangle from the origin to
+/// `(2, 1)` out of the prism of height 2 over the rectangle to `(4, 1)`. The
+/// wall at `x = 0` is deleted, a wall at `x = 2` is inserted, and the faces
+/// at heights 0 and 2 and along `y = 0` and `y = 1` are updated.
+fn cut() -> (Versioned, Versioned) {
+    let versions = |faces: &[(i64, i64)]| {
+        faces
+            .iter()
+            .map(|&(entity_ref, record_ref)| AsmEntityVersion {
+                entity_ref,
+                record_ref,
+            })
+            .collect::<Vec<_>>()
+    };
+    let before = prism_over(4.0);
+    let mut after = prism_over(2.0);
+    let offset = cadmpeg_ir::math::Vector3::new(2.0, 0.0, 0.0);
+    for row in &mut after.point_positions {
+        row.position = row.position.translated(offset, 1.0);
+    }
+    for row in &mut after.surface_planes {
+        row.origin = row.origin.translated(offset, 1.0);
+    }
+    for row in &mut after.curve_axes {
+        row.origin = row.origin.translated(offset, 1.0);
+    }
+    for face in &mut after.faces {
+        if *face == 5 {
+            *face = 6;
+        }
+    }
+    for row in &mut after.face_surfaces {
+        if row.entity == 5 {
+            row.entity = 6;
+        }
+    }
+    for row in &mut after.face_loops {
+        if row.owner_ref == 5 {
+            row.owner_ref = 6;
+        }
+    }
+    (
+        (
+            before,
+            versions(&[(0, 1), (1, 1), (2, 1), (3, 1), (4, 1), (5, 1)]),
+        ),
+        (
+            after,
+            versions(&[(0, 2), (1, 2), (2, 2), (3, 1), (4, 2), (6, 1)]),
+        ),
+    )
+}
+
+/// The stale selection resolved through the transition from `states.0` to
+/// `states.1` of a sweep from the profile plane along its normal.
+fn select_through(
+    mutate: impl FnOnce(&mut DesignProfileCurveSelection, &mut Vec<SketchCurveIdentity>),
+    states: (Versioned, Versioned),
+    operation: BooleanOp,
+    extent: &ExtrudeExtent,
 ) -> Option<(PlanarProfileRef, Vec<F3dLossCode>)> {
     let mut group = group();
     group
@@ -210,34 +300,31 @@ fn select(
             )
         })
         .collect::<Vec<_>>();
-    let states = [
-        (2, prism_over(width)),
-        (1, AsmHistoricalTopology::default()),
-    ]
-    .into_iter()
-    .map(|(state_id, topology)| {
-        (
-            AsmDeltaState {
-                id: format!("synthetic:test:state#{state_id}"),
-                parent: "synthetic:test:history#stale".into(),
-                byte_offset: 0,
-                state_id,
-                version_flag: 1,
-                state_flag: 0,
-                previous_ref: None,
-                next_ref: None,
-                node_index: state_id,
-                partner_ref: None,
-                owner_ref: 0,
-                bulletin_boards: Vec::new(),
-                records: Vec::new(),
-                transition: None,
-            },
-            Some(topology),
-            Vec::new(),
-        )
-    })
-    .collect();
+    let states = [(2, states.1), (1, states.0)]
+        .into_iter()
+        .map(|(state_id, (topology, versions))| {
+            (
+                AsmDeltaState {
+                    id: format!("synthetic:test:state#{state_id}"),
+                    parent: "synthetic:test:history#stale".into(),
+                    byte_offset: 0,
+                    state_id,
+                    version_flag: 1,
+                    state_flag: 0,
+                    previous_ref: None,
+                    next_ref: None,
+                    node_index: state_id,
+                    partner_ref: None,
+                    owner_ref: 0,
+                    bulletin_boards: Vec::new(),
+                    records: Vec::new(),
+                    transition: None,
+                },
+                Some(topology),
+                versions,
+            )
+        })
+        .collect();
     let history = crate::test_support::history::history(
         "synthetic:test:history#stale".into(),
         0,
@@ -273,17 +360,10 @@ fn select(
             },
             (2, 1),
             Sweep {
-                operation: &BooleanOp::Join,
+                operation: &operation,
                 start: &ExtrudeStart::ProfilePlane {},
                 direction: &ExtrudeDirection::ProfileNormal {},
-                extent: &ExtrudeExtent::OneSided {
-                    side: ExtrudeSide {
-                        termination: LinearTermination::Blind {
-                            length: NonZeroLength::new(2.0).unwrap(),
-                        },
-                        draft: None,
-                    },
-                },
+                extent,
             },
         )
     })
@@ -360,4 +440,45 @@ fn an_unknown_traversal_keeps_the_selection_native() {
         2.0
     )
     .is_none());
+}
+
+#[test]
+fn surviving_typed_members_certify_a_new_body_and_a_cut() {
+    for (states, operation) in [
+        (added(prism_over(2.0)), BooleanOp::NewBody),
+        (cut(), BooleanOp::Cut),
+    ] {
+        let (selected, losses) = select_through(|_, _| {}, states, operation, &join(2.0, None))
+            .unwrap_or_else(|| panic!("{operation:?} certifies the union"));
+        assert_eq!(
+            losses,
+            vec![F3dLossCode::FeatureProfileRegionIdentitiesStale]
+        );
+        let PlanarProfileRef::SketchRegions { regions, .. } = selected else {
+            panic!("trimmed regions")
+        };
+        assert_eq!(regions.len(), 2);
+    }
+}
+
+#[test]
+fn a_drafted_or_two_sided_sweep_keeps_the_selection_native() {
+    let side = || ExtrudeSide {
+        termination: LinearTermination::Blind {
+            length: NonZeroLength::new(2.0).unwrap(),
+        },
+        draft: None,
+    };
+    for extent in [
+        join(2.0, Some(SlopeAngle::new(0.1).unwrap())),
+        ExtrudeExtent::TwoSided {
+            first: side(),
+            second: side(),
+        },
+        ExtrudeExtent::Symmetric { side: side() },
+    ] {
+        assert!(
+            select_through(|_, _| {}, added(prism_over(2.0)), BooleanOp::Join, &extent).is_none()
+        );
+    }
 }

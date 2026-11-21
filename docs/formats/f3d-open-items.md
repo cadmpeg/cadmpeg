@@ -3654,7 +3654,7 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Need.** A stored carrier or a derivation rule for absent curves whose surviving members fail the complete directed-boundary and transition certificate in `f3d.md` §3.1, the Sketch that owner 1977 names, and the design that owns a sketchless selection's asset GUID.
 
-**Note.** The selection stays native with `feature.profile-selection-native`.
+**Note.** A selection whose surviving members pass the stale-identity certificate in `f3d.md` §3.1 binds its certified regions with `feature.profile-region-identities-stale`. Each other selection stays native with `feature.profile-selection-native`.
 
 ### DR-670. Carrier state of a Hole on a reconstructed plane
 
