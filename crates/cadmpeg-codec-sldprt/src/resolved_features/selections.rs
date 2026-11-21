@@ -198,7 +198,7 @@ pub(crate) fn compact_body_state_ids_for_selection(
 pub(crate) fn compact_body_retention_mode_for_selection(
     lane: &FeatureInputLane,
     selection: &FeatureInputBodySelection,
-) -> Option<cadmpeg_ir::features::BodyRetentionMode> {
+) -> Option<cadmpeg_ir::features::operation_settings::BodyRetentionMode> {
     let token = compact_body_state_token(lane)?;
     let mut start = None;
     for name in &lane.names {
@@ -218,7 +218,7 @@ fn compact_body_retention_mode(
     start: usize,
     end: usize,
     token: u16,
-) -> Option<cadmpeg_ir::features::BodyRetentionMode> {
+) -> Option<cadmpeg_ir::features::operation_settings::BodyRetentionMode> {
     const HEADER_LEN: usize = 83;
     let scan_end = end.checked_sub(HEADER_LEN - 1)?;
     (|| {
@@ -232,8 +232,8 @@ fn compact_body_retention_mode(
             return None;
         }
         match View::u32_le_at(field, 2)? {
-            0 => Some(cadmpeg_ir::features::BodyRetentionMode::KeepSelected),
-            1 => Some(cadmpeg_ir::features::BodyRetentionMode::DeleteSelected),
+            0 => Some(cadmpeg_ir::features::operation_settings::BodyRetentionMode::KeepSelected),
+            1 => Some(cadmpeg_ir::features::operation_settings::BodyRetentionMode::DeleteSelected),
             _ => None,
         }
     })()

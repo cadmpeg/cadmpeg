@@ -400,7 +400,7 @@ fn decode_preserves_ambiguous_materials_without_fabricating_ownership() {
 
     let moved = result.ir_mut().geometry.points[0].position().get();
     result.ir_mut().geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
             moved.z + 1.0,

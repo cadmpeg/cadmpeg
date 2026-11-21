@@ -21,20 +21,18 @@ use crate::records::{
 use cadmpeg_core::convert::f64_from_i64;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::extents::LinearTermination;
+use cadmpeg_ir::features::geometry::{FeatureDirection3, FinitePoint3};
+use cadmpeg_ir::features::holes::{HoleBottom, HoleKind, HolePlacement};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
     SpatialSketch, SpatialSketchEntity, SpatialSketchGeometryDefinition,
 };
 use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
-use cadmpeg_ir::{
-    features::{
-        holes::{HoleBottom, HoleKind, HolePlacement},
-        FeatureDefinition, FeatureDirection3, FeatureOperation, FinitePoint3, LinearTermination,
-    },
-    scalar::Length,
-};
 use std::collections::{HashMap, HashSet};
 
 const EPS_HOLE_POSITION: f64 = 1.0e-8;
@@ -145,7 +143,7 @@ pub(crate) fn project_helix_axes(
                         "SolidWorks projected length must be finite".into(),
                     )
                 })?,
-                shape: cadmpeg_ir::features::HelixShape::Cylindrical { pitch },
+                shape: cadmpeg_ir::features::sweeps::HelixShape::Cylindrical { pitch },
                 revolutions: *revolutions,
                 start_angle: *start_angle,
                 clockwise: *clockwise,

@@ -214,8 +214,8 @@ fn shared_cylinder_generator_line(
 /// Whether a mapped face path yields `start` and `end` in exactly one order.
 fn path_maps_onto_once(
     path: [[f64; 3]; 2],
-    start: cadmpeg_ir::features::FinitePoint3,
-    end: cadmpeg_ir::features::FinitePoint3,
+    start: cadmpeg_ir::features::geometry::FinitePoint3,
+    end: cadmpeg_ir::features::geometry::FinitePoint3,
 ) -> bool {
     let [Some(first_point), Some(second_point)] = path.map(finite_model_point) else {
         return false;

@@ -136,7 +136,7 @@ impl Placement {
     pub(crate) fn inverse_point(self, point: Point3) -> Option<Point3> {
         self.inverse?
             .apply_point(point)
-            .map(cadmpeg_ir::features::FinitePoint3::get)
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get)
     }
 
     /// Map a direction by the rotation part `L/s`.

@@ -1677,8 +1677,10 @@ fn query_projects_export_identity_and_losses_from_a_generated_report() {
     let mut ir = unit_cube().unwrap();
     ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         "synthetic:cube:point#orphan".try_into().unwrap(),
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(20.0, 30.0, 40.0))
-            .unwrap(),
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            20.0, 30.0, 40.0,
+        ))
+        .unwrap(),
         Some(SourceObjectAssociation {
             format: CodecFormat::Step,
             object_id: cadmpeg_core::nonblank_literal!("orphan"),

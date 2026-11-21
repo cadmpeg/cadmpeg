@@ -9,10 +9,9 @@ use crate::records::{
         construction::DesignConstructionOperandGroupFrame,
     },
 };
-use cadmpeg_ir::features::{
-    patterns::{PatternSeed, PatternTransform},
-    BodySelection, FaceSelection, FeatureDefinition, FeatureOperation,
-};
+use cadmpeg_ir::features::patterns::{PatternSeed, PatternTransform};
+use cadmpeg_ir::features::selections::{BodySelection, FaceSelection};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 fn group(
@@ -88,9 +87,9 @@ fn mirror_scope(seed_group_record_index: u32) -> DesignParameterScope {
             plane_scope_record_index: None,
             plane_selection_record_index: None,
             plane: crate::records::feature::patterns::DesignPlane::from_parts(
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                     .expect("finite plane origin"),
-                cadmpeg_ir::features::FiniteVector3::new(Vector3::new(0.0, 0.0, 1.0))
+                cadmpeg_ir::features::geometry::FiniteVector3::new(Vector3::new(0.0, 0.0, 1.0))
                     .expect("finite plane normal"),
             ),
             construction_plane_scope: None,

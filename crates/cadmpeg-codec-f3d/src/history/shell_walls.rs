@@ -3,7 +3,8 @@
 
 use super::surface_rows::{Carrier, StateRows};
 use crate::history_records::{AsmHistoricalTopology, AsmHistoricalTransition};
-use cadmpeg_ir::features::{FaceSelection, ShellMode};
+use cadmpeg_ir::features::operation_settings::ShellMode;
+use cadmpeg_ir::features::selections::FaceSelection;
 use cadmpeg_ir::math::Vector3;
 use std::collections::{BTreeSet, HashSet};
 

@@ -7,9 +7,10 @@ use cadmpeg_asm::brep::records::BodyNativeKey;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{Model, Topology};
+use cadmpeg_ir::features::patterns::PatternSeed;
+use cadmpeg_ir::features::selections::BodySelection;
 use cadmpeg_ir::features::{
-    patterns::PatternSeed, BodySelection, CombineOperands, FeatureDefinition, FeatureOperation,
-    TrimBodyOperands,
+    CombineOperands, FeatureDefinition, FeatureOperation, TrimBodyOperands,
 };
 use cadmpeg_ir::ids::BodyId;
 use serde::{Deserialize, Serialize};
@@ -397,7 +398,7 @@ impl<'a> ProducerRecords<'a> {
 
 pub(crate) fn produced_before(
     features: &[cadmpeg_ir::features::Feature],
-    results: &[cadmpeg_ir::features::FeatureResultTopology],
+    results: &[cadmpeg_ir::features::evaluation::FeatureResultTopology],
     feature: &cadmpeg_ir::features::Feature,
     records: &ProducerRecords<'_>,
 ) -> HashSet<String> {
@@ -415,7 +416,7 @@ pub(crate) fn produced_before(
     let mut wrappers = results
         .iter()
         .filter(|result| ids.contains(&result.output_of))
-        .flat_map(cadmpeg_ir::features::FeatureResultTopology::bodies)
+        .flat_map(cadmpeg_ir::features::evaluation::FeatureResultTopology::bodies)
         .map(|wrapper| wrapper.as_str().to_owned())
         .collect::<HashSet<_>>();
     for producer in producers {
@@ -589,9 +590,9 @@ pub(crate) fn tools_group(
 
 pub(crate) fn outputs(
     feature: &cadmpeg_ir::features::FeatureId,
-    results: &[cadmpeg_ir::features::FeatureResultTopology],
+    results: &[cadmpeg_ir::features::evaluation::FeatureResultTopology],
     bodies: &HashMap<String, BodyId>,
-) -> Option<cadmpeg_ir::features::DistinctMembers<BodyId>> {
+) -> Option<cadmpeg_ir::features::selections::DistinctMembers<BodyId>> {
     let mut matches = results.iter().filter(|result| &result.output_of == feature);
     let result = matches.next()?;
     if matches.next().is_some() {
@@ -608,7 +609,7 @@ pub(crate) fn outputs(
 
 pub(crate) fn outputs_match(
     feature: &cadmpeg_ir::features::Feature,
-    results: &[cadmpeg_ir::features::FeatureResultTopology],
+    results: &[cadmpeg_ir::features::evaluation::FeatureResultTopology],
     bodies: &HashMap<String, BodyId>,
 ) -> bool {
     match outputs(&feature.id, results, bodies) {
@@ -748,7 +749,7 @@ pub(crate) fn native_losses(
     let result_count = model
         .feature_result_topologies
         .iter()
-        .flat_map(cadmpeg_ir::features::FeatureResultTopology::bodies)
+        .flat_map(cadmpeg_ir::features::evaluation::FeatureResultTopology::bodies)
         .filter(|wrapper| !bodies.contains_key(wrapper.as_str()))
         .count();
     let selection_count = model

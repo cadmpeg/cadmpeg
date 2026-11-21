@@ -14,7 +14,9 @@ use crate::records::feature::sheet_metal::contour::{
 };
 use crate::records::identity::Located;
 use cadmpeg_core::decode::{u64_from_index, View};
-use cadmpeg_ir::{features::FeatureDirection3, math::Vector3, scalar::PositiveReal};
+use cadmpeg_ir::features::geometry::FeatureDirection3;
+use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::scalar::PositiveReal;
 
 const CONTOUR_GUID: &str = "7AFA0A65-B53C-472C-ACA4-5C7C0A65001C";
 const CARRIER_GUID: &str = "CAA55628-037B-4D01-9C74-26118F70B63E";

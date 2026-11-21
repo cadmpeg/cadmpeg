@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
 use crate::feature::{plate_result, plate_side, FeatureFamily, PLATE_SIDE_TYPE};
-use cadmpeg_ir::features::SheetMetalThicknessSide;
+use cadmpeg_ir::features::sheet_metal_forms::SheetMetalThicknessSide;
 
 fn enumeration(
     family: PmDcFeatureEnumFamily,
@@ -308,7 +308,8 @@ fn bend_result_slot_follows_the_bend_property_count() {
 
 #[test]
 fn an_unrecognized_label_class_charges_one_note_per_class() {
-    use cadmpeg_ir::features::{FeatureEvaluation, NativeFeatureKind};
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::NativeFeatureKind;
     let native = |id: &str, kind: &str| -> Feature {
         let mut feature: Feature = serde_json::from_value(serde_json::json!({
             "id": id, "ordinal": 1,

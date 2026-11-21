@@ -5,9 +5,8 @@ use crate::math::Point3;
 
 #[test]
 fn feature_lines_and_polylines_close_geometry_bounds_without_changing_wire_fields() {
-    use crate::features::{
-        FeatureDefinition, FeatureLineSegment, FeatureOperation, FeaturePolyline,
-    };
+    use crate::features::geometry::{FeatureLineSegment, FeaturePolyline};
+    use crate::features::{FeatureDefinition, FeatureOperation};
     let first = Point3::new(0.0, 1.0, 2.0);
     let second = Point3::new(3.0, 4.0, 5.0);
     let segment = FeatureLineSegment::new(first, second).unwrap();
@@ -38,7 +37,7 @@ fn feature_lines_and_polylines_close_geometry_bounds_without_changing_wire_field
         let admitted = points
             .iter()
             .copied()
-            .map(crate::features::FinitePoint3::new)
+            .map(crate::features::geometry::FinitePoint3::new)
             .collect::<Option<Vec<_>>>()
             .unwrap();
         assert_eq!(
@@ -76,7 +75,8 @@ fn feature_lines_and_polylines_close_geometry_bounds_without_changing_wire_field
 
 #[test]
 fn equation_curve_admission_preserves_expression_text_and_requires_an_increasing_domain() {
-    use crate::features::{FeatureDefinition, FeatureEquationCurve, FeatureOperation};
+    use crate::features::geometry::FeatureEquationCurve;
+    use crate::features::{FeatureDefinition, FeatureOperation};
     let curve = FeatureEquationCurve::new(
         " t ".into(),
         " t*t ".into(),

@@ -478,7 +478,8 @@ fn a_full_turn_edge_range_starts_at_its_vertex() {
     let point_id = PointId::mint("test:model:point#seam").expect("point id");
     brep.points.push(Point::new(
         point_id.clone(),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, -1.0, 0.0)).expect("finite point"),
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, -1.0, 0.0))
+            .expect("finite point"),
         None,
     ));
     let vertex_id = VertexId::mint("test:model:vertex#seam").expect("vertex id");
@@ -526,7 +527,8 @@ fn a_full_turn_edge_range_starts_at_its_vertex() {
     // A vertex off the circle does not phase the range.
     brep.points[0] = Point::new(
         brep.points[0].id.clone(),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 1.0, 0.0)).expect("finite point"),
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 1.0, 0.0))
+            .expect("finite point"),
         None,
     );
     super::phase_full_turn_edge_ranges(&mut brep, &mut cadmpeg_ir::AnnotationBuilder::new())

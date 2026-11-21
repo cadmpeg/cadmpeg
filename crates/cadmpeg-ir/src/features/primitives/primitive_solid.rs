@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{
-    PrimitiveSolid, PrimitiveSolidKind, PrimitiveSolidScaleError, INVALID_PRIMITIVE_DIMENSIONS,
-};
+use super::super::INVALID_PRIMITIVE_DIMENSIONS;
+use super::{PrimitiveSolid, PrimitiveSolidKind, PrimitiveSolidScaleError};
 use crate::scalar::{Length, PositiveReal};
 
 impl PrimitiveSolid {

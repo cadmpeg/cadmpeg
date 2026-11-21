@@ -154,8 +154,9 @@ fn circular_pipe_sweep(
     inputs: &PipeSectionInputs<'_>,
     surfaces: &HashMap<&SurfaceId, Option<&Surface>>,
 ) -> Option<(FeatureDefinition, SectionReading, ExtentReading)> {
-    use cadmpeg_ir::features::{
-        GeneratedSweepSection, PathRef, SolidSweepOperation, SweepCircularRegion, SweepPathExtent,
+    use cadmpeg_ir::features::profiles::PathRef;
+    use cadmpeg_ir::features::sweeps::{
+        GeneratedSweepSection, SolidSweepOperation, SweepCircularRegion, SweepPathExtent,
         SweepSection, SweepShape,
     };
     use cadmpeg_ir::scalar::{Fraction, PositiveLength};

@@ -4,7 +4,8 @@ use crate::feature::tests::{reference, reference_list, test_label};
 use crate::record_identity::Located;
 use crate::test_support::mirror::new_body_form;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 #[test]
 fn mirror_new_body_uses_the_source_collection_and_generated_result() {
@@ -233,7 +234,7 @@ fn replacement_boolean_bytes_select_the_historical_body_and_offset_plane() {
     );
     assert_eq!(
         *plane_reference,
-        Some(cadmpeg_ir::features::FaceSelection::Native(
+        Some(cadmpeg_ir::features::selections::FaceSelection::Native(
             fixture.planes[0].id()
         ))
     );
@@ -267,7 +268,8 @@ fn mirror_source_resolves_to_the_current_body_of_its_wrapper() {
     assert_eq!(&bodies[..], &[body]);
     assert_eq!(native, &fixture.properties[2].id());
     let mut resolved = feature.clone();
-    resolved.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(definition);
+    resolved.evaluation =
+        cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(definition);
     let index = fixture.index().with_bodies(&joined);
     assert!(index.matches_projection(&source, &fixture.label, &resolved, &result, false, |_| None));
     // A wrapper without a current body leaves the source unresolved, and an

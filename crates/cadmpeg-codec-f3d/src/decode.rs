@@ -20,7 +20,7 @@ mod work_axis_completeness;
 use cadmpeg_core::decode::u64_from_index;
 
 use cadmpeg_ir::annotations::StreamHandle;
-use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
 
 use cadmpeg_core::container::ContainerRole;
 
@@ -410,8 +410,8 @@ struct DesignProjectionGaps {
 /// Returns whether a face selection supplies the operation's neutral faces.
 ///
 /// Native or absent selections leave the definition incomplete.
-fn face_selection_is_resolved(selection: &cadmpeg_ir::features::FaceSelection) -> bool {
-    use cadmpeg_ir::features::FaceSelection;
+fn face_selection_is_resolved(selection: &cadmpeg_ir::features::selections::FaceSelection) -> bool {
+    use cadmpeg_ir::features::selections::FaceSelection;
 
     match selection {
         FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => !faces.is_empty(),
@@ -423,27 +423,29 @@ fn face_selection_is_resolved(selection: &cadmpeg_ir::features::FaceSelection) -
 }
 
 fn draft_neutral_plane_is_resolved(
-    selection: &cadmpeg_ir::features::FaceSelection,
-    pull: Option<&cadmpeg_ir::features::DraftPull>,
+    selection: &cadmpeg_ir::features::selections::FaceSelection,
+    pull: Option<&cadmpeg_ir::features::direct_edit::DraftPull>,
 ) -> bool {
     face_selection_is_resolved(selection)
         || match selection {
-            cadmpeg_ir::features::FaceSelection::Native(native) => pull.is_some_and(|pull| {
-                pull.direction.unit().is_some()
-                    && (pull
-                        .plane
-                        .as_ref()
-                        .is_some_and(|plane| plane.as_str() == *native)
-                        || (pull.plane.is_none()
-                            && pull.frame.is_some()
-                            && pull.frame_matches_direction()))
-            }),
+            cadmpeg_ir::features::selections::FaceSelection::Native(native) => {
+                pull.is_some_and(|pull| {
+                    pull.direction.unit().is_some()
+                        && (pull
+                            .plane
+                            .as_ref()
+                            .is_some_and(|plane| plane.as_str() == *native)
+                            || (pull.plane.is_none()
+                                && pull.frame.is_some()
+                                && pull.frame_matches_direction()))
+                })
+            }
             _ => false,
         }
 }
 
-fn edge_selection_is_resolved(selection: &cadmpeg_ir::features::EdgeSelection) -> bool {
-    use cadmpeg_ir::features::EdgeSelection;
+fn edge_selection_is_resolved(selection: &cadmpeg_ir::features::selections::EdgeSelection) -> bool {
+    use cadmpeg_ir::features::selections::EdgeSelection;
 
     match selection {
         EdgeSelection::All => true,
@@ -456,21 +458,22 @@ fn edge_selection_is_resolved(selection: &cadmpeg_ir::features::EdgeSelection) -
 }
 
 fn datum_plane_reference_is_resolved(
-    reference: &cadmpeg_ir::features::DatumPlaneReference,
+    reference: &cadmpeg_ir::features::datums::DatumPlaneReference,
 ) -> bool {
     match reference {
-        cadmpeg_ir::features::DatumPlaneReference::Feature { .. } => true,
-        cadmpeg_ir::features::DatumPlaneReference::Face { face } => {
+        cadmpeg_ir::features::datums::DatumPlaneReference::Feature { .. } => true,
+        cadmpeg_ir::features::datums::DatumPlaneReference::Face { face } => {
             face_selection_is_resolved(face)
         }
-        cadmpeg_ir::features::DatumPlaneReference::ResolvedPlane { .. } => true,
+        cadmpeg_ir::features::datums::DatumPlaneReference::ResolvedPlane { .. } => true,
     }
 }
 
 fn datum_point_construction_is_resolved(
-    construction: &cadmpeg_ir::features::DatumPointConstruction,
+    construction: &cadmpeg_ir::features::datums::DatumPointConstruction,
 ) -> bool {
-    use cadmpeg_ir::features::{DatumPointConstruction, SketchPointSelection, VertexSelection};
+    use cadmpeg_ir::features::datums::{DatumPointConstruction, SketchPointSelection};
+    use cadmpeg_ir::features::selections::VertexSelection;
 
     match construction {
         DatumPointConstruction::CircleCenter { edge } => edge_selection_is_resolved(edge),
@@ -495,8 +498,8 @@ fn datum_point_construction_is_resolved(
     }
 }
 
-fn body_selection_is_resolved(selection: &cadmpeg_ir::features::BodySelection) -> bool {
-    use cadmpeg_ir::features::BodySelection;
+fn body_selection_is_resolved(selection: &cadmpeg_ir::features::selections::BodySelection) -> bool {
+    use cadmpeg_ir::features::selections::BodySelection;
 
     match selection {
         BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
@@ -511,16 +514,18 @@ fn body_selection_is_resolved(selection: &cadmpeg_ir::features::BodySelection) -
 }
 
 fn base_feature_body_selection_is_resolved(
-    selection: &cadmpeg_ir::features::BodySelection,
+    selection: &cadmpeg_ir::features::selections::BodySelection,
 ) -> bool {
     body_selection_is_resolved(selection)
         || matches!(
             selection,
-            cadmpeg_ir::features::BodySelection::Resolved { bodies, .. } if bodies.is_empty()
+            cadmpeg_ir::features::selections::BodySelection::Resolved { bodies, .. } if bodies.is_empty()
         )
 }
 
-fn datum_plane_frame_is_resolved(frame: cadmpeg_ir::features::FeatureDatumPlaneFrame) -> bool {
+fn datum_plane_frame_is_resolved(
+    frame: cadmpeg_ir::features::geometry::FeatureDatumPlaneFrame,
+) -> bool {
     const EPS_DATUM_PLANE_ORTHOGONAL: f64 = 1.0e-10;
 
     let (Some(normal), Some(u_axis)) = (
@@ -532,12 +537,12 @@ fn datum_plane_frame_is_resolved(frame: cadmpeg_ir::features::FeatureDatumPlaneF
     normal.as_raw().dot(*u_axis.as_raw()).abs() <= EPS_DATUM_PLANE_ORTHOGONAL
 }
 
-fn axis_angle_is_resolved(axis_angle: &cadmpeg_ir::features::AxisAngle) -> bool {
+fn axis_angle_is_resolved(axis_angle: &cadmpeg_ir::features::direct_edit::AxisAngle) -> bool {
     axis_angle.direction.unit().is_some()
 }
 
-fn face_motion_is_resolved(motion: &cadmpeg_ir::features::FaceMotion) -> bool {
-    use cadmpeg_ir::features::FaceMotion;
+fn face_motion_is_resolved(motion: &cadmpeg_ir::features::direct_edit::FaceMotion) -> bool {
+    use cadmpeg_ir::features::direct_edit::FaceMotion;
     match motion {
         FaceMotion::Offset { .. } | FaceMotion::Transform { .. } => true,
         FaceMotion::Translate { direction, .. } => direction.unit().is_some(),
@@ -561,7 +566,7 @@ fn planar_profile_ref_is_resolved(profile: &PlanarProfileRef) -> bool {
     }
 }
 
-fn profile_ref_is_resolved(profile: &cadmpeg_ir::features::ProfileRef) -> bool {
+fn profile_ref_is_resolved(profile: &cadmpeg_ir::features::profiles::ProfileRef) -> bool {
     match profile {
         ProfileRef::SpatialSketchSelection { .. } => false,
         ProfileRef::SpatialSketchProfiles { .. } => true,
@@ -569,8 +574,11 @@ fn profile_ref_is_resolved(profile: &cadmpeg_ir::features::ProfileRef) -> bool {
     }
 }
 
-fn linear_termination_is_resolved(termination: &cadmpeg_ir::features::LinearTermination) -> bool {
-    use cadmpeg_ir::features::{LinearTermination, VertexSelection};
+fn linear_termination_is_resolved(
+    termination: &cadmpeg_ir::features::extents::LinearTermination,
+) -> bool {
+    use cadmpeg_ir::features::extents::LinearTermination;
+    use cadmpeg_ir::features::selections::VertexSelection;
 
     match termination {
         LinearTermination::Unresolved {} => false,
@@ -590,8 +598,11 @@ fn linear_termination_is_resolved(termination: &cadmpeg_ir::features::LinearTerm
     }
 }
 
-fn angular_termination_is_resolved(termination: &cadmpeg_ir::features::AngularTermination) -> bool {
-    use cadmpeg_ir::features::{AngularTermination, VertexSelection};
+fn angular_termination_is_resolved(
+    termination: &cadmpeg_ir::features::extents::AngularTermination,
+) -> bool {
+    use cadmpeg_ir::features::extents::AngularTermination;
+    use cadmpeg_ir::features::selections::VertexSelection;
 
     match termination {
         AngularTermination::Unresolved {} => false,
@@ -611,8 +622,8 @@ fn angular_termination_is_resolved(termination: &cadmpeg_ir::features::AngularTe
     }
 }
 
-fn loft_path_is_resolved(path: &cadmpeg_ir::features::PathRef) -> bool {
-    use cadmpeg_ir::features::PathRef;
+fn loft_path_is_resolved(path: &cadmpeg_ir::features::profiles::PathRef) -> bool {
+    use cadmpeg_ir::features::profiles::PathRef;
 
     match path {
         PathRef::Unresolved(_) | PathRef::Native(_) | PathRef::SpatialSketchSelection { .. } => {
@@ -694,7 +705,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         }) => {
             !face_selection_is_resolved(faces)
                 || !loft_path_is_resolved(tool)
-                || matches!(keep, cadmpeg_ir::features::TrimRegion::Unresolved)
+                || matches!(keep, cadmpeg_ir::features::surface_inputs::TrimRegion::Unresolved)
         }
         FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
             face,
@@ -739,8 +750,8 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 || !points.iter().all(|point| {
                     matches!(
                         point,
-                        cadmpeg_ir::features::VertexSelection::Generated { .. }
-                            | cadmpeg_ir::features::VertexSelection::Historical { .. }
+                        cadmpeg_ir::features::selections::VertexSelection::Generated { .. }
+                            | cadmpeg_ir::features::selections::VertexSelection::Historical { .. }
                     )
                 })
         }
@@ -751,14 +762,14 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         }
         FeatureDefinition::Operation(
             FeatureOperation::Sphere { op, .. } | FeatureOperation::Torus { op, .. },
-        ) => *op == cadmpeg_ir::features::BooleanOp::Unresolved,
+        ) => *op == cadmpeg_ir::features::operation_settings::BooleanOp::Unresolved,
         FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile,
             start,
             extent,
             ..
         }) => {
-            use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeStart};
+            use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeStart};
 
             let start_is_resolved = match start {
                 ExtrudeStart::Unresolved {} => false,
@@ -779,7 +790,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             !profile_ref_is_resolved(profile) || !start_is_resolved || !extent_is_resolved
         }
         FeatureDefinition::Operation(FeatureOperation::Revolve { construction, op }) => {
-            use cadmpeg_ir::features::{RevolveConstruction, RevolveExtent};
+            use cadmpeg_ir::features::revolve::{RevolveConstruction, RevolveExtent};
 
             match construction {
                 RevolveConstruction::Unresolved(_) => true,
@@ -802,7 +813,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                     !planar_profile_ref_is_resolved(profile)
                         || axis.direction.unit().is_none()
                         || !extent_is_resolved
-                        || *op == cadmpeg_ir::features::BooleanOp::Unresolved
+                        || *op == cadmpeg_ir::features::operation_settings::BooleanOp::Unresolved
                 }
             }
         }
@@ -815,7 +826,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             guide_rail,
             ..
         }) => {
-            use cadmpeg_ir::features::{SweepMode, SweepOrientation};
+            use cadmpeg_ir::features::sweeps::{SweepMode, SweepOrientation};
 
             let mode = shape.mode();
 
@@ -826,7 +837,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             let mode_is_resolved = match mode {
                 SweepMode::Unresolved {} => false,
                 SweepMode::Solid {
-                    op: cadmpeg_ir::features::SolidSweepOperation::NewBody,
+                    op: cadmpeg_ir::features::sweeps::SolidSweepOperation::NewBody,
                 }
                 | SweepMode::Solid { .. }
                 | SweepMode::Surface {} => true,
@@ -890,7 +901,8 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             construction,
             result,
         }) => {
-            use cadmpeg_ir::features::{CoilPlacement, SolidFeatureResult};
+            use cadmpeg_ir::features::operation_settings::SolidFeatureResult;
+            use cadmpeg_ir::features::sweeps::CoilPlacement;
 
             matches!(construction.placement, CoilPlacement::Native { .. })
                 || match result {
@@ -911,12 +923,12 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 || outward.is_none()
                 || !face_selection_is_resolved(faces)
                 || match anchor {
-                    cadmpeg_ir::features::DraftAnchor::PartingLine { tool, pull } => {
+                    cadmpeg_ir::features::direct_edit::DraftAnchor::PartingLine { tool, pull } => {
                         !face_selection_is_resolved(tool)
                             || pull.direction.unit().is_none()
                             || pull.plane.is_none()
                     }
-                    cadmpeg_ir::features::DraftAnchor::NeutralPlane { plane, pull } => {
+                    cadmpeg_ir::features::direct_edit::DraftAnchor::NeutralPlane { plane, pull } => {
                         !draft_neutral_plane_is_resolved(plane, pull.as_ref())
                     }
                 }
@@ -945,7 +957,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         }
         FeatureDefinition::Operation(FeatureOperation::DeleteBody { bodies, mode }) => {
             !body_selection_is_resolved(bodies)
-                || *mode == cadmpeg_ir::features::BodyRetentionMode::Unresolved
+                || *mode == cadmpeg_ir::features::operation_settings::BodyRetentionMode::Unresolved
         }
         FeatureDefinition::Operation(FeatureOperation::ReverseShape { source }) => {
             !body_selection_is_resolved(source)
@@ -954,7 +966,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::Operation(FeatureOperation::InsertComponents { components }) => !components.is_resolved(),
         FeatureDefinition::Operation(FeatureOperation::CapturedComponentPositions { positions }) => {
             positions.iter().any(|position| position.occurrence.is_none()
-                || matches!(position.transform, cadmpeg_ir::features::CapturedPositionTransform::Native { .. }))
+                || matches!(position.transform, cadmpeg_ir::features::tree::CapturedPositionTransform::Native { .. }))
         }
         FeatureDefinition::Operation(FeatureOperation::AssemblyJoint { .. }) => false,
         FeatureDefinition::Operation(FeatureOperation::Shell {
@@ -969,12 +981,12 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             let empty_removed_faces_are_resolved =
                 matches!(
                     removed_faces,
-                    cadmpeg_ir::features::FaceSelection::Faces(faces) if faces.is_empty()
+                    cadmpeg_ir::features::selections::FaceSelection::Faces(faces) if faces.is_empty()
                 ) && bodies.as_ref().is_some_and(body_selection_is_resolved);
             !bodies_are_resolved
                 || (!face_selection_is_resolved(removed_faces) && !empty_removed_faces_are_resolved)
                 || thickness.is_none()
-                || (outward.is_none() && *mode != Some(cadmpeg_ir::features::ShellMode::BothSides))
+                || (outward.is_none() && *mode != Some(cadmpeg_ir::features::operation_settings::ShellMode::BothSides))
         }
         FeatureDefinition::Operation(FeatureOperation::UntrimSurface { faces, loops, extension }) => {
             !face_selection_is_resolved(faces)
@@ -992,7 +1004,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             !face_selection_is_resolved(faces)
                 || thickness.is_none()
                 || side.is_none()
-                || matches!(result, Some(cadmpeg_ir::features::SolidFeatureResult::Boolean { targets, .. }) if !body_selection_is_resolved(targets))
+                || matches!(result, Some(cadmpeg_ir::features::operation_settings::SolidFeatureResult::Boolean { targets, .. }) if !body_selection_is_resolved(targets))
         }
         FeatureDefinition::Operation(FeatureOperation::KnitSurface {
             faces,
@@ -1012,10 +1024,10 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         }) => {
             dimensions.is_none()
                 || placement.is_none()
-                || *op == cadmpeg_ir::features::BooleanOp::Unresolved
+                || *op == cadmpeg_ir::features::operation_settings::BooleanOp::Unresolved
         }
         FeatureDefinition::Operation(FeatureOperation::Primitive { op, .. }) => {
-            *op == cadmpeg_ir::features::BooleanOp::Unresolved
+            *op == cadmpeg_ir::features::operation_settings::BooleanOp::Unresolved
         }
         FeatureDefinition::Operation(FeatureOperation::MoveFace { faces, motion }) => {
             !face_selection_is_resolved(faces) || !face_motion_is_resolved(motion)
@@ -1036,7 +1048,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             !body_selection_is_resolved(bodies)
                 || center.is_none()
                 || center.as_ref().is_some_and(|center| {
-                    matches!(center, cadmpeg_ir::features::ScaleCenter::Native(_))
+                    matches!(center, cadmpeg_ir::features::direct_edit::ScaleCenter::Native(_))
                 })
                 || factors.resolved().is_none()
         }
@@ -1075,10 +1087,10 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::Operation(FeatureOperation::SplitBody { targets, tool, .. }) => {
             !body_selection_is_resolved(targets)
                 || match tool {
-                    cadmpeg_ir::features::SplitBodyTool::Faces(faces) => {
+                    cadmpeg_ir::features::direct_edit::SplitBodyTool::Faces(faces) => {
                         !face_selection_is_resolved(faces)
                     }
-                    cadmpeg_ir::features::SplitBodyTool::Plane { .. } => false,
+                    cadmpeg_ir::features::direct_edit::SplitBodyTool::Plane { .. } => false,
                 }
         }
         FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
@@ -1090,8 +1102,8 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange(construction)) => {
             !construction.has_all_inputs()
                 || construction.edges.as_ref().is_none_or(|edges| !edge_selection_is_resolved(edges))
-                || matches!(&construction.height, Some(cadmpeg_ir::features::SheetMetalFlangeHeight::ToObject(target)) if matches!(target.target, Some(cadmpeg_ir::features::SheetMetalFlangeHeightTarget::Native(_))))
-                || matches!(construction.width, Some(cadmpeg_ir::features::SheetMetalFlangeWidth::TwoOffsetsPerEdge { .. }))
+                || matches!(&construction.height, Some(cadmpeg_ir::features::sheet_metal_forms::SheetMetalFlangeHeight::ToObject(target)) if matches!(target.target, Some(cadmpeg_ir::features::sheet_metal_forms::SheetMetalFlangeHeightTarget::Native(_))))
+                || matches!(construction.width, Some(cadmpeg_ir::features::sheet_metal_forms::SheetMetalFlangeWidth::TwoOffsetsPerEdge { .. }))
         }
         FeatureDefinition::Operation(FeatureOperation::SheetMetalHem {
             edges,
@@ -1102,11 +1114,11 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             !edge_selection_is_resolved(edges)
                 || matches!(
                     direction,
-                    cadmpeg_ir::features::SheetMetalHemDirection::Unresolved
+                    cadmpeg_ir::features::sheet_metal_forms::SheetMetalHemDirection::Unresolved
                 )
                 || matches!(
                     form,
-                    cadmpeg_ir::features::SheetMetalHemForm::GapLength { .. }
+                    cadmpeg_ir::features::sheet_metal_forms::SheetMetalHemForm::GapLength { .. }
                 )
         }
         FeatureDefinition::Operation(FeatureOperation::SplitFace {
@@ -1116,16 +1128,16 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         }) => {
             !face_selection_is_resolved(targets)
                 || match tool {
-                    cadmpeg_ir::features::SplitFaceTool::Faces(faces) => {
+                    cadmpeg_ir::features::direct_edit::SplitFaceTool::Faces(faces) => {
                         !face_selection_is_resolved(faces)
                     }
-                    cadmpeg_ir::features::SplitFaceTool::Native(_) => true,
-                    cadmpeg_ir::features::SplitFaceTool::Plane { .. }
-                    | cadmpeg_ir::features::SplitFaceTool::Planes { .. } => false,
-                    cadmpeg_ir::features::SplitFaceTool::Path(path) => matches!(
+                    cadmpeg_ir::features::direct_edit::SplitFaceTool::Native(_) => true,
+                    cadmpeg_ir::features::direct_edit::SplitFaceTool::Plane { .. }
+                    | cadmpeg_ir::features::direct_edit::SplitFaceTool::Planes { .. } => false,
+                    cadmpeg_ir::features::direct_edit::SplitFaceTool::Path(path) => matches!(
                         path,
-                        cadmpeg_ir::features::PathRef::Native(_)
-                            | cadmpeg_ir::features::PathRef::Unresolved(_)
+                        cadmpeg_ir::features::profiles::PathRef::Native(_)
+                            | cadmpeg_ir::features::profiles::PathRef::Unresolved(_)
                     ),
                 }
                 || match method {
@@ -1148,15 +1160,15 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             };
             sections.len() < 2
                 || sections.iter().any(|section| match section {
-                    cadmpeg_ir::features::LoftSection::Profile(profile) => {
+                    cadmpeg_ir::features::profiles::LoftSection::Profile(profile) => {
                         !profile_ref_is_resolved(profile)
                     }
-                    cadmpeg_ir::features::LoftSection::Point(
-                        cadmpeg_ir::features::LoftPointSection::Native(_),
+                    cadmpeg_ir::features::profiles::LoftSection::Point(
+                        cadmpeg_ir::features::profiles::LoftPointSection::Native(_),
                     ) => true,
-                    cadmpeg_ir::features::LoftSection::Point(
-                        cadmpeg_ir::features::LoftPointSection::Point(_)
-                        | cadmpeg_ir::features::LoftPointSection::Vertex(_),
+                    cadmpeg_ir::features::profiles::LoftSection::Point(
+                        cadmpeg_ir::features::profiles::LoftPointSection::Point(_)
+                        | cadmpeg_ir::features::profiles::LoftPointSection::Vertex(_),
                     ) => false,
                 })
                 || guidance_incomplete
@@ -1169,7 +1181,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             interior_constraints,
             ..
         }) => {
-            use cadmpeg_ir::features::SurfaceBoundary;
+            use cadmpeg_ir::features::surface_inputs::SurfaceBoundary;
 
             let boundary_is_resolved = match boundary {
                 SurfaceBoundary::Edges(edges) => edge_selection_is_resolved(edges),
@@ -1179,8 +1191,8 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             let needs_support = |continuity| {
                 matches!(
                     continuity,
-                    cadmpeg_ir::features::SurfaceContinuity::Tangent
-                        | cadmpeg_ir::features::SurfaceContinuity::Curvature
+                    cadmpeg_ir::features::surface_inputs::SurfaceContinuity::Tangent
+                        | cadmpeg_ir::features::surface_inputs::SurfaceContinuity::Curvature
                 )
             };
             let support_is_required = continuity
@@ -1229,7 +1241,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             let target = operands.target();
             let tools = operands.tools();
             !body_selection_is_resolved(target) || !body_selection_is_resolved(tools)
-                || matches!(destination, cadmpeg_ir::features::CombineDestination::NewComponent)
+                || matches!(destination, cadmpeg_ir::features::operation_settings::CombineDestination::NewComponent)
         }
         // A typed family is not replayable until this match states and checks
         // its complete construction invariants.
@@ -1262,13 +1274,10 @@ fn design_projection_gaps(
     ir: &CadIr,
     native: &F3dNative,
 ) -> Result<DesignProjectionGaps, CodecError> {
-    use cadmpeg_ir::features::{
-        BodySelection, EdgeSelection, ExtrudeExtent, ExtrudeStart, FaceSelection, LinearTermination,
-    };
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, NativeFeatureKind, PathRef, PlanarProfileRef,
-        ProfileRef,
-    };
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeStart, LinearTermination};
+    use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::selections::{BodySelection, EdgeSelection, FaceSelection};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, NativeFeatureKind};
     use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
     use std::collections::HashSet;
 
@@ -1334,7 +1343,7 @@ fn design_projection_gaps(
         .collect::<std::collections::HashMap<_, _>>();
     let mut unprojected_history_dependencies = 0;
     let mut ambiguous_history_dependencies = 0;
-    let scope_history = crate::design::feature_project::ScopeHistoryGraph::new(
+    let scope_history = crate::design::feature_project::scope_order::ScopeHistoryGraph::new(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
@@ -1353,15 +1362,16 @@ fn design_projection_gaps(
         let predecessor_scope = match scope_history.predecessor(scope, |candidate| {
             projected_features.contains_key(candidate.id.as_str())
         }) {
-            Ok(crate::design::feature_project::ScopeHistoryPredecessor::Scope(predecessor)) => {
-                predecessor
-            }
+            Ok(crate::design::feature_project::scope_order::ScopeHistoryPredecessor::Scope(
+                predecessor,
+            )) => predecessor,
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-            Ok(crate::design::feature_project::ScopeHistoryPredecessor::Ambiguous) | Err(_) => {
+            Ok(crate::design::feature_project::scope_order::ScopeHistoryPredecessor::Ambiguous)
+            | Err(_) => {
                 ambiguous_history_dependencies += 1;
                 continue;
             }
-            Ok(crate::design::feature_project::ScopeHistoryPredecessor::None) => {
+            Ok(crate::design::feature_project::scope_order::ScopeHistoryPredecessor::None) => {
                 continue;
             }
         };
@@ -1465,14 +1475,15 @@ fn design_projection_gaps(
         }
     }
 
-    let authored_scopes = match crate::design::feature_project::authored_scope_ordinals_per_stream(
-        &native.design_parameter_scopes,
-        &native.design_feature_timelines,
-    ) {
-        Ok(scopes) => Some(scopes),
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => None,
-    };
+    let authored_scopes =
+        match crate::design::feature_project::scope_order::authored_scope_ordinals_per_stream(
+            &native.design_parameter_scopes,
+            &native.design_feature_timelines,
+        ) {
+            Ok(scopes) => Some(scopes),
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(_) => None,
+        };
     let unplaced_linked_scopes = authored_scopes
         .as_ref()
         .map(|ordinals| {
@@ -1806,13 +1817,21 @@ fn design_projection_gaps(
                     native_body_selection_count(target) + native_body_selection_count(tools);
             }
             FeatureDefinition::Operation(FeatureOperation::Coil {
-                result: cadmpeg_ir::features::SolidFeatureResult::Boolean { targets, .. },
+                result:
+                    cadmpeg_ir::features::operation_settings::SolidFeatureResult::Boolean {
+                        targets,
+                        ..
+                    },
                 ..
             }) => gaps.body_selections += native_body_selection_count(targets),
             FeatureDefinition::Operation(FeatureOperation::Thicken { faces, result, .. }) => {
                 face_selection(faces);
-                if let Some(cadmpeg_ir::features::SolidFeatureResult::Boolean { targets, .. }) =
-                    result
+                if let Some(
+                    cadmpeg_ir::features::operation_settings::SolidFeatureResult::Boolean {
+                        targets,
+                        ..
+                    },
+                ) = result
                 {
                     gaps.body_selections += native_body_selection_count(targets);
                 }
@@ -1918,7 +1937,7 @@ fn design_projection_gaps(
                 construction: Some(construction),
                 ..
             }) => {
-                use cadmpeg_ir::features::{DatumPlaneReference, DatumPointConstruction};
+                use cadmpeg_ir::features::datums::{DatumPlaneReference, DatumPointConstruction};
 
                 let mut plane = |reference: &DatumPlaneReference| {
                     if let DatumPlaneReference::Face { face } = reference {
@@ -1954,8 +1973,10 @@ fn design_projection_gaps(
                 ..
             }) => {
                 match boundary {
-                    cadmpeg_ir::features::SurfaceBoundary::Edges(edges) => edge_selection(edges),
-                    cadmpeg_ir::features::SurfaceBoundary::Path(path) => {
+                    cadmpeg_ir::features::surface_inputs::SurfaceBoundary::Edges(edges) => {
+                        edge_selection(edges);
+                    }
+                    cadmpeg_ir::features::surface_inputs::SurfaceBoundary::Path(path) => {
                         gaps.path_selections += usize::from(!loft_path_is_resolved(path));
                     }
                 }
@@ -1973,7 +1994,7 @@ fn design_projection_gaps(
                     .filter(|section| {
                         matches!(
                             section,
-                            cadmpeg_ir::features::LoftSection::Profile(profile)
+                            cadmpeg_ir::features::profiles::LoftSection::Profile(profile)
                                 if !profile_ref_is_resolved(profile)
                         )
                     })
@@ -2317,8 +2338,8 @@ fn report_design_projection_gaps(
                 feature.evaluation.definition(),
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Extrude {
-                        profile: cadmpeg_ir::features::ProfileRef::Planar(
-                            cadmpeg_ir::features::PlanarProfileRef::Native(id)
+                        profile: cadmpeg_ir::features::profiles::ProfileRef::Planar(
+                            cadmpeg_ir::features::profiles::PlanarProfileRef::Native(id)
                         ),
                         ..
                     }
@@ -2401,7 +2422,7 @@ fn report_design_projection_gaps(
                 feature.evaluation.definition(),
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Extrude {
-                        start: cadmpeg_ir::features::ExtrudeStart::OffsetProfilePlane { .. },
+                        start: cadmpeg_ir::features::extents::ExtrudeStart::OffsetProfilePlane { .. },
                         ..
                     }
                 )
@@ -2432,7 +2453,7 @@ fn report_design_projection_gaps(
                 feature.evaluation.definition(),
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Extrude {
-                        extent: cadmpeg_ir::features::ExtrudeExtent::OneSided { .. },
+                        extent: cadmpeg_ir::features::extents::ExtrudeExtent::OneSided { .. },
                         ..
                     }
                 )
@@ -2456,7 +2477,7 @@ fn report_design_projection_gaps(
                 feature.evaluation.definition(),
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Extrude {
-                        extent: cadmpeg_ir::features::ExtrudeExtent::Symmetric { .. },
+                        extent: cadmpeg_ir::features::extents::ExtrudeExtent::Symmetric { .. },
                         ..
                     },
                 )
@@ -2491,8 +2512,8 @@ fn report_design_projection_gaps(
         if let cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Extrude {
                 profile:
-                    cadmpeg_ir::features::ProfileRef::Planar(
-                        cadmpeg_ir::features::PlanarProfileRef::Native(group),
+                    cadmpeg_ir::features::profiles::ProfileRef::Planar(
+                        cadmpeg_ir::features::profiles::PlanarProfileRef::Native(group),
                     ),
                 ..
             },
@@ -4797,7 +4818,7 @@ fn project_mesh_bodies(
             Some(normals) => {
                 let mut converted = Vec::new();
                 for normal in normals {
-                    converted.push(cadmpeg_ir::features::FiniteVector3::from(normal));
+                    converted.push(cadmpeg_ir::features::geometry::FiniteVector3::from(normal));
                 }
                 Some(converted)
             }

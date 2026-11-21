@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Checked physical chart layouts and paired samples for solved charts.
 
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::FitTolerance;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::{FiniteReal, Magnification, NonNegativeReal, NonZeroReal, PositiveReal};
@@ -517,7 +517,7 @@ mod tests {
 #[cfg(test)]
 mod admission_tests {
     use super::{ChartPreamble, ChartSamples};
-    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::math::Point3;
 
     fn points() -> Vec<FinitePoint3> {
