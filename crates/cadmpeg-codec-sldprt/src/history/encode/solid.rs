@@ -359,12 +359,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         feature.id
                     )));
                 }
-                cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {} if reversed => {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} clears its extrusion reversal",
-                        feature.id
-                    )));
-                }
                 cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {} => {
                     properties.remove("Direction");
                 }
@@ -777,7 +771,9 @@ mod tests {
     }
 
     /// A reversed extrusion projects against its profile normal, and writes
-    /// only where its record keeps the reversal.
+    /// only where its record keeps the reversal. An extrusion along the
+    /// normal over a reversed record keeps the record's flag: the decoder
+    /// gives that travel where the solid contradicts the flag.
     #[test]
     fn a_reversal_writes_only_with_the_record_that_states_it() {
         let record = |reverse: bool| -> crate::records::Feature {
@@ -851,6 +847,10 @@ mod tests {
                 *direction = ExtrudeDirection::ProfileNormal {};
             }
         });
-        assert!(encode(&feature, &reversed).is_err());
+        let kept = encode(&feature, &reversed).expect("the record keeps its flag");
+        assert_eq!(
+            kept.properties.get("Reverse").map(String::as_str),
+            Some("true")
+        );
     }
 }

@@ -4250,7 +4250,14 @@ fn build_geometry_ir(
         source.links_mut().extend(links);
     }
     crate::metadata::mass_properties::append(ctx, &mut ir, &mut pmi_losses)?;
-    if crate::history::extrude_direction::retain_contradicted_directions(&mut ir) {
+    let retained = crate::history::extrude_direction::retain_contradicted_directions(&mut ir);
+    if retained.reversals > 0 {
+        pmi_losses.push(SldprtLossCode::FeatureExtrudeReversalContradicted.note(format!(
+            "{} extrusion(s) travel along the profile normal, as their start and end caps show, against the reversal flag of their end spec.",
+            retained.reversals
+        )));
+    }
+    if retained.changed {
         stamp_feature_baseline(ctx, &mut ir)?;
     }
     stamp_configuration_baseline(ctx, &mut ir)?;
