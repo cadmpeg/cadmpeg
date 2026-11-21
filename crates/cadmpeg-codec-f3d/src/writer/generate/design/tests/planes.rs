@@ -14,7 +14,8 @@ use cadmpeg_ir::design::options::NativeOptions;
 use cadmpeg_ir::design::refs::Member;
 use cadmpeg_ir::design::selection::{PickTarget, PrincipalEntity};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{FeatureDefinition, FeatureId, ParameterValue};
+use cadmpeg_ir::features::parameters::ParameterValue;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId};
 use cadmpeg_ir::scalar::Length;
 
 use super::roster::{segment, Segment};
