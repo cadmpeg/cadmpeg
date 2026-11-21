@@ -228,3 +228,27 @@ fn scan_zstd_checks_cancellation_between_output_steps() {
         Err(StopReason::Cancelled)
     );
 }
+
+#[test]
+fn scan_zstd_frame_of_many_compressed_blocks_is_complete_at_default_limits() {
+    let clock = ManualClock::default();
+    let budget = ScanBudget::new(ScanLimits::default(), &clock);
+    // 32 blocks of 128 KiB: more compressed blocks than the expansion ceiling
+    // admits at one block allowance each.
+    let plain = (0..32 * 128 * 1024)
+        .map(|index: usize| u8::try_from((index % 251) ^ (index / 4096 % 7)).expect("byte"))
+        .collect::<Vec<_>>();
+    let compressed = ruzstd::encoding::compress_to_vec(
+        plain.as_slice(),
+        ruzstd::encoding::CompressionLevel::Fastest,
+    );
+    assert!(
+        compressed.len() < plain.len() / 2,
+        "the blocks are compressed"
+    );
+    let (output, consumed) = budget
+        .inflate(View::over_retained(&compressed), InflateFraming::Zstd)
+        .expect("bounded frame");
+    assert_eq!(output, plain);
+    assert_eq!(consumed, compressed.len());
+}

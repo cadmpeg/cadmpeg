@@ -141,6 +141,15 @@ pub(crate) fn decode(source: View<'_>, budget: &ScanBudget<'_>) -> Result<Vec<u8
                     return Err(StopReason::Malformed("Zstandard content size".into()));
                 }
             }
+            // The decoder holds back at most one window of decoded output, so the
+            // bytes decoded so far are at most `produced + window`. Return the
+            // remainder of the block allowances now rather than at the end of the
+            // frame.
+            let decoded_bound = active.produced.saturating_add(active.window);
+            if reserved > decoded_bound {
+                budget.release_expansion(reserved - decoded_bound);
+                reserved = decoded_bound;
+            }
         }
         if let (Some(declared), Some(computed)) = (
             active.decoder.get_checksum_from_data(),
