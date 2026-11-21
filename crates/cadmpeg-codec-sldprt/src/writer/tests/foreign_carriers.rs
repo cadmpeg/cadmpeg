@@ -315,8 +315,9 @@ fn a_procedural_surface_without_a_cache_leaves_its_body_out() {
     assert!(decoded.geometry.faces.is_empty());
 }
 
-#[test]
-fn history_with_another_formats_native_references_is_written() {
+/// The cube with a triangle sketch and an extrude of it, as another format
+/// states them: each feature carries that format's own native reference.
+fn cube_with_foreign_history() -> cadmpeg_ir::CadIr {
     use cadmpeg_ir::features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
         FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
@@ -425,10 +426,50 @@ fn history_with_another_formats_native_references_is_written() {
     ir.model
         .set_feature_regeneration_parent(&extrude_id, &sketch_feature_id)
         .unwrap();
+    ir
+}
+
+#[test]
+fn history_with_another_formats_native_references_is_written() {
+    let ir = cube_with_foreign_history();
     let losses = plan_losses(&ir);
     assert!(
         loss(&losses, "writer.features-omitted").is_none(),
         "{losses:#?}"
+    );
+    let decoded = crate::test_support::ir::encode_decode(&ir);
+    assert_eq!(decoded.model.sketches.len(), 1);
+}
+
+#[test]
+fn a_sketch_curve_outside_every_profile_is_left_out_and_its_sketch_is_written() {
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::sketches::{
+        SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition,
+    };
+    let mut ir = cube_with_foreign_history();
+    let sketch = ir.model.sketches[0].id.clone();
+    ir.model.sketch_entities.push(SketchEntity::new(
+        SketchEntityId::mint("other:model:sketch-entity#construction").unwrap(),
+        sketch,
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(5.0, 5.0),
+        })
+        .unwrap(),
+    ));
+    let losses = plan_losses(&ir);
+    let notes = losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "writer.features-omitted")
+        .collect::<Vec<_>>();
+    assert_eq!(notes.len(), 1, "{notes:#?}");
+    assert!(
+        notes[0]
+            .message
+            .contains("without 1 such curve(s): other:model:sketch-entity#construction"),
+        "{}",
+        notes[0].message
     );
     let decoded = crate::test_support::ir::encode_decode(&ir);
     assert_eq!(decoded.model.sketches.len(), 1);

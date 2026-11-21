@@ -40,6 +40,8 @@ struct Removed {
     sketches: BTreeSet<String>,
     constraints: BTreeSet<String>,
     parameters: BTreeSet<String>,
+    /// Sketch curves outside every profile of their sketch.
+    entities: BTreeSet<String>,
 }
 
 impl HistoryDrop {
@@ -124,6 +126,7 @@ impl Removed {
             && self.sketches.is_empty()
             && self.constraints.is_empty()
             && self.parameters.is_empty()
+            && self.entities.is_empty()
     }
 
     fn notes(&self, reason: &str) -> Vec<LossNote> {
@@ -140,6 +143,14 @@ impl Removed {
                 list(&self.features),
                 list(&self.sketches),
                 list(&self.parameters),
+            )));
+        }
+        if !self.entities.is_empty() {
+            notes.push(SldprtLossCode::WriterFeaturesOmitted.note(format!(
+                "the SLDPRT history writer cannot write a sketch curve outside the sketch's \
+                 profiles ({reason}); it writes the sketches without {} such curve(s): {}",
+                self.entities.len(),
+                list(&self.entities),
             )));
         }
         if !self.constraints.is_empty() {
@@ -190,8 +201,19 @@ fn named_records(ir: &CadIr, message: &str) -> Removed {
             .map(str::to_owned),
     );
     for entity in &model.sketch_entities {
-        if named(entity.id().as_str()) {
+        if !named(entity.id().as_str()) {
+            continue;
+        }
+        let profiled = model
+            .sketches
+            .iter()
+            .filter(|sketch| sketch.id == entity.sketch)
+            .flat_map(|sketch| sketch.profiles.iter().flatten())
+            .any(|entity_use| &entity_use.entity == entity.id());
+        if profiled {
             seeds.sketches.insert(entity.sketch.as_str().to_owned());
+        } else {
+            seeds.entities.insert(entity.id().as_str().to_owned());
         }
     }
     seeds.constraints.extend(
@@ -216,6 +238,14 @@ fn named_records(ir: &CadIr, message: &str) -> Removed {
             .filter(|id| named(id))
             .map(str::to_owned),
     );
+    // A failure that names a constraint concerns that constraint; the other
+    // records it names are its operands.
+    if !seeds.constraints.is_empty() {
+        return Removed {
+            constraints: seeds.constraints,
+            ..Removed::default()
+        };
+    }
     seeds
 }
 
@@ -240,6 +270,7 @@ fn every_design_record(ir: &CadIr) -> Removed {
             .collect(),
         constraints: BTreeSet::new(),
         parameters: BTreeSet::new(),
+        entities: BTreeSet::new(),
     }
 }
 
@@ -265,6 +296,7 @@ fn remove(ir: &mut CadIr, seeds: &Removed) -> Removed {
         .collect::<Vec<_>>();
     let mut dropped = seeds.features.clone();
     dropped.extend(seeds.sketches.iter().cloned());
+    dropped.extend(seeds.entities.iter().cloned());
     // A feature or sketch that names a dropped feature or sketch needs it. A
     // tree node only groups its children, and is kept.
     loop {
@@ -329,12 +361,20 @@ fn remove(ir: &mut CadIr, seeds: &Removed) -> Removed {
     model
         .sketch_entities
         .retain(|entity| !removed.sketches.contains(entity.sketch.as_str()));
+    model.sketch_entities.retain(|entity| {
+        let keep = !seeds.entities.contains(entity.id().as_str());
+        if !keep {
+            removed.entities.insert(entity.id().as_str().to_owned());
+        }
+        keep
+    });
     model
         .spatial_sketch_entities
         .retain(|entity| !mentions(&value(entity), &removed.sketches));
     model.sketch_constraints.retain(|constraint| {
         let keep = !removed.sketches.contains(constraint.sketch.as_str())
-            && !seeds.constraints.contains(constraint.id.as_str());
+            && !seeds.constraints.contains(constraint.id.as_str())
+            && !mentions(&value(constraint), &removed.entities);
         if !keep && !removed.sketches.contains(constraint.sketch.as_str()) {
             removed
                 .constraints
@@ -411,3 +451,6 @@ fn mentions(record: &Value, ids: &BTreeSet<String>) -> bool {
         other => walk(other, ids),
     }
 }
+
+#[cfg(test)]
+mod tests;
