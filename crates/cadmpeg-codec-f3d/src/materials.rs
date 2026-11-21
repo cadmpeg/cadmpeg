@@ -730,34 +730,34 @@ pub(crate) fn decode_with_body_bindings<'a>(
     )?;
     let body_overrides = decode_body_appearance_overrides(ctx, scan, body_bindings)?;
     for over in &body_overrides {
-        if bindings.iter().any(
-            |binding| matches!(&binding.target.entity, AppearanceTarget::Body(body) if body == &over.body),
-        ) {
-            continue;
-        }
         let Some(appearance) = appearance_for_visual_token(&out, &over.visual_guid, None)? else {
             continue;
         };
-        bindings.push(AppearanceBinding {
-            id: crate::ids::body_appearance_binding_id(
-                over.entity_suffix,
-                over.visual_guid.identity_key(),
-            ),
-            target: AppearanceTarget::Body(over.body.clone()).into(),
-            appearance: appearance.id.clone(),
-            source_entity_id: None,
-            object_type: (object_types.get(&over.entity_suffix).map(String::as_str))
-                .map(std::borrow::ToOwned::to_owned),
-            visible: None,
-            channels: named_act_channels(
-                format_args!(
-                    "f3d:appearance:body#{}:{}",
-                    over.entity_suffix, over.visual_guid
+        // A body-override record takes precedence over the body's material
+        // assignment, so it replaces that binding.
+        bind_body_override(
+            &mut bindings,
+            AppearanceBinding {
+                id: crate::ids::body_appearance_binding_id(
+                    over.entity_suffix,
+                    over.visual_guid.identity_key(),
                 ),
-                act_channels.get(&over.entity_suffix),
-            )?,
-            native_ref: None,
-        });
+                target: AppearanceTarget::Body(over.body.clone()).into(),
+                appearance: appearance.id.clone(),
+                source_entity_id: None,
+                object_type: (object_types.get(&over.entity_suffix).map(String::as_str))
+                    .map(std::borrow::ToOwned::to_owned),
+                visible: None,
+                channels: named_act_channels(
+                    format_args!(
+                        "f3d:appearance:body#{}:{}",
+                        over.entity_suffix, over.visual_guid
+                    ),
+                    act_channels.get(&over.entity_suffix),
+                )?,
+                native_ref: None,
+            },
+        );
     }
     let face_assignments = decode_face_appearance_assignments(scan)?;
     let has_topology_assignments =
@@ -2167,6 +2167,22 @@ fn generic_connection_delta(record: &[u8], value_block: usize) -> Option<usize> 
         }
         _ => None,
     }
+}
+
+/// Binds a body override: it replaces every existing binding of the same body
+/// and leaves bindings of other targets untouched.
+/// Binds a body-override appearance. The override takes precedence over the
+/// body's material assignment: a binding of the same body to another
+/// appearance is replaced, and a binding to the same appearance is kept with
+/// its assignment provenance.
+fn bind_body_override(bindings: &mut Vec<AppearanceBinding>, binding: AppearanceBinding) {
+    if bindings.iter().any(|existing| {
+        existing.target.entity == binding.target.entity && existing.appearance == binding.appearance
+    }) {
+        return;
+    }
+    bindings.retain(|existing| existing.target.entity != binding.target.entity);
+    bindings.push(binding);
 }
 
 #[cfg(test)]
