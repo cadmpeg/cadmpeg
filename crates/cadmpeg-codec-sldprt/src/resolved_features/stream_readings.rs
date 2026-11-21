@@ -6,10 +6,9 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::document::Model;
-use cadmpeg_ir::features::{
-    Feature, FeatureDefinition, FeatureId, FeatureOperation, FinitePoint3, PlanarProfileRef,
-    ProfileRef,
-};
+use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::geometry::{Curve, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;

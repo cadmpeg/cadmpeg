@@ -2,9 +2,11 @@
 
 use std::collections::{BTreeMap, HashSet};
 
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::parameters::{DesignParameter, DimensionDisplay, ParameterValue};
+use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{
-    DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, FeatureOperation,
-    ParameterId, ParameterValue, SketchFeatureBinding,
+    Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId, SketchFeatureBinding,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::Length;
@@ -58,15 +60,15 @@ fn feature(native: &str, name: &str, sketch: SketchFeatureBinding) -> Feature {
         ordinal: 0,
         name: Some(name.into()),
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
         native_ref: Some(native.into()),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Operation(FeatureOperation::Sketch { sketch }),
-        ),
+        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::Sketch { sketch },
+        )),
     }
 }
 
@@ -175,7 +177,7 @@ fn a_configuration_pass_binds_the_dimensioned_stream_circle_to_its_feature() {
         expression: format!("<MOD-DIAM>{}", 2.0 * RADIUS),
         display: Some(DimensionDisplay::Diameter),
         value: Some(ParameterValue::Length(Length::new(2.0 * RADIUS).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,

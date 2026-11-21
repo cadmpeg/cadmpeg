@@ -908,15 +908,26 @@ impl DesignFaceRecipeNode {
 }
 
 impl DesignFaceRecipeStructure {
+    /// Whether the node has two endpoint clauses and valid operand ordinals.
     pub(crate) fn has_valid_operand_ordinals(&self, references: &[DesignRecipeReference]) -> bool {
+        self.sides.len() == 2 && self.has_valid_boundary_edge_ordinals(references)
+    }
+
+    /// Whether the node has one or two endpoint clauses, as its second
+    /// prelude value states, and every ordinal names a prefix operand. A
+    /// one-clause node names a closed boundary edge.
+    pub(crate) fn has_valid_boundary_edge_ordinals(
+        &self,
+        references: &[DesignRecipeReference],
+    ) -> bool {
         let Some(ordinals) = prefix_operand_ordinals(references) else {
             return false;
         };
         let operand_count = ordinals.iter().max().map_or(0, |ordinal| ordinal + 1);
         let in_range =
             |value: i32| usize::try_from(value).is_ok_and(|ordinal| ordinal < operand_count);
-        self.prelude[1] == 2
-            && self.sides.len() == 2
+        matches!(self.prelude[1], 1 | 2)
+            && usize::try_from(self.prelude[1]).is_ok_and(|count| count == self.sides.len())
             && in_range(self.root)
             && in_range(self.prelude[0])
             && self.sides.iter().all(|side| {

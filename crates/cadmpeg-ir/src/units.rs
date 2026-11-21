@@ -4,7 +4,7 @@
 //! Stored lengths and coordinates use millimeters. Angular quantities use
 //! radians.
 
-use crate::features::FiniteVector3;
+use crate::features::geometry::FiniteVector3;
 use crate::math::portable::Portable;
 use crate::math::sum::ScaledValue;
 use crate::math::{Point2, Vector3};
@@ -68,6 +68,22 @@ enum CanonicalTimeUnitWire {
 /// that binds a carrier to topology applies the same bound, so a binding it
 /// accepts is one the topology contract also accepts.
 pub const COINCIDENCE_TOLERANCE: f64 = 0.01;
+
+/// The distance within which positions the model makes coincide agree: the
+/// largest of [`COINCIDENCE_TOLERANCE`], the document's `linear` tolerance and
+/// the declared `tolerances` (edge, vertex, face, cache fit) that apply there.
+/// Validation and every writer that decides whether its output meets that
+/// check use this one bound, so the two cannot disagree.
+pub fn coincidence_allowance(
+    linear: crate::scalar::PositiveLength,
+    tolerances: &[Option<f64>],
+) -> f64 {
+    tolerances
+        .iter()
+        .flatten()
+        .copied()
+        .fold(COINCIDENCE_TOLERANCE.max(linear.get()), f64::max)
+}
 
 /// An array of finite coordinates.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -517,7 +533,7 @@ impl UnitVector3 {
     /// Normalize a finite nonzero displacement with the binade chart used by
     /// [`crate::features::FiniteVector3::unit_nonzero`].
     #[must_use]
-    pub fn normalized_nonzero(value: crate::features::FiniteVector3) -> Option<Self> {
+    pub fn normalized_nonzero(value: crate::features::geometry::FiniteVector3) -> Option<Self> {
         value.unit_nonzero().map(Self)
     }
     /// Normalize three exact sums, each rescaled into the frame of the largest
@@ -1257,7 +1273,7 @@ mod tests {
 
     #[test]
     fn normalized_nonzero_keeps_asm_reader_bits() {
-        let source = crate::features::FiniteVector3::new(Vector3::new(
+        let source = crate::features::geometry::FiniteVector3::new(Vector3::new(
             f64::MIN_POSITIVE,
             f64::MIN_POSITIVE / 2.0,
             0.0,
@@ -1270,7 +1286,7 @@ mod tests {
         assert_eq!(actual.x.to_bits(), expected.x.to_bits());
         assert_eq!(actual.y.to_bits(), expected.y.to_bits());
         assert_eq!(actual.z.to_bits(), expected.z.to_bits());
-        let zero = crate::features::FiniteVector3::new(Vector3::new(0.0, 0.0, 0.0))
+        let zero = crate::features::geometry::FiniteVector3::new(Vector3::new(0.0, 0.0, 0.0))
             .expect("finite zero vector");
         assert!(UnitVector3::normalized_nonzero(zero).is_none());
     }
@@ -1316,7 +1332,7 @@ mod tests {
 
     #[test]
     fn nonzero_unit_normalization_keeps_charted_bits_for_subnormals() {
-        use crate::features::FiniteVector3;
+        use crate::features::geometry::FiniteVector3;
 
         for raw in [
             Vector3::new(5.0e-324, 0.0, -0.0),
@@ -1346,7 +1362,7 @@ mod tests {
     #[test]
     fn finite_frame_triplet_carries_into_a_finite_point() {
         let frame = FiniteVector::new([1.0, 2.0, 3.0, -4.0]).unwrap();
-        let point = crate::features::FinitePoint3::from(frame.three_at(1).unwrap());
+        let point = crate::features::geometry::FinitePoint3::from(frame.three_at(1).unwrap());
         assert_eq!(point.get(), crate::math::Point3::new(2.0, 3.0, -4.0));
         assert_eq!(frame.three_at(2), None);
     }
@@ -1389,8 +1405,8 @@ mod tests {
             Vector3::new(0.577_350_269_2, -0.577_350_269_2, 0.577_350_269_2),
         ] {
             let direction = UnitVector3::new(admitted).expect("admitted direction");
-            let expected = crate::features::FiniteVector3::new(admitted)
-                .and_then(crate::features::FiniteVector3::unit_nonzero)
+            let expected = crate::features::geometry::FiniteVector3::new(admitted)
+                .and_then(crate::features::geometry::FiniteVector3::unit_nonzero)
                 .expect("finite nonzero direction");
             let charted = *direction.to_unit_length_charted().as_raw();
             assert_eq!(
@@ -2030,14 +2046,14 @@ mod tests {
 
     #[test]
     fn nonzero_finite_vector_normalization_preserves_binade_components() {
-        let value = crate::features::FiniteVector3::new(Vector3::new(0.0, 0.0, 1.0e-310))
+        let value = crate::features::geometry::FiniteVector3::new(Vector3::new(0.0, 0.0, 1.0e-310))
             .expect("finite vector");
         let expected = value.unit_nonzero().expect("nonzero vector");
         let actual = UnitVector3::normalized_nonzero(value).expect("nonzero vector");
         assert_eq!(actual.as_raw().x.to_bits(), expected.x.to_bits());
         assert_eq!(actual.as_raw().y.to_bits(), expected.y.to_bits());
         assert_eq!(actual.as_raw().z.to_bits(), expected.z.to_bits());
-        let zero = crate::features::FiniteVector3::new(Vector3::new(0.0, 0.0, 0.0))
+        let zero = crate::features::geometry::FiniteVector3::new(Vector3::new(0.0, 0.0, 0.0))
             .expect("finite vector");
         assert_eq!(UnitVector3::normalized_nonzero(zero), None);
     }
@@ -2174,7 +2190,7 @@ mod tests {
 
     #[test]
     fn increasing_intervals_and_unit_directions_carry_into_finite_vectors() {
-        use crate::features::FiniteVector3;
+        use crate::features::geometry::FiniteVector3;
         use crate::topology::IncreasingParameterInterval;
 
         let interval = IncreasingParameterInterval::new([-2.0, 0.5]).expect("increasing");

@@ -10,11 +10,16 @@ use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::classification::{classify, FeatureClass};
 use crate::history::classify::{extrude_feature_op, is_extrude};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{
-    holes::{HoleBottom, HoleConstruction, HoleKind, HolePlacement, HoleProfileFilter},
-    BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeStart, FaceMaker, FaceSelection,
-    InnerWireTaper, LinearTermination, PlanarProfileRef, ProfileRef,
+use cadmpeg_ir::features::extents::{
+    ExtrudeDirection, ExtrudeExtent, ExtrudeStart, LinearTermination,
 };
+use cadmpeg_ir::features::holes::{
+    HoleBottom, HoleConstruction, HoleKind, HolePlacement, HoleProfileFilter,
+};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::sweeps::{FaceMaker, InnerWireTaper};
 
 /// The decoded fields of one `Extrude` operation, borrowed from the feature definition.
 #[derive(Clone, Copy)]
@@ -34,7 +39,7 @@ pub(super) struct ExtrudeDefinition<'a> {
 /// The decoded fields of one `Hole` operation, borrowed from the feature definition.
 #[derive(Clone, Copy)]
 pub(super) struct HoleDefinition<'a> {
-    pub(super) profile: Option<&'a cadmpeg_ir::features::PlanarProfileRef>,
+    pub(super) profile: Option<&'a cadmpeg_ir::features::profiles::PlanarProfileRef>,
     pub(super) profile_filter: Option<&'a HoleProfileFilter>,
     pub(super) face: Option<&'a FaceSelection>,
     pub(super) placements: Option<&'a [HolePlacement]>,
@@ -73,7 +78,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         Ok({
             // Writer accepts only a first-side draft; second-side draft or
             // any side offset is rejected.
-            let has_offset = |side: &cadmpeg_ir::features::ExtrudeSide| {
+            let has_offset = |side: &cadmpeg_ir::features::extents::ExtrudeSide| {
                 matches!(
                     side.termination,
                     LinearTermination::ToFace {
@@ -101,8 +106,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 ExtrudeDirection::Explicit { source, .. } => source.as_ref(),
                 _ => None,
             };
-            if !matches!(start, cadmpeg_ir::features::ExtrudeStart::ProfilePlane {})
-                || second_side_draft.is_some()
+            if !matches!(
+                start,
+                cadmpeg_ir::features::extents::ExtrudeStart::ProfilePlane {}
+            ) || second_side_draft.is_some()
                 || direction_source.is_some()
                 || solid == Some(false)
                 || face_maker.is_some()
@@ -332,18 +339,18 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 }
             }
             match direction {
-                cadmpeg_ir::features::ExtrudeDirection::Unresolved {}
+                cadmpeg_ir::features::extents::ExtrudeDirection::Unresolved {}
                     if self.contradicted_travel
                         && existing
                             .is_some_and(|record| !record.properties.contains_key("Direction")) => {
                 }
-                cadmpeg_ir::features::ExtrudeDirection::Unresolved {} => {
+                cadmpeg_ir::features::extents::ExtrudeDirection::Unresolved {} => {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} has an unresolved extrusion direction",
                         feature.id
                     )));
                 }
-                cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {}
+                cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {}
                     if self.contradicted_travel =>
                 {
                     return Err(CodecError::NotImplemented(format!(
@@ -351,16 +358,16 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         feature.id
                     )));
                 }
-                cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {} => {
+                cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {} => {
                     properties.remove("Direction");
                 }
-                cadmpeg_ir::features::ExtrudeDirection::ReversedProfileNormal {} => {
+                cadmpeg_ir::features::extents::ExtrudeDirection::ReversedProfileNormal {} => {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} uses a reversed profile-normal extrusion direction",
                         feature.id
                     )));
                 }
-                cadmpeg_ir::features::ExtrudeDirection::Explicit { vector, .. } => {
+                cadmpeg_ir::features::extents::ExtrudeDirection::Explicit { vector, .. } => {
                     properties.insert(
                         cadmpeg_core::nonblank_literal!("Direction"),
                         format_vector3((*vector).into()),

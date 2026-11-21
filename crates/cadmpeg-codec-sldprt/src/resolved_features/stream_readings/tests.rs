@@ -436,7 +436,7 @@ pub(crate) fn solid(
     lines: &[([f64; 3], [f64; 3])],
     circles: &[([f64; 3], [f64; 3], f64)],
 ) -> SolidEdges {
-    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::geometry::analytic::{CircleCurve, LineCurve};
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
     use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};

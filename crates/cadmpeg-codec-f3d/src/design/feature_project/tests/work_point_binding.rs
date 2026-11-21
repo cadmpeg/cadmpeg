@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::u64_from_index;
 
-use crate::design::feature_project::bind_work_point_sketch_point_constructions;
+use crate::design::feature_project::work_points::bind_work_point_sketch_point_constructions;
 use crate::layout::work_point_sketch_point_identity as layout;
 use crate::records::feature::scope::{
     DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
@@ -11,9 +11,8 @@ use crate::records::feature::work_geometry::{
     DesignWorkPointRule, DesignWorkPointRuleForm, DesignWorkPointSketchPointSelection,
     DesignWorkPointSketchPointSelectionDraft,
 };
-use cadmpeg_ir::features::{
-    Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
-};
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::sketches::{
     SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
@@ -99,8 +98,10 @@ fn fixture() -> (
         source_content: Default::default(),
         evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
             FeatureOperation::DatumPoint {
-                position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
-                    .unwrap(),
+                position: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                    1.0, 2.0, 3.0,
+                ))
+                .unwrap(),
                 construction: None,
             },
         )),
@@ -129,7 +130,7 @@ fn fixture() -> (
 
 #[test]
 fn work_point_sketch_binding_preserves_planar_and_spatial_selections() {
-    use cadmpeg_ir::features::{DatumPointConstruction, SketchPointSelection};
+    use cadmpeg_ir::features::datums::{DatumPointConstruction, SketchPointSelection};
     let (scope, feature, planar, spatial) = fixture();
     let mut planar_features = [feature.clone()];
     bind_work_point_sketch_point_constructions(

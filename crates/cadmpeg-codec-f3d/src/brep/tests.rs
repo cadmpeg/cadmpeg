@@ -48,7 +48,9 @@ fn generic_tag_attribute(
         ]
         .into_iter()
         .chain(groups)
+        .map(Some)
         .collect(),
+        native_ref: None,
     }
 }
 
@@ -551,6 +553,7 @@ fn source_curve_keys_retain_distinct_qualifiers_in_every_payload_form() {
             }
         }
         for values in forms {
+            let values = values.into_iter().map(Some).collect::<Vec<_>>();
             let payload = super::sketch_link_payload(&values).expect("source-curve key");
             assert_eq!((payload.sketch_curve_id, payload.ref_b), (149, qualifier));
         }

@@ -236,7 +236,7 @@ or regenerated current-design selection.
 
 **Need.** We must know the form to frame type-81 records in a stream that the shared node reader does not frame to its terminator.
 
-**Conflict.** The decoder's type-81 scan accepts the prefixed form when the first reference byte is `01`. A consecutive reference whose index cell starts with `01` then fails to frame. The decoder omits that record and reports a topology attribute list that reaches it with the loss `nx/attribute.list-unresolved`.
+**Conflict.** The decoder's type-81 scan accepts the prefixed form when the first reference byte is `01`, a byte of `00` or `01` precedes every reference, and a byte of `00` or `01` follows the last reference. Otherwise it reads consecutive references. A consecutive run that satisfies the prefixed form then fails to frame. The decoder omits that record and reports a topology attribute list that reaches it with the loss `nx/attribute.list-unresolved`.
 
 ### PS-42. Control values outside a terminated sequence
 
@@ -253,6 +253,14 @@ or regenerated current-design selection.
 **Known.** `siemens_nx.md` §6.1 "Validity gates: CIRCLE, ELLIPSE, CYLINDER, and SPHERE radii are positive." gives positive TORUS radii. `sldprt.md` §7.1 gives a negative major radius for SLDPRT that reverses the surface parameter frame. The NX decoder omits a TORUS record with a negative major radius and reports `carrier.torus-negative-major-unresolved`.
 
 **Need.** We must know the surface and its face sense before an NX TORUS with a negative major radius can transfer as exact geometry.
+
+### PS-44. SWEPT_SURF surface parameterization
+
+**Question.** What is the role of `scale` in the SWEPT_SURF parameterization, and what are the pcurve parameters when the section is a LINE or another analytic curve?
+
+**Known.** `siemens_nx.md` §6.2.1 defines the record and the linear sweep along `sweep × scale`. A pcurve at constant `v` across the full `u` range of a B-curve section is the section moved along the sweep. The decoder keeps pcurve parameters unchanged on this surface.
+
+**Need.** We must know the parameterization to evaluate a pcurve on every swept surface.
 
 ## 2. Object model and body composition
 

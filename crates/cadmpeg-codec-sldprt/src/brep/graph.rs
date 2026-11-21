@@ -6,7 +6,7 @@
 //! explicit body records. It derives one body hierarchy when those records are
 //! absent. It also derives supported pcurves and periodic seams.
 
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::math::Point3;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
@@ -3807,7 +3807,7 @@ fn decode_graph_inner(
             Some("00_1d"),
         );
         let [x, y, z] = rec.xyz_m;
-        let finite_position = cadmpeg_ir::features::FinitePoint3::new(
+        let finite_position = cadmpeg_ir::features::geometry::FinitePoint3::new(
             cadmpeg_ir::math::Point3::new(x * LEN_TO_MM, y * LEN_TO_MM, z * LEN_TO_MM),
         )
         .ok_or(Point::NON_FINITE_POSITION)
@@ -3899,7 +3899,7 @@ fn decode_graph_inner(
             annotations.exactness(point_id.as_str(), Exactness::Derived);
             annotations.note(vertex_id.as_str(), &source_stream, 0, Some(seam_note));
             annotations.exactness(vertex_id.as_str(), Exactness::Derived);
-            let finite_position = cadmpeg_ir::features::FinitePoint3::new(position)
+            let finite_position = cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                 .ok_or(Point::NON_FINITE_POSITION)
                 .map_err(cadmpeg_core::CodecError::malformed)?;
             admit_brep_entity(ctx)?;
@@ -9230,9 +9230,9 @@ fn synthesize_cylinder_seams(
             }
             if let Some(&index) = vertex_points.get(vertex_id) {
                 out.points[index].set_position(
-                    cadmpeg_ir::features::FinitePoint3::new(position).ok_or_else(|| {
-                        cadmpeg_core::CodecError::Malformed(Point::NON_FINITE_POSITION.into())
-                    })?,
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(position).ok_or_else(
+                        || cadmpeg_core::CodecError::Malformed(Point::NON_FINITE_POSITION.into()),
+                    )?,
                 );
             }
         }
@@ -11652,17 +11652,17 @@ mod tests {
             points: vec![
                 Point::new(
                     start_point,
-                    cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
-                        1000.0, 0.0, 0.0,
-                    ))
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(
+                        cadmpeg_ir::math::Point3::new(1000.0, 0.0, 0.0),
+                    )
                     .expect("a finite position is a point"),
                     None,
                 ),
                 Point::new(
                     end_point,
-                    cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
-                        1000.0, 0.0, 0.0,
-                    ))
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(
+                        cadmpeg_ir::math::Point3::new(1000.0, 0.0, 0.0),
+                    )
                     .expect("a finite position is a point"),
                     None,
                 ),

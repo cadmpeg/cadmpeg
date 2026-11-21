@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::design::feature_project::authored_scope_ordinals;
 use crate::design::feature_project::reverse_normal::project_reverse_normal;
+use crate::design::feature_project::scope_order::authored_scope_ordinals;
 use crate::loss::F3dLossCode;
 use crate::records::entity_header::{BaseTypeGuid, SegmentType, SegmentTypeData};
 use crate::records::feature::body_ops::DesignReverseNormalOperation;
@@ -18,7 +18,8 @@ use crate::records::topology::construction::{
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use crate::test_support::reverse_normal::{linked, timeline};
 use cadmpeg_core::decode::u64_from_index;
-use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 
 const STREAM: &str = "f3d:native/BulkStream.dat";

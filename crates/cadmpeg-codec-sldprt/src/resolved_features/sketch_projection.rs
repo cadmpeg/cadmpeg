@@ -583,7 +583,7 @@ mod projected_brep_output_tests {
             }],
             points: vec![Point::new(
                 point_id,
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
                     .expect("finite position"),
                 None,
             )],

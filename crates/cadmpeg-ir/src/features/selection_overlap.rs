@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Borrowed overlap checks for feature operand memberships.
 
-use super::{
+use crate::features::selections::{
     BodyMembers, BodySelection, FaceSelection, GeneratedBodyRef, GeneratedFaceRef, VertexSelection,
 };
 use crate::ids::{BodyId, FeatureInputTopologyId, HistoricalBodyId, HistoricalFaceId};

@@ -11,7 +11,7 @@ use crate::eval::model_surface_point_by_id;
 use crate::eval::nurbs_pcurve_parameter_domain;
 use crate::eval::pcurve_tangent;
 use crate::eval::EvaluationFailure;
-use crate::features::{FinitePoint3, FiniteVector3};
+use crate::features::geometry::{FinitePoint3, FiniteVector3};
 use crate::geometry::{
     pcurve::PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
@@ -23,7 +23,7 @@ use crate::report::{
 use crate::scalar::{ExtendedReal, FiniteReal};
 use crate::topology::{ParameterInterval, Sense};
 
-use crate::units::COINCIDENCE_TOLERANCE;
+use crate::units::{coincidence_allowance, COINCIDENCE_TOLERANCE};
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 use cadmpeg_core::CodecError;
 
@@ -99,15 +99,6 @@ fn worse_mismatch(first: f64, second: f64) -> f64 {
     }
 }
 
-/// The coincidence allowance combines the document-wide uncertainty with any
-/// stored edge, vertex, face, or carrier tolerances.
-fn allowance(document_tolerance: crate::scalar::PositiveLength, tolerances: &[Option<f64>]) -> f64 {
-    tolerances.iter().flatten().copied().fold(
-        COINCIDENCE_TOLERANCE.max(document_tolerance.get()),
-        f64::max,
-    )
-}
-
 /// Two independently evaluated procedural carriers can each consume the
 /// baseline coincidence allowance. The solved cache's explicit fit tolerance
 /// widens that allowance when it is larger.
@@ -115,7 +106,7 @@ fn procedural_support_allowance(
     document_tolerance: crate::scalar::PositiveLength,
     cache_fit_tolerance: Option<f64>,
 ) -> f64 {
-    COINCIDENCE_TOLERANCE + allowance(document_tolerance, &[cache_fit_tolerance])
+    COINCIDENCE_TOLERANCE + coincidence_allowance(document_tolerance, &[cache_fit_tolerance])
 }
 
 /// Embedded support pcurves must map through their surfaces onto the curve
@@ -658,21 +649,6 @@ fn vertex_positions(ir: &CadIr) -> BorrowedIdentities<'_, (Point3, Option<f64>)>
     })
 }
 
-/// The bounded domain of a curve that an edge with no range runs over: its
-/// stored interval, or the effective knot domain of a clamped NURBS curve.
-fn bounded_curve_domain(curve: &crate::geometry::Curve) -> Option<[f64; 2]> {
-    if let Some(range) = curve.parameter_range {
-        return Some(range.endpoints());
-    }
-    match curve.geometry.solved() {
-        Some(SolvedCurveGeometry::Nurbs(nurbs)) if !nurbs.periodic() => {
-            crate::eval::nurbs_curve_parameter_domain(nurbs)
-                .map(crate::topology::IncreasingParameterInterval::endpoints)
-        }
-        _ => None,
-    }
-}
-
 /// Whether a curve carrier is open: a bounded carrier whose ends do not
 /// coincide within `bound`, or an unbounded line, parabola, or hyperbola. A
 /// carrier that neither its kind nor an evaluation decides is not open.
@@ -717,14 +693,19 @@ pub(super) fn vertexless_edge_on_open_carrier(
     if edge.param_range().is_some() {
         return Ok(false);
     }
-    let bound = allowance(
+    let bound = coincidence_allowance(
         linear,
         &[
             edge.tolerance.map(crate::scalar::PositiveReal::get),
             cache_fit_tolerance.map(crate::geometry::FitTolerance::get),
         ],
     );
-    carrier_is_open(ctx, &curve.geometry, bounded_curve_domain(curve), bound)
+    carrier_is_open(
+        ctx,
+        &curve.geometry,
+        crate::eval::bounded_curve_domain(curve),
+        bound,
+    )
 }
 
 /// An edge's curve evaluated at its parameter range must land on the edge's
@@ -744,7 +725,7 @@ pub(super) fn check_edge_endpoint_consistency(
     });
     let curve_domains = BorrowedIdentities::build(|add| {
         for curve in &ir.geometry.curves {
-            if let Some(domain) = bounded_curve_domain(curve) {
+            if let Some(domain) = crate::eval::bounded_curve_domain(curve) {
                 add(curve.id.as_str(), domain);
             }
         }
@@ -806,7 +787,7 @@ pub(super) fn check_edge_endpoint_consistency(
         ) else {
             continue;
         };
-        let bound = allowance(
+        let bound = coincidence_allowance(
             ir.tolerances.linear,
             &[
                 edge.tolerance.map(crate::scalar::PositiveReal::get),
@@ -891,7 +872,7 @@ pub(super) fn check_edge_endpoint_consistency(
         ) else {
             continue;
         };
-        let bound = allowance(
+        let bound = coincidence_allowance(
             ir.tolerances.linear,
             &[
                 edge.tolerance.map(crate::scalar::PositiveReal::get),
@@ -1037,7 +1018,7 @@ pub(super) fn check_pcurve_surface_consistency(
             Some(curve) => curves.get(curve.as_str()).copied(),
             None => None,
         };
-        let bound = allowance(
+        let bound = coincidence_allowance(
             ir.tolerances.linear,
             &[
                 edge.tolerance.map(crate::scalar::PositiveReal::get),
@@ -1054,7 +1035,7 @@ pub(super) fn check_pcurve_surface_consistency(
         // carrier fit tolerance may qualify the final image, but must not let
         // inverse recovery move an explicitly ranged occurrence onto a
         // different, merely nearby part of the carrier.
-        let recovery_bound = allowance(
+        let recovery_bound = coincidence_allowance(
             ir.tolerances.linear,
             &[
                 edge.tolerance.map(crate::scalar::PositiveReal::get),

@@ -7,11 +7,10 @@ use std::collections::{BTreeMap, BinaryHeap, HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::{
-    features::{DesignParameter, ParameterId, ParameterValue},
-    report::loss::LossNote,
-    scalar::{Angle, FiniteReal, Length},
-};
+use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
+use cadmpeg_ir::features::ParameterId;
+use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::scalar::{Angle, FiniteReal, Length};
 use serde::{Deserialize, Serialize};
 
 use crate::loss::InventorLossCode;
@@ -709,7 +708,7 @@ pub(crate) fn project_parameters(
         } else {
             renderer.emit(token, parameter.formula.index(), expression_length)?
         };
-        let mut dependency_members = cadmpeg_ir::features::DistinctMembers::default();
+        let mut dependency_members = cadmpeg_ir::features::selections::DistinctMembers::default();
         dependency_members.extend(dependencies);
         projected.push(DesignParameter {
             product_definition: None,
@@ -1674,7 +1673,8 @@ mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
     use cadmpeg_core::decode::{DecodeContext, View};
     use cadmpeg_core::CodecError;
-    use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
+    use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
+    use cadmpeg_ir::features::ParameterId;
     use cadmpeg_ir::scalar::{FiniteReal, Length};
     use std::collections::HashMap;
 
@@ -2558,7 +2558,7 @@ mod tests {
             value: Some(ParameterValue::Real(
                 cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite scalar fixture"),
             )),
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies)
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(dependencies)
                 .expect("valid test fixture"),
             properties: std::collections::BTreeMap::new(),
             pmi: None,
@@ -2607,7 +2607,7 @@ mod tests {
             expression: name.into(),
             display: None,
             value: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(
                 dependency.into_iter().map(id).collect::<Vec<_>>(),
             )
             .expect("valid dependency fixture"),
@@ -2647,7 +2647,7 @@ mod tests {
                 expression: name.into(),
                 display: None,
                 value: None,
-                dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(
                     dependency.into_iter().map(id).collect::<Vec<_>>(),
                 )
                 .expect("valid dependency fixture"),

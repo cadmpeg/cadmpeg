@@ -20,7 +20,8 @@ use crate::CatiaCodec;
 
 #[test]
 fn decode_transfers_a_complete_typed_input_when_the_formula_output_is_unresolved() {
-    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::scalar::Length;
 
     let decoded = CatiaCodec
         .decode(
@@ -107,7 +108,8 @@ fn formula_input_with_additional_object_payload_remains_unresolved() {
 
 #[test]
 fn decode_transfers_a_closed_length_formula_and_its_input() {
-    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::scalar::Length;
 
     let bytes = standard_catpart_with_formula_relation(4, false);
     let native = crate::native::CatiaNative::decode(&bytes);
@@ -372,7 +374,7 @@ fn decode_transfers_a_closed_constant_formula() {
     assert!(output.dependencies.is_empty());
     assert_eq!(
         output.value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(12.0).unwrap()
         ))
     );
@@ -409,25 +411,25 @@ fn decode_transfers_linear_interpolation_formula() {
     };
     assert_eq!(
         start.value,
-        Some(cadmpeg_ir::ParameterValue::Real(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(2.0).unwrap()
         ))
     );
     assert_eq!(
         end.value,
-        Some(cadmpeg_ir::ParameterValue::Real(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(10.0).unwrap()
         ))
     );
     assert_eq!(
         fraction.value,
-        Some(cadmpeg_ir::ParameterValue::Real(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(0.25).unwrap()
         ))
     );
     assert_eq!(
         output.value,
-        Some(cadmpeg_ir::ParameterValue::Real(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(4.0).unwrap()
         ))
     );
@@ -462,25 +464,25 @@ fn decode_transfers_cubic_interpolation_formula() {
     };
     assert_eq!(
         start.value,
-        Some(cadmpeg_ir::ParameterValue::Real(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(2.0).unwrap()
         ))
     );
     assert_eq!(
         end.value,
-        Some(cadmpeg_ir::ParameterValue::Real(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(10.0).unwrap()
         ))
     );
     assert_eq!(
         fraction.value,
-        Some(cadmpeg_ir::ParameterValue::Real(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(0.25).unwrap()
         ))
     );
     assert_eq!(
         output.value,
-        Some(cadmpeg_ir::ParameterValue::Real(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(3.25).unwrap()
         ))
     );
@@ -515,25 +517,25 @@ fn decode_transfers_dimensioned_linear_interpolation_formula() {
     };
     assert_eq!(
         start.value,
-        Some(cadmpeg_ir::ParameterValue::Length(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(2.0).unwrap()
         ))
     );
     assert_eq!(
         end.value,
-        Some(cadmpeg_ir::ParameterValue::Length(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(10.0).unwrap()
         ))
     );
     assert_eq!(
         fraction.value,
-        Some(cadmpeg_ir::ParameterValue::Real(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(0.25).unwrap()
         ))
     );
     assert_eq!(
         output.value,
-        Some(cadmpeg_ir::ParameterValue::Length(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(4.0).unwrap()
         ))
     );
@@ -545,7 +547,8 @@ fn decode_transfers_dimensioned_linear_interpolation_formula() {
 
 #[test]
 fn decode_transfers_typed_integer_to_angle_formula() {
-    use cadmpeg_ir::{features::ParameterValue, scalar::Angle};
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::scalar::Angle;
 
     let decoded = CatiaCodec
         .decode(
@@ -585,7 +588,7 @@ fn decode_transfers_typed_integer_to_angle_formula() {
 
 #[test]
 fn decode_transfers_dimensionless_real_formula() {
-    use cadmpeg_ir::features::ParameterValue;
+    use cadmpeg_ir::features::parameters::ParameterValue;
 
     let decoded = EditableDecodeResult::from(
         CatiaCodec
@@ -722,7 +725,7 @@ fn decode_transfers_a_unit_literal_formula_input_and_keeps_the_output_driven() {
     assert_eq!(input.name, "Width");
     assert_eq!(
         input.value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(1.0).unwrap()
         ))
     );
@@ -731,7 +734,7 @@ fn decode_transfers_a_unit_literal_formula_input_and_keeps_the_output_driven() {
     assert_eq!(input.properties["catia_binding"], "#1_ /2");
     assert_eq!(
         output.value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(1.0).unwrap()
         ))
     );
@@ -930,7 +933,7 @@ fn decode_deduplicates_repeated_single_input_formula_symbols() {
 
 #[test]
 fn decode_transfers_ordered_multi_input_formula_dependencies() {
-    use cadmpeg_ir::features::ParameterValue;
+    use cadmpeg_ir::features::parameters::ParameterValue;
 
     let decoded = CatiaCodec
         .decode(
@@ -980,7 +983,8 @@ fn decode_transfers_ordered_multi_input_formula_dependencies() {
 
 #[test]
 fn decode_transfers_a_closed_formula_with_bare_symbols() {
-    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::scalar::Length;
 
     let bytes = standard_catpart_with_typed_formula_inputs(
         4,
@@ -1209,7 +1213,7 @@ fn decode_transfers_each_supported_formula_input_independently() {
     assert_eq!(width.name, "Width");
     assert_eq!(
         width.value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(12.0).unwrap()
         ))
     );
@@ -1217,7 +1221,7 @@ fn decode_transfers_each_supported_formula_input_independently() {
     assert_eq!(depth.name, "Depth");
     assert_eq!(
         depth.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(6.5).unwrap()
         ))
     );
@@ -1343,7 +1347,7 @@ fn decode_retains_a_typed_input_with_ambiguous_formula_definitions() {
     assert_eq!(intermediate.expression, "2 mm");
     assert_eq!(
         intermediate.value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(2.0).unwrap()
         ))
     );

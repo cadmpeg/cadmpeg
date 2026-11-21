@@ -14,25 +14,27 @@ use crate::resolved_features::curves::closed_marker_profiles;
 use crate::resolved_features::curves::fitted_marker_circle;
 use crate::resolved_features::curves::resolve_connected_marker_arcs;
 use crate::resolved_features::dimensions::project_marker_dimensioned_circles;
-use crate::resolved_features::profiles::{project_marker_backed_sketches, HeldMarkerGeometry};
+use crate::resolved_features::profiles::{
+    project_marker_backed_sketches, HeldMarkerGeometry, MarkerSketchEntities,
+};
 use crate::resolved_features::projections::project_compact_edge_selections;
 use crate::resolved_features::relation_loci::doubled_profile_distance_loci;
 use crate::resolved_features::relation_loci::relation_operand_marker;
 use crate::resolved_features::selections::input_owned_edge_selections;
 use crate::resolved_features::LEGACY_EXTENDED_SKETCH_MARKER;
 use crate::resolved_features::LEGACY_SKETCH_MARKER;
+use cadmpeg_ir::features::edge_treatments::RadiusSpec;
+use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::parameters::{DesignParameter, DimensionDisplay, ParameterValue};
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::selections::EdgeSelection;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
     SketchGeometryDefinition, SketchId, SketchLocus, SketchPlacement,
-};
-use cadmpeg_ir::{
-    features::{
-        edge_treatments::RadiusSpec, BooleanOp, DesignParameter, DimensionDisplay, EdgeSelection,
-        ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId, FeatureOperation,
-        LinearTermination, ParameterId, ParameterValue, PlanarProfileRef, ProfileRef,
-    },
-    scalar::Length,
 };
 use std::collections::{BTreeMap, HashMap};
 
@@ -90,7 +92,7 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
         expression: "5".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -141,12 +143,14 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            definition,
+        ),
         native_ref: Some(native_ref.into()),
     };
     let producer = feature(
@@ -160,7 +164,7 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
         "synthetic:test:id#target",
         "target-native",
         FeatureDefinition::Operation(FeatureOperation::Fillet {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(
+            groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(
                 cadmpeg_ir::features::edge_treatments::FilletGroup {
                     edges: EdgeSelection::Unresolved,
                     radius: RadiusSpec::Constant {
@@ -382,12 +386,14 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            definition,
+        ),
         native_ref: Some(native_ref.into()),
     };
     let mut features = vec![
@@ -577,13 +583,16 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         &ctx,
         &mut features,
         &mut sketches,
-        &mut entities,
-        &mut HeldMarkerGeometry::default(),
+        MarkerSketchEntities {
+            projected: &mut entities,
+            held: &mut HeldMarkerGeometry::default(),
+        },
         crate::resolved_features::profiles::MarkerSources {
             histories: &histories,
             lanes: &lanes,
             solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
         },
+        &mut Vec::new(),
     )
     .expect("marker profile projection fits service policy");
 
@@ -631,13 +640,16 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         &ctx,
         &mut configured_features,
         &mut sketches,
-        &mut entities,
-        &mut HeldMarkerGeometry::default(),
+        MarkerSketchEntities {
+            projected: &mut entities,
+            held: &mut HeldMarkerGeometry::default(),
+        },
         crate::resolved_features::profiles::MarkerSources {
             histories: &histories,
             lanes: &lanes,
             solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
         },
+        &mut Vec::new(),
     )
     .expect("configured marker profile projection fits service policy");
     assert_eq!(sketches.len(), 1);
@@ -675,13 +687,16 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         &ctx,
         &mut replacement_features,
         &mut replacement_sketches,
-        &mut replacement_entities,
-        &mut HeldMarkerGeometry::default(),
+        MarkerSketchEntities {
+            projected: &mut replacement_entities,
+            held: &mut HeldMarkerGeometry::default(),
+        },
         crate::resolved_features::profiles::MarkerSources {
             histories: &histories,
             lanes: &lanes,
             solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
         },
+        &mut Vec::new(),
     )
     .expect("replacement marker profile projection fits service policy");
     assert_eq!(replacement_sketches.len(), 1);
@@ -725,12 +740,12 @@ fn marker_backed_sketch_preserves_geometry_when_placement_is_unresolved() {
         ordinal: 0,
         name: Some("generated-profile".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
             }),
@@ -767,13 +782,16 @@ fn marker_backed_sketch_preserves_geometry_when_placement_is_unresolved() {
         &ctx,
         &mut features,
         &mut sketches,
-        &mut entities,
-        &mut HeldMarkerGeometry::default(),
+        MarkerSketchEntities {
+            projected: &mut entities,
+            held: &mut HeldMarkerGeometry::default(),
+        },
         crate::resolved_features::profiles::MarkerSources {
             histories: &histories,
             lanes: &lanes,
             solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
         },
+        &mut Vec::new(),
     )
     .expect("marker profile projection fits service policy");
 
@@ -913,12 +931,12 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
             }),
@@ -952,7 +970,7 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some(format!("scalar-{ordinal}")),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
     };
     let center = marker("center", Some([0.0, 0.0]));
     let mut first = marker("first", Some([0.005, 0.0]));
@@ -1114,12 +1132,13 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies).unwrap(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(dependencies)
+            .unwrap(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(sketch),
             }),
@@ -1159,22 +1178,21 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
             ordinal: 3,
             name: None,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(vec![FeatureId::mint(
-                "synthetic:test:id#child",
-            )
-            .expect("identity grammar")])
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+                FeatureId::mint("synthetic:test:id#child").expect("identity grammar"),
+            ])
             .unwrap(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Extrude {
                     profile: ProfileRef::Planar(PlanarProfileRef::Feature(
                         FeatureId::mint("synthetic:test:id#child").expect("identity grammar"),
                     )),
-                    direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
-                    start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
+                    direction: cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {},
+                    start: cadmpeg_ir::features::extents::ExtrudeStart::ProfilePlane {},
                     extent: ExtrudeExtent::OneSided {
                         side: ExtrudeSide {
                             termination: LinearTermination::Blind {
@@ -1198,12 +1216,10 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
     multi_consumer.id =
         FeatureId::mint("synthetic:test:id#multi-consumer").expect("identity grammar");
     multi_consumer.ordinal = 4;
-    multi_consumer.dependencies =
-        cadmpeg_ir::features::DistinctMembers::try_from(vec![FeatureId::mint(
-            "synthetic:test:id#multi-child",
-        )
-        .expect("identity grammar")])
-        .unwrap();
+    multi_consumer.dependencies = cadmpeg_ir::features::selections::DistinctMembers::try_from(
+        vec![FeatureId::mint("synthetic:test:id#multi-child").expect("identity grammar")],
+    )
+    .unwrap();
     multi_consumer.evaluation.edit(|definition, _| {
         let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) = definition
         else {
@@ -1246,14 +1262,14 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
     assert!(matches!(
         features[1].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::TreeNode {
-            role: cadmpeg_ir::features::FeatureTreeNodeRole::DissectedProfile,
+            role: cadmpeg_ir::features::tree::FeatureTreeNodeRole::DissectedProfile,
             ..
         })
     ));
     assert!(matches!(
         features[3].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::TreeNode {
-            role: cadmpeg_ir::features::FeatureTreeNodeRole::DissectedProfile,
+            role: cadmpeg_ir::features::tree::FeatureTreeNodeRole::DissectedProfile,
             ..
         })
     ));

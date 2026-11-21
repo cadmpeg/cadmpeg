@@ -665,7 +665,7 @@ fn decode_transfers_closed_plane_intersection_brep() {
     else {
         panic!("round groups: {groups:#?}");
     };
-    let cadmpeg_ir::features::EdgeSelection::Resolved { edges, native } = edges else {
+    let cadmpeg_ir::features::selections::EdgeSelection::Resolved { edges, native } = edges else {
         panic!("round edges: {edges:#?}");
     };
     assert_eq!(

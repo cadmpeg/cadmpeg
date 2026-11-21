@@ -384,7 +384,8 @@ fn relation_input_index_matches_parameter_with_optional_ordinal() {
 
 #[test]
 fn complete_relation_program_inputs_transfer_typed_parameters() {
-    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::scalar::Length;
 
     let mut native =
         crate::native::CatiaNative::decode(&standard_catpart_with_formula_relation(0x63, false));
@@ -512,7 +513,8 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
 
 #[test]
 fn complete_relation_program_output_transfers_a_typed_result() {
-    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::scalar::Length;
 
     let mut native =
         crate::native::CatiaNative::decode(&standard_catpart_with_formula_relation(0x63, false));

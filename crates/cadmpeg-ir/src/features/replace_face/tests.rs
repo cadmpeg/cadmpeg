@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::ReplaceFaceOperands;
-use crate::features::FaceSelection;
+use crate::features::selections::FaceSelection;
 
 #[cfg(feature = "schema")]
 #[test]

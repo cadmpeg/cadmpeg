@@ -18,8 +18,8 @@ use crate::ids::native_stream;
 use crate::loss::F3dLossCode;
 use crate::records::feature::{
     assembly::{
-        DesignAssemblyAxialOperandTarget, DesignAssemblyLimitKind, DesignAssemblyOperandPath,
-        DesignAssemblyOperandQualifier,
+        DesignAssemblyAlignment, DesignAssemblyAxialOperandTarget, DesignAssemblyLimitKind,
+        DesignAssemblyOperandPath, DesignAssemblyOperandQualifier,
     },
     assembly_features::DesignComponentOccurrence,
     scope::DesignParameterScope,
@@ -158,14 +158,14 @@ impl AssemblyScopeGeneration {
                     layout.first_reference + layout.stride,
                 ]),
             }
-        } else if compact_placement_as_built_scope(scope) {
+        } else if let Some(shift) = compact_placement_as_built_prefix_shift(scope) {
             use crate::layout::assembly_as_built_scope_378 as layout;
             Self {
                 operand_frame: None,
                 alignment: AssemblyAlignmentLanes::Fixed(Some((4, 0, 4))),
                 locator_offsets: Some([
-                    layout::FIRST_LOCATOR_REFERENCE,
-                    layout::SECOND_LOCATOR_REFERENCE,
+                    layout::FIRST_LOCATOR_REFERENCE + shift,
+                    layout::SECOND_LOCATOR_REFERENCE + shift,
                 ]),
             }
         } else {
@@ -720,19 +720,30 @@ pub(crate) fn placement_ordered_as_built_scope(scope: &DesignParameterScope) -> 
 }
 
 pub(crate) fn compact_placement_as_built_scope(scope: &DesignParameterScope) -> bool {
+    compact_placement_as_built_prefix_shift(scope).is_some()
+}
+
+pub(crate) fn compact_placement_as_built_prefix_shift(
+    scope: &DesignParameterScope,
+) -> Option<usize> {
     use crate::layout::assembly_as_built_scope_378 as layout;
-    scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt
-        && matches!(
-            (
-                scope.canonical_name_frame_length(),
-                scope.reference_members().len()
-            ),
-            (Some(355), 7) | (Some(377), 9)
-        )
-        && scope
-            .reference_count_offset()
-            .checked_sub(scope.byte_offset())
-            == Some(u64_from_index(layout::REFERENCE_COUNT))
+    use crate::layout::assembly_as_built_scope_381_403_prefix as shifted;
+    if scope.kind() != crate::records::feature::scope::DesignFeatureKind::AsBuilt {
+        return None;
+    }
+    let count_offset = match (
+        scope.canonical_name_frame_length()?,
+        scope.reference_members().len(),
+    ) {
+        (355, 7) | (377, 9) => layout::REFERENCE_COUNT,
+        (381, 9) | (403, 11) => shifted::REFERENCE_COUNT,
+        _ => return None,
+    };
+    (scope
+        .reference_count_offset()
+        .checked_sub(scope.byte_offset())
+        == Some(u64_from_index(count_offset)))
+    .then_some(count_offset - layout::REFERENCE_COUNT)
 }
 
 const OPERAND_PATH_LOCATOR_TYPE_GUID: &str = "2E3AC990-483D-4A55-8662-C064B976A957";
@@ -771,6 +782,66 @@ pub(crate) fn as_built_additional_owner_count(scope: &DesignParameterScope) -> O
         return Some(0);
     }
     wide_as_built_additional_owner_count(scope.frame_length())
+}
+
+pub(crate) fn placement_ordered_references_hold(
+    scope: &DesignParameterScope,
+    alignment: &DesignAssemblyAlignment,
+    owners: &[(u32, u32)],
+) -> bool {
+    use crate::layout::assembly_as_built_scope_owner_run as layout;
+    let Some(count) = as_built_additional_owner_count(scope) else {
+        return false;
+    };
+    let Some(run) = &alignment.additional_owner_run else {
+        return false;
+    };
+    let table = scope.reference_members();
+    let compact_shift = compact_placement_as_built_prefix_shift(scope);
+    let shift = compact_shift.unwrap_or_default();
+    usize::try_from(run.count.value) == Ok(count)
+        && run.count.offset
+            == scope.byte_offset() + u64_from_index(layout::ADDITIONAL_OWNER_COUNT + shift)
+        && run.references.len() == count
+        && owners.len() == 4 + count
+        && owners
+            .iter()
+            .enumerate()
+            .all(|(ordinal, (local, _))| usize::try_from(*local) == Ok(ordinal))
+        && alignment.owners.len() == 4
+        && alignment
+            .owners
+            .iter()
+            .zip(owners)
+            .all(|(reference, (_, index))| reference.value == *index)
+        && (compact_shift.is_some()
+            || (table.len() == 9 + count
+                && (count != 0
+                    || table.values_in(5..9).is_some_and(|values| {
+                        values.eq(alignment.owners.iter().map(|owner| &owner.value))
+                    }))))
+        && run
+            .references
+            .iter()
+            .zip(owners.iter().skip(4))
+            .enumerate()
+            .all(|(ordinal, (reference, (_, index)))| {
+                reference.value == *index
+                    && reference.offset
+                        == scope.byte_offset()
+                            + u64_from_index(
+                                layout::ADDITIONAL_OWNER_REFERENCES + shift + 11 * ordinal,
+                            )
+                    && table.values().any(|value| value == index)
+            })
+        && (0..table.len())
+            .filter(|&start| {
+                table.values_in(start..start + 4).is_some_and(|values| {
+                    values.eq(alignment.owners.iter().map(|owner| &owner.value))
+                })
+            })
+            .count()
+            == 1
 }
 
 fn wide_as_built_additional_owner_count(frame_length: u64) -> Option<usize> {
@@ -965,6 +1036,7 @@ pub(crate) fn project_assembly_joints_with_paths(
     let mut assumed_additional_owner_motion = 0_usize;
     let mut assumed_extended_tails = 0_usize;
     let mut assumed_extended_typed_tails = 0_usize;
+    let mut assumed_path_words = 0_usize;
     for scope in scopes {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
@@ -1014,6 +1086,21 @@ pub(crate) fn project_assembly_joints_with_paths(
                     });
                 if paired {
                     paired_joints += 1;
+                }
+                let nonzero_word = |path: &DesignAssemblyOperandPath| {
+                    path.identity_pair_words()
+                        .iter()
+                        .any(|word| word.value != 0)
+                };
+                if scope.assembly_alignment().is_some_and(|alignment| {
+                    alignment
+                        .operand_path_refs()
+                        .is_some_and(|paths| paths.iter().any(|path| nonzero_word(path)))
+                        || alignment.additional_members.iter().any(|member| {
+                            member.qualifier.occurrence_path().is_some_and(nonzero_word)
+                        })
+                }) {
+                    assumed_path_words += 1;
                 }
                 joint.set_frame_sense(projected_frame_sense(scope));
                 if motion.is_some_and(zero_lane_rotation_limits) && undecoded.is_none() {
@@ -1140,6 +1227,11 @@ pub(crate) fn project_assembly_joints_with_paths(
     if assumed_active != 0 {
         losses.push(F3dLossCode::AssemblyJointActivationAssumed.note(format!(
             "{assumed_active} projected Design assembly joint(s) are assumed active: the activation meaning of their scope-tail booleans is unknown."
+        )));
+    }
+    if assumed_path_words != 0 {
+        losses.push(F3dLossCode::AssemblyOperandPathWordAssumed.note(format!(
+            "{assumed_path_words} projected Design assembly joint(s) read an operand path with a nonzero identity-pair word; the word is assumed to leave the selected occurrences unchanged."
         )));
     }
     AssemblyJointProjection {
@@ -1799,6 +1891,8 @@ fn unique_scope<'a>(
 
 #[cfg(test)]
 mod tests {
+    mod placement_owner_run;
+
     #[test]
     fn null_wide_locator_admission_is_specific_to_assemble() {
         let guid = "2E3AC990-483D-4A55-8662-C064B976A957";
@@ -1940,13 +2034,15 @@ mod tests {
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+                definition,
+            ),
             native_ref: Some(native_ref.into()),
         }
     }

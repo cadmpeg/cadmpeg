@@ -2,9 +2,13 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::PlanarProfileRef;
+use cadmpeg_ir::features::revolve::{PartialRevolveConstruction, RevolveConstruction};
+use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{
-    BooleanOp, Feature, FeatureDefinition, FeatureId, FeatureOperation, PartialRevolveConstruction,
-    PlanarProfileRef, RevolveConstruction, SketchFeatureBinding,
+    Feature, FeatureDefinition, FeatureId, FeatureOperation, SketchFeatureBinding,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
@@ -16,7 +20,7 @@ use cadmpeg_ir::sketches::{
 
 use super::{
     finalize_unread_marker_entities, project_marker_backed_sketches, HeldMarkerGeometry,
-    MarkerSources,
+    MarkerSketchEntities, MarkerSources,
 };
 use crate::loss::SldprtLossCode;
 use crate::records::{
@@ -178,12 +182,12 @@ fn feature(id: FeatureId, native: &str, name: &str, definition: FeatureDefinitio
         ordinal: 0,
         name: Some(name.into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+        evaluation: FeatureEvaluation::from_definition(definition),
         native_ref: Some(native.into()),
     }
 }
@@ -305,13 +309,16 @@ fn decode_on(
         &ctx,
         &mut features,
         &mut sketches,
-        &mut entities,
-        &mut held,
+        MarkerSketchEntities {
+            projected: &mut entities,
+            held: &mut held,
+        },
         MarkerSources {
             histories: &histories,
             lanes: &lanes,
             solid,
         },
+        &mut Vec::new(),
     )
     .unwrap();
     let mut losses = Vec::new();
@@ -322,13 +329,16 @@ fn decode_on(
         &ctx,
         &mut again,
         &mut sketches,
-        &mut entities,
-        &mut finalized,
+        MarkerSketchEntities {
+            projected: &mut entities,
+            held: &mut finalized,
+        },
         MarkerSources {
             histories: &histories,
             lanes: &lanes,
             solid,
         },
+        &mut Vec::new(),
     )
     .unwrap();
     let rebound = bound_sketch(&again).cloned();
