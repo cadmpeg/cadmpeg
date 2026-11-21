@@ -141,6 +141,8 @@ pub(crate) enum SldprtLossCode {
     FeatureProfileCurvesUnavailable,
     /// Extrusion travel sense remains in its native feature-input lane.
     FeatureExtrudeDirectionUnresolved,
+    /// Extrusion keeps the travel its solid shows against its end-spec reversal flag.
+    FeatureExtrudeReversalContradicted,
     /// Extrusion start condition is not the sketch plane and has no supported reading.
     FeatureExtrudeStartUnresolved,
     /// Thin extrusion retains an ambiguous inline Boolean operation.
@@ -376,6 +378,7 @@ impl SldprtLossCode {
         Self::FeatureTypedOperandIncomplete,
         Self::FeatureProfileCurvesUnavailable,
         Self::FeatureExtrudeDirectionUnresolved,
+        Self::FeatureExtrudeReversalContradicted,
         Self::FeatureExtrudeStartUnresolved,
         Self::FeatureThinOperationAmbiguous,
         Self::FeatureEdgeTerminalUnresolved,
@@ -506,6 +509,7 @@ impl SldprtLossCode {
             Self::FeatureTypedOperandIncomplete => "feature.typed-operand-incomplete",
             Self::FeatureProfileCurvesUnavailable => "feature.profile-curves-unavailable",
             Self::FeatureExtrudeDirectionUnresolved => "feature.extrude-direction-unresolved",
+            Self::FeatureExtrudeReversalContradicted => "feature.extrude-reversal-contradicted",
             Self::FeatureExtrudeStartUnresolved => "feature.extrude-start-unresolved",
             Self::FeatureThinOperationAmbiguous => "feature.thin-operation-ambiguous",
             Self::FeatureEdgeTerminalUnresolved => "feature.edge-terminal-unresolved",
@@ -671,6 +675,7 @@ impl SldprtLossCode {
             | Self::FeatureTypedOperandIncomplete
             | Self::FeatureProfileCurvesUnavailable
             | Self::FeatureExtrudeDirectionUnresolved
+            | Self::FeatureExtrudeReversalContradicted
             | Self::FeatureExtrudeStartUnresolved
             | Self::FeatureThinOperationAmbiguous
             | Self::FeatureEdgeTerminalUnresolved
@@ -874,6 +879,7 @@ impl SldprtLossCode {
             | Self::FeatureTypedOperandIncomplete
             | Self::FeatureProfileCurvesUnavailable
             | Self::FeatureExtrudeDirectionUnresolved
+            | Self::FeatureExtrudeReversalContradicted
             | Self::FeatureExtrudeStartUnresolved
             | Self::FeatureThinOperationAmbiguous
             | Self::FeatureEdgeTerminalUnresolved
@@ -1100,6 +1106,7 @@ mod tests {
                 "feature.typed-operand-incomplete",
                 "feature.profile-curves-unavailable",
                 "feature.extrude-direction-unresolved",
+                "feature.extrude-reversal-contradicted",
                 "feature.extrude-start-unresolved",
                 "feature.thin-operation-ambiguous",
                 "feature.edge-terminal-unresolved",

@@ -48,16 +48,32 @@ pub(crate) fn contradicted_features(ir: &CadIr) -> HashSet<FeatureId> {
     contradicted
 }
 
-pub(crate) fn retain_contradicted_directions(ir: &mut CadIr) -> bool {
+/// What [`retain_contradicted_directions`] changed.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct Retained {
+    /// Whether a feature definition changed.
+    pub(crate) changed: bool,
+    /// The decoded reversals that the solid contradicts.
+    pub(crate) reversals: usize,
+}
+
+pub(crate) fn retain_contradicted_directions(ir: &mut CadIr) -> Retained {
     let contradicted = contradicted_features(ir);
-    let mut changed = false;
+    let mut retained = Retained::default();
     for feature in &mut ir.model.features {
         if !contradicted.contains(&feature.id) {
             continue;
         }
         let original = feature.evaluation.definition().clone();
         feature.evaluation.edit(|definition, _| retain(definition));
-        changed |= original != *feature.evaluation.definition();
+        retained.changed |= original != *feature.evaluation.definition();
+        retained.reversals += usize::from(matches!(
+            original.operation(),
+            FeatureOperation::Extrude {
+                direction: ExtrudeDirection::ReversedProfileNormal {},
+                ..
+            }
+        ));
         for configuration in ir
             .model
             .configurations
@@ -71,12 +87,17 @@ pub(crate) fn retain_contradicted_directions(ir: &mut CadIr) -> bool {
             }
         }
     }
-    changed
+    retained
 }
 
+/// A contradicted reversal travels along the profile normal, as its solid
+/// shows; other contradicted travel stays in the native lane.
 fn retain(definition: &mut FeatureDefinition) {
     if let FeatureDefinition::Operation(FeatureOperation::Extrude { direction, .. }) = definition {
-        *direction = ExtrudeDirection::Unresolved {};
+        *direction = match direction {
+            ExtrudeDirection::ReversedProfileNormal {} => ExtrudeDirection::ProfileNormal {},
+            _ => ExtrudeDirection::Unresolved {},
+        };
     }
 }
 

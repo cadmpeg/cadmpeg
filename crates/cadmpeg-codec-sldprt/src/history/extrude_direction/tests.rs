@@ -83,7 +83,10 @@ fn opposite_caps_contradict_implicit_travel_with_mirrored_controls() {
             contradicted_features(&ir).contains(&ir.model.features[0].id),
             contradicted
         );
-        assert_eq!(retain_contradicted_directions(&mut ir), contradicted);
+        assert_eq!(
+            retain_contradicted_directions(&mut ir).changed,
+            contradicted
+        );
         let FeatureOperation::Extrude { direction, .. } =
             ir.model.features[0].evaluation.definition().operation()
         else {
@@ -104,6 +107,7 @@ fn opposite_caps_contradict_implicit_travel_with_mirrored_controls() {
     }
 }
 
+/// A reversal that the caps contradict travels along the profile normal.
 #[test]
 fn opposite_caps_contradict_reversed_travel() {
     for (start, normal, contradicted) in [
@@ -124,6 +128,26 @@ fn opposite_caps_contradict_reversed_travel() {
             contradicted_features(&ir).contains(&ir.model.features[0].id),
             contradicted
         );
+        let retained = retain_contradicted_directions(&mut ir);
+        assert_eq!(
+            retained,
+            Retained {
+                changed: contradicted,
+                reversals: usize::from(contradicted),
+            }
+        );
+        let FeatureOperation::Extrude { direction, .. } =
+            ir.model.features[0].evaluation.definition().operation()
+        else {
+            panic!("extrude");
+        };
+        let expected = if contradicted {
+            ExtrudeDirection::ProfileNormal {}
+        } else {
+            ExtrudeDirection::ReversedProfileNormal {}
+        };
+        assert_eq!(direction, &expected);
+        assert!(contradicted_features(&ir).is_empty());
     }
 }
 
@@ -133,7 +157,7 @@ fn absent_caps_and_carrier_failures_preserve_travel() {
         let mut ir = model(10.0, 1.0);
         remove_cap(&mut ir.geometry, missing);
         assert!(contradicted_features(&ir).is_empty());
-        assert!(!retain_contradicted_directions(&mut ir));
+        assert!(!retain_contradicted_directions(&mut ir).changed);
     }
     let mut ir = model(10.0, 1.0);
     ir.model.sketches[0].placement = cadmpeg_ir::sketches::SketchPlacement::try_resolved(
@@ -255,7 +279,7 @@ fn active_state_retention_preserves_inactive_configuration_travel() {
             .insert(feature.id.clone(), feature.configuration_state());
         ir.model.configurations.push(configuration);
     }
-    assert!(retain_contradicted_directions(&mut ir));
+    assert!(retain_contradicted_directions(&mut ir).changed);
     for configuration in &ir.model.configurations {
         let state = &configuration.feature_states[&ir.model.features[0].id];
         let FeatureOperation::Extrude { direction, .. } = state.definition.operation() else {
