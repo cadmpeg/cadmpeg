@@ -4,7 +4,6 @@
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::CadIr;
-use serde::Serialize;
 
 use crate::report::{FaceMeasures, MeasureReport};
 use crate::select::Selection;
@@ -12,8 +11,7 @@ use crate::value::{BoxValue, Measured, Quantity, Reading};
 use crate::{body_boxes, MeasureError, MeasureInput, MeasureOptions, Measurer, WorkProfile};
 
 /// How the box pass's box of one body relates to the full pass's.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Agreement {
     /// Both passes give the same box.
     Equal,
@@ -31,7 +29,7 @@ pub enum Agreement {
 }
 
 /// The agreement of one body.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct BodyAgreement {
     /// The body ID.
     pub body: String,
