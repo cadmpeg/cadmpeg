@@ -1306,8 +1306,28 @@ impl Builder<'_, '_, '_, '_> {
                 if bounded.range_ignored {
                     self.tallies.ranges += 1;
                 }
+                let first = self.ir.geometry.faces.len();
                 match self.brep_body(prim, key, &bounded.brep)? {
-                    Ok(body) => return Ok(Some(body)),
+                    Ok(body) => {
+                        let faces: Vec<_> = self
+                            .ir
+                            .geometry
+                            .faces
+                            .get(first..)
+                            .unwrap_or_default()
+                            .iter()
+                            .map(|face| face.id.clone())
+                            .collect();
+                        for (ordinal, face) in faces.into_iter().enumerate() {
+                            let binding = if ordinal == 0 {
+                                key.to_owned()
+                            } else {
+                                format!("{key}#face{ordinal}")
+                            };
+                            self.material(prim, &binding, AppearanceTarget::Face(face))?;
+                        }
+                        return Ok(Some(body));
+                    }
                     Err(reason) => reason,
                 }
             }
