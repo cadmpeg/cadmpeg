@@ -20,8 +20,8 @@ pub(crate) mod named_parameter_scope_tail {
     pub(crate) const LABEL_LENGTH: usize = 8;
     /// Offset of `associated_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const ASSOCIATED_COUNT: usize = 12;
-    /// Offset of `padding` (`bytes[3]`). Spec §3.1.
-    pub(crate) const PADDING: usize = 16;
+    /// Offset of `state_bytes` (`bytes[3]`). Spec §3.1.
+    pub(crate) const STATE_BYTES: usize = 16;
     /// Offset of `first_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const FIRST_REFERENCE: usize = 19;
     /// Offset of `middle_reference` (`u8`). Spec §3.1.

@@ -94,6 +94,7 @@ cadmpeg_core::named_optional_field!(
     "label"
 );
 cadmpeg_core::named_optional_field!(deserialize_display_name, String, "display_name");
+cadmpeg_core::named_optional_field!(deserialize_rolled_back, bool, "rolled_back");
 cadmpeg_core::named_optional_field!(
     deserialize_deleted_members,
     super::deleted_members::DesignDeletedMembers,
@@ -985,6 +986,21 @@ pub(crate) struct DesignParameterScope {
     /// Display name bound from a companion `WorkPlane` entity record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) display_name: Option<String>,
+    /// The rolled-back lane flag, when the tail's lane flags are read: the
+    /// scope's timeline item follows the saved timeline marker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) rolled_back: Option<bool>,
+    /// A tail state byte marks the scope suppressed, directly or through a
+    /// suppressed timeline group.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) suppression_flag: bool,
+    /// The third tail state byte: the scope holds no evaluated result.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) unevaluated_flag: bool,
+    /// The no-result lane flag: the scope's stored history-state identities
+    /// hold no current result.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) no_result_flag: bool,
     /// ASM delta-state identity produced by this scope, when active.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     history_state_id: Option<i64>,
@@ -1141,6 +1157,22 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_display_name"
     )]
     display_name: Option<String>,
+    /// The rolled-back lane flag.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_rolled_back"
+    )]
+    rolled_back: Option<bool>,
+    /// The suppression state byte.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    suppression_flag: bool,
+    /// The unevaluated state byte.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    unevaluated_flag: bool,
+    /// The no-result lane flag.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    no_result_flag: bool,
     /// ASM delta-state identity produced by this scope, when active.
     #[serde(
         default,
@@ -2731,6 +2763,10 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         }
         admitted.source_kind = wire.source_kind;
         admitted.display_name = wire.display_name;
+        admitted.rolled_back = wire.rolled_back;
+        admitted.suppression_flag = wire.suppression_flag;
+        admitted.unevaluated_flag = wire.unevaluated_flag;
+        admitted.no_result_flag = wire.no_result_flag;
         admitted.captured_positions = captured_positions;
         admitted.occurrence_transfer = occurrence_transfer;
         admitted.occurrence_transfer_intent = occurrence_transfer_intent;
@@ -2780,6 +2816,10 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             feature_ordinal_offset: scope.feature_ordinal_offset,
             label: scope.label,
             display_name: scope.display_name,
+            rolled_back: scope.rolled_back,
+            suppression_flag: scope.suppression_flag,
+            unevaluated_flag: scope.unevaluated_flag,
+            no_result_flag: scope.no_result_flag,
             history_state_id: scope.history_state_id,
             history_state_id_offset,
             previous_history_state_id: scope.previous_history_state_id,
@@ -3368,6 +3408,10 @@ impl DesignParameterScope {
             feature_ordinal_offset: draft.feature_ordinal_offset,
             label: draft.label,
             display_name: None,
+            rolled_back: None,
+            suppression_flag: false,
+            unevaluated_flag: false,
+            no_result_flag: false,
             history_state_id: draft.history_state_id,
             previous_history_state_id: draft.previous_history_state_id,
             previous_history_state_id_offset: draft.previous_history_state_id_offset,

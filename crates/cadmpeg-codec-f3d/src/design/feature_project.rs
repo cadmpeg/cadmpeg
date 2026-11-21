@@ -1318,11 +1318,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             str::to_owned,
                         ),
                 ),
-                suppressed: Some(
-                    family.is_some_and(stateless_scope_is_suppressed)
-                        && scope.history_state_id().is_none()
-                        && scope.previous_history_state_id().is_none(),
-                ),
+                suppressed: Some(scope_is_suppressed(scope, family, &mut projection_losses)),
                 dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                 source_properties: if promoted_fillet_source.is_some() || promoted_fillet_sets.is_some() || matches!(
                     &definition,
@@ -2647,6 +2643,28 @@ pub(crate) fn untyped_parameter_unit_count(parameters: &[DesignParameter]) -> us
                     .is_some_and(|unit| !design_length_unit(unit) && !design_angle_unit(unit))
         })
         .count()
+}
+
+/// Whether a scope is suppressed. A tail whose state bytes are read decides
+/// it by its suppression bytes; null history-state identities decide it only
+/// for a tail whose state bytes are unread.
+fn scope_is_suppressed(
+    scope: &DesignParameterScope,
+    family: Option<DesignFeatureFamily>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> bool {
+    if scope.rolled_back.is_some() {
+        if scope.unevaluated_flag && !scope.suppression_flag {
+            losses.push(crate::loss::F3dLossCode::FeatureUnevaluatedStateAssumed.note(format!(
+                "scope {} sets the third tail state byte; it is read as an active feature with no evaluated result",
+                scope.id
+            )));
+        }
+        return scope.suppression_flag;
+    }
+    family.is_some_and(stateless_scope_is_suppressed)
+        && scope.history_state_id().is_none()
+        && scope.previous_history_state_id().is_none()
 }
 
 /// Whether a scope of this family with null current and preceding

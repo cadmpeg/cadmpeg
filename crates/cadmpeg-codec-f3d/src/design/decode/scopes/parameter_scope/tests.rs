@@ -190,7 +190,7 @@ fn named_combine_rejects_incomplete_or_inconsistent_tail() {
     let bytes = marked_named_combine("NewBody", &[], Some(900), None);
     for (offset, value) in [
         (174, 1),
-        (200, 1),
+        (200, 2),
         (203, 0),
         (214, 2),
         (220, 1),
@@ -199,8 +199,8 @@ fn named_combine_rejects_incomplete_or_inconsistent_tail() {
         (259, 0),
         (270, 2),
         (271, 1),
-        // A set suppressed flag stays refused until the flags are read.
-        (258, 1),
+        (257, 2),
+        (258, 2),
     ] {
         let mut broken = bytes.clone();
         broken[offset] = value;
@@ -224,6 +224,82 @@ fn named_combine_rejects_incomplete_or_inconsistent_tail() {
     let mut broken = bytes;
     broken.insert(272, 0);
     assert!(parse_marked_named_combine(&broken).is_none());
+}
+
+/// A marked named Combine whose tail state bytes and lane flags are `state`
+/// and `flags`; `short` drops the `01` lane marker of the 78-byte form.
+fn marked_named_combine_with_state(
+    label: &str,
+    middle: Option<u32>,
+    state: [u8; 3],
+    flags: [u8; 3],
+    short: bool,
+) -> Vec<u8> {
+    let mut bytes = marked_named_combine(label, &[], middle, None);
+    let state_at = 170 + 16 + 2 * label.encode_utf16().count();
+    let flags_at = state_at + 3 + 11 + if middle.is_some() { 11 } else { 1 } + 31;
+    bytes[state_at..state_at + 3].copy_from_slice(&state);
+    bytes[flags_at..flags_at + 3].copy_from_slice(&flags);
+    if short {
+        bytes.remove(flags_at);
+    }
+    bytes
+}
+
+#[test]
+fn scope_tail_reads_its_state_bytes_and_lane_flags() {
+    for (state, flags, rolled_back, suppressed, unevaluated, no_result) in [
+        ([0, 0, 0], [1, 0, 0], false, false, false, false),
+        ([0, 0, 0], [1, 0, 1], true, false, false, false),
+        ([0, 0, 0], [1, 1, 1], true, false, false, true),
+        ([0, 1, 0], [1, 1, 0], false, true, false, true),
+        ([1, 0, 0], [1, 1, 0], false, true, false, true),
+        ([0, 1, 0], [1, 1, 1], true, true, false, true),
+        ([0, 0, 1], [1, 1, 0], false, false, true, true),
+    ] {
+        for label in ["", "NewBody"] {
+            for (middle, short) in [(None, false), (Some(900), false), (None, true)] {
+                if short && !label.is_empty() {
+                    continue;
+                }
+                let case = format!("{label:?} {middle:?} {short} {state:?} {flags:?}");
+                let bytes = marked_named_combine_with_state(label, middle, state, flags, short);
+                let scope = parse_marked_named_combine(&bytes).unwrap_or_else(|| panic!("{case}"));
+                assert_eq!(scope.rolled_back, Some(rolled_back), "{case}");
+                assert_eq!(scope.suppression_flag, suppressed, "{case}");
+                assert_eq!(scope.unevaluated_flag, unevaluated, "{case}");
+                assert_eq!(scope.no_result_flag, no_result, "{case}");
+                if !label.is_empty() && middle.is_some() {
+                    assert!(scope.combine_named_tail().is_some(), "{case}");
+                }
+                let wire = serde_json::to_value(&scope).unwrap();
+                assert_eq!(wire["rolled_back"], serde_json::json!(rolled_back), "{case}");
+                assert_eq!(
+                    serde_json::from_value::<super::DesignParameterScope>(wire).unwrap(),
+                    scope,
+                    "{case}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn scope_tail_state_outside_the_flag_domain_is_unread() {
+    for (state, flags) in [
+        ([2, 0, 0], [1, 0, 0]),
+        ([0, 2, 0], [1, 0, 0]),
+        ([0, 0, 0], [1, 0, 2]),
+    ] {
+        let bytes = marked_named_combine_with_state("", None, state, flags, false);
+        let scope = parse_marked_named_combine(&bytes);
+        assert!(
+            scope.as_ref().is_none_or(|scope| scope.rolled_back.is_none()
+                && !scope.suppression_flag
+                && !scope.unevaluated_flag),
+            "{state:?} {flags:?}"
+        );
+    }
 }
 
 #[test]

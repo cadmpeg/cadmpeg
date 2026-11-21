@@ -2266,6 +2266,14 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
         })
         .ok()?;
         scope.source_kind = source_kind;
+        if let Some(state) = previous_history_state_id_offset
+            .and_then(|previous| scope_timeline_state(bytes, previous, paired_at))
+        {
+            scope.rolled_back = Some(state.rolled_back);
+            scope.suppression_flag = state.suppressed;
+            scope.unevaluated_flag = state.unevaluated;
+            scope.no_result_flag = state.no_result;
+        }
         if let Some(prologue) = extrude_prologue {
             {
                 let construction = Some(scope::DesignExtrudeScope {
@@ -2544,11 +2552,11 @@ fn named_scope_tail(bytes: &[u8], kind_end: usize, paired_at: usize) -> Option<N
     for _ in 0..count {
         associated.push(named_scope_reference(bytes, &mut cursor)?.into_local()?);
     }
-    let padding_end = cursor.checked_add(named_tail::FIRST_REFERENCE - named_tail::PADDING)?;
-    if bytes.get(cursor..padding_end)? != [0; 3] {
+    let state_end = cursor.checked_add(named_tail::FIRST_REFERENCE - named_tail::STATE_BYTES)?;
+    if bytes.get(cursor..state_end)?.iter().any(|state| *state > 1) {
         return None;
     }
-    cursor = padding_end;
+    cursor = state_end;
     named_scope_reference(bytes, &mut cursor)?.into_local()?;
     let middle = named_scope_reference(bytes, &mut cursor)?.into_local();
     let previous_history_state_id = cursor.checked_sub(kind_end)?;
@@ -2565,13 +2573,13 @@ fn named_scope_tail(bytes: &[u8], kind_end: usize, paired_at: usize) -> Option<N
         .checked_add(named_tail::SECOND_REFERENCE - named_tail::SECOND_EVALUATION_EPOCH)?;
     named_scope_reference(bytes, &mut cursor)?.into_local()?;
     let flags = named_tail::THIRD_REFERENCE - named_tail::LANE_FLAGS;
-    let flag = |at: usize| bytes.get(at) == Some(&0);
+    let flag = |at: usize| bytes.get(at).is_some_and(|flag| *flag <= 1);
     let close = |mut at: usize| {
         named_scope_reference(bytes, &mut at)?.into_local()?;
         let closing = named_scope_reference(bytes, &mut at)?.into_local();
         (bytes.get(at) == Some(&0) && at.checked_add(1)? == paired_at).then_some(closing)
     };
-    // The 78-byte form stores `01` before the suppressed and rolled-back
+    // The 78-byte form stores `01` before the no-result and rolled-back
     // flags; the 77-byte form omits it and has no extra references.
     let long_form = (bytes.get(cursor) == Some(&1) && flag(cursor + 1) && flag(cursor + 2))
         .then(|| close(cursor + flags))
@@ -2594,6 +2602,88 @@ fn named_scope_tail(bytes: &[u8], kind_end: usize, paired_at: usize) -> Option<N
             closing,
         },
         previous_history_state_id,
+    })
+}
+
+/// The state bytes and lane flags of a plain parameter-scope tail.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ScopeTimelineState {
+    /// The first or second state byte: suppressed through a suppressed
+    /// timeline group or directly.
+    suppressed: bool,
+    /// The third state byte.
+    unevaluated: bool,
+    /// The no-result lane flag.
+    no_result: bool,
+    /// The rolled-back lane flag.
+    rolled_back: bool,
+}
+
+/// The timeline state of a plain 78- or 77-byte tail form whose preceding
+/// history-state identity is at `previous`. The 78-byte form stores `01`
+/// before the two lane flags.
+fn scope_timeline_state(
+    bytes: &[u8],
+    previous: usize,
+    paired_at: usize,
+) -> Option<ScopeTimelineState> {
+    let reference = |at: usize| -> Option<bool> {
+        Some(
+            *bytes.get(at)? == 1
+                && View::u32_le_at(bytes, at.checked_add(1)?)? != 0
+                && bytes.get(at.checked_add(5)?..at.checked_add(11)?)? == [0; 6],
+        )
+    };
+    let reference_width = named_tail::MIDDLE_REFERENCE - named_tail::FIRST_REFERENCE;
+    let second = previous
+        .checked_add(named_tail::SECOND_REFERENCE - named_tail::PREVIOUS_HISTORY_STATE_ID)?;
+    let flags_at =
+        previous.checked_add(named_tail::LANE_FLAGS - named_tail::PREVIOUS_HISTORY_STATE_ID)?;
+    let long_rest = named_tail::LEN - named_tail::LANE_FLAGS;
+    let rest = paired_at.checked_sub(flags_at)?;
+    let (no_result, rolled_back, third) =
+        if rest == long_rest || rest == long_rest + reference_width - 1 {
+            let &[1, no_result, rolled_back] = bytes.get(flags_at..flags_at.checked_add(3)?)?
+            else {
+                return None;
+            };
+            (no_result, rolled_back, flags_at.checked_add(3)?)
+        } else if rest == long_rest - 1 || rest == long_rest + reference_width - 2 {
+            let &[no_result, rolled_back] = bytes.get(flags_at..flags_at.checked_add(2)?)? else {
+                return None;
+            };
+            (no_result, rolled_back, flags_at.checked_add(2)?)
+        } else {
+            return None;
+        };
+    if !reference(second)? || !reference(third)? || no_result > 1 || rolled_back > 1 {
+        return None;
+    }
+    let null_middle_first = previous
+        .checked_sub(named_tail::PREVIOUS_HISTORY_STATE_ID - named_tail::FIRST_REFERENCE)?;
+    let first = if reference(null_middle_first)? && bytes.get(previous.checked_sub(1)?) == Some(&0)
+    {
+        null_middle_first
+    } else {
+        let middle = null_middle_first.checked_add(1)?;
+        let first = middle.checked_sub(reference_width)?;
+        if !reference(middle)? || !reference(first)? {
+            return None;
+        }
+        first
+    };
+    let state_at = first.checked_sub(named_tail::FIRST_REFERENCE - named_tail::STATE_BYTES)?;
+    let &[by_group, directly, unevaluated] = bytes.get(state_at..first)? else {
+        return None;
+    };
+    if by_group > 1 || directly > 1 || unevaluated > 1 {
+        return None;
+    }
+    Some(ScopeTimelineState {
+        suppressed: by_group == 1 || directly == 1,
+        unevaluated: unevaluated == 1,
+        no_result: no_result == 1,
+        rolled_back: rolled_back == 1,
     })
 }
 

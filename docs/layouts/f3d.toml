@@ -99,11 +99,11 @@ source = "spec"
 anchor = "the associated count is at offset 12"
 
 [[record.field]]
-name = "padding"
+name = "state_bytes"
 offset = 16
 type = "bytes[3]"
 source = "spec"
-anchor = "followed by a counted associated-reference list, three zero bytes"
+anchor = "followed by a counted associated-reference list, three state bytes"
 
 [[record.field]]
 name = "first_reference"

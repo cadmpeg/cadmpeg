@@ -56,15 +56,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### DR-523. Saved timeline marker position
 
-**Question.** Which record and field select the saved rollback position in the authored timeline?
+**Question.** Which field places the saved timeline marker when the item before it is not a parameter scope, and what does the unevaluated state byte record?
 
-**Known.** `f3d.md` §3.1 "The Fusion feature-timeline record has type GUID" defines the context reference and ordered item run. One local corpus file has one 54-item run and two empty runs. Its final item is a Combine scope. Both history-state identities of that scope are null, which establishes suppression under §3.1 "An `Extrude`, `Fillet`, `Chamfer`, `Hole`, `Thread`, or `Combine` scope". Move scopes 6194 and 6642 occupy positions 45 and 51 and carry result states 3100 and 3106. Assemble scope 10307 occupies position 52. Companion RemoveBody 10422 belongs to the Combine item. The bound ASM histories terminate at states 3106 and 441.
+**Known.** `f3d.md` §3.1 "**Timeline state.**" places the marker before the first scope item with rolled-back flag `1`. In two controlled saves the marker is directly before and directly after an occurrence item that follows the last built scope; the scope tails of the two saves are byte-identical. The Browser segment of the save whose occurrence is before the marker is 270 bytes longer. One local file sets the unevaluated byte on an `Extrude` that the application reports as neither suppressed nor rolled back, with no bodies. One local corpus file has one 54-item run and two empty runs. Its final item is a Combine scope with null history-state identities. Move scopes 6194 and 6642 occupy positions 45 and 51 and carry result states 3100 and 3106. Assemble scope 10307 occupies position 52. Companion RemoveBody 10422 belongs to the Combine item. The bound ASM histories terminate at states 3106 and 441.
 
-**Need.** Controlled saves that move the timeline marker across one active feature while preserving its suppression state. Include a `Combine` that is added after the marker and never computed. Bind the changed field to the timeline context and the selected BREP state in two independent designs. Compare a separate pair that changes suppression while preserving the marker position.
+**Need.** The record that changes between the two occurrence saves, bound to the occurrence item. A controlled save that sets the unevaluated byte, with the application state that causes it.
 
-**Conflict.** A `Combine` after the saved marker that Fusion reports as rolled back and not suppressed has null current and preceding history-state identities, and the §3.1 rule reads it as suppressed. A rolled-back `Combine` that was computed before the marker moved keeps both identities.
-
-**Note.** A suppressed final item establishes its own execution state. Its authored position and the terminal ASM state identities remain distinct from the saved rollback position. Joint activation remains under DR-249.
+**Note.** The decoder states the v11 rollback marker when the item before the rolled-back run is a scope item with rolled-back flag `0`, and otherwise charges `history.rollback-unread`. A scope with the unevaluated byte and no suppression byte is read as active with no evaluated result, with `feature.unevaluated-state-assumed`. Joint activation remains under DR-249.
 
 ### DR-520. Operation tables with an empty path, a two-reference path, or version two or three
 

@@ -123,6 +123,7 @@ fn each_item_of_a_listing_timeline_is_one_feature_in_item_order() {
             &timelines,
             &types,
             &BTreeSet::new(),
+            &super::timeline::TimelineScopes::default(),
             &mut losses,
         )
     })
@@ -200,6 +201,7 @@ fn a_stream_whose_timelines_list_no_item_states_no_container() {
             &[timeline(STREAM, 0, &[])],
             &[],
             &BTreeSet::new(),
+            &super::timeline::TimelineScopes::default(),
             &mut losses,
         )
     })
@@ -217,6 +219,7 @@ fn an_item_of_an_unregistered_type_is_a_native_timeline_item() {
             &[timeline(STREAM, 0, &[7])],
             &[],
             &BTreeSet::new(),
+            &super::timeline::TimelineScopes::default(),
             &mut Vec::new(),
         )
     })
@@ -371,7 +374,15 @@ fn a_base_feature_whose_bodies_are_current_is_stored_geometry() {
         let current = current.iter().copied().collect::<BTreeSet<_>>();
         let timelines = [timeline(STREAM, 0, &[10])];
         crate::test_support::with_decode_context(|ctx| {
-            super::timeline::project(ctx, &[feature], &timelines, &[], &current, &mut Vec::new())
+            super::timeline::project(
+                ctx,
+                &[feature],
+                &timelines,
+                &[],
+                &current,
+                &super::timeline::TimelineScopes::default(),
+                &mut Vec::new(),
+            )
         })
         .unwrap()
         .remove("")
@@ -1238,4 +1249,121 @@ fn part_number_and_description_cells_of_other_rows_override_the_scope_definition
             properties.message
         );
     }
+}
+
+fn timeline_scopes(scopes: &[u32], rolled_back: &[u32]) -> super::timeline::TimelineScopes {
+    timeline_scopes_with_unread(scopes, rolled_back, &[])
+}
+
+fn timeline_scopes_with_unread(
+    scopes: &[u32],
+    rolled_back: &[u32],
+    unread: &[u32],
+) -> super::timeline::TimelineScopes {
+    let records = scopes
+        .iter()
+        .map(|&record_index| {
+            let mut record = serde_json::json!({
+                "id": format!("{STREAM}:design-parameter-scope#{record_index}"),
+                "record_index": record_index,
+            });
+            if !unread.contains(&record_index) {
+                record["rolled_back"] = serde_json::json!(rolled_back.contains(&record_index));
+            }
+            serde_json::from_value::<super::timeline::ScopeRollback>(record).unwrap()
+        })
+        .collect::<Vec<_>>();
+    super::timeline::TimelineScopes::new(&records)
+}
+
+#[test]
+fn rolled_back_lane_flags_place_the_marker_before_a_scope_suffix() {
+    let scopes = [10, 20, 30, 40];
+    for (rolled_back, items, marker) in [
+        (&[30, 40][..], &[10, 20, 30, 40][..], Some(2)),
+        (&[30, 40], &[10, 30, 35, 40], Some(1)),
+        (&[10, 20, 30, 40], &[10, 20, 30, 40], Some(0)),
+        (&[], &[10, 20, 30, 40], None),
+        (&[20, 40], &[10, 20, 30, 40], None),
+        (&[30, 40], &[10, 25, 30, 40], None),
+    ] {
+        assert_eq!(
+            timeline_scopes(&scopes, rolled_back).marker(STREAM, items),
+            marker,
+            "{rolled_back:?} {items:?}"
+        );
+    }
+    for (unread, marker) in [(&[20][..], None), (&[40], None), (&[10], Some(2))] {
+        assert_eq!(
+            timeline_scopes_with_unread(&scopes, &[30, 40], unread)
+                .marker(STREAM, &[10, 20, 30, 40]),
+            marker,
+            "{unread:?}"
+        );
+    }
+}
+
+#[test]
+fn a_placed_marker_states_rollback_before_its_item() {
+    let mut losses = Vec::new();
+    let documents = crate::test_support::with_decode_context(|ctx| {
+        super::timeline::project(
+            ctx,
+            &[],
+            &[timeline(STREAM, 0, &[10, 20, 30])],
+            &[],
+            &BTreeSet::new(),
+            &timeline_scopes(&[10, 20, 30], &[30]),
+            &mut losses,
+        )
+    })
+    .unwrap();
+    let container = &documents[""].containers[0];
+    let Container::Ordered { rollback, .. } = container else {
+        panic!("ordered container")
+    };
+    assert_eq!(*rollback, Rollback::Before(members(container)[2].clone()));
+    assert!(losses.is_empty(), "{losses:?}");
+}
+
+#[test]
+fn the_current_state_sits_at_the_rollback_marker() {
+    let documents = crate::test_support::with_decode_context(|ctx| {
+        super::timeline::project(
+            ctx,
+            &[],
+            &[timeline(STREAM, 0, &[10, 20, 30])],
+            &[],
+            &BTreeSet::new(),
+            &timeline_scopes(&[10, 20, 30], &[20, 30]),
+            &mut Vec::new(),
+        )
+    })
+    .unwrap();
+    let container = &documents[""].containers[0];
+    assert_eq!(
+        super::rollback_position(container),
+        Some(cadmpeg_ir::design::refs::Position::After(
+            members(container)[0].clone()
+        ))
+    );
+    let documents = crate::test_support::with_decode_context(|ctx| {
+        super::timeline::project(
+            ctx,
+            &[],
+            &[timeline(STREAM, 0, &[10, 20])],
+            &[],
+            &BTreeSet::new(),
+            &timeline_scopes(&[10, 20], &[10, 20]),
+            &mut Vec::new(),
+        )
+    })
+    .unwrap();
+    let container = &documents[""].containers[0];
+    assert_eq!(
+        super::rollback_position(container),
+        Some(cadmpeg_ir::design::refs::Position::Start(
+            container.id().clone()
+        ))
+    );
 }

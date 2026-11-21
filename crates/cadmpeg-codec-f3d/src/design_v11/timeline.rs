@@ -8,15 +8,18 @@
 //! projection did not resolve is a feature of the family its record type
 //! establishes, or a native feature named by that type.
 //!
-//! The decoder does not read the rollback marker of a timeline, so each
-//! timeline is stated built through its last item, and one loss names it.
+//! A timeline is rolled back before its first item whose parameter scope
+//! carries the rolled-back lane flag when every later scope item carries it
+//! and the item before it is a scope item whose flag reads `0`. Otherwise the timeline
+//! is stated built through its last item, and one loss names the unread
+//! marker.
 //!
 //! A Base Feature is stored geometry (§5.10) where the v10 projection names
 //! its bodies and each is a body of the current geometry, whose records the
 //! state after it holds; otherwise its bodies are typed with the carrier
 //! unread, and it is native.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
@@ -38,6 +41,66 @@ use crate::ids::native_stream;
 use crate::loss::F3dLossCode;
 use crate::records::entity_header::{DesignFeatureTimeline, SegmentType};
 
+/// The parameter-scope records of the timeline items, keyed by native stream
+/// and record index.
+#[derive(Default)]
+pub(super) struct TimelineScopes {
+    scopes: HashSet<(String, u64)>,
+    built: HashSet<(String, u64)>,
+    rolled_back: HashSet<(String, u64)>,
+}
+
+/// The fields of a native parameter scope that place the rollback marker.
+#[derive(serde::Deserialize)]
+pub(super) struct ScopeRollback {
+    id: String,
+    record_index: u32,
+    #[serde(default, deserialize_with = "deserialize_rolled_back")]
+    rolled_back: Option<bool>,
+}
+
+cadmpeg_core::named_optional_field!(deserialize_rolled_back, bool, "rolled_back");
+
+impl TimelineScopes {
+    pub(super) fn new(scopes: &[ScopeRollback]) -> Self {
+        let mut out = Self::default();
+        for scope in scopes {
+            let Some(stream) = native_stream(&scope.id) else {
+                continue;
+            };
+            let key = (stream.to_owned(), u64::from(scope.record_index));
+            match scope.rolled_back {
+                Some(true) => {
+                    out.rolled_back.insert(key.clone());
+                }
+                Some(false) => {
+                    out.built.insert(key.clone());
+                }
+                None => {}
+            }
+            out.scopes.insert(key);
+        }
+        out
+    }
+
+    /// The position of the first item after the saved marker, when the
+    /// rolled-back lane flags of the scope items place it.
+    pub(super) fn marker(&self, stream: &str, items: &[u64]) -> Option<usize> {
+        let key = |record: u64| (stream.to_owned(), record);
+        let first = items
+            .iter()
+            .position(|record| self.rolled_back.contains(&key(*record)))?;
+        let suffix_rolled_back = items.get(first..)?.iter().all(|record| {
+            !self.scopes.contains(&key(*record)) || self.rolled_back.contains(&key(*record))
+        });
+        let before_is_built_scope = first.checked_sub(1).is_none_or(|before| {
+            let before = items.get(before).copied().map(key);
+            before.is_some_and(|before| self.built.contains(&before))
+        });
+        (suffix_rolled_back && before_is_built_scope).then_some(first)
+    }
+}
+
 /// The containers and features of one document's timelines.
 #[derive(Default)]
 pub(super) struct Projected {
@@ -52,13 +115,14 @@ pub(super) struct Projected {
 /// decode, keyed by the document's identity prefix (empty for the root
 /// document, `xref/…/occurrence-N/` for a referenced design). `bodies` are
 /// the bodies of the current geometry. Each timeline charges one loss to
-/// `losses` for its unread rollback marker.
+/// `losses` for its unread rollback marker. `scopes` places the markers.
 pub(super) fn project(
     ctx: &DecodeContext<'_>,
     features: &[LegacyFeature],
     timelines: &[DesignFeatureTimeline],
     types: &[SegmentType],
     bodies: &BTreeSet<&str>,
+    scopes: &TimelineScopes,
     losses: &mut Vec<LossNote>,
 ) -> Result<BTreeMap<String, Projected>, CodecError> {
     let mut streams = BTreeMap::<&str, Vec<&DesignFeatureTimeline>>::new();
@@ -107,15 +171,25 @@ pub(super) fn project(
             }
             ctx.charge_entities(1, "project F3D v11 timeline")?;
             let id = container_id(timeline.id());
-            losses.push(F3dLossCode::HistoryRollbackUnread.note(format!(
-                "timeline {id}: rollback marker not read; stated built through its last item"
-            )));
+            let records = items.iter().map(|item| item.value).collect::<Vec<_>>();
+            let rollback = match scopes
+                .marker(stream, &records)
+                .and_then(|first| members.get(first))
+            {
+                Some(first) => Rollback::Before(first.clone()),
+                None => {
+                    losses.push(F3dLossCode::HistoryRollbackUnread.note(format!(
+                        "timeline {id}: rollback marker not read; stated built through its last item"
+                    )));
+                    Rollback::End
+                }
+            };
             projected.containers.push(Container::Ordered {
                 id,
                 kind: OrderedKind::Timeline,
                 members,
                 folders: Vec::new(),
-                rollback: Rollback::End,
+                rollback,
                 placement: None,
             });
         }

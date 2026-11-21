@@ -24,6 +24,7 @@ mod fusion_profile_regions;
 mod fusion_reverse_normal;
 mod fusion_surface_loft;
 mod fusion_surface_revolve;
+mod fusion_timeline_state;
 mod history_deltas;
 mod history_scale;
 mod inconsistent_records;

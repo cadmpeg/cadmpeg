@@ -739,6 +739,8 @@ pub(crate) enum F3dLossCode {
     /// An Extrude face profile stays native because the face its selection names is on a curved carrier.
     FeatureExtrudeProfileFaceCurved,
     FeatureSketchProfileFlagsAssumed,
+    /// A scope tail sets the third state byte; the scope is read as an active feature with no evaluated result.
+    FeatureUnevaluatedStateAssumed,
     /// Extrude profile selections skipped the sketch arrangement search at a local cap.
     FeatureProfileArrangementCapped,
     FeatureProfileCrossingRunsCapped,
@@ -1768,6 +1770,7 @@ impl F3dLossCode {
         Self::FeatureExtrudeProfileFaceSetDisputed,
         Self::FeatureExtrudeProfileFaceCurved,
         Self::FeatureSketchProfileFlagsAssumed,
+        Self::FeatureUnevaluatedStateAssumed,
         Self::FeatureProfileArrangementCapped,
         Self::FeatureProfileCrossingRunsCapped,
         Self::FeatureProfileDensificationCapped,
@@ -2731,6 +2734,7 @@ impl F3dLossCode {
             Self::SketchCurveRegionBoundary => "sketch.curve-region-boundary",
             Self::DimensionUnprojected => "dimension.unprojected",
             Self::FeatureSketchProfileFlagsAssumed => "feature.sketch-profile-flags-assumed",
+            Self::FeatureUnevaluatedStateAssumed => "feature.unevaluated-state-assumed",
             Self::FeatureExtrudeProfileGroupNative => "feature.extrude-profile-group-native",
             Self::FeatureExtrudeSketchTextSkipped => "feature.extrude-sketch-text-skipped",
             Self::FeatureExtrudeProfileGroupUnionAssumed => {
@@ -3763,6 +3767,7 @@ impl F3dLossCode {
             | Self::FeatureExtrudeProfileFaceSetDisputed
             | Self::FeatureExtrudeProfileFaceCurved
             | Self::FeatureSketchProfileFlagsAssumed
+            | Self::FeatureUnevaluatedStateAssumed
             | Self::FeatureProfileArrangementCapped
             | Self::FeatureProfileCrossingRunsCapped
             | Self::FeatureProfileDensificationCapped
@@ -4492,6 +4497,7 @@ impl F3dLossCode {
             | Self::FeatureExtrudeProfileFaceSetDisputed
             | Self::FeatureExtrudeProfileFaceCurved
             | Self::FeatureSketchProfileFlagsAssumed
+            | Self::FeatureUnevaluatedStateAssumed
             | Self::FeatureProfileArrangementCapped
             | Self::FeatureProfileCrossingRunsCapped
             | Self::FeatureProfileDensificationCapped
@@ -5334,6 +5340,7 @@ mod tests {
                 "feature.extrude-profile-face-set-disputed",
                 "feature.extrude-profile-face-curved",
                 "feature.sketch-profile-flags-assumed",
+                "feature.unevaluated-state-assumed",
                 "feature.profile-arrangement-capped",
                 "feature.profile-crossing-runs-capped",
                 "feature.profile-densification-capped",

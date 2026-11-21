@@ -33,7 +33,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::design::container::Container;
+use cadmpeg_ir::design::container::{Container, Rollback};
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
 use cadmpeg_ir::design::refs::Position;
 use cadmpeg_ir::design::scope::DesignScope;
@@ -48,6 +48,8 @@ use crate::records::entity_header::{DesignFeatureTimeline, SegmentType};
 const TIMELINES: &str = "design_feature_timelines";
 /// The native arena that holds the `MetaStream` type tables.
 const TYPES: &str = "design_types";
+/// The native arena that holds the parameter scopes.
+const SCOPES: &str = "design_parameter_scopes";
 
 /// Project the design of a decoded Fusion document into `ir.design`, beside
 /// its v10 records, and push what it leaves unstated to `losses`. The root
@@ -68,6 +70,9 @@ pub(crate) fn project(
         return Ok(());
     }
     let types = namespace.arena_as_for_decode::<SegmentType>(ctx, TYPES)?;
+    let scopes = timeline::TimelineScopes::new(
+        &namespace.arena_as_for_decode::<timeline::ScopeRollback>(ctx, SCOPES)?,
+    );
     let current = ir
         .geometry
         .bodies
@@ -80,6 +85,7 @@ pub(crate) fn project(
         &timelines,
         &types,
         &current,
+        &scopes,
         losses,
     )?;
     let mut scopes = BTreeMap::new();
@@ -155,13 +161,9 @@ pub(crate) fn project(
                     .map(|owner| (*owner).clone());
             }
         }
-        let Some(Container::Ordered { id, members, .. }) = projected.containers.first() else {
+        let Some(at) = projected.containers.first().and_then(rollback_position) else {
             continue;
         };
-        let at = members
-            .last()
-            .cloned()
-            .map_or_else(|| Position::Start(id.clone()), Position::After);
         let current = (!bodies.is_empty())
             .then(|| CurrentState {
                 at,
@@ -199,6 +201,33 @@ pub(crate) fn project(
         .extend(scoped_configurations.records);
     thread::project(ctx, ir, losses)?;
     Ok(())
+}
+
+/// The position of an ordered container's rollback marker, spelled through
+/// the member before it, or the container's start before its first member.
+fn rollback_position(container: &Container) -> Option<Position> {
+    let Container::Ordered {
+        id,
+        members,
+        rollback,
+        ..
+    } = container
+    else {
+        return None;
+    };
+    let before = match rollback {
+        Rollback::End => members.last(),
+        Rollback::Before(first) => members
+            .iter()
+            .position(|member| member == first)?
+            .checked_sub(1)
+            .and_then(|at| members.get(at)),
+    };
+    Some(
+        before
+            .cloned()
+            .map_or_else(|| Position::Start(id.clone()), Position::After),
+    )
 }
 
 /// The scope that holds the timelines of the document at `prefix`, which has
