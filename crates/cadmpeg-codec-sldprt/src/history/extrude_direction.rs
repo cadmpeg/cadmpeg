@@ -68,6 +68,27 @@ pub(crate) fn mark_unread_reversal(feature: &mut Feature) {
     }
 }
 
+/// Settles a decoded reversal once the extrusion's Boolean operation is
+/// bound: the flag is the travel only of an extrusion that adds material,
+/// so any other operation travels along the profile normal over an unread
+/// flag. The step never reverses an extrusion, so it keeps the travel that
+/// [`retain_contradicted_directions`] settles.
+pub(crate) fn settle_reversal(feature: &mut Feature) {
+    let adds = match feature.evaluation.definition().operation() {
+        FeatureOperation::Extrude {
+            direction: ExtrudeDirection::ReversedProfileNormal {},
+            op,
+            ..
+        } => matches!(op, BooleanOp::Join | BooleanOp::NewBody),
+        _ => return,
+    };
+    if adds || !reversal_flag(&feature.source_properties) {
+        return;
+    }
+    feature.evaluation.edit(|definition, _| retain(definition));
+    set_unread(feature, true);
+}
+
 fn set_unread(feature: &mut Feature, unread: bool) {
     if !unread {
         feature.source_properties.remove(REVERSE_DECODED);
