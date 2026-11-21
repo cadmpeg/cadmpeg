@@ -22,7 +22,10 @@
 //! archive class of the `ResolvedFeatures` scalar it is bound to, the kind
 //! the decoder's own parameter took from a record, a relation, or the
 //! feature, or the quantity of the sketch or feature dimension that binds
-//! it.
+//! it. A dimension whose kind no record states keeps the number its bound
+//! scalar stores, as a `Native` kind holds it (§5.12). The
+//! `design.parameter-value-unread` note names each dimension whose text is a
+//! bare number and that still has no value.
 
 use std::collections::{HashMap, HashSet};
 use std::num::NonZeroI8;
@@ -111,10 +114,7 @@ impl<'a> Decoded<'a> {
         display: Option<f64>,
     ) -> Option<(ValueKind, Option<ParameterValue>)> {
         use cadmpeg_ir::features::ParameterValue as V10;
-        let parameter = self
-            .parameters
-            .get(id.as_str())
-            .filter(|parameter| parameter.name == name)?;
+        let parameter = self.parameter(id, name)?;
         let class = parameter
             .native_ref
             .as_deref()
@@ -130,20 +130,63 @@ impl<'a> Decoded<'a> {
             (Some(ArchiveParameterClass::Scaler), _) => ValueKind::Quantity(Quantity::REAL),
             (None, _) => return None,
         };
-        let stored = parameter.native_ref.is_some()
-            || display.is_some_and(|display| {
-                parameter
-                    .value
-                    .as_ref()
-                    .is_some_and(|value| !reads_display(value, display))
-            });
         let value = parameter
             .value
             .clone()
-            .filter(|_| stored)
+            .filter(|_| stored(parameter, display))
             .and_then(|value| typed_cache(&kind, value));
         Some((kind, value))
     }
+
+    /// The cache of a dimension whose kind no record states: the value of the
+    /// decoder's parameter of the same id and name where a stored record gave
+    /// it, in the variant a `Native` kind holds it in (§5.12): a real as
+    /// `Number`, unscaled, an integer as `Integer`.
+    fn native_cache(
+        &self,
+        id: &ParameterId,
+        name: &str,
+        display: Option<f64>,
+    ) -> Option<ParameterValue> {
+        use cadmpeg_ir::features::ParameterValue as V10;
+        let parameter = self.parameter(id, name)?;
+        match parameter
+            .value
+            .as_ref()
+            .filter(|_| stored(parameter, display))?
+        {
+            V10::Real(real) => FiniteReal::new(real.get()).map(ParameterValue::Number),
+            V10::Integer(integer) => Some(ParameterValue::Integer(*integer)),
+            V10::Boolean(flag) => Some(ParameterValue::Boolean(*flag)),
+            V10::String(text) => Some(ParameterValue::Text(text.clone())),
+            V10::Length(_) | V10::Angle(_) => None,
+        }
+    }
+
+    /// The decoder's parameter of id `id` named `name`.
+    fn parameter(
+        &self,
+        id: &ParameterId,
+        name: &str,
+    ) -> Option<&'a cadmpeg_ir::features::DesignParameter> {
+        self.parameters
+            .get(id.as_str())
+            .copied()
+            .filter(|parameter| parameter.name == name)
+    }
+}
+
+/// Whether a stored record gave the value of the decoder's `parameter`: a
+/// bound scalar, or a value that is no reading of the dimension's bare
+/// display `display`.
+fn stored(parameter: &cadmpeg_ir::features::DesignParameter, display: Option<f64>) -> bool {
+    parameter.native_ref.is_some()
+        || display.is_some_and(|display| {
+            parameter
+                .value
+                .as_ref()
+                .is_some_and(|value| !reads_display(value, display))
+        })
 }
 
 /// Whether the decoder's `value` is the display's number read in a unit the
@@ -283,15 +326,18 @@ impl<'a> Entries<'a> {
         self.ids.contains(id)
     }
 
-    /// The parameters, their expressions read, and the note naming those
-    /// whose literal is a rounded display.
+    /// The parameters, their expressions read, the note naming those whose
+    /// literal is a rounded display, and the note naming the dimensions
+    /// whose text is a bare number and that have no value.
     pub(super) fn parameters(
         &self,
         scope: &ProductDefinitionId,
         readings: &Readings<'_>,
-    ) -> (Vec<DesignParameter>, Option<LossNote>) {
+    ) -> (Vec<DesignParameter>, Vec<LossNote>) {
         let aliases = Aliases::new(&self.list);
         let mut rounded = NamedCount::default();
+        let mut unread_kind = NamedCount::default();
+        let mut unread_unit = NamedCount::default();
         let parameters = self
             .list
             .iter()
@@ -300,17 +346,43 @@ impl<'a> Entries<'a> {
                 if reading.rounded {
                     rounded.push(entry.id.as_str());
                 }
+                match reading.unvalued {
+                    Some(Unvalued::Kind) => unread_kind.push(entry.id.as_str()),
+                    Some(Unvalued::LengthUnit) => unread_unit.push(entry.id.as_str()),
+                    None => {}
+                }
                 parameter(entry, reading, scope, readings)
             })
             .collect();
-        let loss = (!rounded.is_empty()).then(|| {
-            SldprtLossCode::DesignParameterDisplayRounded.note(format!(
+        let mut losses = Vec::new();
+        if !rounded.is_empty() {
+            losses.push(SldprtLossCode::DesignParameterDisplayRounded.note(format!(
                 "{} parameters hold their dimension's displayed number, rounded to the display \
                  precision, as their literal and value: {rounded}",
                 rounded.count()
-            ))
-        });
-        (parameters, loss)
+            )));
+        }
+        let unvalued = [
+            (
+                unread_kind,
+                "whose dimension no record types or binds to a stored value of its kind",
+            ),
+            (
+                unread_unit,
+                "lengths in a part whose length unit is not read",
+            ),
+        ]
+        .into_iter()
+        .filter(|(named, _)| !named.is_empty())
+        .map(|(named, why)| format!("{} {why} ({named})", named.count()))
+        .collect::<Vec<_>>();
+        if !unvalued.is_empty() {
+            losses.push(SldprtLossCode::DesignParameterValueUnread.note(format!(
+                "Parameters whose dimension text is a bare number hold no value: {}",
+                unvalued.join("; ")
+            )));
+        }
+        (parameters, losses)
     }
 }
 
@@ -384,6 +456,18 @@ struct Reading {
     display: Option<DimensionDisplay>,
     /// The literal and value are a display's rounded number.
     rounded: bool,
+    /// Why a dimension whose text is a bare number has no value.
+    unvalued: Option<Unvalued>,
+}
+
+/// Why a dimension whose text is a bare number has no value.
+#[derive(Clone, Copy)]
+enum Unvalued {
+    /// No record types the dimension, or binds it to a stored value of its
+    /// kind.
+    Kind,
+    /// The dimension is a length and the part's length unit is not read.
+    LengthUnit,
 }
 
 fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Reading {
@@ -397,6 +481,7 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Readin
             value: Some(value),
             display: None,
             rounded: false,
+            unvalued: None,
         };
     }
     let tokens = source_tokens(text, entry.owner.as_ref(), aliases);
@@ -416,6 +501,7 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Readin
             value: Some(ParameterValue::Text(text.to_owned())),
             display: None,
             rounded: false,
+            unvalued: None,
         };
     }
     let stored = feature
@@ -447,7 +533,7 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Readin
                 Some(quantity) => (ValueKind::Quantity(quantity), None),
                 None => (
                     ValueKind::Native(cadmpeg_core::nonblank_const!(UNREAD_KIND)),
-                    None,
+                    decoded.native_cache(&entry.id, name, bare),
                 ),
             },
         },
@@ -459,7 +545,8 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Readin
             cadmpeg_ir::features::DimensionDisplay::Radius => DimensionDisplay::Radius,
         })
         .filter(|display| readings.measured.get(&entry.id) != Some(display));
-    if let Some(number) = bare.filter(|_| !user && !references) {
+    let number = bare.filter(|_| !user && !references);
+    if let Some(number) = number {
         if let Some((node, literal)) =
             displayed_literal(number, &kind, value.as_ref(), readings.length_unit)
         {
@@ -469,9 +556,17 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Readin
                 rounded: value.is_none(),
                 value: Some(literal),
                 display,
+                unvalued: None,
             };
         }
     }
+    let unvalued = (number.is_some() && value.is_none()).then_some(
+        if kind == ValueKind::Quantity(Quantity::LENGTH) && readings.length_unit.is_none() {
+            Unvalued::LengthUnit
+        } else {
+            Unvalued::Kind
+        },
+    );
     Reading {
         kind,
         expression: Expression::Source {
@@ -481,6 +576,7 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Readin
         value,
         display,
         rounded: false,
+        unvalued,
     }
 }
 
