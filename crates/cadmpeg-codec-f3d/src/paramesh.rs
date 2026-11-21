@@ -40,8 +40,10 @@ const CHUNK_NAME_TABLE: u32 = 3;
 const CHUNK_STREAM: u32 = 4;
 /// LZMA1 properties byte: `lc` 3, `lp` 0, `pb` 2.
 const LZMA_PROPERTIES: u8 = 0x5D;
-/// Base-2 logarithm of the LZMA1 dictionary size.
-const LZMA_DICTIONARY_LOG: u8 = 0x14;
+/// Second byte of the LZMA1 stream encoding.
+const LZMA_ENCODING_TAG: u8 = 0x14;
+/// Smallest LZMA1 history window the decoder allocates.
+const LZMA_DICTIONARY_BYTES: u32 = 1 << 22;
 /// Raw-stream selector following the common properties byte.
 const RAW_STREAM_MODE: u8 = 0xfe;
 /// Largest stream this decoder inflates.
@@ -106,7 +108,6 @@ const PACKED_DIRECTION_BYTES: u32 = 8;
 /// One mesh body's decoded geometry.
 pub(crate) struct MeshContainer {
     pub(crate) split_streams: Vec<crate::records::mesh::DesignMeshSplitStream>,
-    pub(crate) history_streams: Vec<crate::records::mesh::DesignMeshHistoryStream>,
     pub(crate) face_group_metadata: Option<crate::records::mesh::DesignMeshFaceGroups>,
     /// The ASCII GUID the protobuf message carries as `fusion_uuid`, which the
     /// container's Design-segment GUID record repeats.
@@ -1013,7 +1014,8 @@ fn message_pack_name_table(bytes: &[u8]) -> Result<UniqueStreamNames, CodecError
 struct MeshStream {
     descriptor: Vec<(String, StreamDescriptorValue)>,
     split_descriptor: Option<Vec<u8>>,
-    history_lengths: Vec<u32>,
+    /// Whether a nested split component stores the `Z: true` flag.
+    component_flag: bool,
     bytes: Vec<u8>,
 }
 
@@ -1190,7 +1192,7 @@ fn inflate_stream_inner(
             ));
         }
         let mut components = Vec::new();
-        let mut history_lengths = Vec::new();
+        let mut component_flag = false;
         let mut position = at;
         for (ordinal, size) in sizes.iter().enumerate() {
             let length = usize::try_from(*size).map_err(|_| {
@@ -1208,14 +1210,14 @@ fn inflate_stream_inner(
                     )),
                 },
             )?;
-            if component.descriptor != [("T".to_owned(), StreamDescriptorValue::Integer(3))]
+            if !split_component_descriptor(&component.descriptor, packed)
                 || component.bytes.len() % 4 != 0
             {
                 return Err(CodecError::malformed(
                     "paramesh split component has an invalid descriptor or length",
                 ));
             }
-            history_lengths.extend(component.history_lengths);
+            component_flag |= component.descriptor.len() == 2;
             components.push(component.bytes);
             position = end;
         }
@@ -1249,7 +1251,7 @@ fn inflate_stream_inner(
         return Ok(MeshStream {
             descriptor,
             split_descriptor: Some(body[2..at].to_vec()),
-            history_lengths,
+            component_flag,
             bytes,
         });
     }
@@ -1278,11 +1280,11 @@ fn inflate_stream_inner(
         return Ok(MeshStream {
             descriptor,
             split_descriptor: None,
-            history_lengths: Vec::new(),
+            component_flag: false,
             bytes: payload.to_vec(),
         });
     }
-    if properties != [LZMA_PROPERTIES, LZMA_DICTIONARY_LOG] {
+    if properties != [LZMA_PROPERTIES, LZMA_ENCODING_TAG] {
         return Err(CodecError::malformed(
             "paramesh stream carries an undefined encoding",
         ));
@@ -1292,12 +1294,11 @@ fn inflate_stream_inner(
     // a final 273-byte match that crosses the declared output boundary.
 
     // `lzma-rs` reads the properties byte and the four-byte dictionary size
-    // from the stream. The container stores a properties byte and a base-2
-    // dictionary exponent.
+    // from the stream. The container stores the properties byte and an
+    // encoding tag in their place.
     let mut framed = Vec::new();
     framed.push(LZMA_PROPERTIES);
-    let nominal_window = 1u32 << LZMA_DICTIONARY_LOG;
-    let window = nominal_window.max(declared);
+    let window = LZMA_DICTIONARY_BYTES.max(declared);
     framed.extend_from_slice(&window.to_le_bytes());
     framed.extend_from_slice(payload);
 
@@ -1326,13 +1327,30 @@ fn inflate_stream_inner(
     Ok(MeshStream {
         descriptor,
         split_descriptor: None,
-        history_lengths: if window > nominal_window {
-            vec![declared]
-        } else {
-            Vec::new()
-        },
+        component_flag: false,
         bytes: writer.expansion.finalize_owned()?,
     })
+}
+
+/// A split component stores f32 values under `{T: 3}`. A component of a
+/// packed-direction split stream can also store `{T: 3, Z: true}` with the
+/// same payload layout.
+fn split_component_descriptor(
+    descriptor: &[(String, StreamDescriptorValue)],
+    packed: bool,
+) -> bool {
+    match descriptor {
+        [(name, StreamDescriptorValue::Integer(3))] => name == "T",
+        [first, second] if packed => {
+            let mut keys = [first, second];
+            keys.sort_by(|left, right| left.0.cmp(&right.0));
+            keys[0].0 == "T"
+                && keys[0].1 == StreamDescriptorValue::Integer(3)
+                && keys[1].0 == "Z"
+                && keys[1].1 == StreamDescriptorValue::Boolean(true)
+        }
+        _ => false,
+    }
 }
 
 /// Keeps the typed expansion error across the LZMA library's I/O boundary.
@@ -2148,29 +2166,13 @@ pub(crate) fn decode_mesh_container(
                 crate::records::mesh::DesignMeshSplitStream {
                     name: name.clone(),
                     descriptor: cadmpeg_ir::native::bytes::NativeBytes::new(descriptor.clone()),
-                }
-            })
-        })
-        .collect();
-    let history_streams = name_table
-        .iter()
-        .zip(&streams)
-        .flat_map(|((name, _), stream)| {
-            stream.history_lengths.iter().map(|length| {
-                crate::records::mesh::DesignMeshHistoryStream {
-                    name: name.clone(),
-                    encoding: cadmpeg_ir::native::bytes::NativeBytes::new([
-                        LZMA_PROPERTIES,
-                        LZMA_DICTIONARY_LOG,
-                    ]),
-                    decoded_length: *length,
+                    component_flag: stream.component_flag,
                 }
             })
         })
         .collect();
     Ok(MeshContainer {
         split_streams,
-        history_streams,
         face_group_metadata,
         fusion_uuid: registry.fusion_uuid,
         mesh_uuid: registry.mesh_uuid,
@@ -2479,7 +2481,7 @@ mod tests {
         MeshAttributeDomain, MeshContainer, MeshElements, MeshStream, StreamDescriptorValue,
         CHANNEL_GROUP, CHANNEL_RESOURCE, CHANNEL_ROLE, CHANNEL_STREAMS, CHUNK_NAME_TABLE,
         CHUNK_STREAM, ELEMENT_PACKED_DIRECTION, ELEMENT_PAIR, ELEMENT_QUAD, ELEMENT_TRIANGLE_DELTA,
-        FEATURE_EDGE_STREAM, GROUP_GUID, GROUP_KEY, LZMA_DICTIONARY_LOG, LZMA_PROPERTIES, MAGIC,
+        FEATURE_EDGE_STREAM, GROUP_GUID, GROUP_KEY, LZMA_ENCODING_TAG, LZMA_PROPERTIES, MAGIC,
         PROPERTY_KEY, PROPERTY_STREAM, PROPERTY_TEXT, RAW_STREAM_MODE, REGISTRY_FACE_GROUP_COUNT,
         REGISTRY_FEATURE_EDGES, REGISTRY_MESH_UUID, REGISTRY_PROPERTY, REGISTRY_TRIANGLES,
         REGISTRY_TRIANGLE_CHANNEL, REGISTRY_VERTEX_CHANNEL, REGISTRY_VERTICES, STREAM_ELEMENT_CODE,
@@ -2574,7 +2576,7 @@ mod tests {
             &(u32::try_from(payload.len()).expect("fixture value fits u32")).to_le_bytes(),
         );
         body.push(LZMA_PROPERTIES);
-        body.push(LZMA_DICTIONARY_LOG);
+        body.push(LZMA_ENCODING_TAG);
         // `lzma_compress` writes the properties byte, the four-byte dictionary
         // size, and the eight-byte unpacked size ahead of the stream; the
         // container stores none of those three.
@@ -3600,7 +3602,7 @@ mod tests {
         let mut container = container(GUID, &[0.0, 0.0, 0.0], &[0, 0]);
         let at = container
             .windows(2)
-            .position(|window| window == [LZMA_PROPERTIES, LZMA_DICTIONARY_LOG])
+            .position(|window| window == [LZMA_PROPERTIES, LZMA_ENCODING_TAG])
             .expect("properties");
         container[at] = 0x00;
         assert!(decode_mesh_container(&container).is_err());
@@ -3715,7 +3717,43 @@ mod tests {
     }
 
     #[test]
-    fn lzma_history_extends_to_the_declared_length_beyond_one_mebibyte() {
+    fn split_direction_components_admit_the_z_flag() {
+        let component_descriptor = [0x82, 0xa1, b'T', 3, 0xa1, b'Z', 0xc3];
+        let part = |first: f32, second: f32| {
+            let mut payload = Vec::new();
+            payload.extend_from_slice(&first.to_le_bytes());
+            payload.extend_from_slice(&second.to_le_bytes());
+            raw_stream_body(&component_descriptor, 8, &payload)
+        };
+        let body = |descriptor: &[u8]| {
+            let mut body = Vec::new();
+            body.extend_from_slice(&u16::try_from(descriptor.len()).unwrap().to_le_bytes());
+            body.extend_from_slice(descriptor);
+            body.extend_from_slice(&part(1.0, 3.0));
+            body.extend_from_slice(&part(2.0, 4.0));
+            body
+        };
+        let packed = [
+            0x85, 0xa1, b'D', 3, 0xa1, b'I', 0xc3, 0xa1, b'S', 0x92, 23, 23, 0xa1, b'T', 3, 0xa1,
+            b'U', 0xc3,
+        ];
+        let stream = inflate_stream(&body(&packed)).unwrap();
+        assert!(stream.component_flag);
+        let expected = [1.0f32, 2.0, 3.0, 4.0]
+            .into_iter()
+            .flat_map(f32::to_le_bytes)
+            .collect::<Vec<_>>();
+        assert_eq!(stream.bytes, expected);
+        assert!(require_version_2_descriptor(&stream).is_ok());
+
+        let unpacked = [
+            0x84, 0xa1, b'D', 2, 0xa1, b'I', 0xc3, 0xa1, b'S', 0x92, 23, 23, 0xa1, b'T', 3,
+        ];
+        assert!(inflate_stream(&body(&unpacked)).is_err());
+    }
+
+    #[test]
+    fn lzma_matches_reach_beyond_one_mebibyte() {
         const PAYLOAD: &str = "0053a48ba682b207b0fc90f390f421bbe0454d93fbdef3696a4b6d4d92722dce9b3e68c474434892c98c07c5beb98dca44aeaba9ab2223f2882aee8b03d2f91f0db2d992bc4bd6264eb20170048e0fbb4664c8d8d61d6518c42f1d81863421753d7e9f702f114b4d2d35d5979c83aa50622bdb69839a374be1eb877da227ab52d1b16c861b74f87be1e3b043fceff052a73d3f97ecb51a94141b4e995df947fa4ee752e2920656199e449ee2d2e446f654f088752c30dbc2505491229706035fc9703b14c0323798a51501a5e8a3092aecaaff5a26ac720c1692a7be398f24e1709ea7235fec28cb85d195988a7e2a91f22775f719c006984d98fdd8afd5900fc42553f8f591363105a5b0ee6fc1704d470cd19111aaad5ffb0606e2778f2008a66bfffecd0a40";
         let head = (0..64u32)
             .map(|index| u8::try_from((index * 73 + 41) * 151 % 251).unwrap())
@@ -3732,12 +3770,11 @@ mod tests {
         body.extend_from_slice(&u16::try_from(descriptor.len()).unwrap().to_le_bytes());
         body.extend_from_slice(&descriptor);
         body.extend_from_slice(&1_052_800u32.to_le_bytes());
-        body.extend_from_slice(&[LZMA_PROPERTIES, LZMA_DICTIONARY_LOG]);
+        body.extend_from_slice(&[LZMA_PROPERTIES, LZMA_ENCODING_TAG]);
         body.extend_from_slice(&payload);
         let stream = inflate_stream(&body).expect("history beyond one mebibyte");
         assert_eq!(stream.bytes.len(), 1_052_800);
         assert_eq!(stream.bytes, expected);
-        assert_eq!(stream.history_lengths, [1_052_800]);
     }
 
     fn split_part(payload: &[u8]) -> Vec<u8> {
@@ -3914,7 +3951,7 @@ mod tests {
             let stream = MeshStream {
                 descriptor: stream_descriptor(&descriptor).expect("version-2 descriptor"),
                 split_descriptor: None,
-                history_lengths: Vec::new(),
+                component_flag: false,
                 bytes: Vec::new(),
             };
             assert!(require_version_2_descriptor(&stream).is_ok());
@@ -3927,7 +3964,7 @@ mod tests {
             let stream = MeshStream {
                 descriptor: stream_descriptor(&descriptor).expect("scalar descriptor"),
                 split_descriptor: None,
-                history_lengths: Vec::new(),
+                component_flag: false,
                 bytes: Vec::new(),
             };
             assert!(matches!(

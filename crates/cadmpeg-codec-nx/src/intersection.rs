@@ -166,13 +166,16 @@ pub(crate) enum TermUseForm {
     Tf,
     #[serde(rename = "TS")]
     Ts,
+    /// A limit type `T` with no inserted `term_use` field.
+    #[serde(rename = "T")]
+    T,
 }
 
 impl TermUseForm {
     pub(crate) fn count(self) -> u32 {
         match self {
             Self::LQuestion | Self::L => 1,
-            Self::Tf | Self::Ts => 2,
+            Self::Tf | Self::Ts | Self::T => 2,
         }
     }
 }
@@ -519,7 +522,12 @@ fn enrich(
     {
         return Err(Rejection::EndpointMismatch.into());
     }
-    if serialized_terms.iter().any(Option::is_none) {
+    // A closed curve names one terminator twice and its closed edge has no
+    // vertices, so the chart closing on itself is the only endpoint witness.
+    let closed_chart = construction.references[3].is_some()
+        && construction.references[3] == construction.references[4]
+        && Point3::distance(chart_endpoints[0], chart_endpoints[1]) <= chart.fit_tolerance.get();
+    if !closed_chart && serialized_terms.iter().any(Option::is_none) {
         let topology_endpoints = graph
             .unique_curve_edge_witness(construction.xmt)
             .map(|witness| witness.endpoints)
@@ -611,7 +619,10 @@ fn construction_supports(
         }
     };
     let primary = u32::from(primary?);
-    is_surface(graph, primary).then_some(())?;
+    let primary = bridges
+        .get(&primary)
+        .copied()
+        .or_else(|| is_surface(graph, primary).then_some(primary))?;
     let secondary = bridge
         .map(u32::from)
         .and_then(|bridge| {
@@ -902,13 +913,17 @@ pub(crate) fn chart_source_record_at(
         {
             continue;
         }
-        let Ok(preamble_values) =
-            ChartPreamble::new(base_parameter, base_scale, chordal_error, angular_error)
-        else {
-            continue;
-        };
         let block = preamble + chart_preamble::LEN;
         let Some((data, end)) = chart_points(stream, block, count, point_layout) else {
+            continue;
+        };
+        let Ok(preamble_values) = ChartPreamble::for_points(
+            base_parameter,
+            base_scale,
+            chordal_error,
+            angular_error,
+            &data.points(),
+        ) else {
             continue;
         };
         return Some((
@@ -1102,8 +1117,12 @@ fn term_at(
         };
         (form, 2)
     } else {
-        ((count, stream.get(payload)?) == (1, &b'L')).then_some(())?;
-        (TermUseForm::L, 1)
+        let form = match (count, stream.get(payload)?) {
+            (1, b'L') => TermUseForm::L,
+            (2, b'T') => TermUseForm::T,
+            _ => return None,
+        };
+        (form, 1)
     };
     let (data, end) =
         limit_state::LimitState::read(stream, payload.checked_add(discriminator)?, form, layout)?;
