@@ -391,7 +391,8 @@ pub(super) fn cache_tolerances_omitted(ir: &CadIr) -> Option<LossNote> {
 
 /// A FIN names the vertex at its end, and the reader takes the other end of
 /// its edge from the next FIN of the ring (`sldprt.md` §4.2), so a loop whose
-/// coedges do not meet end to end cannot be stated: its face is written as the
+/// coedges do not meet end to end cannot be stated: the edges at the break
+/// contradict their twins, and every face that uses one is written as the
 /// document states it and may not read back.
 pub(super) fn unchained_face_loops(ir: &CadIr) -> Option<LossNote> {
     let edges = ir
@@ -406,7 +407,7 @@ pub(super) fn unchained_face_loops(ir: &CadIr) -> Option<LossNote> {
         .iter()
         .map(|coedge| (&coedge.id, coedge))
         .collect::<HashMap<_, _>>();
-    let mut faces = std::collections::BTreeSet::new();
+    let mut broken = std::collections::HashSet::new();
     for lp in &ir.geometry.loops {
         let ends = lp
             .coedges()
@@ -414,27 +415,49 @@ pub(super) fn unchained_face_loops(ir: &CadIr) -> Option<LossNote> {
             .map(|id| {
                 let coedge = coedges.get(id)?;
                 let ends = edges.get(&coedge.edge)?.ends.as_ref()?;
-                Some(match coedge.sense {
-                    cadmpeg_ir::topology::Sense::Forward => (&ends.start, &ends.end),
-                    cadmpeg_ir::topology::Sense::Reversed => (&ends.end, &ends.start),
-                })
+                Some((
+                    &coedge.edge,
+                    match coedge.sense {
+                        cadmpeg_ir::topology::Sense::Forward => (&ends.start, &ends.end),
+                        cadmpeg_ir::topology::Sense::Reversed => (&ends.end, &ends.start),
+                    },
+                ))
             })
             .collect::<Option<Vec<_>>>();
         let Some(ends) = ends else {
             continue;
         };
-        let chained = ends
-            .iter()
-            .zip(ends.iter().cycle().skip(1))
-            .all(|((_, end), (next_start, _))| end == next_start);
-        if !chained {
-            faces.insert(lp.face.as_str().to_owned());
+        for ((edge, (_, end)), (next_edge, (next_start, _))) in
+            ends.iter().zip(ends.iter().cycle().skip(1))
+        {
+            if end != next_start {
+                broken.insert(*edge);
+                broken.insert(*next_edge);
+            }
         }
     }
+    if broken.is_empty() {
+        return None;
+    }
+    let loop_faces = ir
+        .geometry
+        .loops
+        .iter()
+        .map(|lp| (&lp.id, lp.face.as_str()))
+        .collect::<HashMap<_, _>>();
+    let faces = ir
+        .geometry
+        .coedges
+        .iter()
+        .filter(|coedge| broken.contains(&coedge.edge))
+        .filter_map(|coedge| loop_faces.get(&coedge.owner_loop))
+        .map(|face| (*face).to_owned())
+        .collect::<std::collections::BTreeSet<_>>();
     note(
         SldprtLossCode::WriterFaceLoopsUnchained,
-        "face(s) have a loop whose coedges do not meet end to end, which the SLDPRT ring order \
-         cannot state; they are written as the document states them and may not read back",
+        "face(s) have, or share an edge with, a loop whose coedges do not meet end to end, which \
+         the SLDPRT ring order cannot state; they are written as the document states them and \
+         may not read back",
         &faces.into_iter().collect::<Vec<_>>(),
     )
 }

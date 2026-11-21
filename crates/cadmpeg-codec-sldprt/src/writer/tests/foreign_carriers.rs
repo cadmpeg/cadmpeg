@@ -1048,4 +1048,6 @@ fn a_face_loop_whose_coedges_do_not_meet_is_named() {
     let note = crate::writer::reduce::unchained_face_loops(&ir).expect("named face");
     assert_eq!(note.code.local_code(), "writer.face-loops-unchained");
     assert!(note.message.contains(face.id.as_str()), "{}", note.message);
+    // The faces across the edges at the break are named with it.
+    assert!(note.message.starts_with("4 face(s)"), "{}", note.message);
 }
