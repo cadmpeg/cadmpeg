@@ -3,7 +3,7 @@ use super::{
     parameter_record, parse_design_parameter_record, Point2, SketchConstraintDefinitionInput,
     SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
 };
-use crate::design::dimensions::governing_presentation_definition;
+use crate::design::dimensions::{frame_driven_parameters, governing_presentation_definition};
 use crate::records::dimensions::{
     DesignDimensionPresentationFrame, DesignDimensionPresentationOperand,
 };
@@ -101,4 +101,46 @@ fn owner_with_several_frames_takes_the_one_that_measures_its_parameter() {
     }
     assert!(resolve(&[&stale]).is_none());
     assert!(resolve(&[&measuring, &measuring]).is_none());
+}
+
+#[test]
+fn presentation_frame_with_the_driven_text_style_states_its_parameter_driven() {
+    let parameter = parse_design_parameter_record(&parameter_record(
+        Some(7),
+        "5.175",
+        "Linear Dimension-6",
+        Some("cm"),
+        "d55",
+        5.175,
+    ))
+    .unwrap();
+    let stream = crate::ids::native_stream(&parameter.id).unwrap();
+    let parameters =
+        std::collections::HashMap::from([((stream, parameter.record_index), &parameter)]);
+    // The property block, the 129-byte linear measurement, then the text
+    // frame's style byte, four style values, its byte and its zero byte.
+    let driven = |properties: &[u8], style: u8, marker: u8, governing: u32| {
+        let mut bytes = properties.to_vec();
+        bytes.extend([0; 129]);
+        bytes.push(style);
+        bytes.extend([0; 16]);
+        bytes.extend([marker, 0]);
+        let mut presented = frame("driven", [11, 12]);
+        presented.id = format!("{stream}:presentation#driven");
+        presented.governing_parameter_record_index = governing;
+        presented.presentation_bytes = bytes.into();
+        frame_driven_parameters(&[presented], &[], &[], &parameters)
+            .contains(&(stream, parameter.record_index))
+    };
+    let index = parameter.record_index;
+    let mut genesis = vec![1, 1, 0, 0, 0];
+    genesis.resize(57, 0);
+    for properties in [&[0][..], &[1, 0, 0, 0, 0][..], &genesis[..]] {
+        assert!(driven(properties, 1, 1, index), "{properties:?}");
+        assert!(!driven(properties, 0, 1, index), "{properties:?}");
+    }
+    assert!(!driven(&[0], 1, 2, index));
+    assert!(!driven(&[2], 1, 1, index));
+    assert!(!driven(&[1, 2, 0, 0, 0], 1, 1, index));
+    assert!(!driven(&[0], 1, 1, index + 1));
 }

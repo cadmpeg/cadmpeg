@@ -263,11 +263,6 @@ impl Candidate<'_> {
         let value = match (&binding, &driven) {
             (_, Some(driven)) => driven.evaluated,
             (Binding::Parameter(parameter), None) => {
-                if !parameters.states(parameter) {
-                    return Err(
-                        "its parameter is not in the design, so whether it is driven is unknown",
-                    );
-                }
                 Some(parameters.value(parameter, quantity).ok_or(match kind {
                     DimensionKind::Angle => "its parameter is not written as an angle",
                     _ => "its parameter is not written as a length",

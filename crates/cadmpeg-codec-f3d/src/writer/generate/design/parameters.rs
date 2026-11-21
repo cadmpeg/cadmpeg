@@ -54,8 +54,6 @@ pub(in crate::writer::generate) struct ParameterPlan {
     /// The driven parameters, which only the dimension that binds them can
     /// write.
     driven: Vec<DrivenParameter>,
-    /// Every parameter of the design.
-    stated: BTreeSet<ParameterId>,
     losses: Vec<LossNote>,
 }
 
@@ -234,12 +232,6 @@ pub(in crate::writer::generate) fn plan(
         .iter()
         .filter(|parameter| parameter.scope == *definition)
         .collect::<Vec<_>>();
-    let stated = target
-        .design
-        .parameters
-        .iter()
-        .map(|parameter| parameter.id.clone())
-        .collect();
     let mut omitted_kind = Vec::new();
     let mut driven_candidates = Vec::new();
     let mut candidates = Vec::new();
@@ -394,7 +386,6 @@ pub(in crate::writer::generate) fn plan(
         claimed: Vec::new(),
         owned: Vec::new(),
         driven,
-        stated,
         losses,
     }
 }
@@ -415,7 +406,6 @@ pub(in crate::writer::generate) fn native_or_neutral(
             claimed: Vec::new(),
             owned: Vec::new(),
             driven: Vec::new(),
-            stated: BTreeSet::new(),
             losses: Vec::new(),
         },
         |scope| plan(target, &scope.definition),
@@ -663,11 +653,6 @@ impl ParameterPlan {
             names_parameter: false,
             comment: parameter.comment.clone(),
         }
-    }
-
-    /// Whether `id` is a parameter of the design.
-    pub(super) fn states(&self, id: &ParameterId) -> bool {
-        self.stated.contains(id)
     }
 
     /// The written parameter `id`, user or claimed.

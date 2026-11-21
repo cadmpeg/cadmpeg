@@ -13,6 +13,7 @@ use super::super::parameters::OwnedParameter;
 use super::super::types;
 use super::sketches::OWNER_COLLECTION;
 use super::{Context, PARAMETER_COLLECTION};
+use crate::design::decode::parameters::DRIVEN_FLAG;
 use crate::layout::design_parameter_discriminated_text_expression_trailer as trailer;
 
 /// The family discriminator of an owned parameter (f3d-open-items.md
@@ -20,11 +21,11 @@ use crate::layout::design_parameter_discriminated_text_expression_trailer as tra
 pub(super) const DISCRIMINATOR: u32 = 6;
 
 /// The expression trailer of a parameter of the written type version 8
-/// (f3d.md §3.1): zero bytes, with the first flag byte `1` in the parameter of
-/// a driven dimension (f3d-open-items.md DR-144).
+/// (f3d.md §3.1): zero bytes, with the second flag byte, the driven flag,
+/// `1` in the parameter of a driven dimension (f3d-open-items.md DR-144).
 fn expression_trailer(driven: bool) -> [u8; trailer::LEN] {
     let mut bytes = [0; trailer::LEN];
-    bytes[trailer::FLAGS] = u8::from(driven);
+    bytes[trailer::FLAGS + DRIVEN_FLAG] = u8::from(driven);
     bytes
 }
 

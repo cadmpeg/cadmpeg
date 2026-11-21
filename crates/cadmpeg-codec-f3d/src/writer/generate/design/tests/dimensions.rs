@@ -8,10 +8,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_ir::design::container::Container;
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::expr::{BinaryOp, Node};
+use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::ops::sketch::{
     AngleOperands, DefiningRole, DistanceAxis, Planar, PlanarCurve, RadialMeasure, SketchRelation,
 };
-use cadmpeg_ir::design::parameter::{DesignParameter, ParameterDefinition};
+use cadmpeg_ir::design::parameter::{
+    DesignParameter, DimensionDisplay, ParameterDefinition, ParameterOwner,
+};
 use cadmpeg_ir::design::refs::Member;
 use cadmpeg_ir::design::selection::PrincipalEntity;
 use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
@@ -891,13 +894,13 @@ fn driven_and_driving_dimensions_read_back_with_their_state() {
     let trailers = dimension_trailers(&segment(&bytes, "FusionDesignSegmentType1"));
     for (_, name) in DIMENSIONS {
         let mut expected = vec![0; 10];
-        expected[5] = u8::from(matches!(name, "Gap" | "Hole"));
+        expected[6] = u8::from(matches!(name, "Gap" | "Hole"));
         assert_eq!(trailers.get(name), Some(&expected), "{name}");
     }
 }
 
 #[test]
-fn a_dimension_whose_parameter_is_not_in_the_design_is_named_unknown() {
+fn a_dimension_whose_parameter_is_not_in_the_design_is_omitted() {
     let mut ir = on_xy();
     ir.design
         .parameters
@@ -906,7 +909,7 @@ fn a_dimension_whose_parameter_is_not_in_the_design_is_named_unknown() {
     let omitted = omitted(&report);
     assert!(
         omitted.contains(&format!(
-            "{}: its parameter is not in the design, so whether it is driven is unknown",
+            "{}: its parameter is not written as a length",
             constraint_id(SKETCH, "up")
         )),
         "{omitted}"
@@ -1004,4 +1007,45 @@ fn a_driven_parameter_keeps_its_comment_and_its_rename_is_reported() {
             |parameter| parameter.name() == "Gap_width" && parameter.comment() == Some("measured")
         ));
     assert_eq!(driving(&decoded).get("Gap_width"), Some(&Some(false)));
+}
+
+#[test]
+fn a_claimed_driving_parameter_keeps_its_comment() {
+    let mut ir = on_xy();
+    parameter_mut(&mut ir, "up").comment = Some("rise".into());
+    let (_, decoded) = write(&ir);
+    assert!(crate::test_support::native_test::f3d_native(&decoded)
+        .design_parameters
+        .iter()
+        .any(|parameter| parameter.name() == "Up" && parameter.comment() == Some("rise")));
+    assert_eq!(driving(&decoded).get("Up"), Some(&None));
+}
+
+#[test]
+fn a_driven_parameter_names_its_owner_and_its_display_with_its_dimension() {
+    let mut ir = on_xy();
+    drive(&mut ir, "gap");
+    let timeline = ContainerId::mint("test:design:container#timeline").expect("identity grammar");
+    let gap = parameter_mut(&mut ir, "gap");
+    gap.owner = Some(ParameterOwner::Container(timeline.clone()));
+    gap.display = Some(DimensionDisplay::Radius);
+    let (report, decoded) = write(&ir);
+    let unwritable = loss(&report, "export/value.unwritable");
+    let named = |reason: &str, entry: String| {
+        assert!(
+            unwritable
+                .iter()
+                .any(|message| message.contains(reason) && message.contains(&entry)),
+            "{reason}: {unwritable:#?}"
+        );
+    };
+    named(
+        "driven parameters as parameters of their dimensions without their owners",
+        format!("{} (owner container {timeline})", parameter_id("gap")),
+    );
+    named(
+        "driven parameters without their diameter or radius display presentation",
+        format!("{} (Radius)", parameter_id("gap")),
+    );
+    assert_eq!(driving(&decoded).get("Gap"), Some(&Some(false)));
 }

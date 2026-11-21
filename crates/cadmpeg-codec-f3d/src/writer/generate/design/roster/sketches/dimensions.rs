@@ -74,7 +74,16 @@ impl Item<'_> {
         }
         let paired = self.ctx.class(types::DIMENSION_FRAME_PAIRED.guid)?;
         let mut stems = HashMap::<&str, u32>::new();
-        for ((local, dimension), [frame, parameter, owner, companion]) in (0u32..)
+        for (
+            (local, dimension),
+            super::DimensionRecords {
+                frame,
+                parameter,
+                owner,
+                companion,
+                ..
+            },
+        ) in (0u32..)
             .zip(&self.planned.dimensions)
             .zip(&records.dimensions)
         {
@@ -272,17 +281,14 @@ pub(in crate::writer::generate::design::roster) fn losses(ctx: &Context<'_>) -> 
     let mut driven = Vec::new();
     for records in &ctx.roster.sketches.items {
         related.extend(records.relations.iter().map(u32::to_string));
-        for [frame, parameter, _, _] in &records.dimensions {
-            related.push(frame.to_string());
-            frames.push(frame.to_string());
-            parameters.push(parameter.to_string());
+        for dimension in &records.dimensions {
+            related.push(dimension.frame.to_string());
+            frames.push(dimension.frame.to_string());
+            parameters.push(dimension.parameter.to_string());
+            if dimension.driven {
+                driven.push(format!("{} {}", dimension.frame, dimension.parameter));
+            }
         }
-        driven.extend(
-            records
-                .driven
-                .iter()
-                .map(|[frame, parameter]| format!("{frame} {parameter}")),
-        );
     }
     if related.is_empty() {
         return Vec::new();
@@ -304,7 +310,7 @@ pub(in crate::writer::generate::design::roster) fn losses(ctx: &Context<'_>) -> 
         ]);
         if !driven.is_empty() {
             values.push(format!(
-                "driven dimension frames and parameters {} (the first flag byte of the parameter's expression trailer `1` as its driven flag, f3d-open-items.md DR-144; the display text with {DRIVEN_DECIMALS} decimals and the unit of the parameter, DR-917)",
+                "driven dimension frames and parameters {} (the second flag byte of the parameter's expression trailer `1` as its driven flag, f3d-open-items.md DR-144; the display text with {DRIVEN_DECIMALS} decimals and the unit of the parameter, DR-917)",
                 driven.join(", ")
             ));
         }

@@ -34,6 +34,11 @@ pub(super) struct ProductPrereqs {
     /// trailer sets byte 3; the session reports them as losses.
     pub(super) design_parameter_trailer_flags:
         Vec<crate::design::decode::parameters::StreamParameterCount>,
+    /// Per-stream counts of decoded parameters whose nine-byte or ten-byte
+    /// expression trailer sets the driven flag; the session reports them as
+    /// losses.
+    pub(super) design_parameter_driven_flags:
+        Vec<crate::design::decode::parameters::StreamParameterCount>,
     /// Per-stream counts of decoded compact null-owner parameters; the
     /// session reports them as losses.
     pub(super) design_parameter_null_owners:
@@ -120,6 +125,7 @@ impl ProductPrereqs {
             design_parameters,
             design_parameter_unparsed: _,
             design_parameter_trailer_flags: _,
+            design_parameter_driven_flags: _,
             design_parameter_null_owners: _,
             design_parameter_owner_unparsed: _,
             design_parameter_owner_trailer_flags: _,
@@ -195,6 +201,7 @@ pub(super) fn decode(
         parameters: design_parameters,
         unparsed: design_parameter_unparsed,
         trailer_flags: design_parameter_trailer_flags,
+        driven_flags: design_parameter_driven_flags,
         null_owners: design_parameter_null_owners,
     } = crate::design::decode::parameters::decode_parameters(scan)?;
     let design_entity_headers = crate::design::decode::sketch::decode_entity_headers(scan)?;
@@ -289,6 +296,7 @@ pub(super) fn decode(
         design_parameters,
         design_parameter_unparsed,
         design_parameter_trailer_flags,
+        design_parameter_driven_flags,
         design_parameter_null_owners,
         design_parameter_owner_unparsed,
         design_parameter_owner_trailer_flags,

@@ -2165,6 +2165,22 @@ fn report_parameter_trailer_flags(
     }
 }
 
+fn report_parameter_driven_flags(
+    report: &mut DecodeBody,
+    flagged: &[crate::design::decode::parameters::StreamParameterCount],
+) {
+    for parameters in flagged {
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::ParameterDrivenFlagAssumed,
+            format_args!(
+                "{} decoded parameter(s) in {} set the second flag byte of the expression trailer, read as the driven flag (f3d-open-items.md DR-144).",
+                parameters.count, parameters.stream
+            ),
+        );
+    }
+}
+
 fn report_parameter_owner_trailer_flags(
     report: &mut DecodeBody,
     flagged: &[crate::design::decode::parameters::StreamParameterCount],
@@ -3429,6 +3445,7 @@ impl<'a> F3dDecodeSession<'a> {
             .extend(prereqs.design_feature_timeline_losses.iter().cloned());
         report_unparsed_parameter_records(&mut self.report, &prereqs.design_parameter_unparsed);
         report_parameter_trailer_flags(&mut self.report, &prereqs.design_parameter_trailer_flags);
+        report_parameter_driven_flags(&mut self.report, &prereqs.design_parameter_driven_flags);
         report_parameter_null_owners(&mut self.report, &prereqs.design_parameter_null_owners);
         report_parameter_owner_trailer_flags(
             &mut self.report,
