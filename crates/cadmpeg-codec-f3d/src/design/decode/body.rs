@@ -107,6 +107,7 @@ pub(crate) fn decode_body_members(
 pub(crate) fn decode_body_bounds(
     scan: &ContainerScan,
     entities: &[DesignEntityHeader],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<DesignBodyBounds>, CodecError> {
     let mut out = Vec::new();
     for entity in entities
@@ -201,34 +202,47 @@ pub(crate) fn decode_body_bounds(
         if repeated.any(|candidate| candidate.0 != values || candidate.1 != value_offsets) {
             continue;
         }
-        let corner = |start: usize| {
-            FinitePoint3::new(Point3::new(
-                values[start].get() * 10.0,
-                values[start + 1].get() * 10.0,
-                values[start + 2].get() * 10.0,
-            ))
-            .ok_or_else(|| {
-                CodecError::Malformed("scene bounds maximum and minimum must be finite".into())
+        let result = (|| {
+            let corner = |start: usize| {
+                FinitePoint3::new(Point3::new(
+                    values[start].get() * 10.0,
+                    values[start + 1].get() * 10.0,
+                    values[start + 2].get() * 10.0,
+                ))
+                .ok_or_else(|| {
+                    CodecError::Malformed("scene bounds maximum and minimum must be finite".into())
+                })
+            };
+            let id = design_record_id(&entry.name, ":design-body-bounds#", entity.byte_offset);
+            DesignBodyBounds::from_parts(crate::records::bodies::DesignBodyBoundsWire {
+                id,
+                entity_suffix: entity.entity_id.suffix(),
+                entity_byte_offset: entity.byte_offset,
+                record_indices,
+                record_byte_offsets: [
+                    u64_from_index(first),
+                    u64_from_index(second),
+                    u64_from_index(third),
+                ],
+                value_byte_offsets: value_offsets.map(u64_from_index),
+                body_binding_ids: Vec::new(),
+                maximum: corner(0)?,
+                minimum: corner(3)?,
             })
+            .map_err(CodecError::Malformed)
+        })();
+        let Some(record) = super::record::recover(
+            result,
+            losses,
+            crate::loss::F3dLossCode::BodyBoundsUndecoded,
+            format_args!(
+                "Body bounds for Design entity {}",
+                entity.entity_id.suffix()
+            ),
+        )?
+        else {
+            continue;
         };
-        let id = design_record_id(&entry.name, ":design-body-bounds#", entity.byte_offset);
-        let record = DesignBodyBounds::from_parts(crate::records::bodies::DesignBodyBoundsWire {
-            id,
-            entity_suffix: entity.entity_id.suffix(),
-            entity_byte_offset: entity.byte_offset,
-            record_indices,
-            record_byte_offsets: [
-                u64_from_index(first),
-                u64_from_index(second),
-                u64_from_index(third),
-            ],
-            value_byte_offsets: value_offsets.map(u64_from_index),
-            body_binding_ids: Vec::new(),
-            maximum: corner(0)?,
-            minimum: corner(3)?,
-        })
-        .map_err(CodecError::Malformed)?;
-
         out.push(record);
     }
     out.sort_by(|a, b| a.id().cmp(b.id()));
@@ -2697,9 +2711,80 @@ mod tests {
         zip.write_all(&bulk).unwrap();
         let archive = zip.finish().unwrap().into_inner();
         with_scan(&archive, |scan| {
-            let bounds = super::decode_body_bounds(scan, std::slice::from_ref(&entity)).unwrap();
+            let bounds =
+                super::decode_body_bounds(scan, std::slice::from_ref(&entity), &mut Vec::new())
+                    .unwrap();
             assert_eq!(bounds.len(), 1);
             assert_eq!(bounds[0].entity_suffix(), 7);
+        });
+    }
+
+    #[test]
+    fn unreadable_body_bounds_keep_the_sibling_entity() {
+        const ENTRY: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
+        let mut bulk = Vec::new();
+        indexed_header(&mut bulk, *b"256", 7);
+        bulk.extend_from_slice(&[0; 5]);
+        for record_index in [8, 9, 10] {
+            indexed_header(&mut bulk, *b"257", record_index);
+            bulk.push(1);
+            for value in [4.0_f64, 6.0, 1.5, -1.0, 0.0, -0.25] {
+                bulk.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        let mut invalid = bulk.clone();
+        for record_index in [8, 9, 10] {
+            let offset = super::indexed_headers_in(&invalid, 0, invalid.len())
+                .find(|(_, index)| *index == record_index)
+                .unwrap()
+                .0
+                + 12;
+            invalid[offset..offset + 8].copy_from_slice(&f64::MAX.to_le_bytes());
+        }
+        let sibling_offset = invalid.len();
+        for (offset, index) in super::indexed_headers_in(&bulk, 0, bulk.len()).collect::<Vec<_>>() {
+            bulk[offset + 7..offset + 11].copy_from_slice(&(index + 100).to_le_bytes());
+        }
+        invalid.extend_from_slice(&bulk);
+        let bulk = invalid;
+        let entity = crate::records::entity_header::DesignEntityHeader {
+            id: format!("{}:design-entity-header#0", crate::ids::native_scope(ENTRY)),
+            byte_offset: 0,
+            entity_id: crate::records::identity::DesignEntityId::try_from("0_7".to_owned())
+                .unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned())
+                .unwrap(),
+            optional_slot_present: false,
+            registration: crate::records::entity_header::DesignEntityRegistration::new(
+                Some(DESIGN_MODULE_BODY.to_owned()),
+                None,
+                crate::records::identity::ReferenceRun::unlocated(Vec::new()),
+            )
+            .unwrap(),
+        };
+        let mut sibling = entity.clone();
+        sibling.byte_offset = u64_from_index(sibling_offset);
+        sibling.entity_id = "0_107".to_owned().try_into().unwrap();
+        sibling.id = format!(
+            "{}:design-entity-header#{sibling_offset}",
+            crate::ids::native_scope(ENTRY)
+        );
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        write_synthetic_manifests(&mut zip, stored);
+        zip.start_file(ENTRY, stored).unwrap();
+        zip.write_all(&bulk).unwrap();
+        let archive = zip.finish().unwrap().into_inner();
+        with_scan(&archive, |scan| {
+            let mut losses = Vec::new();
+            let bounds = super::decode_body_bounds(scan, &[entity, sibling], &mut losses).unwrap();
+            assert_eq!(losses.len(), 1);
+            assert_eq!(
+                losses[0].code,
+                crate::loss::F3dLossCode::BodyBoundsUndecoded.kind()
+            );
+            assert_eq!(bounds.len(), 1);
+            assert_eq!(bounds[0].entity_suffix(), 107);
         });
     }
 

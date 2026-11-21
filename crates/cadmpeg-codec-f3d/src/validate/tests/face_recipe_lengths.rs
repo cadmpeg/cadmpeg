@@ -597,3 +597,36 @@ fn replacement_face_groups_validate_both_face_envelopes_and_record_bounds() {
         }
     }
 }
+
+#[test]
+fn bend_face_operands_require_role_0x10_members_and_record_bounds() {
+    use crate::records::feature::scope::DesignFeatureKind;
+    use crate::records::recipes::ConstructionRecipeKind;
+    use crate::records::topology::extrude_selection::DesignOperandRole;
+
+    for (kind, length) in [
+        (ConstructionRecipeKind::Face, 16),
+        (ConstructionRecipeKind::BoundedFace, 24),
+    ] {
+        let findings = |role, next_reference_at| {
+            operand_findings(
+                DesignFeatureKind::Bend,
+                kind,
+                length,
+                1_047,
+                role,
+                next_reference_at,
+                0,
+            )
+        };
+        let admitted = findings(Some(DesignOperandRole::ROLE_0X10), None);
+        assert!(admitted.is_empty(), "{admitted:#?}");
+        for role in [None, Some(DesignOperandRole::ROLE_0X21)] {
+            assert_eq!(findings(role, None).len(), 1);
+        }
+        assert_eq!(
+            findings(Some(DesignOperandRole::ROLE_0X10), Some(1_047 + length + 7),).len(),
+            1,
+        );
+    }
+}

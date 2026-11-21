@@ -62,6 +62,7 @@ pub(crate) fn linked_record_indices(settings: &[DesignSheetMetalSettings]) -> Ve
 
 pub(crate) fn decode_settings(
     scan: &ContainerScan,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<DesignSheetMetalSettings>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
@@ -102,39 +103,50 @@ pub(crate) fn decode_settings(
             if !guid.eq_ignore_ascii_case(SETTINGS_GUID) || !matches!(version, 2 | 3) {
                 continue;
             }
-            let Some(fields) =
-                parse_settings(bytes, *frame, *version, &primary, &by_entity, &meta.types)
+            let result = (|| {
+                let fields =
+                    parse_settings(bytes, *frame, *version, &primary, &by_entity, &meta.types)
+                        .ok_or_else(|| {
+                            CodecError::malformed(
+                                "F3D sheet-metal settings frame or typed link is invalid",
+                            )
+                        })?;
+                let rule = *thickness_by_rule.entry(fields.rule).or_insert_with(|| {
+                    let frame = frames_by_entity.get(&fields.rule)?;
+                    let (_, version) = by_entity.get(&fields.rule)?;
+                    let view = View::over_retained(bytes).child(frame.start, frame.member_end)?;
+                    rule_thickness(view, *version, &by_entity)
+                });
+                let id = super::text::design_record_id(
+                    &entry.name,
+                    ":design-sheet-metal-settings#",
+                    u64_from_index(frame.start),
+                );
+                DesignSheetMetalSettings::try_from(DesignSheetMetalSettingsWire {
+                    id,
+                    record_index: frame.entity_id,
+                    byte_offset: u64_from_index(frame.start),
+                    paired_byte_offset: u64_from_index(frame.member_end),
+                    mask: fields.mask,
+                    inputs: fields.inputs,
+                    rule_record_index: fields.rule,
+                    presentation_record_index: fields.presentation,
+                    owner_record_index: fields.owner,
+                    context_record_index: fields.context,
+                    rule_thickness: rule.map(|(thickness, _)| thickness),
+                    rule_thickness_offset: rule.map(|(_, offset)| offset),
+                })
+                .map_err(CodecError::Malformed)
+            })();
+            let Some(record) = super::record::recover(
+                result,
+                losses,
+                crate::loss::F3dLossCode::SheetMetalSettingsUndecoded,
+                format_args!("Sheet-metal settings record {}", frame.entity_id),
+            )?
             else {
-                return Err(CodecError::Malformed(
-                    "F3D sheet-metal settings frame or typed link is invalid".into(),
-                ));
+                continue;
             };
-            let rule = *thickness_by_rule.entry(fields.rule).or_insert_with(|| {
-                let frame = frames_by_entity.get(&fields.rule)?;
-                let (_, version) = by_entity.get(&fields.rule)?;
-                let view = View::over_retained(bytes).child(frame.start, frame.member_end)?;
-                rule_thickness(view, *version, &by_entity)
-            });
-            let id = super::text::design_record_id(
-                &entry.name,
-                ":design-sheet-metal-settings#",
-                u64_from_index(frame.start),
-            );
-            let record = DesignSheetMetalSettings::try_from(DesignSheetMetalSettingsWire {
-                id,
-                record_index: frame.entity_id,
-                byte_offset: u64_from_index(frame.start),
-                paired_byte_offset: u64_from_index(frame.member_end),
-                mask: fields.mask,
-                inputs: fields.inputs,
-                rule_record_index: fields.rule,
-                presentation_record_index: fields.presentation,
-                owner_record_index: fields.owner,
-                context_record_index: fields.context,
-                rule_thickness: rule.map(|(thickness, _)| thickness),
-                rule_thickness_offset: rule.map(|(_, offset)| offset),
-            })
-            .map_err(CodecError::Malformed)?;
             out.push(record);
         }
     }

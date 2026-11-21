@@ -76,7 +76,7 @@ pub(super) struct ProductPrereqs {
     /// scopes from internal operands. A decode failure that does not refuse
     /// the document stays here; design intent then does not run.
     pub(super) design_feature_timelines: Result<Vec<DesignFeatureTimeline>, CodecError>,
-    pub(super) design_feature_timeline_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    pub(super) design_record_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(super) design_component_naming_spaces: Vec<DesignComponentNamingSpace>,
     /// Registered component entities with no context-UUID binding in this
     /// document; the session reports them as a loss.
@@ -139,7 +139,7 @@ impl ProductPrereqs {
             design_joint_motions,
             design_hidden_occurrences: _,
             design_feature_timelines,
-            design_feature_timeline_losses: _,
+            design_record_losses: _,
             design_component_naming_spaces,
             design_unbound_component_naming_spaces: _,
             design_body_bindings,
@@ -252,10 +252,10 @@ pub(super) fn decode(
         &design_parameter_scopes,
         &design_types,
     )?;
-    let mut design_feature_timeline_losses = Vec::new();
+    let mut design_record_losses = crate::design::decode::meta::decode_primary_frame_losses(scan)?;
     let design_feature_timelines = match crate::design::decode::meta::decode_feature_timelines(
         scan,
-        &mut design_feature_timeline_losses,
+        &mut design_record_losses,
     ) {
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         other => other,
@@ -308,7 +308,7 @@ pub(super) fn decode(
         design_joint_motions,
         design_hidden_occurrences,
         design_feature_timelines,
-        design_feature_timeline_losses,
+        design_record_losses,
         design_component_naming_spaces,
         design_unbound_component_naming_spaces,
         design_body_bindings,

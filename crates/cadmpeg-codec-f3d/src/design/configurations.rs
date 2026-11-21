@@ -34,6 +34,7 @@ pub(crate) struct DecodedConfigurations {
 pub(crate) fn decode_configurations(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<DecodedConfigurations, CodecError> {
     let mut documents = Vec::new();
     for entry in scan
@@ -42,33 +43,40 @@ pub(crate) fn decode_configurations(
         .filter(|entry| scan.is_design_asset_entry(entry, ContainerRole::DesignConfig))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let payload = json::parse_configuration_payload(ctx, &entry.name, bytes)?;
-        let serde_json::Value::Object(payload) = payload else {
-            return Err(CodecError::malformed(format_args!(
-                "F3D configuration JSON must be an object: {}",
-                entry.name
-            )));
-        };
-        let kind = if entry.name.ends_with(".dsgcfgrule") {
-            DesignConfigurationKind::Rule
-        } else {
-            DesignConfigurationKind::Table
-        };
-        documents.push(DesignConfiguration::try_new(
-            entry.name.clone(),
-            kind,
-            payload,
-        )?);
-    }
-    let mut names = HashSet::new();
-    for document in &documents {
-        if !names.insert(document.entry_name().as_str()) {
-            return Err(CodecError::malformed(format_args!(
-                "duplicate F3D configuration identity: {}",
-                document.entry_name()
-            )));
+        let result = (|| {
+            let payload = json::parse_configuration_payload(ctx, &entry.name, bytes)?;
+            let serde_json::Value::Object(payload) = payload else {
+                return Err(CodecError::malformed(
+                    "F3D configuration JSON must be an object",
+                ));
+            };
+            let kind = if entry.name.ends_with(".dsgcfgrule") {
+                DesignConfigurationKind::Rule
+            } else {
+                DesignConfigurationKind::Table
+            };
+            DesignConfiguration::try_new(entry.name.clone(), kind, payload)
+        })();
+        if let Some(document) = super::decode::record::recover(
+            result,
+            losses,
+            crate::loss::F3dLossCode::ConfigurationDocumentUndecoded,
+            format_args!("Configuration document {}", entry.name),
+        )? {
+            documents.push(document);
         }
     }
+    let mut names = HashSet::new();
+    documents.retain(|document| {
+        if names.insert(document.entry_name().as_str().to_owned()) {
+            true
+        } else {
+            losses.push(crate::loss::F3dLossCode::ConfigurationDocumentUndecoded.note(
+                format!("Configuration document {} repeats its identity and remains in the source archive", document.entry_name()),
+            ));
+            false
+        }
+    });
     let roots = crate::design::decode::configuration_root::decode_configuration_roots(scan)?;
     let unbound_roots = roots.unparsed + attach_roots(&mut documents, roots.rows)?;
     Ok(DecodedConfigurations {
@@ -212,6 +220,20 @@ impl ConfigurationTargets<'_> {
             }
         }
     }
+}
+
+pub(crate) fn project_configurations_with_losses(
+    native: &[DesignConfiguration],
+    targets: &ConfigurationTargets<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<Vec<cadmpeg_ir::features::DesignConfiguration>, CodecError> {
+    Ok(super::decode::record::recover(
+        project_configurations(native, targets),
+        losses,
+        crate::loss::F3dLossCode::ConfigurationProjectionNative,
+        "Configuration projection",
+    )?
+    .unwrap_or_default())
 }
 
 /// Project the rows of the one populated table into the neutral configuration

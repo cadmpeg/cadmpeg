@@ -324,6 +324,7 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         &mut [],
         &mut [],
         &mut relations,
+        &mut Vec::new(),
     )
     .expect("stream-local sketch graphs bind independently");
     assert_eq!(
@@ -344,14 +345,21 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     let mut overflowing_header = header("A");
     overflowing_header.entity_id =
         crate::records::identity::DesignEntityId::from_parts("A", u64::from(u32::MAX) + 101);
-    assert!(bind_sketch_graph(
+    let mut losses = Vec::new();
+    bind_sketch_graph(
         &[overflowing_header],
         &mut [point("A")],
         &mut [],
         &mut [],
-        &mut [relation("A")]
+        &mut [relation("A")],
+        &mut losses,
     )
-    .is_err());
+    .unwrap();
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::SketchRelationOwnerUnresolved.kind()
+    );
 
     let (mut sketches, mut entities) = crate::test_support::with_decode_context(|decode_ctx| {
         project_sketch_design(

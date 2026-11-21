@@ -10,6 +10,47 @@ use crate::records::sketch_relations::{SketchPatternDefinition, SketchPatternDir
 use crate::test_support::push_reference_u64;
 
 #[test]
+fn unreadable_relation_keeps_its_sibling_relation() {
+    use crate::design::decode::sketch::{decode_sketch_relation_with_losses, RELATION_TYPE_GUID};
+    use crate::records::decal::DesignRecordHeader;
+
+    let mut records = Vec::new();
+    let mut losses = Vec::new();
+    for (index, mut payload) in [
+        (
+            7u32,
+            relation_record(&[(300, 0)], &[], 201, 1, &[300])[..20].to_vec(),
+        ),
+        (8, relation_record(&[(300, 0)], &[], 201, 1, &[300])),
+    ] {
+        payload[7..11].copy_from_slice(&index.to_le_bytes());
+        let header = DesignRecordHeader {
+            id: format!("f3d:BulkStream.dat:design-record-header#{index}"),
+            record_index: index,
+            class_tag: "298".to_owned().try_into().unwrap(),
+            byte_offset: 0,
+        };
+        decode_sketch_relation_with_losses(
+            &mut records,
+            "BulkStream.dat",
+            &header,
+            &payload,
+            RELATION_TYPE_GUID,
+            1,
+            &mut losses,
+        )
+        .unwrap();
+    }
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].record_index, 8);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::SketchRelationUndecoded.kind()
+    );
+}
+
+#[test]
 fn sketch_relation_assembly_admits_a_plain_relation() {
     use crate::records::decal::DesignRecordHeader;
     use crate::records::sketch_relations::SketchRelationDefinition;

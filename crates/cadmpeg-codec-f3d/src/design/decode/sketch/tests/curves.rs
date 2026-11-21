@@ -23,6 +23,7 @@ fn tested_decode_sketch_curve_geometry(
         record_index,
         class,
         record_at,
+        &mut 0,
     )
 }
 
@@ -59,6 +60,75 @@ fn analytic_payload(values: [f64; 12]) -> Vec<u8> {
         payload.extend_from_slice(&value.to_le_bytes());
     }
     payload
+}
+
+#[test]
+fn unreadable_curve_geometry_keeps_its_identity_and_sibling_geometry() {
+    use crate::design::test_support::{design_type, primary_record};
+    use crate::test_support::lp_ascii;
+
+    let curve = |index: u32, start: f64, referenced: bool| {
+        let mut bytes = Vec::new();
+        lp_ascii(&mut bytes, "256");
+        bytes.extend_from_slice(&index.to_le_bytes());
+        bytes.extend_from_slice(&[0; 9]);
+        bytes.push(1);
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        for (name, value) in [
+            ("crv_primary_id", u64::from(index)),
+            ("crv_secondary_id", 0),
+        ] {
+            lp_ascii(&mut bytes, name);
+            lp_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        if referenced {
+            bytes.push(1);
+            bytes.extend_from_slice(&900u32.to_le_bytes());
+            bytes.extend_from_slice(&[0; 6]);
+        }
+        for value in [start, 0.0, 0.0, 2.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes
+    };
+    for (referenced, expected_offset) in [(false, 133), (true, 144)] {
+        let mut bytes = curve(41, f64::MAX, referenced);
+        let sibling_start = bytes.len();
+        bytes.extend_from_slice(&curve(42, 1.0, referenced));
+        let meta = crate::metastream::MetaStream {
+            types: vec![design_type(
+                "DCA267ED-D615-4934-B64F-AD805E8003E2",
+                None,
+                2,
+                "Geometry",
+                vec![41, 42],
+            )],
+            records: vec![primary_record(41, 0), primary_record(42, sibling_start)],
+            secondary_records: Vec::new(),
+        };
+        let mut losses = Vec::new();
+        let curves = super::super::decode_sketch_curve_identities_from_stream(
+            &bytes,
+            &meta,
+            "Design/BulkStream.dat",
+            &mut losses,
+        )
+        .unwrap();
+        assert_eq!(curves.len(), 2);
+        assert_eq!(curves[0].record_index, 41);
+        assert!(curves[0].geometry.is_none());
+        assert_eq!(curves[0].geometry_offset, expected_offset);
+        assert_eq!(curves[1].geometry_offset, expected_offset);
+        assert!(
+            matches!(curves[1].geometry, Some(SketchCurveGeometry::Line { start, .. }) if start.get() == Point3::new(10.0, 0.0, 0.0))
+        );
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::SketchCurveUndecoded.kind()
+        );
+    }
 }
 
 #[test]
