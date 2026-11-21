@@ -401,6 +401,10 @@ struct DesignProjectionGaps {
     partially_resolved_edge_members: usize,
     unresolved_edge_selections: usize,
     unrepaired_lost_edge_references: usize,
+    unplaced_linked_scopes:
+        Vec<crate::design::feature_project::reverse_normal::UnplacedLinkedScope>,
+    record_ordered_linked_scopes:
+        Vec<crate::design::feature_project::reverse_normal::RecordOrderedLinkedScope>,
 }
 
 /// Returns whether a face selection supplies the operation's neutral faces.
@@ -1469,7 +1473,28 @@ fn design_projection_gaps(
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => None,
     };
+    let unplaced_linked_scopes = authored_scopes
+        .as_ref()
+        .map(|ordinals| {
+            crate::design::feature_project::reverse_normal::unplaced_linked_scopes(
+                &native.design_parameter_scopes,
+                ordinals,
+            )
+        })
+        .unwrap_or_default();
+    let record_ordered_linked_scopes = authored_scopes
+        .as_ref()
+        .map(|ordinals| {
+            crate::design::feature_project::reverse_normal::record_ordered_linked_scopes(
+                &native.design_parameter_scopes,
+                &native.design_feature_timelines,
+                ordinals,
+            )
+        })
+        .unwrap_or_default();
     let mut gaps = DesignProjectionGaps {
+        unplaced_linked_scopes,
+        record_ordered_linked_scopes,
         assumed_reference_image_flags: native
             .design_canvas_images
             .iter()
@@ -2423,11 +2448,9 @@ fn report_design_projection_gaps(
             == Some(crate::records::feature::extrude::DesignExtrudeExtent::SymmetricDistance)
             && prologue.distance_tail().is_none()
         {
-            let fixed_lane_only = scope
-                .fixed_extrude_parameters()
-                .is_some_and(|fixed| fixed.along_distance.is_some())
-                && !crate::ids::native_stream(&scope.id)
-                    .is_some_and(|stream| along_scopes.contains(&(stream, scope.record_index)));
+            let indexed_along = crate::ids::native_stream(&scope.id)
+                .is_some_and(|stream| along_scopes.contains(&(stream, scope.record_index)));
+            let each_side = scope.assumes_symmetric_distance_each_side(indexed_along);
             let reading = matches!(
                 feature.evaluation.definition(),
                 cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -2437,7 +2460,7 @@ fn report_design_projection_gaps(
                     },
                 )
             ) && prologue.side_extent_discriminators() != Some([1, 1]);
-            let reading = reading.then_some(if fixed_lane_only {
+            let reading = reading.then_some(if each_side {
                 "each side"
             } else {
                 "the whole travel"
@@ -2715,6 +2738,37 @@ fn report_design_projection_gaps(
             "{uninterpreted_scopes} native feature scope(s) retain their source envelope without interpreted specialized operation data."
         ),
     )?;
+    for unplaced in &gaps.unplaced_linked_scopes {
+        let (code, reason) = if unplaced.shared {
+            (
+                F3dLossCode::FeatureReverseNormalLinkShared,
+                "several timeline items carry that link",
+            )
+        } else {
+            (
+                F3dLossCode::FeatureReverseNormalLinkUnplaced,
+                "no timeline item carries that link",
+            )
+        };
+        push(
+            code,
+            1,
+            format_args!(
+                "Reverse Normal scope {} with link {} takes no timeline position: {reason}.",
+                unplaced.scope_id, unplaced.link
+            ),
+        )?;
+    }
+    for ordered in &gaps.record_ordered_linked_scopes {
+        push(
+            F3dLossCode::FeatureReverseNormalLinkOrderAssumed,
+            1,
+            format_args!(
+                "Reverse Normal scope {} with link {} takes its timeline position by record order among the linked scopes of its timeline item.",
+                ordered.scope_id, ordered.link
+            ),
+        )?;
+    }
     push(
         F3dLossCode::FeatureScopeUnprojected,
         gaps.unprojected_feature_scopes,
@@ -3762,6 +3816,20 @@ impl<'a> F3dDecodeSession<'a> {
             external,
         );
         self.report.losses.extend(external_losses);
+        let mesh_projection = match &finalize_path {
+            FinalizePath::Geometry(index) => &index.mesh_projection,
+            FinalizePath::Bodyless(inputs) => &inputs.mesh_projection,
+        };
+        if matches!(
+            self.report_scope,
+            crate::report::ReportScope::ArchiveMember(_)
+        ) {
+            list_member_scopeless_tessellations(
+                self.ctx,
+                &mut self.ir.model,
+                &mesh_projection.scopeless_tessellations,
+            )?;
+        }
         let parents = crate::tree::parent_ids(
             &self.ir.model.product_definitions,
             &self.ir.model.occurrences,
@@ -4109,12 +4177,20 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 crate::scene::collect(ctx, &scan, &mut decoded.ir, &mut decoded.body.losses)?;
             if has_scene {
                 let sources = crate::scene::sources(ctx, &scan, &decoded.ir)?;
-                crate::scene::bind(ctx, &mut decoded.ir, &sources, &mut decoded.body.losses)?;
+                crate::scene::bind(
+                    ctx,
+                    &mut decoded.ir,
+                    &sources,
+                    &std::collections::BTreeMap::new(),
+                    &mut decoded.body.losses,
+                )?;
             }
             let owned =
                 crate::tree::own_once(ctx, &mut decoded.ir, &std::collections::BTreeMap::new())?;
             decoded.body.losses.extend(owned);
             crate::design::owners::release_unbound(&mut decoded.ir.model);
+            crate::tree::state_root_definition(ctx, &mut decoded.ir)?;
+            crate::design_v11::project(ctx, &mut decoded.ir, &mut decoded.body.losses)?;
             decoded.ir.finalize();
             let hash = cadmpeg_ir::hash::document_local_sha256(
                 ctx,
@@ -4405,6 +4481,8 @@ struct MeshProjection {
     unjoined: usize,
     /// Tessellation identities grouped by their Design stream and feature scope record.
     tessellations_by_scope: std::collections::HashMap<(String, u32), Vec<String>>,
+    /// Tessellation identities of mesh bodies that name no feature scope.
+    scopeless_tessellations: Vec<String>,
 }
 
 fn extend_unique_assets(
@@ -4571,6 +4649,7 @@ fn project_mesh_bodies(
                 count: 0,
                 unjoined: 0,
                 tessellations_by_scope: std::collections::HashMap::new(),
+                scopeless_tessellations: Vec::new(),
             });
         }
     };
@@ -4583,6 +4662,11 @@ fn project_mesh_bodies(
     report
         .losses
         .extend(crate::design::decode::mesh::mesh_split_stream_losses(
+            &native.design_mesh_features,
+        ));
+    report
+        .losses
+        .extend(crate::design::decode::mesh::mesh_component_flag_losses(
             &native.design_mesh_features,
         ));
     report
@@ -4686,6 +4770,7 @@ fn project_mesh_bodies(
         count: bodies.len(),
         unjoined,
         tessellations_by_scope: std::collections::HashMap::new(),
+        scopeless_tessellations: Vec::new(),
     };
     for mut body in bodies {
         let texture_table = texture_tables.remove(&body.id).ok_or_else(|| {
@@ -4699,10 +4784,10 @@ fn project_mesh_bodies(
         )?;
         let mut triangle_groups = Vec::new();
         for group in std::mem::take(&mut body.triangle_groups) {
-            triangle_groups.push(cadmpeg_ir::tessellation::TessellationTriangleGroup {
-                source_id: Some(group.source_id),
-                triangles: group.triangles,
-            });
+            triangle_groups.push(cadmpeg_ir::tessellation::TessellationTriangleGroup::new(
+                Some(group.source_id),
+                group.triangles,
+            ));
         }
         let channels = mesh_attribute_channels(
             &body.attributes,
@@ -4754,7 +4839,7 @@ fn project_mesh_bodies(
             let mut bodies = feature
                 .bodies()
                 .iter()
-                .filter(|body| body.scope_record_index == scope.record().record_index())
+                .filter(|body| body.scope_record_index == Some(scope.record().record_index()))
                 .collect::<Vec<_>>();
             bodies.sort_by_key(|body| body.scope_body_ordinal);
             insert_mesh_scope_tessellations(
@@ -4766,9 +4851,45 @@ fn project_mesh_bodies(
                     .filter_map(|body| body.tessellation_id.as_deref()),
             )?;
         }
+        projection.scopeless_tessellations.extend(
+            feature
+                .bodies()
+                .iter()
+                .filter(|body| body.scope_record_index.is_none())
+                .filter_map(|body| body.tessellation_id.clone()),
+        );
     }
     report_unresolved_mesh_attributes(report, &unresolved);
     Ok(projection)
+}
+
+/// List the meshes of scope-less mesh bodies among the tessellations of an
+/// F3Z member's file root, which `define_member` makes the member definition.
+/// They represent no body and no mesh feature.
+fn list_member_scopeless_tessellations(
+    ctx: &DecodeContext<'_>,
+    model: &mut cadmpeg_ir::document::Model,
+    tessellations: &[String],
+) -> Result<(), CodecError> {
+    if tessellations.is_empty() {
+        return Ok(());
+    }
+    let root_id = crate::tree::file_root_id();
+    if model
+        .product_definitions
+        .iter()
+        .all(|definition| definition.id != root_id)
+    {
+        ctx.charge_entities(1, "F3D member file root")?;
+    }
+    let root = crate::tree::file_root(model);
+    for tessellation in tessellations {
+        root.tessellations.push(
+            cadmpeg_ir::tessellation::TessellationId::mint(tessellation.clone())
+                .map_err(CodecError::malformed)?,
+        );
+    }
+    Ok(())
 }
 
 /// Resolve one-based `tid` values through a Design texture table. Zero leaves
@@ -5315,6 +5436,9 @@ fn decode_result(
     }
     if !retained.untyped.is_empty() {
         source_fidelity.mark_untyped(crate::ids::FILE_SOURCE_IMAGE_ID, retained.untyped)?;
+    }
+    if matches!(report_scope, crate::report::ReportScope::ArchiveMember(_)) {
+        crate::tree::state_root_definition(ctx, &mut ir)?;
     }
     let mut source = crate::report::classify_document(
         scan,
@@ -6358,7 +6482,7 @@ pub(crate) fn resolve_face_appearance_bindings(
         };
         let strings = || {
             attribute.values.iter().filter_map(|value| match value {
-                AttributeValue::String(value) => Some(value.as_str()),
+                Some(AttributeValue::String(value)) => Some(value.as_str()),
                 _ => None,
             })
         };
@@ -6484,6 +6608,7 @@ pub(crate) fn resolve_face_appearance_bindings(
                 object_type: None,
                 visible: None,
                 channels: std::collections::BTreeMap::new(),
+                native_ref: None,
             });
         }
     }

@@ -759,3 +759,62 @@ fn a_profile_body_takes_the_extent_of_its_holding_object() {
         }]
     );
 }
+
+/// A `CString` holding `text`.
+fn cstring(text: &str) -> Vec<u8> {
+    let mut bytes = vec![0xff, 0xfe, 0xff, u8::try_from(text.len()).unwrap()];
+    for unit in text.encode_utf16() {
+        bytes.extend_from_slice(&unit.to_le_bytes());
+    }
+    bytes
+}
+
+/// A feature's named header (its `moNodeName_c` at class index 1) and a
+/// feature-object block with no children.
+fn feature_head(name: &str) -> Vec<u8> {
+    let mut bytes = vec![0x01, 0x80];
+    bytes.extend(cstring(name));
+    bytes.extend_from_slice(&[0; 8]);
+    bytes.extend_from_slice(&42_u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 4]);
+    bytes.extend(cstring(""));
+    bytes.extend_from_slice(&[0; 8 + 12 + 35]);
+    bytes.extend(cstring(""));
+    bytes.extend_from_slice(&[0x00, 0xff, 0xff, 0x00, 0x00]);
+    bytes.extend_from_slice(&[0; 49]);
+    bytes.extend_from_slice(&[0x02, 0x00]);
+    bytes.extend_from_slice(&[0; 8 + 4]);
+    bytes
+}
+
+#[test]
+fn a_mark_record_is_noted_with_the_feature_that_holds_it() {
+    const BASE_BODY: &str = "moBaseBody_c";
+    let mut rest = vec![0xff, 0xff, 0x01, 0x00];
+    rest.extend_from_slice(&u16::try_from(BASE_BODY.len()).unwrap().to_le_bytes());
+    rest.extend_from_slice(BASE_BODY.as_bytes());
+    rest.extend(feature_head("Base-Extrude1"));
+    rest.extend_from_slice(&[0; 32]);
+    rest.extend_from_slice(&[0x01, 0x00]);
+    rest.extend_from_slice(&[0x02, 0x80]);
+    let at = 6 + rest.len();
+    rest.extend_from_slice(&31_u32.to_le_bytes());
+    rest.extend_from_slice(&1_u32.to_le_bytes());
+    rest.extend_from_slice(&0_u32.to_le_bytes());
+    rest.extend_from_slice(&[0; 8]);
+    for word in [20_u32, 0, 20] {
+        rest.extend_from_slice(&word.to_le_bytes());
+    }
+    rest.extend_from_slice(&[0; 16]);
+    let bytes = stream(3, &rest);
+    let known = BTreeMap::from([(1, NODE_NAME.to_owned()), (2, "moPMarkRecord_c".to_owned())]);
+    let walk = walk_with_known(&bytes, &known);
+    assert_eq!(walk.status, Status::End);
+    assert_eq!(
+        walk.marks,
+        [super::reader::MarkOwner {
+            at,
+            owner: Some("Base-Extrude1".to_owned()),
+        }]
+    );
+}

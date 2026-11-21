@@ -15,6 +15,7 @@ use cadmpeg_core::decode::u64_from_index;
 mod arc_extremes;
 pub(crate) mod binding;
 mod blend_spine;
+mod chamfer_supports;
 
 mod body_candidates;
 mod body_index;
@@ -38,6 +39,7 @@ pub(crate) mod fragment_edge;
 mod generated_bodies;
 pub(crate) mod history_bodies;
 mod hole_support;
+pub(crate) mod linked_states;
 mod loop_index;
 mod move_face;
 mod output_blob;
@@ -63,7 +65,7 @@ use loop_index::LoopIndex;
 use output_properties::{
     classify_face_plane, classify_inserted_face, collect_edge_midpoint_slots,
     feature_consumes_tool_body, feature_supports_body_absorption, resolve_split_result_plane,
-    resolve_split_tool_plane, EdgeMidpointRequest, InsertedFaceClassification,
+    resolve_split_tool_plane, EdgeMidpointRequest, FaceSurfaceIndex, InsertedFaceClassification,
     SplitResultPlaneContext, StateFacePlanes, StateSplitCandidates,
     EPS_HISTORY_BODY_BBOX_CONTAINMENT_E2, EPS_HISTORY_BODY_BBOX_GROWTH_E3,
     EPS_HISTORY_BODY_BBOX_UNCHANGED_E4, EPS_HISTORY_VERTEX_ABSORBED_DIST_SQ_E4,
@@ -204,6 +206,7 @@ pub(crate) fn decode(
     binding_work: &cadmpeg_core::decode::WorkBudget,
 ) -> Result<Option<AsmHistory>, cadmpeg_core::CodecError> {
     let framing = HistoryFraming::scan(bytes, stream);
+    let _chamfer_orientation = chamfer_supports::HistoryScope::enter(&framing.history_id);
     let mut states = Vec::new();
     for (ordinal, &offset) in framing.delta_offsets.iter().enumerate() {
         let header = match read_delta_state_header(bytes, offset, width) {
@@ -294,6 +297,11 @@ pub(crate) fn decode_header_index(
         return None;
     }
     Some(framing.into_history(bytes, width, false, states))
+}
+
+/// Drop chamfer face senses recorded for the design decode that just finished.
+pub(crate) fn clear_chamfer_orientation() {
+    chamfer_supports::clear();
 }
 
 /// Stream-level layout of one ASM history: its preamble and `delta_state` offsets.
@@ -621,7 +629,7 @@ struct HistoricalBodyIndex<'a> {
     cylinders: KeyedRows<'a, crate::history_records::AsmHistoricalCylinder>,
     edge_samples: KeyedRows<'a, crate::history_records::AsmHistoricalEdgeSample>,
     planes: KeyedRows<'a, crate::history_records::AsmHistoricalPlane>,
-    coedge_rows: &'a [AsmHistoricalCoedge],
+    edge_loops: HashMap<i64, Vec<i64>>,
     loop_faces: HashMap<i64, i64>,
 }
 
@@ -645,7 +653,16 @@ impl<'a> HistoricalBodyIndex<'a> {
             cylinders: KeyedRows::new(&topology.surface_cylinders),
             edge_samples: KeyedRows::new(&topology.edge_samples),
             planes: KeyedRows::new(&topology.surface_planes),
-            coedge_rows: &topology.coedge_topology,
+            edge_loops: topology.coedge_topology.iter().fold(
+                HashMap::new(),
+                |mut edge_loops: HashMap<i64, Vec<i64>>, coedge| {
+                    edge_loops
+                        .entry(coedge.edge)
+                        .or_default()
+                        .push(coedge.owner_loop);
+                    edge_loops
+                },
+            ),
             loop_faces: topology
                 .face_loops
                 .iter()
@@ -682,10 +699,11 @@ impl<'a> HistoricalBodyIndex<'a> {
         let radius = start.vector_from(center).norm();
         let tolerance = EPS_HISTORY_CIRCLE_EDGE_E7 * radius.max(1.0);
         let on_cylinder = self
-            .coedge_rows
+            .edge_loops
+            .get(&edge)
+            .map_or(&[][..], Vec::as_slice)
             .iter()
-            .filter(|coedge| coedge.edge == edge)
-            .filter_map(|coedge| self.loop_faces.get(&coedge.owner_loop))
+            .filter_map(|loop_| self.loop_faces.get(loop_))
             .filter_map(|face| self.face_surfaces.get(*face))
             .filter_map(|binding| self.cylinders.get(binding.carrier))
             .any(|cylinder| {
@@ -1017,10 +1035,15 @@ pub(crate) fn bind_feature_outputs(
             }
         }
     }
+    let feature_states = features
+        .iter()
+        .map(|feature| feature_history_states(feature, scopes, histories))
+        .collect::<Vec<_>>();
     let feature_sources = features
         .iter()
-        .map(|feature| {
-            let (state_id, previous_state_id) = feature_history_states(feature, scopes, histories)?;
+        .zip(&feature_states)
+        .map(|(feature, states)| {
+            let (state_id, previous_state_id) = (*states)?;
             let scope = feature.native_ref.as_deref()?;
             let (history, _, previous) = if scope_histories.contains_key(scope) {
                 bound_history_state_pair(
@@ -1061,7 +1084,7 @@ pub(crate) fn bind_feature_outputs(
         .iter()
         .enumerate()
         .map(|(index, feature)| {
-            let (current, previous) = feature_history_states(feature, scopes, histories)?;
+            let (current, previous) = feature_states[index]?;
             output_chain::OutputChain::resolve(
                 histories,
                 current,
@@ -1075,15 +1098,10 @@ pub(crate) fn bind_feature_outputs(
             )
         })
         .collect::<Vec<_>>();
-    let output_states = features
+    let output_states = feature_sources
         .iter()
-        .enumerate()
-        .filter_map(|(idx, feature)| {
-            Some((
-                feature_sources[idx]?,
-                feature_history_states(feature, scopes, histories)?.0,
-            ))
-        })
+        .zip(&feature_states)
+        .filter_map(|(source, states)| Some(((*source)?, (*states)?.0)))
         .chain(output_chains.iter().flatten().flat_map(|chain| {
             chain
                 .states
@@ -1092,11 +1110,8 @@ pub(crate) fn bind_feature_outputs(
         }))
         .collect::<HashSet<_>>();
     let mut measured_states = output_states.clone();
-    for (idx, feature) in features.iter().enumerate() {
-        if let (Some(history_index), Some((_, previous_state_id))) = (
-            feature_sources[idx],
-            feature_history_states(feature, scopes, histories),
-        ) {
+    for (source, states) in feature_sources.iter().zip(&feature_states) {
+        if let (Some(history_index), Some((_, previous_state_id))) = (*source, *states) {
             measured_states.insert((history_index, previous_state_id));
         }
     }
@@ -1119,9 +1134,7 @@ pub(crate) fn bind_feature_outputs(
     );
     let mut treatment_states = HashMap::<(usize, i64), Vec<EdgeMidpointRequest>>::new();
     for (feature_index, feature) in features.iter().enumerate() {
-        let Some((state_id, previous_state_id)) =
-            feature_history_states(feature, scopes, histories)
-        else {
+        let Some((state_id, previous_state_id)) = feature_states[feature_index] else {
             continue;
         };
         let op = match feature.evaluation.definition() {
@@ -1277,9 +1290,10 @@ pub(crate) fn bind_feature_outputs(
                 .then(|| history.topology(&history.states()[index]))
                 .flatten();
             if let Some(topology) = measured_topology {
+                let face_surfaces = FaceSurfaceIndex::new(topology);
                 let mut face_planes = BTreeMap::new();
                 for &fid in &topology.faces {
-                    if let Some(plane) = classify_face_plane(topology, fid) {
+                    if let Some(plane) = classify_face_plane(&face_surfaces, fid) {
                         face_planes.insert(fid, plane);
                     }
                 }
@@ -1387,7 +1401,7 @@ pub(crate) fn bind_feature_outputs(
                                 .chain(&transition.topology.bodies.updated)
                                 .all(|b| solid_edges.contains_key(b));
                         for &fid in &transition.topology.faces.inserted {
-                            match classify_inserted_face(topology, transition, fid) {
+                            match classify_inserted_face(&face_surfaces, transition, fid) {
                                 InsertedFaceClassification::Plane(origin, normal) => {
                                     inserted_planar_faces.push((fid, origin, normal));
                                 }
@@ -1515,9 +1529,7 @@ pub(crate) fn bind_feature_outputs(
         {
             continue;
         }
-        let Some((state_id, previous_state_id)) =
-            feature_history_states(feature, scopes, histories)
-        else {
+        let Some((state_id, previous_state_id)) = feature_states[idx] else {
             continue;
         };
         let bound_history = feature_sources[idx];
@@ -2307,6 +2319,7 @@ pub(crate) fn bind_feature_body_selections(
                             _ => None,
                         }
                     };
+                    let mut binding_losses = Vec::new();
                     let refusal =
                         combine_selection::refine(operands, feature_id, |target, tools| {
                             combine_binding::bind_combine_operands(
@@ -2316,8 +2329,10 @@ pub(crate) fn bind_feature_body_selections(
                                 pattern_bodies,
                                 inputs,
                                 &mut body_candidates,
+                                &mut binding_losses,
                             );
                         });
+                    losses.extend(binding_losses);
                     if let Some(loss) = refusal {
                         losses.push(loss);
                     }
@@ -2685,71 +2700,119 @@ fn combine_recipe_family_tool_slots(
 
 /// Bind an operand-list `Combine` through the browser node of each operand.
 ///
-/// Leaves both selections native unless every node names a distinct body of the
-/// preceding history state.
+/// The target binds when its node names a body of the preceding history
+/// state. The tools bind when every tool node names a distinct body of that
+/// state. A body that both sides name leaves both selections native.
 fn bind_operand_list_combine_bodies(
-    target: &mut cadmpeg_ir::features::BodySelection,
-    tools: &mut cadmpeg_ir::features::BodySelection,
+    (target, tools): (
+        &mut cadmpeg_ir::features::BodySelection,
+        &mut cadmpeg_ir::features::BodySelection,
+    ),
     scope: &crate::records::feature::scope::DesignParameterScope,
     operation: &crate::records::feature::combine::DesignCombineOperation,
-    feature_id: &cadmpeg_ir::features::FeatureId,
-    previous_state_id: i64,
+    (feature_id, previous_state_id): (&cadmpeg_ir::features::FeatureId, i64),
     (histories, scopes): (
         &[AsmHistory],
         &[crate::records::feature::scope::DesignParameterScope],
     ),
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<()> {
+    use crate::records::feature::combine::DesignCombineBodyNode;
     use cadmpeg_ir::features::{BodyMembers, BodySelection};
 
     let stream = crate::ids::native_stream(&scope.id)?;
     let (history, _, previous) =
         unique_history_state_pair(histories, scope.history_state_id()?, previous_state_id)?;
     let input = history.topology(previous)?;
-    let body_slot = |node: Option<crate::records::feature::combine::DesignCombineBodyNode>| {
-        let node = node?;
-        let creator = scopes.iter().find(|candidate| {
-            candidate.record_index == node.creating_scope_record_index
-                && crate::ids::native_stream(&candidate.id) == Some(stream)
-        })?;
-        let creator_state = creator.history_state_id()?;
+    let body_slot = |node: Option<DesignCombineBodyNode>| -> Result<i64, &'static str> {
+        let node = node.ok_or("it has no browser body node")?;
+        let creator = scopes
+            .iter()
+            .find(|candidate| {
+                candidate.record_index == node.creating_scope_record_index
+                    && crate::ids::native_stream(&candidate.id) == Some(stream)
+            })
+            .ok_or("its creating scope is not decoded")?;
+        let creator_state = creator
+            .history_state_id()
+            .ok_or("its creating scope has no history state")?;
         let mut states = history
             .states()
             .iter()
             .filter(|state| state.state_id == creator_state);
         let (Some(state), None) = (states.next(), states.next()) else {
-            return None;
+            return Err("its creating history state is not unique");
         };
-        let [slot] = state.transition.as_ref()?.topology.bodies.inserted[..] else {
-            return None;
+        let [slot] = state.transition.as_ref().map_or(&[][..], |transition| {
+            &transition.topology.bodies.inserted[..]
+        }) else {
+            return Err("its creating state does not insert exactly one body");
         };
-        input.bodies.contains(&slot).then_some(slot)
-    };
-    let target_slot = body_slot(operation.target_body_node)?;
-    let mut tool_slots = Vec::new();
-    for tool in operation.tools.iter() {
-        let slot = body_slot(tool.body_node)?;
-        if slot == target_slot {
-            return None;
+        if input.bodies.contains(slot) {
+            Ok(*slot)
+        } else {
+            Err("its body is absent from the preceding history state")
         }
-        tool_slots.push(slot);
+    };
+    let mut refuse = |operand: &str, record_index: u32, reason: &str| {
+        losses.push(crate::loss::F3dLossCode::FeatureCombineOperandBodyUnbound.note(format!(
+            "feature {feature_id} does not bind Combine {operand} {stream}:design-record#{record_index} through its browser node: {reason}"
+        )));
+    };
+    let target_slot = match body_slot(operation.target_body_node) {
+        Ok(slot) => Some(slot),
+        Err(reason) => {
+            refuse("target", operation.target_record_index, reason);
+            None
+        }
+    };
+    let mut tool_slots = Some(Vec::new());
+    for tool in operation.tools.iter() {
+        match body_slot(tool.body_node) {
+            Ok(slot) if Some(slot) == target_slot => {
+                refuse(
+                    "tool",
+                    tool.record_index,
+                    "its body is also the target body",
+                );
+                return None;
+            }
+            Ok(slot) => {
+                if let Some(slots) = tool_slots.as_mut() {
+                    slots.push(slot);
+                }
+            }
+            Err(reason) => {
+                refuse("tool", tool.record_index, reason);
+                tool_slots = None;
+            }
+        }
     }
     let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);
     let design_record = |record_index| format!("{stream}:design-record#{record_index}");
+    if let Some(target_slot) = target_slot {
+        *target = BodySelection::historical(
+            crate::ids::history_input_state_id(&prefix),
+            vec![crate::ids::history_input_body_id(&prefix, target_slot)],
+            design_record(operation.target_record_index),
+        )
+        .ok()?;
+    }
     let mut rows = Vec::new();
-    for (slot, tool) in tool_slots.into_iter().zip(operation.tools.iter()) {
+    for (slot, tool) in tool_slots?.into_iter().zip(operation.tools.iter()) {
         rows.push(body_member(
             crate::ids::history_input_body_id(&prefix, slot),
             design_record(tool.record_index),
         )?);
     }
-    let members = BodyMembers::try_from_rows(rows).ok()?;
-    let target_selection = BodySelection::historical(
-        crate::ids::history_input_state_id(&prefix),
-        vec![crate::ids::history_input_body_id(&prefix, target_slot)],
-        design_record(operation.target_record_index),
-    )
-    .ok()?;
-    *target = target_selection;
+    let Ok(members) = BodyMembers::try_from_rows(rows) else {
+        refuse(
+            "tools",
+            operation.tools.first.record_index,
+            "two tools name one body",
+        );
+        return None;
+    };
     *tools = BodySelection::HistoricalSet {
         state: crate::ids::history_input_state_id(&prefix),
         members,
@@ -4327,7 +4390,8 @@ fn project_input_topology(
     let vertices = project_input_members(&topology.vertices, |slot| {
         crate::ids::history_input_vertex_id(&prefix, slot)
     })?;
-    let edge_geometry = project_input_edge_geometry(topology, &prefix);
+    let mut edge_geometry = project_input_edge_geometry(topology, &prefix);
+    chamfer_supports::attach(feature, &history.id, topology, &prefix, &mut edge_geometry);
     let id = crate::ids::history_input_state_id(&prefix);
     let input_of = feature.id.clone();
     let native_ref = state.id.clone();
@@ -4467,6 +4531,7 @@ fn project_input_edge_geometry(
                 faces: project_input_members(&faces, |face| {
                     crate::ids::history_input_face_id(prefix, face)
                 })?,
+                supports: Vec::new(),
             })
         })
         .collect()
@@ -7941,9 +8006,12 @@ fn bind_historical_edge_operand<'a>(
         for edge in reference_edge_sets.iter().flatten() {
             candidate_edges.insert(*edge);
         }
+        let edge_contexts = topology_queries
+            .edge_contexts
+            .get(topology, selection::EdgeContextIndex::new);
         let contexts = candidate_edges
             .into_iter()
-            .map(|edge| selection::historical_edge_context(edge, topology))
+            .map(|edge| edge_contexts.context(edge))
             .collect::<Vec<_>>();
         operand.recipe_selectors =
             selection::recipe_selector_candidates(operand.recipe_structure.as_ref(), &contexts);
@@ -7967,9 +8035,12 @@ fn bind_historical_edge_operand<'a>(
         for edge in reference_edge_sets.iter().flatten() {
             candidate_edges.insert(*edge);
         }
+        let edge_contexts = topology_queries
+            .edge_contexts
+            .get(topology, selection::EdgeContextIndex::new);
         let contexts = candidate_edges
             .into_iter()
-            .map(|edge| selection::historical_edge_context(edge, topology))
+            .map(|edge| edge_contexts.context(edge))
             .collect::<Vec<_>>();
         operand.recipe_selectors =
             selection::recipe_selector_candidates(operand.recipe_structure.as_ref(), &contexts);
@@ -8318,10 +8389,13 @@ fn bind_active_edge_operand_candidates<'a>(
             continue;
         }
         let boundary_edges = face_boundary_edges(&candidate_faces, topology, topology_queries);
+        let edge_contexts = topology_queries
+            .edge_contexts
+            .get(topology, selection::EdgeContextIndex::new);
         let contexts = boundary_edges
             .iter()
             .copied()
-            .map(|edge| selection::historical_edge_context(edge, topology))
+            .map(|edge| edge_contexts.context(edge))
             .collect::<Vec<_>>();
         let selectors =
             selection::recipe_selector_candidates(operand.recipe_structure.as_ref(), &contexts);
@@ -9026,6 +9100,7 @@ fn historical_topology(
         Some(collected)
     }
 
+    chamfer_supports::note(brep);
     let mut surface_radii = brep
         .surfaces
         .iter()
