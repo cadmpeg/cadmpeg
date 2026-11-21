@@ -388,6 +388,14 @@ fn a_bare_display_is_no_cache() {
     assert_no_design_findings(&ir);
 }
 
+/// The length unit `symbol`, displayed to two decimal places.
+fn two_places(symbol: cadmpeg_ir::design::units::UnitSymbol) -> super::units::LengthUnit {
+    super::units::LengthUnit {
+        symbol,
+        decimals: 2,
+    }
+}
+
 /// The v11 parameters of a part whose decoder read each dimension named in
 /// `readings` as the value and bound scalar given there, with the scalar
 /// classes `classes`, and the notes of their reading.
@@ -400,7 +408,7 @@ fn parameters_with_readings(
         Option<&str>,
     )],
     classes: &[(&str, crate::records::ArchiveParameterClass)],
-    length_unit: Option<cadmpeg_ir::design::units::UnitSymbol>,
+    length_unit: Option<super::units::LengthUnit>,
 ) -> (
     CadIr,
     Vec<cadmpeg_ir::design::parameter::DesignParameter>,
@@ -590,7 +598,7 @@ fn an_unread_kind_keeps_the_number_its_bound_scalar_stores() {
             ("Pattern", "D5", V10::Integer(7), None),
         ],
         &[],
-        Some(UnitSymbol::Mm),
+        Some(two_places(UnitSymbol::Mm)),
     );
     let named = |name: &str| {
         parameters
@@ -673,7 +681,7 @@ fn a_length_display_is_a_literal_in_the_part_length_unit() {
             ("scalar-rounded", ArchiveParameterClass::Length),
             ("scalar-count", ArchiveParameterClass::Integer),
         ],
-        Some(UnitSymbol::In),
+        Some(two_places(UnitSymbol::In)),
     );
     let named = |feature: &str| {
         let owner = cadmpeg_ir::design::parameter::ParameterOwner::Feature(
@@ -1380,7 +1388,7 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
         &definition,
         &super::parameters::Readings {
             decoded: super::parameters::Decoded::new(&ir.model.parameters, &[]),
-            length_unit: Some(UnitSymbol::Mm),
+            length_unit: Some(two_places(UnitSymbol::Mm)),
             bound: typed.bound,
             measured: typed.measured,
             driven: typed.references,
@@ -1581,7 +1589,7 @@ fn a_reference_dimension_makes_the_tree_parameter_it_binds_driven() {
         &ir.design.scopes[0].definition,
         &super::parameters::Readings {
             decoded: super::parameters::Decoded::new(&ir.model.parameters, &[]),
-            length_unit: Some(UnitSymbol::Mm),
+            length_unit: Some(two_places(UnitSymbol::Mm)),
             bound: typed.bound,
             measured: typed.measured,
             driven: typed.references,
@@ -1952,3 +1960,4 @@ fn a_configuration_whose_bodies_are_current_bodies_charges_a_loss() {
 }
 
 mod rollback;
+mod rounding_step;

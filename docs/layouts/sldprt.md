@@ -4014,16 +4014,15 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 4 | `kind` | `u32` | little | spec | u32 kind |
+| 0 | 4 | `display_decimals` | `u32` | little | spec | The decimal places to which Keywords rounds a displayed length (open item DI-79). |
 | 8 | 8 | `value` | `f64` | little | spec | f64 value |
-| 16 | 4 | `decimal_places` | `u32` | little | spec | u32 decimal places |
 | 32 | 12 | `words` | `u32[3]` | little | spec | three or four u32 words |
 | 44 | 2 | `unit_code` | `u16` | little | spec | The u16 a `moLengthUserUnits_c` adds after its base is the unit in which the document displays lengths |
 
 Unstated regions:
 
-- `4..8` (4 B): The u32 after the kind; the specification gives it no meaning.
-- `20..32` (12 B): A u32 and an f64 that the specification gives no meaning.
+- `4..8` (4 B): The u32 after the display decimal places.
+- `16..32` (16 B): Two u32 and an f64. The first u32 is 4 or 10.
 
 ## `units_length_unit_compound_four_word`
 
@@ -4036,16 +4035,15 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 4 | `kind` | `u32` | little | spec | u32 kind |
+| 0 | 4 | `display_decimals` | `u32` | little | spec | The decimal places to which Keywords rounds a displayed length (open item DI-79). |
 | 8 | 8 | `value` | `f64` | little | spec | f64 value |
-| 16 | 4 | `decimal_places` | `u32` | little | spec | u32 decimal places |
 | 32 | 16 | `words` | `u32[4]` | little | spec | three or four u32 words |
 | 48 | 2 | `unit_code` | `u16` | little | spec | The u16 a `moLengthUserUnits_c` adds after its base is the unit in which the document displays lengths |
 
 Unstated regions:
 
-- `4..8` (4 B): The u32 after the kind; the specification gives it no meaning.
-- `20..32` (12 B): A u32 and an f64 that the specification gives no meaning.
+- `4..8` (4 B): The u32 after the display decimal places.
+- `16..32` (16 B): Two u32 and an f64. The first u32 is 4 or 10.
 
 ## `units_length_unit_block`
 
@@ -4058,16 +4056,15 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 4 | `kind` | `u32` | little | spec | u32 kind |
+| 0 | 4 | `display_decimals` | `u32` | little | spec | The decimal places to which Keywords rounds a displayed length (open item DI-79). |
 | 8 | 8 | `value` | `f64` | little | spec | f64 value |
-| 16 | 4 | `decimal_places` | `u32` | little | spec | u32 decimal places |
 | 32 | 16 | `words` | `u32[4]` | little | spec | three or four u32 words |
 | 62 | 2 | `unit_code` | `u16` | little | spec | The u16 a `moLengthUserUnits_c` adds after its base is the unit in which the document displays lengths |
 
 Unstated regions:
 
-- `4..8` (4 B): The u32 after the kind; the specification gives it no meaning.
-- `20..32` (12 B): A u32 and an f64 that the specification gives no meaning.
+- `4..8` (4 B): The u32 after the display decimal places.
+- `16..32` (16 B): Two u32 and an f64. The first u32 is 4 or 10.
 - `48..62` (14 B): The f64, u32 and u16 that follow the four words in a block-container document.
 
 ## Not tabulated

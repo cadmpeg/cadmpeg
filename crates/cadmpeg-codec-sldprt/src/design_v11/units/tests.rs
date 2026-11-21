@@ -2,16 +2,21 @@
 use cadmpeg_ir::design::units::UnitSymbol;
 
 use super::{
-    configuration_length_unit, BLOCK_BASES, COMPOUND_BASES, DENSITY_CLASS, LENGTH_DECLARATION,
-    NEW_CLASS, TABLE_CLASS,
+    configuration_length_unit, Base, LengthUnit, BLOCK_BASES, COMPOUND_BASES, DENSITY_CLASS,
+    LENGTH_DECLARATION, NEW_CLASS, TABLE_CLASS,
 };
 use crate::layout::{
     units_length_unit_block as block, units_length_unit_compound_four_word as four_word,
     units_length_unit_compound_three_word as three_word,
 };
 
-/// A unit base: kind, a u32, value, decimal places, a u32 and a real, then
-/// the u32 `words`, then `tail` more bytes.
+/// The length unit symbol of the units table in `payload`.
+fn symbol(payload: &[u8], bases: &[Base]) -> Option<UnitSymbol> {
+    configuration_length_unit(payload, bases).map(|unit| unit.symbol)
+}
+
+/// A unit base: display decimal places, a u32, value, two u32 and a real,
+/// then the u32 `words`, then `tail` more bytes.
 fn base(words: &[u32], tail: usize) -> Vec<u8> {
     let mut bytes = vec![0xaa; 32];
     for word in words {
@@ -95,41 +100,76 @@ fn the_unit_code_follows_the_base_the_number_unit_measures() {
             (2, UnitSymbol::M),
             (3, UnitSymbol::In),
         ] {
-            assert_eq!(
-                configuration_length_unit(&first(&base, code), bases),
-                Some(unit)
-            );
+            assert_eq!(symbol(&first(&base, code), bases), Some(unit));
         }
     }
+}
+
+#[test]
+fn the_length_unit_base_opens_with_the_display_decimal_places() {
+    for (mut base, decimals, bases) in [
+        (
+            three_word_base(),
+            three_word::DISPLAY_DECIMALS,
+            &COMPOUND_BASES[..],
+        ),
+        (
+            four_word_base(),
+            four_word::DISPLAY_DECIMALS,
+            &COMPOUND_BASES[..],
+        ),
+        (block_base(), block::DISPLAY_DECIMALS, &BLOCK_BASES[..]),
+    ] {
+        base[decimals..decimals + 4].copy_from_slice(&3u32.to_le_bytes());
+        assert_eq!(
+            configuration_length_unit(&first(&base, 2), bases),
+            Some(LengthUnit {
+                symbol: UnitSymbol::M,
+                decimals: 3
+            })
+        );
+    }
+}
+
+#[test]
+fn a_display_at_most_one_rounding_step_from_zero_is_within_one_step() {
+    let metre = |decimals| LengthUnit {
+        symbol: UnitSymbol::M,
+        decimals,
+    };
+    for display in [0.0, -0.0, 0.01, -0.01] {
+        assert!(metre(2).within_one_step(display), "{display}");
+    }
+    for display in [0.02, -0.02, 0.011, 1.0] {
+        assert!(!metre(2).within_one_step(display), "{display}");
+    }
+    assert!(metre(0).within_one_step(1.0));
+    assert!(!metre(0).within_one_step(2.0));
+    assert!(metre(u32::MAX).within_one_step(0.0));
+    assert!(!metre(u32::MAX).within_one_step(1.0e-300));
 }
 
 #[test]
 fn a_four_word_base_whose_last_word_is_zero_reads_the_code_after_it() {
     let base = base(&[0, 1, 0, 0], 0);
     assert_eq!(
-        configuration_length_unit(&first(&base, 3), &COMPOUND_BASES),
+        symbol(&first(&base, 3), &COMPOUND_BASES),
         Some(UnitSymbol::In)
     );
 }
 
 #[test]
 fn a_number_unit_of_no_base_of_the_container_states_no_unit() {
-    assert_eq!(
-        configuration_length_unit(&first(&block_base(), 3), &COMPOUND_BASES),
-        None
-    );
-    assert_eq!(
-        configuration_length_unit(&first(&four_word_base(), 3), &BLOCK_BASES),
-        None
-    );
+    assert_eq!(symbol(&first(&block_base(), 3), &COMPOUND_BASES), None);
+    assert_eq!(symbol(&first(&four_word_base(), 3), &BLOCK_BASES), None);
     let base = four_word_base();
     assert_eq!(
-        configuration_length_unit(&table(&[length(&base, 0), angle(&base)]), &COMPOUND_BASES),
+        symbol(&table(&[length(&base, 0), angle(&base)]), &COMPOUND_BASES),
         None
     );
     let class_reference = vec![0x01, 0x80, 0, 0];
     assert_eq!(
-        configuration_length_unit(
+        symbol(
             &table(&[length(&base, 0), number(&base), class_reference]),
             &COMPOUND_BASES
         ),
@@ -140,10 +180,7 @@ fn a_number_unit_of_no_base_of_the_container_states_no_unit() {
 #[test]
 fn an_unread_code_or_another_first_object_states_no_unit() {
     for code in [4, u16::MAX] {
-        assert_eq!(
-            configuration_length_unit(&first(&block_base(), code), &BLOCK_BASES),
-            None
-        );
+        assert_eq!(symbol(&first(&block_base(), code), &BLOCK_BASES), None);
     }
     let mut other = first(&block_base(), 0);
     let at = other
@@ -151,11 +188,8 @@ fn an_unread_code_or_another_first_object_states_no_unit() {
         .position(|window| window == LENGTH_DECLARATION)
         .unwrap();
     other[at + 6] = b'x';
-    assert_eq!(configuration_length_unit(&other, &BLOCK_BASES), None);
-    assert_eq!(
-        configuration_length_unit(b"moUnitsTable_c", &BLOCK_BASES),
-        None
-    );
+    assert_eq!(symbol(&other, &BLOCK_BASES), None);
+    assert_eq!(symbol(b"moUnitsTable_c", &BLOCK_BASES), None);
 }
 
 /// A units table that writes its length unit of unit code `code` after the
@@ -179,10 +213,7 @@ fn a_length_unit_after_the_other_unit_classes_states_its_code() {
             object(b"moFrequencyUserUnits_c", &base, &[]),
         ];
         for (code, unit) in [(0, UnitSymbol::Mm), (3, UnitSymbol::In)] {
-            assert_eq!(
-                configuration_length_unit(&after(&before, &base, code), bases),
-                Some(unit)
-            );
+            assert_eq!(symbol(&after(&before, &base, code), bases), Some(unit));
         }
     }
 }
@@ -192,13 +223,10 @@ fn a_length_unit_after_another_class_or_a_density_unit_states_no_unit() {
     let base = block_base();
     for class in [&b"moVisualProperties_c"[..], DENSITY_CLASS] {
         let before = [angle(&base), number(&base), object(class, &base, &[0, 0])];
-        assert_eq!(
-            configuration_length_unit(&after(&before, &base, 0), &BLOCK_BASES),
-            None
-        );
+        assert_eq!(symbol(&after(&before, &base, 0), &BLOCK_BASES), None);
     }
     let mut cut = after(&[angle(&base), number(&base)], &base, 0);
     let length = NEW_CLASS.len() + 2 + TABLE_CLASS.len() + 2 + NEW_CLASS.len();
     cut[length..length + 2].copy_from_slice(&u16::MAX.to_le_bytes());
-    assert_eq!(configuration_length_unit(&cut, &BLOCK_BASES), None);
+    assert_eq!(symbol(&cut, &BLOCK_BASES), None);
 }

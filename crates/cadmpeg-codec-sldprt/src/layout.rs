@@ -3506,6 +3506,8 @@ pub(crate) mod pmark_record_head {
 /// A `moLengthUserUnits_c` object after its class declaration, through its unit code, with the three-word base of a compound document. The table's `moNumberUserUnits_c` object is 44 bytes long.
 /// ```
 pub(crate) mod units_length_unit_compound_three_word {
+    /// Offset of `display_decimals` (`u32`, little-endian). Spec §Configuration objects.
+    pub(crate) const DISPLAY_DECIMALS: usize = 0;
     /// Offset of `unit_code` (`u16`, little-endian). Spec §Configuration objects.
     pub(crate) const UNIT_CODE: usize = 44;
 }
@@ -3518,6 +3520,8 @@ pub(crate) mod units_length_unit_compound_three_word {
 /// A `moLengthUserUnits_c` object after its class declaration, through its unit code, with the four-word base of a compound document. The table's `moNumberUserUnits_c` object is 48 bytes long.
 /// ```
 pub(crate) mod units_length_unit_compound_four_word {
+    /// Offset of `display_decimals` (`u32`, little-endian). Spec §Configuration objects.
+    pub(crate) const DISPLAY_DECIMALS: usize = 0;
     /// Offset of `unit_code` (`u16`, little-endian). Spec §Configuration objects.
     pub(crate) const UNIT_CODE: usize = 48;
 }
@@ -3530,6 +3534,8 @@ pub(crate) mod units_length_unit_compound_four_word {
 /// A `moLengthUserUnits_c` object after its class declaration, through its unit code, in a block-container document. The table's `moNumberUserUnits_c` object is 62 bytes long.
 /// ```
 pub(crate) mod units_length_unit_block {
+    /// Offset of `display_decimals` (`u32`, little-endian). Spec §Configuration objects.
+    pub(crate) const DISPLAY_DECIMALS: usize = 0;
     /// Offset of `unit_code` (`u16`, little-endian). Spec §Configuration objects.
     pub(crate) const UNIT_CODE: usize = 62;
 }

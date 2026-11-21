@@ -26,28 +26,75 @@ const NEW_CLASS: &[u8] = b"\xff\xff\x01\x00";
 const UNIT_CLASS_SUFFIX: &[u8] = b"Units_c";
 /// The unit class besides the length unit that holds a length unit pointer.
 const DENSITY_CLASS: &[u8] = b"moDensityUnits_c";
-/// The base lengths of a unit object: three and four words in a compound
+/// Relative tolerance within which a displayed number equals one rounding
+/// step.
+const EPS_DISPLAY_STEP: f64 = 1.0e-9;
+
+/// One base form of a unit object: the offsets, from the end of the class
+/// declaration, of the length unit's display decimal places and unit code.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Base {
+    display_decimals: usize,
+    unit_code: usize,
+}
+
+/// The base forms of a unit object: three and four words in a compound
 /// document, and the block-container base.
-const COMPOUND_BASES: [usize; 2] = [three_word::UNIT_CODE, four_word::UNIT_CODE];
-const BLOCK_BASES: [usize; 1] = [block::UNIT_CODE];
+const COMPOUND_BASES: [Base; 2] = [
+    Base {
+        display_decimals: three_word::DISPLAY_DECIMALS,
+        unit_code: three_word::UNIT_CODE,
+    },
+    Base {
+        display_decimals: four_word::DISPLAY_DECIMALS,
+        unit_code: four_word::UNIT_CODE,
+    },
+];
+const BLOCK_BASES: [Base; 1] = [Base {
+    display_decimals: block::DISPLAY_DECIMALS,
+    unit_code: block::UNIT_CODE,
+}];
+
+/// The unit in which a document displays lengths, and the decimal places to
+/// which Keywords rounds a displayed length.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct LengthUnit {
+    pub(crate) symbol: UnitSymbol,
+    pub(crate) decimals: u32,
+}
+
+impl LengthUnit {
+    /// Whether the displayed number `display` is at most one rounding step
+    /// from zero: a display that holds no value of the length it rounds.
+    pub(crate) fn within_one_step(self, display: f64) -> bool {
+        let step = i32::try_from(self.decimals).map_or(0.0, |decimals| 10f64.powi(-decimals));
+        display.abs() <= step * (1.0 + EPS_DISPLAY_STEP)
+    }
+}
 
 /// The length unit every configuration's units table states, or `None`
-/// where a configuration states none or two state different ones.
-pub(crate) fn length_unit(scan: &ContainerScan) -> Option<UnitSymbol> {
-    let mut found = None;
+/// where a configuration states none or two state different ones. Where
+/// configurations state different decimal places, the fewest hold, the
+/// coarsest rounding of any of them.
+pub(crate) fn length_unit(scan: &ContainerScan) -> Option<LengthUnit> {
+    let mut found: Option<LengthUnit> = None;
     for section in scan.sections() {
         if !section.name().is_some_and(is_configuration) {
             continue;
         }
-        let bases: &[usize] = match section {
+        let bases: &[Base] = match section {
             Section::Compound(_) => &COMPOUND_BASES,
             Section::Block(_) => &BLOCK_BASES,
         };
         let unit = configuration_length_unit(section.payload(), bases)?;
-        if found.is_some_and(|known| known != unit) {
-            return None;
-        }
-        found = Some(unit);
+        found = Some(match found {
+            None => unit,
+            Some(known) if known.symbol == unit.symbol => LengthUnit {
+                symbol: unit.symbol,
+                decimals: known.decimals.min(unit.decimals),
+            },
+            Some(_) => return None,
+        });
     }
     found
 }
@@ -67,31 +114,36 @@ fn is_configuration(stream: &str) -> bool {
 
 /// The length unit of one configuration's units table: after the table's
 /// u16 object count, the object that declares the length unit class, whose
-/// u16 unit code follows its base. The table writes it first, or after the
-/// other unit classes it declares; a class declared before it that is not a
-/// unit class, or that holds a length unit pointer itself, leaves the object
-/// unplaced and states no unit. The base is the one of `bases` that the
-/// table's number unit object measures.
-fn configuration_length_unit(payload: &[u8], bases: &[usize]) -> Option<UnitSymbol> {
+/// base opens with the display decimal places and whose u16 unit code
+/// follows its base. The table writes it first, or after the other unit
+/// classes it declares; a class declared before it that is not a unit class,
+/// or that holds a length unit pointer itself, leaves the object unplaced
+/// and states no unit. The base is the one of `bases` that the table's
+/// number unit object measures.
+fn configuration_length_unit(payload: &[u8], bases: &[Base]) -> Option<LengthUnit> {
     let table = find(payload, TABLE_CLASS)?.checked_add(TABLE_CLASS.len())?;
     let objects = payload.get(table.checked_add(2)?..)?;
     let object = find(objects, LENGTH_DECLARATION)?;
     if !declares_other_units(objects.get(..object)?) {
         return None;
     }
-    let code = object
-        .checked_add(LENGTH_DECLARATION.len())?
-        .checked_add(base(objects, bases)?)?;
-    unit(View::u16_le_at(objects, code)?)
+    let fields = object.checked_add(LENGTH_DECLARATION.len())?;
+    let base = base(objects, bases)?;
+    let symbol = unit(View::u16_le_at(
+        objects,
+        fields.checked_add(base.unit_code)?,
+    )?)?;
+    let decimals = View::u32_le_at(objects, fields.checked_add(base.display_decimals)?)?;
+    Some(LengthUnit { symbol, decimals })
 }
 
-/// The one of `bases` that is the length of the number unit object in
+/// The one of `bases` whose length is that of the number unit object in
 /// `objects`: the class declaration of the next object follows it.
-fn base(objects: &[u8], bases: &[usize]) -> Option<usize> {
+fn base(objects: &[u8], bases: &[Base]) -> Option<Base> {
     let fields = find(objects, NUMBER_DECLARATION)?.checked_add(NUMBER_DECLARATION.len())?;
-    let mut lengths = bases.iter().copied().filter(|&base| {
+    let mut lengths = bases.iter().copied().filter(|base| {
         fields
-            .checked_add(base)
+            .checked_add(base.unit_code)
             .and_then(|next| objects.get(next..))
             .is_some_and(|next| next.starts_with(NEW_CLASS))
     });

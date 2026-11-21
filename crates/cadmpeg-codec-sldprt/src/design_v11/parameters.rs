@@ -16,9 +16,11 @@
 //! a display is a literal in that unit, and an angle dimension's a literal
 //! in degrees (§5.12): the stored value where a record stores one, else the
 //! displayed number, which Keywords rounds to the display precision and the
-//! `design.parameter-display-rounded` note names. Where it states none, a
-//! length display is no cache (§5.13). A parameter that a reference
-//! dimension binds is `Driven` and keeps its value (§6.1). A dimension's kind is the quantity its stored record states: the
+//! `design.parameter-display-rounded` note names. A length display at most
+//! one rounding step from zero, at the decimal places the units table states,
+//! is no cache: it holds no value of the length it rounds. Where the root
+//! definition states no length unit, a length display is no cache (§5.13).
+//! A parameter that a reference dimension binds is `Driven` and keeps its value (§6.1). A dimension's kind is the quantity its stored record states: the
 //! archive class of the `ResolvedFeatures` scalar it is bound to, the kind
 //! the decoder's own parameter took from a record, a relation, or the
 //! feature, or the quantity of the sketch or feature dimension that binds
@@ -47,6 +49,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
 
 use super::tree::Timeline;
+use super::units::LengthUnit;
 use crate::history::literals::dimension_display;
 use crate::history::parameters::eval::exact_integer_f64;
 use crate::history::parameters::{
@@ -275,11 +278,11 @@ struct Entry<'a> {
 }
 
 /// What the decoder read beside a parameter's text: its own parameters and
-/// scalar classes, the definition's length unit, and the quantity of each
-/// dimension that binds a parameter.
+/// scalar classes, the definition's length unit and its display decimal
+/// places, and the quantity of each dimension that binds a parameter.
 pub(super) struct Readings<'a> {
     pub(super) decoded: Decoded<'a>,
-    pub(super) length_unit: Option<UnitSymbol>,
+    pub(super) length_unit: Option<LengthUnit>,
     pub(super) bound: HashMap<ParameterId, Quantity>,
     /// The parameters a radius or diameter dimension binds, by what it
     /// measures: such a parameter states no display of that measure.
@@ -341,6 +344,7 @@ impl<'a> Entries<'a> {
         let mut rounded = NamedCount::default();
         let mut unread_kind = NamedCount::default();
         let mut unread_unit = NamedCount::default();
+        let mut unread_step = NamedCount::default();
         let parameters = self
             .list
             .iter()
@@ -352,6 +356,7 @@ impl<'a> Entries<'a> {
                 match reading.unvalued {
                     Some(Unvalued::Kind) => unread_kind.push(entry.id.as_str()),
                     Some(Unvalued::LengthUnit) => unread_unit.push(entry.id.as_str()),
+                    Some(Unvalued::RoundingStep) => unread_step.push(entry.id.as_str()),
                     None => {}
                 }
                 parameter(entry, reading, scope, readings)
@@ -365,6 +370,13 @@ impl<'a> Entries<'a> {
                 rounded.count()
             )));
         }
+        let step = readings.length_unit.map_or_else(String::new, |unit| {
+            format!(
+                "lengths displayed at most one rounding step from zero, at the {} decimal places \
+                 of the part's length unit",
+                unit.decimals
+            )
+        });
         let unvalued = [
             (
                 unread_kind,
@@ -374,6 +386,7 @@ impl<'a> Entries<'a> {
                 unread_unit,
                 "lengths in a part whose length unit is not read",
             ),
+            (unread_step, step.as_str()),
         ]
         .into_iter()
         .filter(|(named, _)| !named.is_empty())
@@ -471,6 +484,9 @@ enum Unvalued {
     Kind,
     /// The dimension is a length and the part's length unit is not read.
     LengthUnit,
+    /// The dimension is a length displayed at most one rounding step from
+    /// zero.
+    RoundingStep,
 }
 
 fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Reading {
@@ -551,10 +567,21 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Readin
         })
         .filter(|display| readings.measured.get(&entry.id) != Some(display));
     let number = bare.filter(|_| !user && !references);
-    if let Some(number) = number {
-        if let Some((node, literal)) =
-            displayed_literal(number, &kind, value.as_ref(), readings.length_unit)
-        {
+    let length = kind == ValueKind::Quantity(Quantity::LENGTH);
+    let below_step = number.is_some_and(|number| {
+        length
+            && value.is_none()
+            && readings
+                .length_unit
+                .is_some_and(|unit| unit.within_one_step(number))
+    });
+    if let Some(number) = number.filter(|_| !below_step) {
+        if let Some((node, literal)) = displayed_literal(
+            number,
+            &kind,
+            value.as_ref(),
+            readings.length_unit.map(|unit| unit.symbol),
+        ) {
             return Reading {
                 kind,
                 expression: Expression::Neutral(Neutral(node)),
@@ -565,13 +592,13 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Readin
             };
         }
     }
-    let unvalued = (number.is_some() && value.is_none()).then_some(
-        if kind == ValueKind::Quantity(Quantity::LENGTH) && readings.length_unit.is_none() {
-            Unvalued::LengthUnit
-        } else {
-            Unvalued::Kind
-        },
-    );
+    let unvalued = (number.is_some() && value.is_none()).then_some(if below_step {
+        Unvalued::RoundingStep
+    } else if length && readings.length_unit.is_none() {
+        Unvalued::LengthUnit
+    } else {
+        Unvalued::Kind
+    });
     Reading {
         kind,
         expression: Expression::Source {

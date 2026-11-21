@@ -14876,16 +14876,17 @@ endianness = "little"
 note = "A `moLengthUserUnits_c` object after its class declaration, through its unit code, with the three-word base of a compound document. The table's `moNumberUserUnits_c` object is 44 bytes long."
 
 [[record.field]]
-name = "kind"
+name = "display_decimals"
 offset = 0
 type = "u32"
 source = "spec"
-anchor = "u32 kind"
+anchor = "u32 display decimal places"
+note = "The decimal places to which Keywords rounds a displayed length (open item DI-79)."
 
 [[record.gap]]
 offset = 4
 size = 4
-note = "The u32 after the kind; the specification gives it no meaning."
+note = "The u32 after the display decimal places."
 
 [[record.field]]
 name = "value"
@@ -14894,17 +14895,10 @@ type = "f64"
 source = "spec"
 anchor = "f64 value"
 
-[[record.field]]
-name = "decimal_places"
-offset = 16
-type = "u32"
-source = "spec"
-anchor = "u32 decimal places"
-
 [[record.gap]]
-offset = 20
-size = 12
-note = "A u32 and an f64 that the specification gives no meaning."
+offset = 16
+size = 16
+note = "Two u32 and an f64. The first u32 is 4 or 10."
 
 [[record.field]]
 name = "words"
@@ -14931,16 +14925,17 @@ endianness = "little"
 note = "A `moLengthUserUnits_c` object after its class declaration, through its unit code, with the four-word base of a compound document. The table's `moNumberUserUnits_c` object is 48 bytes long."
 
 [[record.field]]
-name = "kind"
+name = "display_decimals"
 offset = 0
 type = "u32"
 source = "spec"
-anchor = "u32 kind"
+anchor = "u32 display decimal places"
+note = "The decimal places to which Keywords rounds a displayed length (open item DI-79)."
 
 [[record.gap]]
 offset = 4
 size = 4
-note = "The u32 after the kind; the specification gives it no meaning."
+note = "The u32 after the display decimal places."
 
 [[record.field]]
 name = "value"
@@ -14949,17 +14944,10 @@ type = "f64"
 source = "spec"
 anchor = "f64 value"
 
-[[record.field]]
-name = "decimal_places"
-offset = 16
-type = "u32"
-source = "spec"
-anchor = "u32 decimal places"
-
 [[record.gap]]
-offset = 20
-size = 12
-note = "A u32 and an f64 that the specification gives no meaning."
+offset = 16
+size = 16
+note = "Two u32 and an f64. The first u32 is 4 or 10."
 
 [[record.field]]
 name = "words"
@@ -14986,16 +14974,17 @@ endianness = "little"
 note = "A `moLengthUserUnits_c` object after its class declaration, through its unit code, in a block-container document. The table's `moNumberUserUnits_c` object is 62 bytes long."
 
 [[record.field]]
-name = "kind"
+name = "display_decimals"
 offset = 0
 type = "u32"
 source = "spec"
-anchor = "u32 kind"
+anchor = "u32 display decimal places"
+note = "The decimal places to which Keywords rounds a displayed length (open item DI-79)."
 
 [[record.gap]]
 offset = 4
 size = 4
-note = "The u32 after the kind; the specification gives it no meaning."
+note = "The u32 after the display decimal places."
 
 [[record.field]]
 name = "value"
@@ -15004,17 +14993,10 @@ type = "f64"
 source = "spec"
 anchor = "f64 value"
 
-[[record.field]]
-name = "decimal_places"
-offset = 16
-type = "u32"
-source = "spec"
-anchor = "u32 decimal places"
-
 [[record.gap]]
-offset = 20
-size = 12
-note = "A u32 and an f64 that the specification gives no meaning."
+offset = 16
+size = 16
+note = "Two u32 and an f64. The first u32 is 4 or 10."
 
 [[record.field]]
 name = "words"

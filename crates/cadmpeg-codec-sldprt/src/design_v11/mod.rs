@@ -61,8 +61,8 @@ pub(crate) struct Part<'a> {
     pub(crate) bodies: Vec<BodyId>,
     /// The persistent ids of every decoded face and body.
     pub(crate) persistent: Persistent<'a>,
-    /// The part's length unit.
-    pub(crate) length: Option<UnitSymbol>,
+    /// The part's length unit and its display decimal places.
+    pub(crate) length: Option<units::LengthUnit>,
     /// What the stored marks state of the rollback position.
     pub(crate) rollback: Reading,
 }
@@ -176,7 +176,7 @@ pub(crate) fn project(
     let mut root = ProductDefinition::root(definition.clone(), ExternalDocument::default());
     root.kind = Some(ProductDefinitionKind::Part);
     root.units = length.map(|length| UnitSystem {
-        length,
+        length: length.symbol,
         angle: UnitSymbol::Deg,
         mass: None,
         time: None,
