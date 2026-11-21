@@ -6841,7 +6841,7 @@ Offsets are relative to the Move scope's primary indexed header. The marked refe
 | 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | primary bytes 11 through 20 are zero |
 | 21 | 11 | `transform_reference` | `bytes[11]` | little | spec | a marked reference to its rigid-transform record at offset 21 |
 | 32 | 4 | `reference_flag` | `u32` | little | spec | u32 `1` at offset 32 |
-| 36 | 11 | `first_reference` | `bytes[11]` | little | spec | a marked reference to its first ordered reference at offset 36 |
+| 36 | 11 | `group_reference` | `bytes[11]` | little | spec | a marked reference to its whole-body construction group at offset 36 |
 
 ## `move_transform_frame_253`
 
@@ -12541,7 +12541,7 @@ Parsed by:
 | 21 | 4 | `zero_word` | `u32` | little | spec | A marker-one `Move` prologue stores nine zero bytes · value `0` |
 | 25 | 11 | `transform_reference` | `bytes[11]` | little | spec | A marker-one `Move` prologue stores nine zero bytes |
 | 36 | 4 | `reference_flag` | `u32` | little | spec | A marker-one `Move` prologue stores nine zero bytes · value `1` |
-| 40 | 11 | `first_reference` | `bytes[11]` | little | spec | A marker-one `Move` prologue stores nine zero bytes |
+| 40 | 11 | `group_reference` | `bytes[11]` | little | spec | A marker-one `Move` prologue stores nine zero bytes |
 
 ## `move_transform_null_reference_prefix`
 
