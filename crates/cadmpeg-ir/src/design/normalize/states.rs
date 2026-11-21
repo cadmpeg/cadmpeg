@@ -6,21 +6,23 @@
 //! evaluation or of a process state), a current state, and a `StateRef` name
 //! that state through its member: `After` the nearest feature of `c` before
 //! the rollback, else `Start(c)`. A target into a state that `state: None`
-//! reaches has `state: None`.
+//! provably reaches has `state: None`; every other target keeps its `state`.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::declared_measures::DeclaredTarget;
 use crate::design::container::{Container, Rollback};
-use crate::design::edit::effective::PathResolver;
 use crate::design::evaluation::StateBase;
 use crate::design::ids::ContainerId;
 use crate::design::refs::{Evaluated, Member, Position, StateRef};
+use crate::design::selection::{OccurrencePath, StepRef};
 use crate::document::{Design, Model, Process};
 use crate::features::ConfigurationId;
+use crate::ids::{OccurrenceId, ProductDefinitionId};
 use crate::physics::solver::SolverValue;
 use crate::pmi::PmiDefinition;
 use crate::process::state::ProcessBase;
+use crate::products::{Occurrence, ProductDefinition};
 use crate::references::InstanceTarget;
 
 /// What the position and target rules read of the design, gathered before
@@ -35,6 +37,21 @@ pub(super) struct States {
     /// The active configuration of each scope and the positions of its
     /// current states, in their one spelling.
     current: BTreeMap<String, (Option<ConfigurationId>, Vec<Position>)>,
+    /// Whether the configuration that applies where no record selects one is
+    /// known everywhere: each scope's active configuration is `None` or one
+    /// of its own configurations whose parents resolve, and no scope,
+    /// configuration, or scope entry puts an arrangement in force.
+    settled: bool,
+    /// The occurrences a record selects a configuration or a prototype for:
+    /// a scope entry's `configuration`, or a configuration override's
+    /// `configuration` or `prototype`.
+    selected: BTreeSet<OccurrenceId>,
+}
+
+/// The occurrences and product definitions a target's path names.
+struct Placements<'a> {
+    occurrences: &'a [Occurrence],
+    definitions: &'a [ProductDefinition],
 }
 
 impl States {
@@ -52,10 +69,43 @@ impl States {
                     .map(|position| (container.id().as_str().to_owned(), position))
             })
             .collect();
+        let settled = design
+            .configurations
+            .iter()
+            .all(|configuration| configuration.active_arrangements.is_empty())
+            && design.scopes.iter().all(|scope| {
+                scope.active_arrangements.is_empty()
+                    && scope
+                        .occurrences
+                        .values()
+                        .all(|entry| entry.arrangements.is_empty())
+                    && scope.active_configuration.as_ref().is_none_or(|active| {
+                        design.configurations.iter().any(|configuration| {
+                            &configuration.id == active && configuration.scope == scope.definition
+                        }) && design.configuration_chain(active).is_ok()
+                    })
+            });
+        let entries = design
+            .scopes
+            .iter()
+            .flat_map(|scope| &scope.occurrences)
+            .filter(|(_, entry)| entry.configuration.is_some());
+        let overrides = design
+            .configurations
+            .iter()
+            .flat_map(|configuration| &configuration.overrides.occurrences)
+            .filter(|(_, entry)| entry.configuration.is_some() || entry.prototype.is_some());
+        let selected = entries
+            .map(|(occurrence, _)| occurrence)
+            .chain(overrides.map(|(occurrence, _)| occurrence))
+            .cloned()
+            .collect();
         let mut states = Self {
             rollbacks,
             scopes: BTreeMap::new(),
             current: BTreeMap::new(),
+            settled,
+            selected,
         };
         for scope in &design.scopes {
             let definition = scope.definition.as_str();
@@ -151,10 +201,9 @@ impl States {
     }
 
     /// Spells every `StateRef` of the model records through its member, and
-    /// clears each instance target's `state` that names what `None` names.
-    /// A target's path resolves through `design` and the model's occurrences
-    /// and product definitions.
-    pub(super) fn normalize_model(&self, design: &Design, model: &mut Model) {
+    /// clears each instance target's `state` that provably names what `None`
+    /// names (see [`States::target`]).
+    pub(super) fn normalize_model(&self, model: &mut Model) {
         let Model {
             occurrences,
             product_definitions,
@@ -171,33 +220,32 @@ impl States {
             declared_measures,
             ..
         } = model;
-        let resolver = PathResolver {
-            design,
+        let placements = Placements {
             occurrences,
             definitions: product_definitions,
         };
         for binding in appearance_bindings {
-            self.target(&resolver, &mut binding.target);
+            self.target(&placements, &mut binding.target);
         }
         for attribute in attributes {
-            self.target(&resolver, &mut attribute.target);
+            self.target(&placements, &mut attribute.target);
         }
         for annotation in pmi {
             for target in &mut annotation.targets {
-                self.target(&resolver, target);
+                self.target(&placements, target);
             }
             match &mut annotation.definition {
                 PmiDefinition::DatumTarget { basis, .. } => {
                     for target in basis {
-                        self.target(&resolver, target);
+                        self.target(&placements, target);
                     }
                 }
                 PmiDefinition::GeometricTolerance { zones, .. } => {
                     for projection in zones.iter_mut().flat_map(|zone| &mut zone.projections) {
                         for target in &mut projection.boundaries {
-                            self.target(&resolver, target);
+                            self.target(&placements, target);
                         }
-                        self.target(&resolver, &mut projection.end);
+                        self.target(&placements, &mut projection.end);
                     }
                 }
                 PmiDefinition::Datum { .. }
@@ -208,27 +256,27 @@ impl States {
         }
         for layer in presentation_layers {
             for item in &mut layer.items {
-                self.target(&resolver, item);
+                self.target(&placements, item);
             }
         }
         for properties in mass_properties {
-            self.target(&resolver, &mut properties.target);
+            self.target(&placements, &mut properties.target);
         }
         for body in rigid_bodies {
-            self.target(&resolver, &mut body.target);
+            self.target(&placements, &mut body.target);
         }
         for collider in colliders {
-            self.target(&resolver, &mut collider.target);
+            self.target(&placements, &mut collider.target);
         }
         for articulation in articulations {
-            self.target(&resolver, &mut articulation.root);
+            self.target(&placements, &mut articulation.root);
         }
         for settings in solver_settings {
-            self.target(&resolver, &mut settings.target);
+            self.target(&placements, &mut settings.target);
             for value in settings.values.values_mut() {
                 if let SolverValue::Targets { targets } = value {
                     for target in targets {
-                        self.target(&resolver, target);
+                        self.target(&placements, target);
                     }
                 }
             }
@@ -246,15 +294,14 @@ impl States {
     }
 
     /// Spells a target's `state` through its member, and clears it where it
-    /// names a current state of its scope that `state: None` reads. With no
-    /// path, `None` reads the scope's active configuration. With a path,
-    /// `None` reads the configuration the path's instance selects, so the
-    /// state is cleared only where the scope that holds it states the design
-    /// of what that instance holds, and that instance selects the active
-    /// configuration (§8, part 9); where the path's instance selects no
-    /// configuration the document holds, the state stays. A `configuration`
-    /// of `None` is the configuration in use.
-    fn target<E>(&self, resolver: &PathResolver<'_>, target: &mut InstanceTarget<E>) {
+    /// provably names what `state: None` names: a current state of the scope
+    /// that holds it, in that scope's active configuration (a `configuration`
+    /// of `None` is the configuration in use), reached with no path, or with a
+    /// path that [`States::reaches_unselected`] accepts. Every other `state`
+    /// stays as decoded: a kept `state` that `None` could spell leaves two
+    /// spellings of one meaning, while a cleared `state` that `None` does not
+    /// spell would change the geometry the target names (§8, part 9).
+    fn target<E>(&self, placements: &Placements<'_>, target: &mut InstanceTarget<E>) {
         let Some(state) = &mut target.state else {
             return;
         };
@@ -273,23 +320,62 @@ impl States {
         else {
             return;
         };
-        if !positions.contains(position) {
-            return;
-        }
-        let reads = match &target.path {
-            None => state.configuration.is_none() || state.configuration == *active,
-            Some(path) => match resolver.instance_configuration(path) {
-                Ok(Some((scope, selected))) => {
-                    scope.as_str() == holder
-                        && selected == *active
-                        && (state.configuration.is_none() || state.configuration == selected)
-                }
-                Ok(None) | Err(_) => false,
-            },
-        };
+        let reads = positions.contains(position)
+            && (state.configuration.is_none() || state.configuration == *active)
+            && target
+                .path
+                .as_ref()
+                .is_none_or(|path| self.reaches_unselected(placements, path, holder));
         if reads {
             target.state = None;
         }
+    }
+
+    /// Whether the instance at `path` is provably an instance of `holder` in
+    /// `holder`'s active configuration: the document is `settled`, the path
+    /// is not empty, and each step names, with no configuration of its own,
+    /// the one occurrence record of its id, which no record selects for
+    /// (`selected`), and which a definition owns, the previous step's
+    /// prototype for every step after the first; the last step's prototype
+    /// is `holder`. No record selects a configuration or a prototype for an
+    /// occurrence of such a path, and no arrangement is in force anywhere, so
+    /// every occurrence on it resolves through an active configuration and
+    /// the last one reads `holder`'s (§5.1, §5.11). Any other path is not
+    /// established here.
+    fn reaches_unselected(
+        &self,
+        placements: &Placements<'_>,
+        path: &OccurrencePath,
+        holder: &str,
+    ) -> bool {
+        if !self.settled {
+            return false;
+        }
+        let mut above: Option<&ProductDefinitionId> = None;
+        for step in &path.0 {
+            let StepRef::Occurrence(occurrence) = &step.occurrence else {
+                return false;
+            };
+            if step.configuration.is_some() || self.selected.contains(occurrence) {
+                return false;
+            }
+            let mut records = placements
+                .occurrences
+                .iter()
+                .filter(|record| &record.id == occurrence);
+            let (Some(record), None) = (records.next(), records.next()) else {
+                return false;
+            };
+            let owned = placements.definitions.iter().any(|definition| {
+                above.is_none_or(|prototype| &definition.id == prototype)
+                    && definition.occurrences.contains(occurrence)
+            });
+            if !owned {
+                return false;
+            }
+            above = Some(&record.prototype);
+        }
+        above.is_some_and(|prototype| prototype.as_str() == holder)
     }
 }
 

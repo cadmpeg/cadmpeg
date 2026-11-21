@@ -31,7 +31,7 @@ impl Design {
     }
 
     /// The configuration and its ancestors, nearest first.
-    pub(super) fn configuration_chain(
+    pub(crate) fn configuration_chain(
         &self,
         configuration: &ConfigurationId,
     ) -> Result<Vec<&DesignConfiguration>, EditError> {

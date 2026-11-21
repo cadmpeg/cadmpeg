@@ -361,6 +361,56 @@ fn an_occurrence_whose_prototype_only_another_configuration_replaces_keeps_its_p
     assert!(!shown_at(&document, &[1, 2]));
 }
 
+#[test]
+fn a_base_selection_of_the_replaced_prototype_resolves_as_no_selection() {
+    let mut document = with_replacement();
+    replace_in(&mut document, 11, None);
+    document.design.scopes[0].occurrences.insert(
+        occurrence(1),
+        OccurrenceDesign {
+            configuration: Some(ConfigurationRef::Local(configuration(22))),
+            arrangements: Vec::new(),
+            grounded: None,
+            flexible: None,
+            parameters: BTreeMap::new(),
+        },
+    );
+    assert_eq!(transform_at(&document, &[1, 5]), Some([10.0, 8.0, 0.0]));
+    assert!(shown_at(&document, &[1, 5]));
+}
+
+#[test]
+fn a_replacement_in_a_parent_configuration_applies_until_the_child_states_its_own() {
+    let mut document = with_replacement();
+    replace_in(&mut document, 12, Some(52));
+    document
+        .design
+        .configurations
+        .iter_mut()
+        .find(|candidate| candidate.id == configuration(11))
+        .unwrap()
+        .parent = Some(configuration(12));
+    assert_eq!(transform_at(&document, &[1, 5]), Some([10.0, 9.0, 0.0]));
+    assert!(!shown_at(&document, &[1, 5]));
+
+    configured(&mut document, 11).occurrences.insert(
+        occurrence(1),
+        OccurrenceOverride {
+            prototype: Some(definition(2)),
+            configuration: Some(ConfigurationRef::Local(configuration(22))),
+            ..OccurrenceOverride::default()
+        },
+    );
+    configured(&mut document, 22).occurrences.insert(
+        occurrence(2),
+        OccurrenceOverride {
+            transform: Some(shift(0.0, 3.0, 0.0)),
+            ..OccurrenceOverride::default()
+        },
+    );
+    assert_eq!(transform_at(&document, &[1, 2]), Some([10.0, 3.0, 0.0]));
+}
+
 fn posed(keys: &[u32], at: Transform) -> CurrentState {
     CurrentState {
         at: Position::After(Member::Feature(id("feature", 1))),
