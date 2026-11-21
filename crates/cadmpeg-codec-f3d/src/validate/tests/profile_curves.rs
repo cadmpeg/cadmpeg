@@ -19,6 +19,7 @@ fn typed_profile_validator_checks_region_offsets_and_exterior_cardinality() {
         scope_sketch_containers: Vec::new(),
         identity_record_offset: 100,
         identity_end_offset: 274,
+        lost_reference_records: Vec::new(),
         groups: vec![
             crate::records::topology::entity_selection::DesignProfileRegionGroup {
                 region: vec![

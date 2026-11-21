@@ -72,6 +72,7 @@ fn loop_selection(
         scope_sketch_containers: Vec::new(),
         identity_record_offset: 500,
         identity_end_offset: 0,
+        lost_reference_records: Vec::new(),
         groups: vec![
             crate::records::topology::entity_selection::DesignProfileRegionGroup {
                 region: vec![DesignProfileCurveLoop {
