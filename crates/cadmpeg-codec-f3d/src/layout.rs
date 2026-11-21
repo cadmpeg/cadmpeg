@@ -10550,11 +10550,13 @@ pub(crate) mod thread_owner_extended_scope_prefix {
 /// Spec §3.1. Record length 134 B.
 ///
 /// ```text
-/// Offsets are relative to the plane entity's primary indexed header through the LP-UTF16 entity ID code-unit count.
+/// Offsets are relative to the plane entity's primary indexed header through the LP-UTF16 entity ID code-unit count, for property-block presence byte `0`. `workplane_item_plane_head` gives the presence-byte-`1` form.
 /// ```
 pub(crate) mod constructed_plane_entity_prefix {
-    /// Record length in bytes. Spec §3.1.
-    pub(crate) const LEN: usize = 134;
+    /// Offset of `property_presence` (`u8`). Spec §3.1.
+    pub(crate) const PROPERTY_PRESENCE: usize = 20;
+    /// Stated value of `property_presence` (`u8`). Spec §3.1.
+    pub(crate) const PROPERTY_PRESENCE_VALUE: u8 = 0;
     /// Offset of `entity_id_code_unit_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const ENTITY_ID_CODE_UNIT_COUNT: usize = 130;
 }
@@ -11426,4 +11428,18 @@ pub(crate) mod sketch_item_geometry_member_run_head {
     pub(crate) const ZERO_BYTE_VALUE: u8 = 0;
     /// Offset of `member_count` (`u32`, little-endian). Spec §Records of a Sketch item.
     pub(crate) const MEMBER_COUNT: usize = 1;
+}
+
+/// Byte offsets for the `workplane_item_plane_head` record.
+///
+/// Spec §Records of a construction-plane item. Record length 190 B.
+///
+/// ```text
+/// Offsets are relative to the plane entity's indexed header, for property-block presence byte `1`. The `L` code units of the Design entity ID follow at 190, then `workplane_item_plane_tail`.
+/// ```
+pub(crate) mod workplane_item_plane_head {
+    /// Stated value of `property_presence` (`u8`). Spec §Records of a construction-plane item.
+    pub(crate) const PROPERTY_PRESENCE_VALUE: u8 = 1;
+    /// Offset of `entity_id_code_unit_count` (`u32`, little-endian). Spec §Records of a construction-plane item.
+    pub(crate) const ENTITY_ID_CODE_UNIT_COUNT: usize = 186;
 }

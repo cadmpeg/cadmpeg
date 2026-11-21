@@ -41775,7 +41775,7 @@ kind = "byte"
 section = "3.1"
 anchor = "A plane entity record has type GUID `8D424E29-DE23-4B1F-A3AD-84C52A497D1A`"
 size = 134
-note = "Offsets are relative to the plane entity's primary indexed header through the LP-UTF16 entity ID code-unit count."
+note = "Offsets are relative to the plane entity's primary indexed header through the LP-UTF16 entity ID code-unit count, for property-block presence byte `0`. `workplane_item_plane_head` gives the presence-byte-`1` form."
 
 [[record.gap]]
 offset = 0
@@ -41784,15 +41784,73 @@ note = "The indexed Design record header (indexed_design_record_header)."
 
 [[record.gap]]
 offset = 11
-size = 119
+size = 9
 note = "The specification states no field in this range."
+
+[[record.field]]
+name = "property_presence"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "A constructed plane entity stores the property-block presence byte `0` or `1` at offset 20"
+value = 0
+
+[[record.field]]
+name = "plane_kind"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "When the presence byte is `0`, the u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow it"
+
+[[record.field]]
+name = "lower_corner"
+offset = 25
+type = "f64[2]"
+source = "spec"
+anchor = "When the presence byte is `0`, the u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow it"
+
+[[record.field]]
+name = "zero_byte"
+offset = 41
+type = "u8"
+source = "spec"
+anchor = "When the presence byte is `0`, the u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow it"
+value = 0
+
+[[record.field]]
+name = "origin"
+offset = 42
+type = "f64[3]"
+source = "spec"
+anchor = "When the presence byte is `0`, the u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow it"
+
+[[record.field]]
+name = "u_direction"
+offset = 66
+type = "f64[3]"
+source = "spec"
+anchor = "When the presence byte is `0`, the u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow it"
+
+[[record.field]]
+name = "v_direction"
+offset = 90
+type = "f64[3]"
+source = "spec"
+anchor = "When the presence byte is `0`, the u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow it"
+
+[[record.field]]
+name = "upper_corner"
+offset = 114
+type = "f64[2]"
+source = "spec"
+anchor = "When the presence byte is `0`, the u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow it"
 
 [[record.field]]
 name = "entity_id_code_unit_count"
 offset = 130
 type = "u32"
 source = "spec"
-anchor = "an LP-UTF16 Design entity ID begins at offset 130 from the indexed header"
+anchor = "and the entity ID begins at offset 130 from the indexed header"
 
 [[record]]
 name = "derived_instance_prefix"
@@ -48445,11 +48503,12 @@ anchor = "The current history-state identity `0xffffffff`, the LP-UTF16 family n
 
 [[record]]
 name = "workplane_item_plane_head"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/placement_construction/work_planes.rs"
 kind = "byte"
 section = "Records of a construction-plane item"
 anchor = "**Plane entity.**"
 size = 190
-note = "Offsets are relative to the plane entity's indexed header. The `L` code units of the entity name follow at 190, then `workplane_item_plane_tail`."
+note = "Offsets are relative to the plane entity's indexed header, for property-block presence byte `1`. The `L` code units of the Design entity ID follow at 190, then `workplane_item_plane_tail`."
 
 [[record.field]]
 name = "indexed_header"
@@ -48524,7 +48583,7 @@ name = "zero_byte"
 offset = 97
 type = "u8"
 source = "spec"
-anchor = "the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and the LP-UTF16 entity name"
+anchor = "the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and the LP-UTF16 Design entity ID"
 value = 0
 
 [[record.field]]
@@ -48532,21 +48591,21 @@ name = "origin"
 offset = 98
 type = "f64[3]"
 source = "spec"
-anchor = "the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and the LP-UTF16 entity name"
+anchor = "the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and the LP-UTF16 Design entity ID"
 
 [[record.field]]
 name = "u_direction"
 offset = 122
 type = "f64[3]"
 source = "spec"
-anchor = "the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and the LP-UTF16 entity name"
+anchor = "the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and the LP-UTF16 Design entity ID"
 
 [[record.field]]
 name = "v_direction"
 offset = 146
 type = "f64[3]"
 source = "spec"
-anchor = "the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and the LP-UTF16 entity name"
+anchor = "the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and the LP-UTF16 Design entity ID"
 
 [[record.field]]
 name = "upper_corner"
@@ -48556,11 +48615,11 @@ source = "spec"
 anchor = "A display corner is an f64 pair of plane coordinates in centimetres"
 
 [[record.field]]
-name = "name_length"
+name = "entity_id_code_unit_count"
 offset = 186
 type = "u32"
 source = "spec"
-anchor = "The entity name is the digit `0`, `_`, and the decimal record index of the plane entity"
+anchor = "The Design entity ID is the digit `0`, `_`, and the decimal record index of the plane entity"
 
 [[record]]
 name = "workplane_item_plane_tail"
@@ -48568,28 +48627,28 @@ kind = "byte"
 section = "Records of a construction-plane item"
 anchor = "**Plane entity.**"
 size = 78
-note = "Offsets are relative to the end of the entity name, for an empty text. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes."
+note = "Offsets are relative to the end of the Design entity ID, for an empty display name. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes."
 
 [[record.field]]
 name = "construction_collection"
 offset = 0
 type = "bytes[11]"
 source = "spec"
-anchor = "After the name follow the construction collection reference"
+anchor = "After the entity ID follow the construction collection reference"
 
 [[record.field]]
 name = "family_ordinal"
 offset = 11
 type = "u32"
 source = "spec"
-anchor = "the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, an LP-UTF16 text, u32 `0`, a flag byte `0` or `1`, twelve zero bytes"
+anchor = "the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, the LP-UTF16 display name, u32 `0`, a flag byte `0` or `1`, twelve zero bytes"
 
 [[record.field]]
 name = "zero_run"
 offset = 15
 type = "bytes[5]"
 source = "spec"
-anchor = "the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, an LP-UTF16 text, u32 `0`, a flag byte `0` or `1`, twelve zero bytes"
+anchor = "the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, the LP-UTF16 display name, u32 `0`, a flag byte `0` or `1`, twelve zero bytes"
 value = [0, 0, 0, 0, 0]
 
 [[record.field]]
@@ -48597,14 +48656,14 @@ name = "scope"
 offset = 20
 type = "bytes[11]"
 source = "spec"
-anchor = "the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, an LP-UTF16 text, u32 `0`, a flag byte `0` or `1`, twelve zero bytes"
+anchor = "the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, the LP-UTF16 display name, u32 `0`, a flag byte `0` or `1`, twelve zero bytes"
 
 [[record.field]]
 name = "zero_byte"
 offset = 31
 type = "u8"
 source = "spec"
-anchor = "the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, an LP-UTF16 text, u32 `0`, a flag byte `0` or `1`, twelve zero bytes"
+anchor = "the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, the LP-UTF16 display name, u32 `0`, a flag byte `0` or `1`, twelve zero bytes"
 value = 0
 
 [[record.field]]
@@ -48612,7 +48671,7 @@ name = "marker"
 offset = 32
 type = "u8"
 source = "spec"
-anchor = "the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, an LP-UTF16 text, u32 `0`, a flag byte `0` or `1`, twelve zero bytes"
+anchor = "the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, the LP-UTF16 display name, u32 `0`, a flag byte `0` or `1`, twelve zero bytes"
 value = 1
 
 [[record.field]]
@@ -48620,7 +48679,7 @@ name = "text_length"
 offset = 33
 type = "u32"
 source = "spec"
-anchor = "The layout table gives the tail for an empty text"
+anchor = "The layout table gives the tail for an empty display name"
 value = 0
 
 [[record.field]]
@@ -48628,7 +48687,7 @@ name = "zero_word"
 offset = 37
 type = "u32"
 source = "spec"
-anchor = "the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, an LP-UTF16 text, u32 `0`, a flag byte `0` or `1`, twelve zero bytes"
+anchor = "the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, the LP-UTF16 display name, u32 `0`, a flag byte `0` or `1`, twelve zero bytes"
 value = 0
 
 [[record.field]]
@@ -48636,14 +48695,14 @@ name = "flag"
 offset = 41
 type = "u8"
 source = "spec"
-anchor = "the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, an LP-UTF16 text, u32 `0`, a flag byte `0` or `1`, twelve zero bytes"
+anchor = "the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, the LP-UTF16 display name, u32 `0`, a flag byte `0` or `1`, twelve zero bytes"
 
 [[record.field]]
 name = "zero_run_b"
 offset = 42
 type = "bytes[12]"
 source = "spec"
-anchor = "the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, an LP-UTF16 text, u32 `0`, a flag byte `0` or `1`, twelve zero bytes"
+anchor = "the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, the LP-UTF16 display name, u32 `0`, a flag byte `0` or `1`, twelve zero bytes"
 value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
 [[record.field]]

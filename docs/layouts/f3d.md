@@ -12190,19 +12190,27 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 134 B
 
-Offsets are relative to the plane entity's primary indexed header through the LP-UTF16 entity ID code-unit count.
+Offsets are relative to the plane entity's primary indexed header through the LP-UTF16 entity ID code-unit count, for property-block presence byte `0`. `workplane_item_plane_head` gives the presence-byte-`1` form.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/placement_construction/work_planes.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 130 | 4 | `entity_id_code_unit_count` | `u32` | little | spec | an LP-UTF16 Design entity ID begins at offset 130 from the indexed header |
+| 20 | 1 | `property_presence` | `u8` | little | spec | A constructed plane entity stores the property-block presence byte `0` or `1` at offset 20 · value `0` |
+| 21 | 4 | `plane_kind` | `u32` | little | spec | When the presence byte is `0`, the u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow it |
+| 25 | 16 | `lower_corner` | `f64[2]` | little | spec | When the presence byte is `0`, the u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow it |
+| 41 | 1 | `zero_byte` | `u8` | little | spec | When the presence byte is `0`, the u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow it · value `0` |
+| 42 | 24 | `origin` | `f64[3]` | little | spec | When the presence byte is `0`, the u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow it |
+| 66 | 24 | `u_direction` | `f64[3]` | little | spec | When the presence byte is `0`, the u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow it |
+| 90 | 24 | `v_direction` | `f64[3]` | little | spec | When the presence byte is `0`, the u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow it |
+| 114 | 16 | `upper_corner` | `f64[2]` | little | spec | When the presence byte is `0`, the u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow it |
+| 130 | 4 | `entity_id_code_unit_count` | `u32` | little | spec | and the entity ID begins at offset 130 from the indexed header |
 
 Unstated regions:
 
 - `0..11` (11 B): The indexed Design record header (indexed_design_record_header).
-- `11..130` (119 B): The specification states no field in this range.
+- `11..20` (9 B): The specification states no field in this range.
 
 ## `derived_instance_prefix`
 
@@ -14278,7 +14286,10 @@ Offsets are relative to the scope's indexed header. The paired scope record foll
 
 Spec §Records of a construction-plane item · layout: byte offsets · size: 190 B
 
-Offsets are relative to the plane entity's indexed header. The `L` code units of the entity name follow at 190, then `workplane_item_plane_tail`.
+Offsets are relative to the plane entity's indexed header, for property-block presence byte `1`. The `L` code units of the Design entity ID follow at 190, then `workplane_item_plane_tail`.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/placement_construction/work_planes.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -14291,31 +14302,31 @@ Offsets are relative to the plane entity's indexed header. The `L` code units of
 | 69 | 8 | `property_value` | `u64` | little | spec | the property count `1`, the property `EntityGenesis` of type `IntrinsicMetaTypeuint64` with u64 value `0`, the u32 plane kind `1` · value `0` |
 | 77 | 4 | `plane_kind` | `u32` | little | spec | the property count `1`, the property `EntityGenesis` of type `IntrinsicMetaTypeuint64` with u64 value `0`, the u32 plane kind `1` · value `1` |
 | 81 | 16 | `lower_corner` | `f64[2]` | little | spec | A display corner is an f64 pair of plane coordinates in centimetres |
-| 97 | 1 | `zero_byte` | `u8` | little | spec | the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and the LP-UTF16 entity name · value `0` |
-| 98 | 24 | `origin` | `f64[3]` | little | spec | the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and the LP-UTF16 entity name |
-| 122 | 24 | `u_direction` | `f64[3]` | little | spec | the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and the LP-UTF16 entity name |
-| 146 | 24 | `v_direction` | `f64[3]` | little | spec | the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and the LP-UTF16 entity name |
+| 97 | 1 | `zero_byte` | `u8` | little | spec | the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and the LP-UTF16 Design entity ID · value `0` |
+| 98 | 24 | `origin` | `f64[3]` | little | spec | the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and the LP-UTF16 Design entity ID |
+| 122 | 24 | `u_direction` | `f64[3]` | little | spec | the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and the LP-UTF16 Design entity ID |
+| 146 | 24 | `v_direction` | `f64[3]` | little | spec | the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and the LP-UTF16 Design entity ID |
 | 170 | 16 | `upper_corner` | `f64[2]` | little | spec | A display corner is an f64 pair of plane coordinates in centimetres |
-| 186 | 4 | `name_length` | `u32` | little | spec | The entity name is the digit `0`, `_`, and the decimal record index of the plane entity |
+| 186 | 4 | `entity_id_code_unit_count` | `u32` | little | spec | The Design entity ID is the digit `0`, `_`, and the decimal record index of the plane entity |
 
 ## `workplane_item_plane_tail`
 
 Spec §Records of a construction-plane item · layout: byte offsets · size: 78 B
 
-Offsets are relative to the end of the entity name, for an empty text. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
+Offsets are relative to the end of the Design entity ID, for an empty display name. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `construction_collection` | `bytes[11]` | little | spec | After the name follow the construction collection reference |
-| 11 | 4 | `family_ordinal` | `u32` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, an LP-UTF16 text, u32 `0`, a flag byte `0` or `1`, twelve zero bytes |
-| 15 | 5 | `zero_run` | `bytes[5]` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, an LP-UTF16 text, u32 `0`, a flag byte `0` or `1`, twelve zero bytes · value `[0, 0, 0, 0, 0]` |
-| 20 | 11 | `scope` | `bytes[11]` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, an LP-UTF16 text, u32 `0`, a flag byte `0` or `1`, twelve zero bytes |
-| 31 | 1 | `zero_byte` | `u8` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, an LP-UTF16 text, u32 `0`, a flag byte `0` or `1`, twelve zero bytes · value `0` |
-| 32 | 1 | `marker` | `u8` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, an LP-UTF16 text, u32 `0`, a flag byte `0` or `1`, twelve zero bytes · value `1` |
-| 33 | 4 | `text_length` | `u32` | little | spec | The layout table gives the tail for an empty text · value `0` |
-| 37 | 4 | `zero_word` | `u32` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, an LP-UTF16 text, u32 `0`, a flag byte `0` or `1`, twelve zero bytes · value `0` |
-| 41 | 1 | `flag` | `u8` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, an LP-UTF16 text, u32 `0`, a flag byte `0` or `1`, twelve zero bytes |
-| 42 | 12 | `zero_run_b` | `bytes[12]` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, an LP-UTF16 text, u32 `0`, a flag byte `0` or `1`, twelve zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 11 | 4 | `family_ordinal` | `u32` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, the LP-UTF16 display name, u32 `0`, a flag byte `0` or `1`, twelve zero bytes |
+| 15 | 5 | `zero_run` | `bytes[5]` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, the LP-UTF16 display name, u32 `0`, a flag byte `0` or `1`, twelve zero bytes · value `[0, 0, 0, 0, 0]` |
+| 20 | 11 | `scope` | `bytes[11]` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, the LP-UTF16 display name, u32 `0`, a flag byte `0` or `1`, twelve zero bytes |
+| 31 | 1 | `zero_byte` | `u8` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, the LP-UTF16 display name, u32 `0`, a flag byte `0` or `1`, twelve zero bytes · value `0` |
+| 32 | 1 | `marker` | `u8` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, the LP-UTF16 display name, u32 `0`, a flag byte `0` or `1`, twelve zero bytes · value `1` |
+| 33 | 4 | `text_length` | `u32` | little | spec | The layout table gives the tail for an empty display name · value `0` |
+| 37 | 4 | `zero_word` | `u32` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, the LP-UTF16 display name, u32 `0`, a flag byte `0` or `1`, twelve zero bytes · value `0` |
+| 41 | 1 | `flag` | `u8` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, the LP-UTF16 display name, u32 `0`, a flag byte `0` or `1`, twelve zero bytes |
+| 42 | 12 | `zero_run_b` | `bytes[12]` | little | spec | the u32 family ordinal of the `WorkPlane` item, five zero bytes, the `WorkPlane` scope reference, `u8 0`, `u8 1`, the LP-UTF16 display name, u32 `0`, a flag byte `0` or `1`, twelve zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
 | 54 | 4 | `scale_a` | `f32` | little | spec | the f32 values `1.0` and `1.0`, five zero bytes, and the construction collection reference · value `1.0` |
 | 58 | 4 | `scale_b` | `f32` | little | spec | the f32 values `1.0` and `1.0`, five zero bytes, and the construction collection reference · value `1.0` |
 | 62 | 5 | `zero_run_c` | `bytes[5]` | little | spec | the f32 values `1.0` and `1.0`, five zero bytes, and the construction collection reference · value `[0, 0, 0, 0, 0]` |
