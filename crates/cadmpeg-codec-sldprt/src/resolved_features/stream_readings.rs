@@ -7,7 +7,8 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::document::Model;
 use cadmpeg_ir::features::{
-    Feature, FeatureDefinition, FeatureId, FeatureOperation, PlanarProfileRef, ProfileRef,
+    Feature, FeatureDefinition, FeatureId, FeatureOperation, FinitePoint3, PlanarProfileRef,
+    ProfileRef,
 };
 use cadmpeg_ir::geometry::{Curve, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -51,8 +52,6 @@ pub(super) enum MarkerReading {
 /// Why a feature's marker sketch stays unbound beside its stream circle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum UnboundReason {
-    /// It holds the stream circle's loop among other loops.
-    HoldsCircle,
     /// Its normal is not parallel to the stream sketch's.
     OtherPlane,
     /// Its placement or the stream sketch's is unresolved.
@@ -65,7 +64,6 @@ pub(crate) enum UnboundReason {
 impl UnboundReason {
     fn text(self) -> &'static str {
         match self {
-            Self::HoldsCircle => "it holds that circle's loop among other loops",
             Self::OtherPlane => "its normal is not parallel to that sketch's normal",
             Self::PlacementUnresolved => {
                 "its placement or that sketch's is unresolved, so their planes cannot be compared"
@@ -94,11 +92,11 @@ const PARALLEL_SINE: f64 = 1.0e-6;
 /// beside `stream`, the profile-stream sketch bound to the feature. Only a
 /// stream sketch of one circle gives way, and only to a marker sketch whose
 /// every entity is `planar` and that does not repeat the circle's loop. A
-/// marker sketch that a revolve takes as its profile binds whatever its
-/// plane. Any other binds only when its normal is parallel to the stream
-/// sketch's, and then takes the stream sketch's plane, unless the `solid`
-/// carries the stream circle on its edges and not the marker sketch's loops
-/// on that plane.
+/// marker sketch that a revolve takes as its profile binds on its own
+/// placement. Any other binds only when its normal is parallel to the
+/// stream sketch's, and then on the stream sketch's plane, unless the
+/// `solid` carries the stream circle on its edges and misses the marker
+/// sketch's loops on that plane.
 pub(super) fn marker_reading(
     marker: &Sketch,
     stream: &Sketch,
@@ -110,24 +108,22 @@ pub(super) fn marker_reading(
     if !planar || !is_one_circle(stream, entities) || same_loops(marker, stream, entities) {
         return MarkerReading::Stays;
     }
-    if holds_loop_of(marker, stream, entities) {
-        return MarkerReading::Unbound(UnboundReason::HoldsCircle);
+    if revolve_profile {
+        return MarkerReading::Binds(marker.placement);
     }
     match stream_plane_placement(marker, stream) {
-        Ok(placement)
-            if !revolve_profile && solid.prefers_stream(marker, &placement, stream, entities) =>
-        {
+        Ok(placement) if solid.prefers_stream(marker, &placement, stream, entities) => {
             MarkerReading::Unbound(UnboundReason::OffSolid)
         }
         Ok(placement) => MarkerReading::Binds(placement),
-        Err(_) if revolve_profile => MarkerReading::Binds(marker.placement),
         Err(reason) => MarkerReading::Unbound(reason),
     }
 }
 
-/// The placement of `marker` moved onto the plane of `stream`: the stream
-/// sketch's normal and u axis, through the marker sketch's origin projected
-/// onto that plane, so the marker sketch keeps its in-plane coordinates.
+/// The placement of `marker` moved along the normal onto the plane of
+/// `stream`, through the marker sketch's origin projected onto that plane.
+/// Where the normals have the same sense it keeps its own normal and u axis;
+/// where they are opposed it takes the stream sketch's.
 fn stream_plane_placement(
     marker: &Sketch,
     stream: &Sketch,
@@ -147,12 +143,14 @@ fn stream_plane_placement(
         return Err(UnboundReason::OtherPlane);
     }
     let offset = stream_origin.vector_from(marker_origin).dot(stream_normal);
-    SketchPlacement::try_resolved(
-        marker_origin.translated(stream_normal, offset),
-        stream_normal,
-        u_axis.get(),
-    )
-    .map_err(|_| UnboundReason::PlacementUnresolved)
+    let origin = marker_origin.translated(stream_normal, offset);
+    if marker_normal.dot(stream_normal) > 0.0 {
+        return FinitePoint3::new(origin)
+            .map(|origin| marker.placement.with_origin(origin))
+            .ok_or(UnboundReason::PlacementUnresolved);
+    }
+    SketchPlacement::try_resolved(origin, stream_normal, u_axis.get())
+        .map_err(|_| UnboundReason::PlacementUnresolved)
 }
 
 /// The work one witness decision may spend: one unit per edge a curve is
@@ -215,9 +213,9 @@ impl SolidEdges {
         solid
     }
 
-    /// Whether the solid carries `stream`'s circle on its edges and not every
-    /// loop of `marker` placed at `placement`. Without a verdict for either,
-    /// it prefers neither.
+    /// Whether the solid carries `stream`'s circle on its edges and misses
+    /// the loops of `marker` placed at `placement`. Without a verdict for
+    /// either, it prefers neither.
     fn prefers_stream(
         &self,
         marker: &Sketch,
@@ -234,10 +232,10 @@ impl SolidEdges {
     /// on an edge of the solid: a line on a line edge whose line holds both
     /// its ends and whose extent holds its midpoint, a circle or an arc on a
     /// circular edge of its centre, radius and axis, each within the linear
-    /// resolution. Any other curve lies on no edge. `false` at the first
-    /// curve on no edge; before that, `None` when the placement is
-    /// unresolved, a loop's entity is not in `entities`, or the work runs
-    /// out.
+    /// resolution. `false` when a curve lies on no edge. Otherwise `None`
+    /// when a curve has no test (a curve of another kind, or an entity not
+    /// in `entities`); also `None` when the placement is unresolved or the
+    /// work runs out.
     fn carries(
         &self,
         sketch: &Sketch,
@@ -256,29 +254,37 @@ impl SolidEdges {
         if sketch.profiles.is_empty() {
             return Some(false);
         }
+        let mut every_curve_tested = true;
         for entity_use in sketch.profiles.as_slice().iter().flatten() {
-            let entity = entities.0.get(&entity_use.entity)?;
-            let on_edge = match *entity.geometry.definition() {
-                SketchGeometryDefinition::Line { start, end } => {
+            let on_edge = match entities
+                .0
+                .get(&entity_use.entity)
+                .map(|entity| entity.geometry.definition())
+            {
+                Some(SketchGeometryDefinition::Line { start, end }) => {
                     if !work.charge_by(self.lines.len().max(1)) {
                         return None;
                     }
-                    self.holds_line(lift(start.get()), lift(end.get()))
+                    Some(self.holds_line(lift(start.get()), lift(end.get())))
                 }
-                SketchGeometryDefinition::Circle { center, radius }
-                | SketchGeometryDefinition::Arc { center, radius, .. } => {
+                Some(
+                    SketchGeometryDefinition::Circle { center, radius }
+                    | SketchGeometryDefinition::Arc { center, radius, .. },
+                ) => {
                     if !work.charge_by(self.circles.len().max(1)) {
                         return None;
                     }
-                    self.holds_circle(lift(center.get()), normal, radius.get())
+                    Some(self.holds_circle(lift(center.get()), normal, radius.get()))
                 }
-                _ => false,
+                _ => None,
             };
-            if !on_edge {
-                return Some(false);
+            match on_edge {
+                Some(false) => return Some(false),
+                Some(true) => {}
+                None => every_curve_tested = false,
             }
         }
-        Some(true)
+        every_curve_tested.then_some(true)
     }
 
     fn holds_line(&self, start: Point3, end: Point3) -> bool {
@@ -447,23 +453,6 @@ fn is_one_circle(sketch: &Sketch, entities: &EntityIndex<'_>) -> bool {
             SketchGeometryDefinition::Circle { .. }
         )
     })
-}
-
-/// Whether one loop of `marker` has the length of the one loop of `stream`
-/// within the linear resolution per curve.
-fn holds_loop_of(marker: &Sketch, stream: &Sketch, entities: &EntityIndex<'_>) -> bool {
-    let (Some(marker), Some(stream)) = (
-        loop_lengths(marker, entities),
-        loop_lengths(stream, entities),
-    ) else {
-        return false;
-    };
-    let [(circle, circle_tolerance)] = stream.as_slice() else {
-        return false;
-    };
-    marker
-        .iter()
-        .any(|(length, tolerance)| (length - circle).abs() <= tolerance + circle_tolerance)
 }
 
 /// Whether the two sketches close the same number of loops and their loops,

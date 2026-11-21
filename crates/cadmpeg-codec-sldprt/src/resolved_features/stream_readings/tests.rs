@@ -3,7 +3,7 @@
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
+    EllipseRadii, Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
     SketchGeometryDefinition, SketchId, SketchPlacement, SketchProfiles,
 };
 
@@ -72,7 +72,11 @@ fn half(id: &str, radius: f64, start: f64) -> SketchEntity {
 }
 
 fn square(id: &str, side: f64) -> [SketchEntity; 4] {
-    let corners = [[0.0, 0.0], [side, 0.0], [side, side], [0.0, side]];
+    rectangle(id, side, side)
+}
+
+fn rectangle(id: &str, width: f64, height: f64) -> [SketchEntity; 4] {
+    let corners = [[0.0, 0.0], [width, 0.0], [width, height], [0.0, height]];
     std::array::from_fn(|index| {
         let [start, end] = [corners[index], corners[(index + 1) % 4]];
         entity(
@@ -161,9 +165,9 @@ fn a_stream_reading_that_is_not_one_circle_keeps_its_binding() {
 }
 
 /// A marker reading whose normal is parallel to the stream circle's binds on
-/// the stream sketch's plane: the stream sketch's normal, u axis and offset,
-/// through its own origin projected onto that plane. Where the normals
-/// oppose, it takes the stream sketch's.
+/// the stream sketch's plane, through its own origin projected onto that
+/// plane. Where the normals have the same sense it keeps its own normal and
+/// u axis; where they oppose, it takes the stream sketch's.
 #[test]
 fn a_parallel_marker_reading_binds_on_the_stream_plane() {
     let whole = circle("whole", [0.0, 0.0], 10.0);
@@ -203,18 +207,107 @@ fn a_parallel_marker_reading_binds_on_the_stream_plane() {
             [-1.0, 0.0, 0.0]
         ))
     );
-    assert_eq!(
-        marker_reading(
-            &boxed,
-            &below,
-            &entities,
-            true,
-            true,
-            &SolidEdges::default()
-        ),
-        reading(&boxed, &below, &entities),
-        "a revolve's profile takes the stream plane too where the normals are parallel"
+}
+
+/// The frame a parallel marker reading of an asymmetric profile takes on
+/// the stream plane: with the same normal sense, its own u axis, here a
+/// quarter turn from the stream sketch's; with opposed normals, the stream
+/// sketch's normal and u axis. The solid carries the profile in that frame
+/// and in no other, so it confirms the binding.
+#[test]
+fn an_asymmetric_parallel_marker_reading_keeps_its_u_axis_only_with_the_same_normal_sense() {
+    let whole = circle("whole", [0.0, 0.0], 10.0);
+    let sides = rectangle("side", 4.0, 1.0);
+    let entities = EntityIndex::new(sides.iter().chain([&whole]));
+    let bar = sketch("bar", &[&sides.iter().collect::<Vec<_>>()]);
+    let read = |marker: &Sketch, stream: &Sketch, solid: &SolidEdges| {
+        marker_reading(marker, stream, &entities, true, false, solid)
+    };
+
+    let turned = placed(
+        bar.clone(),
+        [1.0, 2.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 1.0, 0.0],
     );
+    let above = placed(
+        sketch("above", &[&[&whole]]),
+        [30.0, -4.0, 20.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+    );
+    let own_frame = polygon_edges(&[
+        [1.0, 2.0, 20.0],
+        [1.0, 6.0, 20.0],
+        [0.0, 6.0, 20.0],
+        [0.0, 2.0, 20.0],
+    ]);
+    let rim_above = ([30.0, -4.0, 20.0], [0.0, 0.0, 1.0], 10.0);
+    assert_eq!(
+        read(&turned, &above, &solid(&own_frame, &[rim_above])),
+        MarkerReading::Binds(placement(
+            [1.0, 2.0, 20.0],
+            [0.0, 0.0, 1.0],
+            [0.0, 1.0, 0.0]
+        ))
+    );
+
+    let upward = placed(bar, [1.0, 2.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]);
+    let below = placed(
+        sketch("below", &[&[&whole]]),
+        [0.0, 0.0, -18.5],
+        [0.0, 0.0, -1.0],
+        [-1.0, 0.0, 0.0],
+    );
+    let stream_frame = polygon_edges(&[
+        [1.0, 2.0, -18.5],
+        [-3.0, 2.0, -18.5],
+        [-3.0, 3.0, -18.5],
+        [1.0, 3.0, -18.5],
+    ]);
+    let rim_below = ([0.0, 0.0, -18.5], [0.0, 0.0, 1.0], 10.0);
+    assert_eq!(
+        read(&upward, &below, &solid(&stream_frame, &[rim_below])),
+        MarkerReading::Binds(placement(
+            [1.0, 2.0, -18.5],
+            [0.0, 0.0, -1.0],
+            [-1.0, 0.0, 0.0]
+        ))
+    );
+}
+
+/// A marker reading that a revolve takes as its profile binds on its own
+/// placement also where its normal is parallel to the stream circle's, with
+/// the same sense or the opposed one, and whatever the solid carries.
+#[test]
+fn a_parallel_revolve_profile_binds_on_its_own_placement() {
+    let whole = circle("whole", [0.0, 0.0], 10.0);
+    let sides = square("side", 3.0);
+    let entities = EntityIndex::new(sides.iter().chain([&whole]));
+    let boxed = placed(
+        sketch("box", &[&sides.iter().collect::<Vec<_>>()]),
+        [1.0, 2.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+    );
+    let rim = ([0.0, 0.0, -18.5], [0.0, 0.0, 1.0], 10.0);
+    for (normal, u_axis) in [
+        ([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+        ([0.0, 0.0, -1.0], [-1.0, 0.0, 0.0]),
+    ] {
+        let stream = placed(
+            sketch("stream", &[&[&whole]]),
+            [0.0, 0.0, -18.5],
+            normal,
+            u_axis,
+        );
+        for edges in [SolidEdges::default(), solid(&[], &[rim])] {
+            assert_eq!(
+                marker_reading(&boxed, &stream, &entities, true, true, &edges),
+                MarkerReading::Binds(boxed.placement)
+            );
+        }
+    }
 }
 
 /// A marker reading whose normal is not parallel to the stream circle's, or
@@ -259,31 +352,81 @@ fn a_marker_reading_on_another_plane_leaves_the_stream_bound_unless_a_revolve_ta
     );
 }
 
-/// A marker reading that holds the stream circle's loop among other loops
-/// leaves the stream circle bound, also in the stream circle's plane and
-/// where a revolve takes it.
+/// A marker reading that holds the stream circle's loop among other loops,
+/// a plate whose hole is the stream circle once on the stream plane, is
+/// decided by the plane and the solid like any other: it binds where the
+/// solid carries every loop or where the solid gives no verdict, and leaves
+/// the stream circle bound where the solid carries the circle alone.
 #[test]
-fn a_marker_reading_that_holds_the_circle_among_other_loops_leaves_the_stream_bound() {
+fn a_marker_reading_that_holds_the_circle_among_other_loops_binds_where_the_solid_carries_it() {
     let hole = circle("hole", [8.0, 8.0], 2.0);
     let repeat = circle("repeat", [1.0, 1.0], 2.0);
     let sides = square("side", 20.0);
     let entities = EntityIndex::new(sides.iter().chain([&hole, &repeat]));
-    let stream = sketch("stream", &[&[&repeat]]);
-    let plate = sketch("plate", &[&sides.iter().collect::<Vec<_>>(), &[&hole]]);
-    assert_eq!(
-        reading(&plate, &stream, &entities),
-        MarkerReading::Unbound(UnboundReason::HoldsCircle)
+    let stream = placed(
+        sketch("stream", &[&[&repeat]]),
+        [7.0, 7.0, 5.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
     );
+    let plate = sketch("plate", &[&sides.iter().collect::<Vec<_>>(), &[&hole]]);
+    let read = |solid: &SolidEdges| marker_reading(&plate, &stream, &entities, true, false, solid);
+    let moved = MarkerReading::Binds(placement([0.0, 0.0, 5.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]));
+    let hole_edge = ([8.0, 8.0, 5.0], [0.0, 0.0, 1.0], 2.0);
+    let rim = polygon_edges(&[
+        [0.0, 0.0, 5.0],
+        [20.0, 0.0, 5.0],
+        [20.0, 20.0, 5.0],
+        [0.0, 20.0, 5.0],
+    ]);
+    assert_eq!(read(&solid(&rim, &[hole_edge])), moved);
+    assert_eq!(read(&SolidEdges::default()), moved);
     assert_eq!(
-        marker_reading(
-            &plate,
-            &stream,
-            &entities,
-            true,
-            true,
-            &SolidEdges::default()
-        ),
-        MarkerReading::Unbound(UnboundReason::HoldsCircle)
+        read(&solid(&[], &[hole_edge])),
+        MarkerReading::Unbound(UnboundReason::OffSolid)
+    );
+}
+
+/// A loop curve the solid's edges cannot test, an ellipse, gives no
+/// verdict: beside a circle on an edge, the marker reading binds as it does
+/// without a solid. A curve of another loop on no edge still decides, also
+/// where the ellipse's loop comes first.
+#[test]
+fn an_ellipse_loop_beside_a_circle_on_an_edge_gives_no_verdict() {
+    let whole = circle("whole", [0.0, 0.0], 10.0);
+    let small = circle("small", [5.0, 5.0], 1.0);
+    let oval = entity(
+        "oval",
+        SketchGeometryDefinition::Ellipse {
+            center: Point2::new(12.0, 5.0),
+            major_angle: Angle::new(0.0).unwrap(),
+            radii: EllipseRadii {
+                major_radius: Length::new(2.0).unwrap(),
+                minor_radius: Length::new(1.0).unwrap(),
+            },
+            bounds: None,
+        },
+    );
+    let entities = EntityIndex::new([&whole, &small, &oval]);
+    let marker = sketch("marker", &[&[&oval], &[&small]]);
+    let above = placed(
+        sketch("above", &[&[&whole]]),
+        [0.0, 0.0, 20.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+    );
+    let read = |solid: &SolidEdges| marker_reading(&marker, &above, &entities, true, false, solid);
+    let rim = ([0.0, 0.0, 20.0], [0.0, 0.0, 1.0], 10.0);
+    let small_edge = ([5.0, 5.0, 20.0], [0.0, 0.0, 1.0], 1.0);
+    let moved = MarkerReading::Binds(placement(
+        [0.0, 0.0, 20.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+    ));
+    assert_eq!(read(&solid(&[], &[rim, small_edge])), moved);
+    assert_eq!(
+        read(&solid(&[], &[rim])),
+        MarkerReading::Unbound(UnboundReason::OffSolid)
     );
 }
 
@@ -364,13 +507,17 @@ pub(crate) fn solid(
     SolidEdges::new(&edges, &vertices, &points, &curves)
 }
 
+/// The sides of the closed polygon through `corners`, as line edges.
+fn polygon_edges(corners: &[[f64; 3]]) -> Vec<([f64; 3], [f64; 3])> {
+    (0..corners.len())
+        .map(|index| (corners[index], corners[(index + 1) % corners.len()]))
+        .collect()
+}
+
 /// The four sides of the 3-unit square at `[1, 2]` on the plane `z`, as
 /// line edges.
 fn square_edges(z: f64) -> Vec<([f64; 3], [f64; 3])> {
-    let corners = [[1.0, 2.0, z], [4.0, 2.0, z], [4.0, 5.0, z], [1.0, 5.0, z]];
-    (0..4)
-        .map(|index| (corners[index], corners[(index + 1) % 4]))
-        .collect()
+    polygon_edges(&[[1.0, 2.0, z], [4.0, 2.0, z], [4.0, 5.0, z], [1.0, 5.0, z]])
 }
 
 /// Where the solid carries the stream circle on its edges and not the
@@ -378,7 +525,7 @@ fn square_edges(z: f64) -> Vec<([f64; 3], [f64; 3])> {
 /// leaves the stream circle bound and joins the model unbound. Where the
 /// solid carries the marker loops there, or does not carry the stream
 /// circle, it binds on the stream plane as before; a revolve's profile binds
-/// whatever the solid carries.
+/// on its own placement whatever the solid carries.
 #[test]
 fn a_parallel_marker_reading_off_the_solid_leaves_a_stream_circle_on_it_bound() {
     let whole = circle("whole", [0.0, 0.0], 10.0);
@@ -422,7 +569,10 @@ fn a_parallel_marker_reading_off_the_solid_leaves_a_stream_circle_on_it_bound() 
     assert_eq!(read(&solid(&square_edges(20.0), &[rim]), false), moved);
     assert_eq!(read(&solid(&square_edges(20.0), &[]), false), moved);
     assert_eq!(read(&SolidEdges::default(), false), moved);
-    assert_eq!(read(&solid(&[], &[rim]), true), moved);
+    assert_eq!(
+        read(&solid(&[], &[rim]), true),
+        MarkerReading::Binds(boxed.placement)
+    );
     let wider = ([0.0, 0.0, 20.0], [0.0, 0.0, 1.0], 10.5);
     assert_eq!(
         read(&solid(&[], &[wider]), false),
