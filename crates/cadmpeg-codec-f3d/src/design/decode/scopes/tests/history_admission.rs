@@ -169,6 +169,53 @@ fn refuses_duplicate_scope_envelopes_without_one_history_binding() {
     .is_err());
 }
 
+/// Where several envelopes of a record are history-bound, the primary-indexed
+/// envelope is kept and the loss counts the envelopes that differ from it in
+/// payload or in their current or effective preceding history state.
+#[test]
+fn several_history_bound_envelopes_count_only_those_that_differ_from_the_primary() {
+    let histories = [history(vec![
+        history_state(9, Some(8)),
+        history_state(8, Some(7)),
+        history_state(7, Some(6)),
+        history_state(6, None),
+    ])];
+    let mut renumbered = scope(43, 400, 7, 6);
+    renumbered.feature_ordinal = std::num::NonZeroU32::new(2).expect("nonzero ordinal");
+    let mut scopes = vec![
+        scope(42, 100, 7, 6),
+        scope(42, 200, 7, 6),
+        scope(43, 300, 7, 6),
+        renumbered,
+        scope(43, 500, 7, 6),
+        scope(44, 600, 9, 8),
+        scope(44, 700, 7, 6),
+    ];
+    let primary = std::collections::HashSet::from(
+        [100, 300, 600].map(|byte_offset| ("f3d:stream".to_owned(), byte_offset)),
+    );
+
+    let superseded = with_test_ctx(|ctx| {
+        admit_history_bound_scope_variants(ctx, &mut scopes, &histories, &primary)
+    })
+    .expect("primary-indexed envelopes");
+
+    assert_eq!(
+        superseded,
+        SupersededScopeEnvelopes {
+            primary_indexed: 2,
+            tail_flags: 0,
+        }
+    );
+    assert_eq!(
+        scopes
+            .iter()
+            .map(DesignParameterScope::byte_offset)
+            .collect::<Vec<_>>(),
+        [100, 300, 600]
+    );
+}
+
 #[test]
 fn retains_later_equivalent_scope_envelope_without_history_binding() {
     let mut older = scope(42, 100, 7, 6);
@@ -708,6 +755,15 @@ fn primary_indexed_scope_variant_is_admitted_without_a_history_binding() {
     assert_eq!(superseded.primary_indexed, 1);
     assert_eq!(different.len(), 1);
     assert_eq!(different[0].byte_offset(), 100);
+
+    let mut first_of_three = thicken_variants(&[-1.0, -1.0, -2.0]);
+    let superseded = with_test_ctx(|ctx| {
+        admit_history_bound_scope_variants(ctx, &mut first_of_three, &[], &primary)
+    })
+    .expect("primary-indexed envelope");
+    assert_eq!(superseded.primary_indexed, 1);
+    assert_eq!(first_of_three.len(), 1);
+    assert_eq!(first_of_three[0].byte_offset(), 100);
 
     let mut both = thicken_variants(&[-1.0, -2.0]);
     let primary = std::collections::HashSet::from([(stream.clone(), 100), (stream, 200)]);

@@ -62,6 +62,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** A suppressed final item establishes its own execution state. Its authored position and the terminal ASM state identities remain distinct from the saved rollback position. Joint activation remains under DR-249.
 
+### DR-1005. Live flags of duplicate scope envelopes
+
+**Question.** Same-index scope envelopes can differ only in their suppressed and rolled-back flags, with no envelope bound to an ASM transition and no single envelope at a primary record frame. Which envelope's flags are live?
+
+**Known.** `f3d.md` §3.1 "Same-index scope envelopes with the same logical payload" selects the authoritative envelope by a unique ASM transition, by equivalence of all logical payloads, or by a unique primary record frame. The decoder keeps the later envelope in stream order with its flags. It charges `feature.scope-envelope-superseded` for each other envelope whose flags differ from it, and the loss note names the suppressed and rolled-back flags.
+
+**Need.** A field or an order rule that selects the live envelope. The two flags decide whether the feature builds and where the timeline marker stands, so the selection changes the evaluated design.
+
 ### DR-520. Version-four operation-table pose selection
 
 **Question.** How does a version-four operation table select an occurrence, its final pose, and the saved operation state?

@@ -1082,10 +1082,11 @@ pub(crate) fn design_primary_frame_offsets(
 /// index. An envelope is history-bound when it resolves to one ASM state pair
 /// through the history header links. Binding output is not read, so selection
 /// does not depend on whether history binding ran. Exactly one history-bound
-/// envelope is authoritative. Without one, the primary-indexed envelope is
-/// authoritative; without that, the later envelope is authoritative when the
-/// envelopes are equivalent or differ only in their tail flags. An unresolved
-/// group remains an error.
+/// envelope is authoritative. Otherwise, the later envelope is authoritative
+/// when the envelopes are equivalent and none is history-bound; else the
+/// primary-indexed envelope; else, with none history-bound, the later envelope
+/// when the envelopes differ only in their tail flags. An unresolved group
+/// remains an error.
 pub(crate) fn admit_history_bound_scope_variants(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scopes: &mut Vec<DesignParameterScope>,
@@ -1175,28 +1176,32 @@ pub(crate) fn admit_history_bound_scope_variants(
         ) {
             (Some(keep), false, _, _) => keep,
             (None, false, _, EnvelopeComparison::Equivalent) => later,
-            // Several envelopes resolve to ASM transitions: the one the primary
-            // record index names is live; the others are retained revisions,
-            // and the comparison, which ignores history states, cannot tell
-            // them apart.
+            // Several envelopes resolve to ASM transitions, so two copies of
+            // one payload can be bound to different transitions.
             (Some(_), true, Some(keep), _) => {
                 superseded.primary_indexed = superseded
                     .primary_indexed
-                    .checked_add(following.len())
+                    .checked_add(envelopes_differing_from(
+                        ctx,
+                        scopes,
+                        indices,
+                        keep,
+                        Some(histories),
+                    )?)
                     .ok_or_else(count_overflow)?;
                 keep
             }
             (None, false, Some(keep), _) => {
                 superseded.primary_indexed = superseded
                     .primary_indexed
-                    .checked_add(envelopes_differing_from(ctx, scopes, indices, keep)?)
+                    .checked_add(envelopes_differing_from(ctx, scopes, indices, keep, None)?)
                     .ok_or_else(count_overflow)?;
                 keep
             }
             (None, false, None, EnvelopeComparison::TailFlags) => {
                 superseded.tail_flags = superseded
                     .tail_flags
-                    .checked_add(envelopes_differing_from(ctx, scopes, indices, later)?)
+                    .checked_add(envelopes_differing_from(ctx, scopes, indices, later, None)?)
                     .ok_or_else(count_overflow)?;
                 later
             }
@@ -1227,8 +1232,8 @@ pub(crate) fn admit_history_bound_scope_variants(
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SupersededScopeEnvelopes {
     /// Envelopes not decoded because the primary-indexed envelope of their
-    /// record was: every other envelope where several are history-bound,
-    /// else those that differ from it.
+    /// record was, and that differ from it in payload or, where several are
+    /// history-bound, in their current or effective preceding history state.
     pub(crate) primary_indexed: usize,
     /// Earlier envelopes that differ from the later envelope of their record
     /// only in their suppressed or rolled-back flags.
@@ -1260,18 +1265,31 @@ enum EnvelopeComparison {
     Different,
 }
 
-/// The envelopes of `indices`, other than `keep`, that differ from `keep`.
+/// The envelopes of `indices`, other than `keep`, that differ from `keep` in
+/// payload or, with `histories`, in their current or effective preceding
+/// history state.
 fn envelopes_differing_from(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scopes: &[DesignParameterScope],
     indices: &[usize],
     keep: usize,
+    histories: Option<&[crate::history_records::AsmHistory]>,
 ) -> Result<usize, CodecError> {
+    let states = |index: usize| {
+        let scope = &scopes[index];
+        histories.map(|histories| {
+            (
+                scope.history_state_id(),
+                crate::history::header_scope_previous_history_state_id(scope, histories),
+            )
+        })
+    };
     let mut differing = 0;
     for &index in indices {
         if index != keep
-            && compare_scope_variant_payloads(ctx, &scopes[keep], &scopes[index])?
-                != EnvelopeComparison::Equivalent
+            && (states(index) != states(keep)
+                || compare_scope_variant_payloads(ctx, &scopes[keep], &scopes[index])?
+                    != EnvelopeComparison::Equivalent)
         {
             differing += 1;
         }
