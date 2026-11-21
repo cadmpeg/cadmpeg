@@ -456,7 +456,7 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
     cohorts[0]["second_reference"] = serde_json::json!(6);
     namespace
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "reference_signature_cohorts",
             &cohorts,
         )

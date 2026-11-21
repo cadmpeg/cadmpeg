@@ -1859,3 +1859,17 @@ fn spline_parameters_read_the_banded_positive_dict_heads() {
         assert_eq!(slots, [(Some(value), body)]);
     }
 }
+
+#[test]
+fn forward_find_answers_each_query_as_find_from_does() {
+    let haystack = b"..crv_array\0..crv_array\0crv_array\0..";
+    let needle = b"crv_array\0";
+    let mut forward = crate::surface::ForwardFind::new(haystack, needle);
+    for from in [0, 0, 3, 2, 14, 15, 24, 25, 1, 36, 37, 100, 13] {
+        assert_eq!(
+            forward.at_or_after(from),
+            cadmpeg_core::bytes::find_from(haystack, needle, from),
+            "query at {from}"
+        );
+    }
+}

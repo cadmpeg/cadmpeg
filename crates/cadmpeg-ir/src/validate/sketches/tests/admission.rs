@@ -143,7 +143,7 @@ fn projected_sketch_copy_keeps_missing_member_semantics_and_finding_order() {
                 native_ref: None,
             });
     }
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut findings = vec![];
     super::super::check_sketches(&ctx, &ir, &mut findings).unwrap();
     assert_eq!(findings.len(), 1);

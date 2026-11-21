@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The parameter scope every feature record carries: its feature kind, its payload, and the frames and bindings the payload states.
 
-use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::decode::{index_from_u32, u64_from_index};
 
 use super::align::DesignAlignEnvelope;
 use super::assembly::DesignAssemblyAlignment;
@@ -26,7 +26,9 @@ use super::direct_face::{
     DesignOffsetFacesOperation, DesignShellOperation, DesignThickenOperation,
 };
 use super::emboss::DesignEmbossConstruction;
-use super::extrude::{DesignExtrudeOperation, DesignExtrudePrologue};
+use super::extrude::{
+    DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart,
+};
 use super::fixed_parameters::{
     DesignFixedChamferParameters, DesignFixedExtrudeParameters, DesignFixedFilletParameters,
 };
@@ -583,7 +585,8 @@ impl DesignNamedScopeReferences {
                 (
                     &self.middle,
                     u64_from_index(
-                        named_scope_tail::CLOSING_REFERENCE - named_scope_tail::OPAQUE_WORD,
+                        named_scope_tail::CLOSING_REFERENCE
+                            - named_scope_tail::PREVIOUS_HISTORY_STATE_ID,
                     ),
                 ),
                 (&self.closing, 1),
@@ -3975,6 +3978,42 @@ impl DesignParameterScope {
 
     pub(crate) fn extrude_prologue(&self) -> Option<DesignExtrudePrologue> {
         self.extrude().and_then(|extrude| extrude.extrude_prologue)
+    }
+
+    pub(crate) fn is_legacy_class_330_symmetric_distance(&self) -> bool {
+        use crate::layout::legacy_class_330_symmetric_extrude_frame as layout;
+
+        let Some(DesignExtrudePrologue::LegacyShifted {
+            operation_prefix_marker_offset: None,
+            operation: DesignExtrudeOperation::NewBody,
+            direction_face_extend_values: [3, 2],
+            side_extent_discriminators: [1, 0],
+            side_extent_discriminator_offsets,
+            extent: Some(DesignExtrudeExtent::SymmetricDistance),
+            direction_reversed: false,
+            solid_operation: true,
+            start: DesignExtrudeStart::ProfilePlane,
+            ..
+        }) = self.extrude_prologue()
+        else {
+            return false;
+        };
+        self.class_tag.as_str() == "330"
+            && self.paired_class_tag.as_str() == "262"
+            && self.frame_length == u64_from_index(layout::LEN)
+            && self.reference_count_offset.checked_sub(self.byte_offset)
+                == Some(u64_from_index(layout::REFERENCE_COUNT))
+            && self.reference_members.len() == index_from_u32(layout::REFERENCE_COUNT_VALUE)
+            && side_extent_discriminator_offsets.map(|offset| offset.checked_sub(self.byte_offset))
+                == [layout::FIRST_SIDE_EXTENT, layout::SECOND_SIDE_EXTENT]
+                    .map(|offset| Some(u64_from_index(offset)))
+    }
+
+    pub(crate) fn assumes_symmetric_distance_each_side(&self, indexed_along: bool) -> bool {
+        !indexed_along
+            && self
+                .fixed_extrude_parameters()
+                .is_some_and(|fixed| fixed.along_distance.is_some())
     }
 
     #[cfg(test)]

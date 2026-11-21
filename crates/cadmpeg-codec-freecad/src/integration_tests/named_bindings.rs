@@ -513,7 +513,7 @@ fn named_constraint_recipe_profiles_constraints_and_body_measures() {
                 direction,
                 start,
                 extent: ExtrudeExtent::OneSided { side },
-                op: BooleanOp::Join,
+                op: BooleanOp::NewBody,
                 solid,
                 length_along_profile_normal,
                 allow_multi_profile_faces,

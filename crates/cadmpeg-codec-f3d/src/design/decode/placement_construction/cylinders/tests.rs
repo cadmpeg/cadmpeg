@@ -282,3 +282,56 @@ fn extended_cylinder_composes_the_explicit_same_stream_support_on_the_left() {
         serde_json::from_value(serde_json::to_value(&scope).unwrap()).unwrap();
     assert_eq!(restored, scope);
 }
+
+#[test]
+fn named_cylinder_binds_version_sixteen_frames() {
+    let placements = crate::test_support::placement_construction::modern_placements();
+    for mut placement in placements
+        .into_iter()
+        .filter(|placement| placement.type_version == 16)
+    {
+        placement.record_index = 255;
+        let expected = super::super::checked_solved_frame(&placement).unwrap();
+        let mut scope = scope();
+        assert!(super::bind(std::slice::from_mut(&mut scope), &[placement]).is_empty());
+        let crate::records::feature::scope::DesignScopePayload::CylinderPrimitive(Some(cylinder)) =
+            scope.payload()
+        else {
+            panic!("expected cylinder");
+        };
+        assert_eq!(cylinder.transform, Some(expected));
+    }
+}
+
+#[test]
+fn named_cylinder_binds_version_sixteen_identity_marker() {
+    let mut placement = crate::test_support::placement_construction::modern_placements()
+        .into_iter()
+        .find(|placement| {
+            placement.type_version == 16
+                && placement.fields.matrix.is_none()
+                && placement
+                    .fields
+                    .identity
+                    .as_ref()
+                    .is_some_and(|identity| identity.value)
+        })
+        .unwrap();
+    placement.record_index = 255;
+    let mut scope = scope();
+    assert!(super::bind(std::slice::from_mut(&mut scope), &[placement]).is_empty());
+    let crate::records::feature::scope::DesignScopePayload::CylinderPrimitive(Some(cylinder)) =
+        scope.payload()
+    else {
+        panic!("expected cylinder");
+    };
+    assert_eq!(
+        cylinder.transform.unwrap().value.rows(),
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
+    );
+}

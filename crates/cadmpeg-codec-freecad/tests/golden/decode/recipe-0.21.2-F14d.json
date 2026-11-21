@@ -2247,7 +2247,7 @@
               "operation": {
                 "kind": "primitive",
                 "value": {
-                  "op": "join",
+                  "op": "new_body",
                   "placement": [
                     [
                       1.0,
@@ -2621,7 +2621,27 @@
       "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "bodies": [
+            "fcstd:model:body#Body:Shape:PartShape.brp:13%40location1",
+            "fcstd:model:body#DatumPlane:Shape:PartShape1.brp:1%40location1",
+            "fcstd:model:body#AdditiveCylinder:Shape:PartShape4.brp:9%40location1",
+            "fcstd:model:body#SketchDatumPoint:Shape:PartShape5.brp:1%40location1"
+          ],
+          "bom_properties": {},
+          "id": "fcstd:model:product_definition#document:root",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
       "rigid_bodies": [],
       "semantic_annotations": [],
       "sketch_constraints": [

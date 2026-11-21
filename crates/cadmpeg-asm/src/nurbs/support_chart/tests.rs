@@ -57,7 +57,7 @@ fn assert_endpoints_hit_vertices(surface: &Record, ends: [Point2; 2], vertices: 
         .expect("analytic chart fields parse")
         .normalize(&mut pcurve)
         .expect("finite converted poles");
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for (uv, vertex) in pcurve.control_points().into_iter().zip(vertices) {
         let uv = uv.get();
         let point = cadmpeg_ir::eval::decode::surface_point_solved(&ctx, &geometry, uv.u, uv.v)

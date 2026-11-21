@@ -14,7 +14,7 @@ use cadmpeg_core::convert::{f64_from_i64, truncate_f64_to_i32};
 use crate::design::dimension::ParameterRef;
 use crate::design::expr::{BendVariable, BinaryOp, Constant, Function, MeasureKind, Node, UnaryOp};
 use crate::design::parameter::ParameterValue;
-use crate::design::units::{Quantity, Unit, UnitSymbol, ValueKind};
+use crate::design::units::{Quantity, Unit, ValueKind};
 use crate::math::portable::Portable;
 use crate::scalar::FiniteReal;
 
@@ -58,48 +58,12 @@ const MASS: Quantity = Quantity {
     angle: 0,
     time: 0,
 };
-const TIME: Quantity = Quantity {
-    length: 0,
-    mass: 0,
-    angle: 0,
-    time: 1,
-};
 const VOLUME: Quantity = Quantity {
     length: 3,
     mass: 0,
     angle: 0,
     time: 0,
 };
-
-/// The factor from a symbol to the canonical unit of its quantity, and that
-/// quantity.
-fn symbol(symbol: UnitSymbol) -> (f64, Quantity) {
-    use std::f64::consts::PI;
-    match symbol {
-        UnitSymbol::Nm => (1.0 / 1_000_000.0, Quantity::LENGTH),
-        UnitSymbol::Um => (1.0 / 1_000.0, Quantity::LENGTH),
-        UnitSymbol::Mm => (1.0, Quantity::LENGTH),
-        UnitSymbol::Cm => (10.0, Quantity::LENGTH),
-        UnitSymbol::M => (1_000.0, Quantity::LENGTH),
-        UnitSymbol::Km => (1_000_000.0, Quantity::LENGTH),
-        UnitSymbol::In => (25.4, Quantity::LENGTH),
-        UnitSymbol::Ft => (304.8, Quantity::LENGTH),
-        UnitSymbol::Yd => (914.4, Quantity::LENGTH),
-        UnitSymbol::Mi => (1_609_344.0, Quantity::LENGTH),
-        UnitSymbol::Rad => (1.0, Quantity::ANGLE),
-        UnitSymbol::Deg => (PI / 180.0, Quantity::ANGLE),
-        UnitSymbol::Grad => (PI / 200.0, Quantity::ANGLE),
-        UnitSymbol::Arcmin => (PI / 10_800.0, Quantity::ANGLE),
-        UnitSymbol::Arcsec => (PI / 648_000.0, Quantity::ANGLE),
-        UnitSymbol::Rev => (2.0 * PI, Quantity::ANGLE),
-        UnitSymbol::S => (1.0, TIME),
-        UnitSymbol::Min => (60.0, TIME),
-        UnitSymbol::H => (3_600.0, TIME),
-        UnitSymbol::G => (1.0 / 1_000.0, MASS),
-        UnitSymbol::Kg => (1.0, MASS),
-        UnitSymbol::Lb => (0.453_592_37, MASS),
-    }
-}
 
 fn scaled(quantity: Quantity, by: i8) -> Option<Quantity> {
     Some(Quantity {
@@ -134,7 +98,7 @@ pub(crate) fn unit_factor(unit: &Unit) -> Result<(f64, Quantity), EvalError> {
     let mut factor = 1.0;
     let mut quantity = DIMENSIONLESS;
     for item in &unit.0 {
-        let (scale, of) = symbol(item.symbol);
+        let (scale, of) = item.symbol.canonical();
         let power = item.power.get();
         factor *= scale.powi(i32::from(power));
         let raised = scaled(of, power).ok_or(EvalError::Domain("a quantity exponent overflows"))?;
@@ -302,11 +266,11 @@ fn compare(op: BinaryOp, left: Value, right: Value) -> Result<Value, EvalError> 
     Ok(Value::Boolean(result))
 }
 
-fn binary(
+fn binary<R>(
     op: BinaryOp,
     left: Value,
     right: Value,
-    right_node: &Node<ParameterRef>,
+    right_node: &Node<R>,
 ) -> Result<Value, EvalError> {
     match op {
         BinaryOp::Add | BinaryOp::Subtract => {
@@ -489,12 +453,12 @@ fn call(function: Function, args: Vec<Value>) -> Result<Value, EvalError> {
     }
 }
 
-enum Task<'a> {
-    Visit(&'a Node<ParameterRef>),
+enum Task<'a, R = ParameterRef> {
+    Visit(&'a Node<R>),
     Unary(UnaryOp),
-    Binary(BinaryOp, &'a Node<ParameterRef>),
+    Binary(BinaryOp, &'a Node<R>),
     Call(Function, usize),
-    Branch(&'a Node<ParameterRef>, &'a Node<ParameterRef>),
+    Branch(&'a Node<R>, &'a Node<R>),
 }
 
 /// Evaluates a neutral design expression tree on canonical values.
@@ -509,6 +473,15 @@ enum Task<'a> {
 pub fn evaluate(
     root: &Node<ParameterRef>,
     reference: &mut dyn FnMut(&ParameterRef) -> Option<Value>,
+) -> Result<Value, EvalError> {
+    evaluate_tree(root, reference)
+}
+
+/// [`evaluate`] over a tree of any reference type: a design expression, or
+/// a process expression whose references are `ParamRef`s.
+pub(super) fn evaluate_tree<R>(
+    root: &Node<R>,
+    reference: &mut dyn FnMut(&R) -> Option<Value>,
 ) -> Result<Value, EvalError> {
     let mut tasks = vec![Task::Visit(root)];
     let mut values: Vec<Value> = Vec::new();

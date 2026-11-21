@@ -781,7 +781,7 @@ fn scope_class_type_selects_hole_and_preserves_the_display_name() {
     with_scan(&archive, |scan| {
         for type_rows in [&types[..], &[][..]] {
             let scopes = super::decode_parameter_scopes(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 scan,
                 &super::ParameterScopeSources {
                     types: type_rows,
@@ -808,7 +808,7 @@ fn scope_class_type_selects_hole_and_preserves_the_display_name() {
                     .map(|offset| offset - 6);
                 let english = DesignParameterScope::try_new(english).unwrap();
                 assert!(super::equivalent_scope_variant_payload(
-                    &cadmpeg_test_support::service_decode_context(),
+                    &cadmpeg_core::decode::test_support::service_decode_context(),
                     scope,
                     &english,
                 )

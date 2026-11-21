@@ -1039,6 +1039,14 @@ nearby schema markers and reject a class field borrowed from another row.
 **Conflict.** Joining a nearby schema-object record through its numeric key can
 conflict with an independently established model-feature definition.
 
+### SP-47. Datum, hole-placement, and revolve-axis construction constraints
+
+**Question.** Which Creo feature-input records carry the defining constraints and references of a datum plane, datum coordinate system, placed hole position, and revolve axis?
+
+**Known.** The decoder reads the resolved frame of a datum plane or coordinate system, the resolved point of a directed hole placement, and the resolved axis of a revolve. In v11 design projection, each construction carries one unread input (`Picks::Unread`) beside its resolved value so the element is never stated as a fixed element without constraints.
+
+**Need.** Feature records whose datum constraints, hole-placement dimensions, and revolve-axis references resolve to prior entities, so the v11 constructions state their real inputs in place of the unread input.
+
 ## 4. Topology and appearance
 
 ### TP-01. Current feature-to-body binding

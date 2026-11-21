@@ -398,6 +398,9 @@ pub(crate) struct Builder<'a> {
     body_step_refs: HashMap<String, Ref>,
     default_product_definition_shape: Option<Ref>,
     body_shape_refs: HashMap<String, Ref>,
+    /// Bodies of definitions that only split instances placed and that no
+    /// written definition shows: charged once, and written nowhere.
+    omitted_prototype_bodies: HashSet<cadmpeg_ir::ids::BodyId>,
     pub(crate) body_item_refs: HashMap<String, Vec<Ref>>,
     advanced_brep_items: std::collections::HashSet<Ref>,
     /// Geometric sets of bounded surfaces that stand for sheet bodies.
@@ -642,6 +645,7 @@ impl<'a> Builder<'a> {
             body_step_refs: HashMap::new(),
             default_product_definition_shape: None,
             body_shape_refs: HashMap::new(),
+            omitted_prototype_bodies: HashSet::new(),
             body_item_refs: HashMap::new(),
             advanced_brep_items: std::collections::HashSet::new(),
             surface_set_items: std::collections::HashSet::new(),
@@ -716,11 +720,19 @@ impl<'a> Builder<'a> {
         }
         let context = self.emit_context();
 
+        self.omitted_prototype_bodies = instances::lower(self.ir)
+            .omitted
+            .into_iter()
+            .flat_map(|(_, bodies)| bodies)
+            .collect();
         let mut emitted_items = self.emit_shape_items(context);
         let standalone_items = self.emit_standalone_geometry();
         emitted_items.extend(standalone_items.iter().copied());
         let has_model_items = !emitted_items.is_empty();
-        if self.ir.model.product_definitions.is_empty() {
+        if cadmpeg_ir::products::stated_definitions(&self.ir.model.product_definitions)
+            .next()
+            .is_none()
+        {
             let origin = geometry::placement(
                 &mut self.emitter,
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
@@ -832,6 +844,8 @@ impl<'a> Builder<'a> {
                 | AppearanceTarget::Vertex(_)
                 | AppearanceTarget::Tessellation(_)
                 | AppearanceTarget::TriangleGroup { .. }
+                | AppearanceTarget::Occurrence(_)
+                | AppearanceTarget::Record { .. }
                 | AppearanceTarget::Source { .. } => {}
             }
         }
@@ -1019,6 +1033,8 @@ impl<'a> Builder<'a> {
                 ),
                 AppearanceTarget::Body(_)
                 | AppearanceTarget::TriangleGroup { .. }
+                | AppearanceTarget::Occurrence(_)
+                | AppearanceTarget::Record { .. }
                 | AppearanceTarget::Source { .. } => continue,
             };
             let Some(target) = target else {
@@ -1032,6 +1048,8 @@ impl<'a> Builder<'a> {
                     AppearanceTarget::Tessellation(id) => id.clone(),
                     AppearanceTarget::Body(_)
                     | AppearanceTarget::TriangleGroup { .. }
+                    | AppearanceTarget::Occurrence(_)
+                    | AppearanceTarget::Record { .. }
                     | AppearanceTarget::Source { .. } => continue,
                 };
                 direct_unstyled.insert(target_id);
@@ -1884,6 +1902,9 @@ impl<'a> Builder<'a> {
         let mut items = Vec::new();
         let ir = self.ir;
         for region in &ir.geometry.regions {
+            if self.omitted_prototype_bodies.contains(&region.body) {
+                continue;
+            }
             let body_kind = self
                 .bodies
                 .get(region.body.as_str())
@@ -4447,6 +4468,13 @@ impl<'a> Builder<'a> {
                     geometry::curve(&mut self.emitter, &SolvedCurveGeometry::Nurbs(fitted))?;
                 self.fitted_helix_curves.insert(id.to_owned());
                 reference
+            } else if let Some(exact) = self.approximations.exact_intersection(curve_id) {
+                let procedural = self.procedural_curves.get(curve_id)?.id.to_string();
+                let reference = geometry::curve(&mut self.emitter, &exact)?;
+                self.sampled_curves.insert(procedural);
+                reference
+            } else if let Some(chart) = self.approximations.chart_on_edge_vertices(curve_id) {
+                geometry::curve(&mut self.emitter, &chart)?
             } else if geometry::curve_is_supported(&geometry) {
                 geometry::curve(&mut self.emitter, geometry.solved()?)?
             } else {
@@ -5726,7 +5754,10 @@ impl<'a> Builder<'a> {
             .geometry
             .bodies
             .iter()
-            .filter(|body| !self.body_shape_refs.contains_key(body.id.as_str()))
+            .filter(|body| {
+                !self.body_shape_refs.contains_key(body.id.as_str())
+                    && !self.omitted_prototype_bodies.contains(&body.id)
+            })
             .count();
         let omitted_shells = self
             .ir
@@ -6673,6 +6704,34 @@ impl<'a> Builder<'a> {
                     self.sampled_curves.len(),
                     self.sampled_surfaces.len(),
                     self.approximations.residual_limit()
+                ),
+            );
+        }
+        let (free_form_blends, free_form_residual) = self.approximations.free_form_blend_fits();
+        if free_form_blends > 0 {
+            self.loss(
+                StepLossCode::ProceduralSampledToBspline,
+                format!(
+                    "{free_form_blends} of those procedural surfaces are blends on free-form supports, sampled within {free_form_residual} instead"
+                ),
+            );
+        }
+        let (analytic_blends, analytic_residual) = self.approximations.analytic_blend_fits();
+        if analytic_blends > 0 {
+            self.loss(
+                StepLossCode::ProceduralSampledToBspline,
+                format!(
+                    "{analytic_blends} of those procedural surfaces are blends on analytic supports, sampled within {analytic_residual} instead"
+                ),
+            );
+        }
+        let (free_form_curves, free_form_curve_residual) =
+            self.approximations.free_form_curve_fits();
+        if free_form_curves > 0 {
+            self.loss(
+                StepLossCode::ProceduralSampledToBspline,
+                format!(
+                    "{free_form_curves} of those procedural curves lie on free-form surfaces, sampled within {free_form_curve_residual} instead"
                 ),
             );
         }

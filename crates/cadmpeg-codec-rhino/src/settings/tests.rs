@@ -79,7 +79,7 @@ fn decodes_bounded_utf8_and_utf16_strings() {
         BoundedReader::new(&utf16_bytes, 0, utf16_bytes.len()).expect("bounded UTF-16 reader");
     assert_eq!(
         settings::utf16_retained(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut utf16_reader,
             "Rhino test UTF-16 text"
         )
@@ -98,7 +98,7 @@ fn decodes_bounded_utf8_and_utf16_strings() {
 #[test]
 fn retained_utf16_preserves_surrogates() {
     let bytes = utf16_bytes("é😀");
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded UTF-16 reader");
     assert_eq!(
         settings::utf16_retained(&ctx, &mut reader, "Rhino test UTF-16 text")
@@ -196,7 +196,7 @@ pub(crate) fn parses_units_with_single_scale_transfer_and_legacy_order() {
     body.extend(0.001_f64.to_le_bytes());
     let (data, record) = metadata_record(0x2000_8031, body);
     let units = settings::parse_units(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &data,
         &record,
     )
@@ -226,7 +226,7 @@ pub(crate) fn parses_units_with_single_scale_transfer_and_legacy_order() {
     legacy.extend(0.01_f64.to_le_bytes());
     let (data, record) = metadata_record(0x2000_8031, legacy);
     let units = settings::parse_units(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &data,
         &record,
     )
@@ -256,7 +256,7 @@ fn accepts_future_units_version_with_source_prefix_and_bounded_suffix() {
     body.extend([0xde, 0xad]);
     let (data, record) = metadata_record(0x2000_8031, body);
     let units = settings::parse_units(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &data,
         &record,
     )
@@ -283,7 +283,7 @@ fn property_readers_follow_source_version_gates_and_boundaries() {
     revision_body.extend([0xde, 0xad]);
     let (revision_data, revision_record) = metadata_record(0x2000_8021, revision_body);
     let revision = settings::parse_revision(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &revision_data,
         &revision_record,
     )
@@ -301,7 +301,7 @@ fn property_readers_follow_source_version_gates_and_boundaries() {
     notes_body.extend([0xbe, 0xef]);
     let (notes_data, notes_record) = metadata_record(0x2000_8022, notes_body);
     let notes = settings::parse_notes(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &notes_data,
         &notes_record,
     )
@@ -316,7 +316,7 @@ fn property_readers_follow_source_version_gates_and_boundaries() {
     application_body.extend([0xaa, 0xbb]);
     let (application_data, application_record) = metadata_record(0x2000_8024, application_body);
     let application = settings::parse_application(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &application_data,
         &application_record,
     )
@@ -342,7 +342,7 @@ fn custom_units_body() -> Vec<u8> {
 #[test]
 fn discarded_page_units_keep_the_standard_scale() {
     let data = custom_units_body();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut reader = BoundedReader::new(&data, 0, data.len()).expect("unit bounds");
     let units =
         settings::parse_units_reader(&ctx, &mut reader, false).expect("discarded custom name");
@@ -469,7 +469,7 @@ fn parses_settings_attributes_prefix_nested_records_and_future_minor_suffix() {
 
     let (data, record) = metadata_record(0x2000_8134, body);
     settings::parse_settings_attributes(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &data,
         &record,
         archive,
@@ -507,7 +507,7 @@ fn top_level_mesh_settings_use_outer_boundary_for_future_minor_suffix() {
     let (analysis_data, analysis_record) = metadata_record(0x2000_8033, body);
     let mut settings_value = settings::DocumentSettings::default();
     settings::parse_setting(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &data,
         &render_record,
         &mut settings_value,
@@ -515,7 +515,7 @@ fn top_level_mesh_settings_use_outer_boundary_for_future_minor_suffix() {
     )
     .expect("render mesh settings");
     settings::parse_setting(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &analysis_data,
         &analysis_record,
         &mut settings_value,
@@ -543,7 +543,7 @@ fn nonfinite_unit_tolerances_are_refused_at_the_value_first_byte() {
         }
         let (data, record) = metadata_record(0x2000_8031, body);
         let error = settings::parse_units(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &data,
             &record,
         )
@@ -673,7 +673,7 @@ fn nonfinite_mesh_tolerance_is_refused_at_the_value_first_byte() {
     let (data, record) = metadata_record(0x2000_8032, body);
     let mut settings_value = settings::DocumentSettings::default();
     let error = settings::parse_setting(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &data,
         &record,
         &mut settings_value,
@@ -702,7 +702,7 @@ fn rejects_invalid_unit_tolerances_and_trailing_bytes() {
     body.extend(1_u8.to_le_bytes());
     let (data, record) = metadata_record(0x2000_8031, body);
     assert!(settings::parse_units(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &data,
         &record
     )
@@ -724,7 +724,7 @@ fn rejects_custom_scale_and_tolerance_products_that_overflow() {
     scale_overflow.extend([0_u8, 0]);
     let (data, record) = metadata_record(0x2000_8031, scale_overflow);
     assert!(settings::parse_units(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &data,
         &record
     )
@@ -743,7 +743,7 @@ fn rejects_custom_scale_and_tolerance_products_that_overflow() {
     tolerance_overflow.extend([0_u8, 0]);
     let (data, record) = metadata_record(0x2000_8031, tolerance_overflow);
     assert!(settings::parse_units(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &data,
         &record
     )

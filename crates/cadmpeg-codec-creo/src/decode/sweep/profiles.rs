@@ -1638,12 +1638,12 @@ struct ProfileValidationWork {
 }
 
 impl ProfileValidationWork {
-    /// The work of a set with `pieces` pieces, or `None` when its limit is
-    /// not a `usize`.
-    fn new(pieces: usize) -> Option<Self> {
+    /// The work of a set with `pieces` pieces and a limit of at least
+    /// `floor` units, or `None` when its limit is not a `usize`.
+    fn new(pieces: usize, floor: usize) -> Option<Self> {
         let limit = pieces
             .checked_mul(PROFILE_VALIDATION_WORK_PER_PIECE)?
-            .max(PROFILE_VALIDATION_WORK_FLOOR);
+            .max(floor);
         Some(Self {
             budget: cadmpeg_core::decode::WorkBudget::new(limit),
             limit,
@@ -1892,6 +1892,17 @@ pub(in super::super) fn ordered_extrusion_profiles(
     profiles: Vec<ExtrusionProfile>,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Option<Vec<ValidatedProfile>>, cadmpeg_core::CodecError> {
+    ordered_extrusion_profiles_within(ctx, profiles, PROFILE_VALIDATION_WORK_FLOOR, refusal)
+}
+
+/// [`ordered_extrusion_profiles`] with a validation work limit of at least
+/// `work_floor` units.
+fn ordered_extrusion_profiles_within(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    profiles: Vec<ExtrusionProfile>,
+    work_floor: usize,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
+) -> Result<Option<Vec<ValidatedProfile>>, cadmpeg_core::CodecError> {
     if profiles.is_empty() || profiles.iter().any(Vec::is_empty) {
         return Ok(None);
     }
@@ -1911,7 +1922,7 @@ pub(in super::super) fn ordered_extrusion_profiles(
             return Ok(None);
         }
     };
-    let Some(mut work) = ProfileValidationWork::new(pieces.len()) else {
+    let Some(mut work) = ProfileValidationWork::new(pieces.len(), work_floor) else {
         refusal.note(
             "extrusion profile set",
             &format_args!(
