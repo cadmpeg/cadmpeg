@@ -411,7 +411,7 @@ pub(super) fn added_candidate(
         return Ok(None);
     }
     let Some(ResolvedProfileSelection::Regions(regions)) =
-        super::super::trimmed_selection(&sampled, &selected)
+        super::super::trimmed_selection(&sampled, &selected, tolerance)
     else {
         return Ok(None);
     };
