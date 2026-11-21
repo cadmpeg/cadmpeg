@@ -19,8 +19,7 @@ pub(super) struct CompactReferencePlaneIndex {
     declared: Vec<(usize, u32)>,
     components: Vec<(usize, u32)>,
     component_frames: Vec<(usize, PlaneFrame)>,
-    deferred_principal_components: Vec<usize>,
-    top_components: Vec<usize>,
+    deferred_principal_components: Vec<(usize, PlaneFrame)>,
 }
 
 impl CompactReferencePlaneIndex {
@@ -30,7 +29,6 @@ impl CompactReferencePlaneIndex {
         let mut components = Vec::new();
         let mut component_frames = Vec::new();
         let mut deferred_principal_components = Vec::new();
-        let mut top_components = Vec::new();
         for (offset, byte) in payload.iter().enumerate() {
             if *byte == COMPACT_REFERENCE_PLANE_CLASS[0]
                 && payload.get(offset..offset + COMPACT_REFERENCE_PLANE_CLASS.len())
@@ -57,10 +55,8 @@ impl CompactReferencePlaneIndex {
                         payload.get(start..start + COMPACT_COMPONENT_PLANE_RECORD_LEN)
                     {
                         if let Some(plane) = compact_principal_reference_plane_record(bytes) {
-                            deferred_principal_components.push(start);
-                            if plane == cadmpeg_ir::features::PrincipalPlane::Top {
-                                top_components.push(start);
-                            }
+                            deferred_principal_components
+                                .push((start, principal_component_frame(plane)));
                         }
                         if let Some(source) = compact_component_reference_plane_record(bytes) {
                             components.push((start, source));
@@ -79,28 +75,23 @@ impl CompactReferencePlaneIndex {
             components,
             component_frames,
             deferred_principal_components,
-            top_components,
         }
     }
 
-    pub(super) fn principal_top_profile_frame(
+    /// The frame of the principal plane that every complete principal
+    /// component record in `start..end` names, where no custom component
+    /// record lies there.
+    pub(super) fn principal_component_profile_frame(
         &self,
         start: usize,
         end: usize,
     ) -> Option<PlaneFrame> {
-        let top = records_in_range(
-            &self.top_components,
-            start,
-            end,
-            COMPACT_COMPONENT_PLANE_RECORD_LEN,
-            |offset| *offset,
-        );
         let principal = records_in_range(
             &self.deferred_principal_components,
             start,
             end,
             COMPACT_COMPONENT_PLANE_RECORD_LEN,
-            |offset| *offset,
+            |(offset, _)| *offset,
         );
         let custom = records_in_range(
             &self.component_frames,
@@ -109,8 +100,10 @@ impl CompactReferencePlaneIndex {
             COMPACT_COMPONENT_PLANE_RECORD_LEN,
             |(offset, _)| *offset,
         );
-        (!top.is_empty() && top.len() == principal.len() && custom.is_empty())
-            .then(principal_top_component_frame)
+        if !custom.is_empty() {
+            return None;
+        }
+        unique_indexed_value(principal)
     }
 
     pub(super) fn has_component_frame(&self, start: usize, end: usize) -> bool {
@@ -134,7 +127,7 @@ impl CompactReferencePlaneIndex {
             start,
             end,
             COMPACT_COMPONENT_PLANE_RECORD_LEN,
-            |offset| *offset,
+            |(offset, _)| *offset,
         );
         (!records.is_empty()).then_some((
             Point3::new(0.0, 0.0, 0.0),
@@ -472,6 +465,15 @@ pub(super) fn principal_top_component_frame() -> PlaneFrame {
         Vector3::new(0.0, 1.0, 0.0),
         Vector3::new(1.0, 0.0, 0.0),
     )
+}
+
+/// The sketch frame a profile takes from its principal component records of
+/// `plane`; the profile's marker pairs are sketch coordinates in it.
+pub(super) fn principal_component_frame(plane: cadmpeg_ir::features::PrincipalPlane) -> PlaneFrame {
+    match plane {
+        cadmpeg_ir::features::PrincipalPlane::Top => principal_top_component_frame(),
+        plane => principal_sketch_frame(plane),
+    }
 }
 
 pub(crate) fn principal_sketch_frame(

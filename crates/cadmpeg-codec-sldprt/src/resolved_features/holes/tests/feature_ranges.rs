@@ -31,13 +31,13 @@ fn feature_object_ranges_preserve_equal_offset_history_order() {
 }
 
 #[test]
-fn deferred_principal_component_preserves_scoped_and_lane_front_fallbacks() {
+fn scoped_principal_component_selects_its_plane_and_lane_front_keeps_the_fallback() {
     use crate::resolved_features::compact_reference_planes::{
-        principal_sketch_frame, principal_top_component_frame, CompactReferencePlaneIndex,
+        principal_component_frame, principal_sketch_frame, CompactReferencePlaneIndex,
     };
     use crate::resolved_features::curves::{SketchPlaneFrame, SketchPlaneUAxisSource};
     use crate::resolved_features::holes::{
-        feature_input_sketch_frame, principal_top_profile_frame,
+        feature_input_sketch_frame, principal_component_profile_frame, profile_sketch_frame,
     };
     use cadmpeg_ir::features::PrincipalPlane;
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -57,6 +57,11 @@ fn deferred_principal_component_preserves_scoped_and_lane_front_fallbacks() {
             [0.0f64, 0.0, 1.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0],
         ),
     ] {
+        let plane = if source == 3 {
+            PrincipalPlane::Top
+        } else {
+            PrincipalPlane::Right
+        };
         let mut payload = super::profile_reference_plane_payload(false);
         let start = payload.len();
         let mut component = [0u8; 138];
@@ -82,9 +87,9 @@ fn deferred_principal_component_preserves_scoped_and_lane_front_fallbacks() {
             Vector3::new(0.0, 0.0, -1.0),
         );
         for context in [0, start] {
-            let expected_top = (source == 3 && context == 0).then(principal_top_component_frame);
+            let expected_top = (context == 0).then(|| principal_component_frame(plane));
             assert_eq!(
-                principal_top_profile_frame(&frames, &index, context, start, payload.len()),
+                principal_component_profile_frame(&frames, &index, context, start, payload.len()),
                 expected_top
             );
             assert_eq!(
@@ -98,6 +103,13 @@ fn deferred_principal_component_preserves_scoped_and_lane_front_fallbacks() {
                 ),
                 Some(expected)
             );
+            assert!(profile_sketch_frame(
+                &payload,
+                &frames,
+                &index,
+                [context, start, payload.len()]
+            )
+            .is_some_and(|frame| frame.frame == expected && frame.assumed));
             let frame = expected_top.unwrap_or(expected);
             let sketch = cadmpeg_ir::sketches::Sketch {
                 id: cadmpeg_ir::sketches::SketchId::mint("sldprt:model:sketch#synthetic-principal")
@@ -126,6 +138,16 @@ fn deferred_principal_component_preserves_scoped_and_lane_front_fallbacks() {
             .unwrap();
             if expected_top.is_some() {
                 assert_eq!(transform.apply(point), point.cells());
+                let (u, v) = (3.0, -2.0);
+                let v_axis = frame.1.cross(frame.2);
+                let model = frame.0.translated(frame.2, u).translated(v_axis, v);
+                assert_eq!(
+                    model,
+                    match plane {
+                        PrincipalPlane::Top => Point3::new(3.0, 0.0, 2.0),
+                        _ => Point3::new(0.0, -2.0, -3.0),
+                    }
+                );
             } else {
                 let fallback = crate::resolved_features::transforms::sketch_frame_marker_transform(
                     &sketch, QUANTUM,
@@ -143,14 +165,14 @@ fn deferred_principal_component_preserves_scoped_and_lane_front_fallbacks() {
         reused.extend(&payload[start..]);
         let reused_index = CompactReferencePlaneIndex::new(&reused);
         assert_eq!(
-            principal_top_profile_frame(
+            principal_component_profile_frame(
                 &frames,
                 &reused_index,
                 context,
                 profile_start,
                 reused.len()
             ),
-            (source == 3).then(principal_top_component_frame)
+            Some(principal_component_frame(plane))
         );
         let mut invalid = payload.clone();
         invalid[start + 15..start + 23].copy_from_slice(&2.0f64.to_le_bytes());
@@ -169,7 +191,7 @@ fn deferred_principal_component_preserves_scoped_and_lane_front_fallbacks() {
             Some(placed)
         );
         assert_eq!(
-            principal_top_profile_frame(&frames, &index, 0, start, payload.len()),
+            principal_component_profile_frame(&frames, &index, 0, start, payload.len()),
             None
         );
     }
@@ -278,7 +300,7 @@ fn enclosing_custom_component_retains_its_profile_frame() {
     };
     use crate::resolved_features::curves::{SketchPlaneFrame, SketchPlaneUAxisSource};
     use crate::resolved_features::holes::{
-        feature_input_sketch_frame, principal_top_profile_frame,
+        feature_input_sketch_frame, principal_component_profile_frame, profile_sketch_frame,
     };
     use cadmpeg_ir::features::PrincipalPlane;
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -313,7 +335,7 @@ fn enclosing_custom_component_retains_its_profile_frame() {
         ),
     )]);
     assert_eq!(
-        principal_top_profile_frame(&frames, &index, 0, start, payload.len()),
+        principal_component_profile_frame(&frames, &index, 0, start, payload.len()),
         None
     );
     assert_eq!(
@@ -323,5 +345,9 @@ fn enclosing_custom_component_retains_its_profile_frame() {
             Vector3::new(0.0, -1.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0)
         ))
+    );
+    assert!(
+        profile_sketch_frame(&payload, &frames, &index, [0, start, payload.len()])
+            .is_some_and(|frame| !frame.assumed)
     );
 }

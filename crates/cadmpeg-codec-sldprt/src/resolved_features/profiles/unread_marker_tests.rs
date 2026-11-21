@@ -661,3 +661,23 @@ fn a_later_line_on_a_marker_whose_record_is_not_a_line_charges_the_conflict() {
     assert!(loss.message.contains(entities[1].id().as_str()));
     assert!(loss.message.contains("does not compare the record"));
 }
+
+#[test]
+fn a_sketch_on_the_retained_front_fallback_charges_an_assumed_plane() {
+    let sketch = SketchId::mint("sldprt:model:sketch#markers:lane:4").unwrap();
+    let held = HeldMarkerGeometry {
+        assumed_planes: vec![sketch.clone()],
+        ..HeldMarkerGeometry::default()
+    };
+    let mut entities = Vec::new();
+    let mut losses = Vec::new();
+    finalize_unread_marker_entities(&mut entities, held, &mut losses);
+    assert_eq!(
+        losses
+            .iter()
+            .map(|loss| loss.code.clone())
+            .collect::<Vec<_>>(),
+        vec![SldprtLossCode::SketchPlaneAssumed.kind()]
+    );
+    assert!(losses[0].message.contains(sketch.as_str()));
+}
