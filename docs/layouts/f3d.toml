@@ -127,25 +127,25 @@ source = "spec"
 anchor = "the preceding history-state identity at offset 31"
 
 [[record.field]]
-name = "lane_word"
+name = "evaluation_epoch"
 offset = 35
 type = "u32"
 source = "spec"
-anchor = "the repeated word at offsets 35 and 47"
+anchor = "the evaluation epochs at offsets 35 and 47"
 
 [[record.field]]
-name = "lane_scalar"
+name = "evaluation_duration"
 offset = 39
 type = "f64"
 source = "spec"
-anchor = "the scalar at offset 39"
+anchor = "the evaluation duration at offset 39"
 
 [[record.field]]
-name = "repeated_word"
+name = "second_evaluation_epoch"
 offset = 47
 type = "u32"
 source = "spec"
-anchor = "the repeated word at offsets 35 and 47"
+anchor = "the evaluation epochs at offsets 35 and 47"
 
 [[record.field]]
 name = "second_reference"
@@ -159,7 +159,7 @@ name = "lane_flags"
 offset = 62
 type = "bytes[3]"
 source = "spec"
-anchor = "the three flags at offset 62"
+anchor = "the three flag bytes at offset 62"
 
 [[record.field]]
 name = "third_reference"
