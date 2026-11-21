@@ -14,7 +14,7 @@ use crate::history::classify::{
 };
 use crate::history::configuration::enrich_history_parameters_semantic;
 use crate::history::parameters::apply_evaluated_parameters;
-use crate::history::project::neutral_feature_id;
+use crate::history::project::{neutral_feature_id, referenced_sources};
 
 use super::parameters::restore_equivalent_parameter_expressions;
 use super::project_features_with_native_inputs;
@@ -394,6 +394,8 @@ pub(in crate::history) fn sync_neutral_features(
                 &evaluated_parameters,
                 &mut parameters,
             );
+        } else {
+            state_unreferenced_dependencies(feature, &structural_parent_sources, &mut properties);
         }
         if feature.evaluation.outputs().is_empty() {
             if existing.is_none() {
@@ -591,6 +593,36 @@ fn synchronize_neutral_feature_content(
         record.content = content;
     }
     Ok(())
+}
+
+/// Name in `Dependencies` each dependency of a generated record that none of
+/// its feature-reference properties names, so the record projects with every
+/// dependency its feature states. A dependency with no source id stays
+/// unnamed.
+fn state_unreferenced_dependencies(
+    feature: &cadmpeg_ir::features::Feature,
+    sources: &HashMap<FeatureId, Option<FeatureSource>>,
+    properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+) {
+    let referenced = referenced_sources(properties)
+        .map(str::to_owned)
+        .collect::<HashSet<_>>();
+    let unreferenced = feature
+        .dependencies
+        .iter()
+        .filter_map(|dependency| sources.get(dependency).copied().flatten())
+        .map(String::from)
+        .filter(|source| !referenced.contains(source))
+        .collect::<Vec<_>>();
+    if unreferenced.is_empty() {
+        return;
+    }
+    let key = cadmpeg_core::nonblank_literal!("Dependencies");
+    let value = match properties.get(key.as_str()) {
+        Some(stated) => format!("{stated},{}", unreferenced.join(",")),
+        None => unreferenced.join(","),
+    };
+    properties.insert(key, value);
 }
 
 pub(super) fn synchronize_history_content_order(native: &mut crate::native::SldprtNative) {

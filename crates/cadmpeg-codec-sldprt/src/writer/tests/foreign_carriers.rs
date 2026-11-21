@@ -528,8 +528,9 @@ fn push_length_parameter(
     });
 }
 
-/// `cube_with_foreign_history` plus a fillet whose edges are stated in its
-/// input topology, with a tangency weight and an owned radius parameter `d7`.
+/// `cube_with_foreign_history` plus a fillet of the boss whose edges are stated
+/// in its input topology, with a tangency weight and an owned radius parameter
+/// `d7`.
 fn cube_with_foreign_fillet() -> cadmpeg_ir::CadIr {
     use cadmpeg_ir::features::edge_treatments::{FilletGroup, RadiusSpec};
     use cadmpeg_ir::features::{
@@ -554,6 +555,9 @@ fn cube_with_foreign_fillet() -> cadmpeg_ir::CadIr {
         })
     });
     push_length_parameter(&mut ir, &id, "d7", 2.0);
+    let boss = cadmpeg_ir::features::FeatureId::mint("other:model:feature#boss").unwrap();
+    ir.model.features.last_mut().unwrap().dependencies =
+        cadmpeg_ir::features::DistinctMembers::try_from(vec![boss]).unwrap();
     ir
 }
 
@@ -596,6 +600,17 @@ fn a_fillet_on_input_topology_edges_is_written_with_its_radius_and_named() {
     let [group] = &**groups else {
         panic!("{groups:?}");
     };
+    let boss = decoded
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Boss"))
+        .expect("the boss decodes back");
+    assert!(
+        fillet.dependencies.contains(&boss.id),
+        "{:?}",
+        fillet.dependencies
+    );
     assert_eq!(
         group.edges,
         cadmpeg_ir::features::EdgeSelection::Native("other:design:edge-operand#round".into())
