@@ -161,7 +161,7 @@ fn aggregate(
             (
                 p::NEXT_PERSISTENT_IDENTITY,
                 Bind::U64(super::super::base_feature::next_identity(
-                    ctx.roster.sketches.items.len(),
+                    ctx.roster.sketches.items.len() + ctx.roster.planes.len(),
                     ctx.roster.extrude.is_some(),
                 )?),
             ),

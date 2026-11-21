@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The source's planar sketches as Fusion `Sketch` timeline items on the
-//! origin planes (cadir-v11.md §3.4; f3d.md §3.1, "Records of a Sketch
-//! item"): which sketches are written, each entity and relation in the
-//! fixed frame Fusion stores for its origin plane, and the losses of what is
-//! not written. A tangency at the ends of its curves is written with its
-//! endpoint branch and the coincidence of those ends, and a dimension as a
-//! Fusion sketch dimension that owns its parameter.
+//! origin planes or on offset construction planes (cadir-v11.md §3.4; f3d.md
+//! §3.1, "Records of a Sketch item" and "Records of a construction-plane
+//! item"): which sketches are written, each entity and relation in the frame
+//! Fusion stores for its plane, and the losses of what is not written. A
+//! tangency at the ends of its curves is written with its endpoint branch and
+//! the coincidence of those ends, and a dimension as a Fusion sketch
+//! dimension that owns its parameter.
 
 pub(super) mod dimensions;
 
@@ -21,7 +22,7 @@ use cadmpeg_ir::design::ops::sketch::{
     Contact, DefiningRole, EntityDefinition, Operand, Planar, PlanarCurve, Sketch,
     SketchConstraint, SketchEntity, SketchPlane, SketchRelation,
 };
-use cadmpeg_ir::design::selection::{PickTarget, Picks, PrincipalEntity};
+use cadmpeg_ir::design::selection::{PickTarget, Picked, Picks, PrincipalEntity};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::math::portable::Portable;
@@ -31,7 +32,9 @@ use cadmpeg_ir::sketches::{SketchEntityId, SketchId};
 use crate::loss::F3dLossCode;
 use dimensions::{Candidate, PlannedDimension, Tolerances};
 
-use super::parameters::ParameterPlan;
+use super::expression;
+use super::parameters::{OwnedParameter, ParameterPlan};
+use cadmpeg_ir::design::units::UnitSymbol;
 
 /// The largest departure of a sketch normal from its origin plane's axis.
 const NORMAL_TOLERANCE: f64 = 1e-9;
@@ -44,6 +47,11 @@ const MIN_LINEAR_TOLERANCE: f64 = 1e-5;
 /// Millimetres per Fusion length unit (cm).
 const MM_PER_CM: f64 = 10.0;
 const FULL_TURN: f64 = std::f64::consts::TAU;
+/// Why a sketch whose plane is parallel to no origin plane is not written.
+const TILTED: &str = "lies on a plane tilted from every origin plane";
+/// The expression of a construction plane's `ExtraOffset` parameter (f3d.md
+/// §3.1, "Offset parameters").
+const EXTRA_OFFSET: &str = "0.00 mm";
 
 /// An origin plane of the design, with the frame Fusion stores for a sketch
 /// on it (f3d.md §3.1, "Sketch placement on an origin plane").
@@ -73,6 +81,32 @@ impl OriginPlane {
         }
     }
 
+    /// The origin, u direction and v direction of the plane's origin record,
+    /// as the placement transform of a sketch on it stores them (f3d.md §3.1,
+    /// "Placement path").
+    pub(super) const fn entity_frame(self) -> [[f64; 3]; 3] {
+        match self {
+            Self::Xy => [[0.0, 0.0, 0.0], [1.0, 0.0, -0.0], [-0.0, 1.0, 0.0]],
+            Self::Xz => [[0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]],
+            Self::Yz => [[0.0, 0.0, 0.0], [-0.0, 1.0, 0.0], [0.0, -0.0, 1.0]],
+        }
+    }
+
+    /// The u direction, v direction and normal `u × v` of the plane's origin
+    /// record: the axes of a construction plane offset from it.
+    pub(super) fn entity_axes(self) -> [[f64; 3]; 3] {
+        let [_, u, v] = self.entity_frame();
+        [u, v, cross(u, v)]
+    }
+
+    pub(super) const fn name(self) -> &'static str {
+        match self {
+            Self::Xy => "XY",
+            Self::Xz => "XZ",
+            Self::Yz => "YZ",
+        }
+    }
+
     /// The position of the plane's origin record among the three origin
     /// planes `XY`, `XZ`, `YZ`.
     pub(super) const fn ordinal(self) -> u32 {
@@ -88,6 +122,103 @@ impl OriginPlane {
         [Self::Xy, Self::Xz, Self::Yz]
             .into_iter()
             .find(|plane| (dot(plane.axes()[2], normal).abs() - 1.0).abs() <= NORMAL_TOLERANCE)
+    }
+}
+
+/// The plane a written sketch lies on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Support {
+    Origin(OriginPlane),
+    /// A construction plane, by its position in [`SketchPlan::planes`].
+    Construction(usize),
+}
+
+/// A Fusion `WorkPlane` item that offsets a construction plane from an origin
+/// plane, for the sketches that lie on it.
+#[derive(Debug)]
+pub(super) struct PlannedPlane<'a> {
+    pub(super) base: OriginPlane,
+    /// The offset along the normal of `base`'s origin record, in cm.
+    pub(super) offset: f64,
+    /// The `AlongDistance` expression.
+    expression: String,
+    /// The support the source names, which a plane is shared by.
+    key: Option<&'a [Picked]>,
+    /// The position in [`SketchPlan::items`] of the first sketch on it, which
+    /// the item precedes in the timeline.
+    pub(super) first: usize,
+    sketches: Vec<&'a SketchId>,
+    /// The `AlongDistance` and `ExtraOffset` parameters.
+    pub(super) parameters: Option<[OwnedParameter; 2]>,
+}
+
+impl PlannedPlane<'_> {
+    /// The u direction, v direction and normal of the plane.
+    pub(super) fn axes(&self) -> [[f64; 3]; 3] {
+        self.base.entity_axes()
+    }
+
+    /// The plane's origin in cm: the base plane's origin moved `offset`
+    /// along its normal.
+    pub(super) fn origin(&self) -> [f64; 3] {
+        let ([origin, ..], [.., normal]) = (self.base.entity_frame(), self.axes());
+        [
+            origin[0] + self.offset * normal[0],
+            origin[1] + self.offset * normal[1],
+            origin[2] + self.offset * normal[2],
+        ]
+    }
+
+    /// The row-major matrix whose columns are the u direction, the v
+    /// direction, the normal and the origin.
+    pub(super) fn matrix(&self) -> [f64; 16] {
+        let ([u, v, n], o) = (self.axes(), self.origin());
+        [
+            u[0], v[0], n[0], o[0], u[1], v[1], n[1], o[1], u[2], v[2], n[2], o[2], 0.0, 0.0, 0.0,
+            1.0,
+        ]
+    }
+
+    /// The note that names the sketches on the plane and the source support
+    /// the plane stands for.
+    fn note(&self, index: usize) -> LossNote {
+        let sketches = self
+            .sketches
+            .iter()
+            .map(|sketch| sketch.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        let parameter = self
+            .parameters
+            .as_ref()
+            .map_or_else(String::new, |[along, _]| {
+                format!(", with offset parameter {}", along.name)
+            });
+        let support = self.key.map_or_else(
+            || "the source states the sketch frame and no support the writer reads".to_owned(),
+            |picks| {
+                let named = picks
+                    .iter()
+                    .map(|pick| match &pick.target {
+                        PickTarget::Datum { feature, .. }
+                        | PickTarget::Feature(feature)
+                        | PickTarget::FeatureResult(feature) => feature.to_string(),
+                        PickTarget::Entity(_) => "a topology selection".to_owned(),
+                        _ => "a selection".to_owned(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                format!(
+                    "the source support {named} is not written; its name and parameter are lost"
+                )
+            },
+        );
+        F3dLossCode::WriterSketchSupportSubstituted.note(format!(
+            "F3D places sketches {sketches} on construction plane {}, offset {} from {}{parameter}: {support}",
+            index + 1,
+            self.expression,
+            self.base.name(),
+        ))
     }
 }
 
@@ -202,7 +333,7 @@ pub(super) struct PlannedRelation {
 pub(super) struct PlannedSketch<'a> {
     pub(super) feature: &'a FeatureId,
     pub(super) sketch: &'a SketchId,
-    pub(super) plane: OriginPlane,
+    pub(super) support: Support,
     /// Whether the source normal is opposite the plane's, so that the
     /// sketch is written as its reflection.
     pub(super) mirrored: bool,
@@ -215,6 +346,18 @@ pub(super) struct PlannedSketch<'a> {
     pub(super) candidates: Vec<Candidate<'a>>,
     /// The written dimensions, in constraint order.
     pub(super) dimensions: Vec<PlannedDimension>,
+    /// The content of the sketch the writer does not write.
+    pub(super) losses: Vec<LossNote>,
+}
+
+impl PlannedSketch<'_> {
+    /// The origin plane the sketch lies on, `None` on a construction plane.
+    pub(super) fn origin_plane(&self) -> Option<OriginPlane> {
+        match self.support {
+            Support::Origin(plane) => Some(plane),
+            Support::Construction(_) => None,
+        }
+    }
 }
 
 /// The sketches the design writes, in timeline order, and what it does not
@@ -222,9 +365,10 @@ pub(super) struct PlannedSketch<'a> {
 #[derive(Debug, Default)]
 pub(super) struct SketchPlan<'a> {
     pub(super) items: Vec<PlannedSketch<'a>>,
+    /// The construction planes, in timeline order.
+    pub(super) planes: Vec<PlannedPlane<'a>>,
     /// The typed sketches not written, with the reason.
     pub(super) unwritten: BTreeMap<&'a FeatureId, String>,
-    losses: Vec<LossNote>,
 }
 
 impl SketchPlan<'_> {
@@ -239,7 +383,7 @@ impl SketchPlan<'_> {
                 ),
             );
         }
-        self.losses.clear();
+        self.planes.clear();
     }
 
     /// Write none of the sketches' dimensions, for `reason`: a failure of
@@ -252,7 +396,7 @@ impl SketchPlan<'_> {
                 .map(|candidate| candidate.constraint.to_string())
                 .collect::<Vec<_>>();
             if !dropped.is_empty() {
-                self.losses
+                item.losses
                     .push(F3dLossCode::WriterSketchContentOmitted.note(format!(
                         "F3D writes sketch {} without {}: the writer failed with the sketch's dimensions ({reason})",
                         item.sketch,
@@ -262,16 +406,38 @@ impl SketchPlan<'_> {
         }
     }
 
-    /// Plan the parameter of each measured dimension in timeline order, with
-    /// source ordinals from `1`; a dimension the writer cannot write is
-    /// charged. Returns the next source ordinal.
-    pub(super) fn claim_dimensions(
+    /// Plan the parameters of each construction plane and of each measured
+    /// dimension in timeline order, with source ordinals from `1`: a plane
+    /// before the dimensions of its first sketch. A dimension the writer
+    /// cannot write is charged. Returns the next source ordinal.
+    pub(super) fn claim_parameters(
         &mut self,
         parameters: &mut ParameterPlan,
         tolerances: Tolerances,
     ) -> u32 {
         let mut ordinal = 1u32;
-        for item in &mut self.items {
+        for (position, item) in self.items.iter_mut().enumerate() {
+            if let Some(plane) = self.planes.iter_mut().find(|plane| plane.first == position) {
+                if let Some(next) = ordinal.checked_add(2) {
+                    plane.parameters = Some([
+                        parameters.owned(
+                            ordinal,
+                            plane.expression.clone(),
+                            UnitSymbol::Mm,
+                            plane.offset,
+                            false,
+                        ),
+                        parameters.owned(
+                            ordinal + 1,
+                            EXTRA_OFFSET.to_owned(),
+                            UnitSymbol::Mm,
+                            0.0,
+                            false,
+                        ),
+                    ]);
+                    ordinal = next;
+                }
+            }
             let mut notes = Notes::default();
             for candidate in std::mem::take(&mut item.candidates) {
                 let constraint = candidate.constraint.to_string();
@@ -288,7 +454,7 @@ impl SketchPlan<'_> {
                     Err(reason) => notes.omit(constraint, reason),
                 }
             }
-            self.losses.extend(notes.into_losses(item.sketch.as_str()));
+            item.losses.extend(notes.into_losses(item.sketch.as_str()));
         }
         ordinal
     }
@@ -299,13 +465,29 @@ impl SketchPlan<'_> {
     }
 
     pub(super) fn into_losses(self) -> Vec<LossNote> {
-        self.losses
+        let planes = self
+            .planes
+            .iter()
+            .enumerate()
+            .map(|(index, plane)| plane.note(index))
+            .collect::<Vec<_>>();
+        self.items
+            .into_iter()
+            .flat_map(|item| item.losses)
+            .chain(planes)
+            .collect()
     }
 }
 
 /// The plan of the typed sketches among `features`, the root scope's
-/// features in timeline order.
-pub(super) fn plan<'a>(target: &'a CadIr, features: &[&'a FeatureId]) -> SketchPlan<'a> {
+/// features in timeline order. `planes` is the failure that dropped the
+/// construction planes, if one did: the sketches off the origin planes are
+/// then not written.
+pub(super) fn plan<'a>(
+    target: &'a CadIr,
+    features: &[&'a FeatureId],
+    planes: Option<&str>,
+) -> SketchPlan<'a> {
     let tolerance = target.tolerances.linear.get().max(MIN_LINEAR_TOLERANCE);
     let mut out = SketchPlan::default();
     for &id in features {
@@ -323,44 +505,123 @@ pub(super) fn plan<'a>(target: &'a CadIr, features: &[&'a FeatureId]) -> SketchP
             out.unwritten.insert(id, "is suppressed".into());
             continue;
         }
-        let frame = match placement(target, sketch, tolerance) {
-            Ok(frame) => frame,
+        let (placement, frame) = match placement(target, sketch, tolerance) {
+            Ok(placed) => placed,
             Err(reason) => {
                 out.unwritten.insert(id, reason.into());
                 continue;
             }
         };
+        let support = match placement {
+            Placement::Origin(plane) => Support::Origin(plane),
+            Placement::Construction { base, offset, key } => {
+                if let Some(reason) = planes {
+                    out.unwritten.insert(
+                        id,
+                        format!("is dropped because the writer failed with the design's construction planes ({reason})"),
+                    );
+                    continue;
+                }
+                let shared = out.planes.iter().position(|plane| {
+                    plane.base == base
+                        && key.is_some()
+                        && plane.key == key
+                        && (plane.offset * MM_PER_CM - offset).abs() <= tolerance
+                });
+                let index = match shared {
+                    Some(index) => index,
+                    None => {
+                        let Some(expression) =
+                            expression::quantity_literal(offset, Some(UnitSymbol::Mm))
+                        else {
+                            out.unwritten
+                                .insert(id, "states a plane offset with no Fusion literal".into());
+                            continue;
+                        };
+                        out.planes.push(PlannedPlane {
+                            base,
+                            offset: offset / MM_PER_CM,
+                            expression,
+                            key,
+                            first: out.items.len(),
+                            sketches: Vec::new(),
+                            parameters: None,
+                        });
+                        out.planes.len() - 1
+                    }
+                };
+                out.planes[index].sketches.push(sketch_id);
+                Support::Construction(index)
+            }
+        };
         let mut notes = Notes::default();
-        let planned = PlannedSketch::new(target, id, sketch, frame, &mut notes);
-        out.losses.extend(notes.into_losses(sketch_id.as_str()));
+        let mut planned = PlannedSketch::new(target, id, sketch, support, frame, &mut notes);
+        planned.losses = notes.into_losses(sketch_id.as_str());
         out.items.push(planned);
     }
     out
 }
 
-/// The origin plane of `sketch` and the map from its sketch coordinates to
-/// Fusion's.
-fn placement(target: &CadIr, sketch: &Sketch, tolerance: f64) -> Result<Frame, &'static str> {
+/// Where a sketch is placed.
+enum Placement<'a> {
+    Origin(OriginPlane),
+    /// A plane parallel to `base` at `offset` mm along the normal of
+    /// `base`'s origin record, with the support the source names.
+    Construction {
+        base: OriginPlane,
+        offset: f64,
+        key: Option<&'a [Picked]>,
+    },
+}
+
+/// The plane of `sketch` and the map from its sketch coordinates to
+/// Fusion's: the origin plane it names or lies on, else a plane parallel to
+/// an origin plane.
+fn placement<'a>(
+    target: &CadIr,
+    sketch: &'a Sketch,
+    tolerance: f64,
+) -> Result<(Placement<'a>, Frame), &'static str> {
     let construction = match &sketch.plane {
         SketchPlane::Placed(construction) => construction,
         SketchPlane::Block => return Err("is a block definition"),
     };
     let frame = construction.resolved.as_ref().ok_or("states no frame")?;
     let normal = vector(frame.z_axis.as_raw());
-    let named = match picked_plane(target, construction) {
-        Some(Pick::Plane(plane)) => plane,
-        Some(Pick::Unread) => OriginPlane::along(normal).ok_or("lies on no origin plane")?,
-        None => return Err("lies on no origin plane"),
-    };
-    let axes = named.axes();
     let origin = frame.origin.get();
     let origin = [origin.x, origin.y, origin.z];
-    if dot(origin, axes[2]).abs() > tolerance
-        || (dot(normal, axes[2]).abs() - 1.0).abs() > NORMAL_TOLERANCE
-    {
-        return Err("lies on no origin plane");
+    let picked = picked_plane(target, construction);
+    if let Some(Pick::Plane(named)) = picked {
+        let axes = named.axes();
+        if dot(origin, axes[2]).abs() > tolerance
+            || (dot(normal, axes[2]).abs() - 1.0).abs() > NORMAL_TOLERANCE
+        {
+            return Err("lies on no origin plane");
+        }
+        return Ok((
+            Placement::Origin(named),
+            Frame::new(named.axes(), frame, origin),
+        ));
     }
-    Ok(Frame::new(named, frame, origin))
+    let base = OriginPlane::along(normal).ok_or(TILTED)?;
+    let offset = dot(origin, base.axes()[2]);
+    if matches!(picked, Some(Pick::Unread)) && offset.abs() <= tolerance {
+        return Ok((
+            Placement::Origin(base),
+            Frame::new(base.axes(), frame, origin),
+        ));
+    }
+    let key = match construction.inputs.as_slice() {
+        [input] => match picks(input) {
+            Some(Picks::Named(members)) => Some(members.as_slice()),
+            _ => None,
+        },
+        _ => None,
+    };
+    Ok((
+        Placement::Construction { base, offset, key },
+        Frame::new(base.entity_axes(), frame, origin),
+    ))
 }
 
 enum Pick {
@@ -429,11 +690,10 @@ fn datum_plane(target: &CadIr, feature: &FeatureId) -> Option<OriginPlane> {
 }
 
 /// The map from a source sketch's coordinates (mm) to Fusion's sketch
-/// coordinates (cm) on its origin plane: a rotation, or a reflection where
-/// the source normal is opposite the plane's.
+/// coordinates (cm) on its plane: a rotation, or a reflection where the
+/// source normal is opposite the plane's.
 #[derive(Clone, Copy, Debug)]
 struct Frame {
-    plane: OriginPlane,
     /// The source origin in Fusion's sketch coordinates, in mm.
     origin: [f64; 2],
     /// The source x and y axes in Fusion's sketch coordinates.
@@ -446,8 +706,10 @@ struct Frame {
 }
 
 impl Frame {
-    fn new(plane: OriginPlane, frame: &FrameValue, origin: [f64; 3]) -> Self {
-        let [u_axis, v_axis, normal] = plane.axes();
+    /// The map onto the Fusion sketch plane whose u axis, v axis and normal
+    /// are `axes` and whose origin is the foot of the model origin.
+    fn new(axes: [[f64; 3]; 3], frame: &FrameValue, origin: [f64; 3]) -> Self {
+        let [u_axis, v_axis, normal] = axes;
         let in_plane = |direction: [f64; 3]| [dot(direction, u_axis), dot(direction, v_axis)];
         let x = in_plane(vector(frame.x_axis.as_raw()));
         let y = in_plane(vector(frame.y_axis.as_raw()));
@@ -457,7 +719,6 @@ impl Frame {
             1.0
         };
         Self {
-            plane,
             origin: in_plane(origin),
             x,
             y,
@@ -509,6 +770,7 @@ impl<'a> PlannedSketch<'a> {
         target: &'a CadIr,
         feature: &'a FeatureId,
         sketch: &'a Sketch,
+        support: Support,
         frame: Frame,
         notes: &mut Notes,
     ) -> Self {
@@ -521,13 +783,14 @@ impl<'a> PlannedSketch<'a> {
         let mut planned = Self {
             feature,
             sketch: &sketch.id,
-            plane: frame.plane,
+            support,
             mirrored: frame.sense < 0.0,
             points: Vec::new(),
             curves: Vec::new(),
             relations: Vec::new(),
             candidates: Vec::new(),
             dimensions: Vec::new(),
+            losses: Vec::new(),
         };
         if let Some(name) = sketch
             .name
@@ -951,4 +1214,12 @@ fn vector(vector: &cadmpeg_ir::math::Vector3) -> [f64; 3] {
 
 fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
 }
