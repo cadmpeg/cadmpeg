@@ -1558,6 +1558,18 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** Keep the operand proofs for these groups.
 
+### DR-653. `Chamfer` edges on bevel faces without a plane carrier
+
+**Question.** Which edges does a `Chamfer` group select when its transition inserts a bevel face on a carrier without a plane row, such as the bevel of an edge between a plane and a cylinder?
+
+**Known.** The specification states the edges from the bevel faces of the transition when every new carrier is a plane and both supports of each bevel are planes. A chamfer along a chain that crosses a cylinder inserts bevel faces whose carriers have no plane row. The history rows of a cone carrier state an axis line and no half-angle.
+
+**Need.** The history rows of a controlled chamfer on the edge between a plane and a cylinder with two distances, and the row that states the half-angle or the apex of the bevel cone.
+
+**Conflict.** None.
+
+**Note.** Keep the operand proofs for these groups.
+
 Bounded-face Chamfer members are tracked in DR-481.
 
 ### DR-390. Fillet set flag of the chordal and compact forms, marker bytes, and compact flag run
