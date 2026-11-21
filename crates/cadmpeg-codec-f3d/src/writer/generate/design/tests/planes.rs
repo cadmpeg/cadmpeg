@@ -464,4 +464,22 @@ fn the_records_of_a_workplane_item_have_the_stated_sizes() {
     assert_eq!(super::u64_at(collection, 26), entity);
     assert_eq!(u32_at(collection, 36), 0, "WorkAxis counter");
     assert_eq!(u32_at(collection, 40), 1, "WorkPlane counter");
+    assert_eq!(&collection[52..54], [1, 1], "the bytes after the zero word");
+}
+
+#[test]
+fn the_context_value_of_a_design_with_planes_and_no_dimension_is_named() {
+    let top = frame([0.0, 0.0, 10.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+    let ir = with(Vec::new(), vec![rectangle("top", unread(), top, false)]);
+    let (report, _, _) = write_bytes(&ir);
+    let notes = loss(&report, "export/record.residual-unavailable")
+        .into_iter()
+        .filter(|message| message.contains("record 198"))
+        .collect::<Vec<_>>();
+    let [note] = notes.as_slice() else {
+        panic!("one context-value note: {:#?}", report.losses);
+    };
+    for named in ["WorkPlane items", "context value 2", "DR-882"] {
+        assert!(note.contains(named), "{named}: {note}");
+    }
 }

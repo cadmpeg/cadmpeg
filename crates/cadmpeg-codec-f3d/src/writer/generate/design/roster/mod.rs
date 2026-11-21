@@ -527,22 +527,31 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
         ));
     }
     if !ctx.roster.planes.is_empty() {
+        let mut entries = vec![
+            "plane entities (display corners (0.075, 0.075) and (2.175, 2.175), empty text, flag byte 0)".to_owned(),
+            format!(
+                "WorkPlane scope tails, placements and placement paths (evaluation epoch {}, where f3d.md §3.1 states 252, and duration {}, as the Base Feature item tail)",
+                super::base_feature::EPOCH,
+                super::base_feature::DURATION
+            ),
+            "placements and frame records of the sketches on construction planes (origin at the plane entity's origin)".to_owned(),
+            "record 11 (construction collection: its entities in timeline order)".to_owned(),
+        ];
+        // The dimension note names the context value of a design with
+        // dimensions.
+        if !ctx.roster.sketches.has_dimensions() {
+            entries.push(format!(
+                "record 198 (timeline context: context value {}, the largest source ordinal of an owned parameter, where f3d.md §3.1 states the value for a timeline of Sketch items, or of Sketch and Extrude items, and f3d-open-items.md DR-882 leaves it open for a timeline with WorkPlane items)",
+                ctx.context_value()
+            ));
+        }
         notes.extend(record_residual_unavailable(
             "F3D",
             &format!(
                 "writes the WorkPlane items before the {} with these values where f3d-open-items.md DR-1004 leaves their meaning open and DR-901 leaves the rule of items before a timeline's geometry item open",
                 if ctx.roster.extrude.is_some() { "Extrude" } else { "Base Feature" }
             ),
-            [
-                "plane entities (display corners (0.075, 0.075) and (2.175, 2.175), empty text, flag byte 0)".to_owned(),
-                format!(
-                    "WorkPlane scope tails, placements and placement paths (evaluation epoch {}, where f3d.md §3.1 states 252, and duration {}, as the Base Feature item tail)",
-                    super::base_feature::EPOCH,
-                    super::base_feature::DURATION
-                ),
-                "placements and frame records of the sketches on construction planes (origin at the plane entity's origin)".to_owned(),
-                "record 11 (construction collection: its entities in timeline order)".to_owned(),
-            ],
+            entries,
         ));
     }
     notes.extend(record_residual_unavailable(
