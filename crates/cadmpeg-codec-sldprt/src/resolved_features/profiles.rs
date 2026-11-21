@@ -50,6 +50,8 @@ use super::scalars::FeatureObjectNames;
 use super::sketch_lists::{
     listed_entity, unchecked_record_conflict, ChordConflict, ListedEntity, SketchRecordLists,
 };
+use super::sketch_projection::is_profile_stream_sketch;
+use super::stream_readings::{marker_reading_binds, second_readings, BoundMarker, EntityIndex};
 use super::transforms::{record_top_marker_coordinates, sketch_frame_marker_transform};
 use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
@@ -1111,6 +1113,9 @@ pub(crate) struct HeldMarkerGeometry {
     /// sketch and marker reference, with the record's conflict where it
     /// states one.
     unread_admitted: Vec<((SketchId, String), Option<ChordConflict>)>,
+    /// Each profile-stream sketch that no feature binds and whose loops
+    /// repeat those of a marker sketch, with that marker sketch.
+    second_readings: Vec<(SketchId, SketchId)>,
 }
 
 impl HeldMarkerGeometry {
@@ -1153,6 +1158,7 @@ pub(crate) fn finalize_unread_marker_entities(
         unchecked,
         finalized,
         unread_admitted,
+        second_readings,
     } = held;
     sketch_entities.extend(handles);
     for entity in sketch_entities.iter_mut() {
@@ -1233,6 +1239,11 @@ pub(crate) fn finalize_unread_marker_entities(
         };
         losses.push(SldprtLossCode::SketchMarkerRecordUnread.note(format!(
             "sketch {sketch}: marker {marker}, which the marker layouts skip, gives no entity: {reason}"
+        )));
+    }
+    for (stream, marker) in second_readings {
+        losses.push(SldprtLossCode::SketchSecondReading.note(format!(
+            "sketch {stream}: a second reading of sketch {marker}; its profile loops repeat those of {marker}, which its sketch feature binds, and no feature binds it"
         )));
     }
 }
@@ -1352,6 +1363,7 @@ pub(crate) fn project_marker_backed_sketches(
         &feature_frames,
     );
     let feature_positions = FeaturePositions::new(features);
+    let mut bound_markers = Vec::new();
     for lane in lanes {
         let plane_frames = lane_sketch_plane_frames(features, histories, lane);
         let plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
@@ -1586,9 +1598,11 @@ pub(crate) fn project_marker_backed_sketches(
                     });
                 continue;
             }
-            if bound_sketch
-                .as_ref()
-                .is_some_and(|sketch| !sketch.as_str().contains("sketch#compact:"))
+            let stream_reading = bound_sketch.clone().filter(is_profile_stream_sketch);
+            if stream_reading.is_none()
+                && bound_sketch
+                    .as_ref()
+                    .is_some_and(|sketch| !sketch.as_str().contains("sketch#compact:"))
             {
                 continue;
             }
@@ -2637,7 +2651,20 @@ pub(crate) fn project_marker_backed_sketches(
             if projected.is_empty() || (bound_sketch.is_some() && sketch.profiles.is_empty()) {
                 continue;
             }
-            if let Some(bound_sketch) = &bound_sketch {
+            if let Some(stream) = &stream_reading {
+                if let Some(stream_sketch) = sketches.iter().find(|bound| bound.id == *stream) {
+                    let entities = EntityIndex::new(
+                        projected.iter().chain(
+                            sketch_entities
+                                .iter()
+                                .filter(|entity| entity.sketch == *stream),
+                        ),
+                    );
+                    if !marker_reading_binds(&sketch, stream_sketch, &entities) {
+                        continue;
+                    }
+                }
+            } else if let Some(bound_sketch) = &bound_sketch {
                 sketch_entities.retain(|entity| entity.sketch != *bound_sketch);
                 sketches.retain(|sketch| sketch.id != *bound_sketch);
             }
@@ -2659,6 +2686,14 @@ pub(crate) fn project_marker_backed_sketches(
                     .map(|(marker, conflict)| ((sketch_id.clone(), marker), conflict)),
             );
             sketches.push(sketch);
+            if !block_definition {
+                bound_markers.push(BoundMarker {
+                    feature_name: native_feature.name.clone(),
+                    lane: lane.id.clone(),
+                    marker: sketch_id.clone(),
+                    displaced: stream_reading,
+                });
+            }
             record_top_marker_coordinates(&mut features[feature_index], top_frame.is_some());
             features[feature_index]
                 .evaluation
@@ -2679,6 +2714,12 @@ pub(crate) fn project_marker_backed_sketches(
                 });
         }
     }
+    held_geometry.second_readings.extend(second_readings(
+        &bound_markers,
+        features,
+        sketches,
+        sketch_entities,
+    ));
     Ok(())
 }
 
@@ -5268,6 +5309,9 @@ mod configuration_binding_tests;
 
 #[cfg(test)]
 mod record_profile_tests;
+
+#[cfg(test)]
+mod stream_reading_tests;
 
 #[cfg(test)]
 mod unread_marker_tests;
