@@ -923,6 +923,9 @@ pub(super) fn check_parameter_domains(
                          [0, {span}] of its subset curve"
                     ),
                 );
+                // One finding per range: the subset's local domain is the one
+                // its construction states, so its cache is not tested again.
+                continue;
             }
         }
         let mut valid = true;

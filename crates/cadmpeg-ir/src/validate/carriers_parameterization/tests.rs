@@ -579,63 +579,87 @@ fn carrier_reachability_preserves_orphan_arena_order() {
     }
 }
 
-#[test]
-fn an_edge_on_a_subset_curve_stays_in_the_local_domain() {
+/// The `ParameterDomain` messages on the first edge after it states `range`
+/// on a subset of local span 1 whose carrier holds `cache`.
+fn subset_edge_domain_findings(range: [f64; 2], cache: Option<SolvedCurveGeometry>) -> Vec<String> {
     use crate::geometry::analytic::LineCurve;
     use crate::geometry::curve_payloads::SubsetCurveConstruction;
     use crate::geometry::{Curve, ProceduralCurve, ProceduralCurveDefinition};
     use crate::ids::ProceduralCurveId;
     use crate::topology::ParameterInterval;
 
-    let subset_cube = |range: [f64; 2]| {
-        let mut ir = unit_cube().unwrap();
-        let root = CurveId::mint("test:model:curve#root").unwrap();
-        ir.geometry.curves.push(Curve {
-            id: root.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))
-                    .unwrap(),
-            )),
-            parameter_range: None,
-            source_object: None,
-            native_ref: None,
-        });
-        let edge = ir.geometry.edges[0].clone();
-        let curve = edge.curve().unwrap().clone();
-        let construction = ProceduralCurveId::mint("test:model:construction#subset").unwrap();
-        ir.geometry
-            .curves
-            .iter_mut()
-            .find(|item| item.id == curve)
-            .unwrap()
-            .geometry = CurveGeometry::Procedural {
-            construction: construction.clone(),
-            cache: None,
-        };
-        ir.geometry
-            .add_procedural_curve(
-                &curve,
-                ProceduralCurve::new(
-                    construction,
-                    ProceduralCurveDefinition::Subset(
-                        SubsetCurveConstruction::try_new(root, [2.0, 3.0], true, None).unwrap(),
-                    ),
-                ),
-            )
-            .unwrap();
-        ir.geometry.edges[0].set_param_range(Some(ParameterInterval::new(range).unwrap()));
-        let edge = ir.geometry.edges[0].id.clone();
-        validate_neutral(&ir, Vec::new())
-            .unwrap()
-            .findings
-            .iter()
-            .any(|finding| {
-                finding.check == Check::ParameterDomain
-                    && finding.entity.as_deref() == Some(edge.as_str())
-            })
+    let mut ir = unit_cube().unwrap();
+    let root = CurveId::mint("test:model:curve#root").unwrap();
+    ir.geometry.curves.push(Curve {
+        id: root.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)).unwrap(),
+        )),
+        parameter_range: None,
+        source_object: None,
+        native_ref: None,
+    });
+    let edge = ir.geometry.edges[0].clone();
+    let curve = edge.curve().unwrap().clone();
+    let construction = ProceduralCurveId::mint("test:model:construction#subset").unwrap();
+    ir.geometry
+        .curves
+        .iter_mut()
+        .find(|item| item.id == curve)
+        .unwrap()
+        .geometry = CurveGeometry::Procedural {
+        construction: construction.clone(),
+        cache: None,
     };
-    assert!(!subset_cube([0.0, 1.0]));
-    assert!(subset_cube([2.0, 3.0]));
+    ir.geometry
+        .add_procedural_curve(
+            &curve,
+            ProceduralCurve::new(
+                construction.clone(),
+                ProceduralCurveDefinition::Subset(
+                    SubsetCurveConstruction::try_new(root, [2.0, 3.0], true, None).unwrap(),
+                ),
+            ),
+        )
+        .unwrap();
+    ir.geometry
+        .curves
+        .iter_mut()
+        .find(|item| item.id == curve)
+        .unwrap()
+        .geometry = CurveGeometry::Procedural {
+        construction,
+        cache,
+    };
+    ir.geometry.edges[0].set_param_range(Some(ParameterInterval::new(range).unwrap()));
+    let edge = ir.geometry.edges[0].id.clone();
+    validate_neutral(&ir, Vec::new())
+        .unwrap()
+        .findings
+        .into_iter()
+        .filter(|finding| {
+            finding.check == Check::ParameterDomain
+                && finding.entity.as_deref() == Some(edge.as_str())
+        })
+        .map(|finding| finding.message)
+        .collect()
+}
+
+#[test]
+fn an_edge_on_a_subset_curve_stays_in_the_local_domain() {
+    assert!(subset_edge_domain_findings([0.0, 1.0], None).is_empty());
+    assert!(!subset_edge_domain_findings([2.0, 3.0], None).is_empty());
+}
+
+#[test]
+fn a_subset_edge_past_its_local_domain_and_its_cache_has_one_finding() {
+    assert!(subset_edge_domain_findings([0.0, 1.0], Some(unit_line_nurbs(false))).is_empty());
+    let findings = subset_edge_domain_findings([0.0, 1.5], Some(unit_line_nurbs(false)));
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert!(
+        findings[0].contains("outside the local domain [0, 1] of its subset curve"),
+        "{findings:?}"
+    );
 }
 
 #[test]
@@ -770,7 +794,7 @@ fn use_curve_on_a_periodic_carrier_may_cross_the_seam() {
 }
 
 #[test]
-fn use_curve_on_a_procedural_carrier_has_no_domain_finding() {
+fn use_curve_on_a_procedural_carrier_with_no_cache_has_no_domain_finding() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let curve_id = ir.geometry.edges[0].curve().cloned().unwrap();
     let construction =
