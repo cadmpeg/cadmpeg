@@ -1437,17 +1437,18 @@ fn link_attribute(body: i64, design_id: &str, design_reference: i64) -> SourceAt
         )),
         name: "ATTRIB_CUSTOM-attrib".into(),
         values: vec![
-            AttributeValue::String("generic_tag_attrib_def".into()),
-            AttributeValue::Integer(2),
-            AttributeValue::Integer(2),
-            AttributeValue::Integer(-1),
-            AttributeValue::String("generic_tag_attrib_def ".into()),
-            AttributeValue::Integer(1),
-            AttributeValue::Integer(3),
-            AttributeValue::String(design_id.into()),
-            AttributeValue::Integer(design_reference),
-            AttributeValue::Integer(0),
+            Some(AttributeValue::String("generic_tag_attrib_def".into())),
+            Some(AttributeValue::Integer(2)),
+            Some(AttributeValue::Integer(2)),
+            Some(AttributeValue::Integer(-1)),
+            Some(AttributeValue::String("generic_tag_attrib_def ".into())),
+            Some(AttributeValue::Integer(1)),
+            Some(AttributeValue::Integer(3)),
+            Some(AttributeValue::String(design_id.into())),
+            Some(AttributeValue::Integer(design_reference)),
+            Some(AttributeValue::Integer(0)),
         ],
+        native_ref: None,
     }
 }
 
@@ -1507,7 +1508,7 @@ fn a_split_identity_that_matches_two_bodies_reports_the_undecoded_input() {
     }
     for _ in 0..2 {
         put_fields(&mut bytes, width, "ATTRIB_CUSTOM-attrib", &[(REF, -1)]);
-        for value in link_attribute(1, "626", 1).values {
+        for value in link_attribute(1, "626", 1).values.into_iter().flatten() {
             match value {
                 cadmpeg_ir::attributes::AttributeValue::String(value) => {
                     bytes.extend_from_slice(&[
