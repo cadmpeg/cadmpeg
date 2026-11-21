@@ -34,6 +34,20 @@ By contributing, you license code under **Apache-2.0** and documentation/spec co
 
 ## Ways to contribute
 
+### Claiming an issue
+
+This is the project's proposed claim policy.
+
+Comment `/claim` on the issue before starting. Open a draft pull request linked to the issue within 24 hours, even a rough one, and keep it moving. A claim with no linked pull request after 24 hours lapses.
+
+Once a linked pull request exists, the claim lapses after 5 days without the claimant's activity: commits, pull request edits, or comments on the issue or pull request. The claim stays active while the claimant's ready pull request waits on maintainers or while a dependency named with `Depends on` or `Stacked on` is open. Maintainer claims stay active.
+
+When two open pull requests link one issue, the lowest-numbered pull request wins the claim. On lapse, the pull request stays open and anyone may continue from it. Keep the original author as co-author with a `Co-authored-by: Name <email>` trailer in the continuation.
+
+Comment `/unclaim` to release a claim early. A tracking issue lists sub-issues and stays unclaimed.
+
+The claim bot proposed in [#1879](https://github.com/cadmpeg/cadmpeg/pull/1879) enforces these rules once merged; until then, follow them by hand.
+
 ### Contribute a codec (turn a spec into a decoder)
 
 A codec takes native bytes and produces the cadmpeg IR.
