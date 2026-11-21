@@ -30,6 +30,111 @@ fn frame(prefix: usize, explicit: bool) -> Vec<u8> {
     body
 }
 
+/// A version 4 table: a path of placement references, the path-ordinal field
+/// with `ordinals` values after its count, and two entries, the last with an
+/// explicit matrix.
+fn path_ordinal_frame(path: &[u64], count: u32, ordinals: &[u32]) -> Vec<u8> {
+    let mut body = 3_u32.to_le_bytes().to_vec();
+    body.extend(b"318");
+    body.extend(20_u64.to_le_bytes());
+    body.extend(0_u32.to_le_bytes());
+    body.extend([0; 6]);
+    body.extend(0_u32.to_le_bytes());
+    body.extend(u32::try_from(path.len()).unwrap().to_le_bytes());
+    for placement in path {
+        body.extend(local_reference(*placement));
+    }
+    body.push(2);
+    body.extend(count.to_le_bytes());
+    for ordinal in ordinals {
+        body.extend(ordinal.to_le_bytes());
+    }
+    body.extend(local_reference(3));
+    body.extend(1_u32.to_le_bytes());
+    body.extend(2_u32.to_le_bytes());
+    body.extend([1, 0]);
+    body.extend(local_reference(30));
+    body.push(1);
+    body.extend([0, 0]);
+    body.extend(local_reference(31));
+    body.push(0);
+    let mut matrix = IDENTITY_ROWS;
+    matrix[1][3] = 2.5;
+    for value in matrix.into_iter().flatten() {
+        body.extend(value.to_le_bytes());
+    }
+    body
+}
+
+#[test]
+fn version_4_table_poses_the_occurrence_of_its_one_reference_path() {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let stream = "Design/BulkStream.dat";
+    let body = path_ordinal_frame(&[10], 1, &[1]);
+    let pose = parse(&body).expect("version 4 table");
+    assert_eq!(pose.target_record_index, 10);
+    assert_eq!(pose.matrix[1][3], 2.5);
+    assert_eq!(pose.source_root_record_index, 3);
+    let mut table = OperationTables::default();
+    register(&ctx, &mut table, stream, &body, Some(4)).unwrap();
+    assert_eq!(table.native, 0);
+    assert_eq!(
+        table
+            .poses
+            .get(&(crate::ids::native_scope(stream), 10))
+            .and_then(Option::as_ref)
+            .map(|pose| pose.path_ordinal),
+        Some(Some(1))
+    );
+    let mut reference = reference();
+    reference.operation_pose = Some(XrefOperationPose {
+        carrier_record_index: 20,
+        frame_bytes: body.clone().into(),
+        transform: Some(pose.matrix.try_into().unwrap()),
+    });
+    assert!(reference_matches(&reference));
+    // The other versions read another grammar.
+    for version in [0, 1, 2, 3, 5] {
+        let mut table = OperationTables::default();
+        register(&ctx, &mut table, stream, &body, Some(version)).unwrap();
+        assert!(table.poses.is_empty(), "version {version}");
+        assert_eq!(table.native, 1);
+    }
+    for end in 0..body.len() {
+        assert!(parse(&body[..end]).is_none(), "truncated at {end}");
+    }
+    // The field marker is 2 and its count is 1.
+    assert!(parse(&path_ordinal_frame(&[10], 2, &[1, 2])).is_none());
+    assert!(parse(&path_ordinal_frame(&[10], 0, &[])).is_none());
+    let mut marker = body.clone();
+    let marker_at = 15 + 4 + 6 + 4 + 4 + local_reference(10).len();
+    assert_eq!(marker[marker_at], 2);
+    marker[marker_at] = 3;
+    assert!(parse(&marker).is_none());
+    // The ordinal value does not select the grammar.
+    assert_eq!(
+        parse(&path_ordinal_frame(&[10], 1, &[7])).map(|pose| pose.path_ordinal),
+        Some(Some(7))
+    );
+    assert_eq!(parse(&frame(6, true)).unwrap().path_ordinal, None);
+    assert_eq!(
+        parse(&path_ordinal_frame(&[10], 1, &[7])).map(|pose| pose.target_record_index),
+        Some(10)
+    );
+    // An empty path, a two-reference path, and a null placement stay native.
+    for refused in [
+        path_ordinal_frame(&[], 0, &[]),
+        path_ordinal_frame(&[12, 10], 2, &[1, 2]),
+        path_ordinal_frame(&[0], 1, &[1]),
+    ] {
+        assert!(parse(&refused).is_none());
+        let mut table = OperationTables::default();
+        register(&ctx, &mut table, stream, &refused, Some(4)).unwrap();
+        assert!(table.poses.is_empty());
+        assert_eq!(table.native, 1);
+    }
+}
+
 fn reference() -> XrefReference {
     XrefReference {
         id: "f3d:xref:reference#0-occurrence-0".into(),
@@ -151,6 +256,8 @@ fn model() -> (cadmpeg_ir::CadIr, BTreeMap<String, OperationPose>) {
                 frame: body,
                 carrier: 20,
                 source_root_record_index: 3,
+                path_ordinal: None,
+                table_version: Some(1),
             },
         )]),
     )
@@ -180,6 +287,76 @@ fn operation_pose_updates_every_instance_of_one_definition() {
     assert!(reference_matches(&refs[0]));
     assert!(refs[0].current_pose.is_none());
     assert!(refs[0].operation_pose.is_some());
+}
+
+#[test]
+fn applied_version_4_table_charges_the_path_ordinal_loss() {
+    for (path_ordinal, charged) in [(None, false), (Some(7), true)] {
+        let (mut ir, mut poses) = model();
+        for pose in poses.values_mut() {
+            pose.path_ordinal = path_ordinal;
+        }
+        let mut losses = Vec::new();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+        project(&ctx, &mut ir, &poses, &BTreeSet::new(), &mut losses).unwrap();
+        assert_eq!(
+            losses
+                .iter()
+                .any(|loss| loss.code == F3dLossCode::OperationPosePathOrdinalAssumed.kind()),
+            charged,
+            "{path_ordinal:?}"
+        );
+    }
+}
+
+#[test]
+fn applied_version_2_or_3_table_charges_the_version_loss() {
+    for (version, charged) in [
+        (None, false),
+        (Some(0), false),
+        (Some(1), false),
+        (Some(2), true),
+        (Some(3), true),
+        (Some(4), false),
+    ] {
+        let (mut ir, mut poses) = model();
+        for pose in poses.values_mut() {
+            pose.table_version = version;
+        }
+        let mut losses = Vec::new();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+        project(&ctx, &mut ir, &poses, &BTreeSet::new(), &mut losses).unwrap();
+        assert_eq!(
+            losses
+                .iter()
+                .any(|loss| loss.code == F3dLossCode::OperationPoseVersionAssumed.kind()),
+            charged,
+            "{version:?}"
+        );
+    }
+}
+
+#[test]
+fn a_registered_pose_keeps_the_version_of_its_table() {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    for version in [0, 1, 2, 3] {
+        let mut table = OperationTables::default();
+        let prefix = if version == 0 { 2 } else { 6 };
+        register(
+            &ctx,
+            &mut table,
+            "Design/BulkStream.dat",
+            &frame(prefix, true),
+            Some(version),
+        )
+        .unwrap();
+        let versions = table
+            .poses
+            .values()
+            .map(|pose| pose.as_ref().and_then(|pose| pose.table_version))
+            .collect::<Vec<_>>();
+        assert_eq!(versions, [Some(version)]);
+    }
 }
 
 #[test]
@@ -236,13 +413,19 @@ fn operation_pose_cannot_move_a_carrier_selected_descendant() {
 fn operation_pose_registration_refuses_other_versions_and_duplicate_targets() {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let stream = "Design/BulkStream.dat";
-    for version in [None, Some(2), Some(3), Some(4)] {
+    for version in [None, Some(4), Some(5)] {
         let mut table = OperationTables::default();
         register(&ctx, &mut table, stream, &frame(6, true), version).unwrap();
         assert!(table.poses.is_empty());
         assert_eq!(table.native, 1);
     }
-    for version in [0, 1] {
+    for version in [1, 2, 3] {
+        let mut table = OperationTables::default();
+        register(&ctx, &mut table, stream, &frame(2, true), Some(version)).unwrap();
+        assert!(table.poses.is_empty());
+        assert_eq!(table.native, 1);
+    }
+    for version in [0, 1, 2, 3] {
         let mut table = OperationTables::default();
         let prefix = if version == 0 { 2 } else { 6 };
         register(
