@@ -121,15 +121,15 @@ fn parse_constructed_plane_display_name(
     framed_bytes: &[u8],
     entity_id: u64,
 ) -> Option<(u32, Option<String>)> {
-    use crate::layout::constructed_plane_entity_prefix as plane_prefix;
+    use crate::layout::constructed_plane_entity_body as body;
+    use crate::layout::constructed_plane_entity_prefix as prefix;
     use cadmpeg_core::decode::View;
 
-    if framed_bytes.len() < plane_prefix::LEN {
-        return None;
-    }
+    let mut body_start = prefix::PROPERTY_PRESENCE;
+    crate::design::decode::sketch::read_property_block(framed_bytes, &mut body_start)?;
     let (entity_id_str, mut cursor) = crate::bytes::lp_utf16_bounded(
         framed_bytes,
-        plane_prefix::ENTITY_ID_CODE_UNIT_COUNT,
+        body_start.checked_add(body::ENTITY_ID_CODE_UNIT_COUNT)?,
         1..=64,
     )?;
     let parsed_id = crate::records::identity::DesignEntityId::try_from(entity_id_str).ok()?;
