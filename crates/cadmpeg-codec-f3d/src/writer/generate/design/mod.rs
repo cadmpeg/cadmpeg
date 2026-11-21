@@ -9,8 +9,8 @@
 //! scope's configuration, arrangements and occurrence states, for every
 //! current state's `Stale` or `Failed` status and poses, and for every stored
 //! evaluation. A failure here is a [`super::reduce::Stage::NeutralDesign`]
-//! failure, whose only fallback is to write no design ([`dropped_records`]):
-//! it never drops a body.
+//! failure. Its fallbacks write the design without its `Sketch` items, then
+//! write no design ([`dropped_records`]): they never drop a body.
 
 mod base_feature;
 mod expression;
@@ -18,6 +18,7 @@ pub(super) mod frames;
 pub(super) mod history;
 pub(super) mod parameters;
 mod roster;
+mod sketch;
 #[cfg(test)]
 mod tests;
 mod types;
@@ -47,12 +48,30 @@ use crate::native::F3dNative;
 use base_feature::BaseFeaturePlan;
 use frames::DesignRecords;
 use parameters::ParameterPlan;
+use sketch::SketchPlan;
 
 #[cfg(test)]
 thread_local! {
     /// Makes the next attempt that writes the design scope on this thread
     /// fail in the design module.
     static FAIL_NEXT_PLAN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Makes the next attempt that writes a `Sketch` item on this thread
+    /// fail in the sketch records.
+    static FAIL_NEXT_SKETCHES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// The failure [`FAIL_NEXT_SKETCHES`] requests, once.
+#[cfg(test)]
+fn requested_sketch_failure() -> Option<cadmpeg_core::CodecError> {
+    FAIL_NEXT_SKETCHES
+        .with(|fail| fail.replace(false))
+        .then(|| {
+            cadmpeg_core::CodecError::NotImplemented("a test failure of the sketch records".into())
+        })
 }
 
 /// The failure [`FAIL_NEXT_PLAN`] requests, once.
@@ -77,15 +96,27 @@ pub(super) const DROPPED: DesignArenaDispositions = DesignArenaDispositions {
 /// What the writer writes of the root definition's design scope.
 pub(super) struct NeutralDesign<'a> {
     parameters: ParameterPlan,
+    sketches: SketchPlan<'a>,
     base_feature: BaseFeaturePlan<'a>,
     losses: Vec<LossNote>,
 }
 
 /// The plan for the root definition's design scope; `None` when the
-/// document holds none.
-pub(super) fn plan(target: &CadIr) -> Option<NeutralDesign<'_>> {
-    let scope = root_scope(target)?;
+/// document holds none. With `sketch_failure`, the reason a design with
+/// its sketches failed, the plan writes no `Sketch` item.
+pub(super) fn plan<'a>(
+    target: &'a CadIr,
+    sketch_failure: Option<&str>,
+) -> Result<Option<NeutralDesign<'a>>, CodecError> {
+    let Some(scope) = root_scope(target) else {
+        return Ok(None);
+    };
     let parameters = parameters::plan(target, &scope.definition);
+    let features = scope_features(target, scope);
+    let mut sketches = sketch_plan(target, &features);
+    if let Some(reason) = sketch_failure {
+        sketches.drop_items(reason);
+    }
     let written = parameters.written().collect::<BTreeSet<_>>();
     let mut owned = BTreeMap::<&FeatureId, Vec<String>>::new();
     for parameter in &target.design.parameters {
@@ -98,16 +129,26 @@ pub(super) fn plan(target: &CadIr) -> Option<NeutralDesign<'_>> {
             }
         }
     }
-    let unwritten =
-        scope_features(target, scope)
-            .into_iter()
-            .map(|feature| match owned.get(feature) {
-                Some(parameters) => format!(
-                    "{feature} (its parameters are written as user parameters: {})",
+    let unwritten = features
+        .iter()
+        .filter(|feature| !sketches.writes(feature))
+        .map(|feature| {
+            let mut notes = Vec::new();
+            if let Some(reason) = sketches.unwritten.get(*feature) {
+                notes.push(format!("its sketch {reason}"));
+            }
+            if let Some(parameters) = owned.get(*feature) {
+                notes.push(format!(
+                    "its parameters are written as user parameters: {}",
                     parameters.join(" ")
-                ),
-                None => feature.to_string(),
-            });
+                ));
+            }
+            if notes.is_empty() {
+                feature.to_string()
+            } else {
+                format!("{feature} ({})", notes.join("; "))
+            }
+        });
     let mut losses = evaluation_missing(
         "F3D",
         "stores the current bodies as one Base Feature and no timeline item for these features of the design",
@@ -117,11 +158,13 @@ pub(super) fn plan(target: &CadIr) -> Option<NeutralDesign<'_>> {
     .collect::<Vec<_>>();
     losses.extend(unwritten_records(target, scope));
     losses.extend(states(target));
-    Some(NeutralDesign {
+    let base_feature = base_feature::plan(target, sketches.items.len())?;
+    Ok(Some(NeutralDesign {
         parameters,
-        base_feature: base_feature::plan(target),
+        sketches,
+        base_feature,
         losses,
-    })
+    }))
 }
 
 impl NeutralDesign<'_> {
@@ -164,12 +207,17 @@ impl NeutralDesign<'_> {
         let scope = root_scope(target)
             .ok_or_else(|| CodecError::Malformed("the design has no root scope".into()))?;
         let bodies = self.base_feature.roster_bodies(target);
-        let roster = roster::Roster::new(bodies.len(), self.parameters.written_count())?;
+        let roster = roster::Roster::new(
+            bodies.len(),
+            self.parameters.written_count(),
+            &self.sketches.items,
+        )?;
         let ctx = roster::Context {
             table: roster::type_table(&roster, bodies.iter().any(|body| body.sheet))?,
             roster,
             values: roster::values::Values::new(target, &scope.definition, smbh),
             bodies,
+            sketches: &self.sketches.items,
         };
         let mut records = DesignRecords::default();
         BaseFeaturePlan::roster_records(&ctx, &self.parameters, &mut records)?;
@@ -178,10 +226,35 @@ impl NeutralDesign<'_> {
         Ok(members)
     }
 
+    /// Whether the design writes a `Sketch` item.
+    pub(super) fn writes_sketches(&self) -> bool {
+        !self.sketches.items.is_empty()
+    }
+
     pub(super) fn into_losses(self) -> Vec<LossNote> {
         let mut losses = self.losses;
         losses.extend(self.parameters.into_losses());
+        losses.extend(self.sketches.into_losses());
         losses
+    }
+}
+
+/// Whether the root definition's design scope writes a `Sketch` item.
+pub(super) fn writes_sketches(target: &CadIr) -> bool {
+    root_scope(target).is_some_and(|scope| {
+        !sketch_plan(target, &scope_features(target, scope))
+            .items
+            .is_empty()
+    })
+}
+
+/// The plan of the sketches among `features`. The `Sketch` items precede
+/// the `Base Feature`, which a design with no body does not write.
+fn sketch_plan<'a>(target: &'a CadIr, features: &[&'a FeatureId]) -> SketchPlan<'a> {
+    if target.geometry.bodies.is_empty() {
+        SketchPlan::default()
+    } else {
+        sketch::plan(target, features)
     }
 }
 

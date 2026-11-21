@@ -2489,7 +2489,7 @@ struct SketchProperty<'a> {
 /// Which keys a record carries varies by record, so a caller addresses a
 /// property by name. Reading the block by fixed offset misframes every record
 /// whose key set differs from the one the offsets were taken from.
-struct SketchProperties<'a> {
+pub(crate) struct SketchProperties<'a> {
     payload: &'a [u8],
     first: usize,
     count: usize,
@@ -2544,7 +2544,10 @@ impl SketchProperties<'_> {
     }
 }
 
-fn read_property_block<'a>(payload: &'a [u8], cursor: &mut usize) -> Option<SketchProperties<'a>> {
+pub(crate) fn read_property_block<'a>(
+    payload: &'a [u8],
+    cursor: &mut usize,
+) -> Option<SketchProperties<'a>> {
     let mut count = 0;
     let mut first = *cursor;
     match payload.get(*cursor)? {
