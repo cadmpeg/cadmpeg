@@ -317,7 +317,7 @@ fn validate_surface_sweep_profile_edits(
     Ok(())
 }
 
-fn project_features_with_native_inputs(
+pub(crate) fn project_features_with_native_inputs(
     native: &crate::native::SldprtNative,
 ) -> Result<Vec<cadmpeg_ir::features::Feature>, cadmpeg_core::CodecError> {
     Ok(project_feature_model_with_native_inputs(native)?.features)

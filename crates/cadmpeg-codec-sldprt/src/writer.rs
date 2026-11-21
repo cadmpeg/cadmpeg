@@ -11,9 +11,11 @@ mod default_properties;
 mod edge_direction;
 mod envelope;
 mod history_drop;
+mod keywords_text;
 mod materials;
 mod metadata_owners;
 mod ownership;
+mod read_back;
 mod reduce;
 pub(crate) mod target;
 
@@ -173,13 +175,15 @@ pub(crate) fn write_semantic_with_records(
     losses.extend(history_drop::foreign_native_operations(&mut normalized));
     let reducible = history_drop::HistoryDrop::applies(&normalized);
     let mut displayed_values = history_drop::DisplayedValues::default();
-    let mut keywords_rewrites = history_drop::KeywordsRewrites::default();
+    let mut renamed = history_drop::Renamed::default();
+    let mut source_definitions = None;
     if reducible {
+        source_definitions = Some(read_back::SourceDefinitions::of(&normalized));
         history_drop::clear_foreign_native_refs(&mut normalized, native.as_ref());
         let (displayed, notes) = history_drop::equations_as_displayed_values(&mut normalized);
         displayed_values = displayed;
         losses.extend(notes);
-        keywords_rewrites = history_drop::foreign_records_as_keywords(&mut normalized);
+        renamed = history_drop::foreign_records_as_keywords(&mut normalized);
     }
     let mut dropped_history = history_drop::HistoryDrop::default();
     let feature_input_renames = loop {
@@ -208,9 +212,12 @@ pub(crate) fn write_semantic_with_records(
     };
     losses.extend(dropped_history.finish());
     losses.extend(displayed_values.note(&normalized));
-    losses.extend(keywords_rewrites.notes(&normalized));
-    if reducible {
-        losses.extend(history_drop::historical_selections_note(&normalized));
+    losses.extend(renamed.note(&normalized));
+    if let Some(native) = native.as_mut() {
+        losses.extend(keywords_text::readable_keywords(&normalized, native));
+    }
+    if let Some(source_definitions) = &source_definitions {
+        losses.extend(source_definitions.notes(&normalized, native.as_ref()));
     }
     let ir = &normalized;
     let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new())?;
@@ -2752,6 +2759,7 @@ fn xml_attribute(out: &mut String, name: &str, value: &str) {
             '&' => out.push_str("&amp;"),
             '<' => out.push_str("&lt;"),
             '"' => out.push_str("&quot;"),
+            '\t' => out.push_str("&#9;"),
             '\r' => out.push_str("&#13;"),
             '\n' => out.push_str("&#10;"),
             _ => out.push(character),
@@ -2766,6 +2774,7 @@ fn xml_text(out: &mut String, value: &str) {
             '&' => out.push_str("&amp;"),
             '<' => out.push_str("&lt;"),
             '>' => out.push_str("&gt;"),
+            '\r' => out.push_str("&#13;"),
             _ => out.push(character),
         }
     }

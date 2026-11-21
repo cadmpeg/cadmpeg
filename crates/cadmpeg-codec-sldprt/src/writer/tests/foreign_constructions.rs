@@ -1,0 +1,423 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Construction values of another format's features: each one the written
+//! record reads back, or a note that names it.
+
+use cadmpeg_ir::features::{
+    DraftAnchor, DraftPull, ExtrudeExtent, ExtrudeSide, FaceMotion, FaceSelection, Feature,
+    FeatureDefinition, FeatureDirection3, FeatureId, FeatureOperation, FinitePoint3,
+    LinearTermination, ParameterValue,
+};
+use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::{Angle, FiniteReal, Length, NonZeroLength, PositiveAngle, SlopeAngle};
+
+use super::foreign_carriers::{
+    cube_with_foreign_fillet, cube_with_foreign_history, loss, plan_losses, push_foreign_feature,
+    push_length_parameter, push_parameter,
+};
+
+const BOSS: &str = "other:model:feature#boss";
+
+fn boss() -> FeatureId {
+    FeatureId::mint(BOSS).unwrap()
+}
+
+fn decoded_feature<'a>(ir: &'a cadmpeg_ir::CadIr, name: &str) -> &'a Feature {
+    ir.model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some(name))
+        .unwrap_or_else(|| panic!("{name} decodes back"))
+}
+
+fn owned_names<'a>(ir: &'a cadmpeg_ir::CadIr, feature: &Feature) -> Vec<&'a str> {
+    let mut names = ir
+        .model
+        .parameters
+        .iter()
+        .filter(|parameter| parameter.owner.as_ref() == Some(&feature.id))
+        .map(|parameter| parameter.name.as_str())
+        .collect::<Vec<_>>();
+    names.sort_unstable();
+    names
+}
+
+fn set_boss_extent(ir: &mut cadmpeg_ir::CadIr, new_extent: ExtrudeExtent) {
+    let boss = ir
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.id.as_str() == BOSS)
+        .unwrap();
+    boss.evaluation.edit(|definition, _| {
+        let FeatureDefinition::Operation(FeatureOperation::Extrude { extent, .. }) = definition
+        else {
+            panic!("extrude");
+        };
+        *extent = new_extent;
+    });
+}
+
+fn blind(length: f64) -> ExtrudeSide {
+    ExtrudeSide {
+        termination: LinearTermination::Blind {
+            length: NonZeroLength::new(length).unwrap(),
+        },
+        draft: None,
+    }
+}
+
+fn decoded_extent(ir: &cadmpeg_ir::CadIr) -> (&Feature, &ExtrudeExtent) {
+    let boss = decoded_feature(ir, "Boss");
+    let FeatureDefinition::Operation(FeatureOperation::Extrude { extent, .. }) =
+        boss.evaluation.definition()
+    else {
+        panic!("{:?}", boss.evaluation.definition());
+    };
+    (boss, extent)
+}
+
+#[test]
+fn an_extrude_depth_a_float_off_its_expression_decodes_back_under_d1() {
+    let depth = 6.000_000_000_000_001;
+    let mut ir = cube_with_foreign_history();
+    set_boss_extent(&mut ir, ExtrudeExtent::OneSided { side: blind(depth) });
+    push_parameter(
+        &mut ir,
+        &boss(),
+        "d3",
+        "6 mm".into(),
+        ParameterValue::Length(Length::new(depth).unwrap()),
+    );
+    let losses = plan_losses(&ir);
+    assert!(
+        loss(&losses, "writer.features-omitted").is_none(),
+        "{losses:#?}"
+    );
+
+    let decoded = crate::test_support::ir::encode_decode(&ir);
+    let (boss, extent) = decoded_extent(&decoded);
+    assert!(
+        matches!(
+            extent,
+            ExtrudeExtent::OneSided { side: ExtrudeSide {
+                termination: LinearTermination::Blind { length }, ..
+            } } if (length.get() - 6.0).abs() < 1.0e-9
+        ),
+        "{extent:?}"
+    );
+    assert_eq!(owned_names(&decoded, boss), ["D1"]);
+}
+
+#[test]
+fn a_circular_pattern_decodes_back_with_its_count_and_angle() {
+    use cadmpeg_ir::features::patterns::{PatternKind, PatternSeed, PatternTransform};
+
+    let mut ir = cube_with_foreign_history();
+    let id = push_foreign_feature(&mut ir, "ring", "Ring", |_, _, _| {
+        FeatureDefinition::Operation(FeatureOperation::Pattern {
+            seeds: vec![PatternSeed::Feature(boss())],
+            pattern: PatternKind::new(PatternTransform::Circular {
+                axis_origin: FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+                axis_dir: FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
+                angle: PositiveAngle::new(std::f64::consts::TAU).unwrap(),
+                count: 9,
+            })
+            .unwrap(),
+        })
+    });
+    ir.model.features.last_mut().unwrap().dependencies =
+        cadmpeg_ir::features::DistinctMembers::try_from(vec![boss()]).unwrap();
+    push_parameter(
+        &mut ir,
+        &id,
+        "d29",
+        "9".into(),
+        ParameterValue::Real(FiniteReal::new(9.0).unwrap()),
+    );
+    push_parameter(
+        &mut ir,
+        &id,
+        "d30",
+        "360 deg".into(),
+        ParameterValue::Angle(Angle::new(std::f64::consts::TAU).unwrap()),
+    );
+    let losses = plan_losses(&ir);
+    let note = loss(&losses, "writer.parameters-renamed").expect("named rename");
+    assert!(
+        note.message
+            .contains("other:model:parameter#d29 (d29 as Count)")
+            && note
+                .message
+                .contains("other:model:parameter#d30 (d30 as Angle)"),
+        "{}",
+        note.message
+    );
+
+    let decoded = crate::test_support::ir::encode_decode(&ir);
+    let ring = decoded_feature(&decoded, "Ring");
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
+        ring.evaluation.definition()
+    else {
+        panic!("{:?}", ring.evaluation.definition());
+    };
+    assert!(
+        matches!(
+            pattern.definition(),
+            PatternTransform::Circular { angle, count: 9, .. }
+                if (angle.get() - std::f64::consts::TAU).abs() < 1.0e-9
+        ),
+        "{pattern:?}"
+    );
+    assert_eq!(owned_names(&decoded, ring), ["Angle", "Count"]);
+}
+
+#[test]
+fn a_draft_decodes_back_with_its_angle_under_d1() {
+    let angle = 2.0_f64.to_radians();
+    let mut ir = cube_with_foreign_history();
+    let id = push_foreign_feature(&mut ir, "taper", "Taper", |state, face, _| {
+        FeatureDefinition::Operation(FeatureOperation::Draft {
+            faces: FaceSelection::historical(
+                state,
+                vec![face],
+                "other:design:face-operand#taper".into(),
+            )
+            .unwrap(),
+            anchor: DraftAnchor::NeutralPlane {
+                plane: FaceSelection::Native("other:design:plane#taper".into()),
+                pull: Some(DraftPull::new(
+                    FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
+                    None,
+                )),
+            },
+            angle: Some(SlopeAngle::new(angle).unwrap()),
+            outward: Some(false),
+            second_side: None,
+        })
+    });
+    push_parameter(
+        &mut ir,
+        &id,
+        "d8",
+        "2 deg".into(),
+        ParameterValue::Angle(Angle::new(angle).unwrap()),
+    );
+
+    let decoded = crate::test_support::ir::encode_decode(&ir);
+    let taper = decoded_feature(&decoded, "Taper");
+    assert!(
+        matches!(
+            taper.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Draft { angle: Some(read), .. })
+                if (read.get() - angle).abs() < 1.0e-9
+        ),
+        "{:?}",
+        taper.evaluation.definition()
+    );
+    assert_eq!(owned_names(&decoded, taper), ["D1"]);
+}
+
+#[test]
+fn a_move_face_decodes_back_with_its_distance_under_d1() {
+    let mut ir = cube_with_foreign_history();
+    let id = push_foreign_feature(&mut ir, "push", "Push", |state, face, _| {
+        FeatureDefinition::Operation(FeatureOperation::MoveFace {
+            faces: FaceSelection::historical(
+                state,
+                vec![face],
+                "other:design:face-operand#push".into(),
+            )
+            .unwrap(),
+            motion: FaceMotion::Offset {
+                distance: Length::new(1.5).unwrap(),
+            },
+        })
+    });
+    push_length_parameter(&mut ir, &id, "d9", 1.5);
+
+    let decoded = crate::test_support::ir::encode_decode(&ir);
+    let push = decoded_feature(&decoded, "Push");
+    assert!(
+        matches!(
+            push.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::MoveFace {
+                motion: FaceMotion::Offset { distance },
+                ..
+            }) if distance.get() == 1.5
+        ),
+        "{:?}",
+        push.evaluation.definition()
+    );
+    assert_eq!(owned_names(&decoded, push), ["D1"]);
+}
+
+#[test]
+fn a_depth_with_two_holders_is_named_as_a_value_the_record_reads_back_without() {
+    let mut ir = cube_with_foreign_history();
+    push_length_parameter(&mut ir, &boss(), "d1", 12.0);
+    push_length_parameter(&mut ir, &boss(), "d2", 12.0);
+    let losses = plan_losses(&ir);
+    assert!(
+        loss(&losses, "writer.parameters-renamed").is_none(),
+        "{losses:#?}"
+    );
+    let note = loss(&losses, "writer.feature-fields-omitted").expect("named value");
+    assert!(
+        note.message
+            .contains(&format!("{BOSS} (extent.side.termination: blind read as")),
+        "{}",
+        note.message
+    );
+}
+
+#[test]
+fn a_two_sided_extrude_decodes_back_with_its_depths_under_d1_and_d2() {
+    let mut ir = cube_with_foreign_history();
+    set_boss_extent(
+        &mut ir,
+        ExtrudeExtent::TwoSided {
+            first: blind(12.0),
+            second: blind(5.0),
+        },
+    );
+    push_length_parameter(&mut ir, &boss(), "d1", 12.0);
+    push_length_parameter(&mut ir, &boss(), "d2", 5.0);
+    let losses = plan_losses(&ir);
+    assert!(
+        loss(&losses, "writer.feature-fields-omitted").is_none(),
+        "{losses:#?}"
+    );
+    let note = loss(&losses, "writer.history-keywords-only").expect("named summary");
+    assert!(note.message.contains(BOSS), "{}", note.message);
+
+    let decoded = crate::test_support::ir::encode_decode(&ir);
+    let (boss, extent) = decoded_extent(&decoded);
+    assert_eq!(
+        extent,
+        &ExtrudeExtent::TwoSided {
+            first: blind(12.0),
+            second: blind(5.0),
+        }
+    );
+    assert_eq!(owned_names(&decoded, boss), ["D1", "D2"]);
+}
+
+#[test]
+fn equal_two_sided_depths_with_one_holder_are_not_renamed_twice() {
+    let mut ir = cube_with_foreign_history();
+    set_boss_extent(
+        &mut ir,
+        ExtrudeExtent::TwoSided {
+            first: blind(12.0),
+            second: blind(12.0),
+        },
+    );
+    push_length_parameter(&mut ir, &boss(), "d1", 12.0);
+    let losses = plan_losses(&ir);
+    assert!(
+        loss(&losses, "writer.parameters-renamed").is_none(),
+        "{losses:#?}"
+    );
+    let note = loss(&losses, "writer.feature-fields-omitted").expect("named value");
+    assert!(note.message.contains(BOSS), "{}", note.message);
+}
+
+#[test]
+fn property_names_a_keywords_attribute_cannot_hold_are_left_out_and_named() {
+    let mut ir = cube_with_foreign_fillet();
+    let fillet = ir.model.features.last_mut().unwrap();
+    for name in ["Name", "xmlns"] {
+        fillet.source_properties.insert(
+            cadmpeg_core::text::NonBlankString::new(name.to_owned()).unwrap(),
+            "urn:other".into(),
+        );
+    }
+    let losses = plan_losses(&ir);
+    assert!(
+        losses.iter().any(
+            |note| note.code.local_code() == "writer.feature-fields-omitted"
+                && note
+                    .message
+                    .contains("other:model:feature#round (Name, other:sets, xmlns)")
+        ),
+        "{losses:#?}"
+    );
+
+    let decoded = crate::test_support::ir::encode_decode(&ir);
+    let round = decoded_feature(&decoded, "Round");
+    assert!(
+        !round.source_properties.contains_key("xmlns"),
+        "{:?}",
+        round.source_properties
+    );
+}
+
+#[test]
+fn characters_xml_does_not_allow_are_replaced_and_named_and_a_tab_is_kept() {
+    let mut ir = cube_with_foreign_history();
+    let boss_feature = ir
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.id.as_str() == BOSS)
+        .unwrap();
+    boss_feature.name = Some("Bo\u{1}ss".into());
+    for (name, value) in [("Comment", "a\u{1}b"), ("Tabbed", "a\tb")] {
+        boss_feature.source_properties.insert(
+            cadmpeg_core::text::NonBlankString::new(name.to_owned()).unwrap(),
+            value.into(),
+        );
+    }
+    push_length_parameter(&mut ir, &boss(), "d1", 12.0);
+    ir.model
+        .parameters
+        .last_mut()
+        .unwrap()
+        .properties
+        .insert(cadmpeg_core::nonblank_literal!("Note"), "x\u{b}y".into());
+    let losses = plan_losses(&ir);
+    let note = loss(&losses, "writer.keywords-characters-replaced").expect("named text");
+    assert!(
+        note.message.contains(BOSS) && note.message.contains("other:model:parameter#d1"),
+        "{}",
+        note.message
+    );
+
+    let decoded = crate::test_support::ir::encode_decode(&ir);
+    let boss = decoded_feature(&decoded, "Bo\u{fffd}ss");
+    assert_eq!(
+        boss.source_properties.get("Comment").map(String::as_str),
+        Some("a\u{fffd}b")
+    );
+    assert_eq!(
+        boss.source_properties.get("Tabbed").map(String::as_str),
+        Some("a\tb")
+    );
+    assert!(matches!(
+        boss.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude { .. })
+    ));
+}
+
+#[test]
+fn a_selection_written_by_a_source_token_is_named_as_naming_no_written_record() {
+    let mut ir = cube_with_foreign_history();
+    let face = ir.geometry.faces[0].id.clone();
+    let id = push_foreign_feature(&mut ir, "cap", "Cap", |_, _, _| {
+        FeatureDefinition::Operation(FeatureOperation::DeleteFace {
+            faces: FaceSelection::Resolved {
+                faces: vec![face],
+                native: "other:design:face#cap".into(),
+            },
+            heal: true,
+        })
+    });
+    let losses = plan_losses(&ir);
+    let note = loss(&losses, "writer.selection-identities-omitted").expect("named selection");
+    assert!(
+        note.message.contains(id.as_str())
+            && note.message.contains("names no record of the written part"),
+        "{}",
+        note.message
+    );
+}

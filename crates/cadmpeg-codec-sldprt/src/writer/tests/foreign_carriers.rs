@@ -26,7 +26,7 @@ fn cube() -> cadmpeg_ir::CadIr {
     ir
 }
 
-fn plan_losses(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+pub(super) fn plan_losses(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     SldprtCodec
         .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
         .unwrap()
@@ -35,7 +35,7 @@ fn plan_losses(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::report::loss::LossNote
         .clone()
 }
 
-fn loss<'a>(
+pub(super) fn loss<'a>(
     losses: &'a [cadmpeg_ir::report::loss::LossNote],
     code: &str,
 ) -> Option<&'a cadmpeg_ir::report::loss::LossNote> {
@@ -317,7 +317,7 @@ fn a_procedural_surface_without_a_cache_leaves_its_body_out() {
 
 /// The cube with a triangle sketch and an extrude of it, as another format
 /// states them: each feature carries that format's own native reference.
-fn cube_with_foreign_history() -> cadmpeg_ir::CadIr {
+pub(super) fn cube_with_foreign_history() -> cadmpeg_ir::CadIr {
     use cadmpeg_ir::features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
         FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
@@ -445,7 +445,7 @@ fn history_with_another_formats_native_references_is_written() {
 /// `other:history-input:state#{key}` holding one face and one edge, and
 /// return its id. `definition` builds the operation from that state, face and
 /// edge.
-fn push_foreign_feature(
+pub(super) fn push_foreign_feature(
     ir: &mut cadmpeg_ir::CadIr,
     key: &str,
     name: &str,
@@ -495,7 +495,7 @@ fn push_foreign_feature(
 }
 
 /// Push a length parameter `name` = `value` mm owned by `owner`.
-fn push_length_parameter(
+pub(super) fn push_length_parameter(
     ir: &mut cadmpeg_ir::CadIr,
     owner: &cadmpeg_ir::features::FeatureId,
     name: &str,
@@ -513,7 +513,7 @@ fn push_length_parameter(
 }
 
 /// Push a parameter `name` = `expression` of `value` owned by `owner`.
-fn push_parameter(
+pub(super) fn push_parameter(
     ir: &mut cadmpeg_ir::CadIr,
     owner: &cadmpeg_ir::features::FeatureId,
     name: &str,
@@ -548,7 +548,7 @@ fn push_parameter(
 /// `cube_with_foreign_history` plus a fillet of the boss whose edges are stated
 /// in its input topology, with a tangency weight, a source property whose name
 /// has a namespace prefix, and an owned radius parameter `d7`.
-fn cube_with_foreign_fillet() -> cadmpeg_ir::CadIr {
+pub(super) fn cube_with_foreign_fillet() -> cadmpeg_ir::CadIr {
     use cadmpeg_ir::features::edge_treatments::{FilletGroup, RadiusSpec};
     use cadmpeg_ir::features::{
         EdgeSelection, FeatureDefinition, FeatureOperation, NonEmptyMembers,

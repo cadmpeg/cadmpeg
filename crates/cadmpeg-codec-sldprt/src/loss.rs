@@ -348,6 +348,12 @@ pub(crate) enum SldprtLossCode {
     /// Export writes the named parameters under the positional dimension name
     /// from which the SLDPRT record's construction value is read.
     WriterParametersRenamed,
+    /// Export writes the named Keywords records with U+FFFD in place of each
+    /// character XML 1.0 does not allow.
+    WriterKeywordsCharactersReplaced,
+    /// Export writes the named features as Keywords history records without
+    /// the feature objects from which `SolidWorks` rebuilds a part.
+    WriterHistoryKeywordsOnly,
     SourceDialectDisplaced,
     /// A source record states a property whose key holds no non-whitespace
     /// character, so the property cannot be keyed and is not transferred.
@@ -535,6 +541,8 @@ impl SldprtLossCode {
         Self::WriterSelectionIdentitiesOmitted,
         Self::WriterFeatureFieldsOmitted,
         Self::WriterParametersRenamed,
+        Self::WriterKeywordsCharactersReplaced,
+        Self::WriterHistoryKeywordsOnly,
         Self::SourceDialectDisplaced,
         Self::SourcePropertyKeyBlank,
         Self::AssemblyStructureNotTransferred,
@@ -699,6 +707,8 @@ impl SldprtLossCode {
             Self::WriterSelectionIdentitiesOmitted => "writer.selection-identities-omitted",
             Self::WriterFeatureFieldsOmitted => "writer.feature-fields-omitted",
             Self::WriterParametersRenamed => "writer.parameters-renamed",
+            Self::WriterKeywordsCharactersReplaced => "writer.keywords-characters-replaced",
+            Self::WriterHistoryKeywordsOnly => "writer.history-keywords-only",
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::SourcePropertyKeyBlank => "source.property-key-blank",
             Self::MetadataPartRootUnsupported => "metadata.part-root-unsupported",
@@ -761,6 +771,8 @@ impl SldprtLossCode {
             Self::WriterSelectionIdentitiesOmitted => Severity::Warning,
             Self::WriterFeatureFieldsOmitted => Severity::Warning,
             Self::WriterParametersRenamed => Severity::Warning,
+            Self::WriterKeywordsCharactersReplaced => Severity::Warning,
+            Self::WriterHistoryKeywordsOnly => Severity::Warning,
             Self::WriterUnboundAppearancesOmitted => Severity::Warning,
             Self::WriterMaterialsOmitted => Severity::Warning,
             Self::WriterAttributesOmitted => Severity::Warning,
@@ -921,7 +933,9 @@ impl SldprtLossCode {
             Self::WriterFaceLoopsUnchained => LossTaxonomy::TopologyNotTransferred,
             Self::WriterSelectionIdentitiesOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterFeatureFieldsOmitted => LossTaxonomy::ParametricRecordOmitted,
-            Self::WriterParametersRenamed => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterParametersRenamed => LossTaxonomy::AttributesNotTransferred,
+            Self::WriterKeywordsCharactersReplaced => LossTaxonomy::AttributesNotTransferred,
+            Self::WriterHistoryKeywordsOnly => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterUnboundAppearancesOmitted => LossTaxonomy::AppearanceReduced,
             Self::WriterMaterialsOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
@@ -1372,6 +1386,8 @@ mod tests {
                 "writer.selection-identities-omitted",
                 "writer.feature-fields-omitted",
                 "writer.parameters-renamed",
+                "writer.keywords-characters-replaced",
+                "writer.history-keywords-only",
                 "target.source-dialect-displaced",
                 "source.property-key-blank",
                 "assembly.structure-not-transferred",

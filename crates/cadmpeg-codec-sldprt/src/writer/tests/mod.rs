@@ -8,6 +8,7 @@ pub(crate) mod configuration_carriers;
 mod digests;
 mod flex_history;
 mod foreign_carriers;
+mod foreign_constructions;
 mod helix_surfaces;
 mod homogeneous_poles;
 mod metadata_members;

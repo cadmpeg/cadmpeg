@@ -13,8 +13,8 @@ use crate::history::literals::{
     parse_parameter_literal,
 };
 use crate::history::parameters::{
-    expression_identifier_tokens, global_parameter_owners, parameters_with_incoherent_dependencies,
-    parse_native_parameter_literal, project_parameters,
+    equivalent_parameter_values, expression_identifier_tokens, global_parameter_owners,
+    parameters_with_incoherent_dependencies, parse_native_parameter_literal, project_parameters,
 };
 use crate::history::project::neutral_feature_id;
 use crate::resolved_features::relation_geometry::is_reference_relation_parameter;
@@ -180,7 +180,12 @@ fn sync_neutral_parameters(
             )));
         }
         if parse_neutral_parameter_literal(owner, &parameter.name, &parameter.expression)
-            .is_some_and(|literal| parameter.value.as_ref() != Some(&literal))
+            .is_some_and(|literal| {
+                !parameter
+                    .value
+                    .as_ref()
+                    .is_some_and(|value| equivalent_parameter_values(value, &literal))
+            })
         {
             return Err(CodecError::malformed(format_args!(
                 "SLDPRT parameter {} has a value inconsistent with its expression",

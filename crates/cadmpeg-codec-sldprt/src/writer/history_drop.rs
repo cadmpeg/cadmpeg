@@ -10,12 +10,13 @@ use std::collections::{BTreeSet, HashSet};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, ParameterValue};
 use cadmpeg_ir::report::loss::LossNote;
 use serde::Serialize;
 use serde_json::Value;
 
 use crate::history::literals::{format_parameter_value, parse_parameter_literal};
+use crate::history::parameters::equivalent_parameter_values;
 use crate::loss::SldprtLossCode;
 use crate::native::SldprtNative;
 
@@ -220,177 +221,151 @@ impl DisplayedValues {
     }
 }
 
-/// The note naming each feature `ir` keeps whose definition states a
-/// selection in a feature input topology. `sldprt.md` gives an input topology
-/// no record, and the history encoder writes such a selection by its native
-/// selection token (§3.4).
-pub(super) fn historical_selections_note(ir: &CadIr) -> Option<LossNote> {
-    fn historical(value: &Value) -> bool {
-        match value {
-            Value::Object(map) => {
-                let selection = matches!(
-                    map.get("kind").and_then(Value::as_str),
-                    Some("historical" | "historical_partial")
-                ) && map
-                    .get("value")
-                    .and_then(Value::as_object)
-                    .is_some_and(|value| value.contains_key("state"));
-                selection || map.values().any(historical)
-            }
-            Value::Array(items) => items.iter().any(historical),
-            _ => false,
-        }
-    }
-    let features = ir
-        .model
-        .features
-        .iter()
-        .filter(|feature| historical(&value(feature.evaluation.definition())))
-        .map(|feature| feature.id.as_str())
-        .collect::<Vec<_>>();
-    (!features.is_empty()).then(|| {
-        SldprtLossCode::WriterSelectionIdentitiesOmitted.note(format!(
-            "the SLDPRT history writer writes the selections of {} feature(s) by their native \
-             selection token, without the input-topology faces, edges and vertices they state, \
-             which sldprt.md gives no record: {}",
-            features.len(),
-            features.join(", ")
-        ))
-    })
-}
-
 /// Rewrite each feature of another format into what its Keywords record
 /// holds (§3.4):
 /// - a fillet's tangency weight, for which the record has no field, is not
 ///   written;
-/// - a feature or parameter property whose name a Keywords attribute cannot
-///   hold is not written: a name with a namespace prefix, which the reader's
-///   XML parser refuses with the whole history, or a name the element writes
-///   itself;
-/// - each owned parameter whose value is a construction value the record
-///   reads from a positional dimension (`sldprt.md`, Keywords history) is
-///   written under that name, when every such value of the feature has
-///   exactly one owned holder and the feature owns no parameter of a
-///   positional or named construction dimension already.
+/// - each owned parameter that holds a construction value the record reads
+///   from a named dimension (`sldprt.md`, Keywords history) is written under
+///   that name, when each such value of the feature has its own single owned
+///   holder and no owned parameter has one of the names the record reads the
+///   values from.
 ///
 /// Runs after [`equations_as_displayed_values`], so no expression names a
-/// renamed parameter. The rewrites come back as [`KeywordsRewrites`], named
-/// once the write knows which records it keeps.
-pub(super) fn foreign_records_as_keywords(ir: &mut CadIr) -> KeywordsRewrites {
-    use cadmpeg_ir::features::ParameterValue;
-
-    let mut rewrites = KeywordsRewrites::default();
+/// renamed parameter. The renames come back as [`Renamed`], named once the
+/// write knows which parameters it keeps.
+pub(super) fn foreign_records_as_keywords(ir: &mut CadIr) -> Renamed {
     let mut roles = Vec::new();
     for feature in &mut ir.model.features {
-        let id = feature.id.as_str().to_owned();
-        let left_out = unwritable_attributes(
-            &mut feature.source_properties,
-            &["id", "Name", "Type", "Suppressed"],
-        );
-        if !left_out.is_empty() {
-            rewrites.properties.push((id.clone(), left_out));
-        }
+        let id = feature.id.clone();
         feature.evaluation.edit(|definition, _| {
             if let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) = definition {
                 for group in groups.iter_mut() {
-                    if group.tangency_weight.take().is_some() {
-                        rewrites.weights.insert(id.clone());
-                    }
+                    group.tangency_weight = None;
                 }
             }
-            let lengths = positional_lengths(definition);
-            if !lengths.is_empty() {
-                roles.push((id.clone(), lengths));
+            let dimensions = construction_dimensions(definition);
+            if !dimensions.is_empty() {
+                roles.push((id, dimensions));
             }
         });
     }
-    for parameter in &mut ir.model.parameters {
-        let left_out = unwritable_attributes(&mut parameter.properties, &["Name"]);
-        if !left_out.is_empty() {
-            rewrites
-                .properties
-                .push((parameter.id.as_str().to_owned(), left_out));
-        }
-    }
-    for (feature, lengths) in roles {
-        let owned = |parameter: &&mut cadmpeg_ir::features::DesignParameter| {
-            parameter
-                .owner
-                .as_ref()
-                .is_some_and(|owner| owner.as_str() == feature)
-        };
+    let mut renamed = Renamed::default();
+    for (feature, dimensions) in roles {
         let mut owned = ir
             .model
             .parameters
             .iter_mut()
-            .filter(owned)
+            .filter(|parameter| parameter.owner.as_ref() == Some(&feature))
             .collect::<Vec<_>>();
         if owned.iter().any(|parameter| {
-            matches!(
-                parameter.name.as_str(),
-                "D1" | "D2" | "Depth" | "Depth2" | "Radius" | "Thickness"
-            )
+            dimensions
+                .iter()
+                .any(|dimension| dimension.read_from(parameter.name.as_str()))
         }) {
             continue;
         }
-        let renames = lengths
-            .into_iter()
-            .map(|(name, length)| {
+        let holders = dimensions
+            .iter()
+            .map(|dimension| {
                 let mut holders = owned.iter().enumerate().filter(|(_, parameter)| {
-                    matches!(parameter.value, Some(ParameterValue::Length(value)) if value.get() == length)
+                    parameter
+                        .value
+                        .as_ref()
+                        .is_some_and(|value| equivalent_parameter_values(value, &dimension.value))
                 });
                 match (holders.next(), holders.next()) {
-                    (Some((index, _)), None) => Some((index, name)),
+                    (Some((index, _)), None) => Some(index),
                     _ => None,
                 }
             })
             .collect::<Option<Vec<_>>>();
-        let Some(renames) = renames else {
+        let Some(holders) = holders else {
             continue;
         };
-        for (index, name) in renames {
+        if holders.iter().collect::<HashSet<_>>().len() != holders.len() {
+            continue;
+        }
+        for (index, dimension) in holders.into_iter().zip(&dimensions) {
             let parameter = &mut *owned[index];
-            rewrites.renamed.push((
+            renamed.0.push((
                 parameter.id.as_str().to_owned(),
-                format!("{} ({} as {name})", parameter.id.as_str(), parameter.name),
+                format!(
+                    "{} ({} as {})",
+                    parameter.id.as_str(),
+                    parameter.name,
+                    dimension.name
+                ),
             ));
-            parameter.name = name.into();
+            parameter.name = dimension.name.into();
         }
     }
-    rewrites
+    renamed
 }
 
-/// Remove from `properties` each entry whose name a Keywords element whose
-/// own attributes are `reserved` cannot hold as an attribute, and return the
-/// removed names.
-fn unwritable_attributes(
-    properties: &mut std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
-    reserved: &[&str],
-) -> Vec<String> {
-    let left_out = properties
-        .keys()
-        .map(cadmpeg_core::text::NonBlankString::as_str)
-        .filter(|name| {
-            !crate::history::write::xml::valid_xml_name(name)
-                || name.contains(':')
-                || reserved.contains(name)
-        })
-        .map(str::to_owned)
-        .collect::<Vec<_>>();
-    for name in &left_out {
-        properties.remove(name.as_str());
+/// A construction value of a feature and the Keywords dimension its record
+/// reads it from: `name` first, then the other `aliases`.
+struct ConstructionDimension {
+    name: &'static str,
+    aliases: &'static [&'static str],
+    value: ParameterValue,
+}
+
+impl ConstructionDimension {
+    fn read_from(&self, name: &str) -> bool {
+        self.name == name || self.aliases.contains(&name)
     }
-    left_out
 }
 
-/// The positional dimensions a Keywords record of `definition` reads a
-/// construction value from, each with the value the definition states: a
-/// constant fillet radius, a blind extrusion depth and a shell thickness from
-/// `D1`, a second blind depth from `D2`. A chamfer reads its values in
-/// dimension order and keeps its names.
-fn positional_lengths(definition: &FeatureDefinition) -> Vec<(&'static str, f64)> {
+/// The construction values a Keywords record of `definition` reads from a
+/// named dimension, with the name a native record holds where the decoder
+/// reads it (`D1`, `D2`, `D3`, `D4`). A chamfer reads its values in dimension
+/// order and keeps its names.
+fn construction_dimensions(definition: &FeatureDefinition) -> Vec<ConstructionDimension> {
     use cadmpeg_ir::features::edge_treatments::RadiusSpec;
-    use cadmpeg_ir::features::{ExtrudeExtent, LinearTermination};
+    use cadmpeg_ir::features::patterns::PatternTransform;
+    use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, FaceMotion, LinearTermination};
+    use cadmpeg_ir::scalar::{Angle, Length};
+
+    fn length(
+        name: &'static str,
+        aliases: &'static [&'static str],
+        value: Length,
+    ) -> ConstructionDimension {
+        ConstructionDimension {
+            name,
+            aliases,
+            value: ParameterValue::Length(value),
+        }
+    }
+    fn angle(
+        name: &'static str,
+        aliases: &'static [&'static str],
+        value: Angle,
+    ) -> ConstructionDimension {
+        ConstructionDimension {
+            name,
+            aliases,
+            value: ParameterValue::Angle(value),
+        }
+    }
+    fn count(
+        name: &'static str,
+        aliases: &'static [&'static str],
+        value: u32,
+    ) -> ConstructionDimension {
+        ConstructionDimension {
+            name,
+            aliases,
+            value: ParameterValue::Integer(i64::from(value)),
+        }
+    }
+    fn blind_depth(side: &ExtrudeSide) -> Option<Length> {
+        match side.termination {
+            LinearTermination::Blind { length } => Some(length.into()),
+            _ => None,
+        }
+    }
 
     let FeatureDefinition::Operation(operation) = definition else {
         return Vec::new();
@@ -398,7 +373,7 @@ fn positional_lengths(definition: &FeatureDefinition) -> Vec<(&'static str, f64)
     match operation {
         FeatureOperation::Fillet { groups } => match &**groups {
             [group] => match group.radius {
-                RadiusSpec::Constant { radius } => vec![("D1", radius.get())],
+                RadiusSpec::Constant { radius } => vec![length("D1", &["Radius"], radius.into())],
                 _ => Vec::new(),
             },
             _ => Vec::new(),
@@ -406,99 +381,110 @@ fn positional_lengths(definition: &FeatureDefinition) -> Vec<(&'static str, f64)
         FeatureOperation::Shell {
             thickness: Some(thickness),
             ..
-        } => vec![("D1", thickness.get())],
-        FeatureOperation::Extrude { extent, .. } => match extent {
-            ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
-                match side.termination {
-                    LinearTermination::Blind { length } => vec![("D1", length.get())],
-                    _ => Vec::new(),
+        } => vec![length("D1", &["Thickness"], (*thickness).into())],
+        FeatureOperation::Extrude { extent, .. } => {
+            let (depths, draft) = match extent {
+                ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
+                    (blind_depth(side).map(|depth| vec![depth]), side.draft)
                 }
+                ExtrudeExtent::TwoSided { first, second } => (
+                    blind_depth(first)
+                        .zip(blind_depth(second))
+                        .map(|(first, second)| vec![first, second]),
+                    first.draft,
+                ),
+            };
+            let names: [(&'static str, &'static [&'static str]); 2] =
+                [("D1", &["Depth"]), ("D2", &["Depth2"])];
+            let mut dimensions = depths
+                .unwrap_or_default()
+                .into_iter()
+                .zip(names)
+                .map(|(depth, (name, aliases))| length(name, aliases, depth))
+                .collect::<Vec<_>>();
+            if let Some(draft) = draft {
+                dimensions.push(angle("Draft", &[], draft.into()));
             }
-            ExtrudeExtent::TwoSided { first, second } => {
-                match (&first.termination, &second.termination) {
-                    (
-                        LinearTermination::Blind { length: first },
-                        LinearTermination::Blind { length: second },
-                    ) => vec![("D1", first.get()), ("D2", second.get())],
-                    _ => Vec::new(),
+            dimensions
+        }
+        FeatureOperation::Draft {
+            angle: Some(value), ..
+        } => vec![angle("D1", &["Angle"], (*value).into())],
+        FeatureOperation::MoveFace { motion, .. } => match motion {
+            FaceMotion::Offset { distance } | FaceMotion::Translate { distance, .. } => {
+                vec![length("D1", &["Distance"], *distance)]
+            }
+            FaceMotion::Rotate { angle: value, .. } => vec![angle("Angle", &[], *value)],
+            FaceMotion::Transform { .. } => Vec::new(),
+        },
+        FeatureOperation::Pattern { pattern, .. } => match pattern.definition() {
+            PatternTransform::Circular {
+                angle: value,
+                count: instances,
+                ..
+            } => vec![
+                angle("Angle", &[], (*value).into()),
+                count("Count", &[], *instances),
+            ],
+            PatternTransform::Linear {
+                spacing,
+                count: instances,
+                second,
+                ..
+            } => {
+                let mut dimensions = vec![
+                    count("D1", &["Count"], *instances),
+                    length("D3", &["Spacing"], (*spacing).into()),
+                ];
+                if let Some(second) = second {
+                    dimensions.push(count("D2", &[], second.count));
+                    dimensions.push(length("D4", &[], second.spacing.into()));
                 }
+                dimensions
             }
+            PatternTransform::CurveDriven {
+                spacing,
+                count: instances,
+                ..
+            } => vec![
+                count("D1", &["Count"], *instances),
+                length("D3", &["Spacing"], (*spacing).into()),
+            ],
+            _ => Vec::new(),
         },
         _ => Vec::new(),
     }
 }
 
-/// The records [`foreign_records_as_keywords`] rewrote: the fillets whose
-/// tangency weight is left out, each feature or parameter id with the names
-/// of the properties left out, and each renamed parameter's id and the text
-/// that names it.
+/// The parameters [`foreign_records_as_keywords`] renamed: each id with the
+/// text that names it.
 #[derive(Default)]
-pub(super) struct KeywordsRewrites {
-    weights: BTreeSet<String>,
-    properties: Vec<(String, Vec<String>)>,
-    renamed: Vec<(String, String)>,
-}
+pub(super) struct Renamed(Vec<(String, String)>);
 
-impl KeywordsRewrites {
-    /// The notes naming the rewritten records that `ir` still holds. A record
-    /// a later drop removed is named by that drop.
-    pub(super) fn notes(self, ir: &CadIr) -> Vec<LossNote> {
-        let features: BTreeSet<&str> = ir
-            .model
-            .features
-            .iter()
-            .map(|feature| feature.id.as_str())
-            .collect();
-        let parameters: BTreeSet<&str> = ir
+impl Renamed {
+    /// The note naming the renamed parameters that `ir` still holds. A
+    /// parameter a later drop removed is named by that drop.
+    pub(super) fn note(self, ir: &CadIr) -> Option<LossNote> {
+        let kept: BTreeSet<&str> = ir
             .model
             .parameters
             .iter()
             .map(|parameter| parameter.id.as_str())
             .collect();
-        let weights = self
-            .weights
-            .into_iter()
-            .filter(|id| features.contains(id.as_str()))
-            .collect::<Vec<_>>();
-        let properties = self
-            .properties
-            .into_iter()
-            .filter(|(id, _)| features.contains(id.as_str()) || parameters.contains(id.as_str()))
-            .map(|(id, names)| format!("{id} ({})", names.join(", ")))
-            .collect::<Vec<_>>();
         let renamed = self
-            .renamed
+            .0
             .into_iter()
-            .filter(|(id, _)| parameters.contains(id.as_str()))
+            .filter(|(id, _)| kept.contains(id.as_str()))
             .map(|(_, text)| text)
             .collect::<Vec<_>>();
-        let mut notes = Vec::new();
-        if !weights.is_empty() {
-            notes.push(SldprtLossCode::WriterFeatureFieldsOmitted.note(format!(
-                "the SLDPRT history writer writes {} fillet(s) without their tangency weight, \
-                 which the SLDPRT fillet record has no field for: {}",
-                weights.len(),
-                weights.join(", ")
-            )));
-        }
-        if !properties.is_empty() {
-            notes.push(SldprtLossCode::WriterFeatureFieldsOmitted.note(format!(
-                "the SLDPRT history writer writes {} record(s) without the source properties \
-                 whose names a Keywords attribute cannot hold: {}",
-                properties.len(),
-                properties.join("; ")
-            )));
-        }
-        if !renamed.is_empty() {
-            notes.push(SldprtLossCode::WriterParametersRenamed.note(format!(
-                "the SLDPRT history writer writes {} parameter(s) under the positional \
-                 dimension name its feature's SLDPRT record reads a construction length \
-                 from: {}",
+        (!renamed.is_empty()).then(|| {
+            SldprtLossCode::WriterParametersRenamed.note(format!(
+                "the SLDPRT history writer writes {} parameter(s) under the dimension name \
+                 from which its feature's SLDPRT record reads a construction value: {}",
                 renamed.len(),
                 renamed.join(", ")
-            )));
-        }
-        notes
+            ))
+        })
     }
 }
 
