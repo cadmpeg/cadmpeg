@@ -29,9 +29,8 @@ pub(crate) fn bind_loft_sketch_point_sections(
     features: &mut [cadmpeg_ir::features::Feature],
     sources: &LoftPointSources<'_>,
 ) {
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, LoftPointSection, LoftSection,
-    };
+    use cadmpeg_ir::features::profiles::{LoftPointSection, LoftSection};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     for feature in features.iter_mut() {
         feature.evaluation.edit(|definition, _| {
@@ -54,7 +53,7 @@ pub(crate) fn bind_loft_sketch_point_sections(
 pub(super) fn loft_sketch_point(
     group_id: &str,
     sources: &LoftPointSources<'_>,
-) -> Option<cadmpeg_ir::features::FinitePoint3> {
+) -> Option<cadmpeg_ir::features::geometry::FinitePoint3> {
     fn only<T>(mut matches: impl Iterator<Item = T>) -> Option<T> {
         let first = matches.next()?;
         matches.next().is_none().then_some(first)
@@ -114,12 +113,16 @@ pub(super) fn loft_point_operand<'a>(
 
 pub(super) fn fixed_boolean_operation(
     operation: DesignExtrudeOperation,
-) -> cadmpeg_ir::features::BooleanOp {
+) -> cadmpeg_ir::features::operation_settings::BooleanOp {
     match operation {
-        DesignExtrudeOperation::Join => cadmpeg_ir::features::BooleanOp::Join,
-        DesignExtrudeOperation::Cut => cadmpeg_ir::features::BooleanOp::Cut,
-        DesignExtrudeOperation::Intersect => cadmpeg_ir::features::BooleanOp::Intersect,
-        DesignExtrudeOperation::NewBody => cadmpeg_ir::features::BooleanOp::NewBody,
+        DesignExtrudeOperation::Join => cadmpeg_ir::features::operation_settings::BooleanOp::Join,
+        DesignExtrudeOperation::Cut => cadmpeg_ir::features::operation_settings::BooleanOp::Cut,
+        DesignExtrudeOperation::Intersect => {
+            cadmpeg_ir::features::operation_settings::BooleanOp::Intersect
+        }
+        DesignExtrudeOperation::NewBody => {
+            cadmpeg_ir::features::operation_settings::BooleanOp::NewBody
+        }
     }
 }
 
@@ -215,10 +218,10 @@ pub(in crate::design) fn project_fixed_loft(
     ctx: &DecodeContext<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, LoftGuidance, LoftPointSection, LoftSection,
-        PlanarProfileRef, ProfileRef,
+    use cadmpeg_ir::features::profiles::{
+        LoftPointSection, LoftSection, PlanarProfileRef, ProfileRef,
     };
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, LoftGuidance};
     let &ProjectInputs {
         construction_groups,
         edge_operands,
@@ -330,10 +333,10 @@ pub(in crate::design) fn project_fixed_sweep(
     face_operands: &[DesignFaceOperand],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    use cadmpeg_ir::features::{
-        FaceSelection, FeatureDefinition, FeatureOperation, PlanarProfileRef, SweepGuideRail,
-        SweepOrientation, SweepPathExtent,
-    };
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::sweeps::{SweepGuideRail, SweepOrientation, SweepPathExtent};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::scalar::Angle;
 
     let Some((operation, values, profile, path, paths, guide_surfaces)) = (|| -> Option<_> {
@@ -537,15 +540,15 @@ pub(in crate::design) fn project_fixed_sweep(
         });
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Sweep {
-            shape: cadmpeg_ir::features::SweepShape::Solid {
+            shape: cadmpeg_ir::features::sweeps::SweepShape::Solid {
                 op: if *operation == DesignExtrudeOperation::NewBody {
-                    cadmpeg_ir::features::SolidSweepOperation::NewBody
+                    cadmpeg_ir::features::sweeps::SolidSweepOperation::NewBody
                 } else {
                     or_none!(fixed_boolean_operation(*operation).try_into().ok())
                 },
-                section: cadmpeg_ir::features::SweepSection::Profile(
+                section: cadmpeg_ir::features::sweeps::SweepSection::Profile(
                     match resolved_profile_face_group(scope, profile, face_operands)? {
-                        Some(cadmpeg_ir::features::ProfileRef::Planar(faces)) => faces,
+                        Some(cadmpeg_ir::features::profiles::ProfileRef::Planar(faces)) => faces,
                         _ => PlanarProfileRef::Native(profile.id.clone()),
                     },
                 ),

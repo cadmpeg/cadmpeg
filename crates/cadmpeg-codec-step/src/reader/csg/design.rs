@@ -26,7 +26,8 @@ use cadmpeg_ir::design::selection::{
     Anchor, MemberOrder, Members, PickTarget, Picked, Picks, Selection,
 };
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{FeatureId, FinitePoint3};
+use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::report::loss::LossNote;

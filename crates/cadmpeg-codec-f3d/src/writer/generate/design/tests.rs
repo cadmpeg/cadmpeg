@@ -226,7 +226,8 @@ fn decoded(ir: &CadIr, name: &str) -> Option<(String, f64)> {
         .parameters
         .iter()
         .find(|parameter| parameter.name == name)?;
-    let Some(cadmpeg_ir::features::ParameterValue::Length(length)) = &parameter.value else {
+    let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(length)) = &parameter.value
+    else {
         return None;
     };
     Some((parameter.expression.clone(), length.get()))
@@ -535,8 +536,10 @@ fn the_cube_is_one_base_feature_item_of_the_timeline() {
         panic!("one Base Feature: {:#?}", ir.model.features);
     };
     let resolved = match bodies {
-        cadmpeg_ir::features::BodySelection::Bodies(bodies)
-        | cadmpeg_ir::features::BodySelection::Resolved { bodies, .. } => bodies.as_slice(),
+        cadmpeg_ir::features::selections::BodySelection::Bodies(bodies)
+        | cadmpeg_ir::features::selections::BodySelection::Resolved { bodies, .. } => {
+            bodies.as_slice()
+        }
         other => panic!("the Base Feature resolves its body: {other:?}"),
     };
     assert_eq!(resolved, [ir.geometry.bodies[0].id.clone()]);
@@ -954,7 +957,7 @@ fn a_dropped_design_charges_every_scope_container_feature_and_parameter() {
     // A v10 design record: the export wrapper then charges no design arena.
     ir.model
         .parameters
-        .push(cadmpeg_ir::features::DesignParameter {
+        .push(cadmpeg_ir::features::parameters::DesignParameter {
             product_definition: None,
             id: parameter_id("legacy"),
             owner: None,
@@ -963,7 +966,7 @@ fn a_dropped_design_charges_every_scope_container_feature_and_parameter() {
             expression: "1 mm".into(),
             display: None,
             value: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: None,

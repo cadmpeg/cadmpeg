@@ -696,7 +696,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         result.ir().model.features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::TreeNode {
-                role: cadmpeg_ir::features::FeatureTreeNodeRole::Equations,
+                role: cadmpeg_ir::features::tree::FeatureTreeNodeRole::Equations,
                 ..
             }
         )
@@ -708,7 +708,7 @@ fn decode_retains_typed_nx_numeric_expression() {
     assert_eq!(parameter.name, expressions[0].name.as_str());
     assert!(matches!(
         parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::Angle(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Angle(
             value
         )) if value.get() == 120_f64.to_radians()
     ));

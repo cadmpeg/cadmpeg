@@ -11,7 +11,7 @@ use crate::eval::model_surface_point_by_id;
 use crate::eval::nurbs_pcurve_parameter_domain;
 use crate::eval::pcurve_tangent;
 use crate::eval::EvaluationFailure;
-use crate::features::{FinitePoint3, FiniteVector3};
+use crate::features::geometry::{FinitePoint3, FiniteVector3};
 use crate::geometry::{
     pcurve::PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };

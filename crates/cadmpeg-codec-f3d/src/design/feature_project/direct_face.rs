@@ -33,8 +33,8 @@ pub(super) fn resolved_split_face_path(
     group: &DesignConstructionOperandGroup,
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     histories: &[crate::history_records::AsmHistory],
-) -> Option<cadmpeg_ir::features::PathRef> {
-    use cadmpeg_ir::features::PathRef;
+) -> Option<cadmpeg_ir::features::profiles::PathRef> {
+    use cadmpeg_ir::features::profiles::PathRef;
 
     let previous_state_id =
         crate::history::effective_scope_previous_history_state_id(scope, histories)?;
@@ -85,7 +85,8 @@ pub(in crate::design) fn project_offset_faces(
     operands: &[DesignFaceOperand],
     groups: &[DesignConstructionOperandGroup],
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    use cadmpeg_ir::features::{FaceMotion, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::direct_edit::FaceMotion;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::scalar::Length;
 
     let parameter_distance = match parameters {
@@ -116,7 +117,7 @@ pub(in crate::design) fn project_offset_faces(
     };
     let faces =
         if let Some(group) = single_operand_group(groups, scope, DesignOperandRole::ROLE_0X10) {
-            cadmpeg_ir::features::FaceSelection::Native(group.id.clone())
+            cadmpeg_ir::features::selections::FaceSelection::Native(group.id.clone())
         } else {
             or_none!(direct_face_selection(scope, operands))
         };
@@ -133,7 +134,8 @@ pub(in crate::design) fn project_shell(
     operands: &[DesignFaceOperand],
     groups: &[DesignConstructionOperandGroup],
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::{BodySelection, FaceSelection};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let crate::records::feature::scope::DesignScopePayload::Shell(Some(operation)) =
         &scope.payload()
@@ -147,15 +149,19 @@ pub(in crate::design) fn project_shell(
         Some(outside) if outside.thickness.get().to_bits() == inside.to_bits() => (
             Some(inside + outside.thickness.get()),
             None,
-            Some(cadmpeg_ir::features::ShellMode::BothSides),
+            Some(cadmpeg_ir::features::operation_settings::ShellMode::BothSides),
         ),
-        Some(_) => (None, None, Some(cadmpeg_ir::features::ShellMode::BothSides)),
+        Some(_) => (
+            None,
+            None,
+            Some(cadmpeg_ir::features::operation_settings::ShellMode::BothSides),
+        ),
     };
     let join = slots.map(|slots| {
         if slots.rounded_corners {
-            cadmpeg_ir::features::ShellJoin::Arc
+            cadmpeg_ir::features::operation_settings::ShellJoin::Arc
         } else {
-            cadmpeg_ir::features::ShellJoin::Intersection
+            cadmpeg_ir::features::operation_settings::ShellJoin::Intersection
         }
     });
     let bodies = single_operand_group(groups, scope, DesignOperandRole::BODIES_A)
@@ -200,9 +206,9 @@ pub(in crate::design) fn project_split(
     body_recipe_operands: &[DesignBodyRecipeOperand],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    use cadmpeg_ir::features::{
-        BodySelection, FaceSelection, FeatureDefinition, FeatureOperation, SplitBodyTool,
-    };
+    use cadmpeg_ir::features::direct_edit::SplitBodyTool;
+    use cadmpeg_ir::features::selections::{BodySelection, FaceSelection};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let crate::records::feature::scope::DesignScopePayload::Split(split) = scope.payload() else {
         return Ok(None);
@@ -336,7 +342,8 @@ pub(super) fn project_move_face(
     construction_groups: &[DesignConstructionOperandGroup],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let operation = or_none!(scope.move_operation());
     if !operation.preserves_orientation() {
@@ -416,8 +423,9 @@ pub(super) fn project_move_face(
 
 pub(super) fn move_face_motion(
     transform: &[[f64; 4]; 4],
-) -> Option<cadmpeg_ir::features::FaceMotion> {
-    use cadmpeg_ir::features::{FaceMotion, FeatureDirection3, FinitePoint3};
+) -> Option<cadmpeg_ir::features::direct_edit::FaceMotion> {
+    use cadmpeg_ir::features::direct_edit::FaceMotion;
+    use cadmpeg_ir::features::geometry::{FeatureDirection3, FinitePoint3};
 
     let translation = Vector3::new(
         transform[0][3] * DESIGN_LENGTH_TO_MILLIMETRE,
@@ -480,7 +488,7 @@ pub(super) fn move_face_motion(
 pub(super) fn move_face_rotation_preserves_matrix(
     transform: &[[f64; 4]; 4],
     translation: Vector3,
-    rotation: &cadmpeg_ir::features::AxisAngle,
+    rotation: &cadmpeg_ir::features::direct_edit::AxisAngle,
     origin: Vector3,
 ) -> bool {
     let axis = rotation.direction.get();

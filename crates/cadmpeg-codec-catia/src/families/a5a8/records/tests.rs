@@ -1516,7 +1516,7 @@ fn rolling_ball_limit_curves_reproduce_stored_endpoint_sites() {
                 &geometry,
                 knots[0]
             )
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
             Ok(expected[0])
         );
         assert_eq!(
@@ -1525,7 +1525,7 @@ fn rolling_ball_limit_curves_reproduce_stored_endpoint_sites() {
                 &geometry,
                 knots[1]
             )
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
             Ok(expected[1])
         );
     }

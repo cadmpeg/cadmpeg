@@ -18,7 +18,7 @@ use cadmpeg_ir::eval::{
     analytic_surface_parameters, finite_or_refusal, nurbs_surface_closest_parameter_with_budget,
     nurbs_surface_partials,
 };
-use cadmpeg_ir::features::FiniteVector3;
+use cadmpeg_ir::features::geometry::FiniteVector3;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsPoleGrid, NurbsSurface},
     pcurve::PcurveGeometry,
@@ -2813,7 +2813,7 @@ mod tests {
                     if index == 4 {
                         pole.z += 1.0;
                     }
-                    cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(pole).ok_or_else(|| {
                         cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                             "control_points contains a non-finite point".into(),
                         )
@@ -3039,7 +3039,7 @@ mod tests {
                 .try_map_control_points(|_, point| {
                     let mut point = point.get();
                     point.z = -1.0;
-                    cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(point).ok_or_else(|| {
                         cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                             "control_points contains a non-finite point".into(),
                         )

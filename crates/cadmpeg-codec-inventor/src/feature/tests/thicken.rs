@@ -262,7 +262,7 @@ fn projects_thicken_with_native_selection_thickness_and_ordered_results() {
     };
     assert_eq!(
         faces,
-        &cadmpeg_ir::features::FaceSelection::Native(
+        &cadmpeg_ir::features::selections::FaceSelection::Native(
             test_property(
                 1,
                 PmDcFeaturePropertyKind::References {
@@ -510,7 +510,7 @@ fn thicken_native_and_partial_definitions_emit_the_pinned_operand_loss() {
         .expect("candidate")
         .expect("partial projection");
     let mut native = partial.clone();
-    native.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+    native.evaluation = cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
         FeatureDefinition::Operation(FeatureOperation::Native {
             kind: cadmpeg_ir::features::NativeFeatureKind::Other("Thicken".into()),
             parameters: BTreeMap::new(),
@@ -530,7 +530,7 @@ fn thicken_native_and_partial_definitions_emit_the_pinned_operand_loss() {
         );
         assert!(losses[0].message.starts_with(&features.len().to_string()));
     }
-    native.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+    native.evaluation = cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
         FeatureDefinition::Operation(FeatureOperation::Native {
             kind: cadmpeg_ir::features::NativeFeatureKind::Other("Other".into()),
             parameters: BTreeMap::new(),
@@ -546,12 +546,12 @@ fn retained_offset_selection_loss_requires_a_thicken_source() {
         .project(DecodePolicy::service())
         .expect("candidate")
         .expect("partial projection");
-    feature.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+    feature.evaluation = cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
         FeatureDefinition::Operation(FeatureOperation::MoveFace {
-            faces: cadmpeg_ir::features::FaceSelection::Native(
+            faces: cadmpeg_ir::features::selections::FaceSelection::Native(
                 "inventor:synthetic-selection".into(),
             ),
-            motion: cadmpeg_ir::features::FaceMotion::Offset {
+            motion: cadmpeg_ir::features::direct_edit::FaceMotion::Offset {
                 distance: Length::new(4.0).expect("offset"),
             },
         }),

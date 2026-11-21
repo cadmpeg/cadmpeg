@@ -408,5 +408,5 @@ fn malformed(error: impl std::fmt::Display) -> EditError {
     EditError::Malformed(error.to_string())
 }
 
-mod effective;
+pub(crate) mod effective;
 mod process;

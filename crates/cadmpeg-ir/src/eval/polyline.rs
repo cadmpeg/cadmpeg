@@ -4,7 +4,7 @@
 use super::admission::EvaluationAdmission;
 use super::rational::finite_lanes;
 use super::{difference_quotient, EvaluationFailure};
-use crate::features::{FinitePoint3, FiniteVector3};
+use crate::features::geometry::{FinitePoint3, FiniteVector3};
 use crate::geometry::sampled::PolylineCurve;
 use crate::math::Point3;
 use crate::scalar::{FiniteReal, SegmentPosition};
@@ -115,7 +115,7 @@ pub(super) fn polyline_tangent(
 #[cfg(test)]
 mod tests {
     use super::{polyline_point, EvaluationAdmission};
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::math::Point3;
     use crate::scalar::FiniteReal;
 

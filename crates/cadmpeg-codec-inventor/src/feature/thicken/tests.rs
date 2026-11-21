@@ -151,7 +151,7 @@ struct Operands {
     source: PmDcFeature,
     properties: Vec<PmDcFeatureProperty>,
     parameters: Vec<crate::design::PmDcParameter>,
-    values: Vec<cadmpeg_ir::features::DesignParameter>,
+    values: Vec<cadmpeg_ir::features::parameters::DesignParameter>,
     dimensions: Vec<super::super::revolve::Dimension>,
 }
 

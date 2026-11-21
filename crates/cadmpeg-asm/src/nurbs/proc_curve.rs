@@ -25,7 +25,7 @@ use crate::nurbs::subtypes::{
 use crate::nurbs::support_chart::{cone_axis_reversed, cone_is_circular_cylinder, SupportChart};
 use crate::nurbs::toks::{Cur, SubtypeTable};
 use crate::sab::Token;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{
     ConeSurface, CylinderSurface, PlaneSurface, SphereSurface, TorusSurface,
 };
