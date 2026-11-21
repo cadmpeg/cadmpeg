@@ -3827,6 +3827,9 @@ impl<'a> F3dDecodeSession<'a> {
             external,
         );
         self.report.losses.extend(external_losses);
+        if let Some(table) = prereqs.xref_table() {
+            crate::xref::api_export::state_file_identity(&mut self.ir.model, table);
+        }
         let mesh_projection = match &finalize_path {
             FinalizePath::Geometry(index) => &index.mesh_projection,
             FinalizePath::Bodyless(inputs) => &inputs.mesh_projection,
@@ -5086,7 +5089,6 @@ fn annotate_docstruct(
     Ok(())
 }
 
-/// A warning for a present but unparseable `RedirectionsStream.dat`.
 fn report_xref_parse_loss(report: &mut DecodeBody, error: &CodecError) {
     push_loss_vec(
         &mut report.losses,

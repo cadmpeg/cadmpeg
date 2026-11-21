@@ -271,42 +271,51 @@ pub(super) fn exact_component_insert_construction(
                     occurrence_key = Some(carrier.occurrence_key);
                 }
             }
-            for &carrier_at in records
-                .offsets(carrier_record_index)
-                .iter()
-                .filter(|at| frame_length == 404 && **at < relation_at)
-            {
-                for at in carrier_at + 11..relation_at {
-                    let Some(after_role) = fixed_guid_end(bytes, at) else {
-                        continue;
-                    };
-                    if bytes.get(after_role..after_role + 12)
-                        != Some(&[0, 1, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-                    {
-                        continue;
-                    }
-                    for transform_at in carrier_at + 11..at {
-                        if rigid_transform_at(bytes, transform_at) == Some(transform) {
-                            let role = lp_utf16_bounded(bytes, at, 36..=36)?.0;
-                            placements.push((role, at + 4, Some(transform_at)));
+            if frame_length == 404 {
+                let carrier =
+                    unique_indexed_record_before(records, carrier_record_index, relation_at)
+                        .and_then(|carrier_at| {
+                            crate::xref::attributed_component_insert_carrier(
+                                bytes,
+                                carrier_at,
+                                relation_at,
+                                carrier_record_index,
+                            )
+                        })
+                        .filter(|carrier| {
+                            carrier
+                                .transform_offset
+                                .and_then(|at| rigid_transform_at(bytes, at))
+                                == Some(transform)
+                        });
+                if let Some(carrier) = carrier {
+                    placements.push((carrier.role, carrier.role_offset, carrier.transform_offset));
+                    occurrence_key = Some(carrier.occurrence_key);
+                }
+            }
+            if placements.is_empty() {
+                for &carrier_at in records
+                    .offsets(carrier_record_index)
+                    .iter()
+                    .filter(|at| frame_length == 404 && **at < relation_at)
+                {
+                    for at in carrier_at + 11..relation_at {
+                        let Some(after_role) = fixed_guid_end(bytes, at) else {
+                            continue;
+                        };
+                        if bytes.get(after_role..after_role + 12)
+                            != Some(&[0, 1, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+                        {
+                            continue;
+                        }
+                        for transform_at in carrier_at + 11..at {
+                            if rigid_transform_at(bytes, transform_at) == Some(transform) {
+                                let role = lp_utf16_bounded(bytes, at, 36..=36)?.0;
+                                placements.push((role, at + 4, Some(transform_at)));
+                            }
                         }
                     }
                 }
-            }
-            if frame_length == 404 && placements.is_empty() {
-                let carrier_at =
-                    unique_indexed_record_before(records, carrier_record_index, relation_at)?;
-                let carrier = crate::xref::attributed_component_insert_carrier(
-                    bytes,
-                    carrier_at,
-                    relation_at,
-                    carrier_record_index,
-                )?;
-                if rigid_transform_at(bytes, carrier.transform_offset?)? != transform {
-                    return None;
-                }
-                placements.push((carrier.role, carrier.role_offset, carrier.transform_offset));
-                occurrence_key = Some(carrier.occurrence_key);
             }
             (carrier_record_index, placements)
         } else if carrier_form == InsertCarrierForm::Standard

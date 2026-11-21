@@ -1315,18 +1315,30 @@ fn localized_insert_scopes_join_an_attributed_placement_carrier() {
         [0.0, 0.0, 1.0, 7.0],
         [0.0, 0.0, 0.0, 1.0],
     ];
-    // Canonical frame length, prologue delta, matrix, and marked-reference offset.
-    for (frame, delta, with_matrix, relation_reference) in [
-        (272, 0, false, 37),
-        (276, 4, false, 41),
-        (400, 0, true, 37),
-        (404, 4, true, 41),
+    for (frame, delta, with_matrix, relation_reference, leading) in [
+        (272, 0, false, 37, false),
+        (276, 4, false, 41, false),
+        (400, 0, true, 37, false),
+        (404, 4, true, 41, false),
+        (404, 4, true, 41, true),
     ] {
         let mut bytes = crate::test_support::legacy_attributed_external_placement(
             role,
-            true,
+            !leading,
             with_matrix.then_some(matrix),
         );
+        if leading {
+            use crate::layout::legacy_attributed_external_placement_empty_attributes as attributes;
+            use crate::layout::legacy_attributed_external_placement_identity_tail as tail;
+            use crate::layout::legacy_attributed_external_placement_members as members;
+            use crate::layout::legacy_attributed_external_placement_prefix as prefix;
+            let owner = bytes.len() - tail::LEN + tail::OWNER_MARKER + 1;
+            bytes[owner..owner + 8].copy_from_slice(&6u64.to_le_bytes());
+            let mut source = vec![0];
+            source.extend(matrix.into_iter().flatten().flat_map(f64::to_le_bytes));
+            let at = prefix::LEN + attributes::LEN + members::METADATA_GUID_LENGTH;
+            bytes.splice(at..at, source);
+        }
         let relation_at = bytes.len();
         let header = |bytes: &mut Vec<u8>, class: &str, record: u32| {
             bytes.extend_from_slice(&3_u32.to_le_bytes());

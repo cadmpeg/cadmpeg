@@ -55,6 +55,60 @@ struct DesignObjectReference {
     ids: Vec<u64>,
 }
 
+pub(super) fn document_identities(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+) -> Result<BTreeMap<String, cadmpeg_ir::products::ExternalDocument>, CodecError> {
+    use cadmpeg_core::text::NonBlankString;
+    use cadmpeg_ir::products::ExternalDocument;
+
+    let bytes = scan.entry_bytes(DESIGN_DESCRIPTION_ENTRY)?;
+    let text = std::str::from_utf8(bytes).map_err(|error| {
+        CodecError::malformed(format_args!("{DESIGN_DESCRIPTION_ENTRY}: {error}"))
+    })?;
+    let description = ctx.parse_json_value(text, "read F3Z document identities")?;
+    let mut identities = BTreeMap::new();
+    if let Some(graphs) = description
+        .pointer("/designDescription/designGraphs")
+        .and_then(serde_json::Value::as_array)
+    {
+        for graph in graphs {
+            if let Some(objects) = graph
+                .get("designObjects")
+                .and_then(serde_json::Value::as_array)
+            {
+                for object in objects {
+                    let Some(path) = object
+                        .get("relativePath")
+                        .and_then(serde_json::Value::as_str)
+                    else {
+                        continue;
+                    };
+                    let identity = ExternalDocument {
+                        document_id: object
+                            .get("lineage")
+                            .and_then(serde_json::Value::as_str)
+                            .and_then(NonBlankString::new),
+                        version: object
+                            .get("about")
+                            .and_then(serde_json::Value::as_str)
+                            .and_then(NonBlankString::new),
+                        ..ExternalDocument::default()
+                    };
+                    if let Some(previous) = identities.insert(path.to_owned(), identity.clone()) {
+                        if previous != identity {
+                            return Err(CodecError::malformed(format_args!(
+                                "conflicting F3Z document identities for {path}"
+                            )));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(identities)
+}
+
 /// Retains member classification and the checkpoints used to reopen each scan.
 pub(super) struct ArchiveSession {
     pub(super) members: BTreeMap<String, ClassifiedMember>,
