@@ -38,13 +38,13 @@ fn member_scoped_literal_fact_does_not_invent_a_configuration_name_or_cached_val
     assert_eq!(
         rows[0].values,
         vec![
-            AttributeValue::String(MEMBER.into()),
-            AttributeValue::Integer(3),
-            AttributeValue::String(FMTID.into()),
-            AttributeValue::Integer(3),
-            AttributeValue::String("Designer".into()),
-            AttributeValue::String("lpstr".into()),
-            AttributeValue::String("Merlin".into()),
+            Some(AttributeValue::String(MEMBER.into())),
+            Some(AttributeValue::Integer(3)),
+            Some(AttributeValue::String(FMTID.into())),
+            Some(AttributeValue::Integer(3)),
+            Some(AttributeValue::String("Designer".into())),
+            Some(AttributeValue::String("lpstr".into())),
+            Some(AttributeValue::String("Merlin".into())),
         ]
     );
     assert_eq!(notes.provenance[rows[0].id.as_str()].stream(), MEMBER);
@@ -60,8 +60,8 @@ fn identical_pids_in_distinct_namespaces_are_separate_carrier_facts() {
     assert!(losses.is_empty());
     assert_eq!(rows.len(), 2);
     assert_ne!(rows[0].id, rows[1].id);
-    assert_eq!(rows[0].values[1], AttributeValue::Integer(3));
-    assert_eq!(rows[1].values[1], AttributeValue::Integer(7));
+    assert_eq!(rows[0].values[1], Some(AttributeValue::Integer(3)));
+    assert_eq!(rows[1].values[1], Some(AttributeValue::Integer(7)));
 }
 
 #[test]
@@ -73,13 +73,13 @@ fn blank_empty_null_and_missing_remain_distinct() {
     assert_eq!(rows.len(), 3);
     let find = |name: &str| {
         rows.iter()
-            .find(|row| row.values[4] == AttributeValue::String(name.into()))
+            .find(|row| row.values[4] == Some(AttributeValue::String(name.into())))
             .unwrap()
     };
     assert_eq!(find("Blank").values.len(), 7);
     assert_eq!(
         find("Blank").values[6],
-        AttributeValue::String(String::new())
+        Some(AttributeValue::String(String::new()))
     );
     assert_eq!(find("Empty").values.len(), 6);
     assert_eq!(find("Null").values.len(), 6);
@@ -269,20 +269,20 @@ fn legacy_compound_saved_strings_keep_physical_namespaces_and_withhold_formula_b
     for row in &rows {
         assert_eq!(row.target, AttributeTarget::Document.into());
         assert_eq!(row.name, ATTRIBUTE_NAME);
-        assert_ne!(row.values[4], AttributeValue::String("Mass".into()));
-        assert_eq!(row.values[2], AttributeValue::String(FMTID.into()));
-        assert_eq!(row.values[5], AttributeValue::String("lpstr".into()));
-        let member = if row.values[1] == AttributeValue::Integer(7) {
+        assert_ne!(row.values[4], Some(AttributeValue::String("Mass".into())));
+        assert_eq!(row.values[2], Some(AttributeValue::String(FMTID.into())));
+        assert_eq!(row.values[5], Some(AttributeValue::String("lpstr".into())));
+        let member = if row.values[1] == Some(AttributeValue::Integer(7)) {
             "Config-7-Properties"
         } else {
             "Config-9-Properties"
         };
-        assert_eq!(row.values[0], AttributeValue::String(member.into()));
+        assert_eq!(row.values[0], Some(AttributeValue::String(member.into())));
         assert_eq!(notes.provenance[row.id.as_str()].stream(), member);
     }
     assert_eq!(
         rows.iter()
-            .filter(|row| row.values[6] == AttributeValue::String(String::new()))
+            .filter(|row| row.values[6] == Some(AttributeValue::String(String::new())))
             .count(),
         2
     );
