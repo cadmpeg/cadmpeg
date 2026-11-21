@@ -79,7 +79,8 @@ fn native(
     while reader.remaining() >= block::MARKER_VALUE.len() {
         budget.check()?;
         let at = reader.position();
-        if reader.take(block::MARKER_VALUE.len())?.window() != block::MARKER_VALUE {
+        let relative = at - source.start();
+        if !source.window()[relative..].starts_with(&block::MARKER_VALUE) {
             reader.seek(
                 at.checked_add(1)
                     .ok_or_else(|| malformed("SolidWorks marker position"))?,

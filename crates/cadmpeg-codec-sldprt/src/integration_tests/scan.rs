@@ -103,7 +103,7 @@ fn scan_sldprt_recursive_listing_is_bounded_by_depth() {
         &ManualClock::default(),
     );
     assert_eq!(scan.stop_reason, Some(StopReason::NestingDepth));
-    assert!(!scan.census.unwrap().complete);
+    assert!(scan.census.is_none());
 }
 
 #[test]
@@ -142,7 +142,7 @@ fn scan_sldprt_cancellation_interrupts_a_reader_loop() {
 }
 
 #[test]
-fn scan_sldprt_truncated_record_preserves_prior_rows() {
+fn scan_sldprt_truncated_xml_refuses_the_document() {
     let bytes = source(br#"<Keywords><Feature Type="BossExtrude"/><Feature"#);
     let scan = SldprtCodec::scan_design(
         View::over_retained(&bytes),
@@ -150,13 +150,11 @@ fn scan_sldprt_truncated_record_preserves_prior_rows() {
         &ManualClock::default(),
     );
     assert!(scan.stop_reason.is_some());
-    let census = scan.census.unwrap();
-    assert!(!census.complete);
-    assert_eq!(census.rows[0].kind, "BossExtrude");
+    assert!(scan.census.is_none());
 }
 
 #[test]
-fn scan_sldprt_trailing_garbage_keeps_the_census_incomplete() {
+fn scan_sldprt_trailing_garbage_refuses_the_document() {
     let bytes = source(br#"<Keywords><Feature Type="BossExtrude"/></Keywords>garbage"#);
     let scan = SldprtCodec::scan_design(
         View::over_retained(&bytes),
@@ -164,10 +162,7 @@ fn scan_sldprt_trailing_garbage_keeps_the_census_incomplete() {
         &ManualClock::default(),
     );
     assert!(matches!(scan.stop_reason, Some(StopReason::Malformed(_))));
-    let census = scan.census.expect("admitted listing prefix");
-    assert!(!census.complete);
-    assert_eq!(census.total, None);
-    assert_eq!(census.rows[0].kind, "BossExtrude");
+    assert!(scan.census.is_none());
 }
 
 #[test]
@@ -220,7 +215,7 @@ fn scan_sldprt_namespace_closing_tags_retain_qualified_framing() {
         &ManualClock::default(),
     );
     assert!(matches!(scan.stop_reason, Some(StopReason::Malformed(_))));
-    assert!(!scan.census.expect("admitted row").complete);
+    assert!(scan.census.is_none());
 }
 
 fn compound_keywords(xml: &[u8]) -> Vec<u8> {
@@ -316,4 +311,40 @@ fn scan_sldprt_compound_utf16_conversion_respects_retained_storage() {
     );
     assert_eq!(scan.stop_reason, Some(StopReason::RetainedBytes));
     assert!(scan.census.is_none());
+}
+
+#[test]
+fn scan_sldprt_first_block_and_three_mib_tail_complete_at_default_limits() {
+    let mut bytes = source(LIST);
+    let accepted = u64::try_from(bytes.len()).expect("source length");
+    bytes.resize(bytes.len() + 3 * 1024 * 1024, 0xa5);
+    let scan = SldprtCodec::scan_design(
+        View::over_retained(&bytes),
+        ScanLimits::default(),
+        &ManualClock::default(),
+    );
+    assert_eq!(scan.stop_reason, None);
+    assert!(scan.bytes_read < accepted + 1024);
+    let census = scan.census.expect("first block listing");
+    assert!(census.complete);
+    assert_eq!(census.total, Some(2));
+}
+
+#[test]
+fn scan_sldprt_keywords_xml_matches_decoder_syntax() {
+    for xml in [
+        r#"<Keywords><Feature Type="A<B"/></Keywords>"#,
+        "<Keywords><p:Feature/></Keywords>",
+        "<Keywords><Feature>&unknown;</Feature></Keywords>",
+        r#"<Keywords xmlns:a="urn:test" xmlns:b="urn:test"><Feature a:id="1" b:id="2"/></Keywords>"#,
+    ] {
+        assert!(roxmltree::Document::parse(xml).is_err());
+        let scan = SldprtCodec::scan_design(
+            View::over_retained(&source(xml.as_bytes())),
+            ScanLimits::default(),
+            &ManualClock::default(),
+        );
+        assert!(matches!(scan.stop_reason, Some(StopReason::Malformed(_))));
+        assert!(scan.census.is_none());
+    }
 }

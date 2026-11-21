@@ -1,209 +1,150 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature census from Fusion Design timeline tables.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_container::scan::ScanZip;
-use cadmpeg_core::decode::{bounded_len, u64_from_index, View};
+use cadmpeg_core::decode::{u64_from_index, View};
 use cadmpeg_core::scan::{
-    DesignScan, FeatureCensus, ScanBudget, ScanClock, ScanLimits, ScanReader, StopReason,
-    Suppressed,
+    DesignScan, FeatureCensus, ScanBudget, ScanClock, ScanLimits, StopReason, Suppressed,
 };
 
-use crate::design::decode::meta::{FEATURE_TIMELINE_TYPE_GUID, FEATURE_TIMELINE_TYPE_VERSIONS};
+use crate::design::decode::meta::{
+    is_supported_feature_timeline_type, local_reference, parse_feature_timeline_record,
+    FEATURE_TIMELINE_TYPE_GUID, FEATURE_TIMELINE_TYPE_VERSIONS,
+};
+
+const META_STORAGE_PER_BYTE: u64 = 32;
+const TIMELINE_STORAGE_PER_BYTE: u64 = 32;
+const PARSER_FIXED_STORAGE: u64 = 1024;
 
 fn malformed(what: &str) -> StopReason {
     StopReason::Malformed(what.into())
 }
 
-fn length(reader: &mut ScanReader<'_, '_>, stride: usize) -> Result<usize, StopReason> {
-    let count = reader.u32()?;
-    bounded_len(u64::from(count), stride, reader.remaining())
-        .ok_or_else(|| malformed("Fusion table count exceeds its extent"))
-}
-
-fn text<'a>(reader: &mut ScanReader<'a, '_>) -> Result<&'a str, StopReason> {
-    let length = length(reader, 1)?;
-    std::str::from_utf8(reader.take(length)?.window()).map_err(|_| malformed("Fusion ASCII field"))
-}
-
-fn skip_text16(reader: &mut ScanReader<'_, '_>) -> Result<(), StopReason> {
-    let count = length(reader, 2)?;
-    reader.take(
-        count
-            .checked_mul(2)
-            .ok_or_else(|| malformed("Fusion UTF16 length"))?,
-    )?;
-    Ok(())
+fn admit_parser(
+    source: View<'_>,
+    storage_per_byte: u64,
+    budget: &ScanBudget<'_>,
+) -> Result<(), StopReason> {
+    let length = u64_from_index(source.window().len());
+    budget.source(length)?;
+    budget.retain(
+        length
+            .checked_mul(storage_per_byte)
+            .and_then(|size| size.checked_add(PARSER_FIXED_STORAGE))
+            .ok_or(StopReason::RetainedBytes)?,
+    )
 }
 
 struct Meta<'a> {
-    kinds: BTreeMap<u64, Vec<&'a str>>,
+    kinds: HashMap<u64, Vec<&'a str>>,
     timelines: BTreeMap<u64, String>,
-    records: Vec<(u64, u64)>,
 }
 
-fn metadata<'a>(source: View<'a>, budget: &ScanBudget<'_>) -> Result<Meta<'a>, StopReason> {
-    let mut reader = ScanReader::retained(source, budget);
-    text(&mut reader)?;
-    reader.take(4)?;
-    skip_text16(&mut reader)?;
-    let magic = reader.u32()?;
-    reader.take(if magic == crate::metastream::MODERN_SERIALIZER_MAGIC {
-        12
-    } else {
-        4
-    })?;
-    text(&mut reader)?;
-    text(&mut reader)?;
-    reader.take(8)?;
-    let type_count = length(&mut reader, 20)?;
-    let mut kinds: BTreeMap<u64, Vec<&str>> = BTreeMap::new();
+fn metadata<'a>(
+    source: &'a crate::metastream::MetaStream,
+    budget: &ScanBudget<'_>,
+) -> Result<Meta<'a>, StopReason> {
+    let mut kinds: HashMap<u64, Vec<&str>> = HashMap::new();
     let mut timelines = BTreeMap::new();
-    for ordinal in 0..type_count {
+    for (ordinal, registration) in source.types.iter().enumerate() {
         budget.check()?;
-        let guid = text(&mut reader)?;
-        let base = text(&mut reader)?;
-        let version = reader.u32()?;
-        let module = text(&mut reader)?;
-        let count = length(&mut reader, 8)?;
+        let guid = registration.type_guid.as_str();
         let is_timeline = guid.eq_ignore_ascii_case(FEATURE_TIMELINE_TYPE_GUID);
-        if is_timeline && !FEATURE_TIMELINE_TYPE_VERSIONS.contains(&version) {
+        if is_timeline && !FEATURE_TIMELINE_TYPE_VERSIONS.contains(&registration.version) {
             return Err(StopReason::Unsupported(format!(
-                "Fusion timeline version {version}"
+                "Fusion timeline version {}",
+                registration.version
             )));
         }
-        if is_timeline
-            && (!base
-                .eq_ignore_ascii_case(crate::design::decode::meta::FEATURE_TIMELINE_BASE_TYPE_GUID)
-                || module != crate::records::entity_header::DESIGN_MODULE_FUSION)
-        {
+        if is_timeline && !is_supported_feature_timeline_type(registration) {
             return Err(malformed("Fusion timeline registration"));
         }
-        for _ in 0..count {
+        for id in registration.entities.values() {
             budget.check()?;
             budget.retain(160)?;
-            let id = reader.u64()?;
-            kinds.entry(id).or_default().push(guid);
+            kinds.entry(*id).or_default().push(guid);
             if is_timeline {
                 let class = u64_from_index(ordinal)
                     .checked_add(256)
+                    .filter(|class| *class <= 999)
                     .ok_or_else(|| malformed("Fusion class index"))?;
-                timelines.insert(id, class.to_string());
+                timelines.insert(*id, class.to_string());
             }
         }
     }
-    let named = length(&mut reader, 8)?;
-    reader.take(
-        named
-            .checked_mul(8)
-            .ok_or_else(|| malformed("Fusion named table length"))?,
-    )?;
-    let count = length(&mut reader, 16)?;
-    let mut records = Vec::new();
-    let mut previous = None;
-    let mut ids = BTreeSet::new();
-    for _ in 0..count {
-        budget.check()?;
-        budget.retain(128)?;
-        let id = reader.u64()?;
-        let offset = reader.u64()?;
-        if previous.is_some_and(|at| at >= offset) || !ids.insert(id) {
-            return Err(malformed("Fusion primary record index order or identity"));
-        }
-        previous = Some(offset);
-        records.push((id, offset));
-    }
-    Ok(Meta {
-        kinds,
-        timelines,
-        records,
-    })
-}
-
-fn reference<'a>(
-    source: View<'a>,
-    reader: &mut ScanReader<'a, '_>,
-    budget: &ScanBudget<'_>,
-) -> Result<crate::bytes::Reference<&'a str, crate::bytes::utf16::Utf16View<'a>>, StopReason> {
-    budget.check()?;
-    let mut at = reader.position() - source.start();
-    let value = crate::bytes::take_reference(source.window(), &mut at)
-        .ok_or_else(|| malformed("Fusion timeline reference"))?;
-    reader.seek(
-        source
-            .start()
-            .checked_add(at)
-            .ok_or_else(|| malformed("Fusion reference offset"))?,
-    )?;
-    Ok(value)
+    Ok(Meta { kinds, timelines })
 }
 
 fn timeline(
     source: View<'_>,
-    id: u64,
-    class: &str,
+    expected: (&str, u64),
+    stream: &str,
     meta: &Meta<'_>,
     budget: &ScanBudget<'_>,
     scan: &mut DesignScan,
     depth: u64,
 ) -> Result<(), StopReason> {
-    let mut reader = ScanReader::retained(source, budget);
-    if text(&mut reader)? != class || reader.u64()? != id {
-        return Err(malformed("Fusion timeline identity"));
-    }
-    text(&mut reader)?;
-    if reader.take(2)?.window() != [0, 0] {
-        return Err(malformed("Fusion timeline prefix"));
-    }
-    if reference(source, &mut reader, budget)?.local().is_none() {
-        return Err(malformed("Fusion timeline context"));
-    }
-    let count = length(&mut reader, 1)?;
+    admit_parser(source, TIMELINE_STORAGE_PER_BYTE, budget)?;
+    let (timeline, _) = parse_feature_timeline_record(
+        source.window(),
+        stream,
+        0..source.window().len(),
+        expected,
+        0,
+        &meta.kinds,
+    )
+    .ok_or_else(|| malformed("Fusion timeline does not match its exact frame"))?;
+    budget.check()?;
     scan.census.get_or_insert_with(FeatureCensus::default);
-    let mut visited = BTreeSet::new();
-    for _ in 0..count {
-        budget.check()?;
+    for item in timeline.frame().items() {
         let visit = budget.feature()?;
-        let item = reference(source, &mut reader, budget)?;
-        if matches!(item, crate::bytes::Reference::Null) {
-            continue;
+        let mut at = usize::try_from(item.offset)
+            .ok()
+            .and_then(|offset| offset.checked_sub(1))
+            .ok_or_else(|| malformed("Fusion timeline item offset"))?;
+        budget.source(u64_from_index(
+            source
+                .window()
+                .len()
+                .checked_sub(at)
+                .ok_or_else(|| malformed("Fusion timeline item offset"))?
+                .min(crate::bytes::TYPED_LOCAL_REFERENCE_LEN),
+        ))?;
+        let reference = crate::bytes::take_reference(source.window(), &mut at)
+            .ok_or_else(|| malformed("Fusion timeline reference"))?;
+        let target = local_reference(&reference, &meta.kinds)
+            .ok_or_else(|| malformed("Fusion timeline local reference"))?;
+        let (_, inline) = reference
+            .local()
+            .ok_or_else(|| malformed("Fusion timeline local reference"))?;
+        if target == expected.1 {
+            budget.depth(depth.checked_add(1).ok_or(StopReason::NestingDepth)?)?;
+            return Err(malformed("Fusion timeline references itself"));
         }
-        let kind = if let Some((target, inline)) = item.local() {
-            if target == id {
-                budget.depth(depth.checked_add(1).ok_or(StopReason::NestingDepth)?)?;
-                return Err(malformed("Fusion timeline references itself"));
-            }
-            budget.retain(64)?;
-            if !visited.insert(target) {
-                return Err(malformed("Fusion timeline repeats a feature"));
-            }
-            let mut found: Option<crate::records::feature::scope::DesignFeatureKind> = None;
-            if let Some(registered) = meta.kinds.get(&target) {
-                for guid in registered {
-                    budget.check()?;
-                    if inline.is_some_and(|inline| !inline.eq_ignore_ascii_case(guid)) {
-                        continue;
-                    }
-                    budget.retain(128)?;
-                    if let Some(candidate) =
-                        crate::design::decode::scopes::parameter_scope::scan_kind(guid)
+        let mut kind: Option<crate::records::feature::scope::DesignFeatureKind> = None;
+        if let Some(registered) = meta.kinds.get(&target) {
+            for guid in registered {
+                budget.check()?;
+                if inline.is_some_and(|inline| !inline.eq_ignore_ascii_case(guid)) {
+                    continue;
+                }
+                budget.retain(128)?;
+                if let Some(candidate) =
+                    crate::design::decode::scopes::parameter_scope::scan_kind(guid)
+                {
+                    if kind
+                        .as_ref()
+                        .is_some_and(|old| old.as_str() != candidate.as_str())
                     {
-                        if found
-                            .as_ref()
-                            .is_some_and(|old| old.as_str() != candidate.as_str())
-                        {
-                            found = None;
-                            break;
-                        }
-                        found = Some(candidate);
+                        kind = None;
+                        break;
                     }
+                    kind = Some(candidate);
                 }
             }
-            found
-        } else {
-            None
-        };
+        }
         scan.record_feature(
             visit,
             kind.as_ref().map_or(
@@ -212,9 +153,6 @@ fn timeline(
             ),
             Suppressed::Unknown,
         )?;
-    }
-    if reader.remaining() != 0 {
-        return Err(malformed("Fusion timeline trailing bytes"));
     }
     Ok(())
 }
@@ -263,7 +201,11 @@ fn document(
         }
         scan.declared_size(budget, &entry.name, entry.declared_size)?;
         let bytes = archive.open(entry.ordinal)?;
-        let meta = metadata(budget.view(&bytes)?, budget)?;
+        let source = budget.view(&bytes)?;
+        admit_parser(source, META_STORAGE_PER_BYTE, budget)?;
+        let parsed = crate::metastream::parse(source.window(), &entry.name)
+            .map_err(|error| malformed(&error.to_string()))?;
+        let meta = metadata(&parsed, budget)?;
         if meta.timelines.is_empty() {
             continue;
         }
@@ -275,21 +217,33 @@ fn document(
         let bytes = archive.open(bulk.ordinal)?;
         let source = budget.view(&bytes)?;
         let mut seen = BTreeSet::new();
-        for (ordinal, &(id, offset)) in meta.records.iter().enumerate() {
+        let mut previous = None;
+        let mut ids = BTreeSet::new();
+        for record in &parsed.records {
+            budget.check()?;
+            budget.retain(64)?;
+            if previous.is_some_and(|at| at >= record.bulk_offset) || !ids.insert(record.entity_id)
+            {
+                return Err(malformed("Fusion primary record index order or identity"));
+            }
+            previous = Some(record.bulk_offset);
+        }
+        for (ordinal, record) in parsed.records.iter().enumerate() {
+            let (id, offset) = (record.entity_id, record.bulk_offset);
             budget.check()?;
             let Some(class) = meta.timelines.get(&id) else {
                 continue;
             };
-            let end = meta
+            let end = parsed
                 .records
                 .get(ordinal + 1)
-                .map_or(u64_from_index(bytes.len()), |row| row.1);
+                .map_or(u64_from_index(bytes.len()), |row| row.bulk_offset);
             let start = usize::try_from(offset).map_err(|_| malformed("Fusion record offset"))?;
             let end = usize::try_from(end).map_err(|_| malformed("Fusion record end"))?;
             let frame = source
                 .child(start, end)
                 .ok_or_else(|| malformed("Fusion timeline extent"))?;
-            timeline(frame, id, class, &meta, budget, scan, depth)?;
+            timeline(frame, (class, id), &bulk.name, &meta, budget, scan, depth)?;
             seen.insert(id);
             found = true;
         }

@@ -12,10 +12,14 @@ const FIRST: &str = "DD405BC2-D673-44F0-8833-5CB2A1C186C7";
 const SECOND: &str = "D1728651-3640-4CCF-8083-AF7703013978";
 
 fn fixture(items: &[u64]) -> Vec<u8> {
+    fixture_with(items, None, "Timeline")
+}
+
+fn fixture_with(items: &[u64], inline: Option<&str>, payload: &str) -> Vec<u8> {
     let mut bulk = Vec::new();
     lp_ascii(&mut bulk, "256");
     bulk.extend_from_slice(&35_u64.to_le_bytes());
-    lp_ascii(&mut bulk, "Timeline");
+    lp_ascii(&mut bulk, payload);
     bulk.extend_from_slice(&[0, 0, 1]);
     bulk.extend_from_slice(&17_u64.to_le_bytes());
     bulk.extend_from_slice(&[0, 0]);
@@ -23,6 +27,9 @@ fn fixture(items: &[u64]) -> Vec<u8> {
     for id in items {
         bulk.push(1);
         bulk.extend_from_slice(&id.to_le_bytes());
+        if let Some(guid) = inline {
+            lp_ascii(&mut bulk, guid);
+        }
         bulk.extend_from_slice(&[0, 0]);
     }
     let meta = design_metastream_with_records(
@@ -285,4 +292,87 @@ fn scan_f3z_child_without_a_census_keeps_the_aggregate_incomplete() {
             .collect::<Vec<_>>(),
         ["Mirror", "Extrude"]
     );
+}
+
+fn assert_decoder_and_scan_refuse_timeline(bytes: &[u8]) {
+    use std::io::{Cursor, Read, Write};
+
+    let mut input = zip::ZipArchive::new(Cursor::new(bytes)).expect("timeline archive");
+    let mut output = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut output, options);
+    for name in ["Design1/MetaStream.dat", "Design1/BulkStream.dat"] {
+        let mut member = Vec::new();
+        input
+            .by_name(name)
+            .expect("timeline stream")
+            .read_to_end(&mut member)
+            .unwrap();
+        output
+            .start_file(format!("FusionAssetName[Active]/{name}"), options)
+            .unwrap();
+        output.write_all(&member).unwrap();
+    }
+    let decoder_bytes = output.finish().unwrap().into_inner();
+    let decoded = crate::test_support::zip_test::with_scan(&decoder_bytes, |container| {
+        crate::design::decode::meta::decode_feature_timelines(container, &mut Vec::new())
+    });
+    assert!(matches!(
+        decoded,
+        Err(cadmpeg_core::CodecError::Malformed(_))
+    ));
+    let scan = F3dCodec::scan_design(
+        View::over_retained(bytes),
+        ScanLimits::default(),
+        &ManualClock::default(),
+    );
+    assert!(matches!(scan.stop_reason, Some(StopReason::Malformed(_))));
+    assert!(scan
+        .census
+        .is_none_or(|census| !census.complete && census.total.is_none()));
+}
+
+#[test]
+fn scan_f3d_unregistered_inline_guid_matches_decoder_refusal() {
+    assert_decoder_and_scan_refuse_timeline(&fixture_with(&[101], Some(SECOND), "Timeline"));
+}
+
+#[test]
+fn scan_f3d_payload_bounds_match_decoder_refusal() {
+    for payload in ["a".repeat(2001), "Timéline".into()] {
+        assert_decoder_and_scan_refuse_timeline(&fixture_with(&[101], None, &payload));
+    }
+}
+
+#[test]
+fn scan_f3d_repeated_reference_matches_decoder_frame_refusal() {
+    assert_decoder_and_scan_refuse_timeline(&fixture(&[101, 101]));
+}
+
+#[test]
+fn scan_f3d_registered_inline_guid_preserves_kind() {
+    let scan = F3dCodec::scan_design(
+        View::over_retained(&fixture_with(&[101], Some(FIRST), "Timeline")),
+        ScanLimits::default(),
+        &ManualClock::default(),
+    );
+    assert_eq!(scan.stop_reason, None);
+    let census = scan.census.expect("registered timeline");
+    assert!(census.complete);
+    assert_eq!(census.rows[0].kind, "Extrude");
+}
+
+#[test]
+fn scan_f3d_parser_input_is_admitted_before_payload_validation() {
+    let bytes = fixture_with(&[101], None, &"a".repeat(1024 * 1024));
+    let scan = F3dCodec::scan_design(
+        View::over_retained(&bytes),
+        ScanLimits {
+            source_bytes: 64 * 1024,
+            ..ScanLimits::default()
+        },
+        &ManualClock::default(),
+    );
+    assert_eq!(scan.stop_reason, Some(StopReason::SourceBytes));
+    assert!(scan.census.is_none());
 }
