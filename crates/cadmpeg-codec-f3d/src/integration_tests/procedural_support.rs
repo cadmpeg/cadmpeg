@@ -15,7 +15,7 @@ fn revolution_support_keeps_native_chart_without_false_endpoint_errors() {
                 )));
                 let construction = result
                     .ir()
-                    .model
+                    .geometry
                     .procedural_curves
                     .iter()
                     .find(|curve| {
@@ -59,7 +59,7 @@ fn revolution_support_keeps_native_chart_without_pcurve() {
     )));
     let construction = result
         .ir()
-        .model
+        .geometry
         .procedural_curves
         .iter()
         .find(|curve| {

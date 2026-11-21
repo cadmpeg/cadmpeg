@@ -16,11 +16,11 @@ fn zero_length_edge_parameter_range_is_a_writer_limit() {
         Point3::new(2.0, 0.0, 0.0),
         Point3::new(0.0, 2.0, 0.0),
     ]);
-    let curve = ir.model.edges[0]
+    let curve = ir.geometry.edges[0]
         .curve()
         .expect("polygon edge has a curve")
         .clone();
-    ir.model.edges[0].carrier =
+    ir.geometry.edges[0].carrier =
         EdgeCarrier::new(Some(curve), Some([0.0, 0.0])).expect("equal endpoints are admitted");
 
     let error = WritableModel::try_new(&ir)
@@ -36,7 +36,7 @@ fn admitted_unit_direction_outside_rhino_bound_is_a_writer_limit() {
         Point3::new(2.0, 0.0, 0.0),
         Point3::new(0.0, 2.0, 0.0),
     ]);
-    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+    ir.geometry.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
         cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(1.0 + 5.0e-10, 0.0, 0.0),
@@ -57,7 +57,7 @@ fn admitted_frame_outside_rhino_bound_is_a_writer_limit() {
         Point3::new(2.0, 0.0, 0.0),
         Point3::new(0.0, 2.0, 0.0),
     ]);
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+    ir.geometry.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0 + 5.0e-10),
@@ -80,18 +80,18 @@ fn single_face_resolves_arena_permutations_in_traversal_order() {
         Point3::new(0.0, 2.0, 0.0),
     ]);
     let expected = super::super::brep_payload(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &WritableModel::try_new(&ir).expect("writable triangle"),
         crate::RhinoArchiveVersion::V8,
     )
     .expect("triangle payload");
-    ir.model.vertices.reverse();
-    ir.model.edges.reverse();
-    ir.model.coedges.reverse();
+    ir.geometry.vertices.reverse();
+    ir.geometry.edges.reverse();
+    ir.geometry.coedges.reverse();
     let model =
         WritableModel::try_new(&ir).expect("references resolve independently of arena order");
     let actual = super::super::brep_payload(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &model,
         crate::RhinoArchiveVersion::V8,
     )
@@ -111,10 +111,10 @@ fn multi_face_resolves_domains_and_incidence_in_arena_order() {
     let ir = adjacent_quad_sheet();
     let model = WritableModel::try_new(&ir).expect("writable adjacent faces");
     for (position, edge) in model.edges.iter().enumerate() {
-        assert_eq!(edge.source.id, ir.model.edges[position].id);
+        assert_eq!(edge.source.id, ir.geometry.edges[position].id);
         assert_eq!(
             Some(edge.domain),
-            ir.model.edges[position]
+            ir.geometry.edges[position]
                 .param_range()
                 .map(cadmpeg_ir::units::FiniteVector::finite_components)
         );
@@ -131,25 +131,16 @@ fn multi_face_resolves_domains_and_incidence_in_arena_order() {
 }
 
 #[test]
-fn shell_face_listing_order_is_not_the_arena_order() {
+fn a_face_of_another_shell_is_an_inconsistent_ownership_graph() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    for face in &mut ir.model.faces {
+    for face in &mut ir.geometry.faces {
         face.name = None;
     }
-    let arena: Vec<_> = ir.model.faces.iter().map(|face| face.id.clone()).collect();
-    assert_ne!(ir.model.shells[0].faces(), arena.as_slice());
     assert!(WritableModel::try_new(&ir).is_ok());
-    let shell = &ir.model.shells[0];
-    ir.model.shells[0] = cadmpeg_ir::topology::Shell::new(
-        shell.id.clone(),
-        shell.region.clone(),
-        shell.faces()[1..].to_vec(),
-        Vec::new(),
-        Vec::new(),
-    )
-    .expect("a shell with faces");
+    ir.geometry.faces[0].shell =
+        cadmpeg_ir::ids::ShellId::mint("test:model:shell#other").expect("identity grammar");
     let error = WritableModel::try_new(&ir)
         .err()
-        .expect("a shell face missing from the arena is inconsistent");
+        .expect("a face of another shell is inconsistent");
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
 }

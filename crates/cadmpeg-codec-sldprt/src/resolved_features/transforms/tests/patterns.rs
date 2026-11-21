@@ -655,6 +655,7 @@ fn pattern_inputs_keep_curve_bindings_and_directions_without_guessed_seeds() {
                 count: 3,
                 second: None,
                 omitted_instances: Vec::new(),
+                symmetric: false,
             })
             .unwrap(),
         }));
@@ -744,6 +745,7 @@ fn pattern_inputs_keep_curve_bindings_and_directions_without_guessed_seeds() {
                 count: 3,
                 second: None,
                 omitted_instances: Vec::new(),
+                symmetric: false,
             })
             .unwrap(),
         }));
@@ -1859,7 +1861,7 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
     .expect("find the profile loci for each marker");
     for (index, relation) in relations.iter().enumerate() {
         let definition = typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             relation,
             Some(&parameters[index]),
             &sketch,

@@ -1,821 +1,922 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "10",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "assembly_joints": [],
-      "attributes": [],
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
+    "fragment": false,
+    "geometry": {
       "bodies": [
         {
           "id": "fcstd:model:body#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:33%40location1",
-          "kind": "wire",
-          "regions": [
-            "fcstd:model:region#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:4%40location1",
-            "fcstd:model:region#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:8%40location1",
-            "fcstd:model:region#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:12%40location1",
-            "fcstd:model:region#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:16%40location1",
-            "fcstd:model:region#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:20%40location1",
-            "fcstd:model:region#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:26%40location1",
-            "fcstd:model:region#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:29%40location1",
-            "fcstd:model:region#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:32%40location1"
-          ]
+          "kind": "wire"
         },
         {
           "id": "fcstd:model:body#GeometricRelations:Shape:GeometricRelations.Shape.brp:55%40location1",
-          "kind": "wire",
-          "regions": [
-            "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:4%40location1",
-            "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:8%40location1",
-            "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:12%40location1",
-            "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:16%40location1",
-            "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:20%40location1",
-            "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:24%40location1",
-            "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:28%40location1",
-            "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:32%40location1",
-            "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:38%40location1",
-            "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:44%40location1",
-            "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:48%40location1",
-            "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:51%40location1",
-            "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:54%40location1"
-          ]
+          "kind": "wire"
         },
         {
           "id": "fcstd:model:body#InactiveRelation:Shape:InactiveRelation.Shape.brp:4%40location1",
-          "kind": "wire",
-          "regions": [
-            "fcstd:model:region#InactiveRelation:Shape:InactiveRelation.Shape.brp:4%40location1"
-          ]
+          "kind": "wire"
         },
         {
           "id": "fcstd:model:body#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp:3%40location1",
-          "kind": "wire",
-          "regions": [
-            "fcstd:model:region#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp:3%40location1"
-          ]
+          "kind": "wire"
         },
         {
           "id": "fcstd:model:body#OpticalRelation:Shape:OpticalRelation.Shape.brp:13%40location1",
-          "kind": "wire",
-          "regions": [
-            "fcstd:model:region#OpticalRelation:Shape:OpticalRelation.Shape.brp:4%40location1",
-            "fcstd:model:region#OpticalRelation:Shape:OpticalRelation.Shape.brp:8%40location1",
-            "fcstd:model:region#OpticalRelation:Shape:OpticalRelation.Shape.brp:12%40location1"
-          ]
+          "kind": "wire"
         },
         {
           "id": "fcstd:model:body#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:4%40location1",
-          "kind": "wire",
-          "regions": [
-            "fcstd:model:region#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:4%40location1"
-          ]
+          "kind": "wire"
         },
         {
           "id": "fcstd:model:body#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:13%40location1",
-          "kind": "wire",
-          "regions": [
-            "fcstd:model:region#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:4%40location1",
-            "fcstd:model:region#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:8%40location1",
-            "fcstd:model:region#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:12%40location1"
-          ]
+          "kind": "wire"
         }
       ],
       "coedges": [],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
-            "direction": {
-              "x": 0.89580641647824,
-              "y": 0.4444444444431879,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": -0.06225774832695318,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.89580641647824,
+                "y": 0.4444444444431879,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -0.06225774832695318,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:1",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#DimensionalRelations"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.6979832708413876,
-              "y": 0.7161140646751453,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 15.106777054548552,
-              "y": 0.03162277660168379,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.6979832708413876,
+                "y": 0.7161140646751453,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 15.106777054548552,
+                "y": 0.03162277660168379,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:2",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#DimensionalRelations"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.6049846444987129,
-              "y": 0.7962371379939308,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 24.936754446796634,
-              "y": 4.968377223398316,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.6049846444987129,
+                "y": 0.7962371379939308,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 24.936754446796634,
+                "y": 4.968377223398316,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:3",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#DimensionalRelations"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.8944271909999159,
-              "y": 0.4472135954999579,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 35.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.8944271909999159,
+                "y": 0.4472135954999579,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 35.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:4",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#DimensionalRelations"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.8944271909999159,
-              "y": 0.4472135954999579,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 50.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.8944271909999159,
+                "y": 0.4472135954999579,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 50.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:5",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#DimensionalRelations"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.7071067811865476,
-              "y": 0.7071067811865476,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 65.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.7071067811865476,
+                "y": 0.7071067811865476,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 65.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:6",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#DimensionalRelations"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 65.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 65.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:7",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#DimensionalRelations"
           }
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 85.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "circle",
-            "radius": 4.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": 85.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "circle",
+              "radius": 4.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
             }
           },
           "id": "fcstd:model:curve#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:8",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#DimensionalRelations"
           }
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 100.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "circle",
-            "radius": 4.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": 100.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "circle",
+              "radius": 4.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
             }
           },
           "id": "fcstd:model:curve#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:9",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#DimensionalRelations"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:1",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.9578262852211513,
-              "y": 0.2873478855663454,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 80.0,
-              "y": 3.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.9578262852211513,
+                "y": 0.2873478855663454,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 80.0,
+                "y": 3.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:10",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.9284766908852594,
-              "y": -0.3713906763541037,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 95.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.9284766908852594,
+                "y": -0.3713906763541037,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 95.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:11",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.9284766908852594,
-              "y": 0.3713906763541037,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 95.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.9284766908852594,
+                "y": 0.3713906763541037,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 95.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:12",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.9284766908852594,
-              "y": 0.3713906763541037,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 110.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.9284766908852594,
+                "y": 0.3713906763541037,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 110.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:13",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 55.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "circle",
-            "radius": 5.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": 55.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "circle",
+              "radius": 5.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
             }
           },
           "id": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:14",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 55.0,
-              "y": 12.0,
-              "z": 0.0
-            },
-            "kind": "circle",
-            "radius": 5.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": 55.0,
+                "y": 12.0,
+                "z": 0.0
+              },
+              "kind": "circle",
+              "radius": 5.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
             }
           },
           "id": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:15",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 15.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 15.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:2",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.9284766908852594,
-              "y": 0.3713906763541037,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 20.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.9284766908852594,
+                "y": 0.3713906763541037,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 20.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:3",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.9284766908852594,
-              "y": 0.3713906763541037,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 20.0,
-              "y": 8.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.9284766908852594,
+                "y": 0.3713906763541037,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 20.0,
+                "y": 8.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:4",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.9284766908852594,
-              "y": 0.3713906763541037,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 35.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.9284766908852594,
+                "y": 0.3713906763541037,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 35.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:5",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": -0.3713906763541037,
-              "y": 0.9284766908852594,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 39.0,
-              "y": -5.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -0.3713906763541037,
+                "y": 0.9284766908852594,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 39.0,
+                "y": -5.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:6",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.9716530558331009,
-              "y": 0.2364113768205687,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 50.0117945363695,
-              "y": -0.3634612448649652,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.9716530558331009,
+                "y": 0.2364113768205687,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 50.0117945363695,
+                "y": -0.3634612448649652,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:7",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.9716530558330421,
-              "y": 0.23641137682081043,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 59.997898689119474,
-              "y": 2.066242050618975,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.9716530558330421,
+                "y": 0.23641137682081043,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 59.997898689119474,
+                "y": 2.066242050618975,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:8",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.9578262852211513,
-              "y": 0.2873478855663454,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 70.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.9578262852211513,
+                "y": 0.2873478855663454,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 70.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:9",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#InactiveRelation:Shape:InactiveRelation.Shape.brp:1",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#InactiveRelation"
           }
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "ellipse",
-            "major_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
-            },
-            "major_radius": 12.0,
-            "minor_radius": 5.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "ellipse",
+              "major_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              },
+              "major_radius": 12.0,
+              "minor_radius": 5.0
+            }
           },
           "id": "fcstd:model:curve#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp:1",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#InternalAlignmentRelations"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.9017286445102786,
-              "y": 0.43230250018899463,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": -10.041197527567036,
-              "y": -4.9168271778672175,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.9017286445102786,
+                "y": 0.43230250018899463,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -10.041197527567036,
+                "y": -4.9168271778672175,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#OpticalRelation:Shape:OpticalRelation.Shape.brp:1",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#OpticalRelation"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.7224656188267481,
-              "y": 0.6914068481099126,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.12122764612580109,
-              "y": -0.28763387761099396,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.7224656188267481,
+                "y": 0.6914068481099126,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.12122764612580109,
+                "y": -0.28763387761099396,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#OpticalRelation:Shape:OpticalRelation.Shape.brp:2",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#OpticalRelation"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.9999950917514583,
-              "y": -0.00313312511600634,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": -11.999973848754916,
-              "y": 0.03759760399533831,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.9999950917514583,
+                "y": -0.00313312511600634,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -11.999973848754916,
+                "y": 0.03759760399533831,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#OpticalRelation:Shape:OpticalRelation.Shape.brp:3",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#OpticalRelation"
           }
         },
         {
           "geometry": {
-            "degree": 3,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.0,
-              0.0,
-              1.0,
-              1.0,
-              1.0,
-              1.0
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "rational",
-              "points": [
-                {
-                  "point": {
-                    "x": 0.0,
-                    "y": 0.0,
-                    "z": 0.0
+            "kind": "solved",
+            "value": {
+              "degree": 3,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "rational",
+                "points": [
+                  {
+                    "point": {
+                      "x": 0.0,
+                      "y": 0.0,
+                      "z": 0.0
+                    },
+                    "weight": 1.0
                   },
-                  "weight": 1.0
-                },
-                {
-                  "point": {
-                    "x": 4.0,
-                    "y": 8.0,
-                    "z": 0.0
+                  {
+                    "point": {
+                      "x": 4.0,
+                      "y": 8.0,
+                      "z": 0.0
+                    },
+                    "weight": 1.2
                   },
-                  "weight": 1.2
-                },
-                {
-                  "point": {
-                    "x": 8.0,
-                    "y": 7.0,
-                    "z": 0.0
+                  {
+                    "point": {
+                      "x": 8.0,
+                      "y": 7.0,
+                      "z": 0.0
+                    },
+                    "weight": 1.0
                   },
-                  "weight": 1.0
-                },
-                {
-                  "point": {
-                    "x": 12.0,
-                    "y": 2.0,
-                    "z": 0.0
-                  },
-                  "weight": 1.0
-                }
-              ]
+                  {
+                    "point": {
+                      "x": 12.0,
+                      "y": 2.0,
+                      "z": 0.0
+                    },
+                    "weight": 1.0
+                  }
+                ]
+              }
             }
           },
           "id": "fcstd:model:curve#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:1",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#SplineWeightRelation"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.7071067811865475,
-              "y": 0.7071067811865475,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": -8.0,
-              "y": 3.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.7071067811865475,
+                "y": 0.7071067811865475,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": -8.0,
+                "y": 3.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:1",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#SymmetryRelation"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": -0.7071067811865475,
-              "y": 0.7071067811865475,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 8.0,
-              "y": 3.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -0.7071067811865475,
+                "y": 0.7071067811865475,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 8.0,
+                "y": 3.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:2",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#SymmetryRelation"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": -10.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": -10.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:3",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#SymmetryRelation"
           }
         }
       ],
-      "drawings": [],
       "edges": [
         {
           "carrier": {
@@ -825,9 +926,11 @@
               5.063344303129471
             ]
           },
-          "end": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:10%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:10%40location1",
+            "start": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:9%40location1"
+          },
           "id": "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:11%40location1",
-          "start": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:9%40location1",
           "tolerance": 1e-7
         },
         {
@@ -838,9 +941,11 @@
               8.94427190999916
             ]
           },
-          "end": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:14%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:14%40location1",
+            "start": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:13%40location1"
+          },
           "id": "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:15%40location1",
-          "start": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:13%40location1",
           "tolerance": 1e-7
         },
         {
@@ -851,9 +956,11 @@
               8.94427190999916
             ]
           },
-          "end": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:18%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:18%40location1",
+            "start": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:17%40location1"
+          },
           "id": "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:19%40location1",
-          "start": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:17%40location1",
           "tolerance": 1e-7
         },
         {
@@ -864,9 +971,11 @@
               9.899494936611665
             ]
           },
-          "end": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:22%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:22%40location1",
+            "start": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:21%40location1"
+          },
           "id": "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:23%40location1",
-          "start": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:21%40location1",
           "tolerance": 1e-7
         },
         {
@@ -877,9 +986,11 @@
               10.0
             ]
           },
-          "end": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:24%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:24%40location1",
+            "start": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:21%40location1"
+          },
           "id": "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:25%40location1",
-          "start": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:21%40location1",
           "tolerance": 1e-7
         },
         {
@@ -890,9 +1001,11 @@
               6.283185307179586
             ]
           },
-          "end": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:27%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:27%40location1",
+            "start": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:27%40location1"
+          },
           "id": "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:28%40location1",
-          "start": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:27%40location1",
           "tolerance": 1e-7
         },
         {
@@ -903,9 +1016,11 @@
               9.000000000025445
             ]
           },
-          "end": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:2%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:2%40location1",
+            "start": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:1%40location1"
+          },
           "id": "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:3%40location1",
-          "start": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
         {
@@ -916,9 +1031,11 @@
               6.283185307179586
             ]
           },
-          "end": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:30%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:30%40location1",
+            "start": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:30%40location1"
+          },
           "id": "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:31%40location1",
-          "start": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:30%40location1",
           "tolerance": 1e-7
         },
         {
@@ -929,9 +1046,11 @@
               4.145117893676446
             ]
           },
-          "end": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:6%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:6%40location1",
+            "start": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:5%40location1"
+          },
           "id": "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:7%40location1",
-          "start": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:5%40location1",
           "tolerance": 1e-7
         },
         {
@@ -942,9 +1061,11 @@
               10.770329614269007
             ]
           },
-          "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:10%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:10%40location1",
+            "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:9%40location1"
+          },
           "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:11%40location1",
-          "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:9%40location1",
           "tolerance": 1e-7
         },
         {
@@ -955,9 +1076,11 @@
               10.770329614269007
             ]
           },
-          "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:14%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:14%40location1",
+            "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:13%40location1"
+          },
           "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:15%40location1",
-          "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:13%40location1",
           "tolerance": 1e-7
         },
         {
@@ -968,9 +1091,11 @@
               10.770329614269007
             ]
           },
-          "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:18%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:18%40location1",
+            "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:17%40location1"
+          },
           "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:19%40location1",
-          "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:17%40location1",
           "tolerance": 1e-7
         },
         {
@@ -981,9 +1106,11 @@
               10.770329614269007
             ]
           },
-          "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:22%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:22%40location1",
+            "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:21%40location1"
+          },
           "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:23%40location1",
-          "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:21%40location1",
           "tolerance": 1e-7
         },
         {
@@ -994,9 +1121,11 @@
               10.245999764626488
             ]
           },
-          "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:26%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:26%40location1",
+            "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:25%40location1"
+          },
           "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:27%40location1",
-          "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:25%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1007,9 +1136,11 @@
               10.0
             ]
           },
-          "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:2%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:2%40location1",
+            "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:1%40location1"
+          },
           "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:3%40location1",
-          "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1020,9 +1151,11 @@
               5.171657246885603
             ]
           },
-          "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:30%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:30%40location1",
+            "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:29%40location1"
+          },
           "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:31%40location1",
-          "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:29%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1033,9 +1166,11 @@
               10.44030650891055
             ]
           },
-          "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:34%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:34%40location1",
+            "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:33%40location1"
+          },
           "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:35%40location1",
-          "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:33%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1046,9 +1181,11 @@
               10.44030650891055
             ]
           },
-          "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:36%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:36%40location1",
+            "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:34%40location1"
+          },
           "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:37%40location1",
-          "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:34%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1059,9 +1196,11 @@
               10.770329614269007
             ]
           },
-          "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:40%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:40%40location1",
+            "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:39%40location1"
+          },
           "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:41%40location1",
-          "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:39%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1072,9 +1211,11 @@
               10.770329614269007
             ]
           },
-          "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:42%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:42%40location1",
+            "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:39%40location1"
+          },
           "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:43%40location1",
-          "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:39%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1085,9 +1226,11 @@
               10.770329614269007
             ]
           },
-          "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:46%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:46%40location1",
+            "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:45%40location1"
+          },
           "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:47%40location1",
-          "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:45%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1098,9 +1241,11 @@
               6.283185307179586
             ]
           },
-          "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:49%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:49%40location1",
+            "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:49%40location1"
+          },
           "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:50%40location1",
-          "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:49%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1111,9 +1256,11 @@
               6.283185307179586
             ]
           },
-          "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:52%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:52%40location1",
+            "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:52%40location1"
+          },
           "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:53%40location1",
-          "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:52%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1124,9 +1271,11 @@
               10.0
             ]
           },
-          "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:6%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:6%40location1",
+            "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:5%40location1"
+          },
           "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:7%40location1",
-          "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:5%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1137,9 +1286,11 @@
               10.0
             ]
           },
-          "end": "fcstd:model:vertex#InactiveRelation:Shape:InactiveRelation.Shape.brp:2%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#InactiveRelation:Shape:InactiveRelation.Shape.brp:2%40location1",
+            "start": "fcstd:model:vertex#InactiveRelation:Shape:InactiveRelation.Shape.brp:1%40location1"
+          },
           "id": "fcstd:model:edge#InactiveRelation:Shape:InactiveRelation.Shape.brp:3%40location1",
-          "start": "fcstd:model:vertex#InactiveRelation:Shape:InactiveRelation.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1150,9 +1301,11 @@
               6.283185307179586
             ]
           },
-          "end": "fcstd:model:vertex#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp:1%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp:1%40location1",
+            "start": "fcstd:model:vertex#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp:1%40location1"
+          },
           "id": "fcstd:model:edge#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp:2%40location1",
-          "start": "fcstd:model:vertex#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1163,9 +1316,11 @@
               24.000065495796303
             ]
           },
-          "end": "fcstd:model:vertex#OpticalRelation:Shape:OpticalRelation.Shape.brp:10%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#OpticalRelation:Shape:OpticalRelation.Shape.brp:10%40location1",
+            "start": "fcstd:model:vertex#OpticalRelation:Shape:OpticalRelation.Shape.brp:9%40location1"
+          },
           "id": "fcstd:model:edge#OpticalRelation:Shape:OpticalRelation.Shape.brp:11%40location1",
-          "start": "fcstd:model:vertex#OpticalRelation:Shape:OpticalRelation.Shape.brp:9%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1176,9 +1331,11 @@
               11.181185289516602
             ]
           },
-          "end": "fcstd:model:vertex#OpticalRelation:Shape:OpticalRelation.Shape.brp:2%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#OpticalRelation:Shape:OpticalRelation.Shape.brp:2%40location1",
+            "start": "fcstd:model:vertex#OpticalRelation:Shape:OpticalRelation.Shape.brp:1%40location1"
+          },
           "id": "fcstd:model:edge#OpticalRelation:Shape:OpticalRelation.Shape.brp:3%40location1",
-          "start": "fcstd:model:vertex#OpticalRelation:Shape:OpticalRelation.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1189,9 +1346,11 @@
               10.737597064267645
             ]
           },
-          "end": "fcstd:model:vertex#OpticalRelation:Shape:OpticalRelation.Shape.brp:6%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#OpticalRelation:Shape:OpticalRelation.Shape.brp:6%40location1",
+            "start": "fcstd:model:vertex#OpticalRelation:Shape:OpticalRelation.Shape.brp:5%40location1"
+          },
           "id": "fcstd:model:edge#OpticalRelation:Shape:OpticalRelation.Shape.brp:7%40location1",
-          "start": "fcstd:model:vertex#OpticalRelation:Shape:OpticalRelation.Shape.brp:5%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1202,9 +1361,11 @@
               1.0
             ]
           },
-          "end": "fcstd:model:vertex#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:2%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:2%40location1",
+            "start": "fcstd:model:vertex#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:1%40location1"
+          },
           "id": "fcstd:model:edge#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:3%40location1",
-          "start": "fcstd:model:vertex#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1215,9 +1376,11 @@
               20.0
             ]
           },
-          "end": "fcstd:model:vertex#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:10%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:10%40location1",
+            "start": "fcstd:model:vertex#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:9%40location1"
+          },
           "id": "fcstd:model:edge#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:11%40location1",
-          "start": "fcstd:model:vertex#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:9%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1228,9 +1391,11 @@
               2.82842712474619
             ]
           },
-          "end": "fcstd:model:vertex#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:2%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:2%40location1",
+            "start": "fcstd:model:vertex#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:1%40location1"
+          },
           "id": "fcstd:model:edge#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:3%40location1",
-          "start": "fcstd:model:vertex#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1241,310 +1406,17 @@
               2.82842712474619
             ]
           },
-          "end": "fcstd:model:vertex#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:6%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:6%40location1",
+            "start": "fcstd:model:vertex#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:5%40location1"
+          },
           "id": "fcstd:model:edge#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:7%40location1",
-          "start": "fcstd:model:vertex#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:5%40location1",
           "tolerance": 1e-7
         }
       ],
       "faces": [],
-      "features": [
-        {
-          "definition": {
-            "definition": "sketch",
-            "sketch": {
-              "sketch": "fcstd:design:sketch#DimensionalRelations",
-              "space": "planar"
-            }
-          },
-          "id": "fcstd:design:feature#DimensionalRelations",
-          "name": "DimensionalRelations",
-          "native_ref": "fcstd:native:object#DimensionalRelations",
-          "ordinal": 2,
-          "outputs": [
-            "fcstd:model:body#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:33%40location1"
-          ],
-          "source_properties": {
-            "MapMode": "0",
-            "Visibility": "true"
-          },
-          "source_tag": "Sketcher::SketchObject",
-          "suppressed": null
-        },
-        {
-          "definition": {
-            "definition": "sketch",
-            "sketch": {
-              "sketch": "fcstd:design:sketch#GeometricRelations",
-              "space": "planar"
-            }
-          },
-          "id": "fcstd:design:feature#GeometricRelations",
-          "name": "GeometricRelations",
-          "native_ref": "fcstd:native:object#GeometricRelations",
-          "ordinal": 1,
-          "outputs": [
-            "fcstd:model:body#GeometricRelations:Shape:GeometricRelations.Shape.brp:55%40location1"
-          ],
-          "source_properties": {
-            "MapMode": "0",
-            "Visibility": "true"
-          },
-          "source_tag": "Sketcher::SketchObject",
-          "suppressed": null
-        },
-        {
-          "definition": {
-            "definition": "sketch",
-            "sketch": {
-              "sketch": "fcstd:design:sketch#InactiveRelation",
-              "space": "planar"
-            }
-          },
-          "id": "fcstd:design:feature#InactiveRelation",
-          "name": "InactiveRelation",
-          "native_ref": "fcstd:native:object#InactiveRelation",
-          "ordinal": 4,
-          "outputs": [
-            "fcstd:model:body#InactiveRelation:Shape:InactiveRelation.Shape.brp:4%40location1"
-          ],
-          "source_properties": {
-            "MapMode": "0",
-            "Visibility": "true"
-          },
-          "source_tag": "Sketcher::SketchObject",
-          "suppressed": null
-        },
-        {
-          "definition": {
-            "definition": "sketch",
-            "sketch": {
-              "sketch": "fcstd:design:sketch#InternalAlignmentRelations",
-              "space": "planar"
-            }
-          },
-          "id": "fcstd:design:feature#InternalAlignmentRelations",
-          "name": "InternalAlignmentRelations",
-          "native_ref": "fcstd:native:object#InternalAlignmentRelations",
-          "ordinal": 5,
-          "outputs": [
-            "fcstd:model:body#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp:3%40location1"
-          ],
-          "source_properties": {
-            "MapMode": "0",
-            "Visibility": "true"
-          },
-          "source_tag": "Sketcher::SketchObject",
-          "suppressed": null
-        },
-        {
-          "definition": {
-            "definition": "sketch",
-            "sketch": {
-              "sketch": "fcstd:design:sketch#OpticalRelation",
-              "space": "planar"
-            }
-          },
-          "id": "fcstd:design:feature#OpticalRelation",
-          "name": "OpticalRelation",
-          "native_ref": "fcstd:native:object#OpticalRelation",
-          "ordinal": 6,
-          "outputs": [
-            "fcstd:model:body#OpticalRelation:Shape:OpticalRelation.Shape.brp:13%40location1"
-          ],
-          "source_properties": {
-            "MapMode": "0",
-            "Visibility": "true"
-          },
-          "source_tag": "Sketcher::SketchObject",
-          "suppressed": null
-        },
-        {
-          "definition": {
-            "definition": "sketch",
-            "sketch": {
-              "sketch": "fcstd:design:sketch#SplineWeightRelation",
-              "space": "planar"
-            }
-          },
-          "id": "fcstd:design:feature#SplineWeightRelation",
-          "name": "SplineWeightRelation",
-          "native_ref": "fcstd:native:object#SplineWeightRelation",
-          "ordinal": 7,
-          "outputs": [
-            "fcstd:model:body#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:4%40location1"
-          ],
-          "source_properties": {
-            "MapMode": "0",
-            "Visibility": "true"
-          },
-          "source_tag": "Sketcher::SketchObject",
-          "suppressed": null
-        },
-        {
-          "definition": {
-            "definition": "sketch",
-            "sketch": {
-              "sketch": "fcstd:design:sketch#SymmetryRelation",
-              "space": "planar"
-            }
-          },
-          "id": "fcstd:design:feature#SymmetryRelation",
-          "name": "SymmetryRelation",
-          "native_ref": "fcstd:native:object#SymmetryRelation",
-          "ordinal": 3,
-          "outputs": [
-            "fcstd:model:body#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:13%40location1"
-          ],
-          "source_properties": {
-            "MapMode": "0",
-            "Visibility": "true"
-          },
-          "source_tag": "Sketcher::SketchObject",
-          "suppressed": null
-        }
-      ],
       "loops": [],
-      "occurrences": [],
-      "parameters": [
-        {
-          "expression": "9.0000000000000000",
-          "id": "fcstd:design:parameter#DimensionalRelations:constraint:1",
-          "name": "Constraint1",
-          "native_ref": "fcstd:native:property#DimensionalRelations:Constraints",
-          "ordinal": 0,
-          "owner": "fcstd:design:feature#DimensionalRelations",
-          "properties": {
-            "is_driving": "1"
-          },
-          "value": {
-            "kind": "length",
-            "value": 9.0
-          }
-        },
-        {
-          "expression": "11.0000000000000000",
-          "id": "fcstd:design:parameter#DimensionalRelations:constraint:2",
-          "name": "Constraint2",
-          "native_ref": "fcstd:native:property#DimensionalRelations:Constraints",
-          "ordinal": 1,
-          "owner": "fcstd:design:feature#DimensionalRelations",
-          "properties": {
-            "is_driving": "1"
-          },
-          "value": {
-            "kind": "length",
-            "value": 11.0
-          }
-        },
-        {
-          "expression": "8.0000000000000000",
-          "id": "fcstd:design:parameter#DimensionalRelations:constraint:3",
-          "name": "Constraint3",
-          "native_ref": "fcstd:native:property#DimensionalRelations:Constraints",
-          "ordinal": 2,
-          "owner": "fcstd:design:feature#DimensionalRelations",
-          "properties": {
-            "is_driving": "1"
-          },
-          "value": {
-            "kind": "length",
-            "value": 8.0
-          }
-        },
-        {
-          "expression": "4.0000000000000000",
-          "id": "fcstd:design:parameter#DimensionalRelations:constraint:4",
-          "name": "Constraint4",
-          "native_ref": "fcstd:native:property#DimensionalRelations:Constraints",
-          "ordinal": 3,
-          "owner": "fcstd:design:feature#DimensionalRelations",
-          "properties": {
-            "is_driving": "1"
-          },
-          "value": {
-            "kind": "length",
-            "value": 4.0
-          }
-        },
-        {
-          "expression": "0.7853981633974483",
-          "id": "fcstd:design:parameter#DimensionalRelations:constraint:5",
-          "name": "Constraint5",
-          "native_ref": "fcstd:native:property#DimensionalRelations:Constraints",
-          "ordinal": 4,
-          "owner": "fcstd:design:feature#DimensionalRelations",
-          "properties": {
-            "is_driving": "1"
-          },
-          "value": {
-            "kind": "angle",
-            "value": 0.7853981633974483
-          }
-        },
-        {
-          "expression": "4.0000000000000000",
-          "id": "fcstd:design:parameter#DimensionalRelations:constraint:6",
-          "name": "Constraint6",
-          "native_ref": "fcstd:native:property#DimensionalRelations:Constraints",
-          "ordinal": 5,
-          "owner": "fcstd:design:feature#DimensionalRelations",
-          "properties": {
-            "is_driving": "1"
-          },
-          "value": {
-            "kind": "length",
-            "value": 4.0
-          }
-        },
-        {
-          "expression": "8.0000000000000000",
-          "id": "fcstd:design:parameter#DimensionalRelations:constraint:7",
-          "name": "Constraint7",
-          "native_ref": "fcstd:native:property#DimensionalRelations:Constraints",
-          "ordinal": 6,
-          "owner": "fcstd:design:feature#DimensionalRelations",
-          "properties": {
-            "is_driving": "1"
-          },
-          "value": {
-            "kind": "length",
-            "value": 8.0
-          }
-        },
-        {
-          "expression": "1.2500000000000000",
-          "id": "fcstd:design:parameter#OpticalRelation:constraint:1",
-          "name": "Constraint1",
-          "native_ref": "fcstd:native:property#OpticalRelation:Constraints",
-          "ordinal": 0,
-          "owner": "fcstd:design:feature#OpticalRelation",
-          "properties": {
-            "is_driving": "1"
-          },
-          "value": {
-            "kind": "real",
-            "value": 1.25
-          }
-        },
-        {
-          "expression": "1.0000000000000000",
-          "id": "fcstd:design:parameter#SplineWeightRelation:constraint:2",
-          "name": "Constraint2",
-          "native_ref": "fcstd:native:property#SplineWeightRelation:Constraints",
-          "ordinal": 1,
-          "owner": "fcstd:design:feature#SplineWeightRelation",
-          "properties": {
-            "is_driving": "1"
-          },
-          "value": {
-            "kind": "real",
-            "value": 1.0
-          }
-        }
-      ],
       "pcurves": [],
-      "pmi": [],
       "points": [
         {
           "id": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:1%40location1",
@@ -1555,6 +1427,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#DimensionalRelations"
           }
         },
@@ -1567,6 +1440,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#DimensionalRelations"
           }
         },
@@ -1579,6 +1453,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#DimensionalRelations"
           }
         },
@@ -1591,6 +1466,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#DimensionalRelations"
           }
         },
@@ -1603,6 +1479,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#DimensionalRelations"
           }
         },
@@ -1615,6 +1492,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#DimensionalRelations"
           }
         },
@@ -1627,6 +1505,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#DimensionalRelations"
           }
         },
@@ -1639,6 +1518,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#DimensionalRelations"
           }
         },
@@ -1651,6 +1531,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#DimensionalRelations"
           }
         },
@@ -1663,6 +1544,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#DimensionalRelations"
           }
         },
@@ -1675,6 +1557,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#DimensionalRelations"
           }
         },
@@ -1687,6 +1570,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#DimensionalRelations"
           }
         },
@@ -1699,6 +1583,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#DimensionalRelations"
           }
         },
@@ -1711,6 +1596,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#DimensionalRelations"
           }
         },
@@ -1723,6 +1609,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#DimensionalRelations"
           }
         },
@@ -1735,6 +1622,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
@@ -1747,6 +1635,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
@@ -1759,6 +1648,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
@@ -1771,6 +1661,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
@@ -1783,6 +1674,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
@@ -1795,6 +1687,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
@@ -1807,6 +1700,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
@@ -1819,6 +1713,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
@@ -1831,6 +1726,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
@@ -1843,6 +1739,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
@@ -1855,6 +1752,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
@@ -1867,6 +1765,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
@@ -1879,6 +1778,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
@@ -1891,6 +1791,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
@@ -1903,6 +1804,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
@@ -1915,6 +1817,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
@@ -1927,6 +1830,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
@@ -1939,6 +1843,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
@@ -1951,6 +1856,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
@@ -1963,6 +1869,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
@@ -1975,6 +1882,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
@@ -1987,6 +1895,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
@@ -1999,6 +1908,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
@@ -2011,6 +1921,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
@@ -2023,6 +1934,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
@@ -2035,6 +1947,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#GeometricRelations"
           }
         },
@@ -2047,6 +1960,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#InactiveRelation"
           }
         },
@@ -2059,6 +1973,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#InactiveRelation"
           }
         },
@@ -2071,6 +1986,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#InternalAlignmentRelations"
           }
         },
@@ -2083,6 +1999,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#OpticalRelation"
           }
         },
@@ -2095,6 +2012,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#OpticalRelation"
           }
         },
@@ -2107,6 +2025,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#OpticalRelation"
           }
         },
@@ -2119,6 +2038,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#OpticalRelation"
           }
         },
@@ -2131,6 +2051,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#OpticalRelation"
           }
         },
@@ -2143,6 +2064,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#OpticalRelation"
           }
         },
@@ -2155,6 +2077,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#SplineWeightRelation"
           }
         },
@@ -2167,6 +2090,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#SplineWeightRelation"
           }
         },
@@ -2179,6 +2103,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#SymmetryRelation"
           }
         },
@@ -2191,6 +2116,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#SymmetryRelation"
           }
         },
@@ -2203,6 +2129,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#SymmetryRelation"
           }
         },
@@ -2215,6 +2142,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#SymmetryRelation"
           }
         },
@@ -2227,6 +2155,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#SymmetryRelation"
           }
         },
@@ -2239,15 +2168,13 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#SymmetryRelation"
           }
         }
       ],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [],
       "regions": [
         {
           "body": "fcstd:model:body#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:33%40location1",
@@ -2460,7 +2387,6 @@
           ]
         }
       ],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "fcstd:model:shell#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:12%40location1",
@@ -2775,6 +2701,694 @@
           "region": "fcstd:model:region#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:8%40location1"
         }
       ],
+      "subds": [],
+      "surfaces": [],
+      "vertices": [
+        {
+          "id": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:1%40location1",
+          "point": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:1%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:10%40location1",
+          "point": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:10%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:13%40location1",
+          "point": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:13%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:14%40location1",
+          "point": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:14%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:17%40location1",
+          "point": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:17%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:18%40location1",
+          "point": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:18%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:2%40location1",
+          "point": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:2%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:21%40location1",
+          "point": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:21%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:22%40location1",
+          "point": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:22%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:24%40location1",
+          "point": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:24%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:27%40location1",
+          "point": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:27%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:30%40location1",
+          "point": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:30%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:5%40location1",
+          "point": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:5%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:6%40location1",
+          "point": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:6%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:9%40location1",
+          "point": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:9%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:1%40location1",
+          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:1%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:10%40location1",
+          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:10%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:13%40location1",
+          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:13%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:14%40location1",
+          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:14%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:17%40location1",
+          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:17%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:18%40location1",
+          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:18%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:2%40location1",
+          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:2%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:21%40location1",
+          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:21%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:22%40location1",
+          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:22%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:25%40location1",
+          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:25%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:26%40location1",
+          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:26%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:29%40location1",
+          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:29%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:30%40location1",
+          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:30%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:33%40location1",
+          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:33%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:34%40location1",
+          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:34%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:36%40location1",
+          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:36%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:39%40location1",
+          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:39%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:40%40location1",
+          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:40%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:42%40location1",
+          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:42%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:45%40location1",
+          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:45%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:46%40location1",
+          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:46%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:49%40location1",
+          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:49%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:5%40location1",
+          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:5%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:52%40location1",
+          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:52%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:6%40location1",
+          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:6%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:9%40location1",
+          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:9%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#InactiveRelation:Shape:InactiveRelation.Shape.brp:1%40location1",
+          "point": "fcstd:model:point#InactiveRelation:Shape:InactiveRelation.Shape.brp:1%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#InactiveRelation:Shape:InactiveRelation.Shape.brp:2%40location1",
+          "point": "fcstd:model:point#InactiveRelation:Shape:InactiveRelation.Shape.brp:2%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp:1%40location1",
+          "point": "fcstd:model:point#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp:1%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#OpticalRelation:Shape:OpticalRelation.Shape.brp:1%40location1",
+          "point": "fcstd:model:point#OpticalRelation:Shape:OpticalRelation.Shape.brp:1%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#OpticalRelation:Shape:OpticalRelation.Shape.brp:10%40location1",
+          "point": "fcstd:model:point#OpticalRelation:Shape:OpticalRelation.Shape.brp:10%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#OpticalRelation:Shape:OpticalRelation.Shape.brp:2%40location1",
+          "point": "fcstd:model:point#OpticalRelation:Shape:OpticalRelation.Shape.brp:2%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#OpticalRelation:Shape:OpticalRelation.Shape.brp:5%40location1",
+          "point": "fcstd:model:point#OpticalRelation:Shape:OpticalRelation.Shape.brp:5%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#OpticalRelation:Shape:OpticalRelation.Shape.brp:6%40location1",
+          "point": "fcstd:model:point#OpticalRelation:Shape:OpticalRelation.Shape.brp:6%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#OpticalRelation:Shape:OpticalRelation.Shape.brp:9%40location1",
+          "point": "fcstd:model:point#OpticalRelation:Shape:OpticalRelation.Shape.brp:9%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:1%40location1",
+          "point": "fcstd:model:point#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:1%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:2%40location1",
+          "point": "fcstd:model:point#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:2%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:1%40location1",
+          "point": "fcstd:model:point#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:1%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:10%40location1",
+          "point": "fcstd:model:point#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:10%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:2%40location1",
+          "point": "fcstd:model:point#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:2%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:5%40location1",
+          "point": "fcstd:model:point#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:5%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:6%40location1",
+          "point": "fcstd:model:point#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:6%40location1",
+          "tolerance": 1e-7
+        },
+        {
+          "id": "fcstd:model:vertex#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:9%40location1",
+          "point": "fcstd:model:point#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:9%40location1",
+          "tolerance": 1e-7
+        }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "sketch",
+              "value": {
+                "sketch": {
+                  "kind": "planar",
+                  "sketch": "fcstd:design:sketch#DimensionalRelations"
+                }
+              }
+            }
+          },
+          "dependencies": [],
+          "id": "fcstd:design:feature#DimensionalRelations",
+          "name": "DimensionalRelations",
+          "native_ref": "fcstd:native:object#DimensionalRelations",
+          "ordinal": 2,
+          "outputs": [
+            "fcstd:model:body#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:33%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "MapMode": "0",
+            "Visibility": "true"
+          },
+          "source_tag": "Sketcher::SketchObject"
+        },
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "sketch",
+              "value": {
+                "sketch": {
+                  "kind": "planar",
+                  "sketch": "fcstd:design:sketch#GeometricRelations"
+                }
+              }
+            }
+          },
+          "dependencies": [],
+          "id": "fcstd:design:feature#GeometricRelations",
+          "name": "GeometricRelations",
+          "native_ref": "fcstd:native:object#GeometricRelations",
+          "ordinal": 1,
+          "outputs": [
+            "fcstd:model:body#GeometricRelations:Shape:GeometricRelations.Shape.brp:55%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "MapMode": "0",
+            "Visibility": "true"
+          },
+          "source_tag": "Sketcher::SketchObject"
+        },
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "sketch",
+              "value": {
+                "sketch": {
+                  "kind": "planar",
+                  "sketch": "fcstd:design:sketch#InactiveRelation"
+                }
+              }
+            }
+          },
+          "dependencies": [],
+          "id": "fcstd:design:feature#InactiveRelation",
+          "name": "InactiveRelation",
+          "native_ref": "fcstd:native:object#InactiveRelation",
+          "ordinal": 4,
+          "outputs": [
+            "fcstd:model:body#InactiveRelation:Shape:InactiveRelation.Shape.brp:4%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "MapMode": "0",
+            "Visibility": "true"
+          },
+          "source_tag": "Sketcher::SketchObject"
+        },
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "sketch",
+              "value": {
+                "sketch": {
+                  "kind": "planar",
+                  "sketch": "fcstd:design:sketch#InternalAlignmentRelations"
+                }
+              }
+            }
+          },
+          "dependencies": [],
+          "id": "fcstd:design:feature#InternalAlignmentRelations",
+          "name": "InternalAlignmentRelations",
+          "native_ref": "fcstd:native:object#InternalAlignmentRelations",
+          "ordinal": 5,
+          "outputs": [
+            "fcstd:model:body#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp:3%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "MapMode": "0",
+            "Visibility": "true"
+          },
+          "source_tag": "Sketcher::SketchObject"
+        },
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "sketch",
+              "value": {
+                "sketch": {
+                  "kind": "planar",
+                  "sketch": "fcstd:design:sketch#OpticalRelation"
+                }
+              }
+            }
+          },
+          "dependencies": [],
+          "id": "fcstd:design:feature#OpticalRelation",
+          "name": "OpticalRelation",
+          "native_ref": "fcstd:native:object#OpticalRelation",
+          "ordinal": 6,
+          "outputs": [
+            "fcstd:model:body#OpticalRelation:Shape:OpticalRelation.Shape.brp:13%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "MapMode": "0",
+            "Visibility": "true"
+          },
+          "source_tag": "Sketcher::SketchObject"
+        },
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "sketch",
+              "value": {
+                "sketch": {
+                  "kind": "planar",
+                  "sketch": "fcstd:design:sketch#SplineWeightRelation"
+                }
+              }
+            }
+          },
+          "dependencies": [],
+          "id": "fcstd:design:feature#SplineWeightRelation",
+          "name": "SplineWeightRelation",
+          "native_ref": "fcstd:native:object#SplineWeightRelation",
+          "ordinal": 7,
+          "outputs": [
+            "fcstd:model:body#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:4%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "MapMode": "0",
+            "Visibility": "true"
+          },
+          "source_tag": "Sketcher::SketchObject"
+        },
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "sketch",
+              "value": {
+                "sketch": {
+                  "kind": "planar",
+                  "sketch": "fcstd:design:sketch#SymmetryRelation"
+                }
+              }
+            }
+          },
+          "dependencies": [],
+          "id": "fcstd:design:feature#SymmetryRelation",
+          "name": "SymmetryRelation",
+          "native_ref": "fcstd:native:object#SymmetryRelation",
+          "ordinal": 3,
+          "outputs": [
+            "fcstd:model:body#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:13%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "MapMode": "0",
+            "Visibility": "true"
+          },
+          "source_tag": "Sketcher::SketchObject"
+        }
+      ],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [
+        {
+          "dependencies": [],
+          "expression": "9.0000000000000000",
+          "id": "fcstd:design:parameter#DimensionalRelations:constraint:1",
+          "name": "Constraint1",
+          "native_ref": "fcstd:native:property#DimensionalRelations:Constraints",
+          "ordinal": 0,
+          "owner": "fcstd:design:feature#DimensionalRelations",
+          "properties": {
+            "is_driving": "1"
+          },
+          "value": {
+            "kind": "length",
+            "value": 9.0
+          }
+        },
+        {
+          "dependencies": [],
+          "expression": "11.0000000000000000",
+          "id": "fcstd:design:parameter#DimensionalRelations:constraint:2",
+          "name": "Constraint2",
+          "native_ref": "fcstd:native:property#DimensionalRelations:Constraints",
+          "ordinal": 1,
+          "owner": "fcstd:design:feature#DimensionalRelations",
+          "properties": {
+            "is_driving": "1"
+          },
+          "value": {
+            "kind": "length",
+            "value": 11.0
+          }
+        },
+        {
+          "dependencies": [],
+          "expression": "8.0000000000000000",
+          "id": "fcstd:design:parameter#DimensionalRelations:constraint:3",
+          "name": "Constraint3",
+          "native_ref": "fcstd:native:property#DimensionalRelations:Constraints",
+          "ordinal": 2,
+          "owner": "fcstd:design:feature#DimensionalRelations",
+          "properties": {
+            "is_driving": "1"
+          },
+          "value": {
+            "kind": "length",
+            "value": 8.0
+          }
+        },
+        {
+          "dependencies": [],
+          "expression": "4.0000000000000000",
+          "id": "fcstd:design:parameter#DimensionalRelations:constraint:4",
+          "name": "Constraint4",
+          "native_ref": "fcstd:native:property#DimensionalRelations:Constraints",
+          "ordinal": 3,
+          "owner": "fcstd:design:feature#DimensionalRelations",
+          "properties": {
+            "is_driving": "1"
+          },
+          "value": {
+            "kind": "length",
+            "value": 4.0
+          }
+        },
+        {
+          "dependencies": [],
+          "expression": "0.7853981633974483",
+          "id": "fcstd:design:parameter#DimensionalRelations:constraint:5",
+          "name": "Constraint5",
+          "native_ref": "fcstd:native:property#DimensionalRelations:Constraints",
+          "ordinal": 4,
+          "owner": "fcstd:design:feature#DimensionalRelations",
+          "properties": {
+            "is_driving": "1"
+          },
+          "value": {
+            "kind": "angle",
+            "value": 0.7853981633974483
+          }
+        },
+        {
+          "dependencies": [],
+          "expression": "4.0000000000000000",
+          "id": "fcstd:design:parameter#DimensionalRelations:constraint:6",
+          "name": "Constraint6",
+          "native_ref": "fcstd:native:property#DimensionalRelations:Constraints",
+          "ordinal": 5,
+          "owner": "fcstd:design:feature#DimensionalRelations",
+          "properties": {
+            "is_driving": "1"
+          },
+          "value": {
+            "kind": "length",
+            "value": 4.0
+          }
+        },
+        {
+          "dependencies": [],
+          "expression": "8.0000000000000000",
+          "id": "fcstd:design:parameter#DimensionalRelations:constraint:7",
+          "name": "Constraint7",
+          "native_ref": "fcstd:native:property#DimensionalRelations:Constraints",
+          "ordinal": 6,
+          "owner": "fcstd:design:feature#DimensionalRelations",
+          "properties": {
+            "is_driving": "1"
+          },
+          "value": {
+            "kind": "length",
+            "value": 8.0
+          }
+        },
+        {
+          "dependencies": [],
+          "expression": "1.2500000000000000",
+          "id": "fcstd:design:parameter#OpticalRelation:constraint:1",
+          "name": "Constraint1",
+          "native_ref": "fcstd:native:property#OpticalRelation:Constraints",
+          "ordinal": 0,
+          "owner": "fcstd:design:feature#OpticalRelation",
+          "properties": {
+            "is_driving": "1"
+          },
+          "value": {
+            "kind": "real",
+            "value": 1.25
+          }
+        },
+        {
+          "dependencies": [],
+          "expression": "1.0000000000000000",
+          "id": "fcstd:design:parameter#SplineWeightRelation:constraint:2",
+          "name": "Constraint2",
+          "native_ref": "fcstd:native:property#SplineWeightRelation:Constraints",
+          "ordinal": 1,
+          "owner": "fcstd:design:feature#SplineWeightRelation",
+          "properties": {
+            "is_driving": "1"
+          },
+          "value": {
+            "kind": "real",
+            "value": 1.0
+          }
+        }
+      ],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [
+        {
+          "bodies": [
+            "fcstd:model:body#GeometricRelations:Shape:GeometricRelations.Shape.brp:55%40location1",
+            "fcstd:model:body#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:33%40location1",
+            "fcstd:model:body#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:13%40location1",
+            "fcstd:model:body#InactiveRelation:Shape:InactiveRelation.Shape.brp:4%40location1",
+            "fcstd:model:body#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp:3%40location1",
+            "fcstd:model:body#OpticalRelation:Shape:OpticalRelation.Shape.brp:13%40location1",
+            "fcstd:model:body#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:4%40location1"
+          ],
+          "bom_properties": {},
+          "id": "fcstd:model:product_definition#document:root",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
       "sketch_constraints": [
         {
           "active": true,
@@ -2798,14 +3412,14 @@
           "active": true,
           "definition": {
             "first": {
-              "entity": "fcstd:design:sketch-entity#DimensionalRelations:2",
-              "kind": "start"
+              "kind": "start",
+              "value": "fcstd:design:sketch-entity#DimensionalRelations:2"
             },
             "kind": "distance_loci",
             "parameter": "fcstd:design:parameter#DimensionalRelations:constraint:2",
             "second": {
-              "entity": "fcstd:design:sketch-entity#DimensionalRelations:3",
-              "kind": "start"
+              "kind": "start",
+              "value": "fcstd:design:sketch-entity#DimensionalRelations:3"
             }
           },
           "driving": true,
@@ -2821,14 +3435,14 @@
           "active": true,
           "definition": {
             "first": {
-              "entity": "fcstd:design:sketch-entity#DimensionalRelations:4",
-              "kind": "start"
+              "kind": "start",
+              "value": "fcstd:design:sketch-entity#DimensionalRelations:4"
             },
             "kind": "horizontal_distance",
             "parameter": "fcstd:design:parameter#DimensionalRelations:constraint:3",
             "second": {
-              "entity": "fcstd:design:sketch-entity#DimensionalRelations:4",
-              "kind": "end"
+              "kind": "end",
+              "value": "fcstd:design:sketch-entity#DimensionalRelations:4"
             }
           },
           "driving": true,
@@ -2844,14 +3458,14 @@
           "active": true,
           "definition": {
             "first": {
-              "entity": "fcstd:design:sketch-entity#DimensionalRelations:5",
-              "kind": "start"
+              "kind": "start",
+              "value": "fcstd:design:sketch-entity#DimensionalRelations:5"
             },
             "kind": "vertical_distance",
             "parameter": "fcstd:design:parameter#DimensionalRelations:constraint:4",
             "second": {
-              "entity": "fcstd:design:sketch-entity#DimensionalRelations:5",
-              "kind": "end"
+              "kind": "end",
+              "value": "fcstd:design:sketch-entity#DimensionalRelations:5"
             }
           },
           "driving": true,
@@ -3012,12 +3626,12 @@
             "kind": "coincident_loci",
             "loci": [
               {
-                "entity": "fcstd:design:sketch-entity#GeometricRelations:9",
-                "kind": "end"
+                "kind": "end",
+                "value": "fcstd:design:sketch-entity#GeometricRelations:9"
               },
               {
-                "entity": "fcstd:design:sketch-entity#GeometricRelations:10",
-                "kind": "start"
+                "kind": "start",
+                "value": "fcstd:design:sketch-entity#GeometricRelations:10"
               }
             ]
           },
@@ -3036,8 +3650,8 @@
             "entity": "fcstd:design:sketch-entity#GeometricRelations:12",
             "kind": "point_on_object",
             "point": {
-              "entity": "fcstd:design:sketch-entity#GeometricRelations:11",
-              "kind": "start"
+              "kind": "start",
+              "value": "fcstd:design:sketch-entity#GeometricRelations:11"
             }
           },
           "driving": true,
@@ -3083,7 +3697,7 @@
           "active": true,
           "definition": {
             "alignment": {
-              "alignment": "ellipse_major_diameter"
+              "kind": "ellipse_major_diameter"
             },
             "helper": "fcstd:design:sketch-entity#InternalAlignmentRelations:2",
             "kind": "internal_alignment",
@@ -3102,7 +3716,7 @@
           "active": true,
           "definition": {
             "alignment": {
-              "alignment": "ellipse_minor_diameter"
+              "kind": "ellipse_minor_diameter"
             },
             "helper": "fcstd:design:sketch-entity#InternalAlignmentRelations:3",
             "kind": "internal_alignment",
@@ -3121,7 +3735,7 @@
           "active": true,
           "definition": {
             "alignment": {
-              "alignment": "ellipse_focus1"
+              "kind": "ellipse_focus1"
             },
             "helper": "fcstd:design:sketch-entity#InternalAlignmentRelations:4",
             "kind": "internal_alignment",
@@ -3140,7 +3754,7 @@
           "active": true,
           "definition": {
             "alignment": {
-              "alignment": "ellipse_focus2"
+              "kind": "ellipse_focus2"
             },
             "helper": "fcstd:design:sketch-entity#InternalAlignmentRelations:5",
             "kind": "internal_alignment",
@@ -3159,15 +3773,15 @@
           "active": true,
           "definition": {
             "incident": {
-              "entity": "fcstd:design:sketch-entity#OpticalRelation:1",
-              "kind": "end"
+              "kind": "end",
+              "value": "fcstd:design:sketch-entity#OpticalRelation:1"
             },
             "interface": "fcstd:design:sketch-entity#OpticalRelation:3",
             "kind": "snells_law",
             "parameter": "fcstd:design:parameter#OpticalRelation:constraint:1",
             "refracted": {
-              "entity": "fcstd:design:sketch-entity#OpticalRelation:2",
-              "kind": "start"
+              "kind": "start",
+              "value": "fcstd:design:sketch-entity#OpticalRelation:2"
             }
           },
           "driving": true,
@@ -3183,8 +3797,8 @@
           "active": true,
           "definition": {
             "alignment": {
-              "alignment": "bspline_control_point",
-              "index": 0
+              "index": 0,
+              "kind": "bspline_control_point"
             },
             "helper": "fcstd:design:sketch-entity#SplineWeightRelation:2",
             "kind": "internal_alignment",
@@ -3219,8 +3833,8 @@
           "active": true,
           "definition": {
             "alignment": {
-              "alignment": "bspline_control_point",
-              "index": 1
+              "index": 1,
+              "kind": "bspline_control_point"
             },
             "helper": "fcstd:design:sketch-entity#SplineWeightRelation:3",
             "kind": "internal_alignment",
@@ -3239,8 +3853,8 @@
           "active": true,
           "definition": {
             "alignment": {
-              "alignment": "bspline_control_point",
-              "index": 2
+              "index": 2,
+              "kind": "bspline_control_point"
             },
             "helper": "fcstd:design:sketch-entity#SplineWeightRelation:4",
             "kind": "internal_alignment",
@@ -3275,8 +3889,8 @@
           "active": true,
           "definition": {
             "alignment": {
-              "alignment": "bspline_control_point",
-              "index": 3
+              "index": 3,
+              "kind": "bspline_control_point"
             },
             "helper": "fcstd:design:sketch-entity#SplineWeightRelation:5",
             "kind": "internal_alignment",
@@ -3311,8 +3925,8 @@
           "active": true,
           "definition": {
             "alignment": {
-              "alignment": "bspline_knot_point",
-              "index": 0
+              "index": 0,
+              "kind": "bspline_knot_point"
             },
             "helper": "fcstd:design:sketch-entity#SplineWeightRelation:6",
             "kind": "internal_alignment",
@@ -3331,8 +3945,8 @@
           "active": true,
           "definition": {
             "alignment": {
-              "alignment": "bspline_knot_point",
-              "index": 1
+              "index": 1,
+              "kind": "bspline_knot_point"
             },
             "helper": "fcstd:design:sketch-entity#SplineWeightRelation:7",
             "kind": "internal_alignment",
@@ -3352,13 +3966,13 @@
           "definition": {
             "axis": "fcstd:design:sketch-entity#SymmetryRelation:3",
             "first": {
-              "entity": "fcstd:design:sketch-entity#SymmetryRelation:1",
-              "kind": "start"
+              "kind": "start",
+              "value": "fcstd:design:sketch-entity#SymmetryRelation:1"
             },
             "kind": "symmetric",
             "second": {
-              "entity": "fcstd:design:sketch-entity#SymmetryRelation:2",
-              "kind": "start"
+              "kind": "start",
+              "value": "fcstd:design:sketch-entity#SymmetryRelation:2"
             }
           },
           "driving": true,
@@ -3374,6 +3988,7 @@
       "sketch_entities": [
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "end": {
               "u": 8.0,
@@ -3391,6 +4006,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "end": {
               "u": 18.0,
@@ -3408,6 +4024,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "end": {
               "u": 28.0,
@@ -3425,6 +4042,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "end": {
               "u": 43.0,
@@ -3442,6 +4060,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "end": {
               "u": 58.0,
@@ -3459,6 +4078,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "end": {
               "u": 75.0,
@@ -3476,6 +4096,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "end": {
               "u": 72.0,
@@ -3493,6 +4114,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "center": {
               "u": 85.0,
@@ -3507,6 +4129,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "center": {
               "u": 100.0,
@@ -3521,6 +4144,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "end": {
               "u": 10.0,
@@ -3538,6 +4162,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "end": {
               "u": 90.0,
@@ -3555,6 +4180,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "end": {
               "u": 105.0,
@@ -3572,6 +4198,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "end": {
               "u": 105.0,
@@ -3589,6 +4216,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "end": {
               "u": 120.0,
@@ -3606,6 +4234,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "center": {
               "u": 55.0,
@@ -3620,6 +4249,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "center": {
               "u": 55.0,
@@ -3634,6 +4264,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "end": {
               "u": 15.0,
@@ -3651,6 +4282,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "end": {
               "u": 30.0,
@@ -3668,6 +4300,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "end": {
               "u": 30.0,
@@ -3685,6 +4318,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "end": {
               "u": 45.0,
@@ -3702,6 +4336,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "end": {
               "u": 35.0,
@@ -3719,6 +4354,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "end": {
               "u": 59.96735151773406,
@@ -3736,6 +4372,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "end": {
               "u": 65.02295525677697,
@@ -3753,6 +4390,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "end": {
               "u": 80.0,
@@ -3770,6 +4408,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "end": {
               "u": 10.0,
@@ -3787,6 +4426,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "center": {
               "u": 0.0,
@@ -3803,6 +4443,7 @@
         },
         {
           "construction": true,
+          "endpoint_refs": [],
           "geometry": {
             "end": {
               "u": -12.0,
@@ -3820,6 +4461,7 @@
         },
         {
           "construction": true,
+          "endpoint_refs": [],
           "geometry": {
             "end": {
               "u": 0.0,
@@ -3837,6 +4479,7 @@
         },
         {
           "construction": true,
+          "endpoint_refs": [],
           "geometry": {
             "kind": "point",
             "position": {
@@ -3850,6 +4493,7 @@
         },
         {
           "construction": true,
+          "endpoint_refs": [],
           "geometry": {
             "kind": "point",
             "position": {
@@ -3863,6 +4507,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "end": {
               "u": 0.0411975275670358,
@@ -3880,6 +4525,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "end": {
               "u": 7.878772353874199,
@@ -3897,6 +4543,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "end": {
               "u": 11.999973848754916,
@@ -3914,6 +4561,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "curve": {
               "degree": 3,
@@ -3929,7 +4577,7 @@
               ],
               "periodic": false,
               "poles": {
-                "form": "rational",
+                "kind": "rational",
                 "points": [
                   {
                     "point": {
@@ -3970,6 +4618,7 @@
         },
         {
           "construction": true,
+          "endpoint_refs": [],
           "geometry": {
             "center": {
               "u": 0.0,
@@ -3984,6 +4633,7 @@
         },
         {
           "construction": true,
+          "endpoint_refs": [],
           "geometry": {
             "center": {
               "u": 4.0,
@@ -3998,6 +4648,7 @@
         },
         {
           "construction": true,
+          "endpoint_refs": [],
           "geometry": {
             "center": {
               "u": 8.0,
@@ -4012,6 +4663,7 @@
         },
         {
           "construction": true,
+          "endpoint_refs": [],
           "geometry": {
             "center": {
               "u": 12.0,
@@ -4026,6 +4678,7 @@
         },
         {
           "construction": true,
+          "endpoint_refs": [],
           "geometry": {
             "kind": "point",
             "position": {
@@ -4039,6 +4692,7 @@
         },
         {
           "construction": true,
+          "endpoint_refs": [],
           "geometry": {
             "kind": "point",
             "position": {
@@ -4052,6 +4706,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "end": {
               "u": -6.0,
@@ -4069,6 +4724,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "end": {
               "u": 6.0,
@@ -4086,6 +4742,7 @@
         },
         {
           "construction": false,
+          "endpoint_refs": [],
           "geometry": {
             "end": {
               "u": 0.0,
@@ -4489,304 +5146,12 @@
           ]
         }
       ],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
-      "subds": [],
-      "surfaces": [],
       "tessellations": [],
-      "vertices": [
-        {
-          "id": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:1%40location1",
-          "point": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:1%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:10%40location1",
-          "point": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:10%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:13%40location1",
-          "point": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:13%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:14%40location1",
-          "point": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:14%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:17%40location1",
-          "point": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:17%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:18%40location1",
-          "point": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:18%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:2%40location1",
-          "point": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:2%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:21%40location1",
-          "point": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:21%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:22%40location1",
-          "point": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:22%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:24%40location1",
-          "point": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:24%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:27%40location1",
-          "point": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:27%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:30%40location1",
-          "point": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:30%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:5%40location1",
-          "point": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:5%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:6%40location1",
-          "point": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:6%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:9%40location1",
-          "point": "fcstd:model:point#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:9%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:1%40location1",
-          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:1%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:10%40location1",
-          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:10%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:13%40location1",
-          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:13%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:14%40location1",
-          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:14%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:17%40location1",
-          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:17%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:18%40location1",
-          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:18%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:2%40location1",
-          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:2%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:21%40location1",
-          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:21%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:22%40location1",
-          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:22%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:25%40location1",
-          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:25%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:26%40location1",
-          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:26%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:29%40location1",
-          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:29%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:30%40location1",
-          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:30%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:33%40location1",
-          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:33%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:34%40location1",
-          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:34%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:36%40location1",
-          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:36%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:39%40location1",
-          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:39%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:40%40location1",
-          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:40%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:42%40location1",
-          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:42%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:45%40location1",
-          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:45%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:46%40location1",
-          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:46%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:49%40location1",
-          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:49%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:5%40location1",
-          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:5%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:52%40location1",
-          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:52%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:6%40location1",
-          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:6%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:9%40location1",
-          "point": "fcstd:model:point#GeometricRelations:Shape:GeometricRelations.Shape.brp:9%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#InactiveRelation:Shape:InactiveRelation.Shape.brp:1%40location1",
-          "point": "fcstd:model:point#InactiveRelation:Shape:InactiveRelation.Shape.brp:1%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#InactiveRelation:Shape:InactiveRelation.Shape.brp:2%40location1",
-          "point": "fcstd:model:point#InactiveRelation:Shape:InactiveRelation.Shape.brp:2%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp:1%40location1",
-          "point": "fcstd:model:point#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp:1%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#OpticalRelation:Shape:OpticalRelation.Shape.brp:1%40location1",
-          "point": "fcstd:model:point#OpticalRelation:Shape:OpticalRelation.Shape.brp:1%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#OpticalRelation:Shape:OpticalRelation.Shape.brp:10%40location1",
-          "point": "fcstd:model:point#OpticalRelation:Shape:OpticalRelation.Shape.brp:10%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#OpticalRelation:Shape:OpticalRelation.Shape.brp:2%40location1",
-          "point": "fcstd:model:point#OpticalRelation:Shape:OpticalRelation.Shape.brp:2%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#OpticalRelation:Shape:OpticalRelation.Shape.brp:5%40location1",
-          "point": "fcstd:model:point#OpticalRelation:Shape:OpticalRelation.Shape.brp:5%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#OpticalRelation:Shape:OpticalRelation.Shape.brp:6%40location1",
-          "point": "fcstd:model:point#OpticalRelation:Shape:OpticalRelation.Shape.brp:6%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#OpticalRelation:Shape:OpticalRelation.Shape.brp:9%40location1",
-          "point": "fcstd:model:point#OpticalRelation:Shape:OpticalRelation.Shape.brp:9%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:1%40location1",
-          "point": "fcstd:model:point#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:1%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:2%40location1",
-          "point": "fcstd:model:point#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:2%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:1%40location1",
-          "point": "fcstd:model:point#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:1%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:10%40location1",
-          "point": "fcstd:model:point#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:10%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:2%40location1",
-          "point": "fcstd:model:point#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:2%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:5%40location1",
-          "point": "fcstd:model:point#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:5%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:6%40location1",
-          "point": "fcstd:model:point#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:6%40location1",
-          "tolerance": 1e-7
-        },
-        {
-          "id": "fcstd:model:vertex#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:9%40location1",
-          "point": "fcstd:model:point#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:9%40location1",
-          "tolerance": 1e-7
-        }
-      ],
       "view_presentations": []
     },
     "native": {
@@ -4837,7 +5202,7 @@
           "physical_ledger": "ca3fee771ed31a19fa011c357f03041cfb3ca16f6c1946c6c161d6438f84f280",
           "product_nodes": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "properties": "240b5cb3e108b4501c10426c54f675f6c5218daff224af1dd337f99777fb6931",
-          "shape_payloads": "6bcb20484db6f73a748d922dc9074660878c4b5cf6382631d990b0248596fbd6",
+          "shape_payloads": "2d7ac21d9cffb608f76809d8da0368c236f34ceb3e1feee3affba604bdc00ab7",
           "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f"
         }
       },
@@ -5437,24 +5802,39 @@
       },
       "__elided": "attachment and product-node records are pinned directly; remaining native arena values are omitted and pinned by a digest over their canonical JSON"
     },
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "application_domains": "App,Sketcher",
-        "archive_entry_count": "22",
         "document_kind": "application-document",
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
-        "object_count": "8",
-        "physical_archive_bytes": "12555",
-        "physical_ledger_spans": "155",
         "program_version": "1.1R20260414 (Git shallow)"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "file_version": "1",
               "program_version": "1.1R20260414 (Git shallow)",
@@ -5462,7 +5842,8 @@
             },
             "dialect": "fcstd:schema-4"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -5470,16 +5851,21 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "file_version": "1",
             "program_version": "1.1R20260414 (Git shallow)",
@@ -5487,7 +5873,8 @@
           },
           "dialect": "fcstd:schema-4"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [],
     "notes": [
@@ -5501,10 +5888,20 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "decode_digest": "35bbba0d7529415176cfbbbdc1fabc265ac3748f5fc38058887ac254e44d074f",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

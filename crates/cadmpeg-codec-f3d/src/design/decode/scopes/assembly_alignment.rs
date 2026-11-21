@@ -9,6 +9,7 @@ use super::legacy_operand_paths::exact_legacy_class_388_operand_paths;
 use super::legacy_operand_paths::exact_legacy_class_388_scope;
 use super::legacy_operand_paths::CLASS_383_OWNER_REFERENCE_ORDINALS;
 use super::legacy_operand_paths::CLASS_388_OWNER_REFERENCE_ORDINALS;
+use crate::design::assembly::{compact_placement_as_built_scope, AS_BUILT_SCOPE_TYPE_GUID};
 use crate::design::decode::assembly::exact_legacy_as_built_421_alignment;
 use crate::design::decode::assembly::exact_legacy_as_built_421_solved_frame;
 use crate::design::decode::sketch::IndexedRecordOffsets;
@@ -52,13 +53,16 @@ pub(super) fn exact_assembly_alignment(
     scope: &DesignParameterScope,
     parameter_owners: &[DesignParameterOwner],
 ) -> Result<Option<DesignAssemblyAlignment>, CodecError> {
-    exact_assembly_alignment_with_types(
-        bytes,
-        records,
-        scope,
-        parameter_owners,
-        &std::collections::HashMap::new(),
-    )
+    crate::test_support::with_decode_context(|ctx| {
+        exact_assembly_alignment_with_types(
+            ctx,
+            bytes,
+            records,
+            scope,
+            parameter_owners,
+            &std::collections::HashMap::new(),
+        )
+    })
 }
 
 use crate::layout::assembly_as_built_scope_owner_run as as_built;
@@ -75,9 +79,7 @@ fn placement_ordered_owner_run(
     lanes: &[&DesignParameterOwner],
     owners: &[crate::records::identity::Located<u32>],
 ) -> bool {
-    let Some(count) =
-        crate::design::assembly::as_built_additional_owner_count(scope.frame_length())
-    else {
+    let Some(count) = crate::design::assembly::as_built_additional_owner_count(scope) else {
         return false;
     };
     let Ok(start) = usize::try_from(scope.byte_offset()) else {
@@ -86,13 +88,15 @@ fn placement_ordered_owner_run(
     let stored = View::u32_le_at(bytes, start + as_built::ADDITIONAL_OWNER_COUNT);
     let additional_owners = lanes.get(4..).unwrap_or_default();
     let table = scope.reference_members();
-    let unextended_positions_hold = count != 0
+    let compact = compact_placement_as_built_scope(scope);
+    let unextended_positions_hold = compact
+        || count != 0
         || table
             .values_in(5..9)
             .is_some_and(|values| values.eq(owners.iter().map(|owner| &owner.value)));
     unextended_positions_hold
         && stored.and_then(|stored| usize::try_from(stored).ok()) == Some(count)
-        && table.len() == 9 + count
+        && (compact || table.len() == 9 + count)
         && additional_owners.len() == count
         && additional_owners
             .iter()
@@ -117,6 +121,7 @@ fn placement_ordered_owner_run(
 /// The alignment of an assembly scope. `stream_types` names the stream's
 /// record types, which admit typed operand-path records.
 pub(super) fn exact_assembly_alignment_with_types(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -130,6 +135,7 @@ pub(super) fn exact_assembly_alignment_with_types(
         })
     {
         return super::assembly_v3::alignment(
+            ctx,
             bytes,
             records,
             scope,
@@ -142,7 +148,7 @@ pub(super) fn exact_assembly_alignment_with_types(
     if existing.is_some() {
         return Ok(existing);
     }
-    super::assembly_v3::alignment(bytes, records, scope, parameter_owners, stream_types)
+    super::assembly_v3::alignment(ctx, bytes, records, scope, parameter_owners, stream_types)
 }
 
 fn legacy_assembly_alignment(
@@ -178,6 +184,31 @@ fn legacy_assembly_alignment(
         left_key.cmp(&right_key)
     });
     (|| -> Option<Result<DesignAssemblyAlignment, CodecError>> {
+        if compact_placement_as_built_scope(scope) {
+            use crate::layout::assembly_as_built_scope_378 as frame;
+            use crate::layout::assembly_operand_path_locator_reference_run as locators;
+            let start = usize::try_from(scope.byte_offset()).ok()?;
+            let joint = scope.record_index.checked_sub(1)?;
+            let joint_reference = start.checked_add(frame::LOCATOR_COUNT + locators::LEN)?;
+            if !stream_types
+                .get(&u64::from(scope.record_index))
+                .is_some_and(|(guid, version)| {
+                    *version == 1 && guid.eq_ignore_ascii_case(AS_BUILT_SCOPE_TYPE_GUID)
+                })
+                || !stream_types
+                    .get(&u64::from(joint))
+                    .is_some_and(|(guid, version)| {
+                        matches!(*version, 4 | 5)
+                            && guid.eq_ignore_ascii_case(
+                                crate::design::decode::joint_motion::JOINT_TYPE_GUID,
+                            )
+                    })
+                || super::shared_frames::marked_record_reference(bytes, joint_reference)
+                    != Some(joint)
+            {
+                return None;
+            }
+        }
         if lanes
             .iter()
             .enumerate()
@@ -318,7 +349,8 @@ fn legacy_assembly_alignment(
                 {
                     return None;
                 }
-            } else if !crate::design::assembly::rigid_as_built_scope(scope)
+            } else if !placement_ordered
+                && !crate::design::assembly::rigid_as_built_scope(scope)
                 && crate::design::assembly::variable_reference_assembly_generation(
                 scope.class_tag.as_str(),
                 scope.paired_class_tag.as_str(),

@@ -390,7 +390,8 @@ impl<'ir> WitnessInput<'_, 'ir> {
         shell_id: &'ir str,
     ) -> Option<(&'ir str, Verdict)> {
         let shell = self.owners.shell(shell_id)?;
-        if shell.faces().is_empty() || !closure(self.owners, faces, self.edges, shell).closed() {
+        let shell_faces = self.owners.shell_faces(&shell.id);
+        if shell_faces.is_empty() || !closure(self.owners, faces, self.edges, shell).closed() {
             return None;
         }
         let region = self.owners.region(shell.region.as_str())?;
@@ -405,8 +406,8 @@ impl<'ir> WitnessInput<'_, 'ir> {
         let mut unconfirmed = None;
         let mut fixed = 0.0;
         let mut error = 0.0;
-        for face in shell.faces() {
-            let (id, result) = faces.get_key_value(face.as_str())?;
+        for face in shell_faces {
+            let (id, result) = faces.get_key_value(face.id.as_str())?;
             let Some(Ok(flux)) = &result.flux else {
                 return None;
             };

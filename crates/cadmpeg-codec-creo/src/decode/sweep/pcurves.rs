@@ -94,6 +94,7 @@ pub(super) fn add_extrusion_pcurve(
             ),
             None,
         ),
+        native_ref: None,
     };
     match admission {
         PcurveAdmission::Pending(source_carriers, source_surface) => {

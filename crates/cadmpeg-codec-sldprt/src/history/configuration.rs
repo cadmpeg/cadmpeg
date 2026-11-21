@@ -547,11 +547,11 @@ pub(crate) fn bind_configuration_topology_selections(
         let mut features = copy_configuration_state_features(&ir.model.features, states);
         if body_membership_resolved {
             let topology_selection_inputs = crate::history::selections::TopologySelectionInputs {
-                bodies: &ir.model.bodies,
-                faces: &ir.model.faces,
-                surfaces: &ir.model.surfaces,
-                edges: &ir.model.edges,
-                curves: &ir.model.curves,
+                bodies: &ir.geometry.bodies,
+                faces: &ir.geometry.faces,
+                surfaces: &ir.geometry.surfaces,
+                edges: &ir.geometry.edges,
+                curves: &ir.geometry.curves,
                 lanes: scoped_lanes,
                 face_identities,
             };
@@ -566,8 +566,8 @@ pub(crate) fn bind_configuration_topology_selections(
         // no independently established body membership.
         crate::resolved_features::projections::project_unbound_offset_plane_faces(
             &mut features,
-            &ir.model.faces,
-            &ir.model.surfaces,
+            &ir.geometry.faces,
+            &ir.geometry.surfaces,
         );
         let states = &mut ir.model.configurations[configuration_index].feature_states;
         for feature in features {
@@ -620,6 +620,9 @@ pub(crate) fn project_configuration_sketch_states(
     for (configuration_index, lane_index) in
         configuration_lane_assignments(&ir.model.configurations, lanes)
     {
+        let held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::after_finalized(
+            &ir.model.sketch_entities,
+        );
         let surfaces = configuration_surface_carriers(ir, configuration_index);
         let scoped_lanes = &lanes[lane_index..=lane_index];
         let states = &ir.model.configurations[configuration_index].feature_states;
@@ -719,11 +722,13 @@ pub(crate) fn project_configuration_sketch_states(
                 scoped_lanes,
                 &mut losses,
             )?;
+            let mut held_handles = held_handles;
             crate::resolved_features::profiles::project_marker_backed_sketches(
                 ctx,
                 &mut features,
                 &mut ir.model.sketches,
                 &mut ir.model.sketch_entities,
+                &mut held_handles,
                 histories,
                 scoped_lanes,
             )?;
@@ -800,6 +805,11 @@ pub(crate) fn project_configuration_sketch_states(
                 &parameters,
                 scoped_lanes,
             )?;
+            crate::resolved_features::profiles::finalize_unread_marker_entities(
+                &mut ir.model.sketch_entities,
+                held_handles,
+                &mut losses,
+            );
             crate::resolved_features::relation_geometry::project_relation_bindings(
                 ctx,
                 &mut ir.model.sketch_constraints,
@@ -835,12 +845,12 @@ pub(crate) fn project_configuration_sketch_states(
                 &mut features,
                 &crate::resolved_features::holes::HoleTopology {
                     surfaces: &surfaces,
-                    faces: &ir.model.faces,
-                    loops: &ir.model.loops,
-                    coedges: &ir.model.coedges,
-                    edges: &ir.model.edges,
-                    vertices: &ir.model.vertices,
-                    points: &ir.model.points,
+                    faces: &ir.geometry.faces,
+                    loops: &ir.geometry.loops,
+                    coedges: &ir.geometry.coedges,
+                    edges: &ir.geometry.edges,
+                    vertices: &ir.geometry.vertices,
+                    points: &ir.geometry.points,
                 },
             )?;
             crate::resolved_features::holes::project_hole_axes(
@@ -849,12 +859,12 @@ pub(crate) fn project_configuration_sketch_states(
                 &ir.model.sketch_entities,
                 &crate::resolved_features::holes::HoleTopology {
                     surfaces: &surfaces,
-                    faces: &ir.model.faces,
-                    loops: &ir.model.loops,
-                    coedges: &ir.model.coedges,
-                    edges: &ir.model.edges,
-                    vertices: &ir.model.vertices,
-                    points: &ir.model.points,
+                    faces: &ir.geometry.faces,
+                    loops: &ir.geometry.loops,
+                    coedges: &ir.geometry.coedges,
+                    edges: &ir.geometry.edges,
+                    vertices: &ir.geometry.vertices,
+                    points: &ir.geometry.points,
                 },
                 histories,
                 scoped_lanes,
@@ -868,6 +878,7 @@ pub(crate) fn project_configuration_sketch_states(
                 &parameters,
                 scoped_lanes,
             )?;
+            crate::history::bind::bind_bound_sketch_profiles(&mut features, &ir.model.sketches);
             for feature in features {
                 let Some(state) = ir.model.configurations[configuration_index]
                     .feature_states
@@ -1291,7 +1302,7 @@ fn configuration_surface_carriers(
     let Some(body_ids) = configuration.bodies.as_deref() else {
         // Unresolved membership uses every neutral surface carrier.
         let mut surfaces = Vec::new();
-        for surface in &ir.model.surfaces {
+        for surface in &ir.geometry.surfaces {
             surfaces.push(surface.clone());
         }
         return surfaces;
@@ -1300,38 +1311,22 @@ fn configuration_surface_carriers(
     for id in body_ids {
         bodies.insert(id);
     }
-    let mut regions = HashSet::new();
-    for body in &ir.model.bodies {
-        if bodies.contains(&body.id) {
-            for id in &body.regions {
-                regions.insert(id);
-            }
-        }
-    }
     let mut shells = HashSet::new();
-    for region in &ir.model.regions {
-        if regions.contains(&region.id) {
+    for region in &ir.geometry.regions {
+        if bodies.contains(&region.body) {
             for id in &region.shells {
                 shells.insert(id);
             }
         }
     }
-    let mut faces = HashSet::new();
-    for shell in &ir.model.shells {
-        if shells.contains(&shell.id) {
-            for id in shell.faces() {
-                faces.insert(id);
-            }
-        }
-    }
     let mut surface_ids = HashSet::new();
-    for face in &ir.model.faces {
-        if faces.contains(&face.id) {
+    for face in &ir.geometry.faces {
+        if shells.contains(&face.shell) {
             surface_ids.insert(&face.surface);
         }
     }
     let mut surfaces = Vec::new();
-    for surface in &ir.model.surfaces {
+    for surface in &ir.geometry.surfaces {
         if surface_ids.contains(&surface.id) {
             surfaces.push(surface.clone());
         }

@@ -30,9 +30,9 @@ fn decode_keeps_nonplane_single_parent_relations_native_and_transfers_the_bounde
                 &DecodeOptions::default(),
             )
             .unwrap();
-        assert_eq!(result.ir().model.faces.len(), 1, "IGES {version}");
+        assert_eq!(result.ir().geometry.faces.len(), 1, "IGES {version}");
         assert_eq!(
-            result.ir().model.faces[0].surface,
+            result.ir().geometry.faces[0].surface,
             "iges:model:surface#D1".try_into().expect("valid identity"),
             "IGES {version}"
         );

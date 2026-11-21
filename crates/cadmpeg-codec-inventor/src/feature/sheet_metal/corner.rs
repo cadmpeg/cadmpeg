@@ -266,8 +266,8 @@ pub(in crate::feature) fn project(
             .filter(|item| {
                 matches!(item.feature.evaluation.definition(),
                 FeatureDefinition::Operation(FeatureOperation::SheetMetalBend {
-                    plate, attachment: EdgeSelection::Generated { edges, .. }, ..
-                }) if plate == &plate_id && edges.len() == 1)
+                    plate, attachment, ..
+                }) if plate == &plate_id && single_edge(attachment))
             })
             .map(|item| (item.feature.id.clone(), item.feature.ordinal));
         let Some(item) = projected
@@ -370,6 +370,16 @@ pub(in crate::feature) fn project(
         }
     }
     Ok(added)
+}
+
+/// Whether a bend attachment selects exactly one edge: one generated edge
+/// name, or one stored input-edge revision.
+fn single_edge(attachment: &EdgeSelection) -> bool {
+    match attachment {
+        EdgeSelection::Generated { edges, .. } => edges.len() == 1,
+        EdgeSelection::Historical { edges, .. } => edges.len() == 1,
+        _ => false,
+    }
 }
 
 fn source_id(

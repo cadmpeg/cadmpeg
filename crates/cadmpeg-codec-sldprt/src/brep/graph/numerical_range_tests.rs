@@ -105,6 +105,7 @@ fn sphere_fixture(center: Point3, axis: Vector3, reference: Vector3) -> Brep {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     out.curves.push(Curve {
         parameter_range: None,
@@ -113,6 +114,7 @@ fn sphere_fixture(center: Point3, axis: Vector3, reference: Vector3) -> Brep {
             CircleCurve::try_new(center, axis, reference, 1.).unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     out.faces.push(Face {
         id: face.clone(),
@@ -125,11 +127,13 @@ fn sphere_fixture(center: Point3, axis: Vector3, reference: Vector3) -> Brep {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
     out.loops.push(Loop {
         id: owner_loop.clone(),
         face,
         boundary: LoopBoundary::Ring(LoopRing::single(coedge.clone())),
+        native_ref: None,
     });
     out.coedges.push(Coedge {
         id: coedge.clone(),
@@ -139,13 +143,14 @@ fn sphere_fixture(center: Point3, axis: Vector3, reference: Vector3) -> Brep {
         sense: Sense::Forward,
         pcurves: vec![],
         use_curve: None,
+        native_ref: None,
     });
     out.edges.push(Edge {
         id: edge,
         carrier: EdgeCarrier::new(Some(curve), Some([0., std::f64::consts::TAU])).unwrap(),
-        start: vertex.clone(),
-        end: vertex,
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(vertex.clone(), vertex)),
         tolerance: None,
+        native_ref: None,
     });
     out
 }

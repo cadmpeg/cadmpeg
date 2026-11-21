@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_test_support::edit;
+use crate::test_support::edit;
 
 use super::{
     SpatialSketchConstraintDefinition, SpatialSketchConstraintDefinitionInput,
@@ -543,7 +543,7 @@ fn sketch_regions_round_trip_with_explicit_boundary_roles() {
         json["value"]["regions"][0]["holes"],
         serde_json::json!([3, 5])
     );
-    assert!(json["value"]["regions"][1].get("holes").is_none());
+    assert_eq!(json["value"]["regions"][1]["holes"], serde_json::json!([]));
     assert_eq!(
         json["value"]["regions"][2]["outer_boundary"][0]["parameter_range"],
         serde_json::json!([0.25, 0.75])
@@ -553,7 +553,8 @@ fn sketch_regions_round_trip_with_explicit_boundary_roles() {
         true
     );
     assert_eq!(
-        serde_json::from_value::<ProfileRef>(json).expect("deserialize sketch regions"),
+        serde_json::from_value::<ProfileRef>(serde_json::json!({"kind": "planar", "value": json}))
+            .expect("deserialize sketch regions"),
         ProfileRef::Planar(profile)
     );
 }
@@ -1029,7 +1030,7 @@ fn internal_alignment_index_stays_with_bspline_variants() {
         alignment: SketchInternalAlignment::BsplineControlPoint(2),
     };
     let wire = serde_json::to_value(&definition).unwrap();
-    assert_eq!(wire["alignment"]["alignment"], "bspline_control_point");
+    assert_eq!(wire["alignment"]["kind"], "bspline_control_point");
     assert_eq!(wire["alignment"]["index"], 2);
     assert_eq!(
         serde_json::from_value::<SketchConstraintDefinitionInput>(wire.clone()).unwrap(),
@@ -1044,7 +1045,7 @@ fn internal_alignment_index_stays_with_bspline_variants() {
     assert!(serde_json::from_value::<SketchConstraintDefinitionInput>(missing_index).is_err());
 
     let mut extraneous_index = wire;
-    extraneous_index["alignment"]["alignment"] = serde_json::json!("ellipse_focus1");
+    extraneous_index["alignment"]["kind"] = serde_json::json!("ellipse_focus1");
     let error = serde_json::from_value::<SketchConstraintDefinitionInput>(extraneous_index)
         .unwrap_err()
         .to_string();
@@ -1107,8 +1108,7 @@ fn planar_nurbs_wire_preserves_flat_fields_and_checks_cardinality() {
             "degree": 1,
             "knots": [0.0, 0.0, 1.0, 1.0],
             "poles": {
-                "form": "rational",
-                "points": [
+                "kind": "rational", "points": [
                     {"point": {"u": 2.0, "v": 3.0}, "weight": 1.0},
                     {"point": {"u": 4.0, "v": 5.0}, "weight": 0.5}
                 ]
@@ -1125,15 +1125,13 @@ fn planar_nurbs_wire_preserves_flat_fields_and_checks_cardinality() {
         (
             "poles",
             serde_json::json!({
-                "form": "rational",
-                "points": [{"point": {"u": 2.0, "v": 3.0}, "weight": 1.0}]
+                "kind": "rational", "points": [{"point": {"u": 2.0, "v": 3.0}, "weight": 1.0}]
             }),
         ),
         (
             "poles",
             serde_json::json!({
-                "form": "rational",
-                "points": [
+                "kind": "rational", "points": [
                     {"point": {"u": 2.0, "v": 3.0}, "weight": 0.0},
                     {"point": {"u": 4.0, "v": 5.0}, "weight": 0.5}
                 ]
@@ -1149,13 +1147,14 @@ fn planar_nurbs_wire_preserves_flat_fields_and_checks_cardinality() {
     }
     let mut nonrational = wire;
     nonrational["curve"]["poles"] = serde_json::json!({
-        "form": "polynomial",
-        "points": [{"u": 2.0, "v": 3.0}, {"u": 4.0, "v": 5.0}]
+        "kind": "polynomial", "points": [{"u": 2.0, "v": 3.0}, {"u": 4.0, "v": 5.0}]
     });
-    nonrational["curve"]
+    let mut unstated = nonrational.clone();
+    unstated["curve"]
         .as_object_mut()
         .unwrap()
         .remove("periodic");
+    assert!(serde_json::from_value::<SketchGeometry>(unstated).is_err());
     let geometry = serde_json::from_value::<SketchGeometry>(nonrational).unwrap();
     let SketchGeometryDefinition::Nurbs { curve } = geometry.definition() else {
         panic!("NURBS geometry");
@@ -1890,7 +1889,7 @@ fn native_and_external_geometry_identity_admission_preserves_wire() {
             "native_kind",
         ),
         (
-            serde_json::json!({"kind": "external_reference", "object": "Sketch001"}),
+            serde_json::json!({"kind": "external_reference", "object": "Sketch001", "subelements": []}),
             "object",
         ),
     ] {
@@ -1917,7 +1916,8 @@ fn native_and_external_geometry_identity_admission_preserves_wire() {
 fn native_constraint_kind_rejects_empty_text_at_input_admission() {
     use crate::sketches::{SketchConstraintDefinition, SketchConstraintDefinitionInput};
     let mut wire = serde_json::json!({
-        "kind": "native", "native_kind": "source", "entities": ["test:sketch:entity#0"]
+        "kind": "native", "native_kind": "source", "entities": ["test:sketch:entity#0"],
+        "native_properties": {}, "operands": []
     });
     let admitted = serde_json::from_value::<SketchConstraintDefinition>(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(admitted).unwrap(), wire);

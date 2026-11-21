@@ -36,7 +36,7 @@ fn generic_tag_attribute(
 ) -> SourceAttribute {
     SourceAttribute {
         id: "f3d:brep:attribute#1".try_into().expect("valid identity"),
-        target,
+        target: target.into(),
         name: "ATTRIB_CUSTOM-attrib".into(),
         values: [
             AttributeValue::String("generic_tag_attrib_def".into()),
@@ -156,16 +156,17 @@ fn brep_qualification_rewrites_owned_ids_and_cross_references() {
             bodies: vec![Body {
                 id: body.clone(),
                 kind: BodyKind::default(),
-                regions: vec![region.clone()],
                 transform: None,
                 name: None,
                 color: None,
                 visible: None,
+                native_ref: None,
             }],
             regions: vec![Region {
                 id: region,
                 body: body.clone(),
                 shells: Vec::new(),
+                native_ref: None,
             }],
 
             body_native_keys: vec![BodyNativeKey {
@@ -214,16 +215,14 @@ fn brep_qualification_rewrites_owned_ids_and_cross_references() {
 
 #[test]
 fn body_key_retention_keeps_only_the_selected_connected_graph() {
-    let body = |index, region| Body {
+    let body = |index| Body {
         id: BodyId::mint(format!("f3d:brep:entity#{index}")).expect("identity grammar"),
         kind: BodyKind::default(),
-        regions: vec![
-            RegionId::mint(format!("f3d:brep:entity#{region}")).expect("identity grammar")
-        ],
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     };
     let native_key = |index, key| BodyNativeKey {
         source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
@@ -240,20 +239,22 @@ fn body_key_retention_keeps_only_the_selected_connected_graph() {
             bodies: vec![
                 Body {
                     name: Some("f3d:brep:entity#3".into()),
-                    ..body(1, 2)
+                    ..body(1)
                 },
-                body(3, 4),
+                body(3),
             ],
             regions: vec![
                 Region {
                     id: RegionId::mint("f3d:brep:entity#2").expect("identity grammar"),
                     body: BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
                     shells: Vec::new(),
+                    native_ref: None,
                 },
                 Region {
                     id: RegionId::mint("f3d:brep:entity#4").expect("identity grammar"),
                     body: BodyId::mint("f3d:brep:entity#3").expect("identity grammar"),
                     shells: Vec::new(),
+                    native_ref: None,
                 },
             ],
 
@@ -286,11 +287,11 @@ fn body_key_retention_preserves_derived_links_for_reachable_targets() {
     let body = |index| Body {
         id: BodyId::mint(format!("f3d:brep:entity#{index}")).expect("identity grammar"),
         kind: BodyKind::default(),
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     };
     let native_key = |index, key| BodyNativeKey {
         source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
@@ -358,6 +359,7 @@ fn body_key_retention_preserves_derived_links_for_reachable_targets() {
                 target: target(1),
                 selector: 1,
                 token: cadmpeg_core::text::NonBlankString::new("97").unwrap(),
+                token_integer: 0,
                 design_references: vec![1],
                 ordinal: 0,
             },
@@ -366,6 +368,7 @@ fn body_key_retention_preserves_derived_links_for_reachable_targets() {
                 target: target(3),
                 selector: 1,
                 token: cadmpeg_core::text::NonBlankString::new("97").unwrap(),
+                token_integer: 0,
                 design_references: vec![3],
                 ordinal: 0,
             },
@@ -407,20 +410,20 @@ fn body_key_retention_preserves_selectorless_neutral_roots() {
                 Body {
                     id: native_body.clone(),
                     kind: BodyKind::Solid,
-                    regions: Vec::new(),
                     transform: None,
                     name: None,
                     color: None,
                     visible: None,
+                    native_ref: None,
                 },
                 Body {
                     id: projected_body.clone(),
                     kind: BodyKind::Wire,
-                    regions: Vec::new(),
                     transform: None,
                     name: None,
                     color: None,
                     visible: None,
+                    native_ref: None,
                 },
             ],
 
@@ -596,31 +599,28 @@ fn sketch_region_brep(bodies: &[RegionBody], key: Option<u64>) -> Brep {
         let face = entity(3, 1);
         let ring = entity(4, 1);
         asm.bodies.push(
-            serde_json::from_value(serde_json::json!({"id": body, "regions": [region]})).unwrap(),
+            serde_json::from_value(serde_json::json!({"id": body, "kind": "solid"})).unwrap(),
         );
         asm.regions.push(Region {
             id: RegionId::mint(region.clone()).unwrap(),
             body: BodyId::mint(body.clone()).unwrap(),
             shells: vec![cadmpeg_ir::ids::ShellId::mint(shell.clone()).unwrap()],
+            native_ref: None,
         });
-        asm.shells.push(
-            cadmpeg_ir::topology::Shell::new(
-                cadmpeg_ir::ids::ShellId::mint(shell.clone()).unwrap(),
-                RegionId::mint(region).unwrap(),
-                vec![FaceId::mint(face.clone()).unwrap()],
-                if spec.wire_edge {
-                    vec![cadmpeg_ir::ids::EdgeId::mint(entity(5, 90)).unwrap()]
-                } else {
-                    Vec::new()
-                },
-                Vec::new(),
-            )
-            .unwrap(),
-        );
+        asm.shells.push(cadmpeg_ir::topology::Shell::with_members(
+            cadmpeg_ir::ids::ShellId::mint(shell.clone()).unwrap(),
+            RegionId::mint(region).unwrap(),
+            if spec.wire_edge {
+                vec![cadmpeg_ir::ids::EdgeId::mint(entity(5, 90)).unwrap()]
+            } else {
+                Vec::new()
+            },
+            Vec::new(),
+        ));
         asm.faces.push(
             serde_json::from_value(serde_json::json!({
                 "id": face, "shell": shell, "surface": entity(6, 1), "sense": "forward",
-                "loops": {"classification": "unspecified", "loops": if spec.edges == 0 { vec![] } else { vec![ring.clone()] }},
+                "loops": {"kind": "unspecified", "loops": if spec.edges == 0 { vec![] } else { vec![ring.clone()] }},
             }))
             .unwrap(),
         );
@@ -630,7 +630,7 @@ fn sketch_region_brep(bodies: &[RegionBody], key: Option<u64>) -> Brep {
         if spec.edges != 0 {
             asm.loops.push(
                 serde_json::from_value(serde_json::json!({
-                    "id": ring, "face": face, "boundary": {"kind": "ring", "coedges": coedges},
+                    "id": ring, "face": face, "boundary": {"kind": "ring", "coedges": coedges, "vertex_uses": []},
                 }))
                 .unwrap(),
             );
@@ -640,7 +640,7 @@ fn sketch_region_brep(bodies: &[RegionBody], key: Option<u64>) -> Brep {
             asm.coedges.push(
                 serde_json::from_value(serde_json::json!({
                     "id": coedges[usize::try_from(index).unwrap()], "owner_loop": ring, "edge": edge,
-                    "radial_next": coedges[usize::try_from(index).unwrap()], "sense": "forward",
+                    "radial_next": coedges[usize::try_from(index).unwrap()], "sense": "forward", "pcurves": [],
                 }))
                 .unwrap(),
             );
@@ -673,7 +673,7 @@ fn sketch_region_brep(bodies: &[RegionBody], key: Option<u64>) -> Brep {
         if spec.face_attribute {
             asm.attributes.push(
                 serde_json::from_value(serde_json::json!({
-                    "id": entity(8, 1), "target": {"kind": "face", "id": face},
+                    "id": entity(8, 1), "target": {"entity": {"kind": "face", "value": face}},
                     "name": "generic_tag_attrib_def", "values": [],
                 }))
                 .unwrap(),
@@ -793,4 +793,32 @@ fn a_blob_of_only_sketch_regions_keeps_no_model_body() {
     );
     assert!(brep.asm.bodies.is_empty());
     assert!(brep.asm.body_native_keys.is_empty());
+}
+
+#[test]
+fn generic_tag_payload_retains_token_integer() {
+    for version in [2, 3] {
+        for token_integer in [0u32, 4012, u32::MAX] {
+            let mut groups = vec![
+                AttributeValue::Integer(7),
+                AttributeValue::String("97".into()),
+                AttributeValue::Integer(i64::from(token_integer)),
+                AttributeValue::Integer(1),
+                AttributeValue::Integer(-302),
+            ];
+            if version == 3 {
+                groups.push(AttributeValue::Integer(0));
+            }
+            let attribute = generic_tag_attribute(
+                AttributeTarget::Face(FaceId::mint("f3d:test:face#1").unwrap()),
+                (version, version),
+                1,
+                groups,
+            );
+            let tags = persistent_subentity_tags(&attribute).unwrap();
+            assert_eq!(tags.len(), 1);
+            assert_eq!(tags[0].token_integer, token_integer);
+            assert_eq!(tags[0].design_references, [-302]);
+        }
+    }
 }

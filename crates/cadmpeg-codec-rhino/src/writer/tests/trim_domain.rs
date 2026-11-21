@@ -20,9 +20,12 @@ fn numerical_audit_trim_domain_check_ignores_surface_knot_units() {
             Some([0., 1.]),
         )
         .unwrap(),
-        start: VertexId::mint("test:audit:vertex#1").unwrap(),
-        end: VertexId::mint("test:audit:vertex#2").unwrap(),
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            VertexId::mint("test:audit:vertex#1").unwrap(),
+            VertexId::mint("test:audit:vertex#2").unwrap(),
+        )),
         tolerance: None,
+        native_ref: None,
     };
     for d in [1., 1e-16] {
         let surface = NurbsSurface::from_lanes(
@@ -71,6 +74,7 @@ fn numerical_audit_trim_domain_check_ignores_surface_knot_units() {
                             .expect("finite non-negative fixture tolerance"),
                     ),
                 ),
+                native_ref: None,
             };
             let edge = WritableEdge {
                 source: &source,
@@ -144,14 +148,18 @@ fn trim_refusal_on(
             Some([0., 1.]),
         )
         .unwrap(),
-        start: VertexId::mint("test:overflow:vertex#1").unwrap(),
-        end: VertexId::mint("test:overflow:vertex#2").unwrap(),
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            VertexId::mint("test:overflow:vertex#1").unwrap(),
+            VertexId::mint("test:overflow:vertex#2").unwrap(),
+        )),
         tolerance: None,
+        native_ref: None,
     };
     let p = Pcurve {
         id: PcurveId::mint("test:overflow:pcurve#1").unwrap(),
         geometry,
         metadata: PcurveMetadata::default(),
+        native_ref: None,
     };
     let edge = WritableEdge {
         source: &source,

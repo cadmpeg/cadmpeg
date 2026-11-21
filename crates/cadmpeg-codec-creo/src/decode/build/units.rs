@@ -6,6 +6,8 @@
 //! convert model lengths before insertion into the IR.
 //! Unit directions, angles, ratios, and source-native arenas are not scaled.
 
+mod design;
+
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, FiniteVector3, WrapMode};
@@ -223,8 +225,8 @@ fn scale_feature_operation(
             })?;
             *frame = frame.with_origin(origin);
         }
-        FeatureOperation::DatumAxis { origin, .. }
-        | FeatureOperation::MirrorShape {
+        FeatureOperation::DatumAxis { .. } => design::axis(ctx, definition, scale)?,
+        FeatureOperation::MirrorShape {
             plane_origin: origin,
             ..
         } => {
@@ -378,6 +380,14 @@ fn scale_feature_operation(
             mode: WrapMode::Scribe,
             ..
         } => {}
+        FeatureOperation::Wrap {
+            mode: WrapMode::Unresolved { depth: Some(depth) },
+            ..
+        } => scale_length(depth, scale)?,
+        FeatureOperation::Wrap {
+            mode: WrapMode::Unresolved { depth: None },
+            ..
+        } => {}
         FeatureOperation::SketchBlockInstance {
             placement: Some(placement),
             ..
@@ -455,7 +465,7 @@ fn scale_feature_operation(
             scale_optional_positive_length(&mut construction.thickness, scale)?;
         }
         FeatureOperation::SheetMetalBaseFlange { thickness, .. } => {
-            scale_positive_length(thickness, scale)?;
+            scale_optional_positive_length(thickness, scale)?;
         }
         FeatureOperation::SheetMetalAttachedPlate { thickness, .. } => {
             scale_positive_length(thickness, scale)?;
@@ -466,16 +476,29 @@ fn scale_feature_operation(
             transition,
             ..
         } => scale_attached_sheet_metal(inside_radius, relief, transition, scale)?,
+        FeatureOperation::SheetMetalContourFlange { construction } => {
+            scale_optional_positive_length(&mut construction.thickness, scale)?;
+            if let Some(radius) = &mut construction.inside_radius {
+                scale_nonnegative_length(radius, scale)?;
+            }
+            if let Some(extent) = &mut construction.extent {
+                scale_extrude_extent(extent, scale)?;
+            }
+        }
+        FeatureOperation::SheetMetalBendLines { construction } => {
+            scale_optional_positive_length(&mut construction.inside_radius, scale)?;
+        }
         FeatureOperation::SheetMetalCorner { .. } => {}
-        FeatureOperation::SheetMetalEdgeFlange {
-            height,
-            width,
-            bend_radius,
-            ..
-        } => {
-            scale_sheet_metal_flange_height(height, scale)?;
-            scale_sheet_metal_flange_width(width, scale)?;
-            scale_positive_length(bend_radius, scale)?;
+        FeatureOperation::SheetMetalEdgeFlange(construction) => {
+            if let Some(height) = &mut construction.height {
+                scale_sheet_metal_flange_height(height, scale)?;
+            }
+            if let Some(width) = &mut construction.width {
+                scale_sheet_metal_flange_width(width, scale)?;
+            }
+            if let Some(radius) = &mut construction.bend_radius {
+                scale_nonnegative_length(radius, scale)?;
+            }
         }
         FeatureOperation::SheetMetalHem {
             form, bend_radius, ..
@@ -743,6 +766,7 @@ fn scale_angular_termination(
         AngularTermination::OffsetFromFace { offset, .. } => {
             scale_positive_length(offset, scale)?;
         }
+        AngularTermination::ToPlane { plane, .. } => scale_support_plane_frame(plane, scale)?,
         AngularTermination::Unresolved {}
         | AngularTermination::ThroughAll {}
         | AngularTermination::ThroughNext {}
@@ -762,8 +786,10 @@ fn scale_sheet_metal_flange_height(
     use cadmpeg_ir::features::SheetMetalFlangeHeight;
 
     match height {
+        SheetMetalFlangeHeight::ToObject(construction) => {
+            scale_optional_length(&mut construction.offset, scale)?;
+        }
         SheetMetalFlangeHeight::Distance(distance) => scale_positive_length(distance, scale)?,
-        SheetMetalFlangeHeight::ToObject { offset, .. } => scale_length(offset, scale)?,
     }
     Ok(())
 }
@@ -775,15 +801,28 @@ fn scale_sheet_metal_flange_width(
     use cadmpeg_ir::features::SheetMetalFlangeWidth;
 
     match width {
-        SheetMetalFlangeWidth::Symmetric { width } => scale_positive_length(width, scale)?,
-        SheetMetalFlangeWidth::TwoSides { first, second } => {
-            scale_positive_length(first, scale)?;
-            scale_positive_length(second, scale)?;
+        SheetMetalFlangeWidth::SymmetricPerEdge { widths } => {
+            for row in widths {
+                scale_optional_positive_length(&mut row.width, scale)?;
+            }
+        }
+        SheetMetalFlangeWidth::Symmetric(width) => {
+            scale_optional_positive_length(&mut width.width, scale)?;
+        }
+        SheetMetalFlangeWidth::TwoSides(width) => {
+            scale_optional_positive_length(&mut width.first, scale)?;
+            scale_optional_positive_length(&mut width.second, scale)?;
         }
         SheetMetalFlangeWidth::TwoSidesPerEdge { widths } => {
             for width in widths.as_mut_slice() {
-                scale_positive_length(&mut width.first, scale)?;
-                scale_positive_length(&mut width.second, scale)?;
+                scale_optional_positive_length(&mut width.first, scale)?;
+                scale_optional_positive_length(&mut width.second, scale)?;
+            }
+        }
+        SheetMetalFlangeWidth::TwoOffsetsPerEdge { offsets } => {
+            for row in offsets {
+                scale_optional_length(&mut row.first, scale)?;
+                scale_optional_length(&mut row.second, scale)?;
             }
         }
         SheetMetalFlangeWidth::FullEdge => {}
@@ -911,6 +950,9 @@ fn scale_face_motion(
         }
         cadmpeg_ir::features::FaceMotion::Rotate { axis_origin, .. } => {
             scale_finite_point3(axis_origin, scale)?;
+        }
+        cadmpeg_ir::features::FaceMotion::Transform { transform } => {
+            scale_transform_translation(transform, scale)?;
         }
     }
     Ok(())
@@ -1491,7 +1533,7 @@ mod tests {
     fn model_points_of_an_inch_model_are_converted_to_millimetres() {
         let ir =
             model_point_ir(Point3::new(1.0, -2.0, 0.5)).expect("valid millimeter point admission");
-        assert_point3(ir.model.points[0].position().get(), [25.4, -50.8, 12.7]);
+        assert_point3(ir.geometry.points[0].position().get(), [25.4, -50.8, 12.7]);
     }
 
     #[test]
@@ -1528,12 +1570,13 @@ mod tests {
                         id: curve_id,
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                         source_object: None,
+                        native_ref: None,
                     },
                 )
         })
         .expect_err("overflow must refuse");
         assert!(matches!(error, CodecError::NotImplemented(_)));
-        assert!(ir.model.curves.is_empty());
+        assert!(ir.geometry.curves.is_empty());
     }
 
     #[test]
@@ -1577,6 +1620,43 @@ mod tests {
         assert_point3(axis_origin.get(), [25.4, 50.8, 76.2]);
         assert_eq!(axis_dir, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
         assert_close(angle.get(), 0.5);
+    }
+
+    #[test]
+    fn scales_complete_face_motion_translation_and_keeps_its_basis() {
+        use cadmpeg_ir::transform::Transform;
+
+        let transform =
+            Transform::affine([[0., -1., 0., 1.], [1., 0., 0., -2.], [0., 0., 1., 0.5]])
+                .expect("finite affine fixture");
+        let mut motion = FaceMotion::Transform { transform };
+        scale_face_motion(&mut motion, positive(25.4)).expect("finite scaled translation");
+        let FaceMotion::Transform { transform } = motion else {
+            panic!("expected complete transform");
+        };
+        let expected = [[0., -1., 0., 25.4], [1., 0., 0., -50.8], [0., 0., 1., 12.7]];
+        for (actual, expected) in transform
+            .affine_rows()
+            .into_iter()
+            .flatten()
+            .zip(expected.into_iter().flatten())
+        {
+            assert_close(actual, expected);
+        }
+        let mut overflowing = FaceMotion::Transform {
+            transform: Transform::affine([
+                [1., 0., 0., f64::MAX],
+                [0., 1., 0., 0.],
+                [0., 0., 1., 0.],
+            ])
+            .expect("finite translation fixture before scaling"),
+        };
+        let original = overflowing.clone();
+        assert!(matches!(
+            scale_face_motion(&mut overflowing, positive(2.)),
+            Err(CodecError::Malformed(_))
+        ));
+        assert_eq!(overflowing, original);
     }
 
     #[test]
@@ -1659,6 +1739,7 @@ mod tests {
                         SolvedSurfaceGeometry::Unknown { record: None },
                     ),
                     source_object: None,
+                    native_ref: None,
                 },
             )
         })
@@ -1704,6 +1785,7 @@ mod tests {
                         SolvedCurveGeometry::Unknown { record: None },
                     ),
                     source_object: None,
+                    native_ref: None,
                 },
             )
         })
@@ -1735,7 +1817,7 @@ mod tests {
             .admit_procedural_curve(&mut ir, &curve_id, curve)
             .expect("curve construction admission");
 
-        let surface = &ir.model.procedural_surfaces[0];
+        let surface = &ir.geometry.procedural_surfaces[0];
         let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload) =
             surface.definition()
         else {
@@ -1770,7 +1852,7 @@ mod tests {
             Some([Some(8.0), None, Some(9.0), None])
         );
 
-        let curve = &ir.model.procedural_curves[0];
+        let curve = &ir.geometry.procedural_curves[0];
         let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix_payload) =
             curve.definition()
         else {
@@ -1853,12 +1935,13 @@ mod tests {
                 crate::decode::source_carriers::SourceUnitCarriers::new(Some(positive(25.4)));
             let surface_id = cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#surface")
                 .expect("identity grammar");
-            ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+            ir.geometry.surfaces.push(cadmpeg_ir::geometry::Surface {
                 id: surface_id.clone(),
                 geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
                     SolvedSurfaceGeometry::Unknown { record: None },
                 ),
                 source_object: None,
+                native_ref: None,
             });
             let surface = cadmpeg_ir::geometry::ProceduralSurface::new(
                 cadmpeg_ir::ids::ProceduralSurfaceId::mint(
@@ -2609,6 +2692,65 @@ mod tests {
                 transition.radius.get()
             ],
             [2.0, 4.0, 6.0, 8.0, 10.0, 12.0]
+        );
+    }
+}
+
+#[cfg(test)]
+mod edge_tests;
+
+#[cfg(test)]
+mod contour_tests {
+    use super::*;
+    use cadmpeg_ir::{
+        features::{
+            sheet_metal::SheetMetalContourFlangeConstruction, ExtrudeExtent, ExtrudeSide,
+            FeatureOperation, LinearTermination,
+        },
+        scalar::{NonNegativeLength, NonZeroLength, PositiveLength, PositiveReal},
+    };
+
+    #[test]
+    fn contour_scaling_visits_sheet_lengths_and_signed_travel() {
+        let mut operation = FeatureOperation::SheetMetalContourFlange {
+            construction: SheetMetalContourFlangeConstruction {
+                thickness: PositiveLength::new(1.0),
+                inside_radius: NonNegativeLength::new(0.5),
+                extent: Some(ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: LinearTermination::Blind {
+                            length: NonZeroLength::new(-2.0).expect("nonzero synthetic travel"),
+                        },
+                        draft: None,
+                    },
+                }),
+                ..Default::default()
+            },
+        };
+        crate::decode::with_service_context(|ctx| {
+            scale_feature_operation(
+                ctx,
+                &mut operation,
+                PositiveReal::new(25.4).expect("positive synthetic scale"),
+            )
+        })
+        .expect("contour construction scales");
+        let FeatureOperation::SheetMetalContourFlange { construction } = operation else {
+            panic!("contour flange");
+        };
+        assert_eq!(
+            construction.thickness.expect("scaled thickness").get(),
+            25.4
+        );
+        assert_eq!(
+            construction
+                .inside_radius
+                .expect("scaled inside radius")
+                .get(),
+            12.7
+        );
+        assert!(
+            matches!(construction.extent, Some(ExtrudeExtent::OneSided { side: ExtrudeSide { termination: LinearTermination::Blind { length }, .. } }) if length.get() == -50.8)
         );
     }
 }

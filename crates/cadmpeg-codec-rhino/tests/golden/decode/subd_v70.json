@@ -1,40 +1,39 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "10",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "assembly_joints": [],
-      "attributes": [],
-      "bodies": [],
-      "coedges": [],
+    "design": {
+      "arrangements": [],
       "configurations": [],
-      "curves": [],
-      "drawings": [],
-      "edges": [],
-      "faces": [],
+      "containers": [],
+      "evaluations": [],
       "features": [],
-      "loops": [],
-      "occurrences": [],
+      "names": [],
       "parameters": [],
-      "pcurves": [],
-      "pmi": [],
-      "points": [],
-      "presentation_documents": [],
-      "presentation_layers": [],
-      "procedural_curves": [],
-      "procedural_surfaces": [],
-      "product_definitions": [],
-      "regions": [],
-      "semantic_annotations": [],
-      "shells": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
+      "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
-      "spreadsheets": [],
+      "spreadsheets": []
+    },
+    "fragment": false,
+    "geometry": {
+      "bodies": [],
+      "coedges": [],
+      "curves": [],
+      "edges": [],
+      "faces": [],
+      "loops": [],
+      "pcurves": [],
+      "points": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [],
+      "shells": [],
       "subds": [
         {
           "cage": {
@@ -102,26 +101,43 @@
             ],
             "faces": [
               {
-                "edges": [
+                "sides": [
                   {
-                    "edge": 0,
-                    "reversed": false
+                    "edges": [
+                      {
+                        "edge": 0,
+                        "reversed": false
+                      }
+                    ]
                   },
                   {
-                    "edge": 1,
-                    "reversed": false
+                    "edges": [
+                      {
+                        "edge": 1,
+                        "reversed": false
+                      }
+                    ]
                   },
                   {
-                    "edge": 2,
-                    "reversed": false
+                    "edges": [
+                      {
+                        "edge": 2,
+                        "reversed": false
+                      }
+                    ]
                   },
                   {
-                    "edge": 3,
-                    "reversed": false
+                    "edges": [
+                      {
+                        "edge": 3,
+                        "reversed": false
+                      }
+                    ]
                   }
                 ]
               }
             ],
+            "symmetries": [],
             "vertices": [
               {
                 "point": {
@@ -161,14 +177,67 @@
           "scheme": "catmull_clark",
           "source_object": {
             "format": "rhino",
+            "instance_path": [],
             "object_id": "00000000-0000-0000-0000-000000000000",
             "visible": true
           }
         }
       ],
       "surfaces": [],
+      "vertices": []
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "rhino:model:product-definition#root",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
       "tessellations": [],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {
@@ -227,6 +296,24 @@
         "windows_bitmaps": []
       }
     },
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "absolute_tolerance_millimeters": "0.01",
@@ -240,17 +327,19 @@
         "unit_value": "2"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "archive_version": "70"
             },
             "dialect": "rhino:archive-70"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -258,62 +347,76 @@
       "linear": 0.01
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "archive_version": "70"
           },
           "dialect": "rhino:archive-70"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "object.record-census",
-          "kind": "object_records_untransferred",
-          "namespace": "rhino",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "object.record-census",
+            "kind": "object_records_untransferred",
+            "namespace": "rhino"
+          }
         },
         "message": "decoded 1/1 Rhino object records",
         "severity": "info"
       },
       {
         "code": {
-          "code": "container.integrity-failure",
-          "kind": "integrity_failure",
-          "namespace": "rhino",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "container.integrity-failure",
+            "kind": "integrity_failure",
+            "namespace": "rhino",
+            "strict_floor": "warning"
+          }
         },
         "message": "CRC mismatch at offset 177 for typecode 0x20008070: expected 0x0, got 0x678ad2dd",
         "severity": "error"
       },
       {
         "code": {
-          "code": "container.scan-diagnostic",
-          "kind": "decode_diagnostic",
-          "namespace": "rhino",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "container.scan-diagnostic",
+            "kind": "decode_diagnostic",
+            "namespace": "rhino"
+          }
         },
         "message": "object at 177 has nil object UUID",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "container.integrity-failure",
-          "kind": "integrity_failure",
-          "namespace": "rhino",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "container.integrity-failure",
+            "kind": "integrity_failure",
+            "namespace": "rhino",
+            "strict_floor": "warning"
+          }
         },
         "message": "f09ba4d9-455b-42c3-ba3b-e6ccacef853b: SubD anonymous CRC mismatch at offset 258",
         "severity": "error"
@@ -324,20 +427,30 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
-    "annotations": {},
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "decode_digest": "cdcf90b5e739e3a4a0c5ffa417e06218c751dc9133da3502d6d98bdb38ea9132",
+    "file_digests": {},
     "retained_records": {
       "rhino:object:record#000000": {
         "bytes": {
           "data": "cIAAID4DAAAAAAAAcQAAggAABAAAAAAA+n8CABYDAAAAAAAA+/8CABQAAAAAAAAA2aSb8FtFw0K6O+bMrO+FO6ndcYP8/wIA3gIAAAAAAAABAIAAQM0CAAAAAAAAAQAAAAAAAAABAAAACQAAAAkAAAAJAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAADwPwAAAAAAAAAAAIAAQHUCAAAAAAAAAQAAAAEAAAAAAAQEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAA8D8AAAAAAAAAAAEAAAAFAAAACQAAAAoAAAABAAAAZQAAAAAAAAAA/wEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAEAAAIABQAAAAAIAAAAAAEACQAAAAD/AgAAAGYAAAAAAAAAAP8BAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAAgABAAACAAUAAAAABgAAAAABAAkAAAAA/wMAAABnAAAAAAAAAAD/AQAAAAAAAPA/AAAAAAAA8D8AAAAAAAAAAAIAAQAAAgAGAAAAAAcAAAAAAQAJAAAAAP8EAAAAaAAAAAAAAAAA/wEAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAACAAEAAAIABwAAAAAIAAAAAAEACQAAAAD/BQAAAGkAAAAAAAAAAP8BAQAAAAAAAADAPwAAAAAAAOw/AAAAAAAA0D8CAAEAAAAAAgAAAAABAAkAAAAA/wYAAABqAAAAAAAAAAD/AQEAAAAAAAAAwD8AAAAAAADsPwAAAAAAANA/AgACAAAAAAMAAAAAAQAJAAAAAP8HAAAAawAAAAAAAAAA/wEBAAAAAAAAAMA/AAAAAAAA7D8AAAAAAADQPwIAAwAAAAAEAAAAAAEACQAAAAD/CAAAAGwAAAAAAAAAAP8BAQAAAAAAAADAPwAAAAAAAOw/AAAAAAAA0D8CAAQAAAAAAQAAAAABAAkAAAAA/wkAAABtAAAAAAAAAAD/CQAAAAAAAAAEAAQABQAAAAAGAAAAAAcAAAAACAAAAAD/AAFTRK32t0LQ50a7Yv9/AoAAAAAAAAAAAH8AAIIAAAAAAAAAAN3Simc=",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 177,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

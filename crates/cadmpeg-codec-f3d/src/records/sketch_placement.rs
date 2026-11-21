@@ -3,7 +3,10 @@
 
 use super::identity::{DesignAffineTransform, DesignEntityId, IDENTITY_MATRIX};
 use super::references::DesignClassTag;
+use crate::layout::sketch_explicit_member_head as marked_head;
+use crate::layout::sketch_null_explicit_member_head as null_head;
 use crate::layout::sketch_typed_compact_member_head as typed_compact;
+use crate::layout::sketch_typed_explicit_member_head as typed_head;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 
@@ -15,6 +18,7 @@ cadmpeg_core::named_optional_field!(
     std::num::NonZeroU64,
     "ordinal_collection"
 );
+cadmpeg_core::named_optional_field!(deserialize_display_name, String, "display_name");
 /// Typed sketch-container visibility bound to a Design sketch entity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
@@ -116,6 +120,8 @@ pub(crate) struct DesignSketchPlacement {
     pub(crate) scope_record_index: Option<u32>,
     /// Full Design entity id of the placed sketch.
     pub(crate) entity_id: DesignEntityId,
+    /// User-assigned browser display name when distinct from `entity_id`.
+    pub(crate) display_name: Option<String>,
     /// Typed sketch-container visibility for the placed sketch entity.
     pub(crate) visibility: Option<DesignSketchVisibility>,
     /// Source dynamic three-digit ASCII primary class tag.
@@ -141,6 +147,7 @@ impl Clone for DesignSketchPlacement {
             id: self.id.clone(),
             scope_record_index: self.scope_record_index,
             entity_id: self.entity_id.clone(),
+            display_name: self.display_name.clone(),
             visibility: self.visibility,
             class_tag: self.class_tag.clone(),
             record_index: self.record_index,
@@ -244,6 +251,10 @@ pub(crate) enum DesignSketchFrameForm {
     MemberTypedCompact {
         paired_byte_offset: u64,
     },
+    MemberNullExplicit {
+        paired_byte_offset: u64,
+        transform: SketchPlacementMatrix,
+    },
     MemberExplicit {
         paired_byte_offset: u64,
         transform: SketchPlacementMatrix,
@@ -283,13 +294,16 @@ impl DesignSketchFrame {
             DesignSketchFrameForm::MemberTypedCompact { .. } => {
                 cadmpeg_core::decode::u64_from_index(typed_compact::LEN)
             }
+            DesignSketchFrameForm::MemberNullExplicit { .. } => {
+                cadmpeg_core::decode::u64_from_index(null_head::LEN)
+            }
             DesignSketchFrameForm::MemberExplicit {
                 typed_reference, ..
             } => {
                 if typed_reference {
-                    202
+                    cadmpeg_core::decode::u64_from_index(typed_head::LEN)
                 } else {
-                    162
+                    cadmpeg_core::decode::u64_from_index(marked_head::LEN)
                 }
             }
         }
@@ -304,6 +318,9 @@ impl DesignSketchFrame {
             | DesignSketchFrameForm::ScopeLegacy325(matrix)
             | DesignSketchFrameForm::ScopeExplicit(matrix)
             | DesignSketchFrameForm::ScopeGenesisExplicit(matrix)
+            | DesignSketchFrameForm::MemberNullExplicit {
+                transform: matrix, ..
+            }
             | DesignSketchFrameForm::MemberExplicit {
                 transform: matrix, ..
             } => &matrix.0,
@@ -320,7 +337,16 @@ impl DesignSketchFrame {
             }
             DesignSketchFrameForm::ScopeExplicit(_) => 55,
             DesignSketchFrameForm::ScopeGenesisExplicit(_) => 66,
-            DesignSketchFrameForm::MemberExplicit { .. } => 22,
+            DesignSketchFrameForm::MemberNullExplicit { .. } => {
+                cadmpeg_core::decode::u64_from_index(null_head::TRANSFORM)
+            }
+            DesignSketchFrameForm::MemberExplicit {
+                typed_reference, ..
+            } => cadmpeg_core::decode::u64_from_index(if typed_reference {
+                typed_head::TRANSFORM
+            } else {
+                marked_head::TRANSFORM
+            }),
         };
         Some(self.byte_offset + relative)
     }
@@ -328,6 +354,9 @@ impl DesignSketchFrame {
         match self.form {
             DesignSketchFrameForm::MemberCompact { paired_byte_offset }
             | DesignSketchFrameForm::MemberTypedCompact { paired_byte_offset }
+            | DesignSketchFrameForm::MemberNullExplicit {
+                paired_byte_offset, ..
+            }
             | DesignSketchFrameForm::MemberExplicit {
                 paired_byte_offset, ..
             } => paired_byte_offset,
@@ -357,6 +386,7 @@ impl DesignSketchPlacement {
             self.frame.form,
             DesignSketchFrameForm::MemberCompact { .. }
                 | DesignSketchFrameForm::MemberTypedCompact { .. }
+                | DesignSketchFrameForm::MemberNullExplicit { .. }
                 | DesignSketchFrameForm::MemberExplicit { .. }
         )
     }
@@ -377,6 +407,12 @@ struct DesignSketchPlacementWire {
     scope_record_index: Option<u32>,
     /// Full Design entity id of the placed sketch.
     entity_id: String,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_display_name"
+    )]
+    display_name: Option<String>,
     /// Typed sketch-container visibility for the placed sketch entity.
     #[serde(
         default,
@@ -421,6 +457,8 @@ impl Serialize for DesignSketchPlacement {
             scope_record_index: Option<u32>,
             entity_id: &'a str,
             #[serde(skip_serializing_if = "Option::is_none")]
+            display_name: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
             visibility: Option<DesignSketchVisibility>,
             byte_offset: u64,
             class_tag: &'a str,
@@ -438,6 +476,7 @@ impl Serialize for DesignSketchPlacement {
             id: &self.id,
             scope_record_index: self.scope_record_index,
             entity_id: self.entity_id.as_str(),
+            display_name: self.display_name.as_deref(),
             visibility: self.visibility,
             byte_offset: self.byte_offset(),
             class_tag: self.class_tag.as_str(),
@@ -458,6 +497,18 @@ impl TryFrom<DesignSketchPlacementWire> for DesignSketchPlacement {
     fn try_from(wire: DesignSketchPlacementWire) -> Result<Self, Self::Error> {
         use DesignSketchFrameForm as Form;
         let entity_id = DesignEntityId::try_from(wire.entity_id)?;
+        if let Some(name) = wire.display_name.as_deref() {
+            let units = name.encode_utf16().count();
+            if name.trim().is_empty()
+                || !(1..=256).contains(&units)
+                || name.chars().any(char::is_control)
+            {
+                return Err(
+                    "display_name must be a non-blank 1..=256 UTF-16 string without control characters"
+                        .into(),
+                );
+            }
+        }
 
         let form = match (wire.member_run_head, wire.frame_length) {
             (false, 201) => Form::ScopeCompact,
@@ -474,6 +525,12 @@ impl TryFrom<DesignSketchPlacementWire> for DesignSketchPlacement {
             {
                 Form::MemberTypedCompact {
                     paired_byte_offset: wire.paired_byte_offset,
+                }
+            }
+            (true, length) if length == cadmpeg_core::decode::u64_from_index(null_head::LEN) => {
+                Form::MemberNullExplicit {
+                    paired_byte_offset: wire.paired_byte_offset,
+                    transform: wire.transform.try_into()?,
                 }
             }
             (true, length @ (162 | 202)) => Form::MemberExplicit {
@@ -503,6 +560,7 @@ impl TryFrom<DesignSketchPlacementWire> for DesignSketchPlacement {
             id: wire.id,
             scope_record_index: wire.scope_record_index,
             entity_id,
+            display_name: wire.display_name,
             visibility: wire.visibility,
             class_tag: DesignClassTag::try_from(wire.class_tag)?,
             record_index: wire.record_index,
@@ -526,6 +584,7 @@ impl From<DesignSketchPlacement> for DesignSketchPlacementWire {
             id: value.id,
             scope_record_index: value.scope_record_index,
             entity_id: value.entity_id.into_string(),
+            display_name: value.display_name,
             visibility: value.visibility,
             byte_offset,
             class_tag: value.class_tag.into(),

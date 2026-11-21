@@ -40,6 +40,35 @@ fn row_follows(before: Carrier<'_>, after: Carrier<'_>, motion: &FaceMotion) -> 
                 && (shift - direction.scale(distance.get())).norm()
                     <= FACE_MOTION_POSITION_TOLERANCE
         }
+        (FaceMotion::Transform { transform }, Carrier::Plane(before), Carrier::Plane(after)) => {
+            let (Some(origin), Some(normal)) = (
+                transform.apply_point(before.origin),
+                transform.apply_normal(before.normal),
+            ) else {
+                return false;
+            };
+            (after.origin.vector_from(before.origin).norm() > FACE_MOTION_POSITION_TOLERANCE
+                || same_direction(before.normal, after.normal) == Some(false))
+                && origin.get().vector_from(after.origin).norm() <= FACE_MOTION_POSITION_TOLERANCE
+                && same_direction(*normal.as_raw(), after.normal) == Some(true)
+        }
+        (
+            FaceMotion::Transform { transform },
+            Carrier::Cylinder(before),
+            Carrier::Cylinder(after),
+        ) => {
+            let (Some(origin), Some(axis)) = (
+                transform.apply_point(before.origin),
+                transform.apply_vector(before.axis),
+            ) else {
+                return false;
+            };
+            (after.origin.vector_from(before.origin).norm() > FACE_MOTION_POSITION_TOLERANCE
+                || same_direction(before.axis, after.axis) == Some(false))
+                && origin.get().vector_from(after.origin).norm() <= FACE_MOTION_POSITION_TOLERANCE
+                && same_direction(axis.get(), after.axis) == Some(true)
+                && close(after.radius - before.radius)
+        }
         (
             FaceMotion::Translate {
                 direction,
@@ -77,6 +106,41 @@ fn row_follows(before: Carrier<'_>, after: Carrier<'_>, motion: &FaceMotion) -> 
     }
 }
 
+/// Faces of the input state that the motion moves, sorted: the updated faces
+/// whose plane or cylinder row follows the motion. `None` when an updated face
+/// has no plane or cylinder row in either state, the motion is a rotation, or
+/// its distance is zero. The list is empty when no updated row follows the
+/// motion.
+fn moved_faces(
+    motion: &FaceMotion,
+    updated: &BTreeSet<i64>,
+    input: &AsmHistoricalTopology,
+    output: &AsmHistoricalTopology,
+) -> Option<Vec<i64>> {
+    match motion {
+        FaceMotion::Offset { distance } | FaceMotion::Translate { distance, .. } => {
+            if distance.get().abs() <= FACE_MOTION_POSITION_TOLERANCE {
+                return None;
+            }
+        }
+        FaceMotion::Rotate { .. } => return None,
+        FaceMotion::Transform { .. } => {}
+    }
+    let input_rows = StateRows::new(input);
+    let output_rows = StateRows::new(output);
+    let mut moved = Vec::new();
+    for &face in updated {
+        if row_follows(
+            input_rows.carrier(face)?,
+            output_rows.carrier(face)?,
+            motion,
+        ) {
+            moved.push(face);
+        }
+    }
+    Some(moved)
+}
+
 /// Faces of the input state that a `MoveFace` or `OffsetFaces` feature selects,
 /// sorted.
 ///
@@ -91,27 +155,56 @@ fn moved_face_selection(
     input: &AsmHistoricalTopology,
     output: &AsmHistoricalTopology,
 ) -> Option<Vec<i64>> {
-    let magnitude = match motion {
-        FaceMotion::Offset { distance } | FaceMotion::Translate { distance, .. } => distance.get(),
-        FaceMotion::Rotate { .. } => return None,
-    };
-    if magnitude.abs() <= FACE_MOTION_POSITION_TOLERANCE {
-        return None;
-    }
-    let input_rows = StateRows::new(input);
-    let output_rows = StateRows::new(output);
-    let mut moved = Vec::new();
-    for &face in updated {
-        if row_follows(
-            input_rows.carrier(face)?,
-            output_rows.carrier(face)?,
-            motion,
-        ) {
-            moved.push(face);
-        }
-    }
+    let moved = moved_faces(motion, updated, input, output)?;
     let distinct_members = members.iter().collect::<HashSet<_>>().len();
     (!moved.is_empty() && moved.len() == distinct_members).then_some(moved)
+}
+
+/// Faces of the input state that a one-member group selects when the motion
+/// moves several faces of one surface, sorted.
+///
+/// The faces of one surface move together. The moved set is the selection
+/// when every moved face lies on one input surface and one recipe reference of
+/// the member names exactly the moved faces.
+fn shared_surface_selection(
+    members: &[u32],
+    moved: &[i64],
+    operands: &[&DesignFaceOperand],
+    input: &AsmHistoricalTopology,
+) -> Option<Vec<i64>> {
+    let [member, rest @ ..] = members else {
+        return None;
+    };
+    if rest.iter().any(|other| other != member) || moved.len() < 2 {
+        return None;
+    }
+    let mut matching = operands
+        .iter()
+        .filter(|operand| operand.record_index() == *member);
+    let (Some(operand), None) = (matching.next(), matching.next()) else {
+        return None;
+    };
+    let rows = StateRows::new(input);
+    let surfaces = moved
+        .iter()
+        .map(|face| rows.surface(*face))
+        .collect::<Option<BTreeSet<_>>>()?;
+    if surfaces.len() != 1 {
+        return None;
+    }
+    let moved_set: BTreeSet<i64> = moved.iter().copied().collect();
+    operand
+        .recipe_references
+        .iter()
+        .filter(|reference| reference.design_reference >= 0)
+        .any(|reference| {
+            super::effective_faces(reference)
+                .iter()
+                .map(|face| super::stable_ref(face.as_str()))
+                .collect::<Option<BTreeSet<_>>>()
+                .is_some_and(|named| named == moved_set)
+        })
+        .then(|| moved.to_vec())
 }
 
 /// Faces that the transitions from `previous_state_id` to `state` update, or
@@ -178,6 +271,22 @@ fn recipe_face_selection(
     (!faces.is_empty()).then(|| faces.into_iter().collect())
 }
 
+/// The selection of a group from its direct transition reading, its member
+/// recipes, and the shared-surface reading. The shared-surface reading is
+/// taken only when neither of the others states a selection.
+fn group_selection(
+    direct: Option<Vec<i64>>,
+    recipes: Option<Vec<i64>>,
+    shared: impl FnOnce() -> Option<Vec<i64>>,
+) -> Option<Vec<i64>> {
+    let moved = match (direct, &recipes) {
+        (Some(direct), _) => Some(direct),
+        (None, None) => shared(),
+        (None, Some(_)) => None,
+    };
+    agreed_selection(moved, recipes)
+}
+
 /// The selection that the transitions and the member recipes state. Two
 /// different selections state none.
 fn agreed_selection(moved: Option<Vec<i64>>, recipes: Option<Vec<i64>>) -> Option<Vec<i64>> {
@@ -227,10 +336,6 @@ pub(super) fn bind_move_face_selection(
     let Some(input) = history.topology(previous) else {
         return;
     };
-    let moved = history.topology(state).and_then(|output| {
-        let updated = updated_faces(histories, history, state, previous.state_id)?;
-        moved_face_selection(&members, motion, &updated, input, output)
-    });
     let stream = crate::ids::native_stream(&scope.id);
     let group_operands: Vec<_> = operands
         .iter()
@@ -241,7 +346,16 @@ pub(super) fn bind_move_face_selection(
         })
         .collect();
     let recipes = recipe_face_selection(&members, &group_operands, input);
-    let Some(faces) = agreed_selection(moved, recipes) else {
+    let output = history.topology(state);
+    let updated = output.and_then(|_| updated_faces(histories, history, state, previous.state_id));
+    let direct = output.zip(updated.as_ref()).and_then(|(output, updated)| {
+        moved_face_selection(&members, motion, updated, input, output)
+    });
+    let Some(faces) = group_selection(direct, recipes, || {
+        let (output, updated) = output.zip(updated.as_ref())?;
+        let moved = moved_faces(motion, updated, input, output)?;
+        shared_surface_selection(&members, &moved, &group_operands, input)
+    }) else {
         return;
     };
     let prefix = crate::ids::feature_input_prefix(feature_id, previous.state_id);

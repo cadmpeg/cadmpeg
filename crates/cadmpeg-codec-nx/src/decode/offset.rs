@@ -67,7 +67,7 @@ pub(super) fn saved_offset_carriers(
     for xmt in &face_surfaces {
         let candidate = surfaces_by_xmt.get(xmt).and_then(|id| {
             let geometry = &ir
-                .model
+                .geometry
                 .surfaces
                 .iter()
                 .find(|surface| &surface.id == id)?
@@ -97,7 +97,7 @@ pub(super) fn saved_offset_carriers(
             continue;
         };
         let Some(support) = ir
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| &surface.id == support_id)
@@ -909,7 +909,7 @@ fn offset_support_control_hull_excludes_point(
     mut allowance: f64,
 ) -> bool {
     let mut current = surface;
-    for _ in &index.ir().model.surfaces {
+    for _ in &index.ir().geometry.surfaces {
         if !allowance.is_finite() || allowance < 0.0 {
             return false;
         }
@@ -1950,7 +1950,7 @@ pub(super) fn surface_parameter_periods_with_index(
     surface: &SurfaceId,
 ) -> [std::option::Option<f64>; 2] {
     let mut current = surface;
-    for _ in &index.ir().model.surfaces {
+    for _ in &index.ir().geometry.surfaces {
         let Some(carrier) = index.surfaces(current.as_str(), cadmpeg_ir::index::StandardIndex)
         else {
             return [None, None];
@@ -2424,7 +2424,7 @@ pub(super) fn intersection_side(
         .cloned();
     let lanes = if let (Some(surface_id), Some((uv, parameters))) = (&surface, uv) {
         let geometry = ir
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|candidate| &candidate.id == surface_id)
@@ -2571,10 +2571,11 @@ mod tests {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         let mut ir = CadIr::empty();
         let surface = SurfaceId::mint("test:model:surface#unknown").unwrap();
-        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+        ir.geometry.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: surface.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
         let mut policy = DecodePolicy::service();
@@ -2673,7 +2674,7 @@ mod tests {
             let mut ir = CadIr::empty();
             let surface = SurfaceId::mint("test:model:entity#nx:test:wide-coarse-surface")
                 .expect("identity grammar");
-            ir.model.surfaces.push(Surface {
+            ir.geometry.surfaces.push(Surface {
                 id: surface.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                     NurbsSurface::from_lanes(
@@ -2695,6 +2696,7 @@ mod tests {
                     .expect("finite wide surface"),
                 )),
                 source_object: None,
+                native_ref: None,
             });
             let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
             let geometry_budget =
@@ -2752,7 +2754,7 @@ mod tests {
                 &index,
                 &absent,
                 0,
-                &cadmpeg_test_support::service_decode_context()
+                &cadmpeg_core::decode::test_support::service_decode_context()
             )
             .unwrap(),
             [CoarseSampleCount::unknown(); 2]
@@ -2762,7 +2764,7 @@ mod tests {
                 &index,
                 &absent,
                 32,
-                &cadmpeg_test_support::service_decode_context()
+                &cadmpeg_core::decode::test_support::service_decode_context()
             )
             .unwrap(),
             [CoarseSampleCount::unknown(); 2]
@@ -2841,7 +2843,7 @@ mod tests {
         let support =
             SurfaceId::mint("test:model:entity#synthetic:hull-support").expect("identity grammar");
         let mut ir = CadIr::empty();
-        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+        ir.geometry.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: support.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::from_lanes(
@@ -2868,6 +2870,7 @@ mod tests {
                 .expect("valid rational hull support"),
             )),
             source_object: None,
+            native_ref: None,
         });
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
 
@@ -2897,7 +2900,7 @@ mod tests {
             )
             .expect("identity grammar");
             let mut ir = CadIr::empty();
-            ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+            ir.geometry.surfaces.push(cadmpeg_ir::geometry::Surface {
                 id: support.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                     NurbsSurface::from_lanes(
@@ -2923,16 +2926,18 @@ mod tests {
                     .expect("valid linear support"),
                 )),
                 source_object: None,
+                native_ref: None,
             });
-            ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+            ir.geometry.surfaces.push(cadmpeg_ir::geometry::Surface {
                 id: offset.clone(),
                 geometry: SurfaceGeometry::Procedural {
                     construction: construction.clone(),
                     cache: None,
                 },
                 source_object: None,
+                native_ref: None,
             });
-            ir.model
+            ir.geometry
                 .procedural_surfaces
                 .push(cadmpeg_ir::geometry::ProceduralSurface::new(
                     construction,
@@ -3026,7 +3031,7 @@ mod tests {
             // off-surface residual is then representable without adding it to 1.
             let mut near_zero = ir.clone();
             let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support)) =
-                &mut near_zero.model.surfaces[0].geometry
+                &mut near_zero.geometry.surfaces[0].geometry
             else {
                 panic!("the test support is a NURBS plane");
             };
@@ -3185,11 +3190,12 @@ mod tests {
             None => cylinder,
         };
         let mut ir = CadIr::empty();
-        ir.model.surfaces.extend([
+        ir.geometry.surfaces.extend([
             cadmpeg_ir::geometry::Surface {
                 id: support.clone(),
                 geometry: SurfaceGeometry::Solved(geometry),
                 source_object: None,
+                native_ref: None,
             },
             cadmpeg_ir::geometry::Surface {
                 id: offset.clone(),
@@ -3198,9 +3204,10 @@ mod tests {
                     cache: None,
                 },
                 source_object: None,
+                native_ref: None,
             },
         ]);
-        ir.model
+        ir.geometry
             .procedural_surfaces
             .push(cadmpeg_ir::geometry::ProceduralSurface::new(
                 construction,

@@ -165,7 +165,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
     let (expected_curve, expected_surface) = {
         let mut ir_edit = decoded.ir_mut();
         let curve = ir_edit
-            .model
+            .geometry
             .curves
             .iter_mut()
             .find_map(|curve| match &mut curve.geometry {
@@ -193,7 +193,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
             .unwrap();
         let expected_curve = curve.clone();
         let surface = ir_edit
-            .model
+            .geometry
             .surfaces
             .iter_mut()
             .find_map(|surface| match &mut surface.geometry {
@@ -282,15 +282,15 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert!(regenerated.ir().model.curves.iter().any(
+    assert!(regenerated.ir().geometry.curves.iter().any(
         |curve| matches!(&curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(value)) if value == &expected_curve)
     ));
-    assert!(regenerated.ir().model.surfaces.iter().any(
+    assert!(regenerated.ir().geometry.surfaces.iter().any(
         |surface| matches!(&surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(value)) if value == &expected_surface)
     ));
     assert!(regenerated
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .any(|surface| matches!(
@@ -331,8 +331,8 @@ fn native_patch_edits_points_without_dropping_untyped_surfaces() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let moved = decoded.ir_mut().model.points[1].position().get();
-    decoded.ir_mut().model.points[1].set_position(
+    let moved = decoded.ir_mut().geometry.points[1].position().get();
+    decoded.ir_mut().geometry.points[1].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             1_250.0, moved.y, moved.z,
         ))
@@ -352,12 +352,15 @@ fn native_patch_edits_points_without_dropping_untyped_surfaces() {
             .unwrap(),
     );
 
-    assert_eq!(regenerated.ir().model.points[1].position().get().x, 1_250.0);
+    assert_eq!(
+        regenerated.ir().geometry.points[1].position().get().x,
+        1_250.0
+    );
     assert!(matches!(
-        regenerated.ir().model.surfaces[0].geometry,
+        regenerated.ir().geometry.surfaces[0].geometry,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
     ));
-    assert_eq!(regenerated.ir().model.faces.len(), 1);
+    assert_eq!(regenerated.ir().geometry.faces.len(), 1);
     let written = regenerated
         .source_fidelity()
         .retained_record("sldprt:file:source-image#0")
@@ -395,14 +398,14 @@ fn native_patch_requires_point_provenance_annotation() {
         )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let point_id = decoded.ir().model.points[1].id.as_str().to_owned();
+    let point_id = decoded.ir().geometry.points[1].id.as_str().to_owned();
     assert!(decoded
         .source_fidelity()
         .annotations
         .provenance
         .contains_key(&point_id));
-    let moved = decoded.ir_mut().model.points[1].position().get();
-    decoded.ir_mut().model.points[1].set_position(
+    let moved = decoded.ir_mut().geometry.points[1].position().get();
+    decoded.ir_mut().geometry.points[1].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             1_250.0, moved.y, moved.z,
         ))
@@ -462,7 +465,7 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
     {
         let mut ir_edit = decoded.ir_mut();
         let plane = ir_edit
-            .model
+            .geometry
             .surfaces
             .iter_mut()
             .find(|surface| {
@@ -486,7 +489,7 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, *normal, *u_axis)
                 .unwrap();
         let line = ir_edit
-            .model
+            .geometry
             .curves
             .iter_mut()
             .find(|curve| {
@@ -518,7 +521,7 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert!(regenerated.ir().model.surfaces.iter().any(
+    assert!(regenerated.ir().geometry.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
         if {
             let origin = plane_surface.origin();
@@ -527,14 +530,14 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
     ));
     assert!(regenerated
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .any(|surface| matches!(
             surface.geometry,
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
         )));
-    assert!(regenerated.ir().model.curves.iter().any(
+    assert!(regenerated.ir().geometry.curves.iter().any(
         |curve| matches!(curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve))
         if {
             let origin = line_curve.origin().get();
@@ -690,7 +693,7 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
-        regenerated.ir().model.surfaces[0].geometry,
+        regenerated.ir().geometry.surfaces[0].geometry,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
     ));
     assert_eq!(
@@ -713,12 +716,12 @@ fn opaque_curve_is_retained_and_does_not_block_point_edits() {
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
 
-    let curve_id = decoded.ir().model.edges[0]
+    let curve_id = decoded.ir().geometry.edges[0]
         .curve()
         .expect("opaque edge curve");
     let curve = decoded
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id == *curve_id)
@@ -739,8 +742,8 @@ fn opaque_curve_is_retained_and_does_not_block_point_edits() {
         .iter()
         .any(|link| link.as_str() == curve.id.as_str()));
 
-    let moved = decoded.ir_mut().model.points[1].position().get();
-    decoded.ir_mut().model.points[1].set_position(
+    let moved = decoded.ir_mut().geometry.points[1].position().get();
+    decoded.ir_mut().geometry.points[1].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             1_500.0, moved.y, moved.z,
         ))
@@ -757,11 +760,19 @@ fn opaque_curve_is_retained_and_does_not_block_point_edits() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(regenerated.ir().model.points[1].position().get().x, 1_500.0);
-    assert!(regenerated.ir().model.curves.iter().any(|curve| matches!(
-        curve.geometry,
-        CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
-    )));
+    assert_eq!(
+        regenerated.ir().geometry.points[1].position().get().x,
+        1_500.0
+    );
+    assert!(regenerated
+        .ir()
+        .geometry
+        .curves
+        .iter()
+        .any(|curve| matches!(
+            curve.geometry,
+            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
+        )));
 }
 
 /// A Parasolid stream whose header states a body offset past the bytes the
@@ -820,8 +831,8 @@ fn native_patch_refuses_a_baseline_its_own_decoder_refuses() {
         )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let moved = decoded.ir_mut().model.points[1].position().get();
-    decoded.ir_mut().model.points[1].set_position(
+    let moved = decoded.ir_mut().geometry.points[1].position().get();
+    decoded.ir_mut().geometry.points[1].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             1_250.0, moved.y, moved.z,
         ))
@@ -887,26 +898,27 @@ fn partition_graph_comparison_includes_pcurve_geometry_and_face_colours() {
             .unwrap(),
         ),
         metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
+        native_ref: None,
     };
-    ir.model.pcurves.push(pcurve);
+    ir.geometry.pcurves.push(pcurve);
     let native = crate::brep::graph::Brep {
-        bodies: ir.model.bodies.clone(),
-        regions: ir.model.regions.clone(),
-        shells: ir.model.shells.clone(),
-        faces: ir.model.faces.clone(),
-        loops: ir.model.loops.clone(),
-        coedges: ir.model.coedges.clone(),
-        edges: ir.model.edges.clone(),
-        vertices: ir.model.vertices.clone(),
-        points: ir.model.points.clone(),
-        surfaces: ir.model.surfaces.clone(),
-        curves: ir.model.curves.clone(),
-        pcurves: ir.model.pcurves.clone(),
+        bodies: ir.geometry.bodies.clone(),
+        regions: ir.geometry.regions.clone(),
+        shells: ir.geometry.shells.clone(),
+        faces: ir.geometry.faces.clone(),
+        loops: ir.geometry.loops.clone(),
+        coedges: ir.geometry.coedges.clone(),
+        edges: ir.geometry.edges.clone(),
+        vertices: ir.geometry.vertices.clone(),
+        points: ir.geometry.points.clone(),
+        surfaces: ir.geometry.surfaces.clone(),
+        curves: ir.geometry.curves.clone(),
+        pcurves: ir.geometry.pcurves.clone(),
         ..crate::brep::graph::Brep::default()
     };
     assert!(super::same_graph(&ir, &native));
     let baseline = ir.clone();
-    ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
+    ir.geometry.pcurves[0].geometry = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
         cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
             cadmpeg_ir::math::Point2::new(2.0, 0.0),
             cadmpeg_ir::math::Point2::new(1.0, 0.0),
@@ -915,7 +927,8 @@ fn partition_graph_comparison_includes_pcurve_geometry_and_face_colours() {
     );
     assert!(!super::same_graph(&ir, &native));
     ir = baseline;
-    ir.model.faces[0].color = Some(cadmpeg_ir::topology::Color::new(0.2, 0.3, 0.4, 1.0).unwrap());
+    ir.geometry.faces[0].color =
+        Some(cadmpeg_ir::topology::Color::new(0.2, 0.3, 0.4, 1.0).unwrap());
     assert!(!super::same_graph(&ir, &native));
 }
 
@@ -938,14 +951,14 @@ fn native_partition_patch_refuses_changed_face_colours_and_pcurves() {
             .is_some()
     );
     let mut changed = decoded.ir().clone();
-    changed.model.faces[0].color =
+    changed.geometry.faces[0].color =
         Some(cadmpeg_ir::topology::Color::new(0.2, 0.3, 0.4, 1.0).unwrap());
     let error = super::patch_partition(&changed, annotations, &records, 0.001).unwrap_err();
     assert!(error
         .to_string()
         .contains("cannot write changed face colours"));
     changed = decoded.ir().clone();
-    if let Some(pcurve) = changed.model.pcurves.first_mut() {
+    if let Some(pcurve) = changed.geometry.pcurves.first_mut() {
         pcurve.geometry = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
             cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                 cadmpeg_ir::math::Point2::new(2.0, 0.0),
@@ -955,7 +968,7 @@ fn native_partition_patch_refuses_changed_face_colours_and_pcurves() {
         );
     } else {
         changed
-            .model
+            .geometry
             .pcurves
             .push(cadmpeg_ir::geometry::pcurve::Pcurve {
                 id: "test:model:pcurve#patch".try_into().unwrap(),
@@ -967,6 +980,7 @@ fn native_partition_patch_refuses_changed_face_colours_and_pcurves() {
                     .unwrap(),
                 ),
                 metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
+                native_ref: None,
             });
     }
     let error = super::patch_partition(&changed, annotations, &records, 0.001).unwrap_err();

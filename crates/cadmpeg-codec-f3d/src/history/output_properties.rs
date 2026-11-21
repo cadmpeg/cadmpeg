@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::history_records::{AsmHistoricalTopology, AsmHistoricalTransition};
+use crate::history_records::{AsmHistoricalPlane, AsmHistoricalTopology, AsmHistoricalTransition};
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_ir::features::{
     BodySelection, BooleanKind, BooleanOp, EdgeSelection, FaceSelection, FeatureId,
     FeatureOperation, SolidSweepOperation, SplitBodyTool, SweepShape,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use super::stable_ref;
 
@@ -41,80 +41,89 @@ pub(super) enum InsertedFaceClassification {
     Unclassifiable,
 }
 
+/// The surface rows of one historical topology, keyed by face and carrier.
+pub(super) struct FaceSurfaceIndex<'a> {
+    face_carriers: HashMap<i64, Vec<i64>>,
+    planes: HashMap<i64, Vec<&'a AsmHistoricalPlane>>,
+    curved_carriers: HashSet<i64>,
+}
+
+impl<'a> FaceSurfaceIndex<'a> {
+    pub(super) fn new(topology: &'a AsmHistoricalTopology) -> Self {
+        let mut face_carriers: HashMap<i64, Vec<i64>> = HashMap::new();
+        for binding in &topology.face_surfaces {
+            face_carriers
+                .entry(binding.entity)
+                .or_default()
+                .push(binding.carrier);
+        }
+        let mut planes: HashMap<i64, Vec<&'a AsmHistoricalPlane>> = HashMap::new();
+        for plane in &topology.surface_planes {
+            planes.entry(plane.surface).or_default().push(plane);
+        }
+        let curved_carriers = topology
+            .surface_cylinders
+            .iter()
+            .filter(|s| s.axis.unit().is_some() && s.radius > 0.0)
+            .map(|s| s.surface)
+            .chain(
+                topology
+                    .surface_axes
+                    .iter()
+                    .filter(|s| s.direction.unit().is_some())
+                    .map(|s| s.surface),
+            )
+            .chain(
+                topology
+                    .surface_radii
+                    .iter()
+                    .filter(|s| s.radius > 0.0 && s.radius.is_finite())
+                    .map(|s| s.surface),
+            )
+            .collect();
+        Self {
+            face_carriers,
+            planes,
+            curved_carriers,
+        }
+    }
+
+    /// The carrier of `face` when exactly one row binds it.
+    fn carrier(&self, face: i64) -> Option<i64> {
+        match self.face_carriers.get(&face)?.as_slice() {
+            [carrier] => Some(*carrier),
+            _ => None,
+        }
+    }
+}
+
 pub(super) fn classify_face_plane(
-    topology: &AsmHistoricalTopology,
+    surfaces: &FaceSurfaceIndex<'_>,
     face_id: i64,
 ) -> Option<(Point3, Vector3)> {
-    let mut bindings = topology
-        .face_surfaces
-        .iter()
-        .filter(|f| f.entity == face_id);
-    let fs = bindings.next()?;
-    if bindings.next().is_some() {
+    let carrier = surfaces.carrier(face_id)?;
+    let [sp] = surfaces.planes.get(&carrier)?.as_slice() else {
         return None;
-    }
-    let carrier = fs.carrier;
-    let mut planes = topology
-        .surface_planes
-        .iter()
-        .filter(|s| s.surface == carrier);
-    let has_cylinder = topology
-        .surface_cylinders
-        .iter()
-        .any(|s| s.surface == carrier && s.axis.unit().is_some() && s.radius > 0.0);
-    let has_axis = topology
-        .surface_axes
-        .iter()
-        .any(|s| s.surface == carrier && s.direction.unit().is_some());
-    let has_radius = topology
-        .surface_radii
-        .iter()
-        .any(|s| s.surface == carrier && s.radius > 0.0 && s.radius.is_finite());
-    let sp = planes.next()?;
-    if planes.next().is_some()
-        || has_cylinder
-        || has_axis
-        || has_radius
-        || sp.normal.unit().is_none()
-    {
+    };
+    if surfaces.curved_carriers.contains(&carrier) || sp.normal.unit().is_none() {
         return None;
     }
     Some((sp.origin, sp.normal))
 }
 
 pub(super) fn classify_inserted_face(
-    topology: &AsmHistoricalTopology,
+    surfaces: &FaceSurfaceIndex<'_>,
     transition: &AsmHistoricalTransition,
     face_id: i64,
 ) -> InsertedFaceClassification {
-    if let Some((origin, normal)) = classify_face_plane(topology, face_id) {
+    if let Some((origin, normal)) = classify_face_plane(surfaces, face_id) {
         return InsertedFaceClassification::Plane(origin, normal);
     }
-    let mut bindings = topology
-        .face_surfaces
-        .iter()
-        .filter(|f| f.entity == face_id);
-    let Some(fs) = bindings.next() else {
+    let Some(carrier) = surfaces.carrier(face_id) else {
         return InsertedFaceClassification::Unclassifiable;
     };
-    if bindings.next().is_some() {
-        return InsertedFaceClassification::Unclassifiable;
-    }
-    let carrier = fs.carrier;
-    let has_plane = topology.surface_planes.iter().any(|s| s.surface == carrier);
-    let has_cylinder = topology
-        .surface_cylinders
-        .iter()
-        .any(|s| s.surface == carrier && s.axis.unit().is_some() && s.radius > 0.0);
-    let has_axis = topology
-        .surface_axes
-        .iter()
-        .any(|s| s.surface == carrier && s.direction.unit().is_some());
-    let has_radius = topology
-        .surface_radii
-        .iter()
-        .any(|s| s.surface == carrier && s.radius > 0.0 && s.radius.is_finite());
-    let is_non_planar = has_cylinder || has_axis || has_radius;
+    let has_plane = surfaces.planes.contains_key(&carrier);
+    let is_non_planar = surfaces.curved_carriers.contains(&carrier);
     if !has_plane && is_non_planar && !transition.topology.surfaces.inserted.contains(&carrier) {
         InsertedFaceClassification::NonPlanar
     } else {
@@ -397,6 +406,7 @@ pub(super) fn feature_consumes_tool_body(
         operands,
         op: BooleanKind::Join,
         keep_tools: false,
+        ..
     } = op_ref
     {
         if resolved_body_selection_slots(operands.target()).as_deref() == Some(&[host])
@@ -488,3 +498,6 @@ pub(super) fn collect_edge_midpoint_slots(
     }
     (slots, has_unresolved)
 }
+
+#[cfg(test)]
+mod tests;

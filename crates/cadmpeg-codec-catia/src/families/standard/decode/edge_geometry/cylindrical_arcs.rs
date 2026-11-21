@@ -25,7 +25,7 @@ pub(in crate::families::standard::decode) fn ranges(
 ) -> BTreeMap<usize, Option<[f64; 2]>> {
     let mut recovered = BTreeMap::<usize, Option<[f64; 2]>>::new();
     for (face, topology) in topology.faces().iter().enumerate() {
-        let surface = &ir.model.surfaces[surface_indices[&bindings[face].0]].geometry;
+        let surface = &ir.geometry.surfaces[surface_indices[&bindings[face].0]].geometry;
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) = surface else {
             continue;
         };
@@ -53,8 +53,8 @@ pub(in crate::families::standard::decode) fn ranges(
             continue;
         }
         let (target, witness, range) = match [
-            ir.model.edges[first].param_range(),
-            ir.model.edges[second].param_range(),
+            ir.geometry.edges[first].param_range(),
+            ir.geometry.edges[second].param_range(),
         ] {
             [None, Some(range)] => (first, second, range.get()),
             [Some(range), None] => (second, first, range.get()),
@@ -64,8 +64,8 @@ pub(in crate::families::standard::decode) fn ranges(
             continue;
         }
         let circle = |edge: usize| {
-            let curve = ir.model.edges[edge].curve()?;
-            let geometry = &ir.model.curves[*curve_indices.get(curve)?].geometry;
+            let curve = ir.geometry.edges[edge].curve()?;
+            let geometry = &ir.geometry.curves[*curve_indices.get(curve)?].geometry;
             let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) = geometry else {
                 return None;
             };

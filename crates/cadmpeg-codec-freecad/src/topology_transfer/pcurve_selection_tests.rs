@@ -76,14 +76,14 @@ fn decode_pcurves(locations: &str, representations: &str) -> DecodeResult {
 fn selected_origins(result: &DecodeResult) -> Vec<f64> {
     result
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .map(|coedge| {
             let reference = &coedge.pcurves[0];
             let pcurve = result
                 .ir()
-                .model
+                .geometry
                 .pcurves
                 .iter()
                 .find(|pcurve| pcurve.id == reference.pcurve)
@@ -105,7 +105,7 @@ fn later_matching_pcurve_replaces_curve_and_range() {
     ] {
         let result = decode_pcurves("Locations 0", representations);
         assert_eq!(selected_origins(&result), [origin, origin]);
-        for coedge in &result.ir().model.coedges {
+        for coedge in &result.ir().geometry.coedges {
             assert_eq!(
                 coedge.pcurves[0].parameter_range.unwrap().endpoints(),
                 range,
@@ -131,14 +131,14 @@ fn distinct_location_references_with_equal_transforms_report_ambiguity() {
         "Locations 2\n1\n1 0 0 0\n0 1 0 0\n0 0 1 0\n2\n1 1 0",
     ] {
         let result = decode_pcurves(locations, "2 1 1 1 0 1 2 2 1 2 0 1");
-        assert_eq!(result.ir().model.edges.len(), 1);
+        assert_eq!(result.ir().geometry.edges.len(), 1);
         assert!(result
             .ir()
-            .model
+            .geometry
             .coedges
             .iter()
             .all(|coedge| coedge.pcurves.is_empty()));
-        assert!(result.ir().model.pcurves.is_empty());
+        assert!(result.ir().geometry.pcurves.is_empty());
         assert!(result.report().losses.iter().any(|loss| {
             loss.code.local_code() == "pcurve.location-ambiguous"
                 && loss.severity == Severity::Blocking
@@ -172,7 +172,7 @@ fn canonical_location_aliases_select_last_exact_chain_and_ignore_equal_matrices(
             .any(|loss| loss.code.local_code() == "pcurve.location-ambiguous"));
         assert!(result
             .ir()
-            .model
+            .geometry
             .coedges
             .iter()
             .all(|coedge| coedge.pcurves[0].parameter_range.unwrap().endpoints() == [2.0, 5.0]));
@@ -218,9 +218,9 @@ Co 1001000 +2 1 +2 {second_location} *
 +1 0 *"
         );
         let result = decode_shapes(&[("Shape", brep)]);
-        assert_eq!(result.ir().model.edges.len(), expected_edges);
-        assert_eq!(result.ir().model.vertices.len(), 2 * expected_edges);
-        assert_eq!(result.ir().model.points.len(), 2 * expected_edges);
+        assert_eq!(result.ir().geometry.edges.len(), expected_edges);
+        assert_eq!(result.ir().geometry.vertices.len(), 2 * expected_edges);
+        assert_eq!(result.ir().geometry.points.len(), 2 * expected_edges);
     }
 }
 
@@ -246,13 +246,13 @@ fn bounded_location_expansion_withholds_only_its_payload_before_topology_mutatio
     let tables = crate::brep::Tables::from_payload(bounded).unwrap();
     assert_eq!(tables.locations.len(), 4);
     assert_eq!(tables.tshapes.len(), 5);
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.edges.len(), 1);
-    assert_eq!(result.ir().model.vertices.len(), 2);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_eq!(result.ir().geometry.edges.len(), 1);
+    assert_eq!(result.ir().geometry.vertices.len(), 2);
     assert!(result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .all(|face| face.id.as_str().contains("Complete")));
@@ -266,7 +266,7 @@ fn bounded_location_expansion_withholds_only_its_payload_before_topology_mutatio
         ));
     assert!(result
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .all(|coedge| !coedge.pcurves.is_empty()));

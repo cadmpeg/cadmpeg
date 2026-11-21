@@ -76,7 +76,7 @@ fn step_export_loss_codes(source: &Path, written: &Path, report: &Path) -> Vec<S
         .as_array()
         .unwrap()
         .iter()
-        .map(|loss| loss["code"]["code"].as_str().unwrap().to_owned())
+        .map(|loss| loss["code"]["value"]["code"].as_str().unwrap().to_owned())
         .collect()
 }
 
@@ -213,9 +213,9 @@ fn geometry_diff_detects_a_moved_signature_body() {
 /// whose faces lie on procedural carriers without an admitted cache
 /// (`Sweep`) has no comparable quantity, datum bodies with no vertex
 /// (`DatumPlane`, `DatumCoordinateSystem`) compare by a signature that does
-/// not depend on position, and occurrences that place bodies
-/// (`core_design_product`) keep the verdict inconclusive. A document with
-/// none of these (`geometry_topology`) agrees with itself.
+/// not depend on position. A document whose occurrences place bodies
+/// (`core_design_product`) compares its instances and agrees with itself, as
+/// does a document with none of these (`geometry_topology`).
 #[cfg(feature = "fcstd")]
 #[test]
 fn geometry_diff_self_comparison() {
@@ -228,12 +228,7 @@ fn geometry_diff_self_comparison() {
             &["compare.unmeasured-body", "compare.signature-unplaced"][..],
         ),
         ("geometry_topology.FCStd", "agree", &[][..], &[][..]),
-        (
-            "core_design_product.FCStd",
-            "inconclusive",
-            &[][..],
-            &["compare.occurrence-placement"][..],
-        ),
+        ("core_design_product.FCStd", "agree", &[][..], &[][..]),
     ] {
         let path = corpus.join(file);
         let (code, report) = geometry_json(path.to_str().unwrap(), path.to_str().unwrap());

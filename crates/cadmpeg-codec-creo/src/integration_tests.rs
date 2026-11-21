@@ -15,6 +15,7 @@ use crate::test_support::visibgeom_payload;
 use cadmpeg_core::container::ContainerRole;
 
 use std::io::Cursor;
+use std::sync::LazyLock;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
@@ -43,6 +44,14 @@ fn assert_valid(result: &EditableDecodeResult) {
     assert!(validation.is_ok(), "{validation:#?}");
     assert!(result.ir().native.namespace("creo").is_some());
 }
+
+static NIST_CTC_01: LazyLock<EditableDecodeResult> = LazyLock::new(|| {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/nist-pmi/creo/nist_ctc_01_asme1_rd_cr10030.prt.5");
+    let result = decode(std::fs::read(path).expect("read NIST CTC-01 Creo part"));
+    assert_valid(&result);
+    result
+});
 
 fn closed_plane_brep() -> Vec<u8> {
     let mut payload = b"srf_array\0\xf8\x04".to_vec();
@@ -114,7 +123,7 @@ fn visible_geometry_pipeline_places_a_complete_analytic_prototype() {
 
     let result = decode(build_prt("integration", &[("ND:0:VisibGeom:0", payload)]));
     assert!(result.report().geometry_transferred());
-    assert!(result.ir().model.surfaces.iter().any(|surface| {
+    assert!(result.ir().geometry.surfaces.iter().any(|surface| {
         matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
         if {
             let radius = cylinder_surface.radius().get();
@@ -126,17 +135,15 @@ fn visible_geometry_pipeline_places_a_complete_analytic_prototype() {
 
 #[test]
 fn nist_ctc_01_surface_frames_and_boundary_vertex_match_source() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corpus/nist-pmi/creo/nist_ctc_01_asme1_rd_cr10030.prt.5");
-    let result = decode(std::fs::read(path).expect("read NIST CTC-01 Creo part"));
-    let model = &result.ir().model;
-    let face = model
+    let result = &*NIST_CTC_01;
+    let geometry = &result.ir().geometry;
+    let face = geometry
         .faces
         .iter()
         .find(|face| face.id.as_str() == "creo:visibgeom:face#210")
         .expect("cylindrical source face 210");
     assert_eq!(face.surface.as_str(), "creo:visibgeom:surface#210");
-    let boundary = model
+    let boundary = geometry
         .loops
         .iter()
         .find(|lp| face.loops.contains(&lp.id))
@@ -156,22 +163,31 @@ fn nist_ctc_01_surface_frames_and_boundary_vertex_match_source() {
     );
     let mut directed_vertices = Vec::new();
     for coedge_id in coedges {
-        let coedge = model
+        let coedge = geometry
             .coedges
             .iter()
             .find(|coedge| &coedge.id == coedge_id)
             .expect("boundary coedge");
-        let edge = model
+        let edge = geometry
             .edges
             .iter()
             .find(|edge| edge.id == coedge.edge)
             .expect("boundary edge");
-        for vertex in [&edge.start, &edge.end] {
-            assert!(model.vertices.iter().any(|item| &item.id == vertex));
+        for vertex in [
+            &edge.ends.as_ref().unwrap().start,
+            &edge.ends.as_ref().unwrap().end,
+        ] {
+            assert!(geometry.vertices.iter().any(|item| &item.id == vertex));
         }
         directed_vertices.push(match coedge.sense {
-            cadmpeg_ir::topology::Sense::Forward => (&edge.start, &edge.end),
-            cadmpeg_ir::topology::Sense::Reversed => (&edge.end, &edge.start),
+            cadmpeg_ir::topology::Sense::Forward => (
+                &edge.ends.as_ref().unwrap().start,
+                &edge.ends.as_ref().unwrap().end,
+            ),
+            cadmpeg_ir::topology::Sense::Reversed => (
+                &edge.ends.as_ref().unwrap().end,
+                &edge.ends.as_ref().unwrap().start,
+            ),
         });
     }
     for index in 0..directed_vertices.len() {
@@ -180,7 +196,7 @@ fn nist_ctc_01_surface_frames_and_boundary_vertex_match_source() {
             directed_vertices[(index + 1) % directed_vertices.len()].0
         );
     }
-    let surface = model
+    let surface = geometry
         .surfaces
         .iter()
         .find(|surface| surface.id == face.surface)
@@ -196,7 +212,7 @@ fn nist_ctc_01_surface_frames_and_boundary_vertex_match_source() {
     assert!((cylinder.radius().get() - 17.5).abs() < 1.0e-9);
     let surface = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#1043")
@@ -220,7 +236,7 @@ fn nist_ctc_01_surface_frames_and_boundary_vertex_match_source() {
     }
     let surface = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#2283")
@@ -238,7 +254,7 @@ fn nist_ctc_01_surface_frames_and_boundary_vertex_match_source() {
     assert!((cylinder.radius().get() - 5.0).abs() < 1.0e-9);
     let surface = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#2169")
@@ -261,7 +277,7 @@ fn nist_ctc_01_surface_frames_and_boundary_vertex_match_source() {
     }
     let surface = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#2256")
@@ -278,13 +294,13 @@ fn nist_ctc_01_surface_frames_and_boundary_vertex_match_source() {
     assert!((origin[1] + 100.0 / 3.0_f64.sqrt()).abs() < 1.0e-9);
     assert!(result
         .ir()
-        .model
+        .geometry
         .vertices
         .iter()
         .any(|vertex| vertex.id.as_str() == "creo:visibgeom:vertex#170"));
     let point = result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .find(|point| point.id.as_str() == "creo:visibgeom:point#170")
@@ -298,7 +314,7 @@ fn nist_ctc_01_surface_frames_and_boundary_vertex_match_source() {
     }
     let surface = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#238")
@@ -315,15 +331,15 @@ fn nist_ctc_01_surface_frames_and_boundary_vertex_match_source() {
 #[test]
 fn topology_pipeline_reconstructs_a_closed_plane_intersection_solid() {
     let result = decode(closed_plane_brep());
-    assert_eq!(result.ir().model.points.len(), 4);
-    assert_eq!(result.ir().model.vertices.len(), 4);
-    assert_eq!(result.ir().model.edges.len(), 6);
-    assert_eq!(result.ir().model.faces.len(), 4);
-    assert_eq!(result.ir().model.coedges.len(), 12);
-    assert_eq!(result.ir().model.pcurves.len(), 12);
-    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 4);
+    assert_eq!(result.ir().geometry.vertices.len(), 4);
+    assert_eq!(result.ir().geometry.edges.len(), 6);
+    assert_eq!(result.ir().geometry.faces.len(), 4);
+    assert_eq!(result.ir().geometry.coedges.len(), 12);
+    assert_eq!(result.ir().geometry.pcurves.len(), 12);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
     assert_eq!(
-        result.ir().model.bodies[0].kind,
+        result.ir().geometry.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Solid
     );
     assert_valid(&result);
@@ -357,15 +373,16 @@ fn rotation_plane_pipeline_shares_boundary_and_origin_admission() {
         payload.push(0xe3);
         payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
         let result = decode(build_prt("integration", &[("VisibGeom", payload)]));
-        let plane = result
-            .ir()
-            .model
-            .surfaces
-            .iter()
-            .find_map(|surface| match &surface.geometry {
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) => Some(plane),
-                _ => None,
-            });
+        let plane =
+            result
+                .ir()
+                .geometry
+                .surfaces
+                .iter()
+                .find_map(|surface| match &surface.geometry {
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) => Some(plane),
+                    _ => None,
+                });
         if trailing_scalar {
             assert!(plane.is_none());
             assert!(result.report().losses.iter().any(|loss| {
@@ -402,7 +419,7 @@ fn plane_carrier_report_excludes_untransferred_rows() {
         let result = decode(input);
         let transferred = result
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .filter(|surface| {
@@ -463,7 +480,7 @@ fn datum_pipeline_merges_placed_geometry_with_ordered_feature_history() {
         datum_feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumPlane { .. })
     ));
-    assert!(result.ir().model.surfaces.iter().any(|surface| {
+    assert!(result.ir().geometry.surfaces.iter().any(|surface| {
         matches!(
             surface.geometry,
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
@@ -559,7 +576,7 @@ fn container_only_pipeline_preserves_geometry_thumbnail_and_design_sections() {
     );
     assert!(result.report().container_only());
     assert!(!result.report().geometry_transferred());
-    assert!(result.ir().model.surfaces.is_empty());
+    assert!(result.ir().geometry.surfaces.is_empty());
     assert!(result.ir().model.features.is_empty());
     assert_eq!(result.ir().native_unknowns("creo").unwrap().len(), 2);
     assert!(!result.source_fidelity().retained_records().is_empty());
@@ -614,7 +631,7 @@ fn rotation_cylinder_pipeline_requires_the_stored_envelope_and_radius() {
         ));
         let cylinders = result
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .filter_map(|surface| match &surface.geometry {
@@ -624,7 +641,7 @@ fn rotation_cylinder_pipeline_requires_the_stored_envelope_and_radius() {
                 _ => None,
             })
             .collect::<Vec<_>>();
-        assert!(result.ir().model.surfaces.iter().any(|surface| {
+        assert!(result.ir().geometry.surfaces.iter().any(|surface| {
             surface.id.as_str() == "creo:visibgeom:surface#8"
                 && matches!(&surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane))
                     if plane.origin().get() == cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))
@@ -715,7 +732,7 @@ fn compact_rotation_cylinder_decode_and_validation_share_admission() {
                 for id in [9, 11] {
                     let cylinder = result
                         .ir()
-                        .model
+                        .geometry
                         .surfaces
                         .iter()
                         .find_map(|surface| {
@@ -738,7 +755,7 @@ fn compact_rotation_cylinder_decode_and_validation_share_admission() {
                     loss.code == crate::loss::CreoLossCode::CylinderRotationFrameUnresolved.kind()
                 }));
                 for id in [9, 11] {
-                    assert!(!result.ir().model.surfaces.iter().any(|surface| {
+                    assert!(!result.ir().geometry.surfaces.iter().any(|surface| {
                         surface.id.as_str() == format!("creo:{namespace}:surface#{id}")
                             && matches!(
                                 surface.geometry,
@@ -760,7 +777,7 @@ fn compact_rotation_cylinder_decode_and_validation_share_admission() {
     assert_valid(&result);
     let cylinder = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find_map(|surface| {
@@ -900,7 +917,7 @@ fn floating_cylinder_instances_share_bounded_frame_admission() {
                 "visibgeom"
             };
             for id in [9, 11] {
-                let cylinder = result.ir().model.surfaces.iter().find_map(|surface| {
+                let cylinder = result.ir().geometry.surfaces.iter().find_map(|surface| {
                     if surface.id.as_str() == format!("creo:{namespace}:surface#{id}") {
                         if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) =
                             &surface.geometry
@@ -973,7 +990,7 @@ fn subunit_rotation_pipeline_uses_the_shared_frame_gate() {
         );
         let active_plane = result
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| surface.id.as_str() == "creo:actdatums:surface#9");
@@ -993,7 +1010,7 @@ fn subunit_rotation_pipeline_uses_the_shared_frame_gate() {
         }
         let surface = result
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|s| s.id.as_str() == "creo:visibgeom:surface#7");
@@ -1030,7 +1047,7 @@ fn subunit_rotation_pipeline_uses_the_shared_frame_gate() {
         assert_valid(&result);
         let surface = result
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|s| s.id.as_str() == "creo:visibgeom:surface#7");
@@ -1107,7 +1124,7 @@ fn angular_wall_chart_pipeline_requires_a_complete_rotation() {
         }
         payload.extend_from_slice(b"\xe3crv_array\0\xf3\xf8\0");
         let result = decode(build_prt("integration", &[("ND:0:VisibGeom:0", payload)]));
-        let plane = result.ir().model.surfaces.iter().find_map(|surface| {
+        let plane = result.ir().geometry.surfaces.iter().find_map(|surface| {
             if surface.id.as_str() != "creo:visibgeom:surface#9" {
                 return None;
             }
@@ -1207,7 +1224,7 @@ fn angular_wall_envelope_arbitrates_between_rotation_and_support_frame() {
         payload.extend_from_slice(b"\xe3crv_array\0\xf3\xf8\0");
         let result = decode(build_prt("integration", &[("ND:0:VisibGeom:0", payload)]));
         assert_valid(&result);
-        let plane = result.ir().model.surfaces.iter().find_map(|surface| {
+        let plane = result.ir().geometry.surfaces.iter().find_map(|surface| {
             if surface.id.as_str() != "creo:visibgeom:surface#9" {
                 return None;
             }
@@ -1325,7 +1342,7 @@ fn positive_lower_bend_pipeline_reconciles_named_and_inline_carriers() {
             ));
             let cylinders = result
                 .ir()
-                .model
+                .geometry
                 .surfaces
                 .iter()
                 .filter_map(|surface| match &surface.geometry {
@@ -1374,10 +1391,8 @@ fn positive_lower_bend_pipeline_reconciles_named_and_inline_carriers() {
 }
 #[test]
 fn nist_ctc_01_rounded_hexagon_has_oblique_cylinder_intersection() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corpus/nist-pmi/creo/nist_ctc_01_asme1_rd_cr10030.prt.5");
-    let result = decode(std::fs::read(path).expect("read NIST CTC-01 Creo part"));
-    let model = &result.ir().model;
+    let result = &*NIST_CTC_01;
+    let geometry = &result.ir().geometry;
     for (curve_id, faces) in [
         (2445, [2283, 2308]),
         (2446, [2308, 2303]),
@@ -1386,7 +1401,7 @@ fn nist_ctc_01_rounded_hexagon_has_oblique_cylinder_intersection() {
         (2449, [2288, 2283]),
         (2450, [2293, 2288]),
     ] {
-        let curve = model
+        let curve = geometry
             .curves
             .iter()
             .find(|curve| curve.id.as_str() == format!("creo:visibgeom:curve#{curve_id}"))
@@ -1398,26 +1413,23 @@ fn nist_ctc_01_rounded_hexagon_has_oblique_cylinder_intersection() {
             )
         ));
         for face in faces {
-            assert!(model
+            assert!(geometry
                 .faces
                 .iter()
                 .any(|item| item.id.as_str() == format!("creo:visibgeom:face#{face}")));
-            assert!(model
+            assert!(geometry
                 .pcurves
                 .iter()
                 .any(|pcurve| pcurve.id.as_str()
                     == format!("creo:visibgeom:pcurve#{curve_id}:{face}")));
         }
     }
-    assert_valid(&result);
 }
 
 #[test]
 fn nist_ctc_01_cylinder_intersections_have_surface_curves() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corpus/nist-pmi/creo/nist_ctc_01_asme1_rd_cr10030.prt.5");
-    let result = decode(std::fs::read(path).expect("read NIST CTC-01 Creo part"));
-    let model = &result.ir().model;
+    let result = &*NIST_CTC_01;
+    let geometry = &result.ir().geometry;
     for (curve_id, face_id) in [
         (1797, 1053),
         (1800, 1058),
@@ -1432,7 +1444,7 @@ fn nist_ctc_01_cylinder_intersections_have_surface_curves() {
         (1805, 1272),
         (1805, 1292),
     ] {
-        let curve = model
+        let curve = geometry
             .curves
             .iter()
             .find(|curve| curve.id.as_str() == format!("creo:visibgeom:curve#{curve_id}"))
@@ -1443,11 +1455,11 @@ fn nist_ctc_01_cylinder_intersections_have_surface_curves() {
                 cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(_)
             )
         ));
-        assert!(model
+        assert!(geometry
             .faces
             .iter()
             .any(|face| { face.id.as_str() == format!("creo:visibgeom:face#{face_id}") }));
-        let pcurve = model
+        let pcurve = geometry
             .pcurves
             .iter()
             .find(|pcurve| {
@@ -1459,17 +1471,14 @@ fn nist_ctc_01_cylinder_intersections_have_surface_curves() {
             cadmpeg_ir::geometry::pcurve::PcurveGeometry::PolarNurbs { .. }
         ));
     }
-    assert_valid(&result);
 }
 
 #[test]
 fn nist_ctc_01_cone_seams_follow_the_stored_generators() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corpus/nist-pmi/creo/nist_ctc_01_asme1_rd_cr10030.prt.5");
-    let result = decode(std::fs::read(path).expect("read NIST CTC-01 Creo part"));
-    let model = &result.ir().model;
+    let result = &*NIST_CTC_01;
+    let geometry = &result.ir().geometry;
     for (curve_id, faces) in [(2146, [2151, 2169]), (2187, [2192, 2210])] {
-        let curve = model
+        let curve = geometry
             .curves
             .iter()
             .find(|curve| curve.id.as_str() == format!("creo:visibgeom:curve#{curve_id}"))
@@ -1481,24 +1490,21 @@ fn nist_ctc_01_cone_seams_follow_the_stored_generators() {
             )
         ));
         for face_id in faces {
-            assert!(model
+            assert!(geometry
                 .faces
                 .iter()
                 .any(|face| face.id.as_str() == format!("creo:visibgeom:face#{face_id}")));
-            assert!(model.pcurves.iter().any(|pcurve| pcurve.id.as_str()
+            assert!(geometry.pcurves.iter().any(|pcurve| pcurve.id.as_str()
                 == format!("creo:visibgeom:pcurve#{curve_id}:{face_id}")));
         }
     }
-    assert_valid(&result);
 }
 
 #[test]
 fn nist_ctc_01_top_plane_keeps_its_boundary_and_holes() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corpus/nist-pmi/creo/nist_ctc_01_asme1_rd_cr10030.prt.5");
-    let result = decode(std::fs::read(path).expect("read NIST CTC-01 Creo part"));
-    let model = &result.ir().model;
-    let surface = model
+    let result = &*NIST_CTC_01;
+    let geometry = &result.ir().geometry;
+    let surface = geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#2298")
@@ -1507,19 +1513,19 @@ fn nist_ctc_01_top_plane_keeps_its_boundary_and_holes() {
         surface.geometry,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
     ));
-    let face = model
+    let face = geometry
         .faces
         .iter()
         .find(|face| face.id.as_str() == "creo:visibgeom:face#106")
         .expect("top plane");
     assert_eq!(face.loops.iter().count(), 12);
-    let outer = model
+    let outer = geometry
         .loops
         .iter()
         .find(|lp| lp.id.as_str() == "creo:visibgeom:loop#106")
         .expect("top boundary");
     assert_eq!(outer.coedges().len(), 44);
-    let point = model
+    let point = geometry
         .points
         .iter()
         .find(|point| point.id.as_str() == "creo:visibgeom:point#172")
@@ -1529,37 +1535,31 @@ fn nist_ctc_01_top_plane_keeps_its_boundary_and_holes() {
     assert!(point.x.abs() < 1.0e-9);
     assert!((point.y - 110.0 / 3.0_f64.sqrt()).abs() < 1.0e-9);
     assert!(point.z.abs() < 1.0e-9);
-    assert_valid(&result);
 }
 
 #[test]
 fn nist_ctc_01_end_face_keeps_its_cut_boundaries() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corpus/nist-pmi/creo/nist_ctc_01_asme1_rd_cr10030.prt.5");
-    let result = decode(std::fs::read(path).expect("read NIST CTC-01 Creo part"));
-    let model = &result.ir().model;
-    let face = model
+    let result = &*NIST_CTC_01;
+    let geometry = &result.ir().geometry;
+    let face = geometry
         .faces
         .iter()
         .find(|face| face.id.as_str() == "creo:visibgeom:face#254")
         .expect("end plane");
     assert_eq!(face.loops.iter().count(), 3);
     for face_id in [3741, 3743, 3745, 3765] {
-        assert!(model
+        assert!(geometry
             .faces
             .iter()
             .any(|face| face.id.as_str() == format!("creo:visibgeom:face#{face_id}")));
     }
-    assert_valid(&result);
 }
 
 #[test]
 fn nist_ctc_01_planar_face_keeps_both_bores() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corpus/nist-pmi/creo/nist_ctc_01_asme1_rd_cr10030.prt.5");
-    let result = decode(std::fs::read(path).expect("read NIST CTC-01 Creo part"));
-    let model = &result.ir().model;
-    let face = model
+    let result = &*NIST_CTC_01;
+    let geometry = &result.ir().geometry;
+    let face = geometry
         .faces
         .iter()
         .find(|face| face.id.as_str() == "creo:visibgeom:face#240")
@@ -1570,13 +1570,13 @@ fn nist_ctc_01_planar_face_keeps_both_bores() {
         .loops
         .iter()
         .flat_map(|loop_id| {
-            let lp = model
+            let lp = geometry
                 .loops
                 .iter()
                 .find(|lp| &lp.id == loop_id)
                 .expect("loop");
             lp.coedges().iter().map(|coedge_id| {
-                &model
+                &geometry
                     .coedges
                     .iter()
                     .find(|coedge| &coedge.id == coedge_id)
@@ -1591,7 +1591,7 @@ fn nist_ctc_01_planar_face_keeps_both_bores() {
             .any(|id| id.as_str() == format!("creo:visibgeom:edge#{edge}")));
     }
     for (curve_id, x) in [(2177, -30.0), (2218, 30.0)] {
-        let curve = model
+        let curve = geometry
             .curves
             .iter()
             .find(|curve| curve.id.as_str() == format!("creo:visibgeom:curve#{curve_id}"))
@@ -1608,22 +1608,19 @@ fn nist_ctc_01_planar_face_keeps_both_bores() {
         }
         assert!((circle.radius().get() - 10.0).abs() < 1.0e-9);
     }
-    assert_valid(&result);
 }
 
 #[test]
 fn nist_ctc_01_boundary_planes_keep_step_orientation() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corpus/nist-pmi/creo/nist_ctc_01_asme1_rd_cr10030.prt.5");
-    let result = decode(std::fs::read(path).expect("read NIST CTC-01 Creo part"));
-    let model = &result.ir().model;
+    let result = &*NIST_CTC_01;
+    let geometry = &result.ir().geometry;
     for id in [228, 252] {
-        let face = model
+        let face = geometry
             .faces
             .iter()
             .find(|face| face.id.as_str() == format!("creo:visibgeom:face#{id}"))
             .expect("boundary face");
-        let surface = model
+        let surface = geometry
             .surfaces
             .iter()
             .find(|surface| surface.id == face.surface)
@@ -1643,23 +1640,20 @@ fn nist_ctc_01_boundary_planes_keep_step_orientation() {
         assert!((oriented.y + 1.0).abs() < 1.0e-12);
         assert!((oriented.z).abs() < 1.0e-12);
     }
-    assert_valid(&result);
 }
 
 #[test]
 fn nist_ctc_01_cut_caps_keep_disjoint_boundaries() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corpus/nist-pmi/creo/nist_ctc_01_asme1_rd_cr10030.prt.5");
-    let result = decode(std::fs::read(path).expect("read NIST CTC-01 Creo part"));
-    let model = &result.ir().model;
-    let faces: Vec<_> = model
+    let result = &*NIST_CTC_01;
+    let geometry = &result.ir().geometry;
+    let faces: Vec<_> = geometry
         .faces
         .iter()
         .filter(|face| face.surface.as_str() == "creo:visibgeom:surface#3682")
         .collect();
     assert_eq!(faces.len(), 2);
     for (outer, edge_count) in [(3683, 12), (3695, 20)] {
-        let lp = model
+        let lp = geometry
             .loops
             .iter()
             .find(|lp| {
@@ -1667,7 +1661,7 @@ fn nist_ctc_01_cut_caps_keep_disjoint_boundaries() {
                     .iter()
                     .any(|face| face.loops.iter().any(|id| id == &lp.id))
                     && lp.coedges().iter().any(|id| {
-                        model.coedges.iter().any(|coedge| {
+                        geometry.coedges.iter().any(|coedge| {
                             &coedge.id == id
                                 && coedge.edge.as_str() == format!("creo:visibgeom:edge#{outer}")
                         })
@@ -1676,16 +1670,13 @@ fn nist_ctc_01_cut_caps_keep_disjoint_boundaries() {
             .expect("cut cap loop");
         assert_eq!(lp.coedges().len(), edge_count);
     }
-    assert_valid(&result);
 }
 
 #[test]
 fn nist_ctc_01_disjoint_planar_regions_keep_their_bores() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corpus/nist-pmi/creo/nist_ctc_01_asme1_rd_cr10030.prt.5");
-    let result = decode(std::fs::read(path).expect("read NIST CTC-01 Creo part"));
-    let model = &result.ir().model;
-    let faces: Vec<_> = model
+    let result = &*NIST_CTC_01;
+    let geometry = &result.ir().geometry;
+    let faces: Vec<_> = geometry
         .faces
         .iter()
         .filter(|face| face.surface.as_str() == "creo:visibgeom:surface#158")
@@ -1699,13 +1690,13 @@ fn nist_ctc_01_disjoint_planar_regions_keep_their_bores() {
                     .loops
                     .iter()
                     .flat_map(|loop_id| {
-                        let lp = model
+                        let lp = geometry
                             .loops
                             .iter()
                             .find(|lp| &lp.id == loop_id)
                             .expect("face loop");
                         lp.coedges().iter().map(|coedge_id| {
-                            &model
+                            &geometry
                                 .coedges
                                 .iter()
                                 .find(|coedge| &coedge.id == coedge_id)
@@ -1737,13 +1728,11 @@ fn nist_ctc_01_closed_solid_volume_accounts_for_native_blind_cut() {
     const NATIVE_CUT_DEPTH_MM: f64 = 2.0;
     const FEATURE_LENGTH_TOLERANCE_MM: f64 = 1.0e-12;
 
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corpus/nist-pmi/creo/nist_ctc_01_asme1_rd_cr10030.prt.5");
-    let result = decode(std::fs::read(path).expect("read NIST CTC-01 Creo part"));
+    let result = &*NIST_CTC_01;
     assert!(result.report().geometry_transferred());
 
     let ir = result.ir();
-    let [body] = ir.model.bodies.as_slice() else {
+    let [body] = ir.geometry.bodies.as_slice() else {
         panic!("one native body");
     };
     assert!(matches!(&body.kind, BodyKind::Solid));
@@ -1765,24 +1754,12 @@ fn nist_ctc_01_closed_solid_volume_accounts_for_native_blind_cut() {
     assert_eq!(unowned_surface_losses.len(), UNOWNED_SOURCE_FACES.len());
     for face_id in UNOWNED_SOURCE_FACES {
         let face_identity = format!("creo:visibgeom:face#{face_id}");
-        for region_id in &body.regions {
-            let region = ir
-                .model
-                .regions
-                .iter()
-                .find(|region| &region.id == region_id)
-                .expect("body region");
+        for region in ir.geometry.body_regions(&body.id) {
             for shell_id in &region.shells {
-                let shell = ir
-                    .model
-                    .shells
-                    .iter()
-                    .find(|shell| &shell.id == shell_id)
-                    .expect("region shell");
-                assert!(shell
-                    .faces()
-                    .iter()
-                    .all(|shell_face| shell_face.as_str() != face_identity));
+                assert!(ir
+                    .geometry
+                    .shell_faces(shell_id)
+                    .all(|shell_face| shell_face.id.as_str() != face_identity));
             }
         }
 
@@ -1858,7 +1835,7 @@ fn nist_ctc_01_closed_solid_volume_accounts_for_native_blind_cut() {
         .expect("closed native body has a measured volume");
 
     let bottom_faces = ir
-        .model
+        .geometry
         .faces
         .iter()
         .filter(|face| face.surface.as_str() == CUT_BOTTOM_SURFACE)
@@ -1908,5 +1885,4 @@ fn nist_ctc_01_closed_solid_volume_accounts_for_native_blind_cut() {
         (measured_volume.value().value.get() - expected_volume_mm3).abs() <= measurement_error_mm3,
         "measured volume agrees with STEP volume less the native cut within measurement error"
     );
-    assert_valid(&result);
 }

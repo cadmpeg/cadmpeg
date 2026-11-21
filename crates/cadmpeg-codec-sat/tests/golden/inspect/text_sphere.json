@@ -14,21 +14,22 @@
         "scale": "1",
         "terminator": "End-of-ASM-data"
       },
-      "compression": "stored",
+      "kind": "stored",
       "name": "stream",
       "role": "brep-text",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 389
       }
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [
         {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "save_format_major": "232",
             "save_format_minor": "0"
@@ -37,14 +38,18 @@
         }
       ],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "encoding": "text",
           "terminator": "End-of-ASM-data"
         },
         "dialect": "sat:text"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": []
 }

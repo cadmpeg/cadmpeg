@@ -2,10 +2,10 @@
 //! Rewrite the identities owned by these fields.
 
 use super::{
-    SubdCage, SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdGripDirection, SubdGripWedge,
-    SubdPlaneFrame, SubdRadialMapSelector, SubdRadialSymmetry, SubdRadialSymmetryMap, SubdScheme,
-    SubdSecondaryGrip, SubdSurface, SubdSymmetry, SubdSymmetryKind, SubdUserKnot, SubdVertex,
-    SubdVertexGripLayout, SubdVertexTag,
+    SubdCage, SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdFaceSide, SubdGripDirection,
+    SubdGripWedge, SubdPlaneFrame, SubdRadialMapSelector, SubdRadialSymmetry,
+    SubdRadialSymmetryMap, SubdScheme, SubdSecondaryGrip, SubdSurface, SubdSymmetry,
+    SubdSymmetryKind, SubdUserKnot, SubdVertex, SubdVertexGripLayout, SubdVertexTag,
 };
 
 rewrite_record!(SubdCage, []; {vertices, edges, faces, symmetries});
@@ -13,7 +13,8 @@ rewrite_record!(SubdEdge, []; {vertices, sharpness, tag, knot_interval, user_kno
 rewrite_scalar!(SubdEdgeTag);
 rewrite_scalar!(SubdUserKnot);
 rewrite_scalar!(SubdEdgeUse);
-rewrite_record!(SubdFace, []; {edges});
+rewrite_record!(SubdFace, []; {sides});
+rewrite_record!(SubdFaceSide, []; {edges});
 rewrite_scalar!(SubdGripDirection);
 rewrite_enum!(SubdGripWedge, []; {
     Phantom {},
@@ -25,7 +26,7 @@ rewrite_record!(SubdRadialSymmetry, []; {segments, sweep, radial_maps});
 rewrite_record!(SubdRadialSymmetryMap, []; {selector, pairs});
 rewrite_scalar!(SubdScheme);
 rewrite_record!(SubdSecondaryGrip, []; {source_index, point, weight});
-rewrite_record!(SubdSurface, []; {id, scheme, cage, source_object});
+rewrite_record!(SubdSurface, []; {id, scheme, cage, source_object, native_ref});
 rewrite_record!(SubdSymmetry, []; {kind, plane, face_pairs, edge_pairs, vertex_pairs});
 rewrite_enum!(SubdSymmetryKind, []; {
     Correspondence {},

@@ -8,7 +8,7 @@ fn transfer(patches: Vec<Patch>) -> CadIr {
     transfer_with_notes(patches).0
 }
 
-fn transfer_with_notes(patches: Vec<Patch>) -> (CadIr, Vec<LossNote>) {
+pub(super) fn transfer_with_notes(patches: Vec<Patch>) -> (CadIr, Vec<LossNote>) {
     let mut ir = CadIr::empty();
     let mut refusal = LaneRefusals::new();
     crate::test_support::with_service_context(|ctx| {
@@ -18,6 +18,7 @@ fn transfer_with_notes(patches: Vec<Patch>) -> (CadIr, Vec<LossNote>) {
             patches,
             &mut refusal,
             &mut FamilyEntityAdmission::new(ctx),
+            &BodyRoots::new(),
         )
     })
     .expect("transfer generated sheets");
@@ -65,18 +66,18 @@ fn assert_no_reconciliation(notes: &[LossNote]) {
         .all(|note| note.code.local_code() != "topology.shared-boundary-reconciled"));
 }
 
-fn assert_shared_sheet(ir: &CadIr) {
+pub(super) fn assert_shared_sheet(ir: &CadIr) {
     let validation =
         cadmpeg_ir::validate_neutral(ir, Vec::new()).expect("validate recovered sheet");
     assert!(validation.is_ok(), "{:?}", validation.findings);
-    assert_eq!(ir.model.faces.len(), 2);
-    assert_eq!(ir.model.edges.len(), 7);
-    assert_eq!(ir.model.coedges.len(), 8);
-    for face in &ir.model.faces {
+    assert_eq!(ir.geometry.faces.len(), 2);
+    assert_eq!(ir.geometry.edges.len(), 7);
+    assert_eq!(ir.geometry.coedges.len(), 8);
+    for face in &ir.geometry.faces {
         assert_outer_winding(ir, face);
     }
     let shared = ir
-        .model
+        .geometry
         .coedges
         .iter()
         .filter(|side| side.radial_next != side.id)
@@ -138,11 +139,11 @@ fn shared_sheet_requires_corroboration_and_bounds_vertex_repairs() {
     let mut uncorroborated = two_face_sheet();
     uncorroborated[1].sides[0].vertices[0].1.x += 0.003;
     uncorroborated[1].sides[3].vertices[0].1.x += 0.003;
-    assert_eq!(transfer(uncorroborated).model.faces.len(), 1);
+    assert_eq!(transfer(uncorroborated).geometry.faces.len(), 1);
 
     let mut excessive = two_face_sheet();
     excessive[1].sides[0].vertices[0].1.x += 0.006;
-    assert_eq!(transfer(excessive).model.faces.len(), 1);
+    assert_eq!(transfer(excessive).geometry.faces.len(), 1);
 }
 
 #[test]
@@ -158,7 +159,7 @@ fn shared_sheet_reprojects_a_bounded_boundary_discrepancy() {
 fn shared_sheet_rejects_an_excessive_boundary_discrepancy() {
     let mut patches = two_face_sheet();
     bow_shared_edge(&mut patches[1], 0.02);
-    assert_eq!(transfer(patches).model.faces.len(), 1);
+    assert_eq!(transfer(patches).geometry.faces.len(), 1);
 }
 
 #[test]
@@ -187,7 +188,7 @@ fn shared_sheet_reprojection_keeps_the_surface_lift_limit() {
         )
         .expect("parallel plane boundary");
     }
-    assert_eq!(transfer(patches).model.faces.len(), 1);
+    assert_eq!(transfer(patches).geometry.faces.len(), 1);
 }
 
 #[test]
@@ -236,10 +237,12 @@ fn shared_sheet_recovery_preserves_hole_containment() {
             .expect("hole edge"),
             pcurve: line_pcurve([0.0, 1.0], uv).expect("hole pcurve"),
             forward: true,
+            inferred_accuracy: None,
+            lift_error_mm: 0.0,
         });
     }
     let (ir, notes) = transfer_with_notes(patches);
-    assert_eq!(ir.model.faces.len(), 1);
+    assert_eq!(ir.geometry.faces.len(), 1);
     assert_no_reconciliation(&notes);
 }
 
@@ -261,11 +264,11 @@ fn shared_sheet_reports_seed_admission_and_replaced_prior_curve() {
     assert_shared_sheet(&ir);
     assert_reconciliation(&notes, [0, 1, 0, 1], 0.003);
     let shared = ir
-        .model
+        .geometry
         .edges
         .iter()
         .find(|edge| {
-            ir.model
+            ir.geometry
                 .coedges
                 .iter()
                 .filter(|side| side.edge == edge.id)
@@ -274,7 +277,7 @@ fn shared_sheet_reports_seed_admission_and_replaced_prior_curve() {
         })
         .expect("shared edge");
     let curve = ir
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| Some(&curve.id) == shared.carrier.curve())
@@ -303,7 +306,7 @@ fn shared_sheet_omits_reconciliation_for_a_rejected_repair() {
     patches[1].sides[0].vertices[0].1.x += 0.003;
     patches[1].sides[1].vertices[0].1.x += 0.02;
     let (ir, notes) = transfer_with_notes(patches);
-    assert_eq!(ir.model.faces.len(), 1);
+    assert_eq!(ir.geometry.faces.len(), 1);
     assert_no_reconciliation(&notes);
 }
 
@@ -319,6 +322,6 @@ fn shared_sheet_aggregates_only_emitted_reconciliations() {
     other[1].sides[0].vertices[0].1.x += 0.004;
     patches.extend(other);
     let (ir, notes) = transfer_with_notes(patches);
-    assert_eq!(ir.model.faces.len(), 4);
+    assert_eq!(ir.geometry.faces.len(), 4);
     assert_reconciliation(&notes, [2, 0, 0, 0], 0.004);
 }

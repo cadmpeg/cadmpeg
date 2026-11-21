@@ -5,7 +5,7 @@ use crate::records::feature::thread::{
 };
 
 fn thread_wire() -> serde_json::Value {
-    serde_json::json!({"form":"standard", "designation_offset":38, "designation":"M1", "nominal_size_text":"1.0", "nominal_size":1.0, "profile":"ISO Metric profile", "major_diameter":1.0, "minor_diameter":0.5, "pitch":0.1, "pitch_diameter":0.75, "face_group_record_indices":[10]})
+    serde_json::json!({"form":"standard", "designation_offset":38, "designation":"M1", "nominal_size_text":"1.0", "nominal_size":1.0, "profile":"ISO Metric profile", "major_diameter":1.0, "minor_diameter":0.5, "pitch":0.1, "pitch_diameter":0.75, "modeled":false, "face_group_record_indices":[10]})
 }
 
 #[test]
@@ -137,4 +137,37 @@ fn extended_compact_form_round_trips_its_hole_reference() {
         DesignThreadForm::CompactExtended(_)
     ));
     assert_eq!(serde_json::to_value(construction).unwrap(), wire);
+}
+
+#[test]
+fn compact_owned_thread_forms_preserve_wire_identity_and_reference_shape() {
+    use crate::records::feature::thread::DesignThreadForm;
+
+    for (name, form, references) in [
+        (
+            "compact_owners_leading",
+            DesignThreadForm::CompactOwnersLeading,
+            [120, 123, 101, 102],
+        ),
+        (
+            "compact_owners_trailing",
+            DesignThreadForm::CompactOwnersTrailing,
+            [101, 102, 120, 123],
+        ),
+    ] {
+        let mut wire = thread_wire();
+        wire["form"] = serde_json::json!(name);
+        wire["designation_offset"] = serde_json::json!(46);
+        let construction: DesignThreadConstruction = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(construction.form, form);
+        assert_eq!(serde_json::to_value(&construction).unwrap(), wire);
+        assert!(form.designation_offset_holds(46, 0));
+        assert!(!form.designation_offset_holds(42, 0));
+        assert!(form.reference_count_holds(4));
+        assert!(!form.reference_count_holds(2));
+        assert_eq!(form.face_groups(&references), [101]);
+        wire["trailing_reference_record_index"] = serde_json::json!(7);
+        wire["trailing_reference_offset"] = serde_json::json!(99);
+        assert!(serde_json::from_value::<DesignThreadConstruction>(wire).is_err());
+    }
 }

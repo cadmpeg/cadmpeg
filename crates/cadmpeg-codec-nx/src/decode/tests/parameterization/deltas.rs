@@ -98,8 +98,8 @@ fn every_unselected_deltas_family_preserves_its_paired_primary_model() {
             )
             .unwrap();
         assert_eq!(
-            serde_json::to_value(&paired.ir().model).unwrap(),
-            serde_json::to_value(&baseline.ir().model).unwrap()
+            serde_json::to_value((&paired.ir().geometry, &paired.ir().model)).unwrap(),
+            serde_json::to_value((&baseline.ir().geometry, &baseline.ir().model)).unwrap()
         );
         assert!(
             cadmpeg_ir::validate::validate_neutral(paired.ir(), Vec::new())
@@ -140,10 +140,10 @@ fn unpaired_deltas_and_schema_only_streams_contribute_no_geometry() {
                 &DecodeOptions::default(),
             )
             .unwrap();
-        assert!(decoded.ir().model.points.is_empty());
-        assert!(decoded.ir().model.bodies.is_empty());
-        assert!(decoded.ir().model.curves.is_empty());
-        assert!(decoded.ir().model.surfaces.is_empty());
+        assert!(decoded.ir().geometry.points.is_empty());
+        assert!(decoded.ir().geometry.bodies.is_empty());
+        assert!(decoded.ir().geometry.curves.is_empty());
+        assert!(decoded.ir().geometry.surfaces.is_empty());
         let attributes = &decoded.ir().source.as_ref().unwrap().attributes;
 
         assert_eq!(

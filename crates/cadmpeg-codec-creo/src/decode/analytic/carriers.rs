@@ -23,7 +23,7 @@ use super::super::native::annotate;
 use super::super::sketch_transfer::recipe::FeatureSchemaClasses;
 use super::super::surfaces::NativeSurfaceNamespaces;
 
-use super::super::uniqueness::{exactly_one, UniqueById};
+use super::super::uniqueness::{exactly_one, ExactIdPositions, UniqueById};
 use super::equations::{
     CarrierEquation, ConeEquation, CylinderEquation, PlaneEquation, SphereEquation, TorusEquation,
 };
@@ -90,9 +90,9 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
     for lp in &scan.topology.loops {
         face_loops.entry(lp.face_id()).or_default().push(lp);
     }
-    let model_curves = VisibleModelCurves::new(&ir.model.curves);
+    let model_curves = VisibleModelCurves::new(&ir.geometry.curves);
     let mut visible_surfaces = BTreeMap::<u32, Vec<usize>>::new();
-    for (index, surface) in ir.model.surfaces.iter().enumerate() {
+    for (index, surface) in ir.geometry.surfaces.iter().enumerate() {
         if let Some(face_id) =
             crate::identity::numbered_identity(surface.id.as_str(), "creo:visibgeom:surface#")
         {
@@ -117,7 +117,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
             .flat_map(|lp| lp.half_edges().iter())
         {
             if unique_curve_ids.contains(&half_edge.curve_id) {
-                if let Some(curve) = model_curves.unique(&ir.model.curves, half_edge.curve_id) {
+                if let Some(curve) = model_curves.unique(&ir.geometry.curves, half_edge.curve_id) {
                     boundary_curves.push(source_carriers.curve_geometry(curve));
                 }
             }
@@ -139,7 +139,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
         if existing_count != 0 {
             let conflict = existing_count != 1
                 || existing_plane_agrees_with_topology(
-                    source_carriers.surface_geometry(&ir.model.surfaces[existing[0]]),
+                    source_carriers.surface_geometry(&ir.geometry.surfaces[existing[0]]),
                     plane,
                 ) == Some(false);
             if !conflict {
@@ -147,7 +147,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
             }
             source_carriers.remove_surface(&id);
             for &index in existing {
-                ir.model.surfaces[index].geometry =
+                ir.geometry.surfaces[index].geometry =
                     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                         record: geometry_section_record(scan, row.offset)?,
                     });
@@ -203,6 +203,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
         transferred += 1;
@@ -236,6 +237,12 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let mut surface_ids = ExactIdPositions::new(
+        ir.geometry
+            .surfaces
+            .iter()
+            .map(|surface| surface.id.as_str()),
+    );
     for (rows, namespace) in [
         (&scan.surfaces.rows, LegacySurfaceNamespace::Visible),
         (
@@ -249,7 +256,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                 LegacySurfaceNamespace::NonVisible => &crate::identity::NOVISGEOM_SURFACE,
             };
             let id = crate::identity::compose_checked::<SurfaceId>(identity_namespace, row.id)?;
-            if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            if surface_ids.contains(id.as_str()) {
                 continue;
             }
             annotate(
@@ -269,6 +276,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                 Exactness::Unknown,
             )?;
             ctx.charge_entities(1, "admit Creo model surfaces")?;
+            surface_ids.admit(id.as_str(), ir.geometry.surfaces.len());
             source_carriers.admit_surface(
                 ctx,
                 ir,
@@ -295,14 +303,17 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                         layer: None,
                         instance_path: Vec::new(),
                     }),
+                    native_ref: None,
                 },
             )?;
         }
     }
+    let mut curve_ids =
+        ExactIdPositions::new(ir.geometry.curves.iter().map(|curve| curve.id.as_str()));
     for row in crate::identity::uniquely_identified_rows(&scan.curves.topology_rows, |row| row.id) {
         let id =
             crate::identity::compose_checked::<CurveId>(&crate::identity::VISIBGEOM_CURVE, row.id)?;
-        if ir.model.curves.iter().any(|curve| curve.id == id) {
+        if curve_ids.contains(id.as_str()) {
             continue;
         }
         annotate(
@@ -314,6 +325,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
             Exactness::Unknown,
         )?;
         ctx.charge_entities(1, "admit Creo model curves")?;
+        curve_ids.admit(id.as_str(), ir.geometry.curves.len());
         source_carriers.admit_curve(
             ctx,
             ir,
@@ -336,6 +348,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
     }
@@ -350,7 +363,7 @@ pub(in crate::decode) fn placed_carriers(
 ) -> Result<BTreeMap<u32, CarrierEquation>, cadmpeg_core::CodecError> {
     let mut carriers = BTreeMap::new();
     let namespaces = NativeSurfaceNamespaces::new(scan);
-    let model_surfaces = ModelSurfaceIndex::new(&ir.model.surfaces);
+    let model_surfaces = ModelSurfaceIndex::new(&ir.geometry.surfaces);
     for (id, plane) in placed_planes(scan)? {
         carriers.insert(id, CarrierEquation::Plane(plane));
     }
@@ -455,7 +468,7 @@ pub(in crate::decode) fn placed_carriers(
         }
     }
     let mut model_surfaces_by_id = BTreeMap::<u32, Vec<&Surface>>::new();
-    for surface in &ir.model.surfaces {
+    for surface in &ir.geometry.surfaces {
         let Some(id) = surface
             .id
             .as_str()

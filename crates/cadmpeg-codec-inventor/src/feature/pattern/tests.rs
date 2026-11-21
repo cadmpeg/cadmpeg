@@ -26,6 +26,7 @@ fn is_linear_pattern_accepts_linear_and_rejects_mirror_and_native_features() {
                 count: 2,
                 second: None,
                 omitted_instances: Vec::new(),
+                symmetric: false,
             },
             true,
         ),
@@ -664,6 +665,21 @@ fn project_fixture_with_spacings(
         {
             continue;
         }
+        let mut unresolved = native.clone();
+        unresolved[position] = Located::new(
+            Operand::Unresolved,
+            record.identity.type_id.clone(),
+            record.identity.segment_token.clone(),
+            record.identity.record_ordinal,
+        );
+        assert!(!matches_source(
+            source,
+            &feature,
+            &index,
+            &Operands::from_native(&unresolved, &raw_records),
+            &results,
+            &model_features,
+        ));
         for state in [-1, 0, 1, 2, 3] {
             let mut changed = native.clone();
             let mut payload = (**record).clone();
@@ -753,6 +769,7 @@ fn project_fixture_with_spacings(
             second,
             count,
             omitted_instances,
+            ..
         } = &mut transform
         else {
             panic!("linear pattern");
@@ -1104,6 +1121,7 @@ fn rectangular_patterns_keep_exact_seeds_and_both_directions() {
                 count,
                 second: actual,
                 omitted_instances,
+                ..
             } = pattern.definition()
             else {
                 panic!("linear pattern");
@@ -1153,6 +1171,121 @@ fn rectangular_patterns_keep_other_cached_selection_forms_native() {
             })
             .is_none());
         }
+    }
+}
+
+#[test]
+fn unsupported_selection_forms_with_line_payloads_keep_the_pattern_native() {
+    for version in [19, 23, 25, 28, 29, 30, 31] {
+        for type_id in [LINE_DIRECTION_TYPE, EDGE_DIRECTION_TYPE] {
+            for form in [0u32, 2, 4, 6] {
+                let mut bytes = cached_line(type_id, version, [0.0, 3.0, 0.0]);
+                let prefix = cached_selection_prefix(version, -1, form, 0, 23);
+                bytes[..prefix.len()].copy_from_slice(&prefix);
+                let mut retained = Operands::default();
+                retained.note_record("generated", 89, type_id);
+                with_bytes(&bytes, |ctx, source| {
+                    retained.read(ctx, "generated", 89, type_id, source, version)
+                })
+                .expect("retained direction operand");
+                let records = retained.native_records().expect("native operands");
+                assert!(matches!(
+                    **records.first().expect("one operand"),
+                    Operand::Unresolved
+                ));
+                let restored = Operands::from_native(&records, &raw_records(&retained));
+                assert!(restored.matches_record(&records[0]));
+                assert!(restored
+                    .get_for(&pattern(version, true), reference(90))
+                    .is_none());
+                assert!(project_fixture(&pattern(version, true), |operands, _, _| {
+                    operands.raw.insert(("generated".into(), 89), Some(type_id));
+                    operands
+                        .records
+                        .insert(("generated".into(), 89), Some(Operand::Unresolved));
+                })
+                .is_none());
+            }
+        }
+    }
+}
+
+#[test]
+fn four_cached_lines_keep_the_pattern_native_with_the_pinned_loss() {
+    for version in [19, 23] {
+        let source = pattern(version, true);
+        assert!(project_fixture(&source, |_, _, _| {}).is_some());
+        let mut bytes = cached_selection_prefix(version, -1, 4, 0, 23);
+        for (index, span) in [
+            [2.0, 0.0, 0.0],
+            [0.0, 2.0, 0.0],
+            [-2.0, 0.0, 0.0],
+            [0.0, -2.0, 0.0],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if index != 0 {
+                bytes.extend_from_slice(&0u16.to_le_bytes());
+                bytes.extend_from_slice(&23u32.to_le_bytes());
+            }
+            for value in [0.0; 3].into_iter().chain(span) {
+                bytes.extend_from_slice(&f64::to_le_bytes(value));
+            }
+        }
+        for value in [0.25, 0.0, 0.0] {
+            bytes.extend_from_slice(&f64::to_le_bytes(value));
+        }
+        bytes.push(1);
+        bytes.extend_from_slice(&93u32.to_le_bytes());
+        let header = content_at(2, version, &[]).len();
+        assert_eq!(bytes.len() - header, 261);
+        let body = &bytes[header..];
+        let f64_at =
+            |at: usize| f64::from_le_bytes(body[at..at + 8].try_into().expect("fixed width"));
+        for (index, span) in [
+            [2.0, 0.0, 0.0],
+            [0.0, 2.0, 0.0],
+            [-2.0, 0.0, 0.0],
+            [0.0, -2.0, 0.0],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let entry = 16 + 54 * index;
+            assert_eq!(u16::from_le_bytes([body[entry], body[entry + 1]]), 0);
+            assert_eq!(
+                u32::from_le_bytes(body[entry + 2..entry + 6].try_into().expect("fixed width")),
+                23
+            );
+            for (axis, value) in span.into_iter().enumerate() {
+                assert_eq!(f64_at(entry + 30 + 8 * axis), value);
+            }
+        }
+        assert_eq!(f64_at(232), 0.25);
+        assert_eq!(body[256], 1);
+        assert_eq!(
+            u32::from_le_bytes(body[257..261].try_into().expect("fixed width")),
+            93
+        );
+        let operand = with_bytes(&bytes, |ctx, source| {
+            parse(ctx, LINE_DIRECTION_TYPE, source, version)
+        })
+        .expect("retained four-line operand");
+        assert!(matches!(operand, Operand::Unresolved));
+        assert!(project_fixture(&source, |operands, _, _| {
+            operands
+                .records
+                .insert(("generated".into(), 89), Some(operand));
+        })
+        .is_none());
+        let losses = native_losses(std::iter::once(&source), &[]);
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.namespace(), "inventor");
+        assert_eq!(
+            losses[0].code.local_code(),
+            "feature.rectangular-pattern-operands-native"
+        );
     }
 }
 
@@ -1548,7 +1681,7 @@ fn suppression_validation_requires_positive_resolved_counts_even_for_an_empty_li
 
 #[test]
 fn cached_selection_states_gate_projection_and_validation() {
-    for version in [19, 25, 28, 29, 30, 31] {
+    for version in [19, 23, 25, 28, 29, 30, 31] {
         for type_id in [EDGE_DIRECTION_TYPE, LINE_DIRECTION_TYPE] {
             for state in [-1i32, 1, 2, 0, 3] {
                 let mut bytes = cached_line(type_id, version, [0.0, 3.0, 0.0]);

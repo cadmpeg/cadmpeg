@@ -31,7 +31,7 @@ fn comparison_with(a: &CadIr, b: &CadIr, options: CompareOptions) -> Comparison 
 fn translated(ir: &CadIr, x: f64) -> CadIr {
     let mut moved = ir.clone();
     let shift = FiniteVector3::new(Vector3::new(x, 0.0, 0.0)).expect("finite");
-    moved.model.bodies[0].transform = Some(Transform::identity().with_translation(shift));
+    moved.geometry.bodies[0].transform = Some(Transform::identity().with_translation(shift));
     moved
 }
 
@@ -43,14 +43,14 @@ fn a_document_agrees_with_itself_and_with_a_renamed_copy() {
     assert_eq!(result.pairs().len(), 1);
     assert!(result.inconclusive_causes().is_empty());
     let copy = renamed(&cube, "synthetic:cube:", "synthetic:copy:");
-    assert_ne!(copy.model.bodies[0].id, cube.model.bodies[0].id);
+    assert_ne!(copy.geometry.bodies[0].id, cube.geometry.bodies[0].id);
     let result = comparison(&cube, &copy);
     assert_eq!(result.verdict(), Verdict::Agree);
     let [pair] = result.pairs() else {
         panic!("one pair");
     };
-    assert_eq!(pair.a(), cube.model.bodies[0].id.as_str());
-    assert_eq!(pair.b(), copy.model.bodies[0].id.as_str());
+    assert_eq!(pair.a(), cube.geometry.bodies[0].id.as_str());
+    assert_eq!(pair.b(), copy.geometry.bodies[0].id.as_str());
     assert!(pair
         .quantities()
         .iter()
@@ -96,7 +96,7 @@ fn the_relative_floor_widens_every_tolerance() {
 fn coincident_bodies_pair_by_multiplicity() {
     let cube = cube();
     let twice = merged(&cube, &renamed(&cube, "synthetic:cube:", "synthetic:twin:"));
-    assert_eq!(twice.model.bodies.len(), 2);
+    assert_eq!(twice.geometry.bodies.len(), 2);
     let copy = renamed(&twice, "synthetic:", "synthetic-b:");
     let result = comparison(&twice, &copy);
     assert_eq!(result.verdict(), Verdict::Agree);
@@ -192,63 +192,133 @@ fn a_moved_signature_body_disagrees_by_its_vertex_box() {
     assert_eq!(moved.unmatched_b().len(), 1);
 }
 
-#[test]
-fn occurrences_that_place_bodies_keep_the_verdict_inconclusive() {
+/// The unit cube as a part, placed by the root definition once at each of
+/// `placements`, in that order.
+fn placed_cubes(placements: &[Transform]) -> CadIr {
     use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
     use cadmpeg_ir::products::{
-        Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
+        ExternalDocument, Occurrence, ProductDefinition, ProductDefinitionKind, Storage,
     };
-    let placed = |transform: Transform| {
-        let mut cube = cube();
-        let definition = ProductDefinitionId::mint("synthetic:cube:product#1").expect("id");
-        cube.model.product_definitions.push(ProductDefinition {
-            sketches: Vec::default(),
-            id: definition.clone(),
-            kind: ProductDefinitionKind::Part,
-            source_name: None,
-            label: None,
-            description: None,
-            part_number: None,
-            bom_properties: std::collections::BTreeMap::new(),
-            bodies: vec![cube.model.bodies[0].id.clone()],
-            native_ref: None,
-        });
-        let one = cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite");
-        cube.model.occurrences.push(Occurrence {
-            id: OccurrenceId::mint("synthetic:cube:occurrence#1").expect("id"),
-            prototype: PrototypeReference::Local { definition },
-            parent: OccurrenceParent::Root {},
-            ordinal: 0,
-            transform,
-            linked_prototype: None,
-            scale: [one; 3],
-            name: None,
-            visible: None,
-            link: None,
-            native_ref: None,
-        });
-        cube
-    };
-    let plain = cube();
-    let identity = placed(Transform::identity());
-    assert_eq!(comparison(&plain, &identity).verdict(), Verdict::Agree);
-    let shift = FiniteVector3::new(Vector3::new(15.0, 10.0, 0.0)).expect("finite");
-    let moved = placed(Transform::identity().with_translation(shift));
-    let result = comparison(&plain, &moved);
-    assert_eq!(result.verdict(), Verdict::Inconclusive);
-    assert_eq!(
-        result.inconclusive_causes(),
-        [CompareCause::OccurrencePlacement]
+    let mut cube = cube();
+    let definition = ProductDefinitionId::mint("synthetic:cube:product#1").expect("id");
+    let mut part = ProductDefinition::new(definition.clone(), Storage::Embedded);
+    part.kind = Some(ProductDefinitionKind::Part);
+    part.bodies = vec![cube.geometry.bodies[0].id.clone()];
+    let mut root = ProductDefinition::root(
+        ProductDefinitionId::mint("synthetic:cube:product#root").expect("id"),
+        ExternalDocument::default(),
     );
-    let occurrences = result
+    for (at, transform) in placements.iter().enumerate() {
+        let occurrence = OccurrenceId::mint(format!("synthetic:cube:occurrence#{at}")).expect("id");
+        root.occurrences.push(occurrence.clone());
+        cube.model.occurrences.push(Occurrence::new(
+            occurrence,
+            definition.clone(),
+            Some(*transform),
+        ));
+    }
+    cube.model.product_definitions.extend([part, root]);
+    cube
+}
+
+fn shifted(x: f64, y: f64) -> Transform {
+    Transform::identity()
+        .with_translation(FiniteVector3::new(Vector3::new(x, y, 0.0)).expect("finite"))
+}
+
+fn document_row<'a>(result: &'a Comparison, quantity: &str) -> &'a crate::compare::Row {
+    result
         .document()
         .iter()
-        .find(|row| row.quantity() == "occurrences")
-        .expect("occurrence row");
-    assert_eq!(occurrences.rule(), Rule::NotCompared);
+        .find(|row| row.quantity() == quantity)
+        .expect("document row")
+}
+
+#[test]
+fn an_occurrence_that_moves_a_body_disagrees_with_the_body_in_place() {
+    let plain = cube();
+    let identity = placed_cubes(&[Transform::identity()]);
+    assert_eq!(comparison(&plain, &identity).verdict(), Verdict::Agree);
+    let moved = placed_cubes(&[shifted(15.0, 10.0)]);
+    let result = comparison(&plain, &moved);
+    assert_eq!(result.verdict(), Verdict::Disagree);
+    let occurrences = document_row(&result, "occurrences");
     assert_eq!(
         occurrences.b(),
         Some(&Operand::Text("occurrences".to_owned()))
+    );
+    assert_eq!(occurrences.agrees(), None);
+    let placement = document_row(&result, "instance_placement");
+    assert_eq!(placement.agrees(), Some(false));
+    let distance = placement.difference().expect("one instance on each side");
+    assert!((distance - 325.0_f64.sqrt()).abs() < 1e-9);
+}
+
+#[test]
+fn instances_of_a_reused_part_match_in_any_order() {
+    let first = placed_cubes(&[shifted(5.0, 0.0), shifted(0.0, 7.0)]);
+    let second = placed_cubes(&[shifted(0.0, 7.0), shifted(5.0, 0.0)]);
+    let result = comparison(&first, &second);
+    assert_eq!(result.verdict(), Verdict::Agree, "{result:#?}");
+    assert_eq!(
+        document_row(&result, "instances").a(),
+        Some(&Operand::Count(2))
+    );
+    assert_eq!(
+        document_row(&result, "instance_placement").agrees(),
+        Some(true)
+    );
+    let moved = placed_cubes(&[shifted(0.0, 7.0), shifted(5.0, 1.0)]);
+    let result = comparison(&first, &moved);
+    assert_eq!(result.verdict(), Verdict::Disagree);
+    let placement = document_row(&result, "instance_placement");
+    assert!((placement.difference().expect("matched counts") - 1.0).abs() < 1e-9);
+}
+
+#[test]
+fn a_nested_override_places_its_instance() {
+    use cadmpeg_ir::design::selection::{OccurrencePath, PathStep, StepRef};
+    use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
+    use cadmpeg_ir::products::{NestedOverride, Occurrence, ProductDefinition, Storage};
+    // The root places a subassembly at the identity; the subassembly
+    // places the part at x = 5, which an override of the subassembly
+    // occurrence moves to x = 9.
+    let nested = |override_x: Option<f64>| {
+        let mut ir = placed_cubes(&[Transform::identity()]);
+        let part = ir.model.occurrences[0].prototype.clone();
+        let inner = OccurrenceId::mint("synthetic:cube:occurrence#inner").expect("id");
+        let assembly_id = ProductDefinitionId::mint("synthetic:cube:product#asm").expect("id");
+        let mut assembly = ProductDefinition::new(assembly_id.clone(), Storage::Embedded);
+        assembly.occurrences.push(inner.clone());
+        ir.model.occurrences.push(Occurrence::new(
+            inner.clone(),
+            part,
+            Some(shifted(5.0, 0.0)),
+        ));
+        ir.model.occurrences[0].prototype = assembly_id;
+        if let Some(x) = override_x {
+            ir.model.occurrences[0].overrides.push(NestedOverride {
+                path: OccurrencePath(vec![PathStep {
+                    occurrence: StepRef::Occurrence(inner),
+                    configuration: None,
+                }]),
+                transform: Some(shifted(x, 0.0)),
+                suppressed: None,
+                visible: None,
+                representation: None,
+            });
+        }
+        ir.model.product_definitions.push(assembly);
+        ir
+    };
+    let overridden = nested(Some(9.0));
+    assert_eq!(
+        comparison(&overridden, &placed_cubes(&[shifted(9.0, 0.0)])).verdict(),
+        Verdict::Agree
+    );
+    assert_eq!(
+        comparison(&nested(None), &placed_cubes(&[shifted(5.0, 0.0)])).verdict(),
+        Verdict::Agree
     );
 }
 
@@ -280,7 +350,7 @@ fn nurbs_rectangle(transform: Option<Transform>) -> CadIr {
         .collect();
     builder.face(&surface, Sense::Forward, &[ring], false);
     let mut ir = builder.finish(BodyKind::Sheet);
-    ir.model.bodies[0].transform = transform;
+    ir.geometry.bodies[0].transform = transform;
     ir
 }
 
@@ -331,7 +401,7 @@ fn disjoint_bodies_evaluate_only_overlapping_pairs() {
             .expect("cubes")
     };
     let (a, b) = (row("synthetic:a"), row("synthetic:b"));
-    assert_eq!(a.model.bodies.len(), 40);
+    assert_eq!(a.geometry.bodies.len(), 40);
     let result = comparison(&a, &b);
     assert_eq!(result.verdict(), Verdict::Agree);
     assert_eq!(result.pairs().len(), 40);

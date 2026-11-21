@@ -10,28 +10,31 @@
         "property_specs": "33",
         "upAxis": "Y"
       },
-      "compression": "stored",
+      "kind": "stored",
       "name": "layer",
       "role": "document",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 2597
       }
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "header": "#usda 1.0"
         },
         "dialect": "usd:usda-1.0"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "prim types: GeomSubset 2, Material 2, Mesh 2, Scope 1, Shader 3, Xform 1"
   ]

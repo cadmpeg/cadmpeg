@@ -1092,7 +1092,7 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
     let control_points = curve.pole_rows().raw_points();
     let weights = curve.pole_rows().weights();
     let interior = cadmpeg_ir::eval::nurbs_pcurve_uv(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         curve.degree(),
         curve.knots(),
         &control_points,
@@ -1644,4 +1644,49 @@ fn arrangement_ring_cycle_scan_skips_past_local_budget() {
     });
     assert!(budget.exhausted());
     assert_eq!(edges.len(), 500);
+}
+
+#[test]
+fn arrangement_focus_keeps_only_curves_with_connected_boxes() {
+    let (mut sketch, mut entities, line_id, _) = coincident_circle_arc_arrangement();
+    let far_id = SketchEntityId::mint("synthetic:test:id#far-circle").unwrap();
+    entities.push(SketchEntity::new(
+        far_id.clone(),
+        sketch.id.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+            center: Point2::new(50.0, 0.0),
+            radius: Length::new(1.0).unwrap(),
+        })
+        .unwrap(),
+    ));
+    let mut loops = sketch.profiles.iter().cloned().collect::<Vec<_>>();
+    loops.push(vec![SketchEntityUse {
+        entity: far_id.clone(),
+        reversed: false,
+    }]);
+    sketch.profiles = cadmpeg_ir::sketches::SketchProfiles::try_from(loops).unwrap();
+
+    let focus = std::collections::HashSet::from([line_id]);
+    let (near, near_entities) =
+        super::arrangement_focus(&sketch, &entities, &focus, 1.0e-7).expect("far circle dropped");
+    assert_eq!(near_entities.len(), 3);
+    assert_eq!(near.profiles.len(), 2);
+    let profile_work = local_profile_work();
+    let faces = crate::test_support::with_decode_context(|decode_ctx| {
+        sketch_arrangement_faces(&near, &near_entities, 1.0e-7, &profile_work, decode_ctx)
+    })
+    .unwrap()
+    .expect("faces of the near curves");
+    assert_eq!(faces.len(), 2);
+
+    let focus = std::collections::HashSet::from([far_id]);
+    let (far, far_entities) =
+        super::arrangement_focus(&sketch, &entities, &focus, 1.0e-7).expect("near curves dropped");
+    assert_eq!(far_entities.len(), 1);
+    assert_eq!(far.profiles.len(), 1);
+
+    // A focus in both groups keeps the whole arrangement.
+    let focus =
+        std::collections::HashSet::from([entities[0].id().clone(), entities[3].id().clone()]);
+    assert!(super::arrangement_focus(&sketch, &entities, &focus, 1.0e-7).is_none());
 }

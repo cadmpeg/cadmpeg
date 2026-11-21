@@ -158,7 +158,9 @@ fn an_origin_axis_identity_keeps_its_axis_when_an_asm_entity_shares_it() {
         direction: cadmpeg_ir::features::FeatureDirection3::from(
             cadmpeg_ir::units::UnitVector3::Y_AXIS,
         ),
-        reference: None,
+        reference: Some(cadmpeg_ir::features::PathRef::Native(
+            "f3d:Design/BulkStream.dat:entity-selection#201".into(),
+        )),
     };
     let y = ORIGIN_FIRST + 1;
     for (name, selection) in [
@@ -202,6 +204,7 @@ fn a_sketch_placement_that_owns_the_identity_refuses_the_origin_axis() {
         scope_record_index: None,
         entity_id: crate::records::identity::DesignEntityId::from_parts("Sketch", 40),
         visibility: None,
+        display_name: None,
         class_tag: crate::records::references::DesignClassTag::try_from("264".to_owned()).unwrap(),
         record_index: 700,
         paired_class_tag: crate::records::references::DesignClassTag::try_from("264".to_owned())

@@ -70,14 +70,27 @@ pub(crate) fn transfer(
                 ctx,
                 property,
                 entry.data(),
-                cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
+                cadmpeg_core::decode::u64_from_index(ir.entity_count()),
                 admitted_entities,
             )?;
-            ir.model.points.extend(points);
+            ir.geometry.points.extend(points);
             transferred = true;
         }
     }
     Ok(transferred)
+}
+
+/// The side entry a mesh or point-cloud property names on its value root.
+pub(crate) fn payload_entry(
+    ctx: &DecodeContext<'_>,
+    property: &PropertyRecord,
+) -> Result<Option<String>, CodecError> {
+    let geometry_kind = match property.type_name.as_str() {
+        "Mesh::PropertyMeshKernel" => GeometryKind::Mesh,
+        "Points::PropertyPointKernel" => GeometryKind::Points,
+        _ => return Ok(None),
+    };
+    validate_value_root(ctx, property, geometry_kind.value_tag())
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -606,13 +619,13 @@ pub(crate) mod tests {
                 .map(|source| source.object_id.as_str()),
             Some("fcstd:native:object#Mesh")
         );
-        assert_eq!(result.ir().model.points.len(), 2);
+        assert_eq!(result.ir().geometry.points.len(), 2);
         assert_eq!(
-            result.ir().model.points[0].position().get(),
+            result.ir().geometry.points[0].position().get(),
             cadmpeg_ir::math::Point3::new(11.0, 22.0, 33.0)
         );
         assert_eq!(
-            result.ir().model.points[1].position().get(),
+            result.ir().geometry.points[1].position().get(),
             cadmpeg_ir::math::Point3::new(9.0, 18.0, 27.0)
         );
         assert!(result.report().geometry_transferred());
@@ -628,6 +641,7 @@ pub(crate) mod tests {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
         let model = &decoded.ir().model;
+        let geometry = &decoded.ir().geometry;
         assert_eq!(model.tessellations.len(), 1);
         let mesh = &model.tessellations[0];
         assert_eq!(
@@ -657,9 +671,9 @@ pub(crate) mod tests {
                 })
             }));
         }
-        assert_eq!(model.points.len(), 3);
+        assert_eq!(geometry.points.len(), 3);
         for expected in [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [-1.0, 0.0, 2.0]] {
-            assert!(model.points.iter().any(|point| {
+            assert!(geometry.points.iter().any(|point| {
                 point.source_object.as_ref().is_some_and(|source| {
                     source.object_id.as_str() == "fcstd:native:object#PointCloud"
                 }) && same(point.position().get(), expected)
@@ -830,7 +844,7 @@ pub(crate) mod tests {
             )
             .expect("custom application property is retained");
         assert!(result.ir().model.tessellations.is_empty());
-        assert!(result.ir().model.points.is_empty());
+        assert!(result.ir().geometry.points.is_empty());
         let property = result
             .ir()
             .native

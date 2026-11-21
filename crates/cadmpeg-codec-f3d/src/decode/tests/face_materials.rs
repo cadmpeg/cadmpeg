@@ -26,7 +26,7 @@ fn model() -> cadmpeg_ir::CadIr {
             id: format!("test:model:attribute#{index}")
                 .try_into()
                 .expect("identity"),
-            target: AttributeTarget::Face(ir.model.faces[index].id.clone()),
+            target: AttributeTarget::Face(ir.geometry.faces[index].id.clone()).into(),
             name: "ATTRIB_CUSTOM-attrib".into(),
             values: vec![
                 AttributeValue::String("NEUTRON_Material_attrib_def".into()),
@@ -60,9 +60,9 @@ fn distinct_face_material_revisions_report_loss_without_selecting_by_order() {
         let mut ir = model();
         let explicit = Color::new(0.75, 0.5, 0.25, 1.0).expect("normalized color");
         if tokens[0] == REVISION {
-            ir.model.faces[0].color = Some(explicit);
+            ir.geometry.faces[0].color = Some(explicit);
         }
-        let expected_color = ir.model.faces[0]
+        let expected_color = ir.geometry.faces[0]
             .color
             .or(assignment(FACE_GUID, VISUAL).color);
         let mut assignments = tokens.map(|token| assignment(FACE_GUID, token)).to_vec();
@@ -82,9 +82,9 @@ fn distinct_face_material_revisions_report_loss_without_selecting_by_order() {
         assert_eq!(ir.model.appearance_bindings.len(), 1);
         assert_eq!(
             ir.model.appearance_bindings[0].target,
-            cadmpeg_ir::appearance::AppearanceTarget::Face(ir.model.faces[1].id.clone())
+            cadmpeg_ir::appearance::AppearanceTarget::Face(ir.geometry.faces[1].id.clone()).into()
         );
-        assert_eq!(ir.model.faces[0].color, expected_color);
+        assert_eq!(ir.geometry.faces[0].color, expected_color);
     }
 }
 
@@ -269,13 +269,13 @@ fn apply_body_presentation_names_joins_custom_name_stream_qualified() {
 
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         let mut ir = model();
-        let body_id = ir.model.bodies[0].id.clone();
-        ir.model.bodies[0].name = None;
-        ir.model.bodies[0].visible = Some(true);
+        let body_id = ir.geometry.bodies[0].id.clone();
+        ir.geometry.bodies[0].name = None;
+        ir.geometry.bodies[0].visible = Some(true);
 
         let binding = make_body_binding(stream, 100, entity, body_id.as_str());
         super::super::apply_body_presentation_names(&mut ir, scan, &[binding]).unwrap();
-        assert_eq!(ir.model.bodies[0].name.as_deref(), Some("Bottom"));
+        assert_eq!(ir.geometry.bodies[0].name.as_deref(), Some("Bottom"));
     });
 }
 
@@ -288,13 +288,13 @@ fn apply_body_presentation_names_skips_when_stream_mismatches() {
 
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         let mut ir = model();
-        let body_id = ir.model.bodies[0].id.clone();
-        ir.model.bodies[0].name = None;
-        ir.model.bodies[0].visible = Some(true);
+        let body_id = ir.geometry.bodies[0].id.clone();
+        ir.geometry.bodies[0].name = None;
+        ir.geometry.bodies[0].visible = Some(true);
 
         let binding = make_body_binding(binding_stream, 100, entity, body_id.as_str());
         super::super::apply_body_presentation_names(&mut ir, scan, &[binding]).unwrap();
-        assert_eq!(ir.model.bodies[0].name, None);
+        assert_eq!(ir.geometry.bodies[0].name, None);
     });
 }
 
@@ -306,16 +306,56 @@ fn apply_body_presentation_names_skips_ambiguous_bindings_in_same_stream() {
 
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         let mut ir = model();
-        let body_id = ir.model.bodies[0].id.clone();
-        ir.model.bodies[0].name = None;
-        ir.model.bodies[0].visible = Some(true);
+        let body_id = ir.geometry.bodies[0].id.clone();
+        ir.geometry.bodies[0].name = None;
+        ir.geometry.bodies[0].visible = Some(true);
 
         let binding1 = make_body_binding(stream, 100, entity, body_id.as_str());
         let binding2 = make_body_binding(stream, 200, entity, body_id.as_str());
-        super::super::apply_body_presentation_names(&mut ir, scan, &[binding1, binding2]).unwrap();
+        let losses =
+            super::super::apply_body_presentation_names(&mut ir, scan, &[binding1, binding2])
+                .unwrap();
         assert_eq!(
-            ir.model.bodies[0].name, None,
+            ir.geometry.bodies[0].name, None,
             "sole-pair check must skip ambiguous bindings"
+        );
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::BodyDisplayNameAmbiguous
+                .note("")
+                .code
+        );
+    });
+}
+
+#[test]
+fn apply_body_presentation_names_reports_loss_on_conflicting_body_names() {
+    let stream1 = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let stream2 = "FusionAssetName[Active]/FusionDesignSegmentType2/BulkStream.dat";
+    let entity = 42u64;
+    let archive = synthetic_two_stream_presentation_archive(
+        stream1, entity, "Bottom", stream2, entity, "Top",
+    );
+
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        let mut ir = model();
+        let body_id = ir.geometry.bodies[0].id.clone();
+        ir.geometry.bodies[0].name = None;
+        ir.geometry.bodies[0].visible = Some(true);
+
+        let binding1 = make_body_binding(stream1, 100, entity, body_id.as_str());
+        let binding2 = make_body_binding(stream2, 200, entity, body_id.as_str());
+        let losses =
+            super::super::apply_body_presentation_names(&mut ir, scan, &[binding1, binding2])
+                .unwrap();
+        assert_eq!(ir.geometry.bodies[0].name, None);
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::BodyDisplayNameAmbiguous
+                .note("")
+                .code
         );
     });
 }
@@ -329,13 +369,13 @@ fn apply_body_presentation_names_ignores_default_body_names() {
 
         crate::test_support::zip_test::with_scan(&archive, |scan| {
             let mut ir = model();
-            let body_id = ir.model.bodies[0].id.clone();
-            ir.model.bodies[0].name = None;
-            ir.model.bodies[0].visible = Some(true);
+            let body_id = ir.geometry.bodies[0].id.clone();
+            ir.geometry.bodies[0].name = None;
+            ir.geometry.bodies[0].visible = Some(true);
 
             let binding = make_body_binding(stream, 100, entity, body_id.as_str());
             super::super::apply_body_presentation_names(&mut ir, scan, &[binding]).unwrap();
-            assert_eq!(ir.model.bodies[0].name, None);
+            assert_eq!(ir.geometry.bodies[0].name, None);
         });
     }
 }
@@ -348,13 +388,13 @@ fn apply_body_presentation_names_renames_body_with_none_visibility() {
 
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         let mut ir = model();
-        let body_id = ir.model.bodies[0].id.clone();
-        ir.model.bodies[0].name = None;
-        ir.model.bodies[0].visible = None;
+        let body_id = ir.geometry.bodies[0].id.clone();
+        ir.geometry.bodies[0].name = None;
+        ir.geometry.bodies[0].visible = None;
 
         let binding = make_body_binding(stream, 100, entity, body_id.as_str());
         super::super::apply_body_presentation_names(&mut ir, scan, &[binding]).unwrap();
-        assert_eq!(ir.model.bodies[0].name.as_deref(), Some("Bottom"));
+        assert_eq!(ir.geometry.bodies[0].name.as_deref(), Some("Bottom"));
     });
 }
 
@@ -366,13 +406,16 @@ fn apply_body_presentation_names_preserves_existing_body_name() {
 
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         let mut ir = model();
-        let body_id = ir.model.bodies[0].id.clone();
-        ir.model.bodies[0].name = Some("CustomExisting".to_string());
-        ir.model.bodies[0].visible = Some(true);
+        let body_id = ir.geometry.bodies[0].id.clone();
+        ir.geometry.bodies[0].name = Some("CustomExisting".to_string());
+        ir.geometry.bodies[0].visible = Some(true);
 
         let binding = make_body_binding(stream, 100, entity, body_id.as_str());
         super::super::apply_body_presentation_names(&mut ir, scan, &[binding]).unwrap();
-        assert_eq!(ir.model.bodies[0].name.as_deref(), Some("CustomExisting"));
+        assert_eq!(
+            ir.geometry.bodies[0].name.as_deref(),
+            Some("CustomExisting")
+        );
     });
 }
 
@@ -387,21 +430,21 @@ fn apply_body_presentation_names_does_not_alias_across_streams() {
 
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         let mut ir = model();
-        let body1_id = ir.model.bodies[0].id.clone();
-        ir.model.bodies[0].name = None;
-        ir.model.bodies[0].visible = Some(true);
+        let body1_id = ir.geometry.bodies[0].id.clone();
+        ir.geometry.bodies[0].name = None;
+        ir.geometry.bodies[0].visible = Some(true);
 
-        let mut body2 = ir.model.bodies[0].clone();
+        let mut body2 = ir.geometry.bodies[0].clone();
         let body2_id = cadmpeg_ir::ids::BodyId::mint("test:model:body#2").unwrap();
         body2.id = body2_id.clone();
         body2.name = None;
         body2.visible = Some(true);
-        ir.model.bodies.push(body2);
+        ir.geometry.bodies.push(body2);
 
         let binding1 = make_body_binding(stream1, 100, entity, body1_id.as_str());
         let binding2 = make_body_binding(stream2, 200, entity, body2_id.as_str());
         super::super::apply_body_presentation_names(&mut ir, scan, &[binding1, binding2]).unwrap();
-        assert_eq!(ir.model.bodies[0].name.as_deref(), Some("PlateOne"));
-        assert_eq!(ir.model.bodies[1].name.as_deref(), Some("PlateTwo"));
+        assert_eq!(ir.geometry.bodies[0].name.as_deref(), Some("PlateOne"));
+        assert_eq!(ir.geometry.bodies[1].name.as_deref(), Some("PlateTwo"));
     });
 }

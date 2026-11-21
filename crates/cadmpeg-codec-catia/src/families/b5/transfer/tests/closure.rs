@@ -644,10 +644,10 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
         )
         .expect("transfer the B5 topology"));
     });
-    assert_eq!(ir.model.pcurves.len(), 3);
-    assert_eq!(ir.model.coedges.len(), 3);
+    assert_eq!(ir.geometry.pcurves.len(), 3);
+    assert_eq!(ir.geometry.coedges.len(), 3);
     assert_eq!(
-        ir.model
+        ir.geometry
             .points
             .iter()
             .map(|point| point
@@ -662,7 +662,7 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
         ]
     );
     assert_eq!(
-        ir.model
+        ir.geometry
             .pcurves
             .iter()
             .map(|pcurve| pcurve
@@ -672,7 +672,7 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
         [Some([0.0, 0.5]), Some([0.0, 1.0]), Some([0.5, 1.0])]
     );
     assert_eq!(
-        ir.model
+        ir.geometry
             .coedges
             .iter()
             .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.as_str()))
@@ -684,7 +684,7 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
         ]
     );
     assert_eq!(
-        ir.model
+        ir.geometry
             .coedges
             .iter()
             .map(|coedge| coedge.pcurves[0]
@@ -693,9 +693,9 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
             .collect::<Vec<_>>(),
         [None, Some([1.0, 0.5]), None]
     );
-    assert_eq!(ir.model.loops.len(), 1);
+    assert_eq!(ir.geometry.loops.len(), 1);
     assert_eq!(
-        ir.model.loops[0]
+        ir.geometry.loops[0]
             .anchored_vertex_uses()
             .iter()
             .map(|use_| use_.vertex.as_str())
@@ -707,7 +707,7 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
         ]
     );
     assert_eq!(
-        ir.model.loops[0]
+        ir.geometry.loops[0]
             .anchored_vertex_uses()
             .iter()
             .map(|use_| Some(use_.after.as_str()))

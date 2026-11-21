@@ -67,6 +67,7 @@ fn boundary_circle() -> cadmpeg_ir::geometry::Curve {
             .expect("valid CircleCurve fixture"),
         )),
         source_object: None,
+        native_ref: None,
     }
 }
 
@@ -82,16 +83,17 @@ fn model_plane(origin: [f64; 3]) -> cadmpeg_ir::geometry::Surface {
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     }
 }
 
 #[test]
 fn model_surface_geometry_lookup_rejects_duplicate_native_ids() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    ir.model.surfaces.push(model_plane([0.0, 0.0, 0.0]));
+    ir.geometry.surfaces.push(model_plane([0.0, 0.0, 0.0]));
     assert!(super::unique_model_surface_geometries(&ir).is_some());
 
-    ir.model.surfaces.push(model_plane([0.0, 0.0, 0.5]));
+    ir.geometry.surfaces.push(model_plane([0.0, 0.0, 0.5]));
     assert!(super::unique_model_surface_geometries(&ir).is_none());
 }
 
@@ -99,7 +101,7 @@ fn model_surface_geometry_lookup_rejects_duplicate_native_ids() {
 fn boundary_circle_uses_native_plane_carrier_when_model_plane_is_absent() {
     let scan = boundary_scan();
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    ir.model.curves.push(boundary_circle());
+    ir.geometry.curves.push(boundary_circle());
 
     assert_eq!(
         super::counterbore_source_boundary_circle(
@@ -120,8 +122,8 @@ fn boundary_circle_uses_model_plane_carrier_when_native_plane_is_absent() {
     let mut scan = boundary_scan();
     scan.planes.positional_frames.clear();
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    ir.model.curves.push(boundary_circle());
-    ir.model.surfaces.push(model_plane([0.0, 0.0, 0.0]));
+    ir.geometry.curves.push(boundary_circle());
+    ir.geometry.surfaces.push(model_plane([0.0, 0.0, 0.0]));
 
     assert_eq!(
         super::counterbore_source_boundary_circle(
@@ -141,8 +143,8 @@ fn boundary_circle_uses_model_plane_carrier_when_native_plane_is_absent() {
 fn boundary_circle_rejects_conflicting_model_plane_carrier() {
     let scan = boundary_scan();
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    ir.model.curves.push(boundary_circle());
-    ir.model.surfaces.push(model_plane([0.0, 0.0, 0.5]));
+    ir.geometry.curves.push(boundary_circle());
+    ir.geometry.surfaces.push(model_plane([0.0, 0.0, 0.5]));
 
     assert_eq!(
         super::counterbore_source_boundary_circle(
@@ -162,7 +164,7 @@ fn boundary_circle_rejects_conflicting_model_plane_carrier() {
 fn boundary_circle_rejects_duplicate_model_curves() {
     let scan = boundary_scan();
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    ir.model
+    ir.geometry
         .curves
         .extend([boundary_circle(), boundary_circle()]);
 
@@ -186,7 +188,7 @@ fn boundary_circle_rejects_duplicate_surface_rows() {
     let duplicate = scan.surfaces.rows[0].clone();
     scan.surfaces.rows.push(duplicate);
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    ir.model.curves.push(boundary_circle());
+    ir.geometry.curves.push(boundary_circle());
 
     assert_eq!(
         super::counterbore_source_boundary_circle(
@@ -476,9 +478,10 @@ fn counterbore_patch_rows_cover_each_source_row() {
             .expect("cylinder geometry"),
         )),
         source_object: None,
+        native_ref: None,
     };
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    ir.model
+    ir.geometry
         .surfaces
         .extend([model_cylinder(1), model_cylinder(2)]);
     let service = super::counterbore_patch_geometries(&scan, &ir, 40)

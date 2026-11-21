@@ -160,7 +160,7 @@ fn parameter_numeric_capability_checks_are_proven_for_v4_and_v5_0() {
         let result = IgesCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
-        assert!(result.ir().model.points.is_empty(), "version {version}");
+        assert!(result.ir().geometry.points.is_empty(), "version {version}");
         assert!(result.report().losses.iter().any(|loss| {
             loss.code == IgesLossCode::ParameterLiteralUnusable.kind()
         }), "version {version}: {:#?}", result.report().losses);
@@ -256,7 +256,7 @@ fn a_split_numeric_parameter_is_quarantined_in_the_decode() {
         )
         .unwrap();
 
-    assert!(result.ir().model.points.is_empty());
+    assert!(result.ir().geometry.points.is_empty());
     assert_eq!(result.report().losses.len(), 1, "{:#?}", result.report());
     assert_eq!(
         result.report().losses[0].code,

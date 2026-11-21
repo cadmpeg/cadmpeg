@@ -258,7 +258,7 @@ fn detection_reads_the_second_card_image_from_a_fused_first_line() {
     let result = IgesCodec
         .decode(&mut Cursor::new(fused), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     assert_eq!(
         result
             .report()
@@ -301,7 +301,7 @@ fn readable_start_and_global_sequence_disagreements_recover_from_the_card_census
         let result = IgesCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
-        assert_eq!(result.ir().model.points.len(), 1);
+        assert_eq!(result.ir().geometry.points.len(), 1);
         assert!(result
             .report()
             .losses

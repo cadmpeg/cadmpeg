@@ -25,6 +25,7 @@ use cadmpeg_ir::topology::{
 };
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
+use super::roster::BodyRoots;
 use crate::assemble::annotate;
 use crate::families::FamilyEntityAdmission;
 use crate::loss::CatiaLossCode;
@@ -98,6 +99,7 @@ pub(super) fn append(
     patches: Vec<Patch>,
     refusal: &mut LaneRefusals,
     admission: &mut FamilyEntityAdmission<'_, '_>,
+    body_roots: &BodyRoots,
 ) -> Result<Option<LossNote>, CodecError> {
     let mut by_body = BTreeMap::<_, Vec<_>>::new();
     for patch in patches {
@@ -105,11 +107,16 @@ pub(super) fn append(
     }
     let mut count = 0;
     let mut inferred_senses = 0;
+    let mut boundary_recovery = [(0_usize, 0.0_f64); 3];
     let mut reconciled = [0; 4];
     let mut max_discrepancy_mm = 0.0_f64;
     let (mut rolling_ball, mut offset, mut ruled, mut extrusion) = (0, 0, 0, 0);
     let (mut adjusted, mut max_shift_mm) = (0, 0.0_f64);
     for ((source, body), mut patches) in by_body {
+        let roots = body_roots
+            .get(&(source, body))
+            .cloned()
+            .unwrap_or_else(|| BTreeSet::from([body]));
         patches.sort_by_key(|patch| patch.priority);
         let mut reconciliations = BTreeMap::new();
         let selected = compatible_patches(&mut patches, &mut reconciliations);
@@ -135,34 +142,57 @@ pub(super) fn append(
             }
             component.sort_unstable();
             let patches = component.iter().map(|&i| &patches[i]).collect::<Vec<_>>();
-            if append_component(ir, annotations, source, body, &patches, admission)? {
-                count += patches.len();
-                for index in &component {
-                    if let Some(record) = reconciliations.get(index) {
-                        for (count, gap) in reconciled.iter_mut().zip([
-                            record.vertex_repair,
-                            record.seed_alignment,
-                            record.retry,
-                            record.replaced_edge,
-                        ]) {
-                            if let Some(gap) = gap {
-                                *count += 1;
-                                max_discrepancy_mm = max_discrepancy_mm.max(gap);
+            for &root in &roots {
+                if append_component(ir, annotations, source, (root, body), &patches, admission)? {
+                    count += patches.len();
+                    for index in &component {
+                        if let Some(record) = reconciliations.get(index) {
+                            for (count, gap) in reconciled.iter_mut().zip([
+                                record.vertex_repair,
+                                record.seed_alignment,
+                                record.retry,
+                                record.replaced_edge,
+                            ]) {
+                                if let Some(gap) = gap {
+                                    *count += 1;
+                                    max_discrepancy_mm = max_discrepancy_mm.max(gap);
+                                }
                             }
                         }
                     }
-                }
-                inferred_senses += patches.iter().filter(|patch| patch.sense_inferred).count();
-                for fit in patches.iter().filter_map(|patch| patch.surface_fit) {
-                    match fit {
-                        SheetSurfaceFit::RollingBall { max_rail_shift_mm } => {
-                            rolling_ball += 1;
-                            adjusted += usize::from(max_rail_shift_mm > 0.0);
-                            max_shift_mm = max_shift_mm.max(max_rail_shift_mm);
+                    for patch in &patches {
+                        if let Some(bounds) = patch.recovery.untransferred_plane_bounds {
+                            refusal.push_plane_bounds_not_transferred(patch.face, bounds);
                         }
-                        SheetSurfaceFit::Offset => offset += 1,
-                        SheetSurfaceFit::Ruled => ruled += 1,
-                        SheetSurfaceFit::Extrusion => extrusion += 1,
+                        let accuracy_gap = patch
+                            .sides
+                            .iter()
+                            .map(|side| side.lift_error_mm)
+                            .filter(|&gap| gap > GAP_MM)
+                            .fold(0.0_f64, f64::max);
+                        for ((faces, largest), gap) in boundary_recovery.iter_mut().zip([
+                            patch.recovery.rolling_extension_mm,
+                            patch.recovery.affine_vertex_shift_mm,
+                            accuracy_gap,
+                        ]) {
+                            if gap > 0.0 {
+                                *faces += 1;
+                                *largest = largest.max(gap);
+                            }
+                        }
+                    }
+                    inferred_senses += patches.iter().filter(|patch| patch.sense_inferred).count();
+                    for fit in patches.iter().filter_map(|patch| patch.surface_fit) {
+                        match fit {
+                            SheetSurfaceFit::RollingBall { max_rail_shift_mm } => {
+                                rolling_ball += 1;
+                                adjusted += usize::from(max_rail_shift_mm > 0.0);
+                                max_shift_mm = max_shift_mm.max(max_rail_shift_mm);
+                            }
+                            SheetSurfaceFit::Offset => offset += 1,
+                            SheetSurfaceFit::Ruled => ruled += 1,
+                            SheetSurfaceFit::Extrusion => extrusion += 1,
+                        }
                     }
                 }
             }
@@ -170,6 +200,18 @@ pub(super) fn append(
     }
     if reconciled.iter().any(|&count| count != 0) {
         refusal.push_shared_boundary_reconciled(reconciled, max_discrepancy_mm);
+    }
+    for (code, (faces, gap)) in [
+        CatiaLossCode::GeometryRollingSheetExtended,
+        CatiaLossCode::TopologyAffineVertexReconciled,
+        CatiaLossCode::GeometryParameterMapAccuracyInferred,
+    ]
+    .into_iter()
+    .zip(boundary_recovery)
+    {
+        if faces > 0 {
+            refusal.push_sheet_boundary_recovery(code, faces, gap);
+        }
     }
     if inferred_senses != 0 {
         refusal.push_owned_patch_sense_inferred(inferred_senses);
@@ -182,7 +224,7 @@ pub(super) fn append(
     }
     Ok((count != 0).then(|| {
         CatiaLossCode::TopologyOwnedPatchSubset.note(format!(
-            "Transferred {count} bounded faces as sheet subsets of their native body rosters. The complete body and its active selection remain native."
+            "Transferred {count} bounded faces as sheet subsets of their native body rosters. The complete native body is retained."
         ))
     }))
 }
@@ -454,7 +496,8 @@ fn retry_shared_boundary(
                     max_gap_mm = max_gap_mm.max(edge_discrepancy(prior, side));
                     if edge_alignment::align(prior, side, &retry.surface).is_none() {
                         matches_edge_within(prior, side, MAX_SHARED_EDGE_SEED_GAP_MM)?;
-                        *side = edge_alignment::reproject(prior, side, &retry.surface)?;
+                        *side =
+                            edge_alignment::reproject_corroborated(prior, side, &retry.surface)?;
                     }
                     modified = true;
                 }
@@ -482,7 +525,7 @@ fn append_component(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     source: usize,
-    body: usize,
+    (root, body): (usize, usize),
     patches: &[&Patch],
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<bool, CodecError> {
@@ -522,12 +565,19 @@ fn append_component(
             uses.push((patch.face, side));
         }
     }
+    let affine_vertices = patches
+        .iter()
+        .filter(|patch| patch.recovery.affine_vertex_shift_mm > 0.0)
+        .flat_map(|patch| &patch.sides)
+        .flat_map(|side| side.vertices.map(|(id, _)| id))
+        .collect::<BTreeSet<_>>();
+    let mut inferred_fields = Vec::new();
     let first = patches[0].face;
     macro_rules! id {
         ($kind:ty, $label:literal, $offset:expr) => {
             <$kind>::mint(format!(
-                concat!("catia:owned-patch:", $label, "#{}:{}:{}"),
-                source, first, $offset
+                concat!("catia:owned-patch:", $label, "#{}:{}:{}:{}:{}"),
+                source, root, body, first, $offset
             ))
             .map_err(CodecError::malformed)?
         };
@@ -543,12 +593,22 @@ fn append_component(
             Exactness::Derived,
         )
     };
-    let body_id = id!(BodyId, "body", body);
-    let region = id!(RegionId, "region", body);
+    let body_id = BodyId::mint(format!("catia:owned-patch:body#{source}:{root}"))
+        .map_err(CodecError::malformed)?;
+    let region = RegionId::mint(format!("catia:owned-patch:region#{source}:{root}"))
+        .map_err(CodecError::malformed)?;
     let shell = id!(ShellId, "shell", body);
-    for id in [body_id.as_str(), region.as_str(), shell.as_str()] {
-        admit(id, body, "bounded_face_subset")?;
+    let new_body = !ir
+        .geometry
+        .bodies
+        .iter()
+        .any(|candidate| candidate.id == body_id);
+    if new_body {
+        for id in [body_id.as_str(), region.as_str()] {
+            admit(id, root, "bounded_face_subset")?;
+        }
     }
+    admit(shell.as_str(), body, "bounded_face_subset")?;
     let tolerance = PositiveReal::new(GAP_MM);
     for (vertex, point) in vertices {
         let point_id = id!(PointId, "point", vertex);
@@ -557,13 +617,17 @@ fn append_component(
             .ok_or_else(|| CodecError::malformed("CATIA patch vertex is non-finite"))?;
         admit(point_id.as_str(), vertex, "lifted_boundary_vertex")?;
         admit(vertex_id.as_str(), vertex, "boundary_vertex")?;
-        ir.model
+        if affine_vertices.contains(&vertex) {
+            inferred_fields.push((point_id.to_string(), "position"));
+        }
+        ir.geometry
             .points
             .push(Point::new(point_id.clone(), point, None));
-        ir.model.vertices.push(Vertex {
+        ir.geometry.vertices.push(Vertex {
             id: vertex_id,
             point: point_id,
             tolerance: PositiveReal::new(vertex_gaps[&vertex].max(GAP_MM)),
+            native_ref: None,
         });
     }
     for (&edge, uses) in &edges {
@@ -572,22 +636,40 @@ fn append_component(
         let edge_id = id!(EdgeId, "edge", edge);
         admit(curve.as_str(), edge, "fitted_boundary_curve")?;
         admit(edge_id.as_str(), edge, "boundary_edge")?;
-        ir.model.curves.push(Curve {
+        let mut edge_accuracy_mm = GAP_MM;
+        for (_, occurrence) in uses {
+            if occurrence.lift_error_mm > GAP_MM {
+                let accuracy = occurrence.inferred_accuracy.ok_or_else(|| {
+                    CodecError::malformed("CATIA repaired edge has no inferred accuracy")
+                })?;
+                edge_accuracy_mm = edge_accuracy_mm.max(accuracy.bound_mm + GAP_MM);
+                admit(edge_id.as_str(), accuracy.source, "parameter_map_accuracy")?;
+            }
+        }
+        let tolerance = PositiveReal::new(edge_accuracy_mm);
+        if edge_accuracy_mm > GAP_MM {
+            inferred_fields.push((edge_id.to_string(), "tolerance"));
+        }
+        ir.geometry.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(side.curve.clone())),
             parameter_range: None,
             source_object: None,
+            native_ref: None,
         });
-        ir.model.edges.push(Edge {
+        ir.geometry.edges.push(Edge {
             id: edge_id,
             carrier: EdgeCarrier::new(
                 Some(curve),
                 Some(side.curve.full_knot_endpoints().endpoints()),
             )
             .map_err(CodecError::malformed)?,
-            start: id!(VertexId, "vertex", side.vertices[0].0),
-            end: id!(VertexId, "vertex", side.vertices[1].0),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                id!(VertexId, "vertex", side.vertices[0].0),
+                id!(VertexId, "vertex", side.vertices[1].0),
+            )),
             tolerance,
+            native_ref: None,
         });
     }
     let mut faces = Vec::new();
@@ -598,10 +680,11 @@ fn append_component(
         admit(face.as_str(), patch.face, "roster_face")?;
         admit(ring.as_str(), patch.face, "outer_boundary")?;
         admit(surface.as_str(), patch.face, "face_surface")?;
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: surface.clone(),
             geometry: SurfaceGeometry::Solved(patch.surface.clone()),
             source_object: None,
+            native_ref: None,
         });
         let outer = ring.clone();
         let mut inner_rings = Vec::new();
@@ -644,10 +727,11 @@ fn append_component(
                     format_args!("{}:{}", patch.face, side.edge)
                 );
                 admit(pcurve.as_str(), side.edge, "boundary_surface_curve")?;
-                ir.model.pcurves.push(Pcurve {
+                ir.geometry.pcurves.push(Pcurve {
                     id: pcurve.clone(),
                     geometry: side.pcurve.clone(),
                     metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
+                    native_ref: None,
                 });
                 let [lo, hi] = side.curve.full_knot_endpoints().endpoints();
                 let range = if orders[&(patch.face, side.edge)] {
@@ -657,7 +741,7 @@ fn append_component(
                 };
                 let range = DirectedParameterRange::new(range).map_err(CodecError::malformed)?;
                 coedges.push(id.clone());
-                ir.model.coedges.push(Coedge {
+                ir.geometry.coedges.push(Coedge {
                     id,
                     owner_loop: ring.clone(),
                     edge: id!(EdgeId, "edge", side.edge),
@@ -669,17 +753,19 @@ fn append_component(
                         parameter_range: Some(range),
                     }],
                     use_curve: None,
+                    native_ref: None,
                 });
             }
-            ir.model.loops.push(Loop {
+            ir.geometry.loops.push(Loop {
                 id: ring.clone(),
                 face: face.clone(),
                 boundary: LoopBoundary::Ring(
                     LoopRing::new(coedges, Vec::new()).map_err(CodecError::malformed)?,
                 ),
+                native_ref: None,
             });
         }
-        ir.model.faces.push(Face {
+        ir.geometry.faces.push(Face {
             id: face.clone(),
             shell: shell.clone(),
             surface,
@@ -688,31 +774,52 @@ fn append_component(
             name: None,
             color: None,
             tolerance,
+            native_ref: None,
         });
         faces.push(face);
+    }
+    for (id, field) in inferred_fields {
+        annotations.field_exactness(id, field, Exactness::Inferred)?;
     }
     for (face, patch) in faces.iter().zip(patches) {
         if patch.sense_inferred {
             annotations.field_exactness(face, "sense", Exactness::Inferred)?;
         }
     }
-    ir.model.shells.push(
-        Shell::with_faces(shell.clone(), region.clone(), faces).map_err(CodecError::malformed)?,
-    );
-    ir.model.regions.push(Region {
-        id: region.clone(),
-        body: body_id.clone(),
-        shells: vec![shell],
-    });
-    ir.model.bodies.push(Body {
-        id: body_id,
-        kind: BodyKind::Sheet,
-        regions: vec![region],
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    });
+    if faces.is_empty() {
+        return Err(CodecError::malformed(
+            cadmpeg_ir::features::BodySelectionError::Empty,
+        ));
+    }
+    ir.geometry
+        .shells
+        .push(Shell::new(shell.clone(), region.clone()));
+    if let Some(owner) = ir
+        .geometry
+        .regions
+        .iter_mut()
+        .find(|owner| owner.id == region)
+    {
+        owner.shells.push(shell);
+    } else {
+        ir.geometry.regions.push(Region {
+            id: region,
+            body: body_id.clone(),
+            shells: vec![shell],
+            native_ref: None,
+        });
+    }
+    if new_body {
+        ir.geometry.bodies.push(Body {
+            id: body_id,
+            kind: BodyKind::Sheet,
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+            native_ref: None,
+        });
+    }
     Ok(true)
 }
 

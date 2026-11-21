@@ -14,7 +14,7 @@ use crate::resolved_features::curves::closed_marker_profiles;
 use crate::resolved_features::curves::fitted_marker_circle;
 use crate::resolved_features::curves::resolve_connected_marker_arcs;
 use crate::resolved_features::dimensions::project_marker_dimensioned_circles;
-use crate::resolved_features::profiles::project_marker_backed_sketches;
+use crate::resolved_features::profiles::{project_marker_backed_sketches, HeldMarkerGeometry};
 use crate::resolved_features::projections::project_compact_edge_selections;
 use crate::resolved_features::relation_loci::doubled_profile_distance_loci;
 use crate::resolved_features::relation_loci::relation_operand_marker;
@@ -578,6 +578,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         &mut features,
         &mut sketches,
         &mut entities,
+        &mut HeldMarkerGeometry::default(),
         &histories,
         &lanes,
     )
@@ -587,12 +588,12 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     assert_eq!(entities.len(), 13);
     assert!(matches!(*entities[0].geometry.definition(),
         SketchGeometryDefinition::Point { position }
-            if position == Point2::new(-2.0, 1.0)
+            if position == Point2::new(1.0, 2.0)
     ));
     assert!(matches!(*entities[1].geometry.definition(),
         SketchGeometryDefinition::Line { start, end }
-            if start == Point2::new(-2.0, 1.0)
-                && end == Point2::new(-6.0, 5.0)
+            if start == Point2::new(1.0, 2.0)
+                && end == Point2::new(5.0, 6.0)
     ));
     assert!(!entities[0].construction);
     assert!(entities[1].construction);
@@ -605,8 +606,8 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
             end_angle,
         } if center == Point2::new(0.0, 0.0)
             && radius.get() == 1.0
-            && start_angle.get() == std::f64::consts::FRAC_PI_2
-            && end_angle.get() == std::f64::consts::PI
+            && start_angle.get() == 0.0
+            && end_angle.get() == std::f64::consts::FRAC_PI_2
     ));
     assert_eq!(sketches[0].profiles.len(), 1);
     assert_eq!(sketches[0].profiles[0].len(), 3);
@@ -628,6 +629,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         &mut configured_features,
         &mut sketches,
         &mut entities,
+        &mut HeldMarkerGeometry::default(),
         &histories,
         &lanes,
     )
@@ -668,6 +670,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         &mut replacement_features,
         &mut replacement_sketches,
         &mut replacement_entities,
+        &mut HeldMarkerGeometry::default(),
         &histories,
         &lanes,
     )
@@ -756,6 +759,7 @@ fn marker_backed_sketch_preserves_geometry_when_placement_is_unresolved() {
         &mut features,
         &mut sketches,
         &mut entities,
+        &mut HeldMarkerGeometry::default(),
         &histories,
         &lanes,
     )

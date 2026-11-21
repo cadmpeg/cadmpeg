@@ -39,7 +39,7 @@ fn decode_accepts_asymmetric_nurbs_surface_parameter_domains() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert_eq!(result.ir().model.surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.surfaces.len(), 1);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -55,7 +55,7 @@ fn decode_rejects_permuted_nurbs_surface_parameter_domains() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert!(result.ir().model.surfaces.is_empty());
+    assert!(result.ir().geometry.surfaces.is_empty());
     assert!(result
         .report()
         .losses
@@ -74,13 +74,13 @@ fn decode_retains_nurbs_surface_parameter_subranges() {
 
     let procedural = result
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .find(|surface| {
             result
                 .ir()
-                .model
+                .geometry
                 .procedural_surface_owner(&surface.id)
                 .map(SurfaceId::as_str)
                 == Some("iges:model:surface#D1")
@@ -129,7 +129,7 @@ fn decode_solves_signed_analytic_offset_surfaces() {
 
         let offset = result
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| surface.id.as_str() == "iges:model:surface#D3")
@@ -143,9 +143,9 @@ fn decode_solves_signed_analytic_offset_surfaces() {
         };
         let origin = plane_surface.origin().get();
         assert_eq!(origin, cadmpeg_ir::math::Point3::new(0.0, 0.0, expected_z));
-        assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
+        assert_eq!(result.ir().geometry.procedural_surfaces.len(), 1);
         let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset(definition_payload) =
-            result.ir().model.procedural_surfaces[0].definition()
+            result.ir().geometry.procedural_surfaces[0].definition()
         else {
             panic!("expected an offset dependency");
         };
@@ -169,7 +169,7 @@ fn decode_uses_the_cylinder_normal_at_the_designated_parameters() {
             .unwrap();
         let surface = result
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| surface.id.as_str() == "iges:model:surface#D7")
@@ -215,7 +215,7 @@ fn decode_applies_declared_real_significance_to_offset_surface_indicators() {
 
         let offset = result
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .any(|surface| surface.id.as_str() == "iges:model:surface#D3");
@@ -241,7 +241,7 @@ fn decode_rejects_a_unit_offset_indicator_that_is_not_the_designated_normal() {
 
     assert!(result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .all(|surface| surface.id.as_str() != "iges:model:surface#D3"));
@@ -261,7 +261,8 @@ fn decode_projects_a_bspline_surface_with_u_major_control_order() {
         )
         .unwrap();
 
-    let Some(SolvedSurfaceGeometry::Nurbs(nurbs)) = result.ir().model.surfaces[0].geometry.solved()
+    let Some(SolvedSurfaceGeometry::Nurbs(nurbs)) =
+        result.ir().geometry.surfaces[0].geometry.solved()
     else {
         panic!("expected a NURBS surface carrier");
     };
@@ -302,7 +303,7 @@ fn decode_projects_a_degree_zero_bspline_surface() {
         .unwrap();
 
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
-        result.ir().model.surfaces[0].geometry.solved()
+        result.ir().geometry.surfaces[0].geometry.solved()
     else {
         panic!("expected a NURBS surface carrier");
     };
@@ -336,7 +337,7 @@ fn decode_projects_multispan_degree_zero_bspline_surface() {
         .unwrap();
 
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
-        result.ir().model.surfaces[0].geometry.solved()
+        result.ir().geometry.surfaces[0].geometry.solved()
     else {
         panic!("expected a NURBS surface carrier");
     };
@@ -385,7 +386,7 @@ fn decode_recovers_type128_closure_claims_in_iges_4_and_5_0() {
                 &DecodeOptions::default(),
             )
             .unwrap();
-        assert_eq!(invalid.ir().model.surfaces.len(), 1);
+        assert_eq!(invalid.ir().geometry.surfaces.len(), 1);
         assert!(invalid
             .report()
             .losses
@@ -404,7 +405,7 @@ fn decode_recovers_type128_closure_claims_in_iges_4_and_5_0() {
                     &DecodeOptions::default(),
                 )
                 .unwrap();
-            assert_eq!(valid.ir().model.surfaces.len(), 1);
+            assert_eq!(valid.ir().geometry.surfaces.len(), 1);
             assert!(!valid
                 .report()
                 .losses
@@ -449,7 +450,7 @@ fn rational_boundary_comparison_accepts_projectively_scaled_curves() {
                 &scaled,
                 [0.0, 1.0],
                 0.0,
-                &cadmpeg_test_support::service_decode_context()
+                &cadmpeg_core::decode::test_support::service_decode_context()
             )
             .unwrap(),
             Some(true)
@@ -473,7 +474,7 @@ fn rational_boundary_comparison_accepts_projectively_scaled_curves() {
                 &scaled,
                 [0.0, 1.0],
                 0.0,
-                &cadmpeg_test_support::service_decode_context()
+                &cadmpeg_core::decode::test_support::service_decode_context()
             )
             .unwrap(),
             Some(false)
@@ -515,10 +516,10 @@ fn decode_applies_rational_surface_weight_declaration_in_iges_4_and_5_0() {
                 )
                 .unwrap();
 
-            assert_eq!(result.ir().model.surfaces.len(), 1);
+            assert_eq!(result.ir().geometry.surfaces.len(), 1);
             if projected {
                 let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
-                    result.ir().model.surfaces[0].geometry.solved()
+                    result.ir().geometry.surfaces[0].geometry.solved()
                 else {
                     panic!("expected a NURBS surface carrier");
                 };
@@ -602,7 +603,7 @@ fn numerical_followup_closure_uses_every_span_control_and_weight_scale() {
                 &b,
                 [0., 2.],
                 0.,
-                &cadmpeg_test_support::service_decode_context()
+                &cadmpeg_core::decode::test_support::service_decode_context()
             )
             .unwrap(),
             Some(false)
@@ -630,7 +631,7 @@ fn numerical_followup_closure_uses_every_span_control_and_weight_scale() {
                     &b,
                     [0., 1.],
                     0.001,
-                    &cadmpeg_test_support::service_decode_context()
+                    &cadmpeg_core::decode::test_support::service_decode_context()
                 )
                 .unwrap(),
                 Some(false)
@@ -641,7 +642,7 @@ fn numerical_followup_closure_uses_every_span_control_and_weight_scale() {
                     &a,
                     [0., 1.],
                     0.,
-                    &cadmpeg_test_support::service_decode_context()
+                    &cadmpeg_core::decode::test_support::service_decode_context()
                 )
                 .unwrap(),
                 Some(true)
@@ -678,7 +679,7 @@ fn numerical_followup_ruled_rails_align_across_overflowing_knot_domains() {
             false,
         )
         .unwrap();
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let pairs = super::super::aligned_homogeneous_spans(&first, &second, &ctx)
             .unwrap()
             .unwrap();

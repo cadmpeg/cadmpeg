@@ -6,28 +6,31 @@
         "offset": "76",
         "raw_name": "ND:0:VisibGeom:0"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "VisibGeom",
       "role": "psb-geometry",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 68
       }
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "version_line": "#UGC:2 P c"
         },
         "dialect": "creo:nd"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "PSB container: #UGC:2 P c",
     "layout: ND; 1 section(s) enumerated",

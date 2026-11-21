@@ -523,20 +523,31 @@ fn spline_replay_shape(prototype: &SurfacePrototypeRecord) -> Option<SplineRepla
         })
 }
 
-fn associated_spline_replay_prototype(
+/// The complete surface array bounds and named prototype records of one
+/// payload, each read once, at the first spline row that needs it.
+#[derive(Default)]
+pub(crate) struct SplineReplayPrototypes {
+    complete_bounds: Option<Vec<(usize, usize)>>,
+    records: Option<Vec<SurfacePrototypeRecord>>,
+}
+
+fn associated_spline_replay_prototype<'p>(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     rows: &[SurfaceRow],
     row: &SurfaceRow,
-) -> Result<Option<SurfacePrototypeRecord>, CodecError> {
+    replays: &'p mut SplineReplayPrototypes,
+) -> Result<Option<&'p SurfacePrototypeRecord>, CodecError> {
     if row.kind != SurfaceKind::Spline {
         return Ok(None);
     }
-    let complete_bounds = complete_surface_array_bounds(payload);
+    let complete_bounds = replays
+        .complete_bounds
+        .get_or_insert_with(|| complete_surface_array_bounds(payload));
     let mut bounds = complete_bounds
-        .into_iter()
+        .iter()
         .filter(|(start, end)| row.offset >= *start && row.offset < *end);
-    let Some((frame_start, frame_end)) = bounds.next() else {
+    let Some(&(frame_start, frame_end)) = bounds.next() else {
         return Ok(None);
     };
     if bounds.next().is_some() {
@@ -546,10 +557,17 @@ fn associated_spline_replay_prototype(
     // This route re-reads the same payload to locate a span. The prototype
     // reader in `container` owns the refusal report for these records, so the
     // sink here is a local buffer and states nothing twice.
-    let records =
-        named_prototype_records(ctx, payload, &mut crate::lane_refusal::LaneRefusals::new())?;
-    Ok((|| {
-        let mut prototypes = records.into_iter().filter(|prototype| {
+    let records = match &mut replays.records {
+        Some(records) => records,
+        records => records.insert(named_prototype_records(
+            ctx,
+            payload,
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        )?),
+    };
+    let records: &'p [SurfacePrototypeRecord] = records;
+    Ok((move || {
+        let mut prototypes = records.iter().filter(|prototype| {
             matches!(prototype.family, SurfacePrototypeFamily::Spline(_))
                 && prototype.offset >= frame_start
                 && prototype.offset < frame_end
@@ -579,13 +597,14 @@ fn associated_spline_replay_prototype(
 }
 
 /// Return the unique spline prototype that owns a later positional replay.
-pub(crate) fn positional_spline_replay_prototype(
+pub(crate) fn positional_spline_replay_prototype<'p>(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     rows: &[SurfaceRow],
     row: &SurfaceRow,
-) -> Result<Option<SurfacePrototypeRecord>, CodecError> {
-    associated_spline_replay_prototype(ctx, payload, rows, row)
+    replays: &'p mut SplineReplayPrototypes,
+) -> Result<Option<&'p SurfacePrototypeRecord>, CodecError> {
+    associated_spline_replay_prototype(ctx, payload, rows, row, replays)
 }
 
 fn take_spline_scalars(
@@ -720,23 +739,19 @@ fn parse_positional_spline_replay(
     .map(|grid| (grid, cursor)))
 }
 
-/// Return the final structural close of a complete positional spline replay.
+/// Return the final structural close of a complete positional spline replay
+/// of `prototype`.
 fn positional_spline_replay_body_end(
-    ctx: &DecodeContext<'_>,
     payload: &[u8],
-    rows: &[SurfaceRow],
-    row: &SurfaceRow,
+    prototype: &SurfacePrototypeRecord,
     body_start: usize,
     body_limit: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<usize>, CodecError> {
-    let Some(prototype) = associated_spline_replay_prototype(ctx, payload, rows, row)? else {
-        return Ok(None);
-    };
     let Some(body) = payload.get(body_start..body_limit) else {
         return Ok(None);
     };
-    let Some((_, consumed)) = parse_positional_spline_replay(body, &prototype, cache)? else {
+    let Some((_, consumed)) = parse_positional_spline_replay(body, prototype, cache)? else {
         return Ok(None);
     };
     Ok((body.get(consumed) == Some(&psb::token::COMPOUND_CLOSE))
@@ -3213,9 +3228,45 @@ struct SurfaceArrayFrame {
     count: usize,
 }
 
+/// The first occurrence of one needle at or after an offset.
+///
+/// A query at or after the previous one reuses the previous answer while that
+/// answer still lies at or after the queried offset, so nondecreasing queries
+/// read the haystack once.
+struct ForwardFind<'a> {
+    haystack: &'a [u8],
+    needle: &'a [u8],
+    /// The offset of the previous query and its answer.
+    previous: Option<(usize, Option<usize>)>,
+}
+
+impl<'a> ForwardFind<'a> {
+    fn new(haystack: &'a [u8], needle: &'a [u8]) -> Self {
+        Self {
+            haystack,
+            needle,
+            previous: None,
+        }
+    }
+
+    /// Return what `find(haystack, needle, from)` returns.
+    fn at_or_after(&mut self, from: usize) -> Option<usize> {
+        if let Some((searched, found)) = self.previous {
+            if searched <= from && found.is_none_or(|at| at >= from) {
+                return found;
+            }
+        }
+        let found = find(self.haystack, self.needle, from);
+        self.previous = Some((from, found));
+        found
+    }
+}
+
 fn surface_array_frames(payload: &[u8]) -> impl Iterator<Item = SurfaceArrayFrame> + '_ {
     const LABEL: &[u8] = b"srf_array\0";
     let mut search = 0;
+    let mut terminators = [b"crv_array\0".as_slice(), b"lo_array\0", b"qlt_array\0"]
+        .map(|terminator| ForwardFind::new(payload, terminator));
     std::iter::from_fn(move || {
         loop {
             let label = find(payload, LABEL, search)?;
@@ -3235,8 +3286,8 @@ fn surface_array_frames(payload: &[u8]) -> impl Iterator<Item = SurfaceArrayFram
                 continue;
             };
             let mut end = find(payload, LABEL, start).unwrap_or(payload.len());
-            for terminator in [b"crv_array\0".as_slice(), b"lo_array\0", b"qlt_array\0"] {
-                if let Some(offset) = find(payload, terminator, after_count) {
+            for terminator in &mut terminators {
+                if let Some(offset) = terminator.at_or_after(after_count) {
                     end = end.min(offset);
                 }
             }
@@ -3855,6 +3906,14 @@ fn named_prototype_frames(payload: &[u8]) -> Vec<NamedPrototypeFrame<'_>> {
     let cache = scalar::ScalarCache::from_section_checked(payload);
     let mut frames = Vec::new();
     let mut search = 0;
+    let mut record_terminators = [
+        b"srf_prim_ptr\0".as_slice(),
+        b"\xe0\x00entity_ptr(",
+        b"crv_array\0",
+        b"lo_array\0",
+        b"qlt_array\0",
+    ]
+    .map(|terminator| ForwardFind::new(payload, terminator));
     while let Some(record_start) = find(payload, b"srf_prim_ptr(", search) {
         let family_start = record_start + b"srf_prim_ptr(".len();
         let Some(close) = find(payload, b")\0", family_start) else {
@@ -3869,14 +3928,8 @@ fn named_prototype_frames(payload: &[u8]) -> Vec<NamedPrototypeFrame<'_>> {
             }
         };
         let mut record_end = find(payload, b"srf_prim_ptr(", close + 2).unwrap_or(payload.len());
-        if let Some(at) = find(payload, b"srf_prim_ptr\0", close + 2) {
-            record_end = record_end.min(at);
-        }
-        if let Some(at) = find(payload, b"\xe0\x00entity_ptr(", close + 2) {
-            record_end = record_end.min(at);
-        }
-        for marker in [b"crv_array\0".as_slice(), b"lo_array\0", b"qlt_array\0"] {
-            if let Some(at) = find(payload, marker, close + 2) {
+        for terminator in &mut record_terminators {
+            if let Some(at) = terminator.at_or_after(close + 2) {
                 record_end = record_end.min(at);
             }
         }
@@ -5540,8 +5593,8 @@ fn decode_inline_surface_suffix_at(
             ([value, 0.0], end)
         }
         SurfaceKind::TorusOrSphere => {
-            let (major, next) = scalar::decode_inline_surface_suffix_scalar(local, cursor, cache)?;
-            let (minor, end) = scalar::decode_inline_surface_suffix_scalar(local, next, cache)?;
+            let (major, next) = scalar::decode_type26_radius_slot(local, cursor, cache)?;
+            let (minor, end) = scalar::decode_type26_radius_slot(local, next, cache)?;
             ([major, minor], end)
         }
         _ => return None,
@@ -5839,6 +5892,7 @@ pub(crate) fn parameter_records_for_rows(
         Vec::new()
     };
     let mut records = Vec::new();
+    let mut spline_replays = SplineReplayPrototypes::default();
     for (index, (row, body_start)) in headers.iter().enumerate() {
         let next_row = headers
             .get(index + 1)
@@ -5849,16 +5903,10 @@ pub(crate) fn parameter_records_for_rows(
         } else {
             SurfaceBodyBoundary::SectionEnd
         };
-        let positional_spline_close = if row.kind == SurfaceKind::Spline {
-            positional_spline_replay_body_end(
-                ctx,
-                payload,
-                rows,
-                row,
-                *body_start,
-                body_end,
-                &cache,
-            )?
+        let positional_spline_close = if let Some(prototype) =
+            associated_spline_replay_prototype(ctx, payload, rows, row, &mut spline_replays)?
+        {
+            positional_spline_replay_body_end(payload, prototype, *body_start, body_end, &cache)?
         } else {
             None
         };
@@ -6086,6 +6134,7 @@ fn contour_records_for_rows(
         frames.push(frame);
     }
     let mut records = Vec::new();
+    let mut spline_replays = SplineReplayPrototypes::default();
     for (index, row) in rows.iter().enumerate() {
         let frame_end = frames
             .iter()
@@ -6101,8 +6150,10 @@ fn contour_records_for_rows(
         if body_start >= row_end {
             continue;
         }
-        let positional_spline_close = if row.kind == SurfaceKind::Spline {
-            positional_spline_replay_body_end(ctx, payload, rows, row, body_start, row_end, &cache)?
+        let positional_spline_close = if let Some(prototype) =
+            associated_spline_replay_prototype(ctx, payload, rows, row, &mut spline_replays)?
+        {
+            positional_spline_replay_body_end(payload, prototype, body_start, row_end, &cache)?
         } else {
             None
         };
@@ -7305,8 +7356,12 @@ fn named_spline_scalar_slot(
 }
 
 fn named_positive_dict(body: &[u8], offset: usize) -> Option<(f64, usize)> {
+    let prefix = *body.get(offset)?;
+    if let Some(head) = scalar::positive_dict_head(prefix) {
+        return scalar::ieee7_dict(body, offset, head);
+    }
     // wrapping-exception: DICT prefix remapping reconstructs the low IEEE byte modulo 256
-    let second = body.get(offset)?.wrapping_sub(0x8b);
+    let second = prefix.wrapping_sub(0x8b);
     let first = if second >= 0x80 { 0x3f } else { 0x40 };
     scalar::ieee7_with_prefix(body, offset, first, second)
 }

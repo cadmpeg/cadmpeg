@@ -27,7 +27,7 @@ use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 #[test]
 fn source_less_points_round_trip_across_target_versions() {
     let mut ir = CadIr::empty();
-    ir.model.points.push(Point::new(
+    ir.geometry.points.push(Point::new(
         PointId::mint("rhino:test:point#a").expect("identity grammar"),
         cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.25, -2.5, 3.75))
             .expect("a finite position is a point"),
@@ -57,9 +57,9 @@ fn source_less_points_round_trip_across_target_versions() {
         let decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("required invariant");
-        assert_eq!(decoded.ir().model.points.len(), 1);
+        assert_eq!(decoded.ir().geometry.points.len(), 1);
         assert_eq!(
-            decoded.ir().model.points[0].position().get(),
+            decoded.ir().geometry.points[0].position().get(),
             Point3::new(1.25, -2.5, 3.75)
         );
     }
@@ -70,7 +70,7 @@ fn coarse_absolute_tolerance_writes_valid_independent_relative_tolerance() {
     let mut ir = CadIr::empty();
     ir.tolerances.linear =
         cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive finite tolerance");
-    ir.model.points.push(Point::new(
+    ir.geometry.points.push(Point::new(
         PointId::mint("rhino:test:point#coarse-tolerance").expect("identity grammar"),
         cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
             .expect("a finite position is a point"),
@@ -117,7 +117,7 @@ fn invalid_archive_tolerances_are_rejected_before_output() {
 #[test]
 fn rejection_occurs_before_output() {
     let mut ir = CadIr::empty();
-    ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+    ir.geometry.curves.push(cadmpeg_ir::geometry::Curve {
         parameter_range: None,
         id: cadmpeg_ir::ids::CurveId::mint("rhino:test:curve#a").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
@@ -125,6 +125,7 @@ fn rejection_occurs_before_output() {
                 .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     let mut output = vec![0xaa];
     assert!(RhinoCodec
@@ -140,7 +141,7 @@ fn rejection_occurs_before_output() {
 #[test]
 fn source_less_circle_round_trips_with_its_frame() {
     let mut ir = CadIr::empty();
-    ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+    ir.geometry.curves.push(cadmpeg_ir::geometry::Curve {
         parameter_range: None,
         id: cadmpeg_ir::ids::CurveId::mint("rhino:test:curve#circle").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -153,6 +154,7 @@ fn source_less_circle_round_trips_with_its_frame() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     let mut bytes = Vec::new();
     RhinoCodec
@@ -165,17 +167,17 @@ fn source_less_circle_round_trips_with_its_frame() {
     let decoded = RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("required invariant");
-    assert_eq!(decoded.ir().model.curves.len(), 1);
+    assert_eq!(decoded.ir().geometry.curves.len(), 1);
     assert_eq!(
-        decoded.ir().model.curves[0].geometry,
-        ir.model.curves[0].geometry
+        decoded.ir().geometry.curves[0].geometry,
+        ir.geometry.curves[0].geometry
     );
     let digest = Sha256::digest(b"rhino:test:curve#circle");
     let expected =
         crate::wire::Uuid::from_wire(digest[..16].try_into().expect("required invariant"))
             .to_string();
     assert_eq!(
-        decoded.ir().model.curves[0]
+        decoded.ir().geometry.curves[0]
             .source_object
             .as_ref()
             .expect("generated object identity")
@@ -188,7 +190,7 @@ fn source_less_circle_round_trips_with_its_frame() {
 #[test]
 fn rational_nurbs_curve_round_trips_homogeneous_poles() {
     let mut ir = CadIr::empty();
-    ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+    ir.geometry.curves.push(cadmpeg_ir::geometry::Curve {
         parameter_range: None,
         id: cadmpeg_ir::ids::CurveId::mint("rhino:test:curve#nurbs").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -206,6 +208,7 @@ fn rational_nurbs_curve_round_trips_homogeneous_poles() {
             .expect("valid rational curve"),
         )),
         source_object: None,
+        native_ref: None,
     });
     let mut bytes = Vec::new();
     RhinoCodec
@@ -219,8 +222,8 @@ fn rational_nurbs_curve_round_trips_homogeneous_poles() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("required invariant");
     assert_eq!(
-        decoded.ir().model.curves[0].geometry,
-        ir.model.curves[0].geometry
+        decoded.ir().geometry.curves[0].geometry,
+        ir.geometry.curves[0].geometry
     );
 }
 
@@ -250,7 +253,7 @@ fn reversed_unclamped_nurbs_knots_are_native_canonical() {
 #[test]
 fn free_plane_and_rational_nurbs_surface_round_trip() {
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+    ir.geometry.surfaces.push(cadmpeg_ir::geometry::Surface {
         id: cadmpeg_ir::ids::SurfaceId::mint("rhino:test:surface#plane").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -261,8 +264,9 @@ fn free_plane_and_rational_nurbs_surface_round_trip() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
-    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+    ir.geometry.surfaces.push(cadmpeg_ir::geometry::Surface {
         id: cadmpeg_ir::ids::SurfaceId::mint("rhino:test:surface#nurbs").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
             cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
@@ -289,10 +293,11 @@ fn free_plane_and_rational_nurbs_surface_round_trip() {
             .expect("valid rational surface"),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.finalize();
     let expected = ir
-        .model
+        .geometry
         .surfaces
         .iter()
         .map(|s| s.geometry.clone())
@@ -316,7 +321,7 @@ fn free_plane_and_rational_nurbs_surface_round_trip() {
             .expect("required invariant");
         let actual = decoded
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .map(|s| s.geometry.clone())
@@ -387,10 +392,12 @@ fn standalone_mesh_round_trips_across_archive_versions() {
 
     ir.model.tessellations[0] = ir.model.tessellations[0]
         .clone()
-        .with_triangle_groups(vec![cadmpeg_ir::tessellation::TessellationTriangleGroup {
-            source_id: Some("synthetic:test:group#0".into()),
-            triangles: vec![0],
-        }])
+        .with_triangle_groups(vec![
+            cadmpeg_ir::tessellation::TessellationTriangleGroup::new(
+                Some("synthetic:test:group#0".into()),
+                vec![0],
+            ),
+        ])
         .expect("valid triangle group partition");
     assert!(matches!(
         RhinoCodec.plan(
@@ -598,39 +605,39 @@ fn free_vertex_body_preserves_point_cloud_grouping() {
         cadmpeg_ir::ids::PointId::mint("cadir:model:point#cloud.0").expect("identity grammar"),
         cadmpeg_ir::ids::PointId::mint("cadir:model:point#cloud.1").expect("identity grammar"),
     ];
-    ir.model.bodies.push(cadmpeg_ir::topology::Body {
+    ir.geometry.bodies.push(cadmpeg_ir::topology::Body {
         id: body_id.clone(),
         kind: cadmpeg_ir::topology::BodyKind::General,
-        regions: vec![region_id.clone()],
         transform: None,
         name: Some("survey points".into()),
         color: Some(
             cadmpeg_ir::topology::Color::new(1.0, 0.0, 128.0 / 255.0, 1.0).expect("valid color"),
         ),
         visible: Some(false),
+        native_ref: None,
     });
-    ir.model.regions.push(cadmpeg_ir::topology::Region {
+    ir.geometry.regions.push(cadmpeg_ir::topology::Region {
         id: region_id.clone(),
         body: body_id,
         shells: vec![shell_id.clone()],
+        native_ref: None,
     });
-    ir.model.shells.push(
-        cadmpeg_ir::topology::Shell::new(
+    ir.geometry
+        .shells
+        .push(cadmpeg_ir::topology::Shell::with_members(
             shell_id,
             region_id,
             Vec::new(),
-            Vec::new(),
             vertex_ids.to_vec(),
-        )
-        .unwrap(),
-    );
+        ));
     for (index, (vertex, point)) in vertex_ids.into_iter().zip(point_ids).enumerate() {
-        ir.model.vertices.push(cadmpeg_ir::topology::Vertex {
+        ir.geometry.vertices.push(cadmpeg_ir::topology::Vertex {
             id: vertex,
             point: point.clone(),
             tolerance: None,
+            native_ref: None,
         });
-        ir.model.points.push(cadmpeg_ir::topology::Point::new(
+        ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
             point,
             cadmpeg_ir::features::FinitePoint3::new(Point3::new(
                 cadmpeg_core::convert::f64_from_index(index)
@@ -655,21 +662,24 @@ fn free_vertex_body_preserves_point_cloud_grouping() {
     let decoded = RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("required invariant");
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.vertices.len(), 2);
-    assert_eq!(decoded.ir().model.points.len(), 2);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.vertices.len(), 2);
+    assert_eq!(decoded.ir().geometry.points.len(), 2);
     assert_eq!(
-        decoded.ir().model.bodies[0].name.as_deref(),
+        decoded.ir().geometry.bodies[0].name.as_deref(),
         Some("survey points")
     );
-    assert_eq!(decoded.ir().model.bodies[0].color, ir.model.bodies[0].color);
-    assert_eq!(decoded.ir().model.bodies[0].visible, Some(false));
+    assert_eq!(
+        decoded.ir().geometry.bodies[0].color,
+        ir.geometry.bodies[0].color
+    );
+    assert_eq!(decoded.ir().geometry.bodies[0].visible, Some(false));
 }
 
 #[test]
 fn supported_decoded_geometry_can_be_edited_and_rewritten() {
     let mut source = CadIr::empty();
-    source.model.points.push(Point::new(
+    source.geometry.points.push(Point::new(
         PointId::mint("cadir:model:point#retained").expect("identity grammar"),
         cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
             .expect("a finite position is a point"),
@@ -688,7 +698,7 @@ fn supported_decoded_geometry_can_be_edited_and_rewritten() {
         .expect("required invariant");
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(decoded.ir().native.namespace("rhino").is_some());
-    decoded.ir_mut().model.points[0].set_position(
+    decoded.ir_mut().geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0))
             .expect("a finite position is a point"),
     );
@@ -705,7 +715,7 @@ fn supported_decoded_geometry_can_be_edited_and_rewritten() {
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("required invariant");
     assert_eq!(
-        rewritten.ir().model.points[0].position().get(),
+        rewritten.ir().geometry.points[0].position().get(),
         Point3::new(4.0, 5.0, 6.0)
     );
 }
@@ -713,7 +723,7 @@ fn supported_decoded_geometry_can_be_edited_and_rewritten() {
 #[test]
 fn unsupported_retained_native_records_are_refused_before_output() {
     let mut source = CadIr::empty();
-    source.model.points.push(Point::new(
+    source.geometry.points.push(Point::new(
         PointId::mint("cadir:model:point#retained").expect("identity grammar"),
         cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
             .expect("a finite position is a point"),
@@ -762,7 +772,7 @@ fn unsupported_retained_native_records_are_refused_before_output() {
 #[test]
 fn noncanonical_nurbs_periodicity_is_rejected_atomically() {
     let mut ir = CadIr::empty();
-    ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+    ir.geometry.curves.push(cadmpeg_ir::geometry::Curve {
         parameter_range: None,
         id: cadmpeg_ir::ids::CurveId::mint("cadir:model:curve#periodic").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -780,6 +790,7 @@ fn noncanonical_nurbs_periodicity_is_rejected_atomically() {
             .expect("valid periodic fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
     let mut output = vec![0xaa];
     assert!(RhinoCodec
@@ -853,7 +864,7 @@ fn standalone_support_points_and_curves_are_withheld_with_counted_export_loss() 
         instance_path: Vec::new(),
     };
     let mut ir = CadIr::empty();
-    ir.model.points.push(Point::new(
+    ir.geometry.points.push(Point::new(
         "test:model:point#independent"
             .try_into()
             .expect("synthetic support fixture is admitted"),
@@ -861,7 +872,7 @@ fn standalone_support_points_and_curves_are_withheld_with_counted_export_loss() 
             .expect("synthetic support fixture is admitted"),
         None,
     ));
-    ir.model.points.push(Point::new(
+    ir.geometry.points.push(Point::new(
         "test:model:point#support"
             .try_into()
             .expect("synthetic support fixture is admitted"),
@@ -869,7 +880,7 @@ fn standalone_support_points_and_curves_are_withheld_with_counted_export_loss() 
             .expect("synthetic support fixture is admitted"),
         Some(support.clone()),
     ));
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         id: "test:model:curve#support"
             .try_into()
             .expect("synthetic support fixture is admitted"),
@@ -880,6 +891,7 @@ fn standalone_support_points_and_curves_are_withheld_with_counted_export_loss() 
         ))),
         parameter_range: None,
         source_object: Some(support),
+        native_ref: None,
     });
     let plan = RhinoCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
@@ -899,10 +911,10 @@ fn standalone_support_points_and_curves_are_withheld_with_counted_export_loss() 
     let decoded = RhinoCodec
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("synthetic support fixture is admitted");
-    assert_eq!(decoded.ir().model.points.len(), 1);
+    assert_eq!(decoded.ir().geometry.points.len(), 1);
     assert_eq!(
-        decoded.ir().model.points[0].position().get(),
+        decoded.ir().geometry.points[0].position().get(),
         Point3::new(1.0, 2.0, 3.0)
     );
-    assert!(decoded.ir().model.curves.is_empty());
+    assert!(decoded.ir().geometry.curves.is_empty());
 }

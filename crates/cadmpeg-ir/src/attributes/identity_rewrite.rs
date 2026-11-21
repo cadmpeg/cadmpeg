@@ -17,7 +17,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
             Some("body") => crate::schema::rewrite::typed::native_fields::rewrite_field(
                 ctx,
                 value,
-                "id",
+                "value",
                 map,
                 |owner: &Self| match owner {
                     Self::Body(id) => Some(id),
@@ -27,7 +27,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
             Some("face") => crate::schema::rewrite::typed::native_fields::rewrite_field(
                 ctx,
                 value,
-                "id",
+                "value",
                 map,
                 |owner: &Self| match owner {
                     Self::Face(id) => Some(id),
@@ -37,7 +37,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
             Some("shell") => crate::schema::rewrite::typed::native_fields::rewrite_field(
                 ctx,
                 value,
-                "id",
+                "value",
                 map,
                 |owner: &Self| match owner {
                     Self::Shell(id) => Some(id),
@@ -47,7 +47,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
             Some("loop") => crate::schema::rewrite::typed::native_fields::rewrite_field(
                 ctx,
                 value,
-                "id",
+                "value",
                 map,
                 |owner: &Self| match owner {
                     Self::Loop(id) => Some(id),
@@ -57,7 +57,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
             Some("coedge") => crate::schema::rewrite::typed::native_fields::rewrite_field(
                 ctx,
                 value,
-                "id",
+                "value",
                 map,
                 |owner: &Self| match owner {
                     Self::Coedge(id) => Some(id),
@@ -67,7 +67,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
             Some("edge") => crate::schema::rewrite::typed::native_fields::rewrite_field(
                 ctx,
                 value,
-                "id",
+                "value",
                 map,
                 |owner: &Self| match owner {
                     Self::Edge(id) => Some(id),
@@ -77,10 +77,20 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
             Some("vertex") => crate::schema::rewrite::typed::native_fields::rewrite_field(
                 ctx,
                 value,
-                "id",
+                "value",
                 map,
                 |owner: &Self| match owner {
                     Self::Vertex(id) => Some(id),
+                    _ => None,
+                },
+            ),
+            Some("configuration") => crate::schema::rewrite::typed::native_fields::rewrite_field(
+                ctx,
+                value,
+                "value",
+                map,
+                |owner: &Self| match owner {
+                    Self::Configuration(id) => Some(id),
                     _ => None,
                 },
             ),
@@ -106,6 +116,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
             Self::Coedge(id) => id.visit_identity_references(ctx, visitor),
             Self::Edge(id) => id.visit_identity_references(ctx, visitor),
             Self::Vertex(id) => id.visit_identity_references(ctx, visitor),
+            Self::Configuration(id) => id.visit_identity_references(ctx, visitor),
         }
     }
     fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
@@ -124,6 +135,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
             Self::Coedge(id) => Self::Coedge(id.rewrite_identities(ctx, map)?),
             Self::Edge(id) => Self::Edge(id.rewrite_identities(ctx, map)?),
             Self::Vertex(id) => Self::Vertex(id.rewrite_identities(ctx, map)?),
+            Self::Configuration(id) => Self::Configuration(id.rewrite_identities(ctx, map)?),
         })
     }
 }
@@ -134,6 +146,7 @@ rewrite_enum!(AttributeValue, []; {
     String(field0),
     Boolean(field0),
     Reference(field0),
+    Parameter(field0),
     Vector(field0),
 });
 rewrite_record!(SourceAttribute, []; {id, target, name, values});

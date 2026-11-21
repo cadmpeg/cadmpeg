@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 use std::io::Cursor;
 
-use cadmpeg_ir::document::Model;
+use cadmpeg_ir::document::Topology;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::math::Point3;
@@ -23,6 +23,7 @@ fn authored_geometry_topology_keeps_source_objects_body_topology_and_curves() {
         .unwrap();
     let ir = decoded.ir();
     let model = &ir.model;
+    let geometry = &ir.geometry;
     let mut features = model.features.iter().collect::<Vec<_>>();
     features.sort_by_key(|feature| feature.ordinal);
     let source_shapes = [
@@ -40,7 +41,7 @@ fn authored_geometry_topology_keeps_source_objects_body_topology_and_curves() {
         ("Swept", BodyKind::Solid, 1, 1, 3, 3, 2),
     ];
     assert_eq!(features.len(), source_shapes.len());
-    assert_eq!(model.bodies.len(), source_shapes.len());
+    assert_eq!(geometry.bodies.len(), source_shapes.len());
 
     let native_objects = ir
         .native
@@ -95,15 +96,19 @@ fn authored_geometry_topology_keeps_source_objects_body_topology_and_curves() {
             output_ids.insert(body_id.as_str().to_owned()),
             "{name}: duplicate output"
         );
-        let body = model
+        let body = geometry
             .bodies
             .iter()
             .find(|body| &body.id == body_id)
             .unwrap_or_else(|| panic!("{name}: output body resolves"));
         assert_eq!(body.kind, expected_kind, "{name}: body kind");
-        assert_eq!(body.regions.len(), expected_regions, "{name}: regions");
+        assert_eq!(
+            geometry.body_regions(&body.id).count(),
+            expected_regions,
+            "{name}: regions"
+        );
         assert_body_topology(
-            model,
+            geometry,
             body,
             expected_shells,
             expected_faces,
@@ -112,16 +117,11 @@ fn authored_geometry_topology_keeps_source_objects_body_topology_and_curves() {
             name,
         );
 
-        for region_id in &body.regions {
-            let region = model
-                .regions
-                .iter()
-                .find(|region| &region.id == region_id)
-                .unwrap_or_else(|| panic!("{name}: region resolves"));
+        for region in geometry.body_regions(&body.id) {
             assert_eq!(region.body, body.id, "{name}: region owner");
             assert!(!region.shells.is_empty(), "{name}: region shells");
             for shell_id in &region.shells {
-                let shell = model
+                let shell = geometry
                     .shells
                     .iter()
                     .find(|shell| &shell.id == shell_id)
@@ -142,28 +142,27 @@ fn authored_geometry_topology_keeps_source_objects_body_topology_and_curves() {
     let [carrier_body_id] = feature("CurveCarriers").evaluation.outputs().as_slice() else {
         panic!("CurveCarriers: expected one output body")
     };
-    let carrier_body = model
+    let carrier_body = geometry
         .bodies
         .iter()
         .find(|body| &body.id == carrier_body_id)
         .unwrap();
     let mut carrier_curves = Vec::new();
-    for region_id in &carrier_body.regions {
-        let region = model
-            .regions
-            .iter()
-            .find(|region| &region.id == region_id)
-            .unwrap();
+    for region in geometry.body_regions(&carrier_body.id) {
         for shell_id in &region.shells {
-            let shell = model
+            let shell = geometry
                 .shells
                 .iter()
                 .find(|shell| &shell.id == shell_id)
                 .unwrap();
             for edge_id in shell.wire_edges() {
-                let edge = model.edges.iter().find(|edge| &edge.id == edge_id).unwrap();
+                let edge = geometry
+                    .edges
+                    .iter()
+                    .find(|edge| &edge.id == edge_id)
+                    .unwrap();
                 let curve_id = edge.curve().expect("CurveCarriers edge has a curve");
-                let curve = model
+                let curve = geometry
                     .curves
                     .iter()
                     .find(|curve| &curve.id == curve_id)
@@ -273,32 +272,26 @@ fn authored_geometry_topology_keeps_source_objects_body_topology_and_curves() {
     let [surface_body_id] = feature("FreeformSurface").evaluation.outputs().as_slice() else {
         panic!("FreeformSurface: expected one output body")
     };
-    let surface_body = model
+    let surface_body = geometry
         .bodies
         .iter()
         .find(|body| &body.id == surface_body_id)
         .unwrap();
-    let [region_id] = surface_body.regions.as_slice() else {
+    let [region] = geometry.body_regions(&surface_body.id).collect::<Vec<_>>()[..] else {
         panic!("FreeformSurface: expected one region")
     };
-    let region = model
-        .regions
-        .iter()
-        .find(|region| &region.id == region_id)
-        .unwrap();
     let [shell_id] = region.shells.as_slice() else {
         panic!("FreeformSurface: expected one shell")
     };
-    let shell = model
+    let shell = geometry
         .shells
         .iter()
         .find(|shell| &shell.id == shell_id)
         .unwrap();
-    let [face_id] = shell.faces() else {
+    let [face] = geometry.shell_faces(&shell.id).collect::<Vec<_>>()[..] else {
         panic!("FreeformSurface: expected one face")
     };
-    let face = model.faces.iter().find(|face| &face.id == face_id).unwrap();
-    let surface = model
+    let surface = geometry
         .surfaces
         .iter()
         .find(|surface| surface.id == face.surface)
@@ -322,47 +315,35 @@ fn authored_closed_shapes_keep_void_shells_cylinder_seam_and_disconnected_shells
     let decoded = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    let model = &decoded.ir().model;
+    let geometry = &decoded.ir().geometry;
 
-    let void_body = body_for_feature(model, "Void");
-    let [void_region_id] = void_body.regions.as_slice() else {
+    let void_body = body_for_feature(decoded.ir(), "Void");
+    let [void_region] = geometry.body_regions(&void_body.id).collect::<Vec<_>>()[..] else {
         panic!("Void: one connected solid region")
     };
-    let void_region = model
-        .regions
-        .iter()
-        .find(|region| &region.id == void_region_id)
-        .unwrap();
     let [outer_shell_id, cavity_shell_id] = void_region.shells.as_slice() else {
         panic!("Void: one exterior shell and one cavity shell")
     };
     for shell_id in [outer_shell_id, cavity_shell_id] {
-        let shell = shell_for_id(model, shell_id.as_str());
+        let shell = shell_for_id(geometry, shell_id.as_str());
         assert_eq!(shell.region, void_region.id, "Void: shell region owner");
-        assert_closed_shell(model, shell, 6);
+        assert_closed_shell(geometry, shell, 6);
     }
 
-    let seam_body = body_for_feature(model, "Seam");
-    let [seam_region_id] = seam_body.regions.as_slice() else {
+    let seam_body = body_for_feature(decoded.ir(), "Seam");
+    let [seam_region] = geometry.body_regions(&seam_body.id).collect::<Vec<_>>()[..] else {
         panic!("Seam: one connected solid region")
     };
-    let seam_region = model
-        .regions
-        .iter()
-        .find(|region| &region.id == seam_region_id)
-        .unwrap();
     let [seam_shell_id] = seam_region.shells.as_slice() else {
         panic!("Seam: one closed shell")
     };
-    let seam_shell = shell_for_id(model, seam_shell_id.as_str());
-    assert_closed_shell(model, seam_shell, 3);
+    let seam_shell = shell_for_id(geometry, seam_shell_id.as_str());
+    assert_closed_shell(geometry, seam_shell, 3);
 
-    let cylindrical_faces = seam_shell
-        .faces()
-        .iter()
-        .map(|face_id| model.faces.iter().find(|face| &face.id == face_id).unwrap())
+    let cylindrical_faces = geometry
+        .shell_faces(&seam_shell.id)
         .filter(|face| {
-            model
+            geometry
                 .surfaces
                 .iter()
                 .find(|surface| surface.id == face.surface)
@@ -381,7 +362,7 @@ fn authored_closed_shapes_keep_void_shells_cylinder_seam_and_disconnected_shells
     let [cylindrical_loop_id] = cylindrical_loop_ids.as_slice() else {
         panic!("Seam: one lateral boundary loop")
     };
-    let cylindrical_loop = model
+    let cylindrical_loop = geometry
         .loops
         .iter()
         .find(|loop_| &loop_.id == *cylindrical_loop_id)
@@ -398,7 +379,7 @@ fn authored_closed_shapes_keep_void_shells_cylinder_seam_and_disconnected_shells
         .coedges()
         .iter()
         .map(|coedge_id| {
-            model
+            geometry
                 .coedges
                 .iter()
                 .find(|coedge| &coedge.id == coedge_id)
@@ -435,20 +416,15 @@ fn authored_closed_shapes_keep_void_shells_cylinder_seam_and_disconnected_shells
         "Seam: opposite traversal"
     );
 
-    let multi_shell_body = body_for_feature(model, "MultiShell");
+    let multi_shell_body = body_for_feature(decoded.ir(), "MultiShell");
     let mut multi_shell_ids = Vec::new();
-    for region_id in &multi_shell_body.regions {
-        let region = model
-            .regions
-            .iter()
-            .find(|region| &region.id == region_id)
-            .unwrap();
+    for region in geometry.body_regions(&multi_shell_body.id) {
         let [shell_id] = region.shells.as_slice() else {
             panic!("MultiShell: one shell per disconnected box")
         };
-        let shell = shell_for_id(model, shell_id.as_str());
+        let shell = shell_for_id(geometry, shell_id.as_str());
         assert_eq!(shell.region, region.id, "MultiShell: shell region owner");
-        assert_closed_shell(model, shell, 6);
+        assert_closed_shell(geometry, shell, 6);
         multi_shell_ids.push(shell_id);
     }
     assert_eq!(
@@ -459,8 +435,9 @@ fn authored_closed_shapes_keep_void_shells_cylinder_seam_and_disconnected_shells
     assert_ne!(multi_shell_ids[0], multi_shell_ids[1]);
 }
 
-fn body_for_feature<'a>(model: &'a Model, name: &str) -> &'a Body {
-    let feature = model
+fn body_for_feature<'a>(ir: &'a cadmpeg_ir::CadIr, name: &str) -> &'a Body {
+    let feature = ir
+        .model
         .features
         .iter()
         .find(|feature| feature.name.as_deref() == Some(name))
@@ -468,7 +445,7 @@ fn body_for_feature<'a>(model: &'a Model, name: &str) -> &'a Body {
     let [body_id] = feature.evaluation.outputs().as_slice() else {
         panic!("{name}: one output body")
     };
-    model
+    ir.geometry
         .bodies
         .iter()
         .find(|body| &body.id == body_id)
@@ -476,7 +453,7 @@ fn body_for_feature<'a>(model: &'a Model, name: &str) -> &'a Body {
 }
 
 fn assert_body_topology(
-    model: &Model,
+    geometry: &Topology,
     body: &Body,
     expected_shells: usize,
     expected_faces: usize,
@@ -484,27 +461,17 @@ fn assert_body_topology(
     expected_vertices: usize,
     name: &str,
 ) {
-    let regions = body
-        .regions
-        .iter()
-        .map(|region_id| {
-            model
-                .regions
-                .iter()
-                .find(|region| &region.id == region_id)
-                .unwrap_or_else(|| panic!("{name}: region resolves"))
-        })
-        .collect::<Vec<_>>();
+    let regions = geometry.body_regions(&body.id).collect::<Vec<_>>();
     let shells = regions
         .iter()
         .flat_map(|region| region.shells.iter())
-        .map(|shell_id| shell_for_id(model, shell_id.as_str()))
+        .map(|shell_id| shell_for_id(geometry, shell_id.as_str()))
         .collect::<Vec<_>>();
     let faces = shells
         .iter()
-        .flat_map(|shell| shell.faces())
+        .flat_map(|shell| geometry.shell_faces(&shell.id).map(|face| &face.id))
         .map(|face_id| {
-            model
+            geometry
                 .faces
                 .iter()
                 .find(|face| &face.id == face_id)
@@ -513,26 +480,16 @@ fn assert_body_topology(
         .collect::<Vec<_>>();
     let mut edge_ids = shells
         .iter()
-        .flat_map(|shell| {
-            shell
-                .wire_edges()
-                .iter()
-                .map(cadmpeg_ir::ids::EdgeId::as_str)
-        })
+        .flat_map(|shell| shell.wire_edges().map(cadmpeg_ir::ids::EdgeId::as_str))
         .collect::<BTreeSet<_>>();
     let mut vertex_ids = shells
         .iter()
-        .flat_map(|shell| {
-            shell
-                .free_vertices()
-                .iter()
-                .map(cadmpeg_ir::ids::VertexId::as_str)
-        })
+        .flat_map(|shell| shell.free_vertices().map(cadmpeg_ir::ids::VertexId::as_str))
         .collect::<BTreeSet<_>>();
 
     for face in &faces {
         for loop_id in &face.loops {
-            let loop_ = model
+            let loop_ = geometry
                 .loops
                 .iter()
                 .find(|loop_| &loop_.id == loop_id)
@@ -541,7 +498,7 @@ fn assert_body_topology(
                 panic!("{name}: authored shape loops are coedge rings")
             };
             for coedge_id in ring.coedges() {
-                let coedge = model
+                let coedge = geometry
                     .coedges
                     .iter()
                     .find(|coedge| &coedge.id == coedge_id)
@@ -551,13 +508,13 @@ fn assert_body_topology(
         }
     }
     for edge_id in &edge_ids {
-        let edge = model
+        let edge = geometry
             .edges
             .iter()
             .find(|edge| edge.id.as_str() == *edge_id)
             .unwrap_or_else(|| panic!("{name}: edge resolves"));
-        vertex_ids.insert(edge.start.as_str());
-        vertex_ids.insert(edge.end.as_str());
+        vertex_ids.insert(edge.ends.as_ref().unwrap().start.as_str());
+        vertex_ids.insert(edge.ends.as_ref().unwrap().end.as_str());
     }
 
     assert_eq!(shells.len(), expected_shells, "{name}: source shells");
@@ -570,22 +527,25 @@ fn assert_body_topology(
     );
 }
 
-fn shell_for_id<'a>(model: &'a Model, shell_id: &str) -> &'a Shell {
-    model
+fn shell_for_id<'a>(geometry: &'a Topology, shell_id: &str) -> &'a Shell {
+    geometry
         .shells
         .iter()
         .find(|shell| shell.id.as_str() == shell_id)
         .unwrap_or_else(|| panic!("missing shell {shell_id}"))
 }
 
-fn assert_closed_shell(model: &Model, shell: &Shell, expected_faces: usize) {
-    assert_eq!(shell.faces().len(), expected_faces, "shell face count");
+fn assert_closed_shell(geometry: &Topology, shell: &Shell, expected_faces: usize) {
+    assert_eq!(
+        geometry.shell_faces(&shell.id).count(),
+        expected_faces,
+        "shell face count"
+    );
     let mut uses = Vec::new();
-    for face_id in shell.faces() {
-        let face = model.faces.iter().find(|face| &face.id == face_id).unwrap();
+    for face in geometry.shell_faces(&shell.id) {
         assert_eq!(face.shell, shell.id, "face shell owner");
         for loop_id in &face.loops {
-            let loop_ = model
+            let loop_ = geometry
                 .loops
                 .iter()
                 .find(|loop_| &loop_.id == loop_id)
@@ -594,7 +554,7 @@ fn assert_closed_shell(model: &Model, shell: &Shell, expected_faces: usize) {
                 panic!("closed box and cylinder faces have coedge rings")
             };
             for coedge_id in ring.coedges() {
-                let coedge = model
+                let coedge = geometry
                     .coedges
                     .iter()
                     .find(|coedge| &coedge.id == coedge_id)
@@ -640,7 +600,7 @@ fn assert_curve_interpolation_points(curve: &cadmpeg_ir::geometry::nurbs::NurbsC
         .filter(|span| span[1] > span[0])
         .map(|span| (span[0] + span[1]) * 0.5)
         .collect::<Vec<_>>();
-    let context = cadmpeg_test_support::service_decode_context();
+    let context = cadmpeg_core::decode::test_support::service_decode_context();
     for point in points {
         let parameter = seeds
             .iter()
@@ -678,7 +638,7 @@ fn assert_surface_interpolation_points(surface: &cadmpeg_ir::geometry::nurbs::Nu
         Point3::new(10.0, 5.0, 2.0),
         Point3::new(10.0, 10.0, 0.0),
     ];
-    let context = cadmpeg_test_support::service_decode_context();
+    let context = cadmpeg_core::decode::test_support::service_decode_context();
     for point in points {
         let parameters = cadmpeg_ir::eval::nurbs_surface_closest_parameter_with_budget(
             &context,

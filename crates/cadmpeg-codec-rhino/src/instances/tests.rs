@@ -303,7 +303,7 @@ fn instance_definition_readers_follow_source_minor_boundaries() {
     append_crc_suffix(&mut reference, &[0xa5, 0x5a]);
     let mut reader = BoundedReader::new(&reference, 0, reference.len()).expect("chunk bounds");
     let parsed = parse_file_reference(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &reference,
         &mut reader,
         ArchiveVersion::V6,
@@ -821,8 +821,8 @@ fn definition_scan_recovers_after_malformed_record_and_preserves_membership_unio
     }
     set_test_units(&mut scan, 1.0);
     let result = crate::decode::decode_for_test(&scan);
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert!(result.ir().model.bodies[0]
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert!(result.ir().geometry.bodies[0]
         .id
         .to_string()
         .contains("definition-member-3"));
@@ -872,18 +872,18 @@ pub(crate) fn static_instance_suppresses_member_and_two_references_expand_with_d
     );
 
     let result = crate::decode::decode_for_test(&scan);
-    assert_eq!(result.ir().model.bodies.len(), 2);
-    assert_eq!(result.ir().model.points.len(), 2);
+    assert_eq!(result.ir().geometry.bodies.len(), 2);
+    assert_eq!(result.ir().geometry.points.len(), 2);
     assert!(result
         .ir()
-        .model
+        .geometry
         .bodies
         .iter()
         .all(|body| body.transform.is_none()));
     assert_eq!(
         result
             .ir()
-            .model
+            .geometry
             .points
             .iter()
             .map(|point| point.position().get())
@@ -892,7 +892,7 @@ pub(crate) fn static_instance_suppresses_member_and_two_references_expand_with_d
     );
     let body_ids = result
         .ir()
-        .model
+        .geometry
         .bodies
         .iter()
         .map(|body| body.id.to_string())
@@ -983,10 +983,10 @@ fn instance_transform_uses_member_carriers_for_mixed_body_and_free_geometry() {
     );
 
     let result = crate::decode::decode_for_test(&scan);
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.points[0].position().get().x, 11.0);
-    assert!(result.ir().model.bodies[0].transform.is_none());
-    let Some(SolvedCurveGeometry::Nurbs(curve)) = result.ir().model.curves[0].geometry.solved()
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.points[0].position().get().x, 11.0);
+    assert!(result.ir().geometry.bodies[0].transform.is_none());
+    let Some(SolvedCurveGeometry::Nurbs(curve)) = result.ir().geometry.curves[0].geometry.solved()
     else {
         panic!("free member curve must remain a transformed solved carrier");
     };
@@ -1052,8 +1052,8 @@ pub(crate) fn nested_instance_composes_parent_child_and_records_outer_to_inner_p
     );
 
     let result = crate::decode::decode_for_test(&scan);
-    assert_eq!(result.ir().model.curves.len(), 1);
-    let curve = &result.ir().model.curves[0];
+    assert_eq!(result.ir().geometry.curves.len(), 1);
+    let curve = &result.ir().geometry.curves[0];
     let Some(SolvedCurveGeometry::Nurbs(nurbs)) = curve.geometry.solved() else {
         panic!("expected transformed NURBS");
     };
@@ -1144,10 +1144,10 @@ pub(crate) fn nil_and_duplicate_reference_ids_use_distinct_record_path_segments(
     );
 
     let result = crate::decode::decode_for_test(&scan);
-    assert_eq!(result.ir().model.curves.len(), 4);
+    assert_eq!(result.ir().geometry.curves.len(), 4);
     let ids = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .map(|curve| curve.id.to_string())
@@ -1155,7 +1155,7 @@ pub(crate) fn nil_and_duplicate_reference_ids_use_distinct_record_path_segments(
     assert_eq!(ids.len(), 4);
     let paths = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .map(|curve| {
@@ -1231,7 +1231,7 @@ pub(crate) fn instance_bakes_mesh_subd_and_normals_without_changing_subd_metadat
         mesh.vertex_normals()[0],
         cadmpeg_ir::math::Vector3::new(0.242_535_625_036_332_97, 0.0, 0.970_142_500_145_331_9)
     );
-    let subd = &result.ir().model.subds[0];
+    let subd = &result.ir().geometry.subds[0];
     assert_eq!(
         wire::field::<Vec<subd::SubdVertex>>(&(subd.cage), "vertices")[2]
             .point()
@@ -1294,7 +1294,7 @@ fn failed_instance_expansion_retains_inflated_member_mesh_budget() {
         let result =
             crate::decode::seal_for_test(context.commit().expect("test decode commit"), false);
         assert!(result.ir().model.tessellations.is_empty());
-        assert!(result.ir().model.bodies.is_empty());
+        assert!(result.ir().geometry.bodies.is_empty());
     });
 }
 
@@ -1320,7 +1320,7 @@ pub(crate) fn nonuniform_instance_converts_analytic_circle_to_exact_nurbs() {
     );
 
     let result = crate::decode::decode_for_test(&scan);
-    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = result.ir().model.curves[0].geometry.solved()
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = result.ir().geometry.curves[0].geometry.solved()
     else {
         panic!("nonuniform circle must become NURBS");
     };
@@ -1365,8 +1365,8 @@ pub(crate) fn transformed_procedural_instance_keeps_solved_carriers_without_dang
     );
 
     let result = crate::decode::decode_for_test(&scan);
-    assert!(!result.ir().model.surfaces.is_empty());
-    assert!(result.ir().model.procedural_surfaces.is_empty());
+    assert!(!result.ir().geometry.surfaces.is_empty());
+    assert!(result.ir().geometry.procedural_surfaces.is_empty());
     assert!(result
         .report()
         .losses
@@ -1439,10 +1439,10 @@ fn branching_instance_member_limit_retains_the_wide_reference() {
         let result =
             crate::decode::seal_for_test(context.commit().expect("test decode commit"), false);
         assert_eq!(
-            result.ir().model.points.len(),
+            result.ir().geometry.points.len(),
             1,
             "{:?}",
-            result.ir().model.points
+            result.ir().geometry.points
         );
         assert!(result.report().losses.iter().any(|loss| loss
             .message
@@ -1571,12 +1571,12 @@ fn invalid_instance_families_are_atomic_and_later_reference_recovers() {
     );
 
     let result = crate::decode::decode_for_test(&scan);
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.points.len(), 1);
-    assert!(result.ir().model.surfaces.is_empty());
-    assert!(result.ir().model.bodies[0].transform.is_none());
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
+    assert!(result.ir().geometry.surfaces.is_empty());
+    assert!(result.ir().geometry.bodies[0].transform.is_none());
     assert_eq!(
-        result.ir().model.points[0].position().get(),
+        result.ir().geometry.points[0].position().get(),
         Point3::new(33.0, 0.0, 0.0)
     );
     for unknown in &result
@@ -1619,7 +1619,7 @@ fn contradictory_standard_unit_detail_preserves_scale_and_name() {
     let mut reader = BoundedReader::new(&data, 0, data.len()).expect("bounded units");
     let mut warnings = Diagnostics::new();
     let units = super::unit_detail(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &data,
         &mut reader,
         archive,
@@ -1649,7 +1649,7 @@ fn file_reference_fixtures_have_valid_nested_checksums() {
             BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded file reference");
         let mut warnings = Diagnostics::new();
         let reference = parse_file_reference(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &bytes,
             &mut reader,
             archive,
@@ -1682,7 +1682,7 @@ fn instance_reference_limit_retains_the_reference() {
         assert_eq!(expand.ctx().resource_refusal(), None);
         let result =
             crate::decode::seal_for_test(context.commit().expect("test decode commit"), false);
-        assert!(result.ir().model.bodies.is_empty());
+        assert!(result.ir().geometry.bodies.is_empty());
         assert!(result.report().losses.iter().any(|loss| loss
             .message
             .contains("instance reference budget exceeded (MAX_INSTANCE_REFERENCES)")));
@@ -1749,7 +1749,7 @@ fn instance_copy_element_limit_retains_references_and_stays_exhausted() {
         assert_eq!(expand.ctx().resource_refusal(), None);
         let result =
             crate::decode::seal_for_test(context.commit().expect("test decode commit"), false);
-        let points = &result.ir().model.points;
+        let points = &result.ir().geometry.points;
         assert_eq!(points.len(), 1, "{points:?}");
         assert_eq!(points[0].position().get(), Point3::new(11.0, 0.0, 0.0));
         assert!(result.report().losses.iter().any(|loss| {
@@ -1805,7 +1805,7 @@ fn nested_instance_copy_limit_stops_exponential_expansion() {
         assert_eq!(expand.ctx().resource_refusal(), None);
         let result =
             crate::decode::seal_for_test(context.commit().expect("test decode commit"), false);
-        assert!(result.ir().model.points.is_empty());
+        assert!(result.ir().geometry.points.is_empty());
         assert!(result
             .report()
             .losses

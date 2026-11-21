@@ -2,8 +2,11 @@
 
 use super::*;
 
+mod native_accuracy;
 mod shared_recovery;
-use crate::families::freeform::owned_patch::{line_pcurve, sheet_carrier::Carrier};
+use crate::families::freeform::owned_patch::{
+    line_pcurve, sheet_carrier::Carrier, SheetBoundaryRecovery,
+};
 use cadmpeg_ir::geometry::{analytic::PlaneSurface, nurbs::NurbsCurve, SolvedSurfaceGeometry};
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::report::loss::LossNote;
@@ -39,6 +42,8 @@ fn two_face_sheet() -> Vec<Patch> {
             .expect("linear fixture edge"),
             pcurve: line_pcurve([0.0, 1.0], uv).expect("linear fixture pcurve"),
             forward,
+            inferred_accuracy: None,
+            lift_error_mm: 0.0,
         }
     };
     let patch = |face, forward, sides| Patch {
@@ -51,6 +56,7 @@ fn two_face_sheet() -> Vec<Patch> {
         priority: 0,
         sides,
         inner_starts: Vec::new(),
+        recovery: SheetBoundaryRecovery::default(),
     };
     vec![
         patch(
@@ -87,6 +93,7 @@ fn owned_sheet_emits_one_shared_edge_and_reports_partial_transfer() {
             two_face_sheet(),
             &mut crate::nurbs::LaneRefusals::new(),
             &mut FamilyEntityAdmission::new(ctx),
+            &BodyRoots::new(),
         )
     })
     .expect("sheet transfer succeeds")
@@ -94,17 +101,17 @@ fn owned_sheet_emits_one_shared_edge_and_reports_partial_transfer() {
 
     assert_eq!(loss.code.local_code(), "topology.owned-patch-subset");
     assert!(loss.message.starts_with("Transferred 2 bounded faces"));
-    assert_eq!(ir.model.bodies.len(), 1);
-    assert_eq!(ir.model.bodies[0].kind, BodyKind::Sheet);
-    assert_eq!(ir.model.faces.len(), 2);
-    for face in &ir.model.faces {
+    assert_eq!(ir.geometry.bodies.len(), 1);
+    assert_eq!(ir.geometry.bodies[0].kind, BodyKind::Sheet);
+    assert_eq!(ir.geometry.faces.len(), 2);
+    for face in &ir.geometry.faces {
         assert_outer_winding(&ir, face);
         assert_eq!(face.sense, Sense::Forward);
     }
-    assert_eq!(ir.model.edges.len(), 7);
-    assert_eq!(ir.model.coedges.len(), 8);
+    assert_eq!(ir.geometry.edges.len(), 7);
+    assert_eq!(ir.geometry.coedges.len(), 8);
     let shared: Vec<_> = ir
-        .model
+        .geometry
         .coedges
         .iter()
         .filter(|side| side.radial_next != side.id)
@@ -223,20 +230,21 @@ fn owned_sheet_reports_actual_rolling_ball_rail_movement() {
     let construction =
         ProceduralSurfaceId::mint("catia:test:construction#0").expect("fixture construction ID");
     source
-        .model
+        .geometry
         .procedural_surfaces
         .push(ProceduralSurface::new(
             construction.clone(),
             definition.as_ref().as_ref().clone(),
             None,
         ));
-    source.model.surfaces.push(Surface {
+    source.geometry.surfaces.push(Surface {
         id: SurfaceId::mint("catia:test:surface#0").expect("fixture surface ID"),
         geometry: SurfaceGeometry::Procedural {
             construction,
             cache: None,
         },
         source_object: None,
+        native_ref: None,
     });
 
     let corners = [[u[0], 0.0], [u[1], 0.0], [u[1], radius], [u[0], radius]];
@@ -283,10 +291,11 @@ fn transfer_fit_patches(patches: Vec<Patch>, faces: usize) -> Vec<LossNote> {
             patches,
             &mut refusal,
             &mut FamilyEntityAdmission::new(ctx),
+            &BodyRoots::new(),
         )
     })
     .expect("transfer the sheet");
-    assert_eq!(ir.model.faces.len(), faces);
+    assert_eq!(ir.geometry.faces.len(), faces);
     refusal.take_notes()
 }
 
@@ -295,13 +304,13 @@ fn assert_outer_winding(ir: &CadIr, face: &Face) {
         panic!("fixture face must have an outer loop");
     };
     let boundary = ir
-        .model
+        .geometry
         .loops
         .iter()
         .find(|loop_| &loop_.id == outer)
         .expect("emitted outer loop");
     let surface = ir
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id == face.surface)
@@ -316,12 +325,12 @@ fn assert_outer_winding(ir: &CadIr, face: &Face) {
     };
     let point = |vertex_id: &VertexId| {
         let vertex = ir
-            .model
+            .geometry
             .vertices
             .iter()
             .find(|vertex| &vertex.id == vertex_id)
             .expect("emitted vertex");
-        ir.model
+        ir.geometry
             .points
             .iter()
             .find(|point| point.id == vertex.point)
@@ -335,20 +344,26 @@ fn assert_outer_winding(ir: &CadIr, face: &Face) {
         .iter()
         .map(|id| {
             let coedge = ir
-                .model
+                .geometry
                 .coedges
                 .iter()
                 .find(|coedge| &coedge.id == id)
                 .expect("emitted coedge");
             let edge = ir
-                .model
+                .geometry
                 .edges
                 .iter()
                 .find(|edge| edge.id == coedge.edge)
                 .expect("emitted edge");
             let (start, end) = match coedge.sense {
-                Sense::Forward => (&edge.start, &edge.end),
-                Sense::Reversed => (&edge.end, &edge.start),
+                Sense::Forward => (
+                    &edge.ends.as_ref().expect("edge has vertices").start,
+                    &edge.ends.as_ref().expect("edge has vertices").end,
+                ),
+                Sense::Reversed => (
+                    &edge.ends.as_ref().expect("edge has vertices").end,
+                    &edge.ends.as_ref().expect("edge has vertices").start,
+                ),
             };
             point(start)
                 .vector_from(origin)
@@ -361,4 +376,153 @@ fn assert_outer_winding(ir: &CadIr, face: &Face) {
         "outer loop on {} must run counterclockwise about its oriented normal",
         face.id
     );
+}
+
+#[test]
+fn planar_transfer_preserves_pcurves_with_native_accuracy() {
+    use crate::families::freeform::owned_patch::InferredEdgeAccuracy;
+
+    let mut patches = two_face_sheet();
+    patches[0].sides[0].inferred_accuracy = Some(InferredEdgeAccuracy {
+        source: 17,
+        bound_mm: 0.02,
+    });
+    patches[0].sides[0].lift_error_mm = 0.02;
+    let mut ir = CadIr::empty();
+    let mut annotations = AnnotationBuilder::new();
+    crate::test_support::with_service_context(|ctx| {
+        append(
+            &mut ir,
+            &mut annotations,
+            patches,
+            &mut crate::nurbs::LaneRefusals::new(),
+            &mut FamilyEntityAdmission::new(ctx),
+            &BodyRoots::new(),
+        )
+    })
+    .expect("transfer");
+    assert_eq!(ir.geometry.pcurves.len(), 8);
+    assert!(ir
+        .geometry
+        .coedges
+        .iter()
+        .all(|side| side.pcurves.len() == 1));
+    assert_eq!(
+        ir.geometry.edges[0].tolerance.map(PositiveReal::get),
+        Some(0.02 + GAP_MM)
+    );
+}
+
+#[test]
+fn reused_native_faces_keep_distinct_owner_occurrences() {
+    let mut patches = two_face_sheet();
+    let mut reused = two_face_sheet();
+    for patch in &mut reused {
+        patch.body = (0, 11);
+    }
+    patches.extend(reused);
+    let mut ir = CadIr::empty();
+    crate::test_support::with_service_context(|ctx| {
+        append(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            patches,
+            &mut LaneRefusals::new(),
+            &mut FamilyEntityAdmission::new(ctx),
+            &BodyRoots::new(),
+        )
+    })
+    .expect("transfer shared native faces");
+    ir.finalize();
+    assert_eq!(ir.geometry.bodies.len(), 2);
+    assert_eq!(ir.geometry.faces.len(), 4);
+    assert_eq!(ir.geometry.edges.len(), 14);
+    let validation = cadmpeg_ir::validate_neutral(&ir, vec![]).expect("validate owner occurrences");
+    assert!(validation.is_ok(), "{:?}", validation.findings);
+}
+
+#[test]
+fn disconnected_recovered_shells_keep_their_native_body_owner() {
+    let mut patches = two_face_sheet();
+    for side in &mut patches[1].sides {
+        side.edge += 100;
+        for (vertex, _) in &mut side.vertices {
+            *vertex += 100;
+        }
+    }
+    let mut ir = CadIr::empty();
+    crate::test_support::with_service_context(|ctx| {
+        append(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            patches,
+            &mut LaneRefusals::new(),
+            &mut FamilyEntityAdmission::new(ctx),
+            &BodyRoots::new(),
+        )
+    })
+    .expect("transfer disconnected native body subsets");
+    ir.finalize();
+    assert_eq!(ir.geometry.bodies.len(), 1);
+    assert_eq!(ir.geometry.regions.len(), 1);
+    assert_eq!(ir.geometry.shells.len(), 2);
+    assert_eq!(ir.geometry.regions[0].shells.len(), 2);
+    assert_eq!(ir.geometry.regions[0].body, ir.geometry.bodies[0].id);
+    assert_eq!(ir.geometry.faces.len(), 2);
+    let report = cadmpeg_ir::validate_neutral(&ir, vec![]).expect("validate ownership");
+    assert!(report.is_ok(), "{:?}", report.findings);
+}
+
+#[test]
+fn one_native_body_keeps_multiple_face_rosters() {
+    let mut patches = two_face_sheet();
+    patches[1].body = (0, 11);
+    let roots = [
+        ((0, 10), BTreeSet::from([100])),
+        ((0, 11), BTreeSet::from([100])),
+    ]
+    .into();
+    let mut ir = CadIr::empty();
+    crate::test_support::with_service_context(|ctx| {
+        append(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            patches,
+            &mut LaneRefusals::new(),
+            &mut FamilyEntityAdmission::new(ctx),
+            &roots,
+        )
+    })
+    .expect("transfer body with two face rosters");
+    ir.finalize();
+    assert_eq!(ir.geometry.bodies.len(), 1);
+    assert_eq!(ir.geometry.regions.len(), 1);
+    assert_eq!(ir.geometry.regions[0].shells.len(), 2);
+    assert_eq!(ir.geometry.faces.len(), 2);
+    let report = cadmpeg_ir::validate_neutral(&ir, vec![]).expect("validate body ownership");
+    assert!(report.is_ok(), "{:?}", report.findings);
+}
+
+#[test]
+fn reused_face_roster_keeps_each_native_body_instance() {
+    let roots = [((0, 10), BTreeSet::from([100, 200]))].into();
+    let mut ir = CadIr::empty();
+    crate::test_support::with_service_context(|ctx| {
+        append(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            two_face_sheet(),
+            &mut LaneRefusals::new(),
+            &mut FamilyEntityAdmission::new(ctx),
+            &roots,
+        )
+    })
+    .expect("transfer reused roster instances");
+    ir.finalize();
+    assert_eq!(ir.geometry.bodies.len(), 2);
+    assert_eq!(ir.geometry.regions.len(), 2);
+    assert_eq!(ir.geometry.faces.len(), 4);
+    assert_eq!(ir.geometry.edges.len(), 14);
+    let report = cadmpeg_ir::validate_neutral(&ir, vec![]).expect("validate roster instances");
+    assert!(report.is_ok(), "{:?}", report.findings);
 }

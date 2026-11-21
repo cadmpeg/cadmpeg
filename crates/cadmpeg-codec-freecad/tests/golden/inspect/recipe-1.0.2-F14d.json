@@ -8,8 +8,8 @@
         "data_offset": "42",
         "header_offset": "0"
       },
-      "compression": "deflate",
       "expanded": 36511,
+      "kind": "deflate",
       "name": "Document.xml",
       "role": "document",
       "stored": 3330
@@ -21,8 +21,8 @@
         "data_offset": "3416",
         "header_offset": "3372"
       },
-      "compression": "deflate",
       "expanded": 3471,
+      "kind": "deflate",
       "name": "Body.Shape.brp",
       "role": "brep",
       "stored": 455
@@ -34,8 +34,8 @@
         "data_offset": "3919",
         "header_offset": "3871"
       },
-      "compression": "deflate",
       "expanded": 264,
+      "kind": "deflate",
       "name": "Body.Shape.Map.txt",
       "role": "auxiliary",
       "stored": 135
@@ -47,8 +47,8 @@
         "data_offset": "4104",
         "header_offset": "4054"
       },
-      "compression": "deflate",
       "expanded": 663,
+      "kind": "deflate",
       "name": "DatumPlane.Shape.brp",
       "role": "brep",
       "stored": 178
@@ -60,8 +60,8 @@
         "data_offset": "4336",
         "header_offset": "4282"
       },
-      "compression": "deflate",
       "expanded": 0,
+      "kind": "deflate",
       "name": "Sketch.InternalShape.brp",
       "role": "brep",
       "stored": 2
@@ -73,8 +73,8 @@
         "data_offset": "4384",
         "header_offset": "4338"
       },
-      "compression": "deflate",
       "expanded": 489,
+      "kind": "deflate",
       "name": "Sketch.Shape.brp",
       "role": "brep",
       "stored": 180
@@ -86,8 +86,8 @@
         "data_offset": "4614",
         "header_offset": "4564"
       },
-      "compression": "deflate",
       "expanded": 133,
+      "kind": "deflate",
       "name": "Sketch.Shape.Map.txt",
       "role": "auxiliary",
       "stored": 100
@@ -99,8 +99,8 @@
         "data_offset": "4776",
         "header_offset": "4714"
       },
-      "compression": "deflate",
       "expanded": 2423,
+      "kind": "deflate",
       "name": "AdditiveCylinder.AddSubShape.brp",
       "role": "brep",
       "stored": 396
@@ -112,8 +112,8 @@
         "data_offset": "5228",
         "header_offset": "5172"
       },
-      "compression": "deflate",
       "expanded": 2645,
+      "kind": "deflate",
       "name": "AdditiveCylinder.Shape.brp",
       "role": "brep",
       "stored": 413
@@ -125,19 +125,20 @@
         "data_offset": "5707",
         "header_offset": "5641"
       },
-      "compression": "deflate",
       "expanded": 0,
+      "kind": "deflate",
       "name": "AdditiveCylinder.SuppressedShape.brp",
       "role": "brep",
       "stored": 2
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "file_version": "1",
           "program_version": "1.0R39319 (Git)",
@@ -145,8 +146,10 @@
         },
         "dialect": "fcstd:schema-4"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "SchemaVersion=4",
     "FileVersion=1",

@@ -1121,7 +1121,7 @@ fn fixed_kind_edge_and_revolve_operations(
                 ],
             )
         };
-        let expected = |symmetric, along: f64, against: f64| {
+        let expected = |symmetric, solid, along: f64, against: f64| {
             Some(DesignPathFeatureConstruction::Revolve(
                 crate::records::feature::path_features::DesignRevolveConstruction {
                     operation: DesignExtrudeOperation::NewBody,
@@ -1140,7 +1140,7 @@ fn fixed_kind_edge_and_revolve_operations(
                             angle_offset: along_offset + 200,
                         },
                     ),
-                    solid: None,
+                    solid: Some(solid),
                     reversed: false,
                 },
             ))
@@ -1148,13 +1148,13 @@ fn fixed_kind_edge_and_revolve_operations(
         let (sixty, thirty) = (std::f64::consts::FRAC_PI_3, std::f64::consts::FRAC_PI_6);
         assert_eq!(
             construction(&bytes, sixty, thirty),
-            expected(false, sixty, thirty)
+            expected(false, true, sixty, thirty)
         );
         bytes[two_sided_start + two_sided_layout::TWO_SIDES] = 0;
         bytes[two_sided_start + two_sided_layout::SYMMETRIC] = 1;
         assert_eq!(
             construction(&bytes, sixty, sixty),
-            expected(true, sixty, sixty)
+            expected(true, true, sixty, sixty)
         );
         // Symmetric mirrors one angle, so its two owners agree.
         assert_eq!(construction(&bytes, sixty, thirty), None);
@@ -1162,8 +1162,12 @@ fn fixed_kind_edge_and_revolve_operations(
         bytes[two_sided_start + two_sided_layout::TWO_SIDES] = 1;
         assert_eq!(construction(&bytes, sixty, sixty), None);
         bytes[two_sided_start + two_sided_layout::TWO_SIDES] = 0;
-        // A surface revolve is not this form.
         bytes[two_sided_start + two_sided_layout::SOLID] = 0;
+        assert_eq!(
+            construction(&bytes, sixty, sixty),
+            expected(true, false, sixty, sixty)
+        );
+        bytes[two_sided_start + two_sided_layout::SOLID] = 2;
         assert_eq!(construction(&bytes, sixty, sixty), None);
         bytes[two_sided_start + two_sided_layout::SOLID] = 1;
     }
@@ -1522,6 +1526,7 @@ fn fixed_kind_edge_and_revolve_operations(
             .expect("valid entity ID"),
 
         visibility: None,
+        display_name: None,
 
         class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned()).unwrap(),
         record_index: 904,
@@ -1550,6 +1555,7 @@ fn fixed_kind_edge_and_revolve_operations(
             .unwrap(),
         ),
         planar_z_noise: None,
+        tail_marker: None,
     };
     let projected = crate::design::feature_project::project_fixed_revolve_with_entities(
         &indexed_revolve_scope,
@@ -1648,6 +1654,7 @@ fn fixed_kind_edge_and_revolve_operations(
                 name: None,
                 color: None,
                 tolerance: None,
+                native_ref: None,
             }],
             &[cadmpeg_ir::geometry::Surface {
                 id: surface_id.clone(),
@@ -1662,6 +1669,7 @@ fn fixed_kind_edge_and_revolve_operations(
                     ),
                 ),
                 source_object: None,
+                native_ref: None,
             }],
         ),
         &[],
@@ -1690,6 +1698,7 @@ fn fixed_kind_edge_and_revolve_operations(
                 name: None,
                 color: None,
                 tolerance: None,
+                native_ref: None,
             }],
             &[cadmpeg_ir::geometry::Surface {
                 id: surface_id.clone(),
@@ -1704,6 +1713,7 @@ fn fixed_kind_edge_and_revolve_operations(
                     ),
                 ),
                 source_object: None,
+                native_ref: None,
             }],
         ),
         &crate::test_support::origin_types::origin_design_types("f3d:Design/MetaStream.dat", 500),
@@ -1798,6 +1808,7 @@ fn fixed_kind_edge_and_revolve_operations(
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         },
         cadmpeg_ir::topology::Face {
             id: cadmpeg_ir::ids::FaceId::mint("test:model:face#axis-b").expect("identity grammar"),
@@ -1810,6 +1821,7 @@ fn fixed_kind_edge_and_revolve_operations(
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         },
     ];
     let mut axis_surfaces = [
@@ -1828,6 +1840,7 @@ fn fixed_kind_edge_and_revolve_operations(
                 ),
             ),
             source_object: None,
+            native_ref: None,
         },
         cadmpeg_ir::geometry::Surface {
             id: cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#axis-b")
@@ -1844,6 +1857,7 @@ fn fixed_kind_edge_and_revolve_operations(
                 ),
             ),
             source_object: None,
+            native_ref: None,
         },
     ];
     crate::design::feature_project::bind_revolve_face_axes(

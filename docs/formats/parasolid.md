@@ -97,3 +97,45 @@ byte. Geometric doubles start after every preceding declared field has consumed
 its full width.
 
 The wrapper `00 ce` instance owns the stream BODY (`child`), attribute-definition list (`attdef_list`), preview-mesh references (`mesh`/`polyline`/`lattice`), and index-map arrays (`index_map`, `node_id_index_map`, `schema_embedding_map`).
+
+## 3. Mesh face support
+
+Type `201` (`MESH`, description `Mesh`) has this effective scalar field list:
+
+| Field | Encoding |
+| --- | --- |
+| `node_id` | u32 BE |
+| `attributes_features` | pointer, class 1019 |
+| `owner` | pointer, class 1007 |
+| `next` | pointer, class 1006 |
+| `previous` | pointer, class 1006 |
+| `geometric_owner` | pointer, class 141 |
+| `sense` | character |
+| `mesh_box` | box: six f64 BE values |
+| `transform` | pointer, class 100 |
+| `rcv_key` | pointer, class 1041 |
+| `rcv_index` | u32 BE |
+| `psm_imesh` | pointer, class 189 |
+| `pff_imesh` | pointer, class 188 |
+
+A mesh-support FACE names its MESH node in `surface`. The MESH node's `owner`
+names that FACE. The FACE's `shell` names a SHELL whose `body` names the owning
+BODY. Several mesh-support faces can belong to one body. A BODY with `state`
+value `1` is active. Node indices identify these links within one stream.
+The `mesh_box` values are the minimum and maximum for x, y, and z, in that order.
+
+A stream description beginning `: MESH FILE created ` identifies a mesh node
+sequence. Its header carries the same schema token, maximum node type, and
+user-field size as a transmit node sequence. The auxiliary mesh records have
+these effective field lists:
+
+| Type | Name | Fields in wire order |
+| --- | --- | --- |
+| 189 | `PSM_MESH` | `precision` byte; `owner` pointer class 201; `position_pool` and `normal_pool` pointers class 193; `position_indices` pointer class 191; `normal_type` byte; `normal_indices` pointer class 191; `combs` variable pointer array class 1042 |
+| 190 | `INTEGER_TOOTH` | `values` variable u32 BE array |
+| 191 | `INTEGER_COMB` | `encoding` byte; `n_integers`, `n_max_integers`, `n_bits_per_integer`, and `shift` u32 BE; `teeth` variable pointer array class 190 |
+| 192 | `VECTOR_TOOTH` | `values` variable f64 BE array |
+| 193 | `VECTOR_COMB` | `encoding` byte; `n_vectors`, `n_max_vectors`, and `shift` u32 BE; `teeth` variable pointer array class 192 |
+
+The variable fields carry their element count in the node header before the
+node index. The `teeth` arrays can contain null pointers after populated teeth.

@@ -213,13 +213,13 @@ fn native_namespace_retains_and_validates_complete_entity_numeric_pairs() {
                 bits: 4.5_f64.to_bits(),
                 offset: 8,
             },
-            crate::entity_table::NumericPairSlot::ControlE8 { offset: 17 },
+            crate::entity_table::NumericPairSlot::ZeroLiteral { offset: 17 },
         ]
     );
 
     let mut wire = serde_json::to_value(&native.entity_records[0]).unwrap();
     wire["numeric_pair"]["slots"][0] =
-        serde_json::to_value(crate::entity_table::NumericPairSlot::ControlE8 { offset: 8 })
+        serde_json::to_value(crate::entity_table::NumericPairSlot::ZeroLiteral { offset: 8 })
             .unwrap();
     assert!(
         serde_json::from_value::<crate::native::entity_record::CatiaEntityRecord>(wire).is_err()
@@ -456,7 +456,7 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
     cohorts[0]["second_reference"] = serde_json::json!(6);
     namespace
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "reference_signature_cohorts",
             &cohorts,
         )
@@ -599,15 +599,15 @@ fn native_namespace_types_and_validates_named_parameter_values() {
     );
     assert_eq!(parameter.evaluation_opcode_offset, 4);
 
-    let unset = crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
+    let unit = crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
         0x85, 0x96, 0x82, 0x6a, 0xe7, 0x81, 0x52,
     ]));
     assert_eq!(
-        unset.entity_records[0]
+        unit.entity_records[0]
             .parameter_value()
-            .expect("complete unset parameter")
+            .expect("complete unit-literal parameter")
             .evaluation,
-        CatiaEntityEvaluation::Unset
+        CatiaEntityEvaluation::UnitLiteral
     );
 
     let mut malformed_offset = native.clone();
@@ -819,7 +819,7 @@ fn native_namespace_binds_two_definition_value_chains() {
     );
 
     for (payload, coverage) in [
-        (0xe8, "decoded_definition_chain_control_count"),
+        (0xe8, "decoded_definition_chain_evaluation_count"),
         (0x37, "decoded_definition_chain_separator_count"),
     ] {
         let decoded = CatiaCodec
@@ -1174,7 +1174,10 @@ fn native_namespace_binds_and_validates_definition_values() {
             .definition_value()
             .expect("definition-bound control")
             .payload,
-        CatiaEntitySuffixPayload::ControlE8
+        CatiaEntitySuffixPayload::Evaluation {
+            evaluation: crate::native::CatiaEntityEvaluation::ZeroLiteral,
+            ..
+        }
     ));
 
     let schema_selected =
@@ -1234,11 +1237,19 @@ fn named_parameter_value_requires_the_complete_finite_suffix() {
         control.entity_records[0]
             .suffix_value()
             .as_ref()
-            .expect("complete control suffix")
+            .expect("complete zero-literal suffix")
             .payload,
-        crate::native::CatiaEntitySuffixPayload::ControlE8
+        crate::native::CatiaEntitySuffixPayload::Evaluation {
+            evaluation: crate::native::CatiaEntityEvaluation::ZeroLiteral,
+            ..
+        }
     ));
-    assert!(control.entity_records[0].parameter_value().is_none());
+    assert_eq!(
+        control.entity_records[0]
+            .parameter_value()
+            .map(|value| value.evaluation.clone()),
+        Some(crate::native::CatiaEntityEvaluation::ZeroLiteral)
+    );
 }
 
 #[test]

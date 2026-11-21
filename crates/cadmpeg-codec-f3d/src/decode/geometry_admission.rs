@@ -21,7 +21,7 @@ pub(super) fn admit(
     annotations: &mut [cadmpeg_asm::brep::annotations::AnnotationRecord],
 ) -> Result<(), CodecError> {
     vertex_tolerance::admit(ctx, ir, losses, annotations)?;
-    for curve in &ir.model.procedural_curves {
+    for curve in &ir.geometry.procedural_curves {
         let context = match curve.definition() {
             ProceduralCurveDefinition::Intersection { context, .. } => context,
             ProceduralCurveDefinition::SurfaceCurve { family } => family.context(),
@@ -40,7 +40,7 @@ pub(super) fn admit(
         }
     }
 
-    if !ir.model.procedural_curves.iter().any(|curve| {
+    if !ir.geometry.procedural_curves.iter().any(|curve| {
         matches!(curve.definition(), ProceduralCurveDefinition::Spring(spring)
             if matches!(spring.layout(), SpringLayout::CacheFirst { .. }))
     }) {
@@ -48,7 +48,7 @@ pub(super) fn admit(
     }
     let index = ModelIndex::new_model_only(ir);
     let mut owners = HashMap::new();
-    for curve in &ir.model.curves {
+    for curve in &ir.geometry.curves {
         if let Some(construction) = curve.geometry.procedural_construction() {
             owners
                 .entry(construction)
@@ -57,7 +57,7 @@ pub(super) fn admit(
         }
     }
     let mut replacements = Vec::new();
-    for (slot, curve) in ir.model.procedural_curves.iter().enumerate() {
+    for (slot, curve) in ir.geometry.procedural_curves.iter().enumerate() {
         let ProceduralCurveDefinition::Spring(spring) = curve.definition() else {
             continue;
         };
@@ -91,7 +91,7 @@ pub(super) fn admit(
         replacements.push((slot, replacement));
     }
     for (slot, replacement) in replacements {
-        let curve = &mut ir.model.procedural_curves[slot];
+        let curve = &mut ir.geometry.procedural_curves[slot];
         curve.replace_definition(ProceduralCurveDefinition::Spring(replacement));
         losses.push(F3dLossCode::SpringSupportPcurveUnresolved.note(format!(
             "Curve {} retains native support pcurves whose endpoint relation is unresolved",

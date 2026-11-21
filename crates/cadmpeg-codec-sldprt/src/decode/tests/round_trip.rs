@@ -53,9 +53,12 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
     // The `.sldprt` semantic writer refuses a body or face name without a
     // material, so strip the labels the round trip does not exercise here.
     let prepare = |ir: &mut cadmpeg_ir::document::CadIr| {
-        ir.model.bodies[0].name = None;
-        ir.model.faces.iter_mut().for_each(|face| face.name = None);
-        ir.model
+        ir.geometry.bodies[0].name = None;
+        ir.geometry
+            .faces
+            .iter_mut()
+            .for_each(|face| face.name = None);
+        ir.geometry
             .edges
             .iter_mut()
             .for_each(|edge| edge.set_param_range(None));
@@ -63,7 +66,7 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
 
     let mut base = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     prepare(&mut base);
-    base.model.bodies[0].transform = None;
+    base.geometry.bodies[0].transform = None;
     let mut base_bytes = Vec::new();
     crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(&base, None),
@@ -76,7 +79,7 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
         .unwrap();
     let reference_points: Vec<Point3> = reference
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .map(|point| point.position().get())
@@ -85,7 +88,8 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
     for Motion { rows, apply } in motions {
         let mut moved = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         prepare(&mut moved);
-        moved.model.bodies[0].transform = Some(Transform::affine(rows).expect("affine transform"));
+        moved.geometry.bodies[0].transform =
+            Some(Transform::affine(rows).expect("affine transform"));
         let mut bytes = Vec::new();
         crate::test_support::plan_fixture_with_native_envelope(
             EncodeInput::new(&moved, None),
@@ -100,7 +104,7 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
         for reference_point in &reference_points {
             let expected = apply(*reference_point);
             assert!(
-                decoded.ir().model.points.iter().any(|point| {
+                decoded.ir().geometry.points.iter().any(|point| {
                     (point.position().get().x - expected.x).abs() < 1.0e-9
                         && (point.position().get().y - expected.y).abs() < 1.0e-9
                         && (point.position().get().z - expected.z).abs() < 1.0e-9
@@ -110,7 +114,7 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
         }
         assert!(decoded
             .ir()
-            .model
+            .geometry
             .bodies
             .iter()
             .all(|body| body.transform.is_none()));
@@ -142,28 +146,28 @@ fn decode_encode_decode_reaches_fixpoint() {
         .expect("second decode");
 
     assert_eq!(
-        first.ir().model.points,
-        second.ir().model.points,
+        first.ir().geometry.points,
+        second.ir().geometry.points,
         "points diverged at the fixpoint"
     );
     assert_eq!(
-        first.ir().model.surfaces,
-        second.ir().model.surfaces,
+        first.ir().geometry.surfaces,
+        second.ir().geometry.surfaces,
         "surfaces diverged at the fixpoint"
     );
     assert_eq!(
-        first.ir().model.faces,
-        second.ir().model.faces,
+        first.ir().geometry.faces,
+        second.ir().geometry.faces,
         "faces diverged at the fixpoint"
     );
     assert_eq!(
-        first.ir().model.edges,
-        second.ir().model.edges,
+        first.ir().geometry.edges,
+        second.ir().geometry.edges,
         "edges diverged at the fixpoint"
     );
     assert_eq!(
-        first.ir().model.coedges,
-        second.ir().model.coedges,
+        first.ir().geometry.coedges,
+        second.ir().geometry.coedges,
         "coedges diverged at the fixpoint"
     );
     assert_eq!(
@@ -189,11 +193,17 @@ fn decode_is_equivariant_under_rigid_translation() {
     let moved_out = encode_decode(&moved);
 
     // Topology is invariant under a rigid motion.
-    assert_eq!(base_out.model.faces.len(), moved_out.model.faces.len());
-    assert_eq!(base_out.model.edges.len(), moved_out.model.edges.len());
     assert_eq!(
-        base_out.model.vertices.len(),
-        moved_out.model.vertices.len()
+        base_out.geometry.faces.len(),
+        moved_out.geometry.faces.len()
+    );
+    assert_eq!(
+        base_out.geometry.edges.len(),
+        moved_out.geometry.edges.len()
+    );
+    assert_eq!(
+        base_out.geometry.vertices.len(),
+        moved_out.geometry.vertices.len()
     );
 
     // Point positions of the moved decode equal the base decode shifted by t.
@@ -231,12 +241,12 @@ fn authored_with_retained_native_envelope_cube_reaches_encode_decode_fixpoint() 
     assert_eq!(first_hash, second_hash, "round trip is not a fixed point");
 
     // Value golden: the cube's record families and counts, asserted directly.
-    assert_eq!(first.ir().model.bodies.len(), 1);
-    assert_eq!(first.ir().model.faces.len(), 6);
-    assert_eq!(first.ir().model.edges.len(), 12);
-    assert_eq!(first.ir().model.vertices.len(), 8);
-    assert_eq!(first.ir().model.coedges.len(), 24);
-    assert_eq!(first.ir().model.loops.len(), 6);
+    assert_eq!(first.ir().geometry.bodies.len(), 1);
+    assert_eq!(first.ir().geometry.faces.len(), 6);
+    assert_eq!(first.ir().geometry.edges.len(), 12);
+    assert_eq!(first.ir().geometry.vertices.len(), 8);
+    assert_eq!(first.ir().geometry.coedges.len(), 24);
+    assert_eq!(first.ir().geometry.loops.len(), 6);
     assert_eq!(
         sorted_point_positions(first.ir()),
         sorted_point_positions(&second)
@@ -269,7 +279,7 @@ fn sketch_baselines_cover_final_relation_binding_and_arena_order() {
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .unwrap();
         assert!(!decoded.ir().model.sketch_constraints.is_empty());
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let baselines = &decoded.ir().source.as_ref().unwrap().attributes;
         assert_eq!(
             baselines["sldprt_neutral_sketch_local_sha256"],
