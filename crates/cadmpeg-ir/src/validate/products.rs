@@ -437,7 +437,7 @@ mod tests {
             ir.model.assembly_joints.push(joint);
             let mut findings = Vec::new();
             check_products(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &ir,
                 &mut findings,
             )
@@ -482,7 +482,7 @@ mod tests {
 
         let mut findings = Vec::new();
         check_products(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &ir,
             &mut findings,
         )
@@ -538,7 +538,7 @@ mod tests {
         let findings = |ir: &CadIr| {
             let mut findings = Vec::new();
             check_products(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 ir,
                 &mut findings,
             )
@@ -590,7 +590,7 @@ mod tests {
         ir.model.assembly_joints.push(joint);
         let mut findings = Vec::new();
         check_products(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &ir,
             &mut findings,
         )

@@ -79,7 +79,7 @@ fn dynamic_angle_disambiguates_one_marker_scoped_line_by_angle() {
 
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
@@ -133,7 +133,7 @@ fn dynamic_angle_uses_the_unoriented_solver_line_witness() {
 
     assert!(matches!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
@@ -181,7 +181,7 @@ fn dynamic_angle_uses_unique_complete_roster_when_no_line_resolves() {
 
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
@@ -250,7 +250,7 @@ fn dynamic_angle_repairs_one_resolved_line_from_the_profile_roster() {
 
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
@@ -306,7 +306,7 @@ fn dynamic_angle_uses_solver_lines_for_indirect_operand_references() {
 
     assert!(matches!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
@@ -364,7 +364,7 @@ fn dynamic_angle_prefers_an_explicit_line_over_a_conflicting_solver_alias() {
 
     assert!(matches!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,

@@ -115,7 +115,7 @@ impl CatiaEntityRecordBody {
 
 impl CatiaEntityRecord {
     /// Total framed byte length.
-    pub(super) fn byte_len(&self) -> u64 {
+    pub(crate) fn byte_len(&self) -> u64 {
         match &self.body {
             CatiaEntityRecordBody::Inline(bytes) => 6 + u64_from_index(bytes.len()),
             CatiaEntityRecordBody::Nested {

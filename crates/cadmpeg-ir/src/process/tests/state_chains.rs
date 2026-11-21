@@ -16,8 +16,14 @@ use crate::design::refs::{Evaluated, Member, Position};
 use crate::document::CadIr;
 use crate::process::state::{ProcessBase, ProcessContent, ProcessState, ProcessStateOf};
 
+/// The desktop and service limits, with distinct state chain ceilings low
+/// enough to build chains past them cheaply.
 fn policies() -> [ResourceLimits; 2] {
-    [ResourceLimits::desktop(), ResourceLimits::service()]
+    let mut desktop = ResourceLimits::desktop();
+    desktop.max_state_chain_depth = 8;
+    let mut service = ResourceLimits::service();
+    service.max_state_chain_depth = 5;
+    [desktop, service]
 }
 
 fn key(at: u64) -> u32 {

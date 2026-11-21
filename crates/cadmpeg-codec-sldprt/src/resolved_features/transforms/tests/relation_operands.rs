@@ -71,7 +71,7 @@ fn unary_relation_uses_one_resolved_reverse_curve_owner() {
 
     assert_eq!(
         typed_marker_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &markers,
             &loci
@@ -93,7 +93,7 @@ fn unary_relation_uses_one_resolved_reverse_curve_owner() {
     )
     .with_construction(true);
     let definition = typed_marker_relation_definition_in_sketch(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &relation,
         &sketch,
         std::slice::from_ref(&projected),
@@ -116,7 +116,7 @@ fn unary_relation_uses_one_resolved_reverse_curve_owner() {
     })
     .unwrap();
     let definition = typed_marker_relation_definition_in_sketch(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &relation,
         &sketch,
         std::slice::from_ref(&projected),
@@ -183,7 +183,7 @@ fn point_relation_ignores_auxiliary_relation_links() {
 
     assert_eq!(
         typed_marker_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &markers,
             &loci
@@ -281,7 +281,7 @@ fn axis_relation_expands_intermediate_relation_handle() {
 
     assert_eq!(
         typed_marker_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &horizontal,
             &markers,
             &loci
@@ -324,7 +324,7 @@ fn axis_relation_expands_intermediate_relation_handle() {
     ];
     assert_eq!(
         typed_marker_relation_definition_in_sketch(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &horizontal,
             &sketch,
             &entities,
@@ -360,7 +360,7 @@ fn axis_relation_expands_intermediate_relation_handle() {
     );
     assert!(matches!(
         typed_marker_relation_definition_in_sketch(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &horizontal,
             &sketch,
             &ambiguous_entities,
@@ -449,7 +449,7 @@ fn axis_relation_prefers_forward_points_over_reverse_owners() {
 
     assert_eq!(
         typed_marker_relation_definition_in_sketch(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &horizontal,
             &sketch,
             &entities,
@@ -519,7 +519,7 @@ fn axis_relation_resolves_a_point_proxy_despite_an_index_collision() {
     ];
 
     let definition = typed_marker_relation_definition_in_sketch(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &relation,
         &sketch,
         &entities,
@@ -581,7 +581,7 @@ fn binary_relation_uses_two_resolved_reverse_curve_owners() {
 
     assert_eq!(
         typed_marker_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &markers,
             &loci
@@ -604,7 +604,7 @@ fn binary_relation_uses_two_resolved_reverse_curve_owners() {
     let mut second_line = line(second, Point2::new(0.0, 2.0), Point2::new(4.0, 2.0));
     assert!(matches!(
         typed_marker_relation_definition_in_sketch(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &sketch,
             &[first_line.clone(), second_line.clone()],
@@ -621,7 +621,7 @@ fn binary_relation_uses_two_resolved_reverse_curve_owners() {
     .unwrap();
     let entities = [first_line, second_line];
     let definition = typed_marker_relation_definition_in_sketch(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &relation,
         &sketch,
         &entities,
@@ -1052,7 +1052,7 @@ fn line_operand_rejects_a_circular_geometry_alias() {
 
     assert_eq!(
         single_marker_line_entity(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "circle-marker",
             &HashMap::new(),
             &loci,
@@ -1063,7 +1063,7 @@ fn line_operand_rejects_a_circular_geometry_alias() {
     );
     assert_eq!(
         single_marker_line_entity(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "line-marker",
             &HashMap::new(),
             &loci,
@@ -1183,7 +1183,7 @@ fn line_operand_uses_linked_endpoint_incidence_beside_a_direct_point_locus() {
 
     assert_eq!(
         single_marker_line_entity(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "handle",
             &markers,
             &loci,
@@ -1226,7 +1226,7 @@ fn line_operand_uses_the_unique_profile_line_through_a_point_handle() {
 
     assert_eq!(
         single_marker_line_entity(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "point-handle",
             &markers,
             &loci,
@@ -1291,7 +1291,7 @@ fn axis_relation_preserves_native_kind_and_reports_unsatisfied_geometry() {
     ]);
 
     let definition = typed_marker_relation_definition_in_sketch(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &relation,
         &sketch,
         &entities,
@@ -1323,7 +1323,7 @@ fn axis_relation_preserves_native_kind_and_reports_unsatisfied_geometry() {
         ),
     ]);
     let definition = typed_marker_relation_definition_in_sketch(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &swapped_relation,
         &sketch,
         &entities,
@@ -1382,7 +1382,7 @@ fn axis_relation_preserves_native_kind_and_reports_unsatisfied_geometry() {
         ),
     ]);
     let definition = typed_marker_relation_definition_in_sketch(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &owner_relation,
         &sketch,
         &owner_entities,
@@ -1449,7 +1449,7 @@ fn axis_relation_uses_unique_point_native_identity_when_loci_are_ambiguous() {
     .with_native_ref(Some(second.id().to_string()));
     let entities = vec![first_entity.clone(), second_entity.clone()];
     let definition = typed_marker_relation_definition_in_sketch(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &relation,
         &sketch,
         &entities,
@@ -1475,7 +1475,7 @@ fn axis_relation_uses_unique_point_native_identity_when_loci_are_ambiguous() {
     ambiguous_entities.push(first_entity);
     assert!(matches!(
         typed_marker_relation_definition_in_sketch(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &sketch,
             &ambiguous_entities,
@@ -1565,7 +1565,7 @@ fn dimension_preserves_structurally_typed_operands_when_geometry_disagrees() {
     };
 
     let definition = typed_relation_definition(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &relation,
         Some(&parameter),
         &sketch,
@@ -1585,7 +1585,7 @@ fn dimension_preserves_structurally_typed_operands_when_geometry_disagrees() {
     exact_entities[0].native_ref = Some(first.id().to_string());
     exact_entities[1].native_ref = Some(second.id().to_string());
     assert!(matches!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(&cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
@@ -1667,7 +1667,7 @@ fn line_distance_repairs_distinct_operands_collapsed_to_one_marker() {
     };
 
     assert!(matches!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(&cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
@@ -1772,7 +1772,7 @@ fn line_distance_uses_an_addressed_point_to_select_the_missing_line() {
     let entities = [known.clone(), intended.clone(), distractor, point];
 
     assert!(matches!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(&cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,

@@ -28,7 +28,7 @@ fn projected_fixture(
     fixture: &crate::test_support::pipe::Fixture,
     edit: impl FnOnce(&mut crate::native::F3dNative, &mut Feature),
 ) -> (Feature, Vec<LossKind>) {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut native = fixture.decode(&ctx).unwrap();
     let ir = result_model(&[]);
     let mut feature = pipe_feature(&native.design_parameter_scopes[0], &ir);
@@ -1289,7 +1289,7 @@ fn a_new_body_pipe_without_result_bodies_assumes_a_circle() {
 #[test]
 fn a_point_selected_pipe_with_unit_fractions_assumes_its_whole_path_extent() {
     use crate::test_support::pipe::{Config, Fixture};
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let native = Fixture::new(Config {
         values: [1.0, 1.0, 0.5, 0.1],
         point_version: Some(2),
