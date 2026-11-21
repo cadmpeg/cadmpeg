@@ -657,9 +657,9 @@ integer occupies more than one byte. The 57-byte tail prefix is:
 | `+41` | `f64le[2]` | maximal V limits |
 
 Every scalar is finite. Current U and V limits are ordered. The reference
-scalar is positive and bit-identical to the current V upper limit. Maximal V
-contains current V. The reference scalar does not replace a station's ball
-radius.
+scalar is positive. In the 79-byte, 87-byte, and `87 + 24*K`-byte forms, it
+is bit-identical to the current V upper limit. Maximal V contains current V.
+The station rails and center define the ball radius.
 
 The 79-byte form has this 22-byte suffix after the prefix:
 
@@ -680,6 +680,13 @@ The 89-byte form has a six-byte branch `05 00 a b 00 00`, where `a` and `b` are 
 | `+22` | `f64le` | reference-scalar copy |
 | `+30` | `bytes[2]` | zero terminal |
 
+The 89-byte form with branch `01 00 a b 00 00` uses the same suffix field
+offsets. Current V runs from zero to twice the reference scalar. Divide
+native V by the reference scalar to obtain the multiplier of the stored
+opening angle. The terminal scalar equals the reference scalar.
+For a variable-radius section, evaluate the first rail and center at the
+section's U parameter. Their distance is the section radius.
+
 The explicit scalar-jet form is `87 + 24*K` bytes. After the prefix it stores
 `01 01`, then three finite `f64le[K]` lanes in value, first-derivative, and
 second-derivative order. The derivatives use the rolling-ball U parameter.
@@ -687,10 +694,16 @@ The lanes define a scalar quintic Hermite jet on the same knots as the surface
 jet. A `u32le` terminal in `{0,1}` follows the lanes, then maximal U limits and
 one bit-identical reference-scalar copy. The tail carries no curve identity.
 
+The sheet-owned scalar-jet form has length `89 + 24*K`. Its suffix ends
+with a scalar equal to the current V upper limit, then two zero bytes.
+Current V starts at zero. Divide native V by the terminal scalar to obtain
+the multiplier of the stored opening angle.
+
 Maximal U is ordered and lies inside the knot domain. In the 89-byte branch with `b=1`, its upper limit may be below the current U upper limit; its lower limit remains at or below the current U lower limit. In the other branches, maximal U contains current U.
 In the sheet-owned 89-byte form, `a=1` also permits the maximal U
-lower limit to exceed the current U lower limit. The terminal transverse
-chart extent is positive and independent of the current V interval.
+lower limit to exceed the current U lower limit. In branch `05 00 a b 00 00`,
+the terminal transverse chart extent is positive and independent of the
+current V interval.
 Current and maximal U limits are separate from the knot extremes. Each tail
 production exhausts its declared logical frame. Retain the control, scalar
 jet, terminal, and both limit pairs in the source record independently of the
@@ -1058,6 +1071,13 @@ An A-family class-`34` carrier followed by four contiguous B-family class-`18` r
 - **Owner carrier chart:** the contiguous source-closed production `<carrier:B:28|B:2b|A:32> <bridge:B:37> B:18[1] B:18[2] B:18[3] B:18[4] B:62` binds the fixed-nine owner to the carrier chart. The bridge begins with compact header byte `05` (value `1`), then `0x80+n` and exactly `n` allocation references. Retain each reference's decoded value and addressing form. The `n=5` form is the allocation-reference dialect of the class-`0x37` supported-surface construction: its references are `<carrier_surface> <support_surface[2]> <support_pcurve[2]>`, and its 22-byte tail is `<controls[0..2]> <construction_radius:f64le> <controls[2..4]> <zero:f64le> <controls[4..6]>`. A width-coded support-surface or support-pcurve value selects an outer alias row only when exactly one alias row has that persistent tag. Other addressing forms remain allocation-local and do not enter the outer alias namespace. The selected alias row supplies the canonical surface tag defined in §7.5. In this production the controls serialize as `<carrier_selector> 05 <middle:u8[2]> <terminal:u8> 05`; both middle controls are `03` or `05`, the terminal is `01` or `05`, the zero is exact, and the construction radius is positive. For `n=8`, the unassigned tail is `11 09 05 05 00^8 01 05`. The carrier selector is `05` for `B:28`, `09` for `B:2b`, and `11` for `A:32`; the eight-reference form therefore belongs to `A:32`. The first counted reference is the backward-distance token `05`, whose decoded distance is `1` and selects the immediately preceding carrier. The remaining eight-reference fields retain no higher-level role. The bracketed value after `B:18` is the decoded compact operand. For `B:28`, operands 1 and 2 are the two constant-first-parameter sides. For `B:2b` and `A:32`, they are the two constant-second-parameter sides. Let the constant-side coordinate be `a` and the orthogonal interval be `[b0,b1]`. The two records store the tuples `(a0,b0,b1)` and `(a1,b0,b1)` in either side order, where `[a0,a1]` and `[b0,b1]` are the owner `lower` and `upper` coordinates under that axis assignment. Each constant-side record has the axis control and zero-elision bits defined above, and its lane equals the ordered nonzero tuple subsequence. Operands 3 and 4 are the orthogonal sides at `b0` and `b1` respectively. An orthogonal tuple has the other axis control and stores `(b,a0,a1)` with the same zero elision. An implicit-axis line has `t0=−(a1−a0)/2` and its varying coordinate origin is `(a0+a1)/2`; its constant coordinate origin is `b`. For `B:28` it uses control `88` and `(t0,midpoint,b)`. For `B:2b` and `A:32` it uses control `48` and `(t0,b,midpoint)`. The tuple relation requires exact finite scalar equality. The implicit-line relation allows `1e-12` relative or absolute rounding error. The relation also requires the exact operand order, complete framed adjacency, and one bounded record source.
 
 A five-reference B-family class-`37` rolling-ball construction has payload `85 <allocation_ref[5]> 11 05 <radius:f64le> <middle0:u8> <middle1:u8> <zero:f64le> 01 05`. The radius is positive and the zero lane is exact zero. In the backward-distance form the middle controls are `03` or `05`. The five references select, in order, an `A:32` rolling-ball carrier, two support records of class `B:30` or `B:2e`, and two class-`20` A- or B-family support pcurves in the same contiguous logical record source. The two pcurves correspond by index to the two supports. The sheet-group allocation form also admits `01` in the first middle control.
+
+The seven-reference B-family class-`37` rolling-ball construction has payload
+`87 <allocation_ref[7]> 11 0d <controls:u8[3]> <zero:bytes[8]> 01 05`.
+Each control is `03` or `05`. The first reference selects an extended
+`A:32` carrier. The remaining references select B-family classes
+`(2e|38)`, `(27|30)`, `(18|20)`, `(18|20)`, `(2e|37|38)`, and `(18|20)`,
+in that order. The complete terminal exhausts the payload.
 
 An eight-reference B-family class-`37` construction payload is `88 <allocation_ref[8]> <tail:14B>`. Its complete tail is:
 

@@ -17,7 +17,9 @@ use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::IncreasingParameterInterval;
 use cadmpeg_ir::units::FinitePoint2;
 
-use crate::families::a5a8::records::{a5_owned_rolling_curves, a5_ruled_guides_from_records};
+use crate::families::a5a8::records::{
+    a5_extended_rolling_curve, a5_owned_rolling_curves, a5_ruled_guides_from_records,
+};
 use crate::families::b2::records::{
     b2_circles_from_records, b2_spheres_from_records, owned_cone_charts, owned_edge_nodes,
     owned_parameter_points, owned_torus_charts, B2ParameterPointPayload,
@@ -192,6 +194,8 @@ where
                                 return Some(Carrier::OwnedRollingBall {
                                     definition: Box::new(Cow::Borrowed(definition)),
                                     chart_end,
+                                    native_v_upper: None,
+                                    variable_radius: false,
                                     max_rail_shift_mm: 0.0,
                                 });
                             }
@@ -289,6 +293,9 @@ where
                 self.analytic_result(carrier, class)
             }
             (Family::B, 0x37) => {
+                if bytes.first() == Some(&0x87) {
+                    return self.extended_rolling_carrier(support, bytes);
+                }
                 if let Some((reference, radius)) = bridge_radius(bytes, true) {
                     let carrier = self.records.get((self.resolve)(support, reference)?)?;
                     if carrier.family() != Family::A || carrier.class() != 0x32 {
@@ -330,6 +337,49 @@ where
             }
             _ => None,
         }
+    }
+
+    fn extended_rolling_carrier(&self, support: usize, bytes: &[u8]) -> Option<Carrier<'_>> {
+        let mut at = 1;
+        let reference = allocation_reference(bytes, &mut at)?;
+        let record = self.records.get((self.resolve)(support, reference)?)?;
+        for classes in [
+            &[0x2e, 0x38][..],
+            &[0x27, 0x30],
+            &[0x18, 0x20],
+            &[0x18, 0x20],
+            &[0x2e, 0x37, 0x38],
+            &[0x18, 0x20],
+        ] {
+            let reference = allocation_reference(bytes, &mut at)?;
+            let target = self.records.get((self.resolve)(support, reference)?)?;
+            if target.family() != Family::B || !classes.contains(&target.class()) {
+                return None;
+            }
+        }
+        if !matches!(
+            bytes.get(at..)?,
+            [
+                0x11,
+                0x0d,
+                3 | 5,
+                3 | 5,
+                3 | 5,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                1,
+                5
+            ]
+        ) {
+            return None;
+        }
+        Carrier::extended_rolling_ball(&a5_extended_rolling_curve(self.bytes, record)?)
     }
 
     fn offset_extrusion(
@@ -2031,6 +2081,7 @@ mod tests {
     use super::{line_at, ring_tail, RingBounds, RingTail};
 
     mod recovery;
+    mod rolling_spans;
     mod roster_priority;
 
     #[test]
