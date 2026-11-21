@@ -104,6 +104,7 @@ fn current_document() -> CadIr {
             status: EvaluationStatus::Current,
             native_ref: None,
         }],
+        unproduced: BTreeSet::new(),
     });
     ir
 }
