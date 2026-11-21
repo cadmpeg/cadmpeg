@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::FcstdCodec;
-use cadmpeg_ir::features::{
-    FeatureDefinition, FeatureOperation, ParameterValue, SketchFeatureBinding,
-};
+use cadmpeg_ir::features::parameters::ParameterValue;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SketchFeatureBinding};
 use cadmpeg_ir::sketches::SketchGeometryDefinition;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use cadmpeg_measure::test_support::round_trip::measured;

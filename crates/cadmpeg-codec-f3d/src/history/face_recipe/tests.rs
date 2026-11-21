@@ -414,7 +414,7 @@ fn endpoint_fans_retain_multiplicity_and_cyclic_adjacency() {
 
 #[test]
 fn delete_face_selection_retains_native_group_until_every_member_has_boundary_proof() {
-    use cadmpeg_ir::features::FaceSelection;
+    use cadmpeg_ir::features::selections::FaceSelection;
     let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
         "f3d:test:scope#10",
         crate::records::feature::scope::DesignFeatureKind::DeleteFace,

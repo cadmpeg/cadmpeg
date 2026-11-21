@@ -114,12 +114,12 @@ pub(super) fn project_mirror(
         }
     };
     let origin_scale = if scale_origin { 10.0 } else { 1.0 };
-    let plane_origin = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+    let plane_origin = cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
         plane_origin.x * origin_scale,
         plane_origin.y * origin_scale,
         plane_origin.z * origin_scale,
     ))?;
-    let plane_normal = cadmpeg_ir::features::FeatureDirection3::new(plane_normal)?;
+    let plane_normal = cadmpeg_ir::features::geometry::FeatureDirection3::new(plane_normal)?;
     let pattern = PatternKind::new(PatternTransform::Mirror {
         plane_origin,
         plane_normal,

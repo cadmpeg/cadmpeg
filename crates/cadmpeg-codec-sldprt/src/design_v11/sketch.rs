@@ -576,10 +576,11 @@ impl Relations<'_> {
             return None;
         }
         let value = match (quantity, source.value.as_ref()?) {
-            (Quantity::LENGTH, cadmpeg_ir::features::ParameterValue::Length(length)) => {
-                FiniteReal::new(length.get())?
-            }
-            (Quantity::ANGLE, cadmpeg_ir::features::ParameterValue::Angle(angle)) => {
+            (
+                Quantity::LENGTH,
+                cadmpeg_ir::features::parameters::ParameterValue::Length(length),
+            ) => FiniteReal::new(length.get())?,
+            (Quantity::ANGLE, cadmpeg_ir::features::parameters::ParameterValue::Angle(angle)) => {
                 FiniteReal::new(angle.get())?
             }
             _ => return None,

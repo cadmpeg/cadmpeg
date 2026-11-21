@@ -1,7 +1,6 @@
-use super::{
-    FeatureDirection3, FeatureId, FinitePoint3, NativeSelections, SelectionMembers,
-    SelectionReference,
-};
+use super::FeatureId;
+use crate::features::geometry::{FeatureDirection3, FinitePoint3};
+use crate::features::selections::{NativeSelections, SelectionMembers, SelectionReference};
 use crate::scalar::{Fraction, Length, NonNegativeLength, PositiveLength, PositiveReal};
 use crate::tessellation::TessellationId;
 use cadmpeg_derive::DeserializeName;

@@ -111,9 +111,9 @@ mod tests {
     use super::*;
     use cadmpeg_ir::design::construction::{InputRole, ScalarDimension, Subject};
     use cadmpeg_ir::design::dimension::Dimension;
-    use cadmpeg_ir::features::{
-        datums::DatumAxisDraft, FeatureDirection3, FeatureOperation, FinitePoint3,
-    };
+    use cadmpeg_ir::features::datums::DatumAxisDraft;
+    use cadmpeg_ir::features::geometry::{FeatureDirection3, FinitePoint3};
+    use cadmpeg_ir::features::FeatureOperation;
     use cadmpeg_ir::math::{Point3, Vector3};
     #[test]
     fn work_axis_construction_completeness_accounts_for_unknown_rules_and_missing_values() {

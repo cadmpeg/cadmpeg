@@ -11,10 +11,9 @@ use std::collections::BTreeMap;
 
 #[test]
 fn configuration_hole_inherits_shared_construction_and_placement() {
-    use cadmpeg_ir::features::{
-        holes::{HoleKind, HolePlacement},
-        FeatureDefinition, FeatureId, FeatureOperation, LinearTermination,
-    };
+    use cadmpeg_ir::features::extents::LinearTermination;
+    use cadmpeg_ir::features::holes::{HoleKind, HolePlacement};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
 
     let id = FeatureId::mint("test:model:feature#hole").expect("identity grammar");
     let base = cadmpeg_ir::features::Feature {
@@ -23,23 +22,23 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
         ordinal: 0,
         name: Some("Hole".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Hole {
                 profile: None,
                 profile_filter: None,
                 face: None,
                 direction: None,
                 placements: Some(vec![HolePlacement::Axis {
-                    origin: cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
-                        1.0, 2.0, 3.0,
-                    ))
+                    origin: cadmpeg_ir::features::geometry::FinitePoint3::new(
+                        cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+                    )
                     .unwrap(),
-                    axis: cadmpeg_ir::features::FeatureDirection3::new(
+                    axis: cadmpeg_ir::features::geometry::FeatureDirection3::new(
                         cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
                     )
                     .unwrap(),
@@ -96,19 +95,18 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
 
 #[test]
 fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
-    use cadmpeg_ir::features::{
-        holes::{HoleKind, HolePlacement},
-        FeatureDefinition, FeatureOperation, LinearTermination,
-    };
+    use cadmpeg_ir::features::extents::LinearTermination;
+    use cadmpeg_ir::features::holes::{HoleKind, HolePlacement};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let placement = HolePlacement::Axis {
-        origin: cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        origin: cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             9.0, 8.0, 7.0,
         ))
         .unwrap(),
-        axis: cadmpeg_ir::features::FeatureDirection3::new(cadmpeg_ir::math::Vector3::new(
-            0.0, 1.0, 0.0,
-        ))
+        axis: cadmpeg_ir::features::geometry::FeatureDirection3::new(
+            cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+        )
         .unwrap(),
     };
     let base = FeatureDefinition::Operation(FeatureOperation::Hole {
@@ -117,13 +115,13 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
         face: None,
         direction: None,
         placements: Some(vec![HolePlacement::Axis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
-                1.0, 2.0, 3.0,
-            ))
+            origin: cadmpeg_ir::features::geometry::FinitePoint3::new(
+                cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+            )
             .unwrap(),
-            axis: cadmpeg_ir::features::FeatureDirection3::new(cadmpeg_ir::math::Vector3::new(
-                1.0, 0.0, 0.0,
-            ))
+            axis: cadmpeg_ir::features::geometry::FeatureDirection3::new(
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            )
             .unwrap(),
         }]),
         shape: cadmpeg_ir::features::holes::HoleShape::new(
@@ -198,9 +196,11 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
 
 #[test]
 fn configuration_lane_does_not_inherit_shared_hole_semantics() {
+    use cadmpeg_ir::features::extents::LinearTermination;
+    use cadmpeg_ir::features::holes::HoleKind;
+    use cadmpeg_ir::features::parameters::ConfigurationFeatureState;
     use cadmpeg_ir::features::{
-        holes::HoleKind, ConfigurationFeatureState, Feature as NeutralFeature, FeatureDefinition,
-        FeatureId, FeatureOperation, LinearTermination,
+        Feature as NeutralFeature, FeatureDefinition, FeatureId, FeatureOperation,
     };
 
     let id = FeatureId::mint("test:model:feature#hole-lane").expect("identity grammar");
@@ -210,13 +210,13 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
         face: None,
         direction: None,
         placements: Some(vec![cadmpeg_ir::features::holes::HolePlacement::Axis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
-                1.0, 2.0, 3.0,
-            ))
+            origin: cadmpeg_ir::features::geometry::FinitePoint3::new(
+                cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+            )
             .unwrap(),
-            axis: cadmpeg_ir::features::FeatureDirection3::new(cadmpeg_ir::math::Vector3::new(
-                0.0, 0.0, 1.0,
-            ))
+            axis: cadmpeg_ir::features::geometry::FeatureDirection3::new(
+                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            )
             .unwrap(),
         }]),
         shape: cadmpeg_ir::features::holes::HoleShape::new(
@@ -259,14 +259,14 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
         ordinal: 0,
         name: Some("Hole".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
             base_definition,
-            cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
         ),
         native_ref: None,
     });
@@ -275,10 +275,10 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
     configuration.feature_states.insert(
         id.clone(),
         ConfigurationFeatureState {
-            evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                outputs: cadmpeg_ir::features::DistinctMembers::default(),
+            evaluation: cadmpeg_ir::features::parameters::ConfigurationEvaluation::Active {
+                outputs: cadmpeg_ir::features::selections::DistinctMembers::default(),
             },
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             definition: local_definition,
         },
     );

@@ -12,9 +12,8 @@ use crate::records::topology::{
 #[test]
 fn move_body_selection_uses_unique_owning_history() {
     use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
-    use cadmpeg_ir::features::{
-        BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
-    };
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
     let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#10",
@@ -132,10 +131,10 @@ fn move_body_selection_uses_unique_owning_history() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::MoveBody {
                 bodies: BodySelection::Native(group_id.into()),
-                translation: cadmpeg_ir::features::FiniteVector3::new(
+                translation: cadmpeg_ir::features::geometry::FiniteVector3::new(
                     cadmpeg_ir::math::Vector3::new(1.0, 2.0, 3.0),
                 )
                 .unwrap(),
@@ -235,7 +234,7 @@ fn pattern_seed_feature() -> cadmpeg_ir::features::Feature {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: Vec::new(),
                 pattern: PatternKind::UNRESOLVED_CIRCULAR,
@@ -272,9 +271,9 @@ fn pattern_seed_feature() -> cadmpeg_ir::features::Feature {
 
 #[test]
 fn pattern_body_seed_preserves_native_selection() {
-    use cadmpeg_ir::features::{
-        patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation,
-    };
+    use cadmpeg_ir::features::patterns::PatternSeed;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let feature = pattern_seed_feature();
     assert!(matches!(feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. })
@@ -389,10 +388,9 @@ fn body_recipe_operand(
 #[test]
 fn a_pattern_seed_without_a_stored_preceding_state_binds_through_its_history() {
     use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
-    use cadmpeg_ir::features::{
-        patterns::{PatternKind, PatternSeed},
-        BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
-    };
+    use cadmpeg_ir::features::patterns::{PatternKind, PatternSeed};
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
     let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#10",
@@ -468,7 +466,7 @@ fn a_pattern_seed_without_a_stored_preceding_state_binds_through_its_history() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: vec![PatternSeed::Bodies(BodySelection::Native(group_id.into()))],
                 pattern: PatternKind::UNRESOLVED_CIRCULAR,
@@ -526,7 +524,7 @@ fn generated_case(
     selector: GeneratedSelector,
 ) -> (
     cadmpeg_ir::features::Feature,
-    Vec<cadmpeg_ir::features::FeatureResultTopology>,
+    Vec<cadmpeg_ir::features::evaluation::FeatureResultTopology>,
 ) {
     generated_case_in(
         live,
@@ -555,7 +553,7 @@ fn generated_case_in(
     history: GeneratedHistory<'_>,
 ) -> (
     cadmpeg_ir::features::Feature,
-    Vec<cadmpeg_ir::features::FeatureResultTopology>,
+    Vec<cadmpeg_ir::features::evaluation::FeatureResultTopology>,
 ) {
     use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
 
@@ -681,7 +679,7 @@ fn generated_case_in_histories(
     histories: &[crate::history_records::AsmHistory],
 ) -> (
     cadmpeg_ir::features::Feature,
-    Vec<cadmpeg_ir::features::FeatureResultTopology>,
+    Vec<cadmpeg_ir::features::evaluation::FeatureResultTopology>,
 ) {
     let (feature, results, losses) =
         generated_case_with_bindings(live, remove, histories, &std::collections::HashMap::new());
@@ -696,7 +694,7 @@ fn generated_case_with_bindings(
     scope_histories: &std::collections::HashMap<String, String>,
 ) -> (
     cadmpeg_ir::features::Feature,
-    Vec<cadmpeg_ir::features::FeatureResultTopology>,
+    Vec<cadmpeg_ir::features::evaluation::FeatureResultTopology>,
     Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
     generated_selection_with_bindings(
@@ -718,7 +716,7 @@ fn generated_selection_with_bindings(
     scope_histories: &std::collections::HashMap<String, String>,
 ) -> (
     cadmpeg_ir::features::Feature,
-    Vec<cadmpeg_ir::features::FeatureResultTopology>,
+    Vec<cadmpeg_ir::features::evaluation::FeatureResultTopology>,
     Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
     generated_selection_in_state(live, selector, histories, scope_histories, 79, 0)
@@ -733,14 +731,14 @@ fn generated_selection_in_state(
     selector_ordinal: u64,
 ) -> (
     cadmpeg_ir::features::Feature,
-    Vec<cadmpeg_ir::features::FeatureResultTopology>,
+    Vec<cadmpeg_ir::features::evaluation::FeatureResultTopology>,
     Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
-    use cadmpeg_ir::features::{
-        patterns::{PatternKind, PatternSeed},
-        BodyRetentionMode, BodySelection, Feature, FeatureDefinition, FeatureEvaluation, FeatureId,
-        FeatureOperation,
-    };
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::operation_settings::BodyRetentionMode;
+    use cadmpeg_ir::features::patterns::{PatternKind, PatternSeed};
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
     let scope = |index: u32, state: i64, previous: i64| {
         let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
@@ -810,7 +808,7 @@ fn generated_selection_in_state(
                 },
                 GeneratedSelector::Move => FeatureOperation::MoveBody {
                     bodies: seed,
-                    translation: cadmpeg_ir::features::FiniteVector3::new(
+                    translation: cadmpeg_ir::features::geometry::FiniteVector3::new(
                         cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
                     )
                     .unwrap(),
@@ -848,7 +846,9 @@ fn generated_selection_in_state(
 
 #[test]
 fn a_seed_body_the_final_model_omits_is_generated_by_the_feature_that_inserts_it() {
-    use cadmpeg_ir::features::{patterns::PatternSeed, BodySelection, FeatureDefinition};
+    use cadmpeg_ir::features::patterns::PatternSeed;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::FeatureDefinition;
     let (pattern, results) = generated_case(&[], GeneratedSelector::Pattern);
     let FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Pattern {
         seeds, ..
@@ -888,7 +888,9 @@ fn a_seed_body_the_final_model_omits_is_generated_by_the_feature_that_inserts_it
 
 #[test]
 fn a_seed_body_the_final_model_keeps_stays_historical() {
-    use cadmpeg_ir::features::{patterns::PatternSeed, BodySelection, FeatureDefinition};
+    use cadmpeg_ir::features::patterns::PatternSeed;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::FeatureDefinition;
     let mut body = cadmpeg_ir::examples::unit_cube()
         .unwrap()
         .geometry
@@ -908,7 +910,8 @@ fn a_seed_body_the_final_model_keeps_stays_historical() {
 
 #[test]
 fn a_removed_body_the_final_model_omits_is_generated_by_the_feature_that_inserts_it() {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let (remove, results) = generated_case(&[], GeneratedSelector::Remove);
     let FeatureDefinition::Operation(FeatureOperation::DeleteBody {
         bodies: BodySelection::Generated { bodies, native },
@@ -946,7 +949,9 @@ fn named_history(
 
 #[test]
 fn a_slot_that_only_another_history_inserts_falls_back_with_a_history_loss() {
-    use cadmpeg_ir::features::{patterns::PatternSeed, BodySelection, FeatureDefinition};
+    use cadmpeg_ir::features::patterns::PatternSeed;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::FeatureDefinition;
     // The selecting scope's states 80 and 79 are in history `own`, which never
     // inserts slot 1. History `other` inserts its own slot 1 at state 77; the
     // pass falls back to the all-history search and charges a loss.
@@ -982,7 +987,9 @@ fn a_slot_that_only_another_history_inserts_falls_back_with_a_history_loss() {
 
 #[test]
 fn a_colliding_slot_is_generated_in_the_selecting_scopes_own_history() {
-    use cadmpeg_ir::features::{patterns::PatternSeed, BodySelection, FeatureDefinition};
+    use cadmpeg_ir::features::patterns::PatternSeed;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::FeatureDefinition;
     // Both histories insert a slot 1 at a state 77. The selecting scope's
     // states 80 and 79 are in history `own`, so its slot 1 is the body that
     // the transition 2 -> 77 of `own` inserts.
@@ -1046,9 +1053,9 @@ fn shared_pair_histories(indirect: Option<&str>) -> [crate::history_records::Asm
 
 #[test]
 fn a_shared_state_pair_uses_the_selecting_scopes_bound_history() {
-    use cadmpeg_ir::features::{
-        patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation,
-    };
+    use cadmpeg_ir::features::patterns::PatternSeed;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let bindings = std::collections::HashMap::from([(
         "f3d:Design/BulkStream.dat:design-parameter-scope#8".into(),
@@ -1088,9 +1095,9 @@ fn a_shared_state_pair_uses_the_selecting_scopes_bound_history() {
 
 #[test]
 fn an_unbound_shared_state_pair_binds_the_one_inserting_state_with_a_history_loss() {
-    use cadmpeg_ir::features::{
-        patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation,
-    };
+    use cadmpeg_ir::features::patterns::PatternSeed;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let histories = shared_pair_histories(None);
     for remove in [false, true] {
@@ -1138,9 +1145,9 @@ fn an_unbound_shared_state_pair_binds_the_one_inserting_state_with_a_history_los
 
 #[test]
 fn a_shared_state_pair_uses_the_unique_direct_history() {
-    use cadmpeg_ir::features::{
-        patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation,
-    };
+    use cadmpeg_ir::features::patterns::PatternSeed;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let histories = shared_pair_histories(Some("other"));
     let (pattern, results) = generated_case_in_histories(&[], false, &histories);
@@ -1157,9 +1164,9 @@ fn a_shared_state_pair_uses_the_unique_direct_history() {
 
 #[test]
 fn a_partly_stored_state_pair_binds_through_every_history_with_a_loss() {
-    use cadmpeg_ir::features::{
-        patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation,
-    };
+    use cadmpeg_ir::features::patterns::PatternSeed;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let histories = [
         named_history(
@@ -1191,7 +1198,8 @@ fn a_partly_stored_state_pair_binds_through_every_history_with_a_loss() {
 
 #[test]
 fn a_moved_body_the_final_model_omits_is_generated_by_the_feature_that_inserts_it() {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let (moved, results) = generated_case(&[], GeneratedSelector::Move);
     let FeatureDefinition::Operation(FeatureOperation::MoveBody {
         bodies: BodySelection::Generated { bodies, native },
@@ -1221,7 +1229,8 @@ fn a_moved_body_the_final_model_omits_is_generated_by_the_feature_that_inserts_i
 
 #[test]
 fn a_moved_body_that_another_history_inserts_stays_historical() {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let (moved, results) = generated_case_in(&[], GeneratedSelector::Move, GeneratedHistory::Split);
     assert!(results.is_empty());
     assert!(matches!(
@@ -1236,7 +1245,9 @@ fn a_moved_body_that_another_history_inserts_stays_historical() {
 
 #[test]
 fn a_kept_seed_body_outside_a_brep_history_stays_historical() {
-    use cadmpeg_ir::features::{patterns::PatternSeed, BodySelection, FeatureDefinition};
+    use cadmpeg_ir::features::patterns::PatternSeed;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::FeatureDefinition;
     let mut body = cadmpeg_ir::examples::unit_cube()
         .unwrap()
         .geometry
@@ -1256,7 +1267,9 @@ fn a_kept_seed_body_outside_a_brep_history_stays_historical() {
 
 #[test]
 fn a_seed_body_the_final_model_keeps_selects_that_model_body() {
-    use cadmpeg_ir::features::{patterns::PatternSeed, BodySelection, FeatureDefinition};
+    use cadmpeg_ir::features::patterns::PatternSeed;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::FeatureDefinition;
     let mut body = cadmpeg_ir::examples::unit_cube()
         .unwrap()
         .geometry
@@ -1313,7 +1326,9 @@ fn a_seed_body_the_final_model_keeps_selects_that_model_body() {
 
 #[test]
 fn a_seed_body_updated_after_its_seed_state_stays_historical() {
-    use cadmpeg_ir::features::{patterns::PatternSeed, BodySelection, FeatureDefinition};
+    use cadmpeg_ir::features::patterns::PatternSeed;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::FeatureDefinition;
     let mut body = cadmpeg_ir::examples::unit_cube()
         .unwrap()
         .geometry
@@ -1338,7 +1353,9 @@ fn a_seed_body_updated_after_its_seed_state_stays_historical() {
 
 #[test]
 fn a_seed_body_updated_after_the_pattern_state_stays_historical() {
-    use cadmpeg_ir::features::{patterns::PatternSeed, BodySelection, FeatureDefinition};
+    use cadmpeg_ir::features::patterns::PatternSeed;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::FeatureDefinition;
     let mut body = cadmpeg_ir::examples::unit_cube()
         .unwrap()
         .geometry
@@ -1375,10 +1392,10 @@ fn assert_seed_with_updated_entity_stays_historical(
     entity_slots: impl Fn(&mut crate::history_records::AsmHistoricalTopology) -> &mut Vec<i64>,
 ) {
     use crate::history_records::{AsmDeltaState, AsmEntityVersion, AsmHistoricalTopology};
-    use cadmpeg_ir::features::{
-        patterns::{PatternKind, PatternSeed},
-        BodySelection, Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
-    };
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::patterns::{PatternKind, PatternSeed};
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
     let mut body = cadmpeg_ir::examples::unit_cube()
         .unwrap()

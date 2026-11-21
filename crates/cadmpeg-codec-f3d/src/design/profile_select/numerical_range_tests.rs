@@ -10,13 +10,14 @@ use cadmpeg_ir::sketches::{SpatialSketchGeometry, SpatialSketchGeometryDefinitio
 
 #[test]
 fn numerical_0922_identical_circle_planes_match_tight_tolerance() {
-    let normal = cadmpeg_ir::features::FiniteVector3::new(Vector3::new(2.0, 13.0, 1.0))
-        .and_then(cadmpeg_ir::features::FiniteVector3::unit_nonzero)
+    let normal = cadmpeg_ir::features::geometry::FiniteVector3::new(Vector3::new(2.0, 13.0, 1.0))
+        .and_then(cadmpeg_ir::features::geometry::FiniteVector3::unit_nonzero)
         .unwrap();
-    let reference =
-        cadmpeg_ir::features::FiniteVector3::new(normal.cross(Vector3::new(1.0, 0.0, 0.0)))
-            .and_then(cadmpeg_ir::features::FiniteVector3::unit_nonzero)
-            .unwrap();
+    let reference = cadmpeg_ir::features::geometry::FiniteVector3::new(
+        normal.cross(Vector3::new(1.0, 0.0, 0.0)),
+    )
+    .and_then(cadmpeg_ir::features::geometry::FiniteVector3::unit_nonzero)
+    .unwrap();
     let geometry = SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Circle {
         center: Point3::new(0.0, 0.0, 0.0),
         normal,
@@ -111,7 +112,7 @@ fn circles_inward_of_a_body_stop_when_the_next_circle_passes_the_wall() {
 
 #[test]
 fn concentric_ring_regions_emit_disjoint_annuli_with_hole_boundaries() {
-    use cadmpeg_ir::features::{SketchProfileBoundaryUse, SketchProfileRegion};
+    use cadmpeg_ir::features::profiles::{SketchProfileBoundaryUse, SketchProfileRegion};
     use cadmpeg_ir::geometry::DirectedParameterRange;
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::sketches::{SketchEntityId, SketchEntityUse};

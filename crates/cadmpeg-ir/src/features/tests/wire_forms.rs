@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::examples::unit_cube;
-use crate::features::{DistinctMembers, FeatureContent};
-use crate::features::{PlanarProfileRef, ProfileRef};
+use crate::features::profiles::{PlanarProfileRef, ProfileRef};
+use crate::features::selections::DistinctMembers;
+use crate::features::FeatureContent;
 use crate::math::{Point3, Vector3};
 use crate::validate::validate_neutral;
 
 #[test]
 fn complete_face_motion_preserves_its_literal_affine_wire() {
-    use crate::features::FaceMotion;
+    use crate::features::direct_edit::FaceMotion;
     use crate::transform::Transform;
 
     let motion = FaceMotion::Transform {
@@ -33,7 +34,7 @@ fn complete_face_motion_preserves_its_literal_affine_wire() {
 
 #[test]
 fn complete_face_motion_rejects_malformed_or_nonfinite_wire() {
-    use crate::features::FaceMotion;
+    use crate::features::direct_edit::FaceMotion;
     for wire in [
         r#"{"kind":"transform","transform":[[1,0,0,0],[0,1,0,0]]}"#,
         r#"{"kind":"transform","transform":[[1,0,0,0],[0,1,0,0],[0,0,1,1e999]]}"#,
@@ -46,7 +47,7 @@ fn complete_face_motion_rejects_malformed_or_nonfinite_wire() {
 
 #[test]
 fn complete_face_motion_survives_identity_rewrite() {
-    use crate::features::FaceMotion;
+    use crate::features::direct_edit::FaceMotion;
     use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
     use crate::transform::Transform;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -87,12 +88,12 @@ fn a_standalone_feature_wire_declares_no_regeneration_parent() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
         ),
         native_ref: None,
@@ -115,7 +116,9 @@ fn a_standalone_feature_wire_declares_no_regeneration_parent() {
 
 #[test]
 fn a_datum_plane_reference_states_which_support_it_names() {
-    use crate::features::{DatumPlaneReference, FaceSelection, FeatureSupportPlaneFrame};
+    use crate::features::datums::DatumPlaneReference;
+    use crate::features::geometry::FeatureSupportPlaneFrame;
+    use crate::features::selections::FaceSelection;
 
     let feature = DatumPlaneReference::Feature {
         feature: crate::features::FeatureId::mint("test:model:feature#feature")
@@ -194,14 +197,13 @@ fn a_datum_plane_reference_states_which_support_it_names() {
 
 #[test]
 fn feature_extents_round_trip_through_json() {
-    use crate::ids::FaceId;
-    use crate::{
-        features::{
-            AngularTermination, ExtrudeExtent, ExtrudeSide, FaceSelection, LinearTermination,
-            RevolveExtent,
-        },
-        scalar::Length,
+    use crate::features::extents::{
+        AngularTermination, ExtrudeExtent, ExtrudeSide, LinearTermination,
     };
+    use crate::features::revolve::RevolveExtent;
+    use crate::features::selections::FaceSelection;
+    use crate::ids::FaceId;
+    use crate::scalar::Length;
 
     let extents = vec![
         ExtrudeExtent::OneSided {
@@ -279,7 +281,7 @@ fn feature_extents_round_trip_through_json() {
 
 #[test]
 fn termination_families_preserve_wire_and_reject_cross_family_variants() {
-    use crate::features::{AngularTermination, LinearTermination};
+    use crate::features::extents::{AngularTermination, LinearTermination};
 
     let blind_wire = serde_json::json!({"kind": "blind", "length": 12.5});
     let blind: LinearTermination = serde_json::from_value(blind_wire.clone()).unwrap();
@@ -306,7 +308,7 @@ fn termination_families_preserve_wire_and_reject_cross_family_variants() {
 
 #[test]
 fn to_plane_termination_keeps_its_frame_and_native_record() {
-    use crate::features::{AngularTermination, LinearTermination};
+    use crate::features::extents::{AngularTermination, LinearTermination};
 
     let wire = serde_json::json!({
         "kind": "to_plane",
@@ -347,7 +349,7 @@ fn to_plane_termination_keeps_its_frame_and_native_record() {
 
 #[test]
 fn from_plane_start_keeps_its_frame_and_native_record() {
-    use crate::features::ExtrudeStart;
+    use crate::features::extents::ExtrudeStart;
 
     let wire = serde_json::json!({
         "kind": "from_plane",
@@ -372,9 +374,8 @@ fn from_plane_start_keeps_its_frame_and_native_record() {
 /// The plane-to-plane extrusion example of `docs/cad-ir.md`.
 #[test]
 fn plane_to_plane_extrusion_example_round_trips() {
-    use crate::features::{
-        ExtrudeExtent, ExtrudeStart, FeatureDefinition, FeatureOperation, LinearTermination,
-    };
+    use crate::features::extents::{ExtrudeExtent, ExtrudeStart, LinearTermination};
+    use crate::features::{FeatureDefinition, FeatureOperation};
 
     let plane = |z: f64| {
         serde_json::json!({
@@ -424,9 +425,9 @@ fn plane_to_plane_extrusion_example_round_trips() {
 
 #[test]
 fn loft_sections_preserve_profile_shape() {
-    use crate::features::{
-        BooleanOp, FeatureDefinition, FeatureOperation, LoftSection, PlanarProfileRef, ProfileRef,
-    };
+    use crate::features::operation_settings::BooleanOp;
+    use crate::features::profiles::{LoftSection, PlanarProfileRef, ProfileRef};
+    use crate::features::{FeatureDefinition, FeatureOperation};
 
     let wire = serde_json::json!({"kind": "operation", "value": {"kind": "loft", "value": {
         "sections": [{"kind": "profile", "value": {"kind": "planar", "value": {"kind": "native", "value": "native:section"}}}],
@@ -458,16 +459,14 @@ fn loft_sections_preserve_profile_shape() {
 
 #[test]
 fn generated_sweep_sections_round_trip_and_validate() {
-    use crate::features::{
-        Feature, FeatureDefinition, FeatureId, FeatureOperation, GeneratedSweepSection, SweepMode,
-        SweepSection,
-    };
+    use crate::features::sweeps::{GeneratedSweepSection, SweepMode, SweepSection};
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
     let definition = FeatureDefinition::Operation(FeatureOperation::Sweep {
-        shape: crate::features::SweepShape::Solid {
-            op: crate::features::SolidSweepOperation::NewBody,
+        shape: crate::features::sweeps::SweepShape::Solid {
+            op: crate::features::sweeps::SolidSweepOperation::NewBody,
             section: SweepSection::Generated(GeneratedSweepSection::CircularRegion {
-                region: crate::features::SweepCircularRegion::new(
+                region: crate::features::sweeps::SweepCircularRegion::new(
                     crate::scalar::PositiveLength::new(3.0).unwrap(),
                     Some(crate::scalar::PositiveLength::new(1.0).unwrap()),
                 )
@@ -513,7 +512,7 @@ fn generated_sweep_sections_round_trip_and_validate() {
             source_text: None,
             source_content: FeatureContent::default(),
 
-            evaluation: crate::features::FeatureEvaluation::from_definition(definition),
+            evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
         ir.finalize();
@@ -522,12 +521,12 @@ fn generated_sweep_sections_round_trip_and_validate() {
     let report = validate_definition(definition.clone());
     assert!(report.is_ok(), "{report:#?}");
 
-    assert!(crate::features::SweepCircularRegion::new(
+    assert!(crate::features::sweeps::SweepCircularRegion::new(
         crate::scalar::PositiveLength::new(2.0).unwrap(),
         Some(crate::scalar::PositiveLength::new(2.0).unwrap()),
     )
     .is_err());
-    assert!(crate::features::SweepCircularRegion::new(
+    assert!(crate::features::sweeps::SweepCircularRegion::new(
         crate::scalar::PositiveLength::new(3.0).unwrap(),
         Some(crate::scalar::PositiveLength::new(3.5).unwrap()),
     )
@@ -545,15 +544,14 @@ fn generated_sweep_sections_round_trip_and_validate() {
 
 #[test]
 fn full_round_fillet_keeps_automatic_side_semantics() {
-    use crate::features::{
-        edge_treatments::FullRoundSideSelection, FaceSelection, Feature, FeatureDefinition,
-        FeatureId, FeatureOperation,
-    };
+    use crate::features::edge_treatments::FullRoundSideSelection;
+    use crate::features::selections::FaceSelection;
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let center = ir.geometry.faces[0].id.clone();
     let definition = FeatureDefinition::Operation(FeatureOperation::FullRoundFillet {
-        groups: crate::features::NonEmptyMembers::one(
+        groups: crate::features::selections::NonEmptyMembers::one(
             crate::features::edge_treatments::FullRoundFilletGroup::new(
                 FaceSelection::Faces(vec![center.clone()]),
                 FullRoundSideSelection::Automatic,
@@ -579,7 +577,7 @@ fn full_round_fillet_keeps_automatic_side_semantics() {
         source_text: None,
         source_content: FeatureContent::default(),
 
-        evaluation: crate::features::FeatureEvaluation::from_definition(definition),
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(definition),
         native_ref: None,
     });
     assert!(!validate_neutral(&ir, Vec::new())
@@ -601,10 +599,8 @@ fn full_round_fillet_keeps_automatic_side_semantics() {
 
 #[test]
 fn flex_modes_round_trip_and_validate() {
-    use crate::{
-        features::FlexMode,
-        scalar::{Angle, Length},
-    };
+    use crate::features::direct_edit::FlexMode;
+    use crate::scalar::{Angle, Length};
 
     let modes = vec![
         FlexMode::Bending {
@@ -626,10 +622,8 @@ fn flex_modes_round_trip_and_validate() {
 
 #[test]
 fn unresolved_hole_and_flex_wire_forms_preserve_their_layout() {
-    use crate::features::{
-        holes::{HoleKind, PartialPair},
-        FlexMode,
-    };
+    use crate::features::direct_edit::FlexMode;
+    use crate::features::holes::{HoleKind, PartialPair};
 
     let counterbore = serde_json::json!({
         "kind": "partial_counterbore",
@@ -649,7 +643,7 @@ fn unresolved_hole_and_flex_wire_forms_preserve_their_layout() {
     assert_eq!(
         mode,
         FlexMode::Unresolved {
-            form: Some(crate::features::FlexForm::Twisting)
+            form: Some(crate::features::direct_edit::FlexForm::Twisting)
         }
     );
     assert_eq!(serde_json::to_value(mode).unwrap(), flex);
@@ -679,7 +673,7 @@ fn an_unresolved_hole_wire_keeps_its_form_and_carries_no_dimensions() {
 
 #[test]
 fn unresolved_flex_wire_forms_reject_cross_family_payloads() {
-    use crate::features::FlexMode;
+    use crate::features::direct_edit::FlexMode;
 
     assert!(serde_json::from_value::<FlexMode>(serde_json::json!({
         "kind": "unresolved",
@@ -860,16 +854,15 @@ fn hole_wire_rejects_cross_form_thread_fields() {
 
 #[test]
 fn filled_surface_continuity_preserves_aggregate_and_component_wire_fields() {
-    use crate::features::{
-        EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation, SurfaceBoundary,
-        SurfaceContinuity,
-    };
+    use crate::features::selections::{EdgeSelection, FaceSelection};
+    use crate::features::surface_inputs::{SurfaceBoundary, SurfaceContinuity};
+    use crate::features::{FeatureDefinition, FeatureOperation};
 
     let definition = FeatureDefinition::Operation(FeatureOperation::FilledSurface {
         boundary: SurfaceBoundary::Edges(EdgeSelection::Unresolved),
         support_faces: FaceSelection::Faces(Vec::new()),
-        continuity: crate::features::FilledSurfaceContinuityState::per_boundary(
-            crate::features::NonEmptyMembers::try_from(vec![
+        continuity: crate::features::surface_inputs::FilledSurfaceContinuityState::per_boundary(
+            crate::features::selections::NonEmptyMembers::try_from(vec![
                 SurfaceContinuity::Contact.into(),
                 SurfaceContinuity::Contact.into(),
             ])
@@ -909,14 +902,14 @@ fn filled_surface_continuity_preserves_aggregate_and_component_wire_fields() {
 
 #[test]
 fn unresolved_filled_surface_continuity_omits_both_wire_fields() {
-    use crate::features::{
-        EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation, SurfaceBoundary,
-    };
+    use crate::features::selections::{EdgeSelection, FaceSelection};
+    use crate::features::surface_inputs::SurfaceBoundary;
+    use crate::features::{FeatureDefinition, FeatureOperation};
 
     let definition = FeatureDefinition::Operation(FeatureOperation::FilledSurface {
         boundary: SurfaceBoundary::Edges(EdgeSelection::Unresolved),
         support_faces: FaceSelection::Faces(Vec::new()),
-        continuity: crate::features::FilledSurfaceContinuityState::unresolved(),
+        continuity: crate::features::surface_inputs::FilledSurfaceContinuityState::unresolved(),
         merge_result: None,
         interior_constraints: Vec::new(),
         reverse_normal: None,
@@ -931,7 +924,7 @@ fn unresolved_filled_surface_continuity_omits_both_wire_fields() {
 
 #[test]
 fn empty_filled_surface_continuity_list_is_refused() {
-    use crate::features::{FilledSurfaceContinuityState, SurfaceContinuity};
+    use crate::features::surface_inputs::{FilledSurfaceContinuityState, SurfaceContinuity};
 
     // Absence is the only spelling of unresolved: an empty list is refused by
     // the non-empty member mint, not read as a second spelling of it.
@@ -948,17 +941,20 @@ fn empty_filled_surface_continuity_list_is_refused() {
     assert_eq!(
         resolved.resolved().map(|value| value.conditions.as_slice()),
         Some(
-            &[crate::features::FilledSurfaceBoundaryCondition::from(
-                SurfaceContinuity::Tangent
-            )][..]
+            &[
+                crate::features::surface_inputs::FilledSurfaceBoundaryCondition::from(
+                    SurfaceContinuity::Tangent
+                )
+            ][..]
         )
     );
 }
 
 #[test]
 fn filled_surface_weights_are_positive_and_belong_to_active_continuity() {
-    use crate::features::{
-        FilledSurfaceBoundaryCondition, FilledSurfaceContinuity, NonEmptyMembers,
+    use crate::features::selections::NonEmptyMembers;
+    use crate::features::surface_inputs::{
+        FilledSurfaceBoundaryCondition, FilledSurfaceContinuity,
     };
     use crate::scalar::PositiveReal;
 
@@ -996,7 +992,7 @@ fn filled_surface_weights_are_positive_and_belong_to_active_continuity() {
 
 #[test]
 fn scale_factor_forms_name_themselves_on_the_wire() {
-    use crate::features::ScaleFactors;
+    use crate::features::direct_edit::ScaleFactors;
 
     for wire in [
         serde_json::json!({"kind": "unresolved"}),
@@ -1010,7 +1006,7 @@ fn scale_factor_forms_name_themselves_on_the_wire() {
 
 #[test]
 fn scale_factor_wire_rejects_mixed_and_partial_forms() {
-    use crate::features::ScaleFactors;
+    use crate::features::direct_edit::ScaleFactors;
 
     // The old flat wire spelled the form by which of four optional keys were
     // present, so a mixed or partial set was representable. Each form now
@@ -1028,7 +1024,7 @@ fn scale_factor_wire_rejects_mixed_and_partial_forms() {
 
 #[test]
 fn edge_selections_round_trip_through_json() {
-    use crate::features::EdgeSelection;
+    use crate::features::selections::EdgeSelection;
     use crate::ids::{EdgeId, FeatureInputTopologyId, HistoricalEdgeId};
 
     let selections = vec![
@@ -1066,7 +1062,7 @@ fn edge_selections_round_trip_through_json() {
 
 #[test]
 fn historical_edge_paths_round_trip_through_json() {
-    use crate::features::PathRef;
+    use crate::features::profiles::PathRef;
     use crate::ids::{FeatureInputTopologyId, HistoricalEdgeId};
 
     let path = PathRef::historical_edges(
@@ -1084,7 +1080,7 @@ fn historical_edge_paths_round_trip_through_json() {
 
 #[test]
 fn face_selections_round_trip_through_json() {
-    use crate::features::FaceSelection;
+    use crate::features::selections::FaceSelection;
     use crate::ids::{FaceId, FeatureInputTopologyId, HistoricalFaceId};
 
     let selections = vec![
@@ -1139,19 +1135,20 @@ fn historical_face_profiles_round_trip_through_json() {
 
 #[test]
 fn body_selections_round_trip_through_json() {
-    use crate::features::BodySelection;
+    use crate::features::selections::BodySelection;
     use crate::ids::{BodyId, FeatureInputTopologyId, HistoricalBodyId};
 
     let selections = vec![
         BodySelection::Unresolved,
         BodySelection::Bodies(
-            crate::features::DistinctMembers::try_from(vec![
-                BodyId::mint("synthetic:test:body#0").expect("valid identity")
-            ])
+            crate::features::selections::DistinctMembers::try_from(vec![BodyId::mint(
+                "synthetic:test:body#0",
+            )
+            .expect("valid identity")])
             .expect("distinct bodies"),
         ),
         BodySelection::Resolved {
-            bodies: crate::features::DistinctMembers::try_from(vec![BodyId::mint(
+            bodies: crate::features::selections::DistinctMembers::try_from(vec![BodyId::mint(
                 "synthetic:test:body#0",
             )
             .expect("valid identity")])
@@ -1159,13 +1156,13 @@ fn body_selections_round_trip_through_json() {
             native: "body:17".into(),
         },
         BodySelection::ResolvedSet {
-            members: crate::features::BodyMembers::try_from_rows(vec![
-                crate::features::BodyMember::new(
+            members: crate::features::selections::BodyMembers::try_from_rows(vec![
+                crate::features::selections::BodyMember::new(
                     BodyId::mint("synthetic:test:body#0").expect("valid identity"),
                     cadmpeg_core::text::NonBlankString::new("body:17")
                         .expect("valid body selection row"),
                 ),
-                crate::features::BodyMember::new(
+                crate::features::selections::BodyMember::new(
                     BodyId::mint("synthetic:test:body#1").expect("valid identity"),
                     cadmpeg_core::text::NonBlankString::new("body:18")
                         .expect("valid body selection row"),
@@ -1183,14 +1180,14 @@ fn body_selections_round_trip_through_json() {
         BodySelection::HistoricalSet {
             state: FeatureInputTopologyId::mint("synthetic:history-input:state#0")
                 .expect("valid identity"),
-            members: crate::features::BodyMembers::try_from_rows(vec![
-                crate::features::BodyMember::new(
+            members: crate::features::selections::BodyMembers::try_from_rows(vec![
+                crate::features::selections::BodyMember::new(
                     HistoricalBodyId::mint("synthetic:history-input:body#0")
                         .expect("valid identity"),
                     cadmpeg_core::text::NonBlankString::new("body:16")
                         .expect("valid historical body selection row"),
                 ),
-                crate::features::BodyMember::new(
+                crate::features::selections::BodyMember::new(
                     HistoricalBodyId::mint("synthetic:history-input:body#1")
                         .expect("valid identity"),
                     cadmpeg_core::text::NonBlankString::new("body:17")
@@ -1211,7 +1208,7 @@ fn body_selections_round_trip_through_json() {
 
 #[test]
 fn body_selection_members_reject_blank_native_rows() {
-    use crate::features::BodyMembers;
+    use crate::features::selections::BodyMembers;
     use crate::ids::BodyId;
 
     let body = BodyId::mint("synthetic:test:body#blank").expect("identity grammar");
@@ -1227,7 +1224,8 @@ fn body_selection_members_reject_blank_native_rows() {
 
 #[test]
 fn loft_guidance_rejects_mixed_wire_members() {
-    use crate::features::{LoftGuidance, PathRef};
+    use crate::features::profiles::PathRef;
+    use crate::features::LoftGuidance;
 
     let guidance = LoftGuidance::Centerline(PathRef::Native("test:centerline".into()));
     let wire = serde_json::to_value(&guidance).unwrap();
@@ -1245,10 +1243,11 @@ fn loft_guidance_rejects_mixed_wire_members() {
 
 #[test]
 fn feature_result_topology_round_trips_without_current_model_bodies() {
-    use crate::features::{FeatureId, FeatureResultTopology};
+    use crate::features::evaluation::FeatureResultTopology;
+    use crate::features::FeatureId;
     use crate::ids::FeatureResultTopologyId;
 
-    let state = crate::features::FeatureResultMembers::new(
+    let state = crate::features::evaluation::FeatureResultMembers::new(
         vec![cadmpeg_core::nonblank_literal!("body:17")],
         vec![cadmpeg_core::nonblank_literal!("face:3")],
         vec![cadmpeg_core::nonblank_literal!("edge:5")],
@@ -1273,7 +1272,9 @@ fn feature_result_topology_round_trips_without_current_model_bodies() {
 
 #[test]
 fn combine_omits_the_default_keep_tools_flag_from_json() {
-    use crate::features::{BodySelection, BooleanKind, FeatureDefinition, FeatureOperation};
+    use crate::features::operation_settings::BooleanKind;
+    use crate::features::selections::BodySelection;
+    use crate::features::{FeatureDefinition, FeatureOperation};
 
     let definition = FeatureDefinition::Operation(FeatureOperation::Combine {
         operands: crate::features::CombineOperands::new(
@@ -1285,7 +1286,7 @@ fn combine_omits_the_default_keep_tools_flag_from_json() {
         op: BooleanKind::Join,
         keep_tools: false,
 
-        destination: crate::features::CombineDestination::default(),
+        destination: crate::features::operation_settings::CombineDestination::default(),
     });
     let json = serde_json::to_value(definition).unwrap();
     assert_eq!(json.get("keep_tools"), None);
@@ -1294,10 +1295,9 @@ fn combine_omits_the_default_keep_tools_flag_from_json() {
 
 #[test]
 fn combine_new_component_destination_round_trips() {
-    use crate::features::{
-        BodySelection, BooleanKind, CombineDestination, CombineOperands, FeatureDefinition,
-        FeatureOperation,
-    };
+    use crate::features::operation_settings::{BooleanKind, CombineDestination};
+    use crate::features::selections::BodySelection;
+    use crate::features::{CombineOperands, FeatureDefinition, FeatureOperation};
 
     let definition = FeatureDefinition::Operation(FeatureOperation::Combine {
         operands: CombineOperands::new(
@@ -1324,7 +1324,7 @@ fn combine_new_component_destination_round_trips() {
 /// spelling and an unknown key beside `op` is refused by name.
 #[test]
 fn sweep_mode_spells_new_body_once_and_refuses_a_key_beside_op() {
-    use crate::features::{SolidSweepOperation, SweepMode};
+    use crate::features::sweeps::{SolidSweepOperation, SweepMode};
 
     for (wire, expected) in [
         (
@@ -1793,7 +1793,7 @@ fn an_unknown_key_inside_the_trim_cell_selection_is_rejected_by_name() {
 
 #[test]
 fn the_extrude_start_and_termination_unit_forms_reject_an_unknown_key() {
-    use crate::features::{AngularTermination, ExtrudeStart, LinearTermination};
+    use crate::features::extents::{AngularTermination, ExtrudeStart, LinearTermination};
 
     for wire in [
         serde_json::json!({"kind": "profile_plane"}),
@@ -1832,7 +1832,7 @@ fn the_extrude_start_and_termination_unit_forms_reject_an_unknown_key() {
 
 #[test]
 fn sheet_metal_thickness_sides_name_themselves_on_the_wire() {
-    use crate::features::SheetMetalThicknessSide;
+    use crate::features::sheet_metal_forms::SheetMetalThicknessSide;
 
     for (side, wire) in [
         (SheetMetalThicknessSide::Forward, "forward"),
@@ -1904,7 +1904,7 @@ fn thread_wire_round_trips_and_keeps_unproven_fields_absent() {
 
 #[test]
 fn planar_target_sources_round_trip_and_refuse_invalid_values() {
-    use crate::features::{ExtrudeStart, LinearTermination};
+    use crate::features::extents::{ExtrudeStart, LinearTermination};
     for (kind, source) in [
         ("to_plane", "work_plane"),
         ("to_plane", "work_point"),
@@ -1939,7 +1939,8 @@ fn planar_target_sources_round_trip_and_refuse_invalid_values() {
 
 #[test]
 fn component_transfer_omits_unresolved_operands_and_refuses_their_null_spelling() {
-    use crate::features::{ComponentTransferMode, FeatureOperation};
+    use crate::features::tree::ComponentTransferMode;
+    use crate::features::FeatureOperation;
 
     let operation = FeatureOperation::component_transfer(
         ComponentTransferMode::Reparent,
@@ -1978,7 +1979,8 @@ fn component_transfer_omits_unresolved_operands_and_refuses_their_null_spelling(
 
 #[test]
 fn unstitch_faces_carries_its_face_selection_on_the_wire() {
-    use crate::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    use crate::features::selections::FaceSelection;
+    use crate::features::{FeatureDefinition, FeatureOperation};
 
     let definition = FeatureDefinition::Operation(FeatureOperation::UnstitchFaces {
         faces: FaceSelection::Native("native:face-group".into()),

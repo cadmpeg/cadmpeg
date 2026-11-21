@@ -5,7 +5,7 @@ use crate::history::{bind_direct_body_recipe_body_selection, FeatureBodySelectio
 
 #[test]
 fn form33_without_unique_body_proof_remains_unresolved() {
-    use cadmpeg_ir::features::BodySelection;
+    use cadmpeg_ir::features::selections::BodySelection;
     use cadmpeg_ir::ids::{BodyId, FaceId, RegionId, ShellId};
     use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
 

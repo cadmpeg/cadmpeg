@@ -68,7 +68,7 @@ fn an_explicit_null_mass_is_refused() {
 #[test]
 fn a_rigid_body_keeps_its_initial_velocities_and_rest_state() {
     use super::RigidBody;
-    use crate::features::FiniteVector3;
+    use crate::features::geometry::FiniteVector3;
     use crate::ids::RigidBodyId;
     use crate::math::Vector3;
     let body = RigidBody {

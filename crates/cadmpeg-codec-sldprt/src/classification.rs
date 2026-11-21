@@ -4,7 +4,8 @@
 
 use crate::records::Feature;
 use crate::records::{FeatureInputClassRole, FeatureInputRelationFamily};
-use cadmpeg_ir::features::{FeatureTreeNodeRole, PrincipalPlane};
+use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
+use cadmpeg_ir::features::PrincipalPlane;
 
 /// Semantic family established by native record identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -501,7 +502,7 @@ mod tests {
     use crate::records::FeatureInputClassRole;
     use crate::records::FeatureInputRelationFamily;
     use crate::records::FeatureSource;
-    use cadmpeg_ir::features::FeatureTreeNodeRole;
+    use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
     use cadmpeg_ir::features::PrincipalPlane;
     use std::collections::BTreeMap;
 

@@ -604,7 +604,7 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
         {
             slot.operation = (!hole_scope).then_some(DesignCombineOperation {
                 form: DesignCombineForm::Standard,
-                operation: cadmpeg_ir::features::BooleanKind::Join,
+                operation: cadmpeg_ir::features::operation_settings::BooleanKind::Join,
                 operation_offset: 0,
                 keep_tools: false,
                 keep_tools_offset: 0,
@@ -628,6 +628,8 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
                 },
 
                 destination: Default::default(),
+                created_body_nodes: Vec::new(),
+                consumed_body_nodes: Vec::new(),
             });
         }
         scopes.push(scope);

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Historical body recipe selections.
 
-use cadmpeg_ir::features::{BodySelection, FeatureId};
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::FeatureId;
 
 fn selection_fixture() -> (
     crate::records::feature::scope::DesignParameterScope,

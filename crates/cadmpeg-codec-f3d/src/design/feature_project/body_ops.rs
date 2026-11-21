@@ -17,9 +17,9 @@ pub(in crate::design) fn project_combine(
     native_scope: &str,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use crate::records::feature::combine::DesignCombineDestination;
-    use cadmpeg_ir::features::{
-        BodySelection, CombineDestination, FeatureDefinition, FeatureOperation,
-    };
+    use cadmpeg_ir::features::operation_settings::CombineDestination;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let operation = scope.combine_operation()?;
     let selection = |record_index| {
@@ -38,7 +38,9 @@ pub(in crate::design) fn project_combine(
         for tool in operation.tools.iter() {
             selected.push(selection(tool.record_index));
         }
-        BodySelection::NativeSet(cadmpeg_ir::features::NativeSelections::try_from(selected).ok()?)
+        BodySelection::NativeSet(
+            cadmpeg_ir::features::selections::NativeSelections::try_from(selected).ok()?,
+        )
     };
     let operands = cadmpeg_ir::features::CombineOperands::new(target, tools).ok()?;
     Some(FeatureDefinition::Operation(FeatureOperation::Combine {
@@ -76,9 +78,10 @@ pub(super) fn project_align(
     };
     let Some(definition) = move_body(
         operation,
-        group.map_or(cadmpeg_ir::features::BodySelection::Unresolved, |group| {
-            cadmpeg_ir::features::BodySelection::Native(group.id.clone())
-        }),
+        group.map_or(
+            cadmpeg_ir::features::selections::BodySelection::Unresolved,
+            |group| cadmpeg_ir::features::selections::BodySelection::Native(group.id.clone()),
+        ),
     ) else {
         losses.push(crate::loss::F3dLossCode::FeatureAlignMotionUnprojected.note(format!(
             "Align scope {} has no finite orientation-preserving body motion in canonical millimetres; its constructor is retained (DR-120).", scope.id
@@ -119,7 +122,7 @@ pub(super) fn project_move(
     owners: &[DesignParameterOwner],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::BodySelection;
+    use cadmpeg_ir::features::selections::BodySelection;
 
     let operation = scope.move_operation()?;
     let group = single_operand_group(groups, scope, DesignOperandRole::BODIES_A)?;
@@ -157,7 +160,7 @@ pub(super) fn project_move(
 
 pub(super) fn move_body(
     operation: &crate::records::feature::direct_face::DesignMoveOperation,
-    bodies: cadmpeg_ir::features::BodySelection,
+    bodies: cadmpeg_ir::features::selections::BodySelection,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
@@ -166,7 +169,7 @@ pub(super) fn move_body(
     }
     Some(FeatureDefinition::Operation(FeatureOperation::MoveBody {
         bodies,
-        translation: cadmpeg_ir::features::FiniteVector3::new(Vector3::new(
+        translation: cadmpeg_ir::features::geometry::FiniteVector3::new(Vector3::new(
             operation.transform[0][3] * 10.0,
             operation.transform[1][3] * 10.0,
             operation.transform[2][3] * 10.0,
@@ -181,7 +184,7 @@ pub(in crate::design) fn project_modify(
     groups: &[DesignConstructionOperandGroup],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::BodySelection;
+    use cadmpeg_ir::features::selections::BodySelection;
 
     let operation = scope.modify_operation()?;
     let stream = native_stream(&scope.id)?;
@@ -202,7 +205,7 @@ pub(in crate::design) fn project_modify(
     let bodies = match selected.as_slice() {
         [group] => BodySelection::Native(group.clone()),
         _ => BodySelection::NativeSet(
-            cadmpeg_ir::features::NativeSelections::try_from(selected.clone()).ok()?,
+            cadmpeg_ir::features::selections::NativeSelections::try_from(selected.clone()).ok()?,
         ),
     };
     let definition = move_body(&operation.motion, bodies)?;
@@ -254,9 +257,9 @@ pub(in crate::design) fn project_remove_body(
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{
-        BodyRetentionMode, BodySelection, FeatureDefinition, FeatureOperation,
-    };
+    use cadmpeg_ir::features::operation_settings::BodyRetentionMode;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let group = single_operand_group(groups, scope, DesignOperandRole::BODIES_A)?;
     Some(FeatureDefinition::Operation(FeatureOperation::DeleteBody {

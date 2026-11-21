@@ -257,15 +257,16 @@ fn cap_envelope_withholding_blocks_feature_membership_circle_fallback() {
         crate::reference::ReferenceCircle::try_new(
             id,
             crate::reference::ReferenceCircleCenter::Stored(
-                cadmpeg_ir::features::FinitePoint3::new([2.0, 3.0, z].into())
+                cadmpeg_ir::features::geometry::FinitePoint3::new([2.0, 3.0, z].into())
                     .expect("finite center"),
             ),
             cadmpeg_ir::scalar::PositiveLength::new(0.75).expect("positive radius"),
             cadmpeg_ir::units::UnitVector3::new([0.0, 0.0, 1.0].into()).expect("unit axis"),
             [
-                cadmpeg_ir::features::FinitePoint3::new([2.75, 3.0, z].into())
+                cadmpeg_ir::features::geometry::FinitePoint3::new([2.75, 3.0, z].into())
                     .expect("finite start"),
-                cadmpeg_ir::features::FinitePoint3::new([2.0, 3.75, z].into()).expect("finite end"),
+                cadmpeg_ir::features::geometry::FinitePoint3::new([2.0, 3.75, z].into())
+                    .expect("finite end"),
             ],
             0,
         )

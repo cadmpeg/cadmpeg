@@ -6,7 +6,8 @@ use crate::design::feature_project::{
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::edge_identity::DesignEdgeOperand;
-use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::selections::EdgeSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 #[test]
 fn edge_resolve_deleted_set_assumption_reaches_projection_losses() {
