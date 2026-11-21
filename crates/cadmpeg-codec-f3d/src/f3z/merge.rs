@@ -1963,6 +1963,16 @@ fn define_member(
             .product_definitions
             .retain(|definition| !definition.id.as_str().ends_with(STORED_FRAME_GROUP_SUFFIX));
     }
+    let (top_level, tessellations) = ir
+        .model
+        .product_definitions
+        .iter()
+        .position(|row| row.id == crate::tree::file_root_id())
+        .map(|position| {
+            let root = ir.model.product_definitions.remove(position);
+            (root.occurrences, root.tessellations)
+        })
+        .unwrap_or_default();
     let owned = ir
         .model
         .product_definitions
@@ -1989,15 +1999,6 @@ fn define_member(
         .filter(|sketch| !owned_sketches.contains(&sketch.id))
         .map(|sketch| sketch.id.clone())
         .collect();
-    // The member file's own root definition is the member definition: it is
-    // stored in its own file of the archive, and holds the member's top level.
-    let top_level = ir
-        .model
-        .product_definitions
-        .iter()
-        .position(|row| row.id == crate::tree::file_root_id())
-        .map(|position| ir.model.product_definitions.remove(position).occurrences)
-        .unwrap_or_default();
     let storage = match ir.source.clone() {
         Some(source) => Storage::File {
             document: ExternalDocument::path(document.to_owned()),
@@ -2016,6 +2017,7 @@ fn define_member(
         definition.sketches.extend(sketches);
         definition.label = (!label.trim().is_empty()).then(|| label.to_owned());
         definition.occurrences.extend(top_level);
+        definition.tessellations.extend(tessellations);
         definition.storage = storage;
         return Ok(id);
     }
@@ -2025,6 +2027,7 @@ fn define_member(
     definition.bodies = bodies;
     definition.sketches = sketches;
     definition.occurrences = top_level;
+    definition.tessellations = tessellations;
     ir.model.product_definitions.push(definition);
     Ok(id)
 }
@@ -2610,6 +2613,68 @@ mod tests {
         assert_eq!(ir.model.product_definitions.len(), 1);
         assert_eq!(ir.model.product_definitions[0].id, id);
         assert_eq!(ir.model.product_definitions[0].bodies, [body]);
+    }
+
+    #[test]
+    fn member_definition_takes_the_scopeless_meshes_of_the_member_root() {
+        let mesh =
+            cadmpeg_ir::tessellation::TessellationId::mint("f3d:test:mesh-body#scopeless").unwrap();
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        crate::tree::file_root(&mut ir.model)
+            .tessellations
+            .push(mesh.clone());
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+        let id = define_member(&ctx, &mut ir, "member", "member.f3d").unwrap();
+        let [definition] = ir.model.product_definitions.as_slice() else {
+            panic!("one member definition");
+        };
+        assert_eq!(definition.id, id);
+        assert_eq!(definition.tessellations, [mesh]);
+    }
+
+    #[test]
+    fn scoped_member_mesh_keeps_the_stated_root_as_owner() {
+        let scoped =
+            cadmpeg_ir::tessellation::TessellationId::mint("f3d:test:mesh-body#scoped").unwrap();
+        let scopeless =
+            cadmpeg_ir::tessellation::TessellationId::mint("f3d:test:mesh-body#scopeless").unwrap();
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        ir.model.tessellations.push(
+            cadmpeg_ir::tessellation::Tessellation::new(
+                scoped.clone(),
+                cadmpeg_ir::tessellation::TessellationMesh::List {
+                    vertices: vec![
+                        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                        cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
+                        cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
+                    ],
+                    triangles: vec![[0, 1, 2]],
+                },
+                Vec::new(),
+            )
+            .unwrap(),
+        );
+        crate::tree::file_root(&mut ir.model)
+            .tessellations
+            .push(scopeless.clone());
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+        let member = define_member(&ctx, &mut ir, "member", "member.f3d").unwrap();
+        ir.state_root_definition(
+            &ctx,
+            crate::tree::file_root_id(),
+            cadmpeg_ir::products::ExternalDocument::default(),
+        )
+        .unwrap();
+        let owners = |mesh: &cadmpeg_ir::tessellation::TessellationId| {
+            ir.model
+                .product_definitions
+                .iter()
+                .filter(|definition| definition.tessellations.contains(mesh))
+                .map(|definition| definition.id.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(owners(&scopeless), [member]);
+        assert_eq!(owners(&scoped), [crate::tree::file_root_id()]);
     }
 
     #[test]

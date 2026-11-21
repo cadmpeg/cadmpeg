@@ -10,7 +10,9 @@ pub(super) fn validate(
 ) -> Result<(), CodecError> {
     for attribute in super::metadata_attributes(ir)
         .into_iter()
-        .filter(|attribute| attribute.name == "configuration_manager")
+        .filter(|attribute| {
+            attribute.name == "configuration_manager" && !super::states_no_value(attribute)
+        })
     {
         let valid = attribute.target.entity == AttributeTarget::Document
             && annotations
@@ -27,7 +29,8 @@ pub(super) fn validate(
                             crate::metadata::configuration_manager::values(payload, offset)
                         })
                         .is_some_and(|values| {
-                            attribute.values == values.map(AttributeValue::Integer)
+                            attribute.values
+                                == values.map(|value| Some(AttributeValue::Integer(value)))
                         })
                 });
         if !valid {

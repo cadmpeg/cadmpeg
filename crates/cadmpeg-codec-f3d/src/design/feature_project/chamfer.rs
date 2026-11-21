@@ -124,6 +124,7 @@ impl Projection<'_, '_> {
             )));
             }
             let mut groups = Vec::new();
+            let mut asymmetric_flips = Vec::new();
             for (set, specification) in sets.sets.iter().zip(specifications) {
                 if set.tangent_chain {
                     losses.push(F3dLossCode::ChamferTangentChainAssumed.note(format!(
@@ -146,6 +147,12 @@ impl Projection<'_, '_> {
                         }
                     }
                 };
+                if matches!(
+                    spec,
+                    ChamferSpec::TwoDistances { .. } | ChamferSpec::DistanceAngle { .. }
+                ) {
+                    asymmetric_flips.push(set.distance_reversed);
+                }
                 note_orientation_assumptions(
                     &format!("Chamfer set {} of {}", set.record_index, scope.id),
                     spec,
@@ -164,9 +171,16 @@ impl Projection<'_, '_> {
                 groups.push(ChamferGroup { edges, spec });
             }
             if let Ok(groups) = groups.try_into() {
+                let flip_direction = asymmetric_flips.contains(&true);
+                if flip_direction && asymmetric_flips.contains(&false) {
+                    losses.push(F3dLossCode::ChamferReferenceFaceAssumed.note(format!(
+                        "Chamfer {} stores distance reversal 1 on some of its sets and 0 on others; the neutral feature has one flip state and takes the flipped one (DR-341).",
+                        scope.id
+                    )));
+                }
                 return Ok(FeatureDefinition::Operation(FeatureOperation::Chamfer {
                     groups,
-                    flip_direction: false,
+                    flip_direction,
                 }));
             }
         }

@@ -367,6 +367,7 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
                 "test:model:tessellation#a-body".into(),
             ],
         )]),
+        scopeless_tessellations: Vec::new(),
     };
 
     let archive = crate::test_support::zip_test::synthetic_f3d(false);
@@ -1903,6 +1904,31 @@ fn native_mesh_face_group_sources_remain_incomplete() {
             &FeatureDefinition::Operation(operation)
         ));
     }
+}
+
+#[test]
+fn scopeless_member_mesh_tessellations_belong_to_the_member_file_root() {
+    const MESH: &str = "test:model:tessellation#scopeless-body";
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let mut model = cadmpeg_ir::document::Model::default();
+    super::super::list_member_scopeless_tessellations(&ctx, &mut model, &[MESH.to_owned()])
+        .unwrap();
+    let [root] = model.product_definitions.as_slice() else {
+        panic!("one root definition");
+    };
+    assert_eq!(root.id, crate::tree::file_root_id());
+    assert_eq!(
+        root.tessellations
+            .iter()
+            .map(cadmpeg_ir::tessellation::TessellationId::as_str)
+            .collect::<Vec<_>>(),
+        [MESH]
+    );
+    assert!(root.bodies.is_empty());
+
+    super::super::list_member_scopeless_tessellations(&ctx, &mut model, &[]).unwrap();
+    assert_eq!(model.product_definitions.len(), 1);
+    assert_eq!(model.product_definitions[0].tessellations.len(), 1);
 }
 
 #[test]

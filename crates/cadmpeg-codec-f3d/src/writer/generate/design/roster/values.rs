@@ -68,6 +68,16 @@ impl BodyBox {
     }
 }
 
+/// Why a design's unit system fell back to `MmMKS`.
+#[derive(Clone, Copy)]
+pub(super) enum UnitFallback {
+    /// The document declares no length unit.
+    Undeclared,
+    /// The document's length unit is outside Fusion's five custom unit
+    /// systems.
+    Unmodeled(UnitSymbol),
+}
+
 /// The values of one written design.
 pub(in crate::writer::generate) struct Values {
     pub(in crate::writer::generate) stamps: Timestamps,
@@ -75,6 +85,8 @@ pub(in crate::writer::generate) struct Values {
     seed: String,
     /// The unit-system record `AssetSettings` names.
     pub(super) unit_system: u32,
+    /// Why the unit system fell back to `MmMKS` (record 67), where it did.
+    pub(super) unit_system_fallback: Option<UnitFallback>,
     pub(super) name: String,
     /// The vertex box of each result body, in body order; `None` where the
     /// body's vertices span no extent.
@@ -100,6 +112,13 @@ impl Values {
             .filter(|name| !name.trim().is_empty())
             .unwrap_or("Component1")
             .to_owned();
+        let (unit_system, unit_system_fallback) = match unit_system(length) {
+            Some(record) => (record, None),
+            None => (
+                67,
+                Some(length.map_or(UnitFallback::Undeclared, UnitFallback::Unmodeled)),
+            ),
+        };
         Self {
             stamps: Timestamps::FIXED,
             seed: Sha256::digest(model)
@@ -107,7 +126,8 @@ impl Values {
                 .flat_map(|byte| [byte >> 4, byte & 0x0f])
                 .filter_map(|nibble| char::from_digit(u32::from(nibble), 16))
                 .collect(),
-            unit_system: unit_system(length),
+            unit_system,
+            unit_system_fallback,
             name,
             boxes: body_boxes(target),
         }
@@ -124,16 +144,17 @@ impl Values {
     }
 }
 
-/// The unit-system record of the document's length unit: `MmMKS` where the
-/// document states none or a unit no group models.
-fn unit_system(length: Option<UnitSymbol>) -> u32 {
-    match length {
-        Some(UnitSymbol::Cm) => 47,
-        Some(UnitSymbol::M) => 87,
-        Some(UnitSymbol::In) => 107,
-        Some(UnitSymbol::Ft) => 124,
-        _ => 67,
-    }
+/// The unit-system record of the document's length unit, or `None` when the
+/// document states none or a unit outside Fusion's five custom unit systems.
+fn unit_system(length: Option<UnitSymbol>) -> Option<u32> {
+    Some(match length? {
+        UnitSymbol::Mm => 67,
+        UnitSymbol::Cm => 47,
+        UnitSymbol::M => 87,
+        UnitSymbol::In => 107,
+        UnitSymbol::Ft => 124,
+        _ => return None,
+    })
 }
 
 /// The box of each body's vertex points, in centimetres; `None` for a body
