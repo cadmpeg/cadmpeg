@@ -371,12 +371,8 @@ impl Ring {
         self.boundary.reverse();
     }
 
-    fn first_curve(&self) -> usize {
-        self.entries
-            .iter()
-            .map(|entry| entry.curve)
-            .min()
-            .unwrap_or(usize::MAX)
+    fn first_curve(&self) -> Option<usize> {
+        self.entries.iter().map(|entry| entry.curve).min()
     }
 
     /// The entries of the counterclockwise exterior loop or the clockwise
