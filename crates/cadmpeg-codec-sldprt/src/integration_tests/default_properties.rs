@@ -76,7 +76,7 @@ fn semantic_metadata_edit_retains_saved_default_bytes_and_aliases() {
                 && !crate::metadata::default_properties::is_attribute(row)
         })
         .unwrap();
-    let AttributeValue::Vector(values) = &mut bbox.values[0] else {
+    let Some(AttributeValue::Vector(values)) = &mut bbox.values[0] else {
         panic!("bbox")
     };
     values[3] = cadmpeg_ir::scalar::FiniteReal::new(41.0).unwrap();
@@ -100,7 +100,10 @@ fn semantic_metadata_edit_retains_saved_default_bytes_and_aliases() {
                 && crate::metadata::default_properties::is_attribute(row)
         })
         .unwrap();
-    assert_eq!(saved.values, vec![AttributeValue::String(String::new())]);
+    assert_eq!(
+        saved.values,
+        vec![Some(AttributeValue::String(String::new()))]
+    );
     assert_ne!(
         readback
             .ir()
@@ -134,7 +137,7 @@ fn inherited_writer_refuses_every_saved_property_edit() {
                 ir.model.attributes.push(row);
             }
             2 => ir.model.attributes[i].name = "Renamed".into(),
-            3 => ir.model.attributes[i].values = vec![AttributeValue::Integer(7)],
+            3 => ir.model.attributes[i].values = vec![Some(AttributeValue::Integer(7))],
             4 => ir.model.attributes[i].id = AttributeId::mint("other:metadata:saved#0").unwrap(),
             5 => ir
                 .model
@@ -148,7 +151,7 @@ fn inherited_writer_refuses_every_saved_property_edit() {
                     .filter(is_property)
                     .find(|row| row.name == "SavedName")
                     .unwrap();
-                row.values = vec![AttributeValue::float(1.0).unwrap()];
+                row.values = vec![Some(AttributeValue::float(1.0).unwrap())];
             }
             _ => unreachable!(),
         }
@@ -172,11 +175,11 @@ fn saved_negative_zero_and_zero_are_one_property_value() {
         .filter(is_property)
         .find(|row| row.name == "SavedName")
         .unwrap();
-    let [AttributeValue::Float(saved)] = row.values.as_slice() else {
+    let [Some(AttributeValue::Float(saved))] = row.values.as_slice() else {
         panic!("SavedName decodes as one float")
     };
     assert_eq!(saved.get().to_bits(), (-0.0_f64).to_bits());
-    row.values = vec![AttributeValue::float(0.0).unwrap()];
+    row.values = vec![Some(AttributeValue::float(0.0).unwrap())];
     drop(ir);
     let bytes = write(&decoded).unwrap();
     let scan = crate::test_support::container::scan(&bytes);
@@ -213,7 +216,7 @@ fn inherited_writer_refuses_changed_unit_mirrors_in_the_saved_carrier() {
         .iter_mut()
         .find(|row| row.id.as_str().starts_with(&prefix))
         .unwrap();
-    mirror.values = vec![AttributeValue::Integer(3)];
+    mirror.values = vec![Some(AttributeValue::Integer(3))];
     drop(ir);
     assert!(
         matches!(write(&decoded), Err(CodecError::NotImplemented(message)) if message == "SLDPRT saved-property edits require a retained property serializer")
@@ -226,7 +229,8 @@ fn source_less_writer_refuses_saved_properties() {
         id: AttributeId::mint("sldprt:metadata:default_property#8:2:Saved").unwrap(),
         target: AttributeTarget::Document.into(),
         name: "Saved".into(),
-        values: vec![AttributeValue::Integer(7)],
+        values: vec![Some(AttributeValue::Integer(7))],
+        native_ref: None,
     });
     let mut bytes = Vec::new();
     assert!(
