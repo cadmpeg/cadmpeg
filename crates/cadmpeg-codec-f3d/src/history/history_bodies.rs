@@ -220,7 +220,6 @@ pub(crate) fn fill(
         scopes,
         histories,
         bindings,
-        primary_brep,
         ..
     } = inputs;
     let mut wants = BTreeMap::<usize, Vec<Want<'_>>>::new();
@@ -228,57 +227,14 @@ pub(crate) fn fill(
         let Some(bodies) = super::stored_bodies::base_feature_result_bodies(feature, scopes) else {
             continue;
         };
-        let Some(current) = feature
-            .native_ref
-            .as_deref()
-            .and_then(|id| scopes.iter().find(|scope| scope.id == id))
-            .and_then(DesignParameterScope::history_state_id)
-        else {
-            continue;
-        };
-        let bound = feature
-            .native_ref
-            .as_deref()
-            .and_then(|id| bindings.get(id))
-            .map(String::as_str);
-        let output_bound = output_history(
-            bodies.iter().map(cadmpeg_ir::ids::BodyId::as_str),
-            histories,
-            primary_brep,
-        );
-        let Some(bound) = bound.or(output_bound) else {
-            continue;
-        };
-        let mut matches = histories
-            .iter()
-            .enumerate()
-            .filter(|(_, history)| history.id == bound);
-        let Some((history_index, history)) = matches.next() else {
-            continue;
-        };
-        if matches.next().is_some()
-            || history
-                .states()
-                .iter()
-                .filter(|state| state.state_id == current)
-                .count()
-                != 1
+        if let Some((history_index, feature_wants)) =
+            result_state_wants(feature, bodies.iter(), inputs, false)
+                .filter(|(_, feature_wants)| !feature_wants.is_empty())
         {
-            continue;
-        }
-        for body in bodies {
-            if let Some(slot) = super::stable_ref(body.as_str()) {
-                wants.entry(history_index).or_default().push(Want {
-                    origin: feature,
-                    producer: Some(feature),
-                    consumer: None,
-                    state: current,
-                    slot,
-                    identity: None,
-                    capture_current: false,
-                    consumed: false,
-                });
-            }
+            wants
+                .entry(history_index)
+                .or_default()
+                .extend(feature_wants);
         }
     }
     for feature in features {
@@ -345,6 +301,171 @@ pub(crate) fn fill(
     let work = WorkBudget::new(MAX_HISTORY_BODY_WORK);
     fill_requests(ctx, scan, histories, &wants, &mut bodies_out, &work, losses)?;
     Ok((bodies_out, work.remaining()))
+}
+
+/// Wants for the output bodies of `feature` at its own result state.
+fn result_state_wants<'a>(
+    feature: &'a Feature,
+    bodies: impl Iterator<Item = &'a cadmpeg_ir::ids::BodyId> + Clone,
+    inputs: Inputs<'a>,
+    capture_current: bool,
+) -> Option<(usize, Vec<Want<'a>>)> {
+    let Inputs {
+        scopes,
+        histories,
+        bindings,
+        primary_brep,
+        ..
+    } = inputs;
+    let current = feature
+        .native_ref
+        .as_deref()
+        .and_then(|id| scopes.iter().find(|scope| scope.id == id))
+        .and_then(DesignParameterScope::history_state_id)?;
+    let bound = feature
+        .native_ref
+        .as_deref()
+        .and_then(|id| bindings.get(id))
+        .map(String::as_str);
+    let output_bound = output_history(
+        bodies.clone().map(cadmpeg_ir::ids::BodyId::as_str),
+        histories,
+        primary_brep,
+    );
+    let bound = bound.or(output_bound)?;
+    let mut matches = histories
+        .iter()
+        .enumerate()
+        .filter(|(_, history)| history.id == bound);
+    let (history_index, history) = matches.next()?;
+    if matches.next().is_some()
+        || history
+            .states()
+            .iter()
+            .filter(|state| state.state_id == current)
+            .count()
+            != 1
+    {
+        return None;
+    }
+    let wants = bodies
+        .filter_map(|body| {
+            Some(Want {
+                origin: feature,
+                producer: Some(feature),
+                consumer: None,
+                identity: None,
+                state: current,
+                slot: super::stable_ref(body.as_str())?,
+                capture_current,
+                consumed: false,
+            })
+        })
+        .collect();
+    Some((history_index, wants))
+}
+
+/// Kinds of the output bodies of each projected Loft, decoded at the Loft's own
+/// history state. A Loft is absent when any of its output bodies does not
+/// decode at that state.
+///
+/// The pass runs in a context resumed from a checkpoint and never commits its
+/// charges, so a refusal inside it leaves the session budget unchanged.
+pub(crate) fn loft_result_kinds(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+    inputs: Inputs<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> HashMap<cadmpeg_ir::features::FeatureId, Vec<cadmpeg_ir::topology::BodyKind>> {
+    let mut wants = BTreeMap::<usize, Vec<Want<'_>>>::new();
+    let mut expected = HashMap::new();
+    for feature in inputs.features {
+        if !matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Loft { .. })
+        ) {
+            continue;
+        }
+        let outputs = feature.evaluation.outputs();
+        if outputs.is_empty() {
+            continue;
+        }
+        let Some((history_index, feature_wants)) =
+            result_state_wants(feature, outputs.iter(), inputs, true)
+        else {
+            continue;
+        };
+        if feature_wants.len() != outputs.len() {
+            continue;
+        }
+        expected.insert(&feature.id, outputs.len());
+        wants
+            .entry(history_index)
+            .or_default()
+            .extend(feature_wants);
+    }
+    if wants.is_empty() {
+        return HashMap::new();
+    }
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let local = ctx.checkpoint().resume(&arena);
+    local.take_trace();
+    let mut bodies = Vec::new();
+    let work = WorkBudget::new(MAX_HISTORY_BODY_WORK);
+    let mut discarded = Vec::new();
+    #[cfg(test)]
+    if INJECTED_LOFT_PASS_REFUSAL.with(std::cell::Cell::take) {
+        let limit = local.policy().limits.max_entities;
+        local
+            .charge_entities(limit.saturating_add(1), "injected Loft pass charge")
+            .expect_err("the injected charge exceeds the entity limit");
+    }
+    let result = fill_requests(
+        &local,
+        scan,
+        inputs.histories,
+        &wants,
+        &mut bodies,
+        &work,
+        &mut discarded,
+    );
+    let bounded = F3dLossCode::FeatureHistoryBodyBounded.kind();
+    losses.extend(discarded.into_iter().filter(|loss| loss.code == bounded));
+    if let Some(limit) = local.resource_refusal() {
+        let mut refused = expected.keys().collect::<Vec<_>>();
+        refused.sort();
+        losses.extend(refused.into_iter().map(|feature| {
+            F3dLossCode::FeatureHistoryBodyBounded.note(format!(
+                "{feature} output bodies at its own history state exceed the Loft pass budget: {}",
+                CodecError::ResourceLimit(limit)
+            ))
+        }));
+        return HashMap::new();
+    }
+    if result.is_err() {
+        return HashMap::new();
+    }
+    let mut kinds = HashMap::<_, Vec<_>>::new();
+    for body in &bodies {
+        if let Some(feature) = &body.produced_by {
+            kinds
+                .entry(feature.clone())
+                .or_default()
+                .push(body.topology.body.kind);
+        }
+    }
+    kinds.retain(|feature, kinds| expected.get(feature) == Some(&kinds.len()));
+    kinds
+}
+
+#[cfg(test)]
+thread_local! {
+    static INJECTED_LOFT_PASS_REFUSAL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[cfg(test)]
+pub(crate) fn inject_loft_pass_refusal() {
+    INJECTED_LOFT_PASS_REFUSAL.with(|slot| slot.set(true));
 }
 
 #[cfg(test)]
