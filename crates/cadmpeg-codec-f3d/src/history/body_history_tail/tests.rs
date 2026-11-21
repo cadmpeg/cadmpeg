@@ -119,6 +119,15 @@ fn feature(scope: &DesignParameterScope, slot: i64) -> Feature {
     }
 }
 
+fn definition() -> ProductDefinition {
+    serde_json::from_value(serde_json::json!({
+        "id": "test:model:component#panel", "kind": "part", "bodies": [body(1)],
+        "bom_properties": {}, "storage": {"kind": "embedded"}, "tessellations": [],
+        "occurrences": [], "instance_bodies": [], "representations": [], "sketches": []
+    }))
+    .unwrap()
+}
+
 #[test]
 fn a_later_body_change_retains_a_native_operation_owned_by_the_target() {
     let scope = scope(59);
@@ -131,12 +140,7 @@ fn a_later_body_change_retains_a_native_operation_owned_by_the_target() {
     let features = vec![before, foreign];
     let tails = collect(&features, &[scope], &[history()], None);
     assert_eq!(tails.len(), 1);
-    let definition: ProductDefinition = serde_json::from_value(serde_json::json!({
-        "id": "test:model:component#panel", "kind": "part", "bodies": [body(1)],
-        "bom_properties": {}, "storage": {"kind": "embedded"}, "tessellations": [],
-        "occurrences": [], "instance_bodies": [], "representations": [], "sketches": []
-    }))
-    .unwrap();
+    let definition = definition();
     let mut guide = definition.clone();
     guide.id = features[1].product_definition.clone().unwrap();
     guide.bodies.clear();
@@ -147,7 +151,7 @@ fn a_later_body_change_retains_a_native_operation_owned_by_the_target() {
     append(&mut model, &tails, &mut losses).unwrap();
     assert_eq!(&model.features[..2], features.as_slice());
     let retained = &model.features[2];
-    assert_eq!(retained.product_definition, Some(definition.id));
+    assert_eq!(retained.product_definition, Some(definition.id.clone()));
     assert_eq!(retained.evaluation.outputs(), &[body(1)]);
     assert_eq!(
         retained.dependencies.as_slice(),
@@ -167,6 +171,10 @@ fn a_later_body_change_retains_a_native_operation_owned_by_the_target() {
         losses[0].code,
         F3dLossCode::FeatureBodyHistoryIncomplete.kind()
     );
+    assert!(losses[0].message.contains(&format!(
+        "Product definition {} holds the body and owns the native history interval.",
+        definition.id
+    )));
 }
 
 #[test]
@@ -236,4 +244,59 @@ fn matching_state_numbers_in_another_brep_do_not_claim_the_target() {
     let mut other = history();
     other.id = "f3d:BREP.other.smbh:asm-history#0".into();
     assert!(collect(&[feature(&scope, 1)], &[scope], &[other], None).is_empty());
+}
+
+#[test]
+fn a_body_in_zero_product_definitions_retains_an_unowned_native_operation() {
+    assert_unresolved_owner(Vec::new(), "no owner");
+}
+
+#[test]
+fn a_body_in_two_product_definitions_retains_an_unowned_native_operation() {
+    let first = definition();
+    let mut second = first.clone();
+    second.id = "test:model:component#guide".try_into().unwrap();
+    assert_unresolved_owner(vec![first, second], "several owners");
+}
+
+fn assert_unresolved_owner(definitions: Vec<ProductDefinition>, gap: &str) {
+    let scope = scope(59);
+    let before = feature(&scope, 1);
+    let tails = collect(std::slice::from_ref(&before), &[scope], &[history()], None);
+    assert_eq!(tails.len(), 1);
+    let mut model = Model::default();
+    model.features.push(before.clone());
+    model.product_definitions = definitions;
+    let mut losses = Vec::new();
+    append(&mut model, &tails, &mut losses).unwrap();
+    assert_eq!(model.features.len(), 2);
+    assert_eq!(model.features[0], before);
+    let retained = &model.features[1];
+    assert_eq!(retained.product_definition, None);
+    assert_eq!(retained.evaluation.outputs(), &[body(1)]);
+    assert_eq!(retained.dependencies.as_slice(), &[before.id]);
+    assert_eq!(retained.ordinal, 2);
+    assert_eq!(
+        retained.native_ref.as_deref(),
+        Some("f3d:BREP.panel.smbh:asm-delta-state#64")
+    );
+    assert!(matches!(
+        retained.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Native { .. })
+    ));
+    assert_eq!(losses.len(), 2);
+    let ownership = losses
+        .iter()
+        .find(|loss| loss.code == F3dLossCode::FeatureBodyHistoryOwnerUnresolved.kind())
+        .unwrap();
+    assert_eq!(
+        ownership.message,
+        format!(
+            "Body {} has {gap} in product definitions; the native history interval from state 59 to 64 remains unowned and retains the imported final shape.",
+            body(1)
+        )
+    );
+    assert!(losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::FeatureBodyHistoryIncomplete.kind()));
 }

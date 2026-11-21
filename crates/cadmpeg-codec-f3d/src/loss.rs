@@ -419,6 +419,7 @@ pub(crate) enum F3dLossCode {
     FeatureHistoryBodyConsumedWithheld,
     /// Later body changes retain a native operation after the linked feature history.
     FeatureBodyHistoryIncomplete,
+    FeatureBodyHistoryOwnerUnresolved,
     FeatureOwnedBodyPairingAssumed,
     /// A Base Feature has no complete unique body binding.
     FeatureStoredBodiesUnbound,
@@ -1557,6 +1558,7 @@ impl F3dLossCode {
         Self::FeatureHistoryBodyUndecoded,
         Self::FeatureHistoryBodyConsumedWithheld,
         Self::FeatureBodyHistoryIncomplete,
+        Self::FeatureBodyHistoryOwnerUnresolved,
         Self::FeatureOwnedBodyPairingAssumed,
         Self::FeatureStoredBodiesUnbound,
         Self::FeatureDerivedInstanceComponentInsertAssumed,
@@ -2318,6 +2320,7 @@ impl F3dLossCode {
             Self::FeatureHistoryBodyUndecoded => "feature.history-body-undecoded",
             Self::FeatureHistoryBodyConsumedWithheld => "feature.history-body-consumed-withheld",
             Self::FeatureBodyHistoryIncomplete => "feature.body-history-incomplete",
+            Self::FeatureBodyHistoryOwnerUnresolved => "feature.body-history-owner-unresolved",
             Self::FeatureOwnedBodyPairingAssumed => "feature.owned-body-pairing-assumed",
             Self::FeatureStoredBodiesRecipeAbsent => "feature.stored-bodies-recipe-absent",
             Self::FeatureStoredBodiesUnbound => "feature.stored-bodies-unbound",
@@ -3210,7 +3213,9 @@ impl F3dLossCode {
     #[must_use]
     const fn severity(self) -> Severity {
         match self {
-            Self::FeatureBodyHistoryIncomplete => Severity::Warning,
+            Self::FeatureBodyHistoryIncomplete | Self::FeatureBodyHistoryOwnerUnresolved => {
+                Severity::Warning
+            }
             Self::SceneOverrideRefused => Severity::Warning,
             Self::BendStationaryRoleAssumed
             | Self::BendAngleUnresolved
@@ -3989,7 +3994,9 @@ impl F3dLossCode {
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
-            Self::FeatureBodyHistoryIncomplete => LossTaxonomy::FeatureHistoryRetained,
+            Self::FeatureBodyHistoryIncomplete | Self::FeatureBodyHistoryOwnerUnresolved => {
+                LossTaxonomy::FeatureHistoryRetained
+            }
             Self::SceneOverrideRefused => LossTaxonomy::RecordNotTyped,
             Self::BendStationaryRoleAssumed
             | Self::BendAngleUnresolved
@@ -5089,6 +5096,7 @@ mod tests {
                 "feature.history-body-undecoded",
                 "feature.history-body-consumed-withheld",
                 "feature.body-history-incomplete",
+                "feature.body-history-owner-unresolved",
                 "feature.owned-body-pairing-assumed",
                 "feature.stored-bodies-unbound",
                 "feature.derived-instance-component-insert-assumed",

@@ -193,9 +193,26 @@ pub(crate) fn append(
             .product_definitions
             .iter()
             .filter(|definition| definition.bodies.contains(&tail.body));
-        let owner = match (owners.next(), owners.next()) {
-            (Some(definition), None) => Some(definition.id.clone()),
-            _ => None,
+        let (owner, ownership) = match (owners.next(), owners.next()) {
+            (Some(definition), None) => (
+                Some(definition.id.clone()),
+                format!(
+                    " Product definition {} holds the body and owns the native history interval.",
+                    definition.id
+                ),
+            ),
+            (first, _) => {
+                let gap = if first.is_some() {
+                    "several owners"
+                } else {
+                    "no owner"
+                };
+                losses.push(F3dLossCode::FeatureBodyHistoryOwnerUnresolved.note(format!(
+                    "Body {} has {gap} in product definitions; the native history interval from state {} to {} remains unowned and retains the imported final shape.",
+                    tail.body, tail.previous_state, tail.state,
+                )));
+                (None, String::new())
+            }
         };
         let id = crate::ids::body_history_tail_feature_id(&tail.body);
         model.features.push(Feature {
@@ -225,7 +242,7 @@ pub(crate) fn append(
             ""
         };
         losses.push(F3dLossCode::FeatureBodyHistoryIncomplete.note(format!(
-            "Body {} retains the native history interval from state {} to {} after feature {}.{bound}",
+            "Body {} retains the native history interval from state {} to {} after feature {}.{ownership}{bound}",
             tail.body, tail.previous_state, tail.state, tail.previous,
         )));
     }
