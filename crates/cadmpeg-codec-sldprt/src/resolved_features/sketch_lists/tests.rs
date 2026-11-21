@@ -755,11 +755,66 @@ fn current_prefix_92_byte_selector_four_geometry_locus_line_uses_object_indices(
     sample.payload.drain(sample.line + 92..sample.line + 94);
     sample.payload[sample.line + head::LOCUS..sample.line + head::LOCUS + 4]
         .copy_from_slice(&OBJECT_INDEX_LOCUS);
+    assert!(
+        super::super::endpoints::wide_indexed_curve_endpoint_indices(&sample.payload, sample.line)
+            .is_some()
+    );
     assert!(curve_stays_unresolved(&sample.payload, sample.line));
     assert!(roster_geometry(&sample.payload, sample.line).is_none());
     assert!(point_record_index_basis_loss(&sample.payload, sample.line).is_none());
     sample.payload.truncate(sample.line + 92);
-    assert!(curve_stays_unresolved(&sample.payload, sample.line));
+    assert_eq!(
+        curve_form(&sample.payload, sample.line, ListedReading::Complete),
+        Some(CurveForm::Line { start: 1, end: 2 })
+    );
+    assert_eq!(
+        point_record_index_basis_loss(&sample.payload, sample.line)
+            .unwrap()
+            .code,
+        SldprtLossCode::SketchPointRecordIndexBasisAssumed.kind()
+    );
+}
+
+#[test]
+fn geometry_locus_lines_rejected_by_object_index_gate_keep_point_record_readings() {
+    for (field, value) in [
+        (48, 2.0f64.to_le_bytes().to_vec()),
+        (27, 2u16.to_le_bytes().to_vec()),
+        (68, 2u32.to_le_bytes().to_vec()),
+    ] {
+        let mut sample = sample();
+        sample.payload.drain(sample.line + 92..sample.line + 94);
+        sample.payload[sample.line + head::LOCUS..sample.line + head::LOCUS + 4]
+            .copy_from_slice(&OBJECT_INDEX_LOCUS);
+        sample.payload[sample.line + field..sample.line + field + value.len()]
+            .copy_from_slice(&value);
+        assert!(
+            super::super::endpoints::wide_indexed_curve_endpoint_indices(
+                &sample.payload,
+                sample.line
+            )
+            .is_none()
+        );
+        for reading in [ListedReading::Roster, ListedReading::Complete] {
+            assert_eq!(
+                curve_form(&sample.payload, sample.line, reading),
+                Some(CurveForm::Line { start: 1, end: 2 })
+            );
+        }
+        assert_eq!(
+            roster_geometry(&sample.payload, sample.line),
+            expected(SketchGeometryDefinition::Line {
+                start: Point2::new(10.0, 0.0),
+                end: Point2::new(0.0, 10.0),
+            })
+        );
+        assert_eq!(
+            point_record_index_basis_loss(&sample.payload, sample.line)
+                .unwrap()
+                .code,
+            SldprtLossCode::SketchPointRecordIndexBasisAssumed.kind()
+        );
+    }
 }
 
 #[test]

@@ -5,7 +5,7 @@
 //! count *N*, u16 `0`, a u16, u16 `0` and a little-endian u32), *N* point
 //! records, a little-endian u32 and its curve lists. In a curve record whose
 //! selector has bit 0 clear, except the current-prefix 92-byte selector-4
-//! line with locus `05 00 01 00`,
+//! line with locus `05 00 01 00` that §2 reads,
 //! the endpoint and centre fields are zero-based indices into the point
 //! records of its own sketch, and the sense word selects a line, a
 //! counterclockwise arc or a clockwise arc.
@@ -379,7 +379,8 @@ pub(super) fn curve_form(
     }
     (sense & LINE_TYPE_MASK == 0
         && start != end
-        && !object_index_line(payload, offset, fields, selector)
+        && !(object_index_line(payload, offset, fields, selector)
+            && super::endpoints::wide_indexed_curve_endpoint_indices(payload, offset).is_some())
         && !(roster && identifier_trailer_line(payload, offset)?))
     .then_some(CurveForm::Line { start, end })
 }
