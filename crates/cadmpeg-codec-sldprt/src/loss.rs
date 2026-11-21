@@ -129,6 +129,13 @@ pub(crate) enum SldprtLossCode {
     /// `sgSketch` curve record states an arc or another form that gives no
     /// entity.
     SketchArcRecordConflict,
+    /// A sketch keeps the retained Front fallback frame although its profile
+    /// holds principal component records, because `sldprt.md` §3.3 does not
+    /// place the profile: its Front declaration is the feature-input lane's
+    /// default, another declaration or a custom component record lies beside
+    /// the records, or the records name more than one plane. The note states
+    /// which.
+    SketchPlaneAssumed,
     /// A compact sketch profile failed neutral profile admission.
     SketchProfileRejected,
     /// Native sketch relation has no projected neutral constraint.
@@ -392,6 +399,7 @@ impl SldprtLossCode {
         Self::SketchHandleUnresolved,
         Self::SketchLineDegenerate,
         Self::SketchArcRecordConflict,
+        Self::SketchPlaneAssumed,
         Self::SketchProfileRejected,
         Self::SketchRelationUnprojected,
         Self::SketchRelationMultiplyProjected,
@@ -531,6 +539,7 @@ impl SldprtLossCode {
             Self::SketchHandleUnresolved => "sketch.handle-unresolved",
             Self::SketchLineDegenerate => "sketch.line-degenerate",
             Self::SketchArcRecordConflict => "sketch.arc-record-conflict",
+            Self::SketchPlaneAssumed => "sketch.plane-assumed",
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
             Self::SketchRelationMultiplyProjected => "sketch.relation-multiply-projected",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
@@ -702,6 +711,7 @@ impl SldprtLossCode {
             | Self::SketchHandleUnresolved
             | Self::SketchLineDegenerate
             | Self::SketchArcRecordConflict
+            | Self::SketchPlaneAssumed
             | Self::SketchProfileRejected
             | Self::SketchRelationUnprojected
             | Self::SketchRelationMultiplyProjected
@@ -920,6 +930,7 @@ impl SldprtLossCode {
             | Self::SketchHandleUnresolved
             | Self::SketchLineDegenerate
             | Self::SketchArcRecordConflict
+            | Self::SketchPlaneAssumed
             | Self::SketchProfileRejected
             | Self::SketchRelationUnprojected
             | Self::SketchRelationMultiplyProjected
@@ -1149,6 +1160,7 @@ mod tests {
                 "sketch.handle-unresolved",
                 "sketch.line-degenerate",
                 "sketch.arc-record-conflict",
+                "sketch.plane-assumed",
                 "sketch.profile-rejected",
                 "sketch.relation-unprojected",
                 "sketch.relation-multiply-projected",

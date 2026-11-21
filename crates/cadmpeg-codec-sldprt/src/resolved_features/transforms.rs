@@ -3,7 +3,7 @@
 use super::grid::{quantize, GridCoordinate, GridPoint};
 
 use crate::records::{SketchInputEntity, SketchInputKind};
-use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometryDefinition, SketchLocus};
 use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
@@ -116,16 +116,37 @@ impl MarkerTransform {
 }
 
 const MARKER_COORDINATE_SYSTEM: &str = "MarkerCoordinateSystem";
-const PRINCIPAL_TOP_COMPONENT: &str = "principal-top-component";
+const PRINCIPAL_COMPONENTS: [(cadmpeg_ir::features::PrincipalPlane, &str); 2] = [
+    (
+        cadmpeg_ir::features::PrincipalPlane::Top,
+        "principal-top-component",
+    ),
+    (
+        cadmpeg_ir::features::PrincipalPlane::Right,
+        "principal-right-component",
+    ),
+];
 
-pub(super) fn record_top_marker_coordinates(
+/// The marker coordinate system of the principal component frame `frame`.
+fn principal_component_coordinates(frame: (Point3, Vector3, Vector3)) -> Option<&'static str> {
+    PRINCIPAL_COMPONENTS
+        .into_iter()
+        .find(|(plane, _)| {
+            super::compact_reference_planes::principal_component_frame(*plane) == frame
+        })
+        .map(|(_, coordinates)| coordinates)
+}
+
+/// Records on `feature` that its sketch's marker pairs are sketch
+/// coordinates in the principal component frame `component`.
+pub(super) fn record_component_marker_coordinates(
     feature: &mut cadmpeg_ir::features::Feature,
-    top: bool,
+    component: Option<(Point3, Vector3, Vector3)>,
 ) {
-    if top {
+    if let Some(value) = component.and_then(principal_component_coordinates) {
         feature.source_properties.insert(
             cadmpeg_core::nonblank_literal!("MarkerCoordinateSystem"),
-            PRINCIPAL_TOP_COMPONENT.to_owned(),
+            value.to_owned(),
         );
     }
 }
@@ -133,13 +154,14 @@ pub(super) fn record_top_marker_coordinates(
 pub(super) fn component_sketch_marker_transform(
     sketch: &cadmpeg_ir::sketches::Sketch,
     quantum: f64,
-    top: bool,
+    local: bool,
 ) -> Option<MarkerTransform> {
-    if top
+    if local
         && sketch
             .resolved_placement()
             .map(|(origin, normal, u_axis)| (origin.get(), normal.get(), u_axis.get()))
-            == Some(super::compact_reference_planes::principal_top_component_frame())
+            .and_then(principal_component_coordinates)
+            .is_some()
     {
         Some(MarkerTransform {
             axes: Axes::Aligned {
@@ -159,11 +181,11 @@ pub(super) fn feature_sketch_marker_transform(
     quantum: f64,
     features: &[cadmpeg_ir::features::Feature],
 ) -> Option<MarkerTransform> {
-    let top = features.iter().any(|feature| {
+    let local = features.iter().any(|feature| {
         matches!(feature.evaluation.definition(), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sketch { sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(id)) }) if id == &sketch.id)
-            && feature.source_properties.get(MARKER_COORDINATE_SYSTEM).is_some_and(|value| value == PRINCIPAL_TOP_COMPONENT)
+            && feature.source_properties.get(MARKER_COORDINATE_SYSTEM).is_some_and(|value| PRINCIPAL_COMPONENTS.iter().any(|(_, component)| value == component))
     });
-    component_sketch_marker_transform(sketch, quantum, top)
+    component_sketch_marker_transform(sketch, quantum, local)
 }
 
 pub(super) fn sketch_frame_marker_transform(
