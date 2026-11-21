@@ -923,6 +923,9 @@ pub(super) fn check_parameter_domains(
                          [0, {span}] of its subset curve"
                     ),
                 );
+                // One finding per range: the subset's local domain is the one
+                // its construction states, so its cache is not tested again.
+                continue;
             }
         }
         let mut valid = true;
@@ -948,15 +951,14 @@ pub(super) fn check_parameter_domains(
                         <= tau + EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9
                         && (full_period || (0.0..tau).contains(&start));
                 }
-                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-                    valid &= nurbs_range_in_domain(
-                        nurbs,
+                _ => {
+                    valid &= curve_range_in_domain(
+                        curve,
                         start,
                         end,
                         EPS_CARRIERS_PARAMETERIZATION_PARAMETER_IN_DOMAIN_E12,
                     );
                 }
-                _ => {}
             }
         }
         if !valid {
@@ -985,9 +987,9 @@ pub(super) fn check_parameter_domains(
                     Some(coedge.id.as_str()),
                     format_args!("coedge use-curve names no curve carrier"),
                 ),
-                Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)))
-                    if !nurbs_range_in_domain(
-                        nurbs,
+                Some(curve)
+                    if !curve_range_in_domain(
+                        curve,
                         start,
                         end,
                         EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9,
@@ -1085,6 +1087,44 @@ fn periodic_pcurve_range_in_domain(start: f64, end: f64, domain: [f64; 2]) -> bo
                     ratio.get() <= 1.0 + EPS_CARRIERS_PARAMETERIZATION_PERIODIC_PCURVE_SPAN
                 })
         })
+}
+
+/// Whether a parameter range lies in the domain of the geometry that
+/// evaluates `curve`: a procedural carrier's cache, through every placement's
+/// basis. A NURBS evaluates over its knot domain and a polyline between its
+/// first and last sample parameters; the other kinds evaluate at every finite
+/// parameter.
+fn curve_range_in_domain(
+    curve: &CurveGeometry,
+    start: f64,
+    end: f64,
+    relative_tolerance: f64,
+) -> bool {
+    let mut evaluated = curve.solved();
+    while let Some(SolvedCurveGeometry::Transformed(placed)) = evaluated {
+        evaluated = Some(placed.basis());
+    }
+    match evaluated {
+        Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
+            nurbs_range_in_domain(nurbs, start, end, relative_tolerance)
+        }
+        Some(SolvedCurveGeometry::Polyline(polyline)) => {
+            let (Some(first), Some(last)) = (
+                polyline.parameter_at(0),
+                polyline
+                    .point_count()
+                    .checked_sub(1)
+                    .and_then(|index| polyline.parameter_at(index)),
+            ) else {
+                return true;
+            };
+            let span = [first.get().min(last.get()), first.get().max(last.get())];
+            [start, end]
+                .into_iter()
+                .all(|value| crate::math::parameter_in_domain(value, span, relative_tolerance))
+        }
+        _ => true,
+    }
 }
 
 /// Whether a parameter range lies in a NURBS carrier's knot domain.
