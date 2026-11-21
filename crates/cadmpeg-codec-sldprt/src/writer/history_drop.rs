@@ -220,11 +220,47 @@ impl DisplayedValues {
     }
 }
 
+/// The note naming each feature `ir` keeps whose definition states a
+/// selection in a feature input topology. `sldprt.md` gives an input topology
+/// no record, and the history encoder writes such a selection by its native
+/// selection token (§3.4).
+pub(super) fn historical_selections_note(ir: &CadIr) -> Option<LossNote> {
+    fn historical(value: &Value) -> bool {
+        match value {
+            Value::Object(map) => {
+                let selection = matches!(
+                    map.get("kind").and_then(Value::as_str),
+                    Some("historical" | "historical_partial")
+                ) && map
+                    .get("value")
+                    .and_then(Value::as_object)
+                    .is_some_and(|value| value.contains_key("state"));
+                selection || map.values().any(historical)
+            }
+            Value::Array(items) => items.iter().any(historical),
+            _ => false,
+        }
+    }
+    let features = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| historical(&value(feature.evaluation.definition())))
+        .map(|feature| feature.id.as_str())
+        .collect::<Vec<_>>();
+    (!features.is_empty()).then(|| {
+        SldprtLossCode::WriterSelectionIdentitiesOmitted.note(format!(
+            "the SLDPRT history writer writes the selections of {} feature(s) by their native \
+             selection token, without the input-topology faces, edges and vertices they state, \
+             which sldprt.md gives no record: {}",
+            features.len(),
+            features.join(", ")
+        ))
+    })
+}
+
 /// Rewrite each fillet of another format into what a Keywords fillet record
 /// holds (§3.4):
-/// - an edge selection stated in a feature input topology, which `sldprt.md`
-///   gives no record, is written by its native selection token, as a
-///   historical vertex selection already is;
 /// - a tangency weight, for which the record has no field, is not written;
 /// - the one owned parameter whose length is a constant radius is written as
 ///   `D1`, the positional dimension the fillet record's radius is read from
@@ -236,7 +272,7 @@ impl DisplayedValues {
 /// the write knows which records it keeps.
 pub(super) fn fillets_as_keywords_records(ir: &mut CadIr) -> FilletRewrites {
     use cadmpeg_ir::features::edge_treatments::RadiusSpec;
-    use cadmpeg_ir::features::{EdgeSelection, ParameterValue};
+    use cadmpeg_ir::features::ParameterValue;
 
     let mut rewrites = FilletRewrites::default();
     let mut radii = Vec::new();
@@ -248,13 +284,6 @@ pub(super) fn fillets_as_keywords_records(ir: &mut CadIr) -> FilletRewrites {
                 return;
             };
             for group in groups.iter_mut() {
-                if let EdgeSelection::Historical { native, .. }
-                | EdgeSelection::HistoricalPartial { native, .. } = &group.edges
-                {
-                    let native = native.as_str().to_owned();
-                    group.edges = EdgeSelection::Native(native);
-                    rewrites.identities.insert(id.clone());
-                }
                 if group.tangency_weight.take().is_some() {
                     rewrites.weights.insert(id.clone());
                 }
@@ -301,12 +330,10 @@ pub(super) fn fillets_as_keywords_records(ir: &mut CadIr) -> FilletRewrites {
 }
 
 /// The fillets [`fillets_as_keywords_records`] rewrote: the features whose
-/// edges are written by their native token, the features whose tangency
-/// weight is left out, and each renamed parameter's id and the text that
-/// names it.
+/// tangency weight is left out, and each renamed parameter's id and the text
+/// that names it.
 #[derive(Default)]
 pub(super) struct FilletRewrites {
-    identities: BTreeSet<String>,
     weights: BTreeSet<String>,
     renamed: Vec<(String, String)>,
 }
@@ -327,13 +354,11 @@ impl FilletRewrites {
             .iter()
             .map(|parameter| parameter.id.as_str())
             .collect();
-        let kept = |ids: BTreeSet<String>| {
-            ids.into_iter()
-                .filter(|id| features.contains(id.as_str()))
-                .collect::<Vec<_>>()
-        };
-        let identities = kept(self.identities);
-        let weights = kept(self.weights);
+        let weights = self
+            .weights
+            .into_iter()
+            .filter(|id| features.contains(id.as_str()))
+            .collect::<Vec<_>>();
         let renamed = self
             .renamed
             .into_iter()
@@ -341,17 +366,6 @@ impl FilletRewrites {
             .map(|(_, text)| text)
             .collect::<Vec<_>>();
         let mut notes = Vec::new();
-        if !identities.is_empty() {
-            notes.push(
-                SldprtLossCode::WriterSelectionIdentitiesOmitted.note(format!(
-                    "the SLDPRT history writer writes the edges of {} fillet(s) by their native \
-                 selection token, without the input-topology edges they state, which sldprt.md \
-                 gives no record: {}",
-                    identities.len(),
-                    identities.join(", ")
-                )),
-            );
-        }
         if !weights.is_empty() {
             notes.push(SldprtLossCode::WriterFeatureFieldsOmitted.note(format!(
                 "the SLDPRT history writer writes {} fillet(s) without their tangency weight, \

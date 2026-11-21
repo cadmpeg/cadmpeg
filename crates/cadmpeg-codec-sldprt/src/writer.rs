@@ -209,6 +209,9 @@ pub(crate) fn write_semantic_with_records(
     losses.extend(dropped_history.finish());
     losses.extend(displayed_values.note(&normalized));
     losses.extend(fillet_rewrites.notes(&normalized));
+    if reducible {
+        losses.extend(history_drop::historical_selections_note(&normalized));
+    }
     let ir = &normalized;
     let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new())?;
     losses.extend(reduce::invalid_records(ir, &validation));

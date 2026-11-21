@@ -441,77 +441,119 @@ fn history_with_another_formats_native_references_is_written() {
     assert_eq!(decoded.model.sketches.len(), 1);
 }
 
-/// `cube_with_foreign_history` plus a fillet whose edges are stated in its
-/// input topology, with a tangency weight and an owned radius parameter `d7`.
-fn cube_with_foreign_fillet() -> cadmpeg_ir::CadIr {
-    use cadmpeg_ir::features::edge_treatments::{FilletGroup, RadiusSpec};
-    use cadmpeg_ir::features::{
-        DesignParameter, DistinctMembers, EdgeSelection, Feature, FeatureDefinition, FeatureId,
-        FeatureInputTopology, FeatureOperation, NonEmptyMembers, ParameterId, ParameterValue,
-    };
-    use cadmpeg_ir::ids::{FeatureInputTopologyId, HistoricalEdgeId};
+/// Push a feature of another format named `name`, with the input topology
+/// `other:history-input:state#{key}` holding one face and one edge, and
+/// return its id. `definition` builds the operation from that state, face and
+/// edge.
+fn push_foreign_feature(
+    ir: &mut cadmpeg_ir::CadIr,
+    key: &str,
+    name: &str,
+    definition: impl FnOnce(
+        cadmpeg_ir::ids::FeatureInputTopologyId,
+        cadmpeg_ir::ids::HistoricalFaceId,
+        cadmpeg_ir::ids::HistoricalEdgeId,
+    ) -> cadmpeg_ir::features::FeatureDefinition,
+) -> cadmpeg_ir::features::FeatureId {
+    use cadmpeg_ir::features::{DistinctMembers, Feature, FeatureId, FeatureInputTopology};
+    use cadmpeg_ir::ids::{FeatureInputTopologyId, HistoricalEdgeId, HistoricalFaceId};
 
-    let mut ir = cube_with_foreign_history();
-    let id = FeatureId::mint("other:model:feature#round").unwrap();
-    let state = FeatureInputTopologyId::mint("other:history-input:state#round").unwrap();
-    let edge = HistoricalEdgeId::mint("other:history-input:edge#round:1").unwrap();
+    let id = FeatureId::mint(format!("other:model:feature#{key}")).unwrap();
+    let state = FeatureInputTopologyId::mint(format!("other:history-input:state#{key}")).unwrap();
+    let face = HistoricalFaceId::mint(format!("other:history-input:face#{key}:1")).unwrap();
+    let edge = HistoricalEdgeId::mint(format!("other:history-input:edge#{key}:1")).unwrap();
     ir.model
         .feature_input_topologies
         .push(FeatureInputTopology {
             id: state.clone(),
             input_of: id.clone(),
             bodies: DistinctMembers::default(),
-            faces: DistinctMembers::default(),
+            faces: DistinctMembers::try_from(vec![face.clone()]).unwrap(),
             edges: DistinctMembers::try_from(vec![edge.clone()]).unwrap(),
             vertices: DistinctMembers::default(),
             edge_geometry: Vec::new(),
             native_ref: None,
         });
+    let ordinal = u64::try_from(ir.model.features.len()).unwrap();
     ir.model.features.push(Feature {
         product_definition: None,
         id: id.clone(),
-        ordinal: 2,
-        name: Some("Round".into()),
+        ordinal,
+        name: Some(name.into()),
         suppressed: Some(false),
         dependencies: DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Operation(FeatureOperation::Fillet {
-                groups: NonEmptyMembers::one(FilletGroup {
-                    edges: EdgeSelection::historical(
-                        state,
-                        vec![edge],
-                        "other:design:edge-operand#round".into(),
-                    )
-                    .unwrap(),
-                    radius: RadiusSpec::Constant {
-                        radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
-                    },
-                    tangency_weight: cadmpeg_ir::scalar::FiniteReal::new(1.0),
-                }),
-            }),
-        ),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition(
+            state, face, edge,
+        )),
         native_ref: None,
     });
+    id
+}
+
+/// Push a length parameter `name` = `value` mm owned by `owner`.
+fn push_length_parameter(
+    ir: &mut cadmpeg_ir::CadIr,
+    owner: &cadmpeg_ir::features::FeatureId,
+    name: &str,
+    value: f64,
+) {
+    use cadmpeg_ir::features::{DesignParameter, DistinctMembers, ParameterId, ParameterValue};
+
     ir.model.parameters.push(DesignParameter {
         product_definition: None,
-        id: ParameterId::mint("other:model:parameter#d7").unwrap(),
-        owner: Some(id),
-        ordinal: 0,
-        name: "d7".into(),
-        expression: "2 mm".into(),
+        id: ParameterId::mint(format!("other:model:parameter#{name}")).unwrap(),
+        owner: Some(owner.clone()),
+        ordinal: u32::try_from(
+            ir.model
+                .parameters
+                .iter()
+                .filter(|parameter| parameter.owner.as_ref() == Some(owner))
+                .count(),
+        )
+        .unwrap(),
+        name: name.into(),
+        expression: format!("{value} mm"),
         display: None,
         value: Some(ParameterValue::Length(
-            cadmpeg_ir::scalar::Length::new(2.0).unwrap(),
+            cadmpeg_ir::scalar::Length::new(value).unwrap(),
         )),
         dependencies: DistinctMembers::default(),
         properties: std::collections::BTreeMap::new(),
         pmi: None,
         native_ref: None,
     });
+}
+
+/// `cube_with_foreign_history` plus a fillet whose edges are stated in its
+/// input topology, with a tangency weight and an owned radius parameter `d7`.
+fn cube_with_foreign_fillet() -> cadmpeg_ir::CadIr {
+    use cadmpeg_ir::features::edge_treatments::{FilletGroup, RadiusSpec};
+    use cadmpeg_ir::features::{
+        EdgeSelection, FeatureDefinition, FeatureOperation, NonEmptyMembers,
+    };
+
+    let mut ir = cube_with_foreign_history();
+    let id = push_foreign_feature(&mut ir, "round", "Round", |state, _, edge| {
+        FeatureDefinition::Operation(FeatureOperation::Fillet {
+            groups: NonEmptyMembers::one(FilletGroup {
+                edges: EdgeSelection::historical(
+                    state,
+                    vec![edge],
+                    "other:design:edge-operand#round".into(),
+                )
+                .unwrap(),
+                radius: RadiusSpec::Constant {
+                    radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
+                },
+                tangency_weight: cadmpeg_ir::scalar::FiniteReal::new(1.0),
+            }),
+        })
+    });
+    push_length_parameter(&mut ir, &id, "d7", 2.0);
     ir
 }
 
@@ -612,6 +654,46 @@ fn a_fillet_the_history_drop_removes_is_named_by_that_drop_alone() {
     ] {
         assert!(loss(&losses, code).is_none(), "{code}: {losses:#?}");
     }
+}
+
+#[test]
+fn a_delete_face_on_input_topology_faces_decodes_back_and_is_named() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+
+    let mut ir = cube_with_foreign_history();
+    let id = push_foreign_feature(&mut ir, "remove", "Remove", |state, face, _| {
+        FeatureDefinition::Operation(FeatureOperation::DeleteFace {
+            faces: FaceSelection::historical(
+                state,
+                vec![face],
+                "other:design:face-operand#remove".into(),
+            )
+            .unwrap(),
+            heal: true,
+        })
+    });
+    let losses = plan_losses(&ir);
+    assert!(
+        loss(&losses, "writer.features-omitted").is_none(),
+        "{losses:#?}"
+    );
+    let note = loss(&losses, "writer.selection-identities-omitted").expect("named selection");
+    assert!(note.message.contains(id.as_str()), "{}", note.message);
+
+    let decoded = crate::test_support::ir::encode_decode(&ir);
+    let delete = decoded
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Remove"))
+        .expect("the delete-face feature decodes back");
+    assert_eq!(
+        delete.evaluation.definition(),
+        &FeatureDefinition::Operation(FeatureOperation::DeleteFace {
+            faces: FaceSelection::Native("other:design:face-operand#remove".into()),
+            heal: true,
+        })
+    );
 }
 
 #[test]
