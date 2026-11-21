@@ -636,6 +636,14 @@ resolve a seed feature?
 
 **Note.** DI-02 holds the relation-list grammar that locates `H`.
 
+### DI-78. Equation-manager lines against the manager's stored values
+
+**Question.** Does a line evaluated over the values the manager stores beside its references give the manager's own result in every stream, so that those values test a line whose decoded inputs are rounded displays or have no value?
+
+**Known.** `sldprt.md` §2 "A relation whose byte 1 after its text is `02` or `03` stores its sides as tokens" places the f64 stored beside each dimension reference (metres, radians, or a count) and the decimal number stored beside each global-variable token. In the manager's stored sequence, a line's number is its parameter's value: a length of that many document units, an angle of that many degrees, a count rounded as §2 states; a global variable's number equals the number stored where another line reads it; and a line that reads a dimension a later line drives stores the earlier value beside the reading, while the value stored on the assigned side can be an earlier input. A rounded display can reproduce a rounded result by coincidence, so the test against decoded values (`sldprt.md` §2 "The active configuration's equation-manager lines are parameter expressions") states such a line as SolidWorks source text. A test against the stored values takes a line where every name it reads resolves in the same letter case, every dimension it reads has a decoded value equal to the stored one, it calls no trigonometric function, and its number is its parameter's value. In a part with several configurations it also takes the line where each inactive configuration's snapshot holds the values its own stream establishes, the line evaluated over each configuration's values gives that configuration's value, and no inactive snapshot holds a value of a global variable the line reads. Each parameter so taken carries the property `equation length unit`, whose value is the document unit's symbol (`mm`, `cm`, `m`, `in`, `ft`) or `unresolved`. EV-19 holds the token layout of a relation whose six bytes are all zero.
+
+**Need.** A decoder needs the stored values to state, under Rule H1, a line that reads a rounded display or a dimension whose kind it does not read. Without them, such a line stays SolidWorks source text with its names as references.
+
 ### DI-44. Sign of an integer scalar value
 
 **Question.** Is the four-byte value of an `moIntegerParameter_c` named scalar signed or unsigned?
@@ -992,7 +1000,7 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Question.** What is the grammar of a `moRelMgr_c` object's detailing settings after its ten dimension styles, how are `moCThreadRefMgr_c` records and the untagged thread data laid out, how does a relation whose six bytes after its text are all zero store its equation sides, and what are the `Config-N` layouts of files below `swVersion` 14000?
 
-**Known.** A per-version template of gap lengths and string positions reads the detailing settings in 892 streams. Thread data with records writes 17-byte entries (u32, u32, a byte, f64), then f64 geometry of varying length, two `CString` values and three matrix rows; 124 streams stop there. 34 stop at equations, and none of the 37 streams of 10000–12000 reaches its end, for want of templates for those versions.
+**Known.** A per-version template of gap lengths and string positions reads the detailing settings in 892 streams. Thread data with records writes 17-byte entries (u32, u32, a byte, f64), then f64 geometry of varying length, two `CString` values and three matrix rows; 124 streams stop there. 34 stop at equations, and none of the 37 streams of 10000–12000 reaches its end, for want of templates for those versions. A relation whose six bytes after its text are all zero opens its first side with the same side class or token as the other relations and stores fewer tokens; a global-variable token's character range differs in length from its text.
 
 **Need.** A writer that creates a part has to write the configuration stream, and a reader that keeps detailing settings, threads and equations has to read it.
 
