@@ -5,10 +5,16 @@
 //! Support: L0 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#solid-edge-par-psm-and-asm)).
 //! <!-- /generated: capability solidedge -->
 
+mod brep;
+mod chart;
 mod container;
 mod decode;
 mod dialect;
+mod geometry;
+mod intersection;
+mod isocurve;
 mod loss;
+mod partition;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;

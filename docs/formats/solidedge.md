@@ -9,3 +9,63 @@ Binary. The compound directory stores UTF-16LE entry names and the storage
 hierarchy. A stream entry identifies its logical byte length and allocation
 chain. Regular streams use the FAT. Small streams use the mini FAT and the
 root storage's mini stream.
+
+The root directory contains the streams `JSitesList` and `PSMroots`.
+CFB directory names compare without case.
+
+## 2. Kernel stream map
+
+The `PARASOLID` storage contains binary kernel streams. A primary partition
+has the path `PARASOLID/STREAM<n>.P_B`, where `<n>` is a decimal stream index.
+Its paired delta stream has the path `PARASOLID/STREAM<n>.D_B`.
+Each stream has its own transmit header and node-index space.
+
+`JSitesList` also names document sites. Site storages use the name pattern
+`JSite<n>`. Assembly sites carry reference and physical-property streams,
+including `JAsmRefAttr` and `JAsmPhysicalPropertiesAttr`.
+
+## 3. Transmit envelope
+
+A kernel stream starts with the Parasolid text header. Header lines end with
+LF. Named text fields use `KEY=VALUE;`. The header has `**PART1;`, `**PART2;`,
+and `**PART3;` sections. The final line starts with `**END_OF_HEADER` and has
+star padding. The binary transmit payload starts immediately after that
+line's LF. The text header has variable length.
+
+The `FORMAT` declaration is `binary`. The primary partition's `GUISE` is
+`transmit_partition`; the delta stream's `GUISE` is `transmit_deltas`.
+`KEY` names the stream index as `STREAM<n>`, and `FILE` names the stream leaf.
+`SCH` declares the kernel schema. `USFLD_SIZE` declares the user-field size.
+
+The binary payload starts with `PS`. The description and schema token are
+length-prefixed byte strings. Each length is an unsigned big-endian `u32`.
+The description identifies `(partition)` or `(deltas)` and carries a modeller
+version declaration. The schema token selects the Parasolid field grammar.
+The binary header and node grammar are specified in
+[`parasolid.md`](parasolid.md). An embedded-schema token names its base schema
+and is followed by the maximum node type and the user-field size.
+
+## 4. Geometry
+
+Primary partition node indices identify bodies, regions, shells, faces,
+loops, fins, edges, vertices, and their carriers. References are local to
+the partition. Topology ownership and carrier fields use the Parasolid
+schema named in the binary header. Kernel model-space lengths are in metres.
+Direction vectors are dimensionless. A line's distance
+parameter has the model-space length unit. A body's `res_linear` field is
+its positive linear resolution in metres.
+
+An intersection record references two support surfaces, a chart, and start
+and end limits. A chart carries a counted array of model-space points, a
+base parameter, a nonzero parameter scale, and a repeated point count.
+The parameter increment between successive points is their distance in
+metres times the scale. `chordal_error` is a model-space length; the null
+real denotes an unstated fit bound. Limit records carry a type character
+and a counted point array. Types `L`, `H`, `T`, and `B` place their terminal
+point first in that array.
+
+## 5. Document version declarations
+
+The root streams `Versions`, `DocVersion2`, and `BuildVersions` carry document
+version declarations. These declarations and the kernel schema token occupy
+separate streams. The kernel token declares the embedded node grammar.
