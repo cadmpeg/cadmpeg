@@ -6,7 +6,7 @@
 //! whole feature history. The current geometry is still written: the writer
 //! writes the current partition whatever history it writes.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -16,6 +16,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::loss::SldprtLossCode;
+use crate::native::SldprtNative;
 
 /// Source attributes that state a `SolidWorks` feature-history baseline. A
 /// document with either is a `SolidWorks` source, whose history edits take the
@@ -77,6 +78,43 @@ impl HistoryDrop {
 
     pub(super) fn finish(self) -> Vec<LossNote> {
         self.losses
+    }
+}
+
+/// Clear each feature and parameter `native_ref` that names no record of the
+/// document's `sldprt` namespace. The history writer reads that field as one of
+/// its own records (§3.4 W1); another format's reference is written as a
+/// generated record.
+pub(super) fn clear_foreign_native_refs(ir: &mut CadIr, native: Option<&SldprtNative>) {
+    let features = native
+        .iter()
+        .flat_map(|native| &native.feature_histories)
+        .flat_map(|history| &history.features)
+        .map(|feature| feature.id.as_str())
+        .collect::<HashSet<_>>();
+    let scalars = native
+        .iter()
+        .flat_map(|native| &native.feature_input_lanes)
+        .flat_map(|lane| &lane.scalars)
+        .map(|scalar| scalar.id.as_str())
+        .collect::<HashSet<_>>();
+    for feature in &mut ir.model.features {
+        if feature
+            .native_ref
+            .as_deref()
+            .is_some_and(|record| !features.contains(record))
+        {
+            feature.native_ref = None;
+        }
+    }
+    for parameter in &mut ir.model.parameters {
+        if parameter
+            .native_ref
+            .as_deref()
+            .is_some_and(|scalar| !scalars.contains(scalar))
+        {
+            parameter.native_ref = None;
+        }
     }
 }
 

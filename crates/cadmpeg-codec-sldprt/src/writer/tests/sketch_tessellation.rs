@@ -907,18 +907,16 @@ fn semantic_writer_expands_indexed_tessellation() {
             ),
         ])
         .expect("valid triangle group partition");
-    assert!(matches!(
-        crate::writer::sequential_tessellation(&attributed),
-        Err(cadmpeg_core::CodecError::NotImplemented(_))
-    ));
+    let expanded = crate::writer::sequential_tessellation(&attributed).unwrap();
+    assert!(expanded.triangle_groups().is_empty());
+    assert_eq!(expanded.triangles(), vec![[0, 1, 2], [3, 4, 5]]);
 
     let edged = mesh
         .with_feature_edges(vec![[0, 1]])
         .expect("valid feature edge");
-    assert!(matches!(
-        crate::writer::sequential_tessellation(&edged),
-        Err(cadmpeg_core::CodecError::NotImplemented(_))
-    ));
+    let expanded = crate::writer::sequential_tessellation(&edged).unwrap();
+    assert!(expanded.feature_edges().is_empty());
+    assert_eq!(expanded.vertex_count(), 6);
 }
 
 #[test]

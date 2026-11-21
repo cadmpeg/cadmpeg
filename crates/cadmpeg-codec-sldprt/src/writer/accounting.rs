@@ -145,6 +145,42 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
         SldprtLossCode::WriterTessellationMetadataOmitted,
         "tessellation chordal deflection",
     );
+    charge(
+        ir.model
+            .tessellations
+            .iter()
+            .map(|mesh| mesh.triangle_groups().len())
+            .sum(),
+        SldprtLossCode::WriterTessellationMetadataOmitted,
+        "tessellation triangle group",
+    );
+    charge(
+        ir.model
+            .tessellations
+            .iter()
+            .map(|mesh| mesh.texture_assignments().len())
+            .sum(),
+        SldprtLossCode::WriterTessellationMetadataOmitted,
+        "tessellation texture assignment",
+    );
+    charge(
+        ir.model
+            .tessellations
+            .iter()
+            .map(|mesh| mesh.texture_coordinates().len())
+            .sum(),
+        SldprtLossCode::WriterTessellationMetadataOmitted,
+        "tessellation texture coordinate set",
+    );
+    charge(
+        ir.model
+            .tessellations
+            .iter()
+            .map(|mesh| mesh.feature_edges().len())
+            .sum(),
+        SldprtLossCode::WriterTessellationMetadataOmitted,
+        "tessellation feature edge",
+    );
     losses
 }
 

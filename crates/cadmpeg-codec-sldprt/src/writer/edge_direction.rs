@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::ids::{CurveId, EdgeId};
 use cadmpeg_ir::topology::Sense;
 
@@ -34,12 +34,7 @@ pub(super) fn reversed_compact_edges(ir: &CadIr) -> Result<ReversedCompactEdges,
         .geometry
         .curves
         .iter()
-        .filter(|curve| {
-            !matches!(
-                curve.geometry,
-                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
-            )
-        })
+        .filter(|curve| !matches!(curve.geometry.solved(), Some(SolvedCurveGeometry::Nurbs(_))))
         .map(|curve| &curve.id)
         .collect::<HashSet<_>>();
     let mut forward_coedges = HashMap::<&EdgeId, bool>::new();

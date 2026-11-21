@@ -6,6 +6,7 @@ use std::io::Write;
 use std::num::NonZeroU16;
 
 mod accounting;
+mod body_drop;
 mod default_properties;
 mod edge_direction;
 mod envelope;
@@ -33,7 +34,7 @@ use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::scalar::FiniteReal;
-use cadmpeg_ir::topology::{BodyKind, Color, Sense};
+use cadmpeg_ir::topology::{BodyKind, Color, LoopBoundary, Sense};
 use cadmpeg_ir::Annotations;
 
 use crate::SourceRecord;
@@ -143,6 +144,9 @@ pub(crate) fn write_semantic_with_records(
     let retained_partition =
         retained_partition(&normalized, source_scan.as_ref(), native.as_ref())?;
     let reducible = history_drop::HistoryDrop::applies(&normalized);
+    if reducible {
+        history_drop::clear_foreign_native_refs(&mut normalized, native.as_ref());
+    }
     let mut dropped_history = history_drop::HistoryDrop::default();
     let feature_input_renames = loop {
         let snapshot = reducible.then(|| (normalized.model.parameters.clone(), native.clone()));
@@ -200,31 +204,22 @@ pub(crate) fn write_semantic_with_records(
     } else {
         ir
     };
+    let mut encodable = None;
     let partition_sections = if let Some(retained) = retained_partition {
         vec![retained]
     } else if let Some(patched) = patched_partition {
         vec![patched]
     } else if brep_empty {
         empty_partitions(ir)?
-    } else if !ir.model.configurations.is_empty() {
-        configuration_partitions(ir, length_scale)?
     } else {
-        let schema_32001 = ir
-            .geometry
-            .bodies
-            .iter()
-            .any(|body| body.kind == BodyKind::Sheet);
-        let body = brep_body(ir, length_scale, schema_32001)?;
-        let schema = if schema_32001 {
-            "SCH_SW_32001_11000"
-        } else {
-            "SCH_SW_33103_11000"
-        };
-        vec![(
-            "Contents/Config-0-Partition".to_string(),
-            parasolid_stream(&body, schema)?,
-        )]
+        let encoded = body_drop::encode_without_unwritable_bodies(ir, |ir| {
+            generated_partitions(ir, length_scale)
+        })?;
+        losses.extend(encoded.losses);
+        encodable = encoded.reduced;
+        encoded.partitions
     };
+    let ir = encodable.as_ref().unwrap_or(ir);
     let mut generated_partition_sections = partition_sections
         .iter()
         .map(|(section, _)| section.clone())
@@ -779,6 +774,34 @@ pub(crate) fn pmi_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
     Ok(cadmpeg_ir::hash::sha256_hex(&bytes))
 }
 
+/// The partitions the writer generates from the document's bodies.
+fn generated_partitions(
+    ir: &CadIr,
+    length_scale: f64,
+) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
+    if ir.geometry.faces.is_empty() {
+        return empty_partitions(ir);
+    }
+    if !ir.model.configurations.is_empty() {
+        return configuration_partitions(ir, length_scale);
+    }
+    let schema_32001 = ir
+        .geometry
+        .bodies
+        .iter()
+        .any(|body| body.kind == BodyKind::Sheet);
+    let body = brep_body(ir, length_scale, schema_32001)?;
+    let schema = if schema_32001 {
+        "SCH_SW_32001_11000"
+    } else {
+        "SCH_SW_33103_11000"
+    };
+    Ok(vec![(
+        "Contents/Config-0-Partition".to_string(),
+        parasolid_stream(&body, schema)?,
+    )])
+}
+
 fn configuration_partitions(
     ir: &CadIr,
     length_scale: f64,
@@ -979,6 +1002,9 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .collect::<HashSet<_>>();
     for shell in &subset.geometry.shells {
         vertices.extend(shell.free_vertices().cloned());
+    }
+    for loop_ in &subset.geometry.loops {
+        vertices.extend(loop_.vertices().cloned());
     }
     subset
         .geometry
@@ -2733,17 +2759,6 @@ fn has_core_tessellation_channels(
 fn sequential_tessellation(
     mesh: &cadmpeg_ir::tessellation::Tessellation,
 ) -> Result<cadmpeg_ir::tessellation::Tessellation, CodecError> {
-    if !mesh.triangle_groups().is_empty() || !mesh.texture_assignments().is_empty() {
-        return Err(CodecError::NotImplemented(
-            "SLDPRT display tessellation triangle groups and texture assignments are not writable"
-                .into(),
-        ));
-    }
-    if !mesh.feature_edges().is_empty() {
-        return Err(CodecError::NotImplemented(
-            "SLDPRT display tessellation feature edges are not writable".into(),
-        ));
-    }
     if matches!(
         mesh.mesh(),
         cadmpeg_ir::tessellation::TessellationMesh::Strips { .. }
@@ -2829,8 +2844,14 @@ fn sequential_tessellation(
             |strips| cadmpeg_ir::tessellation::TessellationMesh::ShadedStrips { strips },
         )
     };
+    // The display list holds no face grouping, texture or feature-edge
+    // record; the export accounting charges each.
     mesh.clone()
-        .with_mesh(rows, channels)
+        .with_triangle_groups(Vec::new())
+        .and_then(|mesh| mesh.with_texture_assignments(Vec::new()))
+        .and_then(|mesh| mesh.with_texture_coordinates(Vec::new()))
+        .and_then(|mesh| mesh.with_feature_edges(Vec::new()))
+        .and_then(|mesh| mesh.with_mesh(rows, channels))
         .map_err(|err| CodecError::Malformed(err.to_string()))
 }
 
@@ -2872,6 +2893,19 @@ fn descriptor(
     out.extend_from_slice(&count.to_le_bytes());
     out.extend_from_slice(data);
     Ok(())
+}
+
+/// `error` with the record it concerns named as a whole token (§3.2), so the
+/// encode retry can find the body that owns it.
+fn named_record(error: CodecError, id: &str) -> CodecError {
+    match error {
+        CodecError::NotImplemented(message) => {
+            CodecError::NotImplemented(format!("{message}: {id}"))
+        }
+        CodecError::Malformed(message) => CodecError::malformed(format_args!("{message}: {id}")),
+        CodecError::InvalidInput(message) => CodecError::InvalidInput(format!("{message}: {id}")),
+        other => other,
+    }
 }
 
 pub(crate) fn brep_body(
@@ -2943,6 +2977,17 @@ pub(crate) fn brep_body(
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
+    // The sole FIN of each vertex loop (§4, coedge `00 11` marker `0x3f`).
+    let vertex_loop_fins = ir
+        .geometry
+        .loops
+        .iter()
+        .filter_map(|item| match &item.boundary {
+            LoopBoundary::Vertex { vertex, .. } => Some((item, vertex)),
+            LoopBoundary::Ring(_) => None,
+        })
+        .map(|(item, vertex)| Ok((item.id.clone(), (take_attr(&mut next)?, vertex))))
+        .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let loops = ir
         .geometry
         .loops
@@ -2965,7 +3010,15 @@ pub(crate) fn brep_body(
     let reversed_edges = edge_direction::reversed_compact_edges(ir)?;
     let mut out = Vec::new();
     for surface in &ir.geometry.surfaces {
-        if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) = &surface.geometry {
+        // A procedural carrier is written as the solved shape the source
+        // retains for it; its construction is charged by the arena coverage.
+        let solved = surface.geometry.solved().ok_or_else(|| {
+            CodecError::NotImplemented(format!(
+                "carrier has no solved geometry: {}",
+                surface.id.as_str()
+            ))
+        })?;
+        if let SolvedSurfaceGeometry::Nurbs(nurbs) = solved {
             write_nurbs_surface(
                 &mut out,
                 surfaces[&surface.id],
@@ -2976,10 +3029,12 @@ pub(crate) fn brep_body(
             )?;
             continue;
         }
-        let reference = surface_reference(surface.geometry.solved().ok_or_else(|| {
-            cadmpeg_core::CodecError::NotImplemented("carrier has no solved geometry".into())
-        })?);
-        let (kind, values) = surface_values(&surface.geometry, reference, length_scale)?;
+        let (kind, values) = surface_values(
+            &SurfaceGeometry::Solved(solved.clone()),
+            surface_reference(solved),
+            length_scale,
+        )
+        .map_err(|error| named_record(error, surface.id.as_str()))?;
         compact(
             &mut out,
             kind,
@@ -2992,7 +3047,13 @@ pub(crate) fn brep_body(
         if derived_sphere_seam_curves.contains(&curve.id) {
             continue;
         }
-        if let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = &curve.geometry {
+        let solved = curve.geometry.solved().ok_or_else(|| {
+            CodecError::NotImplemented(format!(
+                "carrier has no solved geometry: {}",
+                curve.id.as_str()
+            ))
+        })?;
+        if let SolvedCurveGeometry::Nurbs(nurbs) = solved {
             write_nurbs_curve(
                 &mut out,
                 curves[&curve.id],
@@ -3003,7 +3064,8 @@ pub(crate) fn brep_body(
             )?;
             continue;
         }
-        let (kind, values) = curve_values(&curve.geometry, length_scale)?;
+        let (kind, values) = curve_values(&CurveGeometry::Solved(solved.clone()), length_scale)
+            .map_err(|error| named_record(error, curve.id.as_str()))?;
         compact(
             &mut out,
             kind,
@@ -3059,9 +3121,10 @@ pub(crate) fn brep_body(
         if let Some(tolerance) = vertex.tolerance {
             let value = tolerance.get() * length_scale;
             if !value.is_finite() || value <= 0.0 {
-                return Err(CodecError::NotImplemented(
-                    "SLDPRT vertex tolerance is outside the finite positive source range".into(),
-                ));
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT vertex tolerance is outside the finite positive source range: {}",
+                    vertex.id
+                )));
             }
             bef64(&mut out, value);
         } else {
@@ -3070,14 +3133,18 @@ pub(crate) fn brep_body(
         be16(&mut out, vertex_owners[&vertex.id]);
     }
     for edge in &ir.geometry.edges {
-        let ends = edge_ends(edge)?;
-        let owner = vertex_owners
-            .get(&ends.start)
-            .ok_or_else(|| CodecError::Malformed("SLDPRT EDGE start has no BODY owner".into()))?;
+        let ends = edge_ends(edge).map_err(|error| named_record(error, edge.id.as_str()))?;
+        let owner = vertex_owners.get(&ends.start).ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "SLDPRT EDGE start has no BODY owner: {}",
+                edge.id
+            ))
+        })?;
         if vertex_owners.get(&ends.end) != Some(owner) {
-            return Err(CodecError::NotImplemented(
-                "SLDPRT EDGE endpoints do not have one BODY owner".into(),
-            ));
+            return Err(CodecError::NotImplemented(format!(
+                "SLDPRT EDGE endpoints do not have one BODY owner: {}",
+                edge.id
+            )));
         }
         tag(&mut out, 0x10);
         be16(&mut out, edges[&edge.id]);
@@ -3114,11 +3181,13 @@ pub(crate) fn brep_body(
     for coedge in &ir.geometry.coedges {
         tag(&mut out, 0x11);
         be16(&mut out, coedges[&coedge.id]);
-        let edge = edges_by_id
-            .get(&coedge.edge)
-            .copied()
-            .ok_or_else(|| CodecError::Malformed("coedge references missing edge".into()))?;
-        let ends = edge_ends(edge)?;
+        let edge = edges_by_id.get(&coedge.edge).copied().ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "coedge references missing edge: {}",
+                coedge.id
+            ))
+        })?;
+        let ends = edge_ends(edge).map_err(|error| named_record(error, edge.id.as_str()))?;
         let forward_vertex = if coedge.sense == Sense::Forward {
             &ends.end
         } else {
@@ -3157,32 +3226,51 @@ pub(crate) fn brep_body(
         );
     }
     for lp in &ir.geometry.loops {
-        let face = faces_by_id
-            .get(&lp.face)
-            .copied()
-            .ok_or_else(|| CodecError::Malformed("loop references missing face".into()))?;
+        let Some((fin, vertex)) = vertex_loop_fins.get(&lp.id) else {
+            continue;
+        };
+        let vertex = vertices.get(*vertex).copied().ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "vertex loop references a missing vertex: {}",
+                lp.id
+            ))
+        })?;
+        tag(&mut out, 0x11);
+        be16(&mut out, *fin);
+        for value in [0, loops[&lp.id], *fin, *fin, vertex, 0, 0, 0, 0] {
+            be16(&mut out, value);
+        }
+        out.push(0x3f);
+    }
+    for lp in &ir.geometry.loops {
+        let face = faces_by_id.get(&lp.face).copied().ok_or_else(|| {
+            CodecError::malformed(format_args!("loop references missing face: {}", lp.id))
+        })?;
         let position = face
             .loops
             .iter()
             .position(|id| id == &lp.id)
-            .ok_or_else(|| CodecError::Malformed("face does not own referenced loop".into()))?;
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!("face does not own referenced loop: {}", lp.id))
+            })?;
         let next_loop = face
             .loops
             .iter()
             .nth(position + 1)
             .map_or(0, |id| loops[id]);
+        let first_fin = match vertex_loop_fins.get(&lp.id) {
+            Some((fin, _)) => *fin,
+            None => {
+                coedges[lp
+                    .coedges()
+                    .first()
+                    .ok_or_else(|| CodecError::malformed(format_args!("empty loop: {}", lp.id)))?]
+            }
+        };
         tag(&mut out, 0x0f);
         be16(&mut out, loops[&lp.id]);
         be32(&mut out, 0);
-        for value in [
-            0,
-            coedges[lp
-                .coedges()
-                .first()
-                .ok_or_else(|| CodecError::Malformed("empty loop".into()))?],
-            faces[&lp.face],
-            next_loop,
-        ] {
+        for value in [0, first_fin, faces[&lp.face], next_loop] {
             be16(&mut out, value);
         }
     }
@@ -3192,11 +3280,10 @@ pub(crate) fn brep_body(
         be32(&mut out, 0);
         be16(&mut out, face_owners[&face.id]);
         out.extend_from_slice(&MAGIC);
-        let first = face
-            .loops
-            .iter()
-            .next()
-            .ok_or_else(|| CodecError::Malformed("face has no loop".into()))?;
+        let first =
+            face.loops.iter().next().ok_or_else(|| {
+                CodecError::malformed(format_args!("face has no loop: {}", face.id))
+            })?;
         for value in [0, 0, loops[first], 0, surfaces[&face.surface]] {
             be16(&mut out, value);
         }
@@ -3844,9 +3931,16 @@ pub(super) fn surface_values(
             | SolvedSurfaceGeometry::Unknown { .. },
         )
         | SurfaceGeometry::Procedural { .. } => {
-            return Err(CodecError::NotImplemented(
-                "semantic SLDPRT writer does not support this surface carrier".into(),
-            ))
+            let kind = match geometry {
+                SurfaceGeometry::Procedural { .. } => "procedural",
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)) => "nurbs",
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(_)) => "polygonal",
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(_)) => "transformed",
+                SurfaceGeometry::Solved(_) => "unknown",
+            };
+            return Err(CodecError::NotImplemented(format!(
+                "semantic SLDPRT writer does not support this surface carrier ({kind})"
+            )));
         }
     };
     Ok(result)
@@ -3860,11 +3954,6 @@ fn write_nurbs_curve(
     length_scale: f64,
     entity: &str,
 ) -> Result<(), CodecError> {
-    if nurbs.periodic() {
-        return Err(CodecError::NotImplemented(
-            "semantic SLDPRT writer does not support periodic NURBS curves".into(),
-        ));
-    }
     let descriptor = take_attr(next)?;
     let control = take_attr(next)?;
     let multiplicity = take_attr(next)?;
@@ -3898,7 +3987,7 @@ fn write_nurbs_curve(
     be16(out, if rational { 4 } else { 3 });
     be32(out, knot_count);
     out.push(0);
-    out.extend_from_slice(&[0, 0, u8::from(rational), 0]);
+    out.extend_from_slice(&[u8::from(nurbs.periodic()), 0, u8::from(rational), 0]);
     for attr in [control, multiplicity, knots] {
         be16(out, attr);
     }
@@ -3928,11 +4017,6 @@ fn write_nurbs_surface(
     length_scale: f64,
     entity: &str,
 ) -> Result<(), CodecError> {
-    if nurbs.u_periodic() || nurbs.v_periodic() {
-        return Err(CodecError::NotImplemented(
-            "semantic SLDPRT writer does not support periodic NURBS surfaces".into(),
-        ));
-    }
     let u_degree = u16::try_from(nurbs.u_degree()).map_err(|_| {
         CodecError::NotImplemented(format!(
             "SLDPRT NURBS surface {entity} u degree exceeds the native u16 field"
@@ -3987,7 +4071,7 @@ fn write_nurbs_surface(
     be16(out, 0);
     tag(out, 0x7e);
     be16(out, descriptor);
-    out.extend_from_slice(&[0, 0]);
+    out.extend_from_slice(&[u8::from(nurbs.u_periodic()), u8::from(nurbs.v_periodic())]);
     be16(out, u_degree);
     be16(out, v_degree);
     be32(out, u_count);
