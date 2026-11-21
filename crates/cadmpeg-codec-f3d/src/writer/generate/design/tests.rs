@@ -448,12 +448,22 @@ struct DesignStream {
 impl DesignStream {
     fn read(archive: &[u8]) -> Self {
         let mut zip = zip::ZipArchive::new(Cursor::new(archive)).expect("a ZIP archive");
+        let folder = ["FusionDesignSegmentType1", "Design1"]
+            .into_iter()
+            .find(|folder| {
+                zip.by_name(&format!(
+                    "{}/{folder}/BulkStream.dat",
+                    crate::manifest::GENERATED_DESIGN_ASSET_FOLDER
+                ))
+                .is_ok()
+            })
+            .expect("a Design segment");
         let mut entry = |name: &str| {
             let mut bytes = Vec::new();
             std::io::Read::read_to_end(
                 &mut zip
                     .by_name(&format!(
-                        "{}/Design1/{name}",
+                        "{}/{folder}/{name}",
                         crate::manifest::GENERATED_DESIGN_ASSET_FOLDER
                     ))
                     .expect("the Design stream"),
@@ -534,7 +544,7 @@ fn the_cube_is_one_base_feature_item_of_the_timeline() {
         panic!("one timeline");
     };
     assert_eq!(timeline.frame().items().len(), 1);
-    assert!(loss(&report, "export/record.residual-unavailable")
+    assert!(!loss(&report, "export/record.residual-unavailable")
         .iter()
         .any(|message| message.contains("component aggregate")));
 }
@@ -687,6 +697,26 @@ fn a_document_with_no_body_writes_the_timeline_with_no_item() {
     assert!(native.asm_histories.is_empty());
     assert!(!loss(&report, "export/output.empty").is_empty());
     assert_eq!(loss(&report, "export/evaluation.missing").len(), 1);
+}
+
+#[test]
+fn a_document_with_no_body_charges_the_fixed_clock_of_its_component_table_only() {
+    let mut ir = scoped_cube();
+    ir.geometry = cadmpeg_ir::document::Topology::default();
+    ir.design.scopes[0].current[0].bodies.clear();
+    let (report, _) = write(&ir);
+    let notes = loss(&report, "export/record.residual-unavailable")
+        .into_iter()
+        .filter(|message| message.contains("fixed-clock"))
+        .collect::<Vec<_>>();
+    let [note] = notes.as_slice() else {
+        panic!("one fixed-clock note: {:#?}", report.losses);
+    };
+    assert!(
+        note.contains("(component record-timestamp table)"),
+        "{note}"
+    );
+    assert!(!note.contains("Base Feature"), "{note}");
 }
 
 #[test]
@@ -1141,3 +1171,5 @@ fn a_parameter_display_flag_and_unstated_body_visibility_are_charged() {
         report.losses
     );
 }
+
+mod roster;

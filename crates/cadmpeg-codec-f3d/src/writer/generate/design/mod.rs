@@ -17,6 +17,7 @@ mod expression;
 pub(super) mod frames;
 pub(super) mod history;
 pub(super) mod parameters;
+mod roster;
 #[cfg(test)]
 mod tests;
 mod types;
@@ -148,6 +149,33 @@ impl NeutralDesign<'_> {
             self.base_feature.encode(&self.parameters, registry)?;
         self.losses.extend(losses);
         Ok((parameter_bytes, records))
+    }
+
+    /// The members of the design folder of a design with result bodies:
+    /// the Design, ACT and Browser segments, the history stream `smbh`, the
+    /// snapshot stream `smb` and the members their records name (f3d.md §3.1, "Records of a Base
+    /// Feature design").
+    pub(super) fn archive(
+        &mut self,
+        target: &CadIr,
+        smbh: &[u8],
+        smb: &[u8],
+    ) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
+        let scope = root_scope(target)
+            .ok_or_else(|| CodecError::Malformed("the design has no root scope".into()))?;
+        let bodies = self.base_feature.roster_bodies(target);
+        let roster = roster::Roster::new(bodies.len(), self.parameters.written_count())?;
+        let ctx = roster::Context {
+            table: roster::type_table(&roster, bodies.iter().any(|body| body.sheet))?,
+            roster,
+            values: roster::values::Values::new(target, &scope.definition, smbh),
+            bodies,
+        };
+        let mut records = DesignRecords::default();
+        BaseFeaturePlan::roster_records(&ctx, &self.parameters, &mut records)?;
+        let (members, losses) = roster::archive(&ctx, records, smbh, smb)?;
+        self.losses.extend(losses);
+        Ok(members)
     }
 
     pub(super) fn into_losses(self) -> Vec<LossNote> {
