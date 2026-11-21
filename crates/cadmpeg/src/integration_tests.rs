@@ -128,6 +128,8 @@ fn planar_pcurve_recovers_a_solid_for_each_geometry_writer() {
     round_trip(&cadmpeg_codec_rhino::RhinoCodec, &ir, &original);
 }
 
+#[cfg(all(feature = "step", feature = "iges"))]
+mod box_pass;
 mod repro;
 
 #[cfg(all(
