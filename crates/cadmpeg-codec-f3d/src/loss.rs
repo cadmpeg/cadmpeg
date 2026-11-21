@@ -96,6 +96,10 @@ pub(crate) enum F3dLossCode {
     SceneOverrideUnbound,
     /// A direct operation-table pose is applied uniformly to its definition.
     OperationPoseApplied,
+    /// A version-four operation table is applied with its path-ordinal value read as leaving the pose unchanged.
+    OperationPosePathOrdinalAssumed,
+    /// A version-two or version-three operation table is applied with the pose semantics of version one.
+    OperationPoseVersionAssumed,
     /// A scope namespace has no unique neutral product definition.
     ScopeOwnerUnresolved,
     /// A history output body belongs to another product definition.
@@ -1230,6 +1234,9 @@ pub(crate) enum F3dLossCode {
     WriterFaceOmitted,
     /// Geometry was not written as the source states it.
     WriterGeometryOmitted,
+    /// An open edge whose source states no range was written over one arc of
+    /// a curve that passes one of its vertices twice.
+    WriterEdgeRangeAssumed,
     /// An appearance was not written.
     WriterAppearanceOmitted,
     /// The retained source could not carry an edit; the file was regenerated.
@@ -1342,6 +1349,8 @@ impl F3dLossCode {
         Self::SceneOverrideAmbiguous,
         Self::SceneOverrideUnbound,
         Self::OperationPoseApplied,
+        Self::OperationPosePathOrdinalAssumed,
+        Self::OperationPoseVersionAssumed,
         Self::ScopeOwnerUnresolved,
         Self::ScopeOutputOwnerMismatch,
         Self::ScopeOutputOwnerUnresolved,
@@ -2027,6 +2036,7 @@ impl F3dLossCode {
         Self::WriterBodyOmitted,
         Self::WriterFaceOmitted,
         Self::WriterGeometryOmitted,
+        Self::WriterEdgeRangeAssumed,
         Self::WriterAppearanceOmitted,
         Self::WriterPatchDeclined,
         Self::WriterAppearanceGuidAllocated,
@@ -2154,6 +2164,10 @@ impl F3dLossCode {
             Self::ScopeOutputOwnerUnresolved => "scope.output-owner-unresolved",
             Self::ScopeSketchOwnerMismatch => "scope.sketch-owner-mismatch",
             Self::OperationPoseApplied => "assembly.operation-table-pose",
+            Self::OperationPosePathOrdinalAssumed => {
+                "assembly.operation-table-path-ordinal-assumed"
+            }
+            Self::OperationPoseVersionAssumed => "assembly.operation-table-version-assumed",
             Self::OperationPoseDisagrees => "assembly.operation-table-pose-disagrees",
             Self::OperationPoseNative => "assembly.operation-table-pose-native",
             Self::DimensionCompanionUntyped => "dimension.companion-untyped",
@@ -3160,6 +3174,7 @@ impl F3dLossCode {
             Self::WriterBodyOmitted => "writer.body-omitted",
             Self::WriterFaceOmitted => "writer.face-omitted",
             Self::WriterGeometryOmitted => "writer.geometry-omitted",
+            Self::WriterEdgeRangeAssumed => "writer.edge-range-assumed",
             Self::WriterAppearanceOmitted => "writer.appearance-omitted",
             Self::WriterPatchDeclined => "writer.patch-declined",
             Self::WriterIntegerAsReal => "writer.integer-as-real",
@@ -3266,6 +3281,7 @@ impl F3dLossCode {
             Self::WriterBodyOmitted => Severity::Error,
             Self::WriterFaceOmitted => Severity::Error,
             Self::WriterGeometryOmitted => Severity::Warning,
+            Self::WriterEdgeRangeAssumed => Severity::Warning,
             Self::WriterAppearanceOmitted => Severity::Warning,
             Self::WriterPatchDeclined => Severity::Warning,
             Self::WriterIntegerAsReal => Severity::Info,
@@ -3274,6 +3290,8 @@ impl F3dLossCode {
             Self::ScopeOwnerUnresolved
             | Self::ScopeOutputOwnerUnresolved
             | Self::OperationPoseApplied
+            | Self::OperationPosePathOrdinalAssumed
+            | Self::OperationPoseVersionAssumed
             | Self::OperationPoseNative
             | Self::BodylessDesignCarrier
             | Self::EmptyDesign
@@ -4043,6 +4061,7 @@ impl F3dLossCode {
             Self::WriterBodyOmitted => LossTaxonomy::TopologyNotTransferred,
             Self::WriterFaceOmitted => LossTaxonomy::TopologyNotTransferred,
             Self::WriterGeometryOmitted => LossTaxonomy::GeometryNotTransferred,
+            Self::WriterEdgeRangeAssumed => LossTaxonomy::TopologyGaugeSubstituted,
             Self::WriterAppearanceOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::WriterPatchDeclined => LossTaxonomy::PreservedSourceUnavailable,
             Self::WriterIntegerAsReal => LossTaxonomy::ParametricRecordOmitted,
@@ -4078,6 +4097,8 @@ impl F3dLossCode {
             | Self::CoilShortControlsAssumed
             | Self::CoilTargetUnresolved
             | Self::OperationPoseApplied
+            | Self::OperationPosePathOrdinalAssumed
+            | Self::OperationPoseVersionAssumed
             | Self::OperationPoseDisagrees
             | Self::OperationPoseNative
             | Self::ConfigurationMemberUnassigned
@@ -4738,10 +4759,12 @@ impl F3dLossCode {
     ///
     /// Defaults to the taxonomy floor. `DesignIntentUndecoded` pins Warning
     /// above its tolerable `DecodeDiagnostic` taxonomy: strict mode refuses a
-    /// document whose design intent was dropped.
+    /// document whose design intent was dropped. `WriterEdgeRangeAssumed`
+    /// pins Warning above `TopologyGaugeSubstituted`: strict mode refuses an
+    /// edge written over an arc the source does not state.
     const fn strict_floor(self) -> Option<Severity> {
         match self {
-            Self::DesignIntentUndecoded => Some(Severity::Warning),
+            Self::DesignIntentUndecoded | Self::WriterEdgeRangeAssumed => Some(Severity::Warning),
             other => other.shared_taxonomy().strict_floor(),
         }
     }
@@ -4848,6 +4871,8 @@ mod tests {
                 "scene.override-ambiguous",
                 "scene.override-unbound",
                 "assembly.operation-table-pose",
+                "assembly.operation-table-path-ordinal-assumed",
+                "assembly.operation-table-version-assumed",
                 "scope.owner-unresolved",
                 "scope.output-owner-mismatch",
                 "scope.output-owner-unresolved",
@@ -5533,6 +5558,7 @@ mod tests {
                 "writer.body-omitted",
                 "writer.face-omitted",
                 "writer.geometry-omitted",
+                "writer.edge-range-assumed",
                 "writer.appearance-omitted",
                 "writer.patch-declined",
                 "writer.appearance-guid-allocated",
