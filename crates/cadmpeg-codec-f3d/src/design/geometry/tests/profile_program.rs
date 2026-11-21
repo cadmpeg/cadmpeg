@@ -5,6 +5,7 @@ use super::*;
 const PROFILE_PROGRAM_TOLERANCE: f64 = 1.0e-7;
 
 mod arrangement_islands;
+mod counted_rings;
 mod identity_unique;
 
 fn divided_circle(two_dividers: bool) -> (Sketch, Vec<SketchEntity>) {
@@ -1772,8 +1773,13 @@ fn crossing_run_matching_preserves_the_exact_arrangement_budget() {
         .unwrap();
         assert!(super::super::match_member_rings(
             &faces,
-            &rings,
+            super::super::MemberRings {
+                uses: &rings,
+                counted: None,
+            },
             &std::collections::HashSet::new(),
+            &entities,
+            PROFILE_PROGRAM_TOLERANCE,
             &exact,
             false,
         )

@@ -26,6 +26,7 @@ mod operation;
 mod parameters;
 #[cfg(test)]
 mod tests;
+mod thread;
 mod timeline;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -200,6 +201,7 @@ pub(crate) fn project(
     ir.design
         .configurations
         .extend(scoped_configurations.records);
+    thread::project(ctx, ir, losses)?;
     Ok(())
 }
 
