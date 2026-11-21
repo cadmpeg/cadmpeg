@@ -1210,6 +1210,9 @@ pub(crate) enum F3dLossCode {
     WriterFaceOmitted,
     /// Geometry was not written as the source states it.
     WriterGeometryOmitted,
+    /// An open edge whose source states no range was written over one arc of
+    /// a curve that passes one of its vertices twice.
+    WriterEdgeRangeAssumed,
     /// An appearance was not written.
     WriterAppearanceOmitted,
     /// The retained source could not carry an edit; the file was regenerated.
@@ -1998,6 +2001,7 @@ impl F3dLossCode {
         Self::WriterBodyOmitted,
         Self::WriterFaceOmitted,
         Self::WriterGeometryOmitted,
+        Self::WriterEdgeRangeAssumed,
         Self::WriterAppearanceOmitted,
         Self::WriterPatchDeclined,
         Self::WriterAppearanceGuidAllocated,
@@ -3118,6 +3122,7 @@ impl F3dLossCode {
             Self::WriterBodyOmitted => "writer.body-omitted",
             Self::WriterFaceOmitted => "writer.face-omitted",
             Self::WriterGeometryOmitted => "writer.geometry-omitted",
+            Self::WriterEdgeRangeAssumed => "writer.edge-range-assumed",
             Self::WriterAppearanceOmitted => "writer.appearance-omitted",
             Self::WriterPatchDeclined => "writer.patch-declined",
             Self::WriterIntegerAsReal => "writer.integer-as-real",
@@ -3223,6 +3228,7 @@ impl F3dLossCode {
             Self::WriterBodyOmitted => Severity::Error,
             Self::WriterFaceOmitted => Severity::Error,
             Self::WriterGeometryOmitted => Severity::Warning,
+            Self::WriterEdgeRangeAssumed => Severity::Warning,
             Self::WriterAppearanceOmitted => Severity::Warning,
             Self::WriterPatchDeclined => Severity::Warning,
             Self::WriterIntegerAsReal => Severity::Info,
@@ -3991,6 +3997,7 @@ impl F3dLossCode {
             Self::WriterBodyOmitted => LossTaxonomy::TopologyNotTransferred,
             Self::WriterFaceOmitted => LossTaxonomy::TopologyNotTransferred,
             Self::WriterGeometryOmitted => LossTaxonomy::GeometryNotTransferred,
+            Self::WriterEdgeRangeAssumed => LossTaxonomy::TopologyGaugeSubstituted,
             Self::WriterAppearanceOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::WriterPatchDeclined => LossTaxonomy::PreservedSourceUnavailable,
             Self::WriterIntegerAsReal => LossTaxonomy::ParametricRecordOmitted,
@@ -4678,10 +4685,12 @@ impl F3dLossCode {
     ///
     /// Defaults to the taxonomy floor. `DesignIntentUndecoded` pins Warning
     /// above its tolerable `DecodeDiagnostic` taxonomy: strict mode refuses a
-    /// document whose design intent was dropped.
+    /// document whose design intent was dropped. `WriterEdgeRangeAssumed`
+    /// pins Warning above `TopologyGaugeSubstituted`: strict mode refuses an
+    /// edge written over an arc the source does not state.
     const fn strict_floor(self) -> Option<Severity> {
         match self {
-            Self::DesignIntentUndecoded => Some(Severity::Warning),
+            Self::DesignIntentUndecoded | Self::WriterEdgeRangeAssumed => Some(Severity::Warning),
             other => other.shared_taxonomy().strict_floor(),
         }
     }
@@ -5464,6 +5473,7 @@ mod tests {
                 "writer.body-omitted",
                 "writer.face-omitted",
                 "writer.geometry-omitted",
+                "writer.edge-range-assumed",
                 "writer.appearance-omitted",
                 "writer.patch-declined",
                 "writer.appearance-guid-allocated",

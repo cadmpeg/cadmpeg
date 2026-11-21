@@ -139,6 +139,9 @@ pub(super) struct Reduction<'a> {
     /// The faces omitted from each opened body, charged at [`Self::finish`]
     /// for the bodies still written.
     opened: BTreeMap<String, Vec<String>>,
+    /// The open edges written over one arc of a curve that passes a vertex
+    /// twice, charged at [`Self::finish`] for the edges still written.
+    assumed_arcs: Vec<(EdgeId, LossNote)>,
 }
 
 impl<'a> Reduction<'a> {
@@ -149,6 +152,7 @@ impl<'a> Reduction<'a> {
             design_dropped: false,
             neutral_dropped: false,
             opened: BTreeMap::new(),
+            assumed_arcs: Vec::new(),
         }
     }
 
@@ -200,6 +204,19 @@ impl<'a> Reduction<'a> {
                 faces.join(", ")
             )));
         }
+        let written = self
+            .ir
+            .geometry
+            .edges
+            .iter()
+            .map(|edge| &edge.id)
+            .collect::<HashSet<_>>();
+        self.losses.extend(
+            std::mem::take(&mut self.assumed_arcs)
+                .into_iter()
+                .filter(|(edge, _)| written.contains(edge))
+                .map(|(_, note)| note),
+        );
         let geometry = &self.ir.geometry;
         if geometry.faces.is_empty()
             && !geometry.shells.iter().any(|shell| {
@@ -596,9 +613,10 @@ impl<'a> Reduction<'a> {
     /// to that distance, with `geometry.vertex-tolerance-widened` naming it.
     /// On a curve other than a line, conic or point, each end also inverts
     /// from the other end's seed. Where a self-crossing curve passes a vertex
-    /// on two arcs, the edge takes the shortest range between a witness of
-    /// each end that passes no other witness of its vertices, with a loss
-    /// naming the edge and that assumption. The two ends of a closed curve's
+    /// on two arcs, the edge takes the shortest range the writer can state
+    /// between a witness of each end that passes no other witness of its
+    /// vertices, and `writer.edge-range-assumed` names the edge if it is
+    /// still written at [`Self::finish`]. The two ends of a closed curve's
     /// domain are one place.
     /// An edge that runs against its line is written with its ends exchanged.
     /// A line or conic carrier that a vertex lies beyond the edge's allowance
@@ -637,10 +655,11 @@ impl<'a> Reduction<'a> {
             .map(|curve| (curve.id.as_str(), curve))
             .collect::<HashMap<_, _>>();
         let mut tolerant = HashMap::<&VertexId, f64>::new();
-        let (stated, exchanged, assumptions, invalid) = loop {
+        let (stated, exchanged, feet, arcs, invalid) = loop {
             let mut stated = Vec::new();
             let mut exchanged = HashSet::new();
-            let mut assumptions = Vec::new();
+            let mut feet = Vec::new();
+            let mut arcs = Vec::new();
             let mut invalid = Vec::new();
             let mut raised_any = false;
             for &edge_index in &open {
@@ -790,6 +809,7 @@ impl<'a> Reduction<'a> {
                         other_place(end, domain.map_or(0.0, |[low, _]| low), last)?,
                     ];
                     if starts[1].is_some() || finishes[1].is_some() {
+                        let reversible = aperiodic_nurbs && !self.names_edge_uses(edge);
                         let witnesses = starts.iter().chain(&finishes).flatten();
                         let Some(arc) = starts
                             .iter()
@@ -798,6 +818,7 @@ impl<'a> Reduction<'a> {
                             .filter(|&[from, to]| {
                                 let (low, high) = (from.min(to), from.max(to));
                                 low < high
+                                    && (from < to || reversible)
                                     && !witnesses
                                         .clone()
                                         .any(|&witness| low < witness && witness < high)
@@ -807,12 +828,15 @@ impl<'a> Reduction<'a> {
                             continue;
                         };
                         [first, last] = arc;
-                        assumed = Some(F3dLossCode::WriterGeometryOmitted.note(format!(
-                            "edge {}: its curve passes a vertex of the edge on two arcs; the \
-                             edge runs from {first:.6} to {last:.6} on it, the shortest arc that \
-                             passes neither vertex between its ends",
-                            edge.id
-                        )));
+                        assumed = Some((
+                            edge.id.clone(),
+                            F3dLossCode::WriterEdgeRangeAssumed.note(format!(
+                                "edge {}: its curve passes a vertex of the edge on two arcs; the \
+                                 edge runs from {first:.6} to {last:.6} on it, the shortest arc \
+                                 the writer can state that passes neither vertex between its ends",
+                                edge.id
+                            )),
+                        ));
                     }
                 }
                 let reach = [
@@ -861,7 +885,7 @@ impl<'a> Reduction<'a> {
                     }
                 }
                 if !off.is_empty() {
-                    assumptions.push(F3dLossCode::WriterGeometryOmitted.note(format!(
+                    feet.push(F3dLossCode::WriterGeometryOmitted.note(format!(
                         "edge {}: {}; its range is stated from the vertices' feet on the curve",
                         edge.id,
                         off.join(", ")
@@ -871,11 +895,11 @@ impl<'a> Reduction<'a> {
                 if exchange {
                     exchanged.insert(edge.id.clone());
                 }
-                assumptions.extend(assumed);
+                arcs.extend(assumed);
                 stated.push((edge_index, carrier));
             }
             if !raised_any {
-                break (stated, exchanged, assumptions, invalid);
+                break (stated, exchanged, feet, arcs, invalid);
             }
         };
         drop(index);
@@ -917,7 +941,8 @@ impl<'a> Reduction<'a> {
             }
         }
         self.losses.extend(widened);
-        self.losses.extend(assumptions);
+        self.losses.extend(feet);
+        self.assumed_arcs.extend(arcs);
         if !invalid.is_empty() {
             self.losses.push(record_invalid(
                 EntityKind::Edge,

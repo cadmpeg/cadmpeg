@@ -77,11 +77,11 @@ fn widened() -> String {
     F3dLossCode::VertexToleranceWidened.kind().to_string()
 }
 
-/// Whether `report` charges `writer.geometry-omitted` for `edge` running over
-/// one of two arcs of its curve.
+/// Whether `report` charges `writer.edge-range-assumed` for `edge` running
+/// over one of two arcs of its curve.
 fn arc_assumed_for(report: &cadmpeg_ir::report::export::ExportReport, edge: &str) -> bool {
     report.losses.iter().any(|loss| {
-        loss.code.to_string() == geometry_omitted()
+        loss.code.to_string() == F3dLossCode::WriterEdgeRangeAssumed.kind().to_string()
             && loss.message.contains(&format!("edge {edge}:"))
             && loss.message.contains("on two arcs")
     })
@@ -507,7 +507,16 @@ fn an_open_edge_ending_where_its_nurbs_curve_crosses_itself_takes_the_inner_arc_
     // at 3. The edge runs against the curve from 3 to 2.5 or to 0.5; the arc
     // [0.5, 3] passes the edge's end vertex again at 2.5, so the edge takes
     // [2.5, 3] with its ends exchanged.
-    let ir = cube_with_unranged_nurbs_edge(
+    let ir = cube_with_self_crossing_nurbs_edge();
+    let edge = ir.geometry.edges[0].id.to_string();
+    let (report, decoded) = write(&ir);
+    assert_inner_arc(&report, &decoded, &edge);
+}
+
+/// The unit cube with edge 0 on a degree-1 NURBS that passes `(10,0,0)` at
+/// 0.5 and 2.5 and ends at `(0,0,0)` at 3.
+fn cube_with_self_crossing_nurbs_edge() -> CadIr {
+    cube_with_unranged_nurbs_edge(
         vec![0.0, 0.0, 1.0, 2.0, 3.0, 3.0],
         vec![
             Point3::new(10.0, -10.0, 0.0),
@@ -516,10 +525,67 @@ fn an_open_edge_ending_where_its_nurbs_curve_crosses_itself_takes_the_inner_arc_
             Point3::new(0.0, 0.0, 0.0),
         ],
         false,
+    )
+}
+
+#[test]
+fn an_inner_arc_edge_of_a_body_left_unwritten_is_not_named() {
+    // Every face of the cube is on a carrier F3D has no form for, so the body
+    // is not written and the edge, ranged over its inner arc, goes with it.
+    let mut ir = cube_with_self_crossing_nurbs_edge();
+    for surface in &mut ir.geometry.surfaces {
+        surface.geometry = cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+            cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { record: None },
+        );
+    }
+    let edge = ir.geometry.edges[0].id.to_string();
+    let body = ir.geometry.bodies[0].id.to_string();
+    let (report, _) = write(&ir);
+    assert!(
+        report.losses.iter().any(|loss| {
+            loss.code.to_string() == F3dLossCode::WriterBodyOmitted.kind().to_string()
+                && loss.message.contains(&body)
+        }),
+        "{:#?}",
+        report.losses
+    );
+    assert!(!arc_assumed_for(&report, &edge), "{:#?}", report.losses);
+}
+
+#[test]
+fn an_open_edge_on_a_periodic_nurbs_curve_takes_the_forward_inner_arc() {
+    // The curve passes (0,0,0) at 0 and 3 and (10,0,0) at 2. The arc [2, 3]
+    // is the shorter, but it runs against the curve, and on a periodic curve
+    // the writer does not exchange the edge's ends: the edge takes [0, 2].
+    let ir = cube_with_unranged_nurbs_edge(
+        vec![0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 4.0],
+        vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(5.0, -10.0, 0.0),
+            Point3::new(10.0, 0.0, 0.0),
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(-10.0, -10.0, 0.0),
+        ],
+        true,
     );
     let edge = ir.geometry.edges[0].id.to_string();
     let (report, decoded) = write(&ir);
-    assert_inner_arc(&report, &decoded, &edge);
+    assert!(
+        !record_invalid_names(&report, &edge),
+        "{:#?}",
+        report.losses
+    );
+    assert!(arc_assumed_for(&report, &edge), "{:#?}", report.losses);
+    let [start, end] = decoded.geometry.edges[0]
+        .param_range()
+        .expect("the edge is written with a range")
+        .get();
+    assert!(
+        start.abs() < EPS_PARAMETER && (end - 2.0).abs() < EPS_PARAMETER,
+        "[{start}, {end}]"
+    );
+    assert!(start_position(&decoded, 0).distance(Point3::new(0.0, 0.0, 0.0)) < EPS_PARAMETER);
+    assert_eq!(edge_errors(&decoded, 0), Vec::<String>::new());
 }
 
 /// `edge`, edge 0, is written over `[2.5, 3]` from `(10,0,0)`, with the loss
@@ -545,19 +611,10 @@ fn assert_inner_arc(
 
 #[test]
 fn an_open_edge_starting_where_its_nurbs_curve_crosses_itself_takes_the_inner_arc_and_is_named() {
-    // Edge 0 is reversed to run from (10,0,0) to (0,0,0) on the curve of the
-    // test above. Its start inverts to 0.5 and to 2.5; the arc [0.5, 3] passes
+    // Edge 0 is reversed to run from (10,0,0) to (0,0,0) on the self-crossing
+    // curve. Its start inverts to 0.5 and to 2.5; the arc [0.5, 3] passes
     // the start vertex again at 2.5, so the edge takes [2.5, 3] as it runs.
-    let mut ir = cube_with_unranged_nurbs_edge(
-        vec![0.0, 0.0, 1.0, 2.0, 3.0, 3.0],
-        vec![
-            Point3::new(10.0, -10.0, 0.0),
-            Point3::new(10.0, 10.0, 0.0),
-            Point3::new(20.0, 0.0, 0.0),
-            Point3::new(0.0, 0.0, 0.0),
-        ],
-        false,
-    );
+    let mut ir = cube_with_self_crossing_nurbs_edge();
     let edge = ir.geometry.edges[0].id.clone();
     let ends = ir.geometry.edges[0].ends.take().expect("edge ends");
     ir.geometry.edges[0].ends = Some(EdgeEnds::new(ends.end, ends.start));
