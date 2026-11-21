@@ -814,6 +814,10 @@ pub(crate) enum F3dLossCode {
     FeatureWorkAxisUnsupportedVersionLegacyLayoutAssumed,
     FeatureWorkAxisLegacyLayoutAssumed,
     FeatureWorkAxisCandidatesUnresolved,
+    /// Null work-axis input references state no construction input.
+    FeatureWorkAxisInputNull,
+    /// A work axis whose stored line was read only in part states no line.
+    FeatureWorkAxisPartialLineNative,
     /// Feature body selections retain native identities; no unique body.
     FeatureBodySelectionNative,
     /// Reverse Normal body-group members lack the whole-body record type.
@@ -1771,6 +1775,8 @@ impl F3dLossCode {
         Self::FeatureWorkAxisUnsupportedVersionLegacyLayoutAssumed,
         Self::FeatureWorkAxisLegacyLayoutAssumed,
         Self::FeatureWorkAxisCandidatesUnresolved,
+        Self::FeatureWorkAxisInputNull,
+        Self::FeatureWorkAxisPartialLineNative,
         Self::FeatureBodySelectionNative,
         Self::FeatureReverseNormalBodyUnverified,
         Self::FeatureReverseNormalBodyProducerUnresolved,
@@ -2795,6 +2801,8 @@ impl F3dLossCode {
             }
             Self::FeatureWorkAxisLegacyLayoutAssumed => "feature.work-axis-legacy-layout-assumed",
             Self::FeatureWorkAxisCandidatesUnresolved => "feature.work-axis-candidates-unresolved",
+            Self::FeatureWorkAxisInputNull => "feature.work-axis-input-null",
+            Self::FeatureWorkAxisPartialLineNative => "feature.work-axis-partial-line-native",
             Self::FeatureWorkAxisEndpointToleranceAssumed => {
                 "feature.work-axis-endpoint-tolerance-assumed"
             }
@@ -3717,6 +3725,8 @@ impl F3dLossCode {
             | Self::FeatureWorkAxisUnsupportedVersionLegacyLayoutAssumed
             | Self::FeatureWorkAxisLegacyLayoutAssumed
             | Self::FeatureWorkAxisCandidatesUnresolved
+            | Self::FeatureWorkAxisInputNull
+            | Self::FeatureWorkAxisPartialLineNative
             | Self::FeatureBodySelectionNative
             | Self::FeatureReverseNormalBodyUnverified
             | Self::FeatureReverseNormalBodyProducerUnresolved
@@ -4431,6 +4441,8 @@ impl F3dLossCode {
             | Self::FeatureWorkAxisUnsupportedVersionLegacyLayoutAssumed
             | Self::FeatureWorkAxisLegacyLayoutAssumed
             | Self::FeatureWorkAxisCandidatesUnresolved
+            | Self::FeatureWorkAxisInputNull
+            | Self::FeatureWorkAxisPartialLineNative
             | Self::FeatureBodySelectionNative
             | Self::FeatureReverseNormalBodyUnverified
             | Self::FeatureReverseNormalBodyProducerUnresolved
@@ -5253,6 +5265,8 @@ mod tests {
                 "feature.work-axis-unsupported-version-legacy-layout-assumed",
                 "feature.work-axis-legacy-layout-assumed",
                 "feature.work-axis-candidates-unresolved",
+                "feature.work-axis-input-null",
+                "feature.work-axis-partial-line-native",
                 "feature.body-selection-native",
                 "feature.reverse-normal-body-unverified",
                 "feature.reverse-normal-body-producer-unresolved",

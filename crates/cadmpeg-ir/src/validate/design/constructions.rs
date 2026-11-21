@@ -152,6 +152,12 @@ fn check_construction(
         }
     }
     for input in inputs {
+        if input.reference.is_none() && input.value.is_none() {
+            error(format_args!(
+                "a {} construction has an input with neither a reference nor a value",
+                kind.name()
+            ));
+        }
         let Some(role) = &input.role else {
             continue;
         };

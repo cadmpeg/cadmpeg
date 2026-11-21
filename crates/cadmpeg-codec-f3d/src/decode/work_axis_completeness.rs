@@ -145,7 +145,11 @@ mod tests {
                     reference: Some(InputReference::Built(Box::new(AnyConstruction::Point(
                         Construction {
                             resolved: Some(point),
-                            ..Default::default()
+                            inputs: Vec::new(),
+                            after: Vec::new(),
+                            solution: None,
+                            mode: None,
+                            resolved_in: std::collections::BTreeMap::new(),
                         },
                     )))),
                     value,
@@ -208,7 +212,11 @@ mod tests {
                     reference: reference.then(|| {
                         InputReference::Built(Box::new(AnyConstruction::Point(Construction {
                             resolved: Some(point),
-                            ..Default::default()
+                            inputs: Vec::new(),
+                            after: Vec::new(),
+                            solution: None,
+                            mode: None,
+                            resolved_in: std::collections::BTreeMap::new(),
                         })))
                     }),
                     reversed: None,
