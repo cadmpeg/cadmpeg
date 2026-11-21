@@ -127,7 +127,10 @@ fn selected_target_plane<'a>(
         component_naming_spaces,
         ..
     } = *inputs;
-    if !super::scope_stream_has_one_component(scope, component_naming_spaces) {
+    if !crate::design::feature_project::draft::scope_stream_has_one_component(
+        scope,
+        component_naming_spaces,
+    ) {
         return None;
     }
     let stream = native_stream(&scope.id);
@@ -139,7 +142,12 @@ fn selected_target_plane<'a>(
         return None;
     }
     match (
-        super::selected_work_plane(scope, group, entity_selection_operands, scopes),
+        crate::design::feature_project::draft::selected_work_plane(
+            scope,
+            group,
+            entity_selection_operands,
+            scopes,
+        ),
         super::selected_origin_class(scope, group, entity_selection_operands, design_types)?,
     ) {
         (Some(work_plane), OriginClassification::NotOrigin) => {
