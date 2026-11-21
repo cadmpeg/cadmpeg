@@ -145,7 +145,10 @@ pub(crate) fn decode(source: View<'_>, budget: &ScanBudget<'_>) -> Result<Vec<u8
             // bytes decoded so far are at most `produced + window`. Return the
             // remainder of the block allowances now rather than at the end of the
             // frame.
-            let decoded_bound = active.produced.saturating_add(active.window);
+            let decoded_bound = active
+                .produced
+                .checked_add(active.window)
+                .ok_or(StopReason::ExpandedBytes)?;
             if reserved > decoded_bound {
                 budget.release_expansion(reserved - decoded_bound);
                 reserved = decoded_bound;
