@@ -152,6 +152,55 @@ fn side_one_edge_uses_nonzero_references_and_ignores_second_side() {
 }
 
 #[test]
+fn side_one_single_face_boundary_resolves_without_incidence_candidates() {
+    let program = [
+        -1, -1, 2, 0, -1, 1, -1, 1, -1, 2, 1, -1, 0, -1, 0, 1, 0, 2, 1, 1, 1, 1, 1, 1, -1,
+    ];
+    let structure = crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::operands::edge_recipe_structure(ctx, &program)
+    })
+    .unwrap()
+    .unwrap();
+    let context = |reference_ordinal, shared_edge_slots| {
+        crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext {
+            reference_ordinal,
+            result_faces: Vec::new(),
+            result_face_boundary_ids: Vec::new(),
+            result_shared_edge_slots: Vec::new(),
+            preceding_faces: Vec::new(),
+            preceding_face_boundary_ids: Vec::new(),
+            preceding_support_face_slots: Vec::new(),
+            preceding_support_face_boundary_ids: Vec::new(),
+            shared_edge_slots,
+            changed_shared_edge_slots: Vec::new(),
+            changed_reference_edge_slots: Vec::new(),
+        }
+    };
+    let mut contexts = [context(0, vec![31]), context(1, vec![31, 32])];
+    let selectors = [
+        crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext {
+            selector: 0,
+            clauses: vec![None],
+            incidence_matching_edge_slots: Vec::new(),
+            boundary_count_matching_edge_slots: Vec::new(),
+        },
+    ];
+    assert_eq!(
+        side_one_recipe_edge(Some(&structure), &contexts, &selectors, &[31, 32]),
+        Some(31)
+    );
+    assert_eq!(
+        side_one_recipe_edge(Some(&structure), &contexts, &selectors, &[32]),
+        None
+    );
+    contexts[0].shared_edge_slots.push(32);
+    assert_eq!(
+        side_one_recipe_edge(Some(&structure), &contexts, &selectors, &[31, 32]),
+        None
+    );
+}
+
+#[test]
 fn side_one_common_edge_requires_one_shared_candidate_without_incidence_fallback() {
     let side = |header_value, scalars: Vec<i32>| {
         crate::records::topology::edge_recipe::DesignTopologyRecipeSide {
