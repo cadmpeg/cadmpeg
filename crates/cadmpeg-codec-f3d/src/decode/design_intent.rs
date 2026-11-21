@@ -1222,6 +1222,17 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_parameter_scopes,
         &mut losses,
     )?;
+    super::mesh_operations::tessellate::bind_features(
+        ctx,
+        scan,
+        &mut model.features,
+        &super::mesh_operations::tessellate::TessellateInputs {
+            scopes: &design.design_parameter_scopes,
+            owners: &prereqs.design_parameter_owners,
+            parameters: &prereqs.design_parameters,
+        },
+        &mut losses,
+    )?;
     super::mesh_operations::plane_cut::bind_features(
         ctx,
         scan,

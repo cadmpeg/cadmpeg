@@ -33,6 +33,7 @@ pub(super) mod combine;
 pub(super) mod convert;
 pub(super) mod plane_cut;
 pub(super) mod separate;
+pub(super) mod tessellate;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct OwnerValue {

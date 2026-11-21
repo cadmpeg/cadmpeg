@@ -314,6 +314,8 @@ impl Serialize for DesignMeshFeature {
             collection_base_record: RecordRef<'a>,
             #[serde(skip_serializing_if = "Option::is_none")]
             collection_flagged_data: Option<&'a super::DesignMeshFlaggedCollection>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            collection_received_count: Option<u32>,
             texture_table_record: RecordRef<'a>,
             body_count_offsets: [u64; 2],
             body_record_indices: SliceColumn<'a, DesignMeshBody, u32>,
@@ -345,6 +347,7 @@ impl Serialize for DesignMeshFeature {
             collection_record: RecordRef::from_identity(self.collection.record()),
             collection_base_record: RecordRef::collection_base(&self.collection),
             collection_flagged_data: self.collection.flagged_data.as_ref(),
+            collection_received_count: self.collection.received_count(),
             texture_table_record: RecordRef::from_identity(self.texture_table.record()),
             body_count_offsets: self.body_count_offsets(),
             body_record_indices: SliceColumn::new(&self.bodies, |body| {
