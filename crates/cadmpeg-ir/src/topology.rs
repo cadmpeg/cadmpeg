@@ -201,7 +201,7 @@ pub struct Region {
 
 /// One member of a shell that names no parent of its own: a wire edge or a
 /// free vertex. A shell's faces name it through [`Face::shell`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -435,7 +435,7 @@ impl Face {
 /// `loops` on `Unspecified` is a `Vec`, not a non-empty list: a closed surface
 /// with no boundary is a face with no loop, and nx, sat, step and freecad all
 /// produce one.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -607,7 +607,7 @@ pub struct PcurveUse {
 }
 
 /// The mutually exclusive forms of a loop boundary.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum LoopBoundary {

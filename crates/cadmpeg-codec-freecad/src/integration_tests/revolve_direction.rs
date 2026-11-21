@@ -43,7 +43,7 @@ fn revolve_recipe_sides_agree_with_stored_solid_end_faces() {
         let FeatureOperation::Revolve { construction, op } = operation else {
             unreachable!()
         };
-        assert_eq!(*op, BooleanOp::Join);
+        assert_eq!(*op, BooleanOp::NewBody);
         let axis = construction.axis().expect("axis");
         assert_eq!(axis.origin, cadmpeg_ir::features::FinitePoint3::ZERO);
         assert!((axis.direction.z - 1.0).abs() < EPS_RECIPE_ANGLE);
