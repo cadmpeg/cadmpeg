@@ -11,16 +11,18 @@ use cadmpeg_ir::design::container::{Container, Rollback};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::shared::{Limit, Span};
+use cadmpeg_ir::design::ops::sketch::{EntityDefinition, PlanarCurve};
 use cadmpeg_ir::design::ops::swept::{Extrude, ExtrudeDirection, ExtrudeOrigin};
 use cadmpeg_ir::design::options::{BodyForm, Boolean, BooleanOp};
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
-use cadmpeg_ir::design::selection::{PickTarget, Picks};
+use cadmpeg_ir::design::selection::{PickTarget, Picked, Picks};
 use cadmpeg_ir::design::units::{Quantity, UnitSymbol};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::ids::{BodyId, CoedgeId, EdgeId, FaceId};
+use cadmpeg_ir::sketches::SketchId;
 use cadmpeg_ir::topology::Sense;
 
 use super::expression;
@@ -172,6 +174,62 @@ fn typed_extrude<'a>(target: &'a CadIr, feature: &FeatureId) -> Option<&'a Extru
         FeatureOperation::Extrude(extrude) => Some(extrude.as_ref()),
         _ => None,
     }
+}
+
+const NOT_WRITTEN: &str = "its sketch is not written";
+
+/// The sketch that `picks` take: one pick of the sketch, or picks of regions
+/// of one sketch whose rings use each of its curves that is no construction
+/// once, so that they are the regions the walk of row 5 finds (§6.1,
+/// "Profiles and regions": construction entities bound no region).
+fn picked_sketch<'a>(target: &CadIr, picks: &'a [Picked]) -> Result<&'a SketchId, &'static str> {
+    let sketch = match picks {
+        [Picked {
+            target: PickTarget::Sketch(sketch),
+            ..
+        }] => return Ok(sketch),
+        [Picked {
+            target: PickTarget::SketchRegion { sketch, .. },
+            ..
+        }, ..] => sketch,
+        _ => return Err(NOT_WRITTEN),
+    };
+    let mut rings = Vec::new();
+    for picked in picks {
+        match &picked.target {
+            PickTarget::SketchRegion { sketch: of, region } if of == sketch => {
+                rings.extend(region.outer.iter().chain(region.holes.iter().flatten()));
+            }
+            _ => return Err(NOT_WRITTEN),
+        }
+    }
+    let mut used = rings
+        .iter()
+        .map(|usage| usage.fragment.is_none().then_some(&usage.entity))
+        .collect::<Option<Vec<_>>>()
+        .ok_or("its profile picks fragments of curves")?;
+    let mut curves = target
+        .design
+        .sketch_entities
+        .iter()
+        .filter(|entity| {
+            &entity.sketch == sketch
+                && entity.construction != Some(true)
+                && !matches!(
+                    entity.definition,
+                    EntityDefinition::Free(PlanarCurve::Point(_))
+                )
+        })
+        .map(|entity| &entity.id)
+        .collect::<Vec<_>>();
+    used.sort();
+    curves.sort();
+    if used != curves {
+        return Err(
+            "its profile picks regions that are not every region its sketch's curves bound",
+        );
+    }
+    Ok(sketch)
 }
 
 /// What the rows read.
@@ -332,20 +390,15 @@ impl<'a> Input<'a, '_> {
         Ok(())
     }
 
-    /// Row 4: the profile is one written sketch before the extrude. Returns
+    /// Row 4: the profile is one written sketch before the extrude, picked
+    /// whole or by regions that its walk finds (`picked_sketch`). Returns
     /// its position in the plan and the number of written sketches before
     /// the extrude.
     fn sketch(&self) -> Result<(usize, usize), &'static str> {
-        const NOT_WRITTEN: &str = "its sketch is not written";
         let Picks::Named(members) = &self.extrude.profile.picks else {
             return Err(NOT_WRITTEN);
         };
-        let [picked] = members.as_slice() else {
-            return Err(NOT_WRITTEN);
-        };
-        let PickTarget::Sketch(sketch) = &picked.target else {
-            return Err(NOT_WRITTEN);
-        };
+        let sketch = picked_sketch(self.target, members.as_slice())?;
         let owner = self
             .target
             .design
