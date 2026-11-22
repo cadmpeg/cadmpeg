@@ -1134,15 +1134,13 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 ### SF-02. Right component ownership and profile coordinates
 
-**Question.** Which native role or operand field binds a Right component to the sketch support plane and selects the profile coordinate convention?
+**Question.** Which field binds a Right principal-plane component record that lies outside the profile's own object, or beside another declared or component record of that object, to a profile's support plane, and which profile coordinate convention does it select?
 
-**Known.** A complete profile-local `(4,1)` component occurs with a scoped Front declaration or a lane-default Front reference. The scoped declaration lies in the profile or its immediate context. The matrix identifies the referenced frame. The intrinsic component mapping can lose finite carrier support on the retained profile plane in both forms. The decoder retains the existing profile binding when the component source conflicts with it.
+**Known.** A principal-plane component record with selector `1` inside the profile's own object, a `(4,1)` record or `(5,1)` in parts that number their feature-input objects from `3`, names the Right plane for that profile ahead of a declared Front record of the same object, a Front reference of the preceding object and a lane-default Front reference (`sldprt.md` §2). `sldprt.md` §3.3 gives the Right frame and the profile coordinates. The decoder places such a profile, and the hole positions it gives, on the Right frame. Where a Right record lies only in the preceding object, or the profile holds another declared or component record that gives one other source, or a component frame record lies from the start of the preceding object through the end of the profile, the decoder keeps the binding of SF-01.
 
-**Need.** Establish the support-plane role and profile coordinate rule from explicit fields, including the enclosing reference and operand path. Distinguish finite support from intersections with carrier extensions. Establish each selected form with independent designs, mirrored-polarity controls, and per-sample carrier retention.
+**Need.** Establish the support-plane role and the profile coordinate rule of the remaining Right forms from explicit fields, including the enclosing reference and the operand path. Establish each form with independent designs and mirrored-polarity controls.
 
-**Conflict.** The Right matrix normal is +X. The retained Front component fallback normal is -Y.
-
-**Note.** Right component mappings retain their current interpretation and losses. The scoped and lane Front fallbacks retain their frames. Section 3.3 defines local Top component profile placement.
+**Note.** Profiles of the remaining forms keep their current binding and losses. `sldprt.md` §3.3 gives the Top and Right placement of a profile whose own object holds a principal-plane component record.
 
 ### DI-69. Extrusion Boolean carriers
 
