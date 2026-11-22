@@ -19,8 +19,9 @@
 //! `design.parameter-display-rounded` note names. Where it states none, a
 //! length display is no cache (§5.13). A parameter that a reference
 //! dimension binds is `Driven` and keeps its value (§6.1). A dimension's kind is the quantity its stored record states: the
-//! archive class of the `ResolvedFeatures` scalar it is bound to, the
-//! parameter class that scalar's own record states, the kind the decoder's
+//! archive class of the `ResolvedFeatures` scalar it is bound to and the
+//! parameter class that scalar's own record states (where the two differ,
+//! the dimension has no kind and no value), the kind the decoder's
 //! own parameter took from a record, a relation, or the feature, or the
 //! quantity of the sketch or feature dimension that binds it. A bare display
 //! that none of these types takes the class and stored value of the scalar
@@ -64,7 +65,7 @@ use crate::records::{
     ArchiveParameterClass, Feature, FeatureHistory, FeatureInputLane, FeatureInputScalarRole,
 };
 use crate::resolved_features::assembly::ConfigurationMaps;
-use crate::resolved_features::parameter_classes::{stated_parameters, StatedParameter};
+use crate::resolved_features::parameter_classes::{stated_parameters, StatedParameter, Statement};
 
 /// The kind of a dimension whose quantity the decoder has not read: a bare
 /// number, or an expression over other parameters, that no stored record
@@ -84,21 +85,21 @@ const MM_PER_M: f64 = 1000.0;
 
 /// The decoder's readings of the part's dimensions: its own parameters by
 /// id, the archive class of each `ResolvedFeatures` scalar by id (`None`
-/// where two lanes give one id two classes), the parameter each scalar's own
-/// record states, and the scalars each history feature holds under each
-/// name.
+/// where two lanes give one id two classes), what each scalar's own record
+/// states of its parameter, and the scalars each history feature holds under
+/// each name.
 pub(super) struct Decoded<'a> {
     pub(super) parameters: HashMap<&'a str, &'a cadmpeg_ir::features::parameters::DesignParameter>,
     pub(super) classes: HashMap<&'a str, Option<ArchiveParameterClass>>,
-    pub(super) stated: HashMap<&'a str, StatedParameter>,
+    pub(super) stated: HashMap<&'a str, Statement>,
     pub(super) named: HashMap<(&'a str, &'a str), Vec<NamedScalar>>,
 }
 
-/// A scalar a history feature holds under a dimension's name: the parameter
-/// its record states, and whether it drives the model.
+/// A scalar a history feature holds under a dimension's name: what its
+/// record states of its parameter, and whether it drives the model.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct NamedScalar {
-    pub(super) stated: Option<StatedParameter>,
+    pub(super) stated: Option<Statement>,
     pub(super) driving: bool,
 }
 
@@ -163,8 +164,11 @@ impl<'a> Decoded<'a> {
     /// `unit` and length precision `places` (Rule H1), else the quantity of
     /// its value. The cache is that value only where a stored record gave it:
     /// a bound scalar, or a value that is no reading of the display; else the
-    /// stated parameter's value.
-    /// `None` where none of these states a kind.
+    /// stated parameter's value. `Ok(None)` where none of these states a
+    /// kind. A bound scalar whose class token the decoder's class sources
+    /// name differently, or whose archive class differs from the class its
+    /// record states, gives no kind and no value, whatever the earlier
+    /// reading: [`Unvalued::ClassesDisagree`].
     fn dimension(
         &self,
         id: &ParameterId,
@@ -172,18 +176,28 @@ impl<'a> Decoded<'a> {
         display: Option<Shown>,
         unit: Option<UnitSymbol>,
         places: Option<u32>,
-    ) -> Option<(ValueKind, Option<ParameterValue>)> {
+    ) -> Result<Option<(ValueKind, Option<ParameterValue>)>, Unvalued> {
         use cadmpeg_ir::features::parameters::ParameterValue as V10;
-        let parameter = self.parameter(id, name)?;
+        let Some(parameter) = self.parameter(id, name) else {
+            return Ok(None);
+        };
         let scalar = parameter.native_ref.as_deref();
-        let stated = scalar
-            .and_then(|scalar| self.stated.get(scalar).copied())
-            .filter(|stated| {
-                display.is_none_or(|display| agrees(*stated, display, unit, places) != Some(false))
-            });
-        let class = scalar
-            .and_then(|scalar| self.classes.get(scalar).copied().flatten())
-            .or(stated.map(StatedParameter::class));
+        let archive = scalar.and_then(|scalar| self.classes.get(scalar).copied().flatten());
+        let stated = match scalar.and_then(|scalar| self.stated.get(scalar)) {
+            Some(Statement::Contested) => return Err(Unvalued::ClassesDisagree),
+            Some(Statement::Parameter(stated)) => Some(*stated),
+            None => None,
+        };
+        if archive
+            .zip(stated)
+            .is_some_and(|(archive, stated)| archive != stated.class())
+        {
+            return Err(Unvalued::ClassesDisagree);
+        }
+        let stated = stated.filter(|stated| {
+            display.is_none_or(|display| agrees(*stated, display, unit, places) != Some(false))
+        });
+        let class = archive.or(stated.map(StatedParameter::class));
         let kind = match (class, &parameter.value) {
             (Some(ArchiveParameterClass::Length), _) | (None, Some(V10::Length(_))) => {
                 ValueKind::Quantity(Quantity::LENGTH)
@@ -193,7 +207,7 @@ impl<'a> Decoded<'a> {
             }
             (Some(ArchiveParameterClass::Integer), _) => ValueKind::Integer,
             (Some(ArchiveParameterClass::Scaler), _) => ValueKind::Quantity(Quantity::REAL),
-            (None, _) => return None,
+            (None, _) => return Ok(None),
         };
         let value = parameter
             .value
@@ -206,7 +220,7 @@ impl<'a> Decoded<'a> {
                     .filter(|(stated, _)| *stated == kind)
                     .map(|(_, value)| value)
             });
-        Some((kind, value))
+        Ok(Some((kind, value)))
     }
 
     /// The kind and value of a dimension of the history feature `feature`
@@ -231,9 +245,16 @@ impl<'a> Decoded<'a> {
         let mut counted = Vec::new();
         let mut reason = Unvalued::NoScalar;
         for scalar in scalars {
-            let Some(stated) = scalar.stated else {
-                reason = reason.max(Unvalued::ClassUnread);
-                continue;
+            let stated = match scalar.stated {
+                Some(Statement::Parameter(stated)) => stated,
+                Some(Statement::Contested) => {
+                    reason = reason.max(Unvalued::ClassesDisagree);
+                    continue;
+                }
+                None => {
+                    reason = reason.max(Unvalued::ClassUnread);
+                    continue;
+                }
             };
             match agrees(stated, display, unit, places) {
                 Some(true) => counted.push(*scalar),
@@ -251,7 +272,10 @@ impl<'a> Decoded<'a> {
         if counted.iter().any(|scalar| scalar.stated != first.stated) {
             return Err(Unvalued::Disagrees);
         }
-        first.stated.and_then(typed).ok_or(Unvalued::Disagrees)
+        let Some(Statement::Parameter(stated)) = first.stated else {
+            return Err(Unvalued::Disagrees);
+        };
+        typed(stated).ok_or(Unvalued::Disagrees)
     }
 
     /// The cache of a dimension whose kind no record states: the value of the
@@ -683,6 +707,11 @@ enum Unvalued {
     /// No record of a scalar under its name states a parameter class the
     /// decoder reads.
     ClassUnread,
+    /// The decoder's sources of the parameter class of its bound scalar, or
+    /// of a scalar under its name, name different classes: the sources of a
+    /// class token, or a bound scalar's archive class and the class its record
+    /// states.
+    ClassesDisagree,
     /// The dimension is a length and the part's length unit is not read.
     LengthUnit,
     /// The stored values of the scalars under its name differ from its
@@ -691,10 +720,11 @@ enum Unvalued {
 }
 
 impl Unvalued {
-    const ALL: [Self; 5] = [
+    const ALL: [Self; 6] = [
         Self::Kind,
         Self::NoScalar,
         Self::ClassUnread,
+        Self::ClassesDisagree,
         Self::LengthUnit,
         Self::Disagrees,
     ];
@@ -706,6 +736,9 @@ impl Unvalued {
             Self::NoScalar => "whose feature holds no scalar under the dimension's name",
             Self::ClassUnread => {
                 "whose scalars' records state no parameter class the decoder reads"
+            }
+            Self::ClassesDisagree => {
+                "whose scalars' parameter classes the decoder's class sources name differently"
             }
             Self::LengthUnit => "lengths in a part whose length unit is not read",
             Self::Disagrees => "whose stored values differ from the display or from each other",
@@ -769,38 +802,42 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Readin
     let (kind, value) = match parsed.and_then(cache) {
         Some((kind, value)) => (kind, Some(value)),
         None if user => (ValueKind::Quantity(Quantity::REAL), None),
-        None => match decoded.dimension(
-            &entry.id,
-            name,
-            shown,
-            readings.length_unit,
-            readings.length_places,
-        ) {
-            Some(reading) => reading,
-            None => match shown.filter(|_| !references).map(|shown| {
-                decoded.named_dimension(
-                    &feature.id,
-                    name,
-                    shown,
-                    readings.length_unit,
-                    readings.length_places,
-                )
-            }) {
-                Some(Ok((kind, value))) => (kind, Some(value)),
-                named => {
-                    unread = named.and_then(Result::err);
-                    if native_parameter_is_length(feature, name, Some(text)) {
-                        (ValueKind::Quantity(Quantity::LENGTH), None)
-                    } else if let Some(quantity) = bound {
-                        (ValueKind::Quantity(quantity), None)
-                    } else {
-                        (
-                            ValueKind::Native(cadmpeg_core::nonblank_const!(UNREAD_KIND)),
-                            decoded.native_cache(&entry.id, name, bare),
+        None => match decoded
+            .dimension(
+                &entry.id,
+                name,
+                shown,
+                readings.length_unit,
+                readings.length_places,
+            )
+            .transpose()
+            .or_else(|| {
+                shown.filter(|_| !references).map(|shown| {
+                    decoded
+                        .named_dimension(
+                            &feature.id,
+                            name,
+                            shown,
+                            readings.length_unit,
+                            readings.length_places,
                         )
-                    }
+                        .map(|(kind, value)| (kind, Some(value)))
+                })
+            }) {
+            Some(Ok(reading)) => reading,
+            unvalued => {
+                unread = unvalued.and_then(Result::err);
+                if native_parameter_is_length(feature, name, Some(text)) {
+                    (ValueKind::Quantity(Quantity::LENGTH), None)
+                } else if let Some(quantity) = bound {
+                    (ValueKind::Quantity(quantity), None)
+                } else {
+                    (
+                        ValueKind::Native(cadmpeg_core::nonblank_const!(UNREAD_KIND)),
+                        decoded.native_cache(&entry.id, name, bare),
+                    )
                 }
-            },
+            }
         },
     };
     let display = display

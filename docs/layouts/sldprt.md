@@ -68,7 +68,7 @@ Parsed by:
 
 Spec §2 · layout: byte offsets · size: 8 B
 
-The relation and parameter classes of a sketch dimension's named scalar in the token form; the scalar's name record begins at +8. The parameter-class token at +6 is the two bytes before the name record of every named scalar in the token form.
+The relation and parameter classes of a sketch dimension's named scalar in the token form; the scalar's name record begins at +8. The parameter-class token at +6 is the two bytes before the name record of every named scalar in the token form. A relation class declared in place ends at +2, and the zero u32 at +2 and the parameter-class token at +6 follow it.
 
 Parsed by:
 - `crates/cadmpeg-codec-sldprt/src/resolved_features/parameter_classes.rs`

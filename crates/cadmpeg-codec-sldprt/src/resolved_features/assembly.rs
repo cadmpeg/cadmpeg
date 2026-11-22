@@ -87,9 +87,8 @@ pub(crate) fn lanes(
 /// parameter object whose value it is, from the exact walk of the stream.
 /// Scalars the walk did not reach keep no class. Returns the walk's
 /// `moPMarkRecord_c` records with the features that hold them, and the
-/// `Config-N` class map the lane continues: the map that reconciles with the
-/// stream's map count, else the count alone, or, for a stream that states
-/// none, the classes a consistent walk of `Config-N` places.
+/// classes of the `Config-N` map the lane continues, where a walk of
+/// `Config-N` reconciles with the stream's map count.
 fn type_scalars_from_archive(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -116,25 +115,16 @@ fn type_scalars_from_archive(
     }) else {
         return Ok((Vec::new(), None));
     };
-    let (map, configuration) = match crate::archive::resolved_count(resolved) {
-        Some(count) => {
-            let map = crate::archive::class_index_map(config, count, ctx)?;
-            let configuration = ConfigurationMap::counted(count, map.as_ref());
-            (map, Some(configuration))
-        }
-        None if crate::archive::continues_unstated_count(resolved) => (
-            None,
-            crate::archive::unreconciled_class_index_map(config, ctx)?
-                .map(|classes| ConfigurationMap::unstated(&classes)),
-        ),
-        None => (None, None),
+    let Some(count) = crate::archive::resolved_count(resolved) else {
+        return Ok((Vec::new(), None));
     };
+    let Some(map) = crate::archive::class_index_map(config, count, ctx)? else {
+        return Ok((Vec::new(), None));
+    };
+    let configuration = Some(ConfigurationMap::reconciled(count, &map));
     let Some(version) =
         crate::carchive::walk_version(crate::container::declared_sw_version(scan), config)
     else {
-        return Ok((Vec::new(), configuration));
-    };
-    let Some(map) = map else {
         return Ok((Vec::new(), configuration));
     };
     let Some(mut walk) = crate::carchive::walk_configuration(ctx, &map, resolved, Some(version))?
