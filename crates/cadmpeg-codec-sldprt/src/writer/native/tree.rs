@@ -125,7 +125,11 @@ pub(super) fn resolved_features(
     // Dimension parameters take identifiers after the stored bodies' and the
     // user features'.
     let features = archive.count32(facts.bodies.len() + facts.features.len(), "feature count");
-    let mut next_id = archive.tree_id(ids::MARKUPS + 1).saturating_add(features);
+    let first = archive.tree_id(ids::MARKUPS + 1);
+    let mut next_id = match first.checked_add(features) {
+        Some(id) => id,
+        None => archive.count32(usize::MAX, "object identifier"),
+    };
     let mut profiles = Vec::new();
     for feature in facts.features {
         let profile = match feature {
@@ -141,8 +145,8 @@ pub(super) fn resolved_features(
                         "SLDPRT native skeleton: an extrusion's profile is no earlier sketch",
                     ));
                 };
-                super::extrude::extrusion(&mut archive, extrusion, profile, part.atom, next_id);
-                next_id = next_id.saturating_add(1);
+                let parameter = super::sketch::take_id(&mut archive, &mut next_id);
+                super::extrude::extrusion(&mut archive, extrusion, profile, part.atom, parameter);
                 None
             }
         };

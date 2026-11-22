@@ -56,6 +56,17 @@ pub(in crate::writer) const FEATURE_ZERO_RUNS: &str = "each native sketch's 76-b
      dimension handle (42, 20 and 14 bytes), its depth parameter's placement block (84, 262 and \
      40 bytes) and its favourite handle (206, 92, 12, 40 and 50 bytes)";
 
+/// The object identifier `next_id` holds, which it then advances past; an
+/// identifier past the field's range is the stream's refusal.
+pub(super) fn take_id(archive: &mut Archive, next_id: &mut u32) -> u32 {
+    let id = *next_id;
+    *next_id = match id.checked_add(1) {
+        Some(next) => next,
+        None => archive.count32(usize::MAX, "object identifier"),
+    };
+    id
+}
+
 /// The slot of a placeholder entity handle.
 const PLACEHOLDER_SLOT: u16 = 0x777f;
 
@@ -331,8 +342,8 @@ fn dimension_groups(archive: &mut Archive, sketch: &Sketch, next_id: &mut u32) {
         archive.f64(dimension.value);
         archive.u8(0);
         archive.null();
-        archive.u32(*next_id);
-        *next_id = next_id.saturating_add(1);
+        let id = take_id(archive, next_id);
+        archive.u32(id);
         archive.zeros(16);
         archive.u32(dimension.code);
         let placeholder = dimension.operands.len() == 1;
