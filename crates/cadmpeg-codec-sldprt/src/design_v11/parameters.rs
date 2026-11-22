@@ -528,19 +528,33 @@ impl<'a> Entries<'a> {
         readings: &Readings<'_>,
     ) -> (Vec<DesignParameter>, Vec<LossNote>) {
         let aliases = Aliases::new(&self.list);
-        let finest = self
+        let mut read_entries = self
             .list
             .iter()
-            .filter_map(|entry| Shown::of(entry.text))
-            .map(|shown| shown.rounding)
-            .fold(f64::INFINITY, f64::min);
+            .map(|entry| read(entry, &aliases, readings, None))
+            .collect::<Vec<_>>();
+        if !readings.confirmed.is_empty() {
+            let finest = self
+                .list
+                .iter()
+                .zip(&read_entries)
+                .filter(|(_, reading)| reading.kind == ValueKind::Quantity(Quantity::LENGTH))
+                .filter_map(|(entry, _)| Shown::of(entry.text))
+                .map(|shown| shown.rounding)
+                .fold(f64::INFINITY, f64::min);
+            for (entry, reading) in self.list.iter().zip(&mut read_entries) {
+                if readings.confirmed.contains(&entry.id) {
+                    *reading = read(entry, &aliases, readings, Some(finest));
+                }
+            }
+        }
         let mut rounded = NamedCount::default();
         let mut unvalued = Unvalued::ALL.map(|reason| (reason, NamedCount::default()));
         let parameters = self
             .list
             .iter()
-            .map(|entry| {
-                let reading = read(entry, &aliases, readings, finest);
+            .zip(read_entries)
+            .map(|(entry, reading)| {
                 if reading.rounded {
                     rounded.push(entry.id.as_str());
                 }
@@ -669,7 +683,7 @@ enum Unvalued {
     Disagrees,
     /// The line that drives it gives the length the equation manager stores,
     /// and its display rounds that length at fewer decimal places than the
-    /// document's finest display.
+    /// document's finest length display.
     Coarse,
 }
 
@@ -695,15 +709,24 @@ impl Unvalued {
             Self::Disagrees => "whose stored values differ from the display or from each other",
             Self::Coarse => {
                 "whose display rounds the length their equation gives at fewer decimal places than \
-                 the document's finest display"
+                 the document's finest length display"
             }
         }
     }
 }
 
-/// The reading of `entry`; `finest` is half a unit in the finest decimal
-/// place of any parameter text of the document that reads as a number.
-fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>, finest: f64) -> Reading {
+/// The reading of `entry`. Keywords shows a length at the document's length
+/// precision and drops trailing zeros. `finest` stands for that precision:
+/// half a unit in the finest decimal place of the bare displays the decoder
+/// reads as lengths. A dimension in `readings.confirmed` takes its stored
+/// length where its display rounds that length within `finest`; `None`
+/// leaves every dimension unrounded.
+fn read(
+    entry: &Entry<'_>,
+    aliases: &Aliases,
+    readings: &Readings<'_>,
+    finest: Option<f64>,
+) -> Reading {
     let decoded = &readings.decoded;
     let user = entry.owner.is_none();
     let (feature, name, text) = (entry.feature, entry.name.as_str(), entry.text);
@@ -789,10 +812,12 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>, finest: f
             },
         },
     };
-    let (kind, value) = match (kind, value) {
-        (kind @ (ValueKind::Quantity(Quantity::LENGTH) | ValueKind::Native(_)), None)
-            if !user && !references && readings.confirmed.contains(&entry.id) =>
-        {
+    let (kind, value) = match (kind, value, finest) {
+        (
+            kind @ (ValueKind::Quantity(Quantity::LENGTH) | ValueKind::Native(_)),
+            None,
+            Some(finest),
+        ) if !user && !references && readings.confirmed.contains(&entry.id) => {
             let rounded = |rounding: f64| {
                 shown
                     .zip(readings.manager.get(&entry.id))
@@ -810,7 +835,7 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>, finest: f
                 }
             }
         }
-        other => other,
+        (kind, value, _) => (kind, value),
     };
     let display = display
         .filter(|_| kind == ValueKind::Quantity(Quantity::LENGTH))
