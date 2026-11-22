@@ -364,7 +364,7 @@ Payload kind is determined from **decompressed bytes**, not from `type_id`.
 | `<?xml` / UTF-16LE BOM+XML / byte0 `86`+XML / byte0 `85`+`<?xml` | XML       |
 | `unqlite`                                       | UnQLite database            |
 
-An XML payload stores its text as UTF-8, as UTF-16LE after the BOM `ff fe`, or as either form after one lead byte `85` or `86`. The `swXmlContents/KeyWords` section and a compound-file `KeyWords__ZLB` stream hold the Keywords feature history, a `Keywords` root element. A Keywords text that is not well-formed is read through its last complete markup before the first error, with the elements open there closed; the innermost open element is read only when it holds a complete child element. A namespace prefix that the text uses and does not declare is part of the element or attribute name.
+An XML payload stores its text as UTF-8, as UTF-16LE after the BOM `ff fe`, or as UTF-8 after one lead byte `85` or `86`. The `swXmlContents/KeyWords` section and a compound-file `KeyWords__ZLB` stream hold the Keywords feature history, a `Keywords` root element. Its first child element can be an `Application` element whose `Keyword` children each hold a `Name` attribute and a text value (CM-18).
 
 PNG preview dimensions and encoding fields are in `IHDR`. BMP thumbnail width, height, planes, bit depth, compression, and image size are in the 40-byte BITMAPINFOHEADER after the leading file-size word. The `swSolidWorks` XML root carries version, creation time, and path; its `swModel` child carries model and configuration names.
 
