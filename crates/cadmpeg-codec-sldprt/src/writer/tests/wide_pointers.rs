@@ -160,3 +160,40 @@ fn a_compact_record_past_the_short_range_stores_its_attr_in_the_native_four_byte
         [0x00, 0x32, 0xfe, 0xfe, 0x00, 0x01]
     );
 }
+
+#[test]
+fn a_nurbs_surface_whose_wide_references_follow_a_quotient_equal_to_an_array_count_reads_back() {
+    use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+    use cadmpeg_ir::math::Point3;
+
+    // Four distinct u knots, so the u multiplicity and u knot arrays hold four
+    // entries, the quotient word `00 04` of each wide reference before them.
+    let u_knots = vec![0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0, 3.0, 3.0];
+    let v_knots = vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0];
+    let rows = (0..6)
+        .map(|u| {
+            (0..4)
+                .map(|v| Point3::new(f64::from(u), f64::from(v), f64::from(u * v) / 10.0))
+                .collect()
+        })
+        .collect();
+    let surface = NurbsSurface::from_lanes(
+        NurbsSurfaceAxis::new(3, u_knots.clone(), false),
+        NurbsSurfaceAxis::new(3, v_knots, false),
+        NurbsSurfaceLanes::new(rows, None),
+        false,
+    )
+    .expect("bicubic surface");
+    let mut bytes = Vec::new();
+    let mut next = 4 * 32_767 + 300;
+    crate::writer::write_nurbs_surface(&mut bytes, 2, &surface, &mut next, 1.0, "test:surface#q4")
+        .expect("surface is written");
+    let carrier = crate::brep::spline::scan_surface_carriers(&bytes, &mut Vec::new())
+        .remove(&2)
+        .expect("surface carrier reads back");
+    let Some(SolvedSurfaceGeometry::Nurbs(decoded)) = carrier.geometry.solved() else {
+        panic!("expected a NURBS surface");
+    };
+    assert_eq!(decoded.u_knots().as_slice(), u_knots.as_slice());
+}

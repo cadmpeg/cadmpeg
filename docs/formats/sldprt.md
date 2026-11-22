@@ -3080,7 +3080,7 @@ B-spline **array records** are reached by attr reference, not inline:
 
 The `attr` of each array record is a pointer (§4): past `0x7fff` it takes the 4-byte form, and the values follow it.
 
-The compact form has a nonzero count. The descriptor reference role selects its element width: control-grid and unique-knot references select f64 BE values, and multiplicity references select u16 BE values. A compact control array count equals `u_pole_count * v_pole_count * vertex_dim`. A compact knot and multiplicity pair has one common physical count at least as large as the declared distinct-knot count. Multiplicities inside the declared prefix are nonzero, and every trailing multiplicity is zero.
+The compact form has a nonzero count. A compact array does not start inside a framed descriptor: a quotient word `00 0q` followed by a reference there is part of the descriptor's references (§4). The descriptor reference role selects its element width: control-grid and unique-knot references select f64 BE values, and multiplicity references select u16 BE values. A compact control array count equals `u_pole_count * v_pole_count * vertex_dim`. A compact knot and multiplicity pair has one common physical count at least as large as the declared distinct-knot count. Multiplicities inside the declared prefix are nonzero, and every trailing multiplicity is zero.
 
 For rational arrays (`dimension == 4`) `00 2d` and compact control arrays store `[x*w, y*w, z*w, w]` per pole, and every weight `w` is positive. Surface control grids use native index `u*n_v + v`. A trailing zero-multiplicity array entry is not part of the knot vector; its paired f64 slot is physically present but ignored.
 
