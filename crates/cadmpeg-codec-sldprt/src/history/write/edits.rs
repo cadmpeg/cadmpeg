@@ -412,15 +412,11 @@ impl ReadBack {
         )
     }
 
-    /// Judges `claims` against `written`, the written part decoded; `None`
-    /// when it does not decode.
+    /// Judges `claims`, none of which asks to withhold its feature, against
+    /// `written`, the written part decoded; `None` when it does not decode.
     fn of(claims: &[FeatureClaims], written: Option<&CadIr>) -> Self {
         let mut read_back = Self::default();
         for claim in claims {
-            if claim.withhold {
-                read_back.withhold.push(claim.id.clone());
-                continue;
-            }
             let read = written
                 .and_then(|written| claim.read(written))
                 .and_then(|read| {

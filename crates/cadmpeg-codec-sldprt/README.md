@@ -130,13 +130,17 @@ records cannot carry keeps the stored record or value: an edit of a
 display-only relation parameter or a parameter value that the written
 expression does not state gets a `writer.parameter-edit-unwritten` loss, and
 an edited compact selection, a feature definition that the encoder cannot
-restate, or a construction edit that the written records read back as stored
-gets a `writer.feature-edit-unwritten` loss. A feature that keeps its stored
-definition record keeps its stored operands and source properties too, and its
-loss names each edit of its definition, dependencies and source properties
-that the record does not carry. A record field that no
-edit moves keeps its stored state: an unedited feature or parameter is written
-as stored, and a rename changes only the name and the references that name it.
+restate, or a construction edit that the written part, decoded again, does not
+read back as edited gets a `writer.feature-edit-unwritten` loss, and the
+feature is written with its stored definition record. A feature that keeps its
+stored definition record keeps its stored operands and source properties too,
+and its loss names each edit of its definition, dependencies and source
+properties that the written part does not read back as edited. A record field
+that no edit moves keeps its stored state: an unedited feature or parameter is
+written as stored, and a rename changes only the name and the references that
+name it. The decoder fills some property groups of a record from the
+feature-input lane as one unit (a revolution axis, a coordinate-system or
+reference-plane frame); an edit of one member writes the whole group.
 The writer has no compound-file serializer: an edited compound-file part is
 written as its stored part, and a `writer.compound-file-edit-unwritten` loss
 (severity error) states that no edit is written. `cadmpeg convert
