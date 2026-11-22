@@ -272,20 +272,9 @@ jobs:
       - name: Match cargo's job count to the runner
         uses: ./.github/actions/cargo-job-count
 
-      - name: Add swap for test builds
-        shell: bash
-        run: |
-          set -euo pipefail
-          df -h /mnt
-          sudo fallocate -l 4G /mnt/cadmpeg-swap
-          sudo chmod 600 /mnt/cadmpeg-swap
-          sudo mkswap /mnt/cadmpeg-swap
-          sudo swapon /mnt/cadmpeg-swap
-          sudo sysctl vm.swappiness=1
-          swapon --show
-          free -m
-
       - name: Limit broad test builds
+        # A one-codec build peaks near 10 GB at four jobs. Broader builds
+        # swap at three or four jobs on the 16 GB runner, so they keep two.
         shell: bash
         run: |
           codecs="$(python3 -c 'import json, os; print(len(json.loads(os.environ["CI_CODEC_FEATURES"])))')"
@@ -315,14 +304,10 @@ jobs:
       - name: Unit and integration tests
         # Compile selected packages and their dependencies before running.
         # A separate `cargo build` step would repeat that compilation. The
-        # memory line every 10 seconds stays in the log if the runner stops.
+        # memory line every 30 seconds stays in the log if the runner stops.
         shell: bash
         run: |
-          (while sleep 10; do
-            free -m | awk 'NR==2 {printf "memory used %s of %s MiB; ", $3, $2} NR==3 {printf "swap used %s of %s MiB; ", $3, $2}'
-            awk '/^pswpin / {printf "swap pages in %s; ", $2} /^pswpout / {print "swap pages out " $2}' /proc/vmstat
-          done) &
-          (stdbuf -oL vmstat -n 1 | awk 'NR > 3 && ($7 || $8) {print "swap activity in " $7 " out " $8 " KiB/s"; fflush()}') &
+          (while sleep 30; do free -m | awk 'NR==2 {print "memory used " $3 " of " $2 " MiB"}'; done) &
           python3 scripts/ci_cargo.py nextest run --bins --tests --no-fail-fast
 
       - name: Inventor CLI evidence tests
