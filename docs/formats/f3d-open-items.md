@@ -3975,7 +3975,7 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Note.** The decoder reads the flagged payload with the `{T: 3}` layout, retains the flag on the native split-stream record, and reports `mesh.component-flag-uninterpreted`.
 
-### DR-920. Version-3 settings reference prefix
+### DR-1029. Version-3 settings reference prefix
 
 **Question.** Where are the override mask and optional inputs in the version-3 sheet-metal settings reference prefix, and which control does its first reference supply?
 
