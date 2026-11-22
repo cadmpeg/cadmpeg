@@ -416,26 +416,26 @@ pub(crate) mod design_parameter_typed_compact_owned_prefix {
     pub(crate) const EXPRESSION_LENGTH: usize = 81;
 }
 
-/// Byte offsets for the `design_parameter_wide_discriminated_prefix` record.
+/// Byte offsets for the `design_parameter_discriminated_prefix` record.
 ///
-/// Spec §3.1. Record length 35 B.
+/// Spec §3.1. Record length 31 B.
 ///
 /// ```text
-/// Offsets are relative to the indexed header of a wide discriminated parameter through the comment code-unit count. The comment code units follow, and every later field moves on by their byte length.
+/// Offsets are relative to the indexed header of a discriminated parameter through the comment code-unit count. The comment code units follow, and every later field moves on by their byte length. The wide discriminated form stores every field from the zero run on four bytes later.
 /// ```
-pub(crate) mod design_parameter_wide_discriminated_prefix {
+pub(crate) mod design_parameter_discriminated_prefix {
     /// Record length in bytes. Spec §3.1.
-    pub(crate) const LEN: usize = 35;
-    /// Offset of `zero_run_15` (`bytes[15]`). Spec §3.1.
-    pub(crate) const ZERO_RUN_15: usize = 11;
+    pub(crate) const LEN: usize = 31;
+    /// Offset of `zero_run_11` (`bytes[11]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_11: usize = 11;
     /// Offset of `family_discriminator` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const FAMILY_DISCRIMINATOR: usize = 26;
-    /// Offset of `reserved_30` (`u8`). Spec §3.1.
-    pub(crate) const RESERVED_30: usize = 30;
-    /// Stated value of `reserved_30` (`u8`). Spec §3.1.
-    pub(crate) const RESERVED_30_VALUE: u8 = 0;
+    pub(crate) const FAMILY_DISCRIMINATOR: usize = 22;
+    /// Offset of `reserved_26` (`u8`). Spec §3.1.
+    pub(crate) const RESERVED_26: usize = 26;
+    /// Stated value of `reserved_26` (`u8`). Spec §3.1.
+    pub(crate) const RESERVED_26_VALUE: u8 = 0;
     /// Offset of `comment_length` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const COMMENT_LENGTH: usize = 31;
+    pub(crate) const COMMENT_LENGTH: usize = 27;
 }
 
 /// Byte offsets for the `design_parameter_comment_discriminated_prefix` record.
