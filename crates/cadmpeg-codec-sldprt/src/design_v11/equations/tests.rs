@@ -212,7 +212,7 @@ fn sides(first: &mut bool, assigned: (&str, f64), tokens: &[Token<'_>]) -> Vec<u
     let mut bytes = 1u16.to_le_bytes().to_vec();
     bytes.extend(dimension_reference(first, assigned.0, assigned.1));
     bytes.extend(counted_utf16(&format!("\"{}\"", assigned.0)));
-    bytes.extend([0, 0, 0, 0, 1, 0, 0, 0, 0x4d, 0x02]);
+    bytes.extend([0, 0, 0, 0, 1, 0, 0, 0, 0x5a, 0xa5]);
     bytes.extend(EXPRESSION_SIDE_TOKEN.to_le_bytes());
     bytes.extend(u16::try_from(tokens.len() + 1).unwrap().to_le_bytes());
     let plain = |bytes: &mut Vec<u8>, declare: &mut bool, text: &str, kind: u32| {
@@ -1243,17 +1243,39 @@ fn reading_lines_that_store_different_values_give_none() {
             Token::Plain("4", 2),
         ],
     );
+    let eighth = sides(
+        &mut first,
+        ("Eighth@Boss", 0.0055),
+        &[
+            Token::Dimension("Lead@Boss", 0.044),
+            Token::Plain("/", 3),
+            Token::Plain("8", 2),
+        ],
+    );
+    let keywords = br#"<Keywords Name="Bracket">
+    <Extrusion Name="Boss" Type="BossExtrude" id="7">
+        <Dimension Name="Lead">44</Dimension>
+        <Dimension Name="Half">22</Dimension>
+        <Dimension Name="Quarter">11</Dimension>
+        <Dimension Name="Eighth">5.5</Dimension>
+    </Extrusion>
+</Keywords>"#;
     let (ir, _) = decode_relations(
-        &boss_keywords("44", "22", "11"),
+        keywords,
         MILLIMETRE,
-        &[half, ("\"Quarter@Boss\" = \"Lead@Boss\" / 4", quarter)],
+        &[
+            half,
+            ("\"Quarter@Boss\" = \"Lead@Boss\" / 4", quarter),
+            ("\"Eighth@Boss\" = \"Lead@Boss\" / 8", eighth),
+        ],
     );
     assert!(
         is_untyped(&ir, "Lead"),
-        "lines that store different values beside Lead type it with neither: {:?}",
+        "lines that store different values beside Lead type it with none of them, the first \
+         or the last: {:?}",
         parameter(&ir, "Lead")
     );
-    for name in ["Half", "Quarter"] {
+    for name in ["Half", "Quarter", "Eighth"] {
         assert!(
             matches!(
                 parameter(&ir, name).definition,
@@ -1262,4 +1284,85 @@ fn reading_lines_that_store_different_values_give_none() {
             "{name}"
         );
     }
+}
+
+/// A part whose `Half` shows `half` and is driven by
+/// `"Half@Boss" = "Lead@Boss" / 3`, the relation storing 1.3 mm beside
+/// `Lead` and `third` metres beside `Half`; `Quarter` shows `quarter`.
+fn decode_third(half: &str, quarter: &str, third: f64) -> (CadIr, Vec<LossNote>) {
+    let mut first = true;
+    let owned = sides(
+        &mut first,
+        ("Half@Boss", third),
+        &[
+            Token::Dimension("Lead@Boss", 0.0013),
+            Token::Plain("/", 3),
+            Token::Plain("3", 2),
+        ],
+    );
+    decode_relations(
+        &boss_keywords("1.3", half, quarter),
+        MILLIMETRE,
+        &[("\"Half@Boss\" = \"Lead@Boss\" / 3", owned)],
+    )
+}
+
+#[test]
+fn a_display_that_rounds_the_length_its_line_gives_takes_the_stored_length() {
+    let third = 0.0013 / 3.0;
+    let (ir, losses) = decode_third("0.43", "2.5", third);
+    let half = parameter(&ir, "Half");
+    assert_eq!(half.kind, ValueKind::Quantity(Quantity::LENGTH));
+    match &half.value {
+        Some(ParameterValue::Number(value)) => assert!((value.get() - 1.3 / 3.0).abs() < 1e-9),
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(
+        neutral_text(half),
+        (
+            "$0 / 3".to_owned(),
+            vec![reference_to(parameter(&ir, "Lead"))]
+        )
+    );
+    assert!(messages(&losses, SldprtLossCode::DesignEquationSource).is_empty());
+    let unvalued = messages(&losses, SldprtLossCode::DesignParameterValueUnread);
+    assert!(
+        unvalued
+            .iter()
+            .all(|message| !message.contains(half.id.as_str())),
+        "{unvalued:?}"
+    );
+    assert_no_design_findings(&ir);
+
+    let (ir, losses) = decode_third("0.43", "2.505", third);
+    let half = parameter(&ir, "Half");
+    assert!(
+        is_untyped(&ir, "Half"),
+        "a finer display elsewhere: {half:?}"
+    );
+    assert!(matches!(
+        half.definition,
+        ParameterDefinition::Expression(Expression::Source { .. })
+    ));
+    let unvalued = messages(&losses, SldprtLossCode::DesignParameterValueUnread);
+    assert!(
+        unvalued.len() == 1
+            && unvalued[0].contains("fewer decimal places")
+            && unvalued[0].contains(half.id.as_str()),
+        "{unvalued:?}"
+    );
+
+    let (ir, losses) = decode_third("0.43", "2.5", 0.000_432);
+    let half = parameter(&ir, "Half");
+    assert!(
+        is_untyped(&ir, "Half"),
+        "a stored value the line does not give: {half:?}"
+    );
+    let unvalued = messages(&losses, SldprtLossCode::DesignParameterValueUnread);
+    assert!(
+        unvalued
+            .iter()
+            .all(|message| !message.contains("fewer decimal places")),
+        "{unvalued:?}"
+    );
 }

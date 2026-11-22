@@ -25,7 +25,10 @@
 //! quantity of the sketch or feature dimension that binds it. A bare display
 //! that none of these types takes the class and stored value of the scalar
 //! its feature holds under its name, where that value shows the display
-//! (Rule H1). A dimension whose kind no record states keeps the number its bound
+//! (Rule H1). A bare display that rounds the length the equation manager
+//! stores beside the dimension takes that length where the line that drives
+//! the dimension, evaluated over the values stored beside its names, gives
+//! it. A dimension whose kind no record states keeps the number its bound
 //! scalar stores, as a `Native` kind holds it (§5.12). The
 //! `design.parameter-value-unread` note names each dimension whose text is a
 //! bare number and that still has no value.
@@ -470,6 +473,9 @@ pub(super) struct Readings<'a> {
     /// The value the active configuration's equation manager stores beside
     /// each dimension its lines name: metres, radians, or a count.
     pub(super) manager: HashMap<ParameterId, f64>,
+    /// The dimensions whose stored value the line that drives them gives,
+    /// evaluated over the values stored beside the names it reads.
+    pub(super) confirmed: HashSet<ParameterId>,
 }
 
 /// The parameters of the timeline's features and of the equations folders,
@@ -522,13 +528,19 @@ impl<'a> Entries<'a> {
         readings: &Readings<'_>,
     ) -> (Vec<DesignParameter>, Vec<LossNote>) {
         let aliases = Aliases::new(&self.list);
+        let finest = self
+            .list
+            .iter()
+            .filter_map(|entry| Shown::of(entry.text))
+            .map(|shown| shown.rounding)
+            .fold(f64::INFINITY, f64::min);
         let mut rounded = NamedCount::default();
         let mut unvalued = Unvalued::ALL.map(|reason| (reason, NamedCount::default()));
         let parameters = self
             .list
             .iter()
             .map(|entry| {
-                let reading = read(entry, &aliases, readings);
+                let reading = read(entry, &aliases, readings, finest);
                 if reading.rounded {
                     rounded.push(entry.id.as_str());
                 }
@@ -655,15 +667,20 @@ enum Unvalued {
     /// The stored values of the scalars under its name differ from its
     /// display or from each other.
     Disagrees,
+    /// The line that drives it gives the length the equation manager stores,
+    /// and its display rounds that length at fewer decimal places than the
+    /// document's finest display.
+    Coarse,
 }
 
 impl Unvalued {
-    const ALL: [Self; 5] = [
+    const ALL: [Self; 6] = [
         Self::Kind,
         Self::NoScalar,
         Self::ClassUnread,
         Self::LengthUnit,
         Self::Disagrees,
+        Self::Coarse,
     ];
 
     /// The note's words for the dimensions with this reason.
@@ -676,11 +693,17 @@ impl Unvalued {
             }
             Self::LengthUnit => "lengths in a part whose length unit is not read",
             Self::Disagrees => "whose stored values differ from the display or from each other",
+            Self::Coarse => {
+                "whose display rounds the length their equation gives at fewer decimal places than \
+                 the document's finest display"
+            }
         }
     }
 }
 
-fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Reading {
+/// The reading of `entry`; `finest` is half a unit in the finest decimal
+/// place of any parameter text of the document that reads as a number.
+fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>, finest: f64) -> Reading {
     let decoded = &readings.decoded;
     let user = entry.owner.is_none();
     let (feature, name, text) = (entry.feature, entry.name.as_str(), entry.text);
@@ -766,6 +789,29 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Readin
             },
         },
     };
+    let (kind, value) = match (kind, value) {
+        (kind @ (ValueKind::Quantity(Quantity::LENGTH) | ValueKind::Native(_)), None)
+            if !user && !references && readings.confirmed.contains(&entry.id) =>
+        {
+            let rounded = |rounding: f64| {
+                shown
+                    .zip(readings.manager.get(&entry.id))
+                    .and_then(|(shown, stored)| {
+                        manager_rounded(shown, *stored, readings.length_unit, rounding)
+                    })
+            };
+            match rounded(finest) {
+                Some(value) => (ValueKind::Quantity(Quantity::LENGTH), Some(value)),
+                None => {
+                    if rounded(f64::INFINITY).is_some() {
+                        unread = Some(Unvalued::Coarse);
+                    }
+                    (kind, None)
+                }
+            }
+        }
+        other => other,
+    };
     let display = display
         .filter(|_| kind == ValueKind::Quantity(Quantity::LENGTH))
         .map(|display| match display {
@@ -819,6 +865,36 @@ fn manager_length(number: f64, stored: f64, unit: Option<UnitSymbol>) -> Option<
     let metres = number * canonical(unit?)?.1 / MM_PER_M;
     let same = |a: f64, b: f64| (a - b).abs() <= EPS_STORED_DISPLAY * a.abs().max(b.abs());
     (number != 0.0 && same(metres, stored) && !same(number, stored))
+        .then(|| FiniteReal::new(stored * MM_PER_M).map(ParameterValue::Number))
+        .flatten()
+}
+
+/// The length the equation manager's `stored` metres give a dimension whose
+/// bare display `shown` rounds them, where the line that drives the dimension
+/// gives that value: the stored value, where `shown` is the stored value in
+/// exactly one of millimetres and inches, the part's length unit `unit`,
+/// within half a unit in its own last decimal place or `finest`, whichever is
+/// finer, and the text at its own places shows neither the stored number
+/// itself nor the stored number in degrees (`docs/formats/sldprt.md`).
+fn manager_rounded(
+    shown: Shown,
+    stored: f64,
+    unit: Option<UnitSymbol>,
+    finest: f64,
+) -> Option<ParameterValue> {
+    let allowed = Shown {
+        number: shown.number,
+        rounding: shown.rounding.min(finest),
+    };
+    let shows = |symbol| Some(allowed.shows(stored * MM_PER_M / canonical(symbol)?.1));
+    let (millimetres, inches) = (shows(UnitSymbol::Mm)?, shows(UnitSymbol::In)?);
+    let in_unit = match unit? {
+        UnitSymbol::Mm => millimetres && !inches,
+        UnitSymbol::In => inches && !millimetres,
+        _ => false,
+    };
+    let other_reading = shown.shows(stored) || shown.shows(stored.to_degrees());
+    (shown.number != 0.0 && in_unit && !other_reading)
         .then(|| FiniteReal::new(stored * MM_PER_M).map(ParameterValue::Number))
         .flatten()
 }
