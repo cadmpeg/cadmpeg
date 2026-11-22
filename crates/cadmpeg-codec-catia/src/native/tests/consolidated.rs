@@ -982,7 +982,9 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
             .is_ok()
     );
     assert!(match revolution.definition() {
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(matched_payload) => matches!(
+        cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Revolution(
+            matched_payload,
+        ) => matches!(
             (
                 matched_payload.angular_interval().endpoints(),
                 &matched_payload.parameter_interval().map(

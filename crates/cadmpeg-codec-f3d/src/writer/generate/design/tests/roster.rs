@@ -147,6 +147,66 @@ impl Segment {
                 |row| (row.0.as_str(), row.2),
             )
     }
+
+    /// The record indices of the type `guid`, each with the type's version.
+    pub(super) fn records_of(&self, guid: &str) -> Vec<(u64, u32)> {
+        self.types
+            .iter()
+            .filter(|row| row.0.eq_ignore_ascii_case(guid))
+            .flat_map(|row| row.4.iter().map(|index| (*index, row.2)))
+            .collect()
+    }
+}
+
+/// Each user parameter record is framed by the version of the type the
+/// `MetaStream` registers for it (f3d.md §3.1): the eleven-byte header with
+/// its comment, the null owner, and the nine-byte expression trailer at
+/// version 7 or the ten-byte one at version 8, whose last byte is the
+/// document flag.
+#[test]
+fn every_parameter_record_closes_with_the_trailer_of_its_type_version() {
+    let mut ir = scoped_cube();
+    ir.design.parameters[0].comment = Some("overall width".into());
+    let (_, _, bytes) = write_bytes(&ir);
+    let design = segment(&bytes, "FusionDesignSegmentType1");
+    let mut written = Vec::new();
+    for (index, version) in design.records_of(super::super::types::PARAMETER.guid) {
+        let record = design.record(index);
+        let trailer = match version {
+            7 => 9,
+            8 => 10,
+            other => panic!("parameter type version {other}"),
+        };
+        assert_eq!(&record[11..22], &[0; 11], "record {index}");
+        assert!(u32_at(record, 22) <= 6, "record {index}");
+        assert_eq!(record[26], 0, "record {index}");
+        let mut reader = Reader {
+            bytes: record,
+            at: 27,
+        };
+        let comment = reader.utf16();
+        reader.u32();
+        assert_eq!(reader.take(1), [0], "record {index}: the null owner");
+        reader.utf16();
+        let mut expected = vec![0; trailer];
+        expected[trailer - 1] = 1;
+        assert_eq!(reader.take(trailer), expected, "record {index}");
+        let kind = reader.utf16();
+        assert_eq!(reader.u32(), 0, "record {index}: the text value");
+        written.push((kind, comment));
+    }
+    assert_eq!(
+        u64::try_from(written.len()).expect("count"),
+        parameters(&design)
+    );
+    for expected in [("User Parameter", "overall width"), ("User Parameter", "")] {
+        assert!(
+            written
+                .iter()
+                .any(|(kind, comment)| (kind.as_str(), comment.as_str()) == expected),
+            "{expected:?} in {written:?}"
+        );
+    }
 }
 
 fn design() -> (Segment, Vec<u8>) {

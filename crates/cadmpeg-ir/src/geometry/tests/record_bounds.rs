@@ -5,7 +5,8 @@ use serde::{
     Deserialize, Deserializer,
 };
 
-use crate::geometry::{ProceduralSurface, ProceduralSurfaceDefinition, RecordBounds};
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use crate::geometry::{ProceduralSurface, RecordBounds};
 use crate::ids::{ProceduralSurfaceId, SurfaceId};
 
 fn id() -> ProceduralSurfaceId {

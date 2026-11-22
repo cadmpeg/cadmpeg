@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::{decode::curve_point, finite_or_refusal};
-use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 use cadmpeg_ir::index::{ModelIndex, StandardIndex};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::loss::LossNote;
@@ -86,7 +86,7 @@ pub(super) fn admit(
         });
         let fit = construction
             .and_then(cadmpeg_ir::geometry::ProceduralCurve::cache_fit_tolerance)
-            .map(cadmpeg_ir::geometry::FitTolerance::get);
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get);
         for (side, id) in edge.vertices().enumerate() {
             if !candidates.contains(id.as_str()) {
                 continue;
