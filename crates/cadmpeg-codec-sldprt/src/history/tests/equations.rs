@@ -731,7 +731,7 @@ fn decode_applies_owned_feature_units_to_resolved_scalar() {
 }
 
 #[test]
-fn configuration_local_modeling_edits_without_brep_are_refused() {
+fn inconsistent_configuration_local_edits_are_refused_and_consistent_ones_written_and_named() {
     use cadmpeg_ir::features::edge_treatments::RadiusSpec;
     use cadmpeg_ir::features::parameters::ParameterValue;
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};

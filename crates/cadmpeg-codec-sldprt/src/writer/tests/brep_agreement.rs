@@ -595,6 +595,16 @@ fn a_model_suppression_with_an_unedited_snapshot_is_written_and_named_once() {
         "{:?}",
         report.losses
     );
+    // The written part restates the active snapshot from the model, so its
+    // active configuration states the suppression the model states.
+    assert!(
+        !report
+            .losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "record.invalid"),
+        "{:?}",
+        report.losses
+    );
     let written = EditableDecodeResult::from(
         SldprtCodec
             .decode(&mut Cursor::new(output), &DecodeOptions::default())
@@ -754,7 +764,7 @@ fn a_snapshot_only_parameter_edit_without_the_source_image_is_named_unwritten() 
 }
 
 #[test]
-fn a_suppressed_feature_an_active_feature_depends_on_is_refused_as_the_decoder_states_it() {
+fn a_dependency_its_operands_do_not_state_is_refused() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
         0x42,
