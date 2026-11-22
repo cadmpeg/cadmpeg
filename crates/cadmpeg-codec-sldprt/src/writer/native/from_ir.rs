@@ -29,7 +29,7 @@ const PLANE_NORMAL_TOLERANCE: f64 = 1.0e-9;
 const PLANE_OFFSET_TOLERANCE_MM: f64 = 1.0e-6;
 
 /// Largest distance, in metres, between two loci written as one point record.
-const POINT_MERGE_TOLERANCE_M: f64 = 1.0e-9;
+pub(super) const POINT_MERGE_TOLERANCE_M: f64 = 1.0e-9;
 
 /// Millimetres to metres.
 const METRES_PER_MILLIMETRE: f64 = 0.001;
@@ -486,10 +486,12 @@ fn geometry(ir: &cadmpeg_ir::CadIr, sketch: &IrSketch) -> Result<Geometry, Strin
                 lines.push(Curve::Line { start, end });
             }
             SketchGeometryDefinition::Circle { center, radius } => {
-                let centre = to_plane(center.get());
+                // The centre's record precedes the circle's point, as in
+                // native sketches.
+                let centre_at = to_plane(center.get());
                 let radius = radius.get() * METRES_PER_MILLIMETRE;
-                let on = point([centre[0] + radius, centre[1]], 1);
-                let centre = point(centre, 1);
+                let centre = point(centre_at, 1);
+                let on = point([centre_at[0] + radius, centre_at[1]], 1);
                 handles
                     .entities
                     .push((entity.id().clone(), Operand::Arc(arcs.len())));

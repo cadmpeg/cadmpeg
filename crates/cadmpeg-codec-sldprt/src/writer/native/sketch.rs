@@ -45,6 +45,17 @@ const RECORD_ATTRIBUTE: [u8; 17] = [
 /// A geometry locus at record +23: `05 00 01 00`.
 const GEOMETRY_LOCUS: [u16; 2] = [5, 1];
 
+/// The locus at record +23 of the centre, the circle and the projected
+/// origin in a native sketch of one circle about the origin: `04 00 02 00`.
+const CENTRE_LOCUS: [u16; 2] = [4, 2];
+
+/// The u32 at +11 of the `moUnitComponent_c` of a native sketch's
+/// projection of the origin point (EV-16).
+const PROJECTION_COMPONENT_WORD: u32 = 10_001;
+
+/// The name a sketch's projection of the origin point ends with.
+const ORIGIN_POINT_NAME: &str = "Point1@Origin";
+
 /// The selector at record +37 of a record whose indices are positions.
 const SELECTOR: u16 = 4;
 
@@ -272,18 +283,28 @@ pub(super) fn profile_feature(
     block(archive, feature_tail(PROFILE_BLOCK_WORD));
     archive.zeros(10);
     archive.object("sgSketch");
-    let points = archive.count32(sketch.points.len(), "sketch point count");
+    let about_origin = one_circle_about_origin(sketch);
+    let points = archive.count32(
+        sketch.points.len() + usize::from(about_origin),
+        "sketch point count",
+    );
     archive.u32(points);
     archive.u16(0);
     archive.u16(0);
     archive.u16(0);
-    archive.u32(1);
-    for (index, point) in sketch.points.iter().enumerate() {
-        point_record(archive, sketch, index, point);
-    }
-    curve_lists(archive, sketch);
+    let curve_head = if about_origin {
+        one_circle_records(archive, sketch, reference);
+        (1, CENTRE_LOCUS)
+    } else {
+        archive.u32(1);
+        for (index, point) in sketch.points.iter().enumerate() {
+            point_record(archive, sketch, index, point);
+        }
+        (0, GEOMETRY_LOCUS)
+    };
+    curve_lists(archive, sketch, curve_head);
     dimension_groups(archive, sketch, next_id);
-    relation_groups(archive, sketch);
+    relation_groups(archive, sketch, about_origin);
     archive.object("suObList");
     archive.u16(0);
     // The in-context block of a sketch with no external references.
@@ -305,17 +326,29 @@ pub(super) fn profile_feature(
     Ok(index)
 }
 
-/// The 64-byte head of a sketch record of `kind`.
-fn record_head(archive: &mut Archive, kind: u32, state: u16) {
+/// The 64-byte head of a sketch record of `kind` at `locus`. The object
+/// pointer at +35 is null, or, when `projection` holds the sketch's
+/// plane-reference identifier, the `sgExtEnt_c` of the origin point's
+/// projection.
+fn record_head(
+    archive: &mut Archive,
+    kind: u32,
+    locus: [u16; 2],
+    state: u16,
+    projection: Option<u32>,
+) {
     archive.bytes(&RECORD_ATTRIBUTE);
     archive.u32(kind);
     archive.u16(0);
-    archive.u16(GEOMETRY_LOCUS[0]);
-    archive.u16(GEOMETRY_LOCUS[1]);
+    archive.u16(locus[0]);
+    archive.u16(locus[1]);
     archive.u16(1);
     archive.u16(state);
     archive.f32(-1.0);
-    archive.null();
+    match projection {
+        Some(reference) => origin_projection(archive, reference),
+        None => archive.null(),
+    }
     archive.u16(SELECTOR);
     archive.zeros(9);
     archive.f64(1.0);
@@ -331,7 +364,7 @@ fn record_head(archive: &mut Archive, kind: u32, state: u16) {
 /// the first line's chain identifier, or `0` when the sketch holds no line,
 /// in place of the identifier.
 fn point_record(archive: &mut Archive, sketch: &Sketch, index: usize, point: &Point) {
-    record_head(archive, point.kind, 0);
+    record_head(archive, point.kind, GEOMETRY_LOCUS, 0, None);
     archive.u16(TWO_COORDINATES);
     archive.f64(point.at[0]);
     archive.f64(point.at[1]);
@@ -371,6 +404,151 @@ fn point_record(archive: &mut Archive, sketch: &Sketch, index: usize, point: &Po
     };
     let id = archive.count32(id, "point identifier");
     archive.u32(id);
+}
+
+/// Whether `sketch` is one circle about the origin: its records are the
+/// centre, at the origin, and the circle's point. The 5 native sketches of
+/// one circle hold the centre there and the origin point's projection, and
+/// the writer writes them in that form ([`one_circle_records`]).
+fn one_circle_about_origin(sketch: &Sketch) -> bool {
+    matches!(
+        sketch.curves.as_slice(),
+        [Curve::Circle { on: 1, centre: 0 }]
+    ) && sketch.points.len() == 2
+        && sketch.points[0]
+            .at
+            .iter()
+            .all(|coordinate| coordinate.abs() <= super::from_ir::POINT_MERGE_TOLERANCE_M)
+}
+
+/// A point record of a sketch of one circle about the origin.
+struct CircleRecord {
+    kind: u32,
+    locus: [u16; 2],
+    /// The plane-reference identifier, for the origin point's projection.
+    projection: Option<u32>,
+    at: [f64; 2],
+    /// The u16 after the coordinates.
+    word: u16,
+    /// The count of curve uses at the point.
+    uses: u16,
+    /// The handle of the curve whose ends meet there.
+    curve: Option<Operand>,
+    /// The count of the record array that follows, or the line count after
+    /// the last record.
+    next_array: u32,
+    /// The identifier of the next record, `0` after the last.
+    next_id: u32,
+}
+
+/// The identifier before the records and the three point records of a
+/// sketch of one circle about the origin, as the 5 native ones hold them
+/// (sldprt.md §2.3): identifier `2`; the centre (kind `1`, locus `04 00 02
+/// 00`, one curve use, no handle, next identifier `1`); the circle's point
+/// (kind `0`, locus `05 00 01 00`, u16 `2`, two curve uses and the circle's
+/// handle, u32 `1` and next identifier `3`); the origin point's projection
+/// (kind `1`, locus `04 00 02 00`, the `sgExtEnt_c`, u16 `6`, no curve, the
+/// line count `0` and identifier `0`).
+fn one_circle_records(archive: &mut Archive, sketch: &Sketch, reference: u32) {
+    archive.u32(2);
+    let records = [
+        CircleRecord {
+            kind: 1,
+            locus: CENTRE_LOCUS,
+            projection: None,
+            at: sketch.points[0].at,
+            word: 0,
+            uses: 1,
+            curve: None,
+            next_array: 0,
+            next_id: 1,
+        },
+        CircleRecord {
+            kind: 0,
+            locus: GEOMETRY_LOCUS,
+            projection: None,
+            at: sketch.points[1].at,
+            word: 2,
+            uses: 2,
+            curve: Some(Operand::Arc(0)),
+            next_array: 1,
+            next_id: 3,
+        },
+        CircleRecord {
+            kind: 1,
+            locus: CENTRE_LOCUS,
+            projection: Some(reference),
+            at: [0.0, 0.0],
+            word: 6,
+            uses: 0,
+            curve: None,
+            next_array: 0,
+            next_id: 0,
+        },
+    ];
+    for record in records {
+        record_head(archive, record.kind, record.locus, 0, record.projection);
+        archive.u16(TWO_COORDINATES);
+        archive.f64(record.at[0]);
+        archive.f64(record.at[1]);
+        archive.u16(record.word);
+        archive.u16(record.uses);
+        match record.curve {
+            Some(curve) => handle(archive, curve),
+            None => archive.null(),
+        }
+        archive.null();
+        archive.null();
+        archive.u32(0xffff_fffe);
+        archive.zeros(36);
+        archive.u32(record.next_array);
+        archive.u16(0);
+        archive.u32(record.next_id);
+    }
+}
+
+/// The origin point's projection into a sketch: an `sgExtEnt_c` naming a
+/// `moSketchExtRef_w` naming a `moCompSketchEntHandle_c`, whose component
+/// is a `moUnitComponent_c` with [`PROJECTION_COMPONENT_WORD`] at +11, whose
+/// feature is the origin sketch with its time stamp and whose handle is the
+/// origin sketch's point; then u32 `1`, u16 `0`, a null component, the
+/// 54-byte block (u32 `0`, the sketch's plane-reference identifier,
+/// twelve zero bytes, three i32 `-12345`, u32 `0`, the version and fourteen
+/// zero bytes), a `moPointBackedUpData_c` at the origin, six zero bytes and
+/// the name, as the native one-circle sketch of `swVersion` 14000 holds it
+/// (sldprt.md §2.3).
+fn origin_projection(archive: &mut Archive, reference: u32) {
+    archive.object("sgExtEnt_c");
+    archive.object("moSketchExtRef_w");
+    archive.object("moCompSketchEntHandle_c");
+    archive.object("moUnitComponent_c");
+    archive.u16(2);
+    archive.u16(0);
+    archive.zeros(11);
+    archive.u32(PROJECTION_COMPONENT_WORD);
+    archive.zeros(24);
+    archive.bytes(&[0xff; 16]);
+    archive.zeros(20);
+    let origin = archive.tree_id(super::ids::ORIGIN);
+    archive.u32(origin);
+    archive.u32(TIME_STAMP);
+    handle(archive, Operand::Point(0));
+    archive.u32(1);
+    archive.u16(0);
+    archive.null();
+    archive.u32(0);
+    archive.u32(reference);
+    archive.zeros(12);
+    for _ in 0..3 {
+        archive.i32(-12_345);
+    }
+    archive.u32(0);
+    archive.u32(super::VERSION);
+    archive.zeros(14);
+    archive.object("moPointBackedUpData_c");
+    archive.f64s(&[0.0; 3]);
+    archive.zeros(6);
+    archive.cstring(ORIGIN_POINT_NAME);
 }
 
 /// The identifier a chain names the curve at `position` among the sketch's
@@ -442,11 +620,17 @@ fn dimension_groups(archive: &mut Archive, sketch: &Sketch, next_id: &mut u32) {
 
 /// The eight relation groups and a u16 `0`: relations on one operand in the
 /// first group, tangent relations in the third and the others in the second,
-/// where native sketches hold them (EV-16). A relation writes eight zero
+/// where native sketches hold them (EV-16); a sketch of one circle about the
+/// origin opens the third with the centre's coincidence with the origin
+/// point's projection. A relation writes eight zero
 /// bytes, i32 `-1`, sixteen zero bytes, its code, u32 `2`, u16 `0`, u32
 /// `0xfffe` and its operand handles; one with two operands then writes six
 /// zero bytes, u16 `0`, eight `ff` bytes and 24 zero bytes.
-fn relation_groups(archive: &mut Archive, sketch: &Sketch) {
+fn relation_groups(archive: &mut Archive, sketch: &Sketch, about_origin: bool) {
+    let projection = about_origin.then(|| Relation {
+        code: SketchRelationKind::Coincident.native_code(),
+        operands: vec![Operand::Point(2), Operand::Point(0)],
+    });
     let group_of = |relation: &Relation| {
         if relation.operands.len() == 1 {
             0
@@ -457,10 +641,15 @@ fn relation_groups(archive: &mut Archive, sketch: &Sketch) {
         }
     };
     for written in 0..RELATION_GROUPS_WRITTEN {
-        let group = sketch
-            .relations
+        let group = projection
             .iter()
-            .filter(|relation| group_of(relation) == written)
+            .filter(|_| written == 2)
+            .chain(
+                sketch
+                    .relations
+                    .iter()
+                    .filter(|relation| group_of(relation) == written),
+            )
             .collect::<Vec<_>>();
         let count = archive.count16(group.len(), "relation count");
         archive.u16(count);
@@ -502,7 +691,7 @@ const RELATION_GROUPS_WRITTEN: usize = 3;
 /// array's count stands 14 bytes before its first record: the arc count is
 /// the high half of the last line's last word. The list trailer is 36 zero
 /// bytes after a line and 22 after an arc.
-fn curve_lists(archive: &mut Archive, sketch: &Sketch) {
+fn curve_lists(archive: &mut Archive, sketch: &Sketch, head: (u32, [u16; 2])) {
     let lines = lines(sketch);
     let arcs = sketch.curves.len() - lines;
     let arc_count = archive.count16(arcs, "arc count");
@@ -533,7 +722,7 @@ fn curve_lists(archive: &mut Archive, sketch: &Sketch) {
         } else {
             (0, 0)
         };
-        curve_record(archive, *curve, next);
+        curve_record(archive, *curve, next, head);
     }
     archive.zeros(if arcs == 0 { 36 } else { 22 });
 }
@@ -544,8 +733,8 @@ fn curve_lists(archive: &mut Archive, sketch: &Sketch) {
 /// `next`: the chain and record identifiers of the next record of its kind,
 /// or `0` and the next array's count in the high half of a u32 after the
 /// last.
-fn curve_record(archive: &mut Archive, curve: Curve, next: (u32, u32)) {
-    record_head(archive, 0, 1);
+fn curve_record(archive: &mut Archive, curve: Curve, next: (u32, u32), head: (u32, [u16; 2])) {
+    record_head(archive, head.0, head.1, 1, None);
     let [start, end] = curve.ends();
     let start = archive.count16(start, "curve endpoint");
     let end = archive.count16(end, "curve endpoint");

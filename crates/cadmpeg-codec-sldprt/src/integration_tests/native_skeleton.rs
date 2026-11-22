@@ -81,76 +81,83 @@ fn generated_part_decodes_its_default_tree_and_stored_body() {
     ));
 }
 
+/// Add a sketch `key` through the origin with `normal` and the u axis +X,
+/// whose profile chains are `profiles`, and its sketch feature.
+fn add_sketch(
+    ir: &mut cadmpeg_ir::CadIr,
+    key: &str,
+    normal: cadmpeg_ir::math::Vector3,
+    profiles: Vec<Vec<cadmpeg_ir::sketches::SketchGeometryDefinition>>,
+) {
+    use cadmpeg_ir::features::{Feature, FeatureId};
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::sketches::{
+        Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
+        SketchPlacement, SketchProfiles,
+    };
+    let sketch = SketchId::mint(format!("synthetic:test:sketch#{key}")).expect("id");
+    let mut uses = Vec::new();
+    for (profile_index, profile) in profiles.into_iter().enumerate() {
+        let mut chain = Vec::new();
+        for (index, definition) in profile.into_iter().enumerate() {
+            let entity = SketchEntityId::mint(format!(
+                "synthetic:test:sketch-entity#{key}-{profile_index}-{index}"
+            ))
+            .expect("id");
+            ir.model.sketch_entities.push(SketchEntity::new(
+                entity.clone(),
+                sketch.clone(),
+                SketchGeometry::try_from(definition).expect("geometry"),
+            ));
+            chain.push(SketchEntityUse {
+                entity,
+                reversed: false,
+            });
+        }
+        uses.push(chain);
+    }
+    ir.model.sketches.push(Sketch {
+        id: sketch.clone(),
+        name: Some(key.into()),
+        configuration: None,
+        visible: None,
+        placement: SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            normal,
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("placement"),
+        profiles: SketchProfiles::try_from(uses).expect("profiles"),
+        native_ref: None,
+    });
+    let ordinal = u64::try_from(ir.model.features.len()).expect("ordinal");
+    ir.model.features.push(Feature {
+        product_definition: None,
+        id: FeatureId::mint(format!("synthetic:test:feature#{key}")).expect("id"),
+        ordinal,
+        name: Some(key.into()),
+        suppressed: Some(false),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
+            }),
+        ),
+        native_ref: None,
+    });
+}
+
 /// The unit cube with two sketches: a 10 by 6 rectangle on the XY plane and,
 /// on the XZ plane, a quarter disc of radius 3 about (5, 5) and a circle of
 /// radius 2 about (-4, 1), all in millimetres.
 fn cube_with_sketches() -> cadmpeg_ir::CadIr {
-    use cadmpeg_ir::features::{Feature, FeatureId};
-    use cadmpeg_ir::math::{Point2, Point3, Vector3};
-    use cadmpeg_ir::sketches::{
-        Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
-        SketchGeometryDefinition, SketchId, SketchPlacement, SketchProfiles,
-    };
+    use cadmpeg_ir::math::{Point2, Vector3};
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    let add = |ir: &mut cadmpeg_ir::CadIr,
-               key: &str,
-               normal: Vector3,
-               profiles: Vec<Vec<SketchGeometryDefinition>>| {
-        let sketch = SketchId::mint(format!("synthetic:test:sketch#{key}")).expect("id");
-        let mut uses = Vec::new();
-        for (profile_index, profile) in profiles.into_iter().enumerate() {
-            let mut chain = Vec::new();
-            for (index, definition) in profile.into_iter().enumerate() {
-                let entity = SketchEntityId::mint(format!(
-                    "synthetic:test:sketch-entity#{key}-{profile_index}-{index}"
-                ))
-                .expect("id");
-                ir.model.sketch_entities.push(SketchEntity::new(
-                    entity.clone(),
-                    sketch.clone(),
-                    SketchGeometry::try_from(definition).expect("geometry"),
-                ));
-                chain.push(SketchEntityUse {
-                    entity,
-                    reversed: false,
-                });
-            }
-            uses.push(chain);
-        }
-        ir.model.sketches.push(Sketch {
-            id: sketch.clone(),
-            name: Some(key.into()),
-            configuration: None,
-            visible: None,
-            placement: SketchPlacement::try_resolved(
-                Point3::new(0.0, 0.0, 0.0),
-                normal,
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .expect("placement"),
-            profiles: SketchProfiles::try_from(uses).expect("profiles"),
-            native_ref: None,
-        });
-        let ordinal = u64::try_from(ir.model.features.len()).expect("ordinal");
-        ir.model.features.push(Feature {
-            product_definition: None,
-            id: FeatureId::mint(format!("synthetic:test:feature#{key}")).expect("id"),
-            ordinal,
-            name: Some(key.into()),
-            suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
-            source_properties: std::collections::BTreeMap::new(),
-            source_tag: None,
-            source_text: None,
-            source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
-                FeatureDefinition::Operation(FeatureOperation::Sketch {
-                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-                }),
-            ),
-            native_ref: None,
-        });
-    };
     let line = |start: Point2, end: Point2| SketchGeometryDefinition::Line { start, end };
     let corners = [
         Point2::new(0.0, 0.0),
@@ -161,7 +168,7 @@ fn cube_with_sketches() -> cadmpeg_ir::CadIr {
     let rectangle = (0..4)
         .map(|index| line(corners[index], corners[(index + 1) % 4]))
         .collect();
-    add(
+    add_sketch(
         &mut ir,
         "Rectangle",
         Vector3::new(0.0, 0.0, 1.0),
@@ -169,7 +176,7 @@ fn cube_with_sketches() -> cadmpeg_ir::CadIr {
     );
     let length = |value: f64| cadmpeg_ir::scalar::Length::new(value).expect("length");
     let angle = |value: f64| cadmpeg_ir::scalar::Angle::new(value).expect("angle");
-    add(
+    add_sketch(
         &mut ir,
         "Arcs",
         Vector3::new(0.0, 1.0, 0.0),
@@ -368,6 +375,81 @@ fn generated_sketches_are_native_profile_features_that_decode_back() {
             [5.0, 0.0, -5.0],
             [-4.0, 0.0, -1.0],
         ],
+    );
+}
+
+#[test]
+fn a_circle_about_the_origin_is_written_as_native_one_circle_sketches_hold_it() {
+    use cadmpeg_ir::math::{Point2, Vector3};
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    let radius = cadmpeg_ir::scalar::Length::new(5.0).expect("length");
+    add_sketch(
+        &mut ir,
+        "Disc",
+        Vector3::new(0.0, 0.0, 1.0),
+        vec![vec![SketchGeometryDefinition::Circle {
+            center: Point2::new(0.0, 0.0),
+            radius,
+        }]],
+    );
+    let bytes = write(&ir);
+    let (walk, resolved) = walk(&bytes);
+    let classes = classes(&walk);
+    for class in [
+        "sgExtEnt_c",
+        "moSketchExtRef_w",
+        "moCompSketchEntHandle_c",
+        "moPointBackedUpData_c",
+    ] {
+        assert!(classes.contains(&class), "{class} in {classes:?}");
+    }
+    let u32_at = |at: usize| u32::from_le_bytes(resolved[at..at + 4].try_into().expect("four"));
+    let f64_at = |at: usize| f64::from_le_bytes(resolved[at..at + 8].try_into().expect("eight"));
+    // The user sketch's point count and, after three u16, the identifier
+    // before its records; then the centre's 142-byte record (kind at +17,
+    // locus at +23, coordinates at +66) and the circle's point's. The origin
+    // sketch's `sgSketch` comes first.
+    let sketch = walk
+        .trace
+        .iter()
+        .rfind(|object| &*object.class == "sgSketch")
+        .expect("the sketch is written")
+        .body;
+    assert_eq!(u32_at(sketch), 3, "centre, circle point, origin projection");
+    assert_eq!(u32_at(sketch + 10), 2);
+    let centre = sketch + 14;
+    assert_eq!(u32_at(centre + 17), 1);
+    assert_eq!(resolved[centre + 23..centre + 27], [4, 0, 2, 0]);
+    assert_eq!([f64_at(centre + 66), f64_at(centre + 74)], [0.0, 0.0]);
+    let on = centre + 142;
+    assert_eq!(u32_at(on + 17), 0);
+    assert_eq!(resolved[on + 23..on + 27], [5, 0, 1, 0]);
+    assert_eq!([f64_at(on + 66), f64_at(on + 74)], [0.005, 0.0]);
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("the part decodes");
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code.local_code() != "feature.input-archive-walk-stopped"));
+    let circles = decoded
+        .ir()
+        .model
+        .sketch_entities
+        .iter()
+        .filter_map(|entity| match entity.geometry.definition() {
+            SketchGeometryDefinition::Circle { center, radius } => {
+                Some((center.get(), radius.get()))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        matches!(circles.as_slice(), [(centre, radius)]
+            if centre.u.abs() < 1.0e-9 && centre.v.abs() < 1.0e-9 && (radius - 5.0).abs() < 1.0e-9),
+        "{circles:?}"
     );
 }
 
