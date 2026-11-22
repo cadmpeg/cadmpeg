@@ -3,7 +3,7 @@
 use super::admission::EvaluationRefusal;
 use super::decode;
 use crate::features::geometry::FinitePoint3;
-use crate::math::sum::{ExactSignedSum, LaneProductSums, LaneSum, ScaledValue};
+use crate::math::sum::{scaled_finite, ExactSignedSum, LaneProductSums, LaneSum, ScaledValue};
 use crate::scalar::FiniteReal;
 
 /// Cloneable pole traversal. Admission precedes each input-dependent advance.
@@ -240,17 +240,75 @@ impl Homogeneous {
             let numerator = if subtract.is_empty() {
                 self.values[axis]
             } else {
-                let mut sum = ExactSignedSum::default();
-                sum.add_scaled_product(self.values[axis], FiniteReal::ONE)?;
-                for (weight, factor) in subtract {
-                    sum.add_scaled_product(weight.values[3], factor[axis].negated())?;
+                match fast_project_numerator(self.values[axis], subtract, axis) {
+                    LaneSum::Settled(fast) => fast,
+                    LaneSum::Replay => {
+                        let mut sum = ExactSignedSum::default();
+                        sum.add_scaled_product(self.values[axis], FiniteReal::ONE)?;
+                        for (weight, factor) in subtract {
+                            sum.add_scaled_product(weight.values[3], factor[axis].negated())?;
+                        }
+                        sum.finish()
+                    }
                 }
-                sum.finish()
             };
             *lane = numerator.map_or(Ok(FiniteReal::ZERO), |value| value.quotient(denominator));
         }
         Some(lanes)
     }
+}
+
+/// Binary64 fast path for [`Homogeneous::project`] when every term is normal
+/// and does not cancel significantly; returns [`LaneSum::Replay`] to fall back
+/// to [`ExactSignedSum`].
+fn fast_project_numerator(
+    base: Option<ScaledValue>,
+    subtract: &[(Homogeneous, [FiniteReal; 3])],
+    axis: usize,
+) -> LaneSum {
+    let mut sum = match base {
+        None => 0.0_f64,
+        Some(value) => {
+            let Ok(finite) = value.finite() else {
+                return LaneSum::Replay;
+            };
+            let finite = finite.get();
+            if !finite.is_normal() {
+                return LaneSum::Replay;
+            }
+            finite
+        }
+    };
+    let mut largest = sum.abs();
+    for (weight, factor) in subtract {
+        let Some(weight) = weight.values[3] else {
+            continue;
+        };
+        let factor = factor[axis].get();
+        if factor == 0.0 {
+            continue;
+        }
+        let Ok(weight) = weight.finite() else {
+            return LaneSum::Replay;
+        };
+        let weight = weight.get();
+        if !weight.is_normal() {
+            return LaneSum::Replay;
+        }
+        let product = weight * (-factor);
+        if !product.is_normal() {
+            return LaneSum::Replay;
+        }
+        sum += product;
+        if !sum.is_finite() {
+            return LaneSum::Replay;
+        }
+        largest = largest.max(product.abs());
+    }
+    if largest != 0.0 && sum.abs() < 0.125 * largest {
+        return LaneSum::Replay;
+    }
+    LaneSum::Settled(scaled_finite(sum))
 }
 
 /// The coordinates when every lane is finite. Otherwise the value of every

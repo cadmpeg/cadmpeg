@@ -5094,7 +5094,7 @@ fn part_construction_geometry_definition(
                             required!(scalar_named(ctx, properties, "Radius",)?)
                         )),
                         required!(
-                            cadmpeg_ir::geometry::DirectedParameterRange::from_angle_endpoints([
+                            cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::from_angle_endpoints([
                                 required!(angle(if legacy_angles { "Angle0" } else { "Angle1" })?),
                                 required!(angle(if legacy_angles { "Angle1" } else { "Angle2" })?),
                             ])
@@ -5119,7 +5119,7 @@ fn part_construction_geometry_definition(
                         )),
                     ],
                     required!(
-                        cadmpeg_ir::geometry::DirectedParameterRange::from_angle_endpoints([
+                        cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::from_angle_endpoints([
                             required!(angle("Angle1")?),
                             required!(angle("Angle2")?),
                         ])

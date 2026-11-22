@@ -214,7 +214,7 @@ pub(crate) fn decode_builds_a_valid_ap203_sheet_brep() {
         .iter()
         .any(|surface| matches!(
             surface.definition(),
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded {
+            cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::CurveBounded {
                 support,
                 boundaries,
                 implicit_outer: false,
