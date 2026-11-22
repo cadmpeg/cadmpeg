@@ -43,6 +43,7 @@ use super::{
 mod arcs;
 mod faces;
 mod holes;
+mod regions;
 mod reversed;
 
 const TOLERANCE: f64 = 1e-9;
