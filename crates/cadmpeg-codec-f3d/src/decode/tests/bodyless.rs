@@ -481,3 +481,29 @@ fn empty_model_maps_beside_an_undecoded_mesh_container_keep_the_geometry_losses(
     assert!(has_code(&report, F3dLossCode::GeometryNotTransferred));
     assert!(!has_code(&report, F3dLossCode::EmptyDesign));
 }
+
+/// A bodyless design reports the body history tails collected for it: a
+/// feature output body that no decoded history holds gets the unread loss.
+#[test]
+fn a_bodyless_design_reports_its_body_history_tails() {
+    let body = cadmpeg_ir::ids::BodyId::mint("f3d:brep/panel.smbh/brep:entity#1").unwrap();
+    let feature = cadmpeg_ir::features::FeatureId::mint("test:model:feature#1").unwrap();
+    let mut design = crate::decode::design_intent::DesignNative::default();
+    design.history_body_consumers.tails.unread = vec![(body.clone(), feature.clone())];
+    let bytes = crate::test_support::assembly_test::f3d_without_brep("assembly", "root.f3d", &[]);
+    crate::test_support::with_decode_context(|ctx| {
+        let scan =
+            crate::container::scan(ctx, cadmpeg_core::decode::View::over_retained(&bytes)).unwrap();
+        let mut native = crate::native::F3dNative::default();
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        let mut losses = Vec::new();
+        crate::decode::store_bodyless_design(ctx, &scan, design, &mut native, &mut ir, &mut losses)
+            .unwrap();
+        let loss = losses
+            .iter()
+            .find(|loss| loss.code == F3dLossCode::FeatureBodyHistoryUnread.kind())
+            .expect("unread body history loss");
+        assert!(loss.message.contains(&body.to_string()));
+        assert!(loss.message.contains(&feature.to_string()));
+    });
+}
