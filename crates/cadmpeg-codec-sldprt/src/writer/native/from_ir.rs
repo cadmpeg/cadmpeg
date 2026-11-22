@@ -35,6 +35,10 @@ pub(super) const POINT_MERGE_TOLERANCE_M: f64 = 1.0e-9;
 /// Millimetres to metres.
 const METRES_PER_MILLIMETRE: f64 = 0.001;
 
+/// The angle, in degrees from the sketch's first axis about its centre, at
+/// which native sketches hold a full circle's point.
+const CIRCLE_POINT_DEGREES: f64 = 17.0;
+
 /// A source feature and the bodies its evaluation makes or changes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::writer) struct SourceFeature {
@@ -480,7 +484,11 @@ fn geometry(ir: &cadmpeg_ir::CadIr, sketch: &IrSketch) -> Result<Geometry, Strin
                 let centre_at = to_plane(center.get());
                 let radius = radius.get() * METRES_PER_MILLIMETRE;
                 let centre = point(centre_at, 1);
-                let on = point([centre_at[0] + radius, centre_at[1]], 1);
+                let (sin, cos) = CIRCLE_POINT_DEGREES.to_radians().sin_cos();
+                let on = point(
+                    [centre_at[0] + radius * cos, centre_at[1] + radius * sin],
+                    1,
+                );
                 handles
                     .entities
                     .push((entity.id().clone(), Operand::Arc(arcs.len())));

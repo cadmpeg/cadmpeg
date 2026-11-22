@@ -425,7 +425,14 @@ fn a_circle_about_the_origin_is_written_as_native_one_circle_sketches_hold_it() 
     let on = centre + 142;
     assert_eq!(u32_at(on + 17), 0);
     assert_eq!(resolved[on + 23..on + 27], [5, 0, 1, 0]);
-    assert_eq!([f64_at(on + 66), f64_at(on + 74)], [0.005, 0.0]);
+    // The circle's point lies at 17 degrees from the centre, as native
+    // sketches hold it.
+    let (sin, cos) = 17.0_f64.to_radians().sin_cos();
+    let at = [f64_at(on + 66), f64_at(on + 74)];
+    assert!(
+        (at[0] - 0.005 * cos).abs() < 1.0e-15 && (at[1] - 0.005 * sin).abs() < 1.0e-15,
+        "{at:?}"
+    );
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("the part decodes");
