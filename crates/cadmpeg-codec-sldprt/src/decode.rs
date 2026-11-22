@@ -4304,7 +4304,7 @@ fn build_geometry_ir(
             &mut pmi_losses,
         )?;
     }
-    pmi_losses.extend(plane_bindings.notes(&ir.model.sketches));
+    pmi_losses.extend(plane_bindings.note(&ir.model.sketches));
     // Sort arenas for the order-sensitive loss scans that follow.
     ir.finalize();
     stamp_sketch_baseline(ctx, &mut ir, &native.feature_input_lanes)?;
@@ -5205,7 +5205,7 @@ fn build_metadata_ir(
             &mut pmi_losses,
         )?;
     }
-    pmi_losses.extend(plane_bindings.notes(&ir.model.sketches));
+    pmi_losses.extend(plane_bindings.note(&ir.model.sketches));
     // Sort arenas for the order-sensitive loss scans that follow.
     ir.finalize();
     stamp_sketch_baseline(ctx, &mut ir, &native.feature_input_lanes)?;

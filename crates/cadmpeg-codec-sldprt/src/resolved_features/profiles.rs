@@ -3421,7 +3421,7 @@ fn project_detached_legacy_config_sketches(
             };
             // A feature with no frame of its own takes the lane's only frame.
             SupportFrame {
-                binding: PlaneBinding::Assumed,
+                binding: PlaneBinding::LaneFrame,
                 ..*frame
             }
         };

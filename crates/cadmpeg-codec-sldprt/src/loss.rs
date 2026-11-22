@@ -133,12 +133,11 @@ pub(crate) enum SldprtLossCode {
     /// line with an identifier trailer and that the handle's own read
     /// endpoints contradict when they coincide.
     SketchHandleReadingAssumed,
-    /// A profile sketch is placed on the Top frame through the plane its
-    /// feature-input reference names, a binding open item DI-73 questions.
-    SketchTopPlaneBindingAssumed,
-    /// A profile sketch takes its plane from the preceding object's or the
-    /// lane's plane reference, or from the Front lane fallback frame, because
-    /// its own object holds no plane record the decoder reads (open item DI-73).
+    /// A profile sketch lies on a plane the decoder assumes (open item
+    /// DI-73): the plane that the preceding object's or the lane's plane
+    /// reference names, the Top plane its feature-input reference names, the
+    /// only frame of its legacy configuration lane, or the Front lane fallback
+    /// frame (SF-01).
     SketchPlaneBindingAssumed,
     /// A geometry-locus curve uses assumed zero-based sketch point-record indices.
     SketchPointRecordIndexBasisAssumed,
@@ -416,7 +415,6 @@ impl SldprtLossCode {
         Self::SketchLineDegenerate,
         Self::SketchArcRecordConflict,
         Self::SketchHandleReadingAssumed,
-        Self::SketchTopPlaneBindingAssumed,
         Self::SketchPlaneBindingAssumed,
         Self::SketchPointRecordIndexBasisAssumed,
         Self::SketchProfileRejected,
@@ -565,7 +563,6 @@ impl SldprtLossCode {
             Self::SketchLineDegenerate => "sketch.line-degenerate",
             Self::SketchArcRecordConflict => "sketch.arc-record-conflict",
             Self::SketchHandleReadingAssumed => "sketch.handle-reading-assumed",
-            Self::SketchTopPlaneBindingAssumed => "sketch.top-plane-binding-assumed",
             Self::SketchPlaneBindingAssumed => "sketch.plane-binding-assumed",
             Self::SketchPointRecordIndexBasisAssumed => "sketch.point-record-index-basis-assumed",
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
@@ -743,7 +740,6 @@ impl SldprtLossCode {
             | Self::SketchArcRecordConflict
             | Self::SketchPointRecordIndexBasisAssumed
             | Self::SketchHandleReadingAssumed
-            | Self::SketchTopPlaneBindingAssumed
             | Self::SketchPlaneBindingAssumed
             | Self::SketchProfileRejected
             | Self::SketchListedLineConstructionAssumed
@@ -969,7 +965,6 @@ impl SldprtLossCode {
             | Self::SketchArcRecordConflict
             | Self::SketchPointRecordIndexBasisAssumed
             | Self::SketchHandleReadingAssumed
-            | Self::SketchTopPlaneBindingAssumed
             | Self::SketchPlaneBindingAssumed
             | Self::SketchProfileRejected
             | Self::SketchListedLineConstructionAssumed
@@ -1205,7 +1200,6 @@ mod tests {
                 "sketch.line-degenerate",
                 "sketch.arc-record-conflict",
                 "sketch.handle-reading-assumed",
-                "sketch.top-plane-binding-assumed",
                 "sketch.plane-binding-assumed",
                 "sketch.point-record-index-basis-assumed",
                 "sketch.profile-rejected",

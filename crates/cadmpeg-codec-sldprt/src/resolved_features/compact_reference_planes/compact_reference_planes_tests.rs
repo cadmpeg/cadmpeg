@@ -150,7 +150,7 @@ fn indexed_profile_frames_resolve_each_record_interval() {
     let width = super::COMPACT_COMPONENT_PLANE_RECORD_LEN;
     let index = CompactReferencePlaneIndex {
         payload_len: records * width,
-        class_offsets: Vec::new(),
+        class_end: None,
         declared: Vec::new(),
         components: (0..records).map(|i| (i * width, 7)).collect(),
         principal_components: Vec::new(),
@@ -174,7 +174,7 @@ fn indexed_component_frames_keep_complete_boundaries_and_ambiguity() {
     let width = super::COMPACT_COMPONENT_PLANE_RECORD_LEN;
     let index = CompactReferencePlaneIndex {
         payload_len: width * 3,
-        class_offsets: Vec::new(),
+        class_end: None,
         declared: Vec::new(),
         components: vec![(0, 7), (width, 7), (width * 2, 9)],
         principal_components: Vec::new(),
@@ -245,6 +245,22 @@ fn top_component_frame_requires_a_complete_local_unmixed_record() {
     );
     assert_eq!(index.principal_profile_plane(1, record.len()), None);
     assert_eq!(index.principal_profile_plane(0, record.len() - 1), None);
+    // The trailer count word is 2, 3 or 4.
+    for (count, expected) in [
+        (1u32, None),
+        (2, Some(PrincipalPlane::Top)),
+        (3, Some(PrincipalPlane::Top)),
+        (5, None),
+    ] {
+        let mut counted = record;
+        counted[layout::TRAILER_KIND..layout::TRAILER_KIND + 4]
+            .copy_from_slice(&count.to_le_bytes());
+        assert_eq!(
+            CompactReferencePlaneIndex::new(&counted).principal_profile_plane(0, counted.len()),
+            expected,
+            "trailer count {count}"
+        );
+    }
     let top = record;
     let mut right = record;
     right[layout::SOURCE..layout::SOURCE + 4].copy_from_slice(&4u32.to_le_bytes());
@@ -301,4 +317,47 @@ fn top_component_frame_requires_a_complete_local_unmixed_record() {
         CompactReferencePlaneIndex::new(&record).principal_profile_plane(0, record.len()),
         None
     );
+}
+
+/// A lane writes the `moCompRefPlane_c` class name once, so a later profile's
+/// own declared record follows the name without holding it; it is still that
+/// profile's own record. A lane without the class name holds no declared
+/// record.
+#[test]
+fn own_declared_record_after_the_lane_class_name_is_the_profile_source() {
+    use super::SourceRoute;
+    let declared = |source: u32| {
+        let mut record = Vec::new();
+        record.extend(source.to_le_bytes());
+        record.extend(19u32.to_le_bytes());
+        record.extend([0, 0, 3, 0]);
+        record.extend([0; 27]);
+        record.extend(1.0f64.to_le_bytes());
+        record.extend([
+            0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0xf9, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00,
+            0x00, 0x65,
+        ]);
+        record.extend([0; 4]);
+        record
+    };
+    let mut payload = b"moCompRefPlane_c".to_vec();
+    payload.extend([0; 11]);
+    payload.extend(declared(2));
+    payload.extend([0xaa; 32]);
+    let second = payload.len();
+    payload.extend([0xbb; 16]);
+    payload.extend(declared(2));
+    payload.extend([0xaa; 32]);
+    let index = CompactReferencePlaneIndex::new(&payload);
+    assert_eq!(
+        index.profile_source_route(0, second, payload.len()),
+        Some((2, SourceRoute::Profile))
+    );
+    assert!(index.holds_plane_record(second, payload.len()));
+    assert!(!index.holds_plane_record(second + 16 + 67, payload.len()));
+
+    let unnamed = payload[b"moCompRefPlane_c".len()..].to_vec();
+    let index = CompactReferencePlaneIndex::new(&unnamed);
+    assert_eq!(index.profile_source_route(0, 0, unnamed.len()), None);
+    assert!(!index.holds_plane_record(0, unnamed.len()));
 }

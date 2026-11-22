@@ -4269,8 +4269,9 @@ pub(super) fn feature_input_sketch_marker_transform(
 /// records of a profile name (`sldprt.md` §2): the profile's own plane record,
 /// which decides over the reference of the preceding object and the lane
 /// default. A profile whose own object holds a declared or component source
-/// record keeps that source, unless the source is the declared Front plane; a
-/// custom component frame from the preceding object on keeps its frame.
+/// record keeps that source, unless the source is the declared Front plane
+/// (feature number 2 or 3); a custom component frame from the preceding object
+/// on keeps its frame.
 pub(super) fn principal_profile_frame(
     plane_frames: &HashMap<u32, SketchPlaneFrame>,
     plane_index: &CompactReferencePlaneIndex,
@@ -4290,7 +4291,6 @@ pub(super) fn principal_profile_frame(
             return false;
         };
         plane_index.profile_declared_source(context_start, start, end) == Some(source)
-            && source == 2
             && plane_frames.get(&source).is_some_and(|reference| {
                 reference.u_axis_source == SketchPlaneUAxisSource::Native
                     && reference.as_tuple()
@@ -4370,7 +4370,7 @@ pub(super) fn feature_input_support_frame(
                     if let Some(frame) = plane_index.preserved_principal_fallback(start, end) {
                         return (
                             SketchPlaneFrame::from_frame(frame, reference.u_axis_source),
-                            PlaneBinding::Assumed,
+                            PlaneBinding::FrontFallback,
                         );
                     }
                 }
@@ -4380,7 +4380,9 @@ pub(super) fn feature_input_support_frame(
                     } else if route == SourceRoute::Profile {
                         PlaneBinding::Stored
                     } else {
-                        PlaneBinding::Assumed
+                        PlaneBinding::Borrowed {
+                            own_records: plane_index.holds_plane_record(start, end),
+                        }
                     };
                 (reference, binding)
             })

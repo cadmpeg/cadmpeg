@@ -386,9 +386,70 @@ fn support_frame_from_the_preceding_object_or_the_lane_is_assumed() {
             .map(|support| (support.frame, support.binding))
     };
     assert_eq!(binding(0, 0), Some((front, PlaneBinding::Stored)));
-    assert_eq!(binding(0, record_end), Some((front, PlaneBinding::Assumed)));
-    assert_eq!(
-        binding(record_end, record_end),
-        Some((front, PlaneBinding::Assumed))
-    );
+    let borrowed = PlaneBinding::Borrowed { own_records: false };
+    assert_eq!(binding(0, record_end), Some((front, borrowed)));
+    assert_eq!(binding(record_end, record_end), Some((front, borrowed)));
+}
+
+/// A profile whose own object holds a declared Front record and a
+/// principal-plane component record takes the principal plane, whether the
+/// part numbers the principal planes from 2 or from 3, and its own declared
+/// record binds it where it lies after the lane's class name.
+#[test]
+fn own_declared_front_record_keeps_the_principal_plane_in_both_numberings() {
+    use crate::resolved_features::compact_reference_planes::{
+        principal_sketch_frame, CompactReferencePlaneIndex, PlaneBinding,
+    };
+    use crate::resolved_features::curves::{SketchPlaneFrame, SketchPlaneUAxisSource};
+    use crate::resolved_features::holes::{feature_input_support_frame, principal_profile_frame};
+    use cadmpeg_ir::features::PrincipalPlane;
+    use std::collections::HashMap;
+
+    let header = super::profile_reference_plane_payload(false);
+    let record_start = b"moCompRefPlane_c".len() + 11;
+    let front = principal_sketch_frame(PrincipalPlane::Front);
+    for front_number in [2u32, 3] {
+        let mut declared = header[record_start..record_start + 67].to_vec();
+        declared[..4].copy_from_slice(&front_number.to_le_bytes());
+        let mut payload = header[..record_start].to_vec();
+        payload.extend(&declared);
+        payload.extend([0xaa; 24]);
+        let start = payload.len();
+        payload.extend(&declared);
+        let declared_only_end = payload.len();
+        let mut component = [0u8; 138];
+        component[..4].copy_from_slice(&(front_number + 1).to_le_bytes());
+        component[10..14].copy_from_slice(&2u32.to_le_bytes());
+        component[14] = 1;
+        for (index, value) in [
+            1.0f64, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let offset = 15 + index * 8;
+            component[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        // A trailer count of 3, as some parts write it.
+        component[122..126].copy_from_slice(&3u32.to_le_bytes());
+        component[126..130].fill(0xff);
+        payload.extend(component);
+        let index = CompactReferencePlaneIndex::new(&payload);
+        let frames = HashMap::from([(
+            front_number,
+            SketchPlaneFrame::from_frame(front, SketchPlaneUAxisSource::Native),
+        )]);
+        assert_eq!(
+            principal_profile_frame(&frames, &index, 0, start, payload.len()),
+            Some((
+                principal_sketch_frame(PrincipalPlane::Top),
+                PrincipalPlane::Top
+            )),
+            "Front numbered {front_number}"
+        );
+        let support =
+            feature_input_support_frame(&payload, &frames, &index, 0, start, declared_only_end)
+                .map(|support| (support.frame, support.binding));
+        assert_eq!(support, Some((front, PlaneBinding::Stored)));
+    }
 }

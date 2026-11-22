@@ -104,11 +104,11 @@ fn top_coordinate_provenance_follows_the_sketch_binding() {
     );
 }
 
-/// The Top-binding loss names the sketches whose frame the plane reference
-/// gave, by the route recorded where the frame was chosen. A compact sketch
-/// that a principal-plane component record placed, the unbound twin of a marker
-/// sketch of the same name, is not named; nor is a recorded sketch that no
-/// longer lies on the Top frame.
+/// The assumed-binding loss names the sketches whose frame the Top plane
+/// reference gave, by the route recorded where the frame was chosen. A compact
+/// sketch that a principal-plane component record placed, the unbound twin of
+/// a marker sketch of the same name, is not named; nor is a recorded sketch
+/// that no longer lies on the Top frame.
 #[test]
 fn top_plane_binding_names_only_sketches_the_plane_reference_placed() {
     use crate::resolved_features::compact_reference_planes::{PlaneBinding, PlaneBindings};
@@ -122,7 +122,7 @@ fn top_plane_binding_names_only_sketches_the_plane_reference_placed() {
     let mut routes = PlaneBindings::default();
     routes.record(&marker.id, PlaneBinding::Stored);
     routes.record(&twin.id, PlaneBinding::Stored);
-    assert!(routes.notes(&[marker.clone(), twin.clone()]).is_empty());
+    assert!(routes.note(&[marker.clone(), twin.clone()]).is_none());
 
     let referenced = named("sldprt:model:sketch#markers:1:9", "Sketch5");
     let moved = Sketch {
@@ -137,51 +137,111 @@ fn top_plane_binding_names_only_sketches_the_plane_reference_placed() {
     };
     routes.record(&referenced.id, PlaneBinding::TopReference);
     routes.record(&moved.id, PlaneBinding::TopReference);
-    let notes = routes.notes(&[marker, twin, referenced, moved]);
-    let [note] = notes.as_slice() else {
-        panic!("one note: {notes:?}");
-    };
-    assert_eq!(
-        note.code,
-        crate::loss::SldprtLossCode::SketchTopPlaneBindingAssumed.kind()
-    );
-    assert!(
-        note.message
-            .starts_with("1 profile sketch(es) (Sketch5) are placed on the Top plane"),
-        "{}",
-        note.message
-    );
-}
-
-/// A sketch whose plane comes from the preceding object's or the lane's
-/// reference is named by the assumed-binding loss wherever it lies; a later
-/// stored record of the same sketch clears it.
-#[test]
-fn assumed_plane_binding_names_the_sketches_of_the_default_routes() {
-    use crate::resolved_features::compact_reference_planes::{PlaneBinding, PlaneBindings};
-    let named = |id: &str, name: &str| Sketch {
-        id: SketchId::mint(id).unwrap(),
-        name: Some(name.into()),
-        ..sketch()
-    };
-    let lane = named("sldprt:model:sketch#markers:1:3", "Sketch1");
-    let restored = named("sldprt:model:sketch#markers:1:4", "Sketch2");
-    let mut routes = PlaneBindings::default();
-    routes.record(&lane.id, PlaneBinding::Assumed);
-    routes.record(&restored.id, PlaneBinding::Assumed);
-    routes.record(&restored.id, PlaneBinding::Stored);
-    let notes = routes.notes(&[lane, restored]);
-    let [note] = notes.as_slice() else {
-        panic!("one note: {notes:?}");
-    };
+    let note = routes
+        .note(&[marker, twin, referenced, moved])
+        .expect("one note");
     assert_eq!(
         note.code,
         crate::loss::SldprtLossCode::SketchPlaneBindingAssumed.kind()
     );
-    assert!(
-        note.message
-            .starts_with("1 profile sketch(es) (Sketch1) take their plane from"),
-        "{}",
-        note.message
+    assert_eq!(
+        note.message,
+        "1 profile sketch(es) lie on a plane the decoder assumes (sldprt-open-items.md DI-73): \
+         1 lie on the Top plane (origin 0,0,0, normal +Y, u-axis +X) that their feature-input \
+         plane reference names, and the B-rep of some sketches bound this way lies on another \
+         principal plane (Sketch5)."
+    );
+}
+
+/// Each assumed route is named with the plane it gave; a later stored record
+/// of the same sketch clears it. A sketch bound by its own record is never
+/// named.
+#[test]
+fn assumed_plane_binding_names_each_route_and_its_plane() {
+    use crate::resolved_features::compact_reference_planes::{PlaneBinding, PlaneBindings};
+    let on = |id: &str, name: &str, plane: PrincipalPlane| {
+        let (origin, normal, u_axis) = principal_sketch_frame(plane);
+        Sketch {
+            id: SketchId::mint(id).unwrap(),
+            name: Some(name.into()),
+            placement: SketchPlacement::try_resolved(origin, normal, u_axis).unwrap(),
+            ..sketch()
+        }
+    };
+    let lane = on(
+        "sldprt:model:sketch#markers:1:3",
+        "Sketch1",
+        PrincipalPlane::Front,
+    );
+    let context = on(
+        "sldprt:model:sketch#markers:1:5",
+        "Sketch4",
+        PrincipalPlane::Right,
+    );
+    let conflicting = on(
+        "sldprt:model:sketch#markers:1:6",
+        "Sketch6",
+        PrincipalPlane::Front,
+    );
+    let legacy = on(
+        "sldprt:model:sketch#legacy:1:7",
+        "Sketch7",
+        PrincipalPlane::Front,
+    );
+    let fallback = Sketch {
+        id: SketchId::mint("sldprt:model:sketch#markers:1:8").unwrap(),
+        name: Some("Sketch8".into()),
+        placement: SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, -1.0, 0.0),
+            Vector3::new(0.0, 0.0, -1.0),
+        )
+        .unwrap(),
+        ..sketch()
+    };
+    let restored = on(
+        "sldprt:model:sketch#markers:1:4",
+        "Sketch2",
+        PrincipalPlane::Front,
+    );
+    let own = on(
+        "sldprt:model:sketch#markers:1:9",
+        "Sketch9",
+        PrincipalPlane::Front,
+    );
+    let mut routes = PlaneBindings::default();
+    let borrowed = PlaneBinding::Borrowed { own_records: false };
+    routes.record(&lane.id, borrowed);
+    routes.record(&context.id, borrowed);
+    routes.record(
+        &conflicting.id,
+        PlaneBinding::Borrowed { own_records: true },
+    );
+    routes.record(&legacy.id, PlaneBinding::LaneFrame);
+    routes.record(&fallback.id, PlaneBinding::FrontFallback);
+    routes.record(&restored.id, borrowed);
+    routes.record(&restored.id, PlaneBinding::Stored);
+    routes.record(&own.id, PlaneBinding::Stored);
+    let note = routes
+        .note(&[lane, context, conflicting, legacy, fallback, restored, own])
+        .expect("one note");
+    assert_eq!(
+        note.code,
+        crate::loss::SldprtLossCode::SketchPlaneBindingAssumed.kind()
+    );
+    assert_eq!(
+        note.message,
+        "5 profile sketch(es) lie on a plane the decoder assumes (sldprt-open-items.md DI-73): \
+         2 take the plane that the plane reference of the preceding feature object or the \
+         lane's default reference names, and their own object holds no plane record the \
+         decoder reads (1 on the Front plane (Sketch1), 1 on the Right plane (Sketch4)); 1 take \
+         the plane that the plane reference of the preceding feature object or the lane's \
+         default reference names, because the plane records of their own object give no single \
+         plane (1 on the Front plane (Sketch6)); 1 are legacy configuration sketches with no \
+         frame of their own that take the only frame of the other sketches of their \
+         configuration lane (1 on the Front plane (Sketch7)); 1 lie on the Front lane fallback \
+         frame (origin 0,0,0, normal -Y, u-axis -Z), which no plane of the part stores, because \
+         their reference names the Front plane and the principal-plane component records of \
+         their own object do not name their plane, open item SF-01 (Sketch8)."
     );
 }
