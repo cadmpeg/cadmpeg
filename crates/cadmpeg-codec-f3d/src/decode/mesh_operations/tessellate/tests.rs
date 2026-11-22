@@ -201,7 +201,15 @@ fn tessellation_records_owner_roles_operand_group_and_produced_body() {
     assert!(!feature
         .source_properties
         .contains_key("mesh-tessellate-parameter:normal-deviation"));
-    assert_eq!(codes, ["feature.mesh-tessellate-source-unresolved"]);
+    assert_eq!(
+        codes,
+        [
+            "feature.mesh-operation-parameter-unbound",
+            "feature.mesh-operation-parameter-unbound",
+            "feature.mesh-operation-parameter-unbound",
+            "feature.mesh-tessellate-source-unresolved",
+        ]
+    );
 }
 
 #[test]

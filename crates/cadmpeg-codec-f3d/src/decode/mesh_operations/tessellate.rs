@@ -99,6 +99,12 @@ pub(in crate::decode) fn bind_features(
                     notes.property(format!("mesh-tessellate-owner:{role}"), owner);
                     if let Some(name) = parameter_name(inputs, scope, owner) {
                         notes.property(format!("mesh-tessellate-parameter:{role}"), name);
+                    } else {
+                        notes.losses.push(F3dLossCode::FeatureMeshOperationParameterUnbound.note(
+                            format!(
+                                "Mesh tessellation {source} has no parameter for its {role} owner {owner}."
+                            ),
+                        ));
                     }
                 }
                 if let Some(count) = parsed.operand_count {
