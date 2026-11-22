@@ -1818,7 +1818,10 @@ mod operand_list_combine {
             (std::slice::from_ref(history), scopes),
             &mut refusals,
         );
-        let losses = refusals.iter().map(|refusal| refusal.note()).collect();
+        let losses = refusals
+            .iter()
+            .map(crate::history::CombineOperandRefusal::note)
+            .collect();
         ((target, tools), losses, shared_body)
     }
 

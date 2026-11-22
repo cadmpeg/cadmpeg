@@ -31,8 +31,7 @@ pub(super) fn bind_combine_operands<'a>(
     pattern_bodies: Option<&BTreeSet<i64>>,
     inputs: &FeatureBodySelectionInputs<'a>,
     body_candidates: &mut BodyCandidates<'a>,
-    refusals: &mut Vec<CombineOperandRefusal>,
-    losses: &mut Vec<LossNote>,
+    (refusals, losses): (&mut Vec<CombineOperandRefusal>, &mut Vec<LossNote>),
 ) {
     let (Some(state_id), Some(previous_state_id)) = (
         scope.history_state_id(),
@@ -57,8 +56,7 @@ pub(super) fn bind_combine_operands<'a>(
         pattern_bodies,
         inputs,
         body_candidates,
-        refusals,
-        losses,
+        (refusals, losses),
     );
     if scope.previous_history_state_id().is_none() {
         for operand in [target, tools] {
@@ -79,8 +77,7 @@ fn bind_historical_combine_operands<'a>(
     pattern_bodies: Option<&BTreeSet<i64>>,
     inputs: &FeatureBodySelectionInputs<'a>,
     body_candidates: &mut BodyCandidates<'a>,
-    operand_refusals: &mut Vec<CombineOperandRefusal>,
-    losses: &mut Vec<LossNote>,
+    (operand_refusals, losses): (&mut Vec<CombineOperandRefusal>, &mut Vec<LossNote>),
 ) {
     if let Some(local) = combine_external_local_tools(scope) {
         *tools = local;

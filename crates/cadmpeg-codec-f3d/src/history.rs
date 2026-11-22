@@ -2149,15 +2149,6 @@ pub(crate) struct FeatureBodySelectionInputs<'a> {
     pub(crate) faces: &'a [cadmpeg_ir::topology::Face],
 }
 
-pub(crate) fn bind_feature_body_selections(
-    features: &mut [cadmpeg_ir::features::Feature],
-    inputs: &FeatureBodySelectionInputs<'_>,
-) -> Vec<cadmpeg_ir::report::loss::LossNote> {
-    let (mut losses, refusals) = bind_feature_body_selections_with_refusals(features, inputs);
-    losses.extend(native_combine_operand_refusal_notes(features, refusals));
-    losses
-}
-
 /// Bind the body selections of `features`, and return the browser-node
 /// refusals of `Combine` operands that stay native, for a later binding pass
 /// to settle.
@@ -2351,8 +2342,7 @@ pub(crate) fn bind_feature_body_selections_with_refusals(
                                 pattern_bodies,
                                 inputs,
                                 &mut body_candidates,
-                                &mut operand_refusals,
-                                &mut losses,
+                                (&mut operand_refusals, &mut losses),
                             );
                         });
                     if let Some(loss) = refusal {
