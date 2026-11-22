@@ -351,11 +351,13 @@ The class-290 primary paired with class-261 uses the same six-byte fields on its
 
 ### DR-67. Base Face material side and result choice
 
-**Question.** Which producer fields select Side 1, Side 2, Center, New Body, and New Component for a legacy sheet-metal Base Face, and what do the opaque carrier suffix and repeated-u32/f64 lane mean?
+**Question.** Which producer fields select Side 1, Side 2, Center, New Body, and New Component for a sheet-metal Base Face or Base Flange, and what do the opaque carrier suffix and repeated-u32/f64 lane mean?
 
-**Known.** `f3d.md` §3.1 defines the stable Base Face scope, ordered source-profile pairs, persistent region identities, and separate sheet-metal settings. The one-identity carrier is valid; the enclosing scope is a different record. The repeated discriminator differs between Forward results and is not a constant Forward or feature-family code. The complete carrier suffix remains opaque and has not been shown to omit side or result choice. Family-2 profile clauses, nonconstant loop markers, and secondary loop programs also require preservation; a family-3-only primary-loop decoder does not cover every source recipe.
+**Known.** `f3d.md` §3.1 defines the stable Base Face scope, ordered source-profile pairs, persistent region identities, and separate sheet-metal settings. The one-identity carrier is valid; the enclosing scope is a different record. The repeated discriminator differs between Forward results and is not a constant Forward or feature-family code. The complete carrier suffix remains opaque and has not been shown to omit side or result choice. A Base Flange in the fixed 416-byte form with a read operation frame places the thickness along the sketch plane's positive normal in the saves examined. Family-2 profile clauses, nonconstant loop markers, and secondary loop programs also require preservation; a family-3-only primary-loop decoder does not cover every source recipe.
 
 **Need.** Controlled saves must vary side and result choice independently while holding the sketch, regions, thickness, and rule fixed. Compare the carrier, settings, and profile programs and confirm each change against exact result topology. Resolve the ordered region identities to the corresponding sketch regions, including secondary loops.
+
+**Note.** A Base Flange with an unread operation frame keeps its readable profile and governing thickness. Its selected region program remains native with `feature.base-flange-profile-unresolved`; its side remains native with `feature.base-flange-side-unresolved`. With a read operation frame the decoder assumes Forward and charges `feature.base-flange-side-assumed`.
 
 ### DR-74. Lost-edge runs shorter than the operand list
 
@@ -554,13 +556,15 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 ### DR-93. Sheet-metal rule word and entry run
 
-**Question.** What does the u32 word at rule-record offset 21 state, and how long is the rule's entry run?
+**Question.** What does the u32 word at rule-record offset 21 state, how long is the rule's entry run, and which entries set bend radius, neutral-axis factor and relief?
 
-**Known.** In two CC0 sheet-metal parts the word is 3. It is followed by four LP-UTF16 expression and f64 value entries (`Thickness`, `1`, `Thickness * 0.5`, `Thickness * 2.0`), then a zero u32 and the `Thickness` entry again. So the word is not the entry count.
+**Known.** In two CC0 sheet-metal parts the word is 3. It is followed by four LP-UTF16 expression and f64 value entries (`Thickness`, `1`, `Thickness * 0.5`, `Thickness * 2.0`), then a zero u32 and the `Thickness` entry again.
 
-**Need.** Rules with a different number of entries, or a controlled edit of one rule value, would fix the word's meaning and the bounds of the entry run.
+**Need.** Controlled edits of thickness, bend radius, neutral-axis factor and relief, with the resulting geometry measured, must identify each entry and the entry-run boundary. Rules with different entry counts must identify the rule word.
 
 **Conflict.** Treating the word as an entry count reads one entry fewer than the record holds.
+
+**Note.** The decoder retains the rule controls in the source record and reports `feature.sheet-metal-rule-controls-native`.
 
 ### DR-94. Freedom entry word and trailing value
 

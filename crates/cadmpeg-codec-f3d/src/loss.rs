@@ -538,6 +538,13 @@ pub(crate) enum F3dLossCode {
     /// Sheet-metal base flanges projected with their stored thickness copy because
     /// their rule states no thickness.
     SheetThicknessUnruled,
+    SheetMetalRuleControlsNative,
+    SheetMetalProfileNative,
+    BaseFlangeProfileUnresolved,
+    BaseFlangeThicknessUnresolved,
+    BaseFlangeSideUnresolved,
+    /// Base flanges with a read operation frame project the Forward material side, which the frame does not store.
+    BaseFlangeSideAssumed,
     /// Decoded feature scopes have no neutral construction-history feature.
     FeatureScopeUnprojected,
     /// A Move scope has no neutral `MoveBody` feature.
@@ -1680,6 +1687,12 @@ impl F3dLossCode {
         Self::FeatureBoxSupportFrameAssumed,
         Self::FeatureBoxSupportFlagsAssumed,
         Self::SheetThicknessUnruled,
+        Self::SheetMetalRuleControlsNative,
+        Self::SheetMetalProfileNative,
+        Self::BaseFlangeProfileUnresolved,
+        Self::BaseFlangeThicknessUnresolved,
+        Self::BaseFlangeSideUnresolved,
+        Self::BaseFlangeSideAssumed,
         Self::FeatureScopeUnprojected,
         Self::MoveUnprojected,
         Self::ModifyUnprojected,
@@ -2668,6 +2681,12 @@ impl F3dLossCode {
                 "feature.mesh-separate-membership-unresolved"
             }
             Self::SheetThicknessUnruled => "feature.sheet-thickness-unruled",
+            Self::SheetMetalRuleControlsNative => "feature.sheet-metal-rule-controls-native",
+            Self::SheetMetalProfileNative => "feature.sheet-metal-profile-native",
+            Self::BaseFlangeProfileUnresolved => "feature.base-flange-profile-unresolved",
+            Self::BaseFlangeThicknessUnresolved => "feature.base-flange-thickness-unresolved",
+            Self::BaseFlangeSideUnresolved => "feature.base-flange-side-unresolved",
+            Self::BaseFlangeSideAssumed => "feature.base-flange-side-assumed",
             Self::EmbossControlsNative => "feature.emboss-controls-native",
             Self::FeatureShellAuxiliaryReferencesNative => {
                 "feature.shell-auxiliary-references-native"
@@ -3702,6 +3721,12 @@ impl F3dLossCode {
             | Self::FeatureMeshSeparateReferenceRolesAssumed
             | Self::FeatureMeshSeparateMembershipUnresolved
             | Self::SheetThicknessUnruled
+            | Self::SheetMetalRuleControlsNative
+            | Self::SheetMetalProfileNative
+            | Self::BaseFlangeProfileUnresolved
+            | Self::BaseFlangeThicknessUnresolved
+            | Self::BaseFlangeSideUnresolved
+            | Self::BaseFlangeSideAssumed
             | Self::HoleExtentUnproven
             | Self::HolePlacementUnproven
             | Self::FeaturePointDirectionInputsUnrepresented
@@ -4441,6 +4466,12 @@ impl F3dLossCode {
             | Self::FeatureMeshSeparateMembershipUnresolved
             | Self::ThreadLiveFaceUnproven
             | Self::SheetThicknessUnruled
+            | Self::SheetMetalRuleControlsNative
+            | Self::SheetMetalProfileNative
+            | Self::BaseFlangeProfileUnresolved
+            | Self::BaseFlangeThicknessUnresolved
+            | Self::BaseFlangeSideUnresolved
+            | Self::BaseFlangeSideAssumed
             | Self::WorkPlaneFrameUnbound
             | Self::WorkPlaneInferredAxisAssumed
             | Self::CylinderPlacementUnbound
@@ -5308,6 +5339,12 @@ mod tests {
                 "feature.box-support-frame-assumed",
                 "feature.box-support-flags-assumed",
                 "feature.sheet-thickness-unruled",
+                "feature.sheet-metal-rule-controls-native",
+                "feature.sheet-metal-profile-native",
+                "feature.base-flange-profile-unresolved",
+                "feature.base-flange-thickness-unresolved",
+                "feature.base-flange-side-unresolved",
+                "feature.base-flange-side-assumed",
                 "feature.scope-unprojected",
                 "feature.move-unprojected",
                 "feature.modify-unprojected",

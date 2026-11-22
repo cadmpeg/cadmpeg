@@ -25,7 +25,6 @@ use crate::design::feature_project::scope_order::ScopeHistoryGraph;
 use crate::design::feature_project::scope_order::ScopeHistoryPredecessor;
 use crate::design::feature_project::scope_properties::scope_parameter_expressions;
 use crate::design::feature_project::scope_properties::scope_properties;
-use crate::design::feature_project::sheet_metal::project_base_flange;
 use crate::design::feature_project::sheet_metal::project_hem;
 use crate::design::feature_project::surface_edit::project_ruled_surface;
 use crate::design::feature_project::surface_edit::project_surface_stitch;
@@ -119,6 +118,7 @@ macro_rules! or_none {
 }
 
 mod base_face;
+mod base_flange;
 mod bend_lines;
 mod chamfer;
 mod coil;
@@ -1031,11 +1031,12 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     } else if scope.kind()
                         == crate::records::feature::scope::DesignFeatureKind::BaseFlange
                     {
-                        project_base_flange(
+                        base_flange::project(
                             scope,
                             construction_groups,
                             placements,
                             sheet_metal_settings,
+                            &mut projection_losses,
                         )
                         .map_or_else(
                             || {
@@ -1044,8 +1045,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                     parameters: BTreeMap::new(),
                                 })
                             },
-                            |(definition, ruled)| {
-                                if !ruled {
+                            |(definition, stored_thickness)| {
+                                if stored_thickness {
                                     unruled_flange_thicknesses
                                         .set(unruled_flange_thicknesses.get() + 1);
                                 }

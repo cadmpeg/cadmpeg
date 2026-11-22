@@ -8948,6 +8948,28 @@ Unstated regions:
 
 - `0..11` (11 B): The indexed header precedes this field run.
 
+## `base_flange_scope`
+
+Spec §3.1 · layout: byte offsets · size: 416 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/sheet_metal.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 82 | 4 | `settings_record_index` | `u32` | little | spec | The scope repeats references three, two, and zero at primary-record offsets 82, 113, and 146 |
+| 113 | 4 | `thickness_record_index` | `u32` | little | spec | The scope repeats references three, two, and zero at primary-record offsets 82, 113, and 146 |
+| 123 | 8 | `thickness_copy` | `f64` | little | spec | A positive finite f64 at primary-record offset 123 stores a copy of a sheet thickness in centimetres |
+| 146 | 4 | `profile_group_record_index` | `u32` | little | spec | The scope repeats references three, two, and zero at primary-record offsets 82, 113, and 146 |
+
+Unstated regions:
+
+- `0..82` (82 B): Scope header and controls before the repeated settings index.
+- `86..113` (27 B): Controls before the repeated thickness-construction index.
+- `117..123` (6 B): Marked-reference suffix.
+- `131..146` (15 B): Controls before the repeated profile-group index.
+- `150..416` (266 B): Remaining scope controls and ordered references.
+
 ## `sheet_metal_rule_v0_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 25 B
