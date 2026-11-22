@@ -38,9 +38,10 @@ use cadmpeg_ir::features::Feature;
 use cadmpeg_ir::features::FeatureDefinition as IrFeatureDefinition;
 use cadmpeg_ir::features::FeatureId as IrFeatureId;
 use cadmpeg_ir::features::FeatureOperation as IrFeatureOperation;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -1350,7 +1351,7 @@ fn geometry_signal_excludes_opaque_carriers() {
                 .expect("identity grammar"),
             ProceduralSurfaceDefinition::Exact(
                 cadmpeg_ir::geometry::surface_payloads::ExactSurfacePayload::try_new(
-                    cadmpeg_ir::geometry::ExactSpline::Legacy {
+                    cadmpeg_ir::geometry::procedural_surfaces::ExactSpline::Legacy {
                         ranges: [[0.0, 1.0], [0.0, 1.0]],
                         extension: 0,
                         cache: None,

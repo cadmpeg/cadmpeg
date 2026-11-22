@@ -11,9 +11,11 @@ use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    pcurve::PcurveGeometry, CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -969,10 +971,12 @@ mod route_tests {
 
     use cadmpeg_ir::document::CadIr;
 
+    use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     use cadmpeg_ir::geometry::{
-        pcurve::PcurveGeometry, Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition,
-        ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
-        Surface, SurfaceGeometry,
+        Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, SolvedCurveGeometry,
+        SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -1436,7 +1440,7 @@ mod route_tests {
         ir.geometry.procedural_surfaces[0].edit_definition(|definition| {
             *definition = ProceduralSurfaceDefinition::Exact(
                 cadmpeg_ir::geometry::surface_payloads::ExactSurfacePayload::try_new(
-                    cadmpeg_ir::geometry::ExactSpline::Legacy {
+                    cadmpeg_ir::geometry::procedural_surfaces::ExactSpline::Legacy {
                         ranges: [[0.0, 1.0], [0.0, 1.0]],
                         extension: 0,
                         cache: None,

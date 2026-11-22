@@ -169,7 +169,7 @@ fn trimmed_curve_resolves_a_surface_curve_basis_carrier() {
             .procedural_curve_owner(&curve.id)
             .map(CurveId::as_str)
             == Some("step:data:curve#70")
-            && match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((matched_payload.source(),), (source,) if source.as_str() == "step:data:curve#16"), _ => false }
+            && match curve.definition() { cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Subset(matched_payload) => matches!((matched_payload.source(),), (source,) if source.as_str() == "step:data:curve#16"), _ => false }
     }));
     assert!(decoded.report().losses.iter().all(|loss| {
         !loss
@@ -235,7 +235,7 @@ fn pcurve_trimmed_stale_range_recovers_the_edge_use_interval() {
         .expect("stale trimmed pcurve use");
     assert_eq!(
         use_.parameter_range
-            .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
+            .map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints),
         Some([0.0, 1.0])
     );
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
@@ -410,7 +410,7 @@ fn linear_extrusion_pcurve_uses_directrix_and_dimensionless_sweep_parameters() {
                 == Some("step:data:surface#28")
                 && matches!(
                     surface.definition(),
-                    cadmpeg_ir::geometry::ProceduralSurfaceDefinition::LinearSweep { .. }
+                    cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::LinearSweep { .. }
                 )
         }));
 }
@@ -971,7 +971,7 @@ fn direct_boundary_curve_builds_a_curve_bounded_surface() {
             .expect("curve-bounded surface");
         assert!(matches!(
             bounded.definition(),
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded { boundaries, .. }
+            cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::CurveBounded { boundaries, .. }
                 if boundaries == &[CurveId::mint("step:data:curve#9".to_owned()).expect("identity grammar")]
         ));
         assert!(!result.report().losses.iter().any(|loss| {
@@ -1005,13 +1005,15 @@ fn complex_surface_curve_pcurve_is_retained_by_curve_bounded_surface() {
         .geometry
         .procedural_surfaces
         .iter()
-        .find_map(|surface| match surface.definition() {
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded {
+        .find_map(|surface| {
+            match surface.definition() {
+            cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::CurveBounded {
                 boundaries,
                 boundary_pcurves,
                 ..
             } => Some((boundaries, boundary_pcurves)),
             _ => None,
+        }
         })
         .expect("curve-bounded surface");
     assert_eq!(

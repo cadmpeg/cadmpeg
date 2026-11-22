@@ -4,8 +4,8 @@ use proptest::{prop_assert_eq, proptest};
 
 use super::{
     bit_is_set, rounded_magnitude, scaled_finite, ExactSignedSum, LaneProductSums, LaneSum,
-    ProductSum, ScaledValue, Window, EXACT_PRODUCT_EXPONENT, EXACT_SUM_WORDS, MAX_SCALED_EXPONENT,
-    MIN_SCALED_EXPONENT, MIN_SIGNIFICAND_EXPONENT, SUBNORMAL_UNIT_BIT,
+    ProductSum, ScaledValue, Window, Words, EXACT_PRODUCT_EXPONENT, EXACT_SUM_WORDS,
+    MAX_SCALED_EXPONENT, MIN_SCALED_EXPONENT, MIN_SIGNIFICAND_EXPONENT, SUBNORMAL_UNIT_BIT,
 };
 use crate::scalar::{FiniteReal, NonZeroReal};
 
@@ -224,16 +224,17 @@ fn bitwise_rounded_magnitude(
     let sign = if negative { -1.0 } else { 1.0 };
     let keep = (highest_bit + 1).min(53);
     let mut significand = 0_u64;
+    let words = Words::full(magnitude);
     for bit in (highest_bit + 1 - keep..=highest_bit).rev() {
-        significand = (significand << 1) | u64::from(bit_is_set(magnitude, usize::from(bit)));
+        significand = (significand << 1) | u64::from(bit_is_set(words, usize::from(bit)));
     }
     if keep == 53 {
         let guard = highest_bit
             .checked_sub(keep)
-            .is_some_and(|bit| bit_is_set(magnitude, usize::from(bit)));
-        let sticky = highest_bit.checked_sub(keep).is_some_and(|bit| {
-            (0..bit).any(|candidate| bit_is_set(magnitude, usize::from(candidate)))
-        });
+            .is_some_and(|bit| bit_is_set(words, usize::from(bit)));
+        let sticky = highest_bit
+            .checked_sub(keep)
+            .is_some_and(|bit| (0..bit).any(|candidate| bit_is_set(words, usize::from(candidate))));
         if guard && (sticky || significand & 1 != 0) {
             significand += 1;
             if significand == 1_u64 << 53 {
@@ -255,14 +256,15 @@ fn bitwise_rounded_magnitude(
 
 /// `ExactSignedSum::finite_sum` below the normal range as it read bit by bit.
 fn bitwise_subnormal_sum(magnitude: &[u64; EXACT_SUM_WORDS], highest_bit: usize) -> FiniteReal {
+    let words = Words::full(magnitude);
     let mut units = 0_u64;
     if highest_bit >= SUBNORMAL_UNIT_BIT {
         for bit in (SUBNORMAL_UNIT_BIT..=highest_bit).rev() {
-            units = (units << 1) | u64::from(bit_is_set(magnitude, bit));
+            units = (units << 1) | u64::from(bit_is_set(words, bit));
         }
     }
-    let guard = bit_is_set(magnitude, SUBNORMAL_UNIT_BIT - 1);
-    let sticky = (0..SUBNORMAL_UNIT_BIT - 1).any(|bit| bit_is_set(magnitude, bit));
+    let guard = bit_is_set(words, SUBNORMAL_UNIT_BIT - 1);
+    let sticky = (0..SUBNORMAL_UNIT_BIT - 1).any(|bit| bit_is_set(words, bit));
     if guard && (sticky || units & 1 != 0) {
         units += 1;
     }
@@ -284,7 +286,7 @@ proptest! {
         let highest = u16::try_from(highest_bit(&magnitude)).expect("a u16 bit index");
         let low = tight_window(&magnitude).low;
         let rounded =
-            rounded_magnitude(negative, &magnitude, low, highest).expect("a rounded value");
+            rounded_magnitude(negative, Words::full(&magnitude), low, highest).expect("a rounded value");
         let (sign, mantissa, exponent) = bitwise_rounded_magnitude(negative, &magnitude, highest);
         prop_assert_eq!(rounded.sign.to_bits(), sign.to_bits());
         prop_assert_eq!(rounded.mantissa.to_bits(), mantissa.to_bits());
@@ -302,12 +304,7 @@ proptest! {
             magnitude[bit / 64] &= !(1_u64 << (bit % 64));
         }
         let highest = highest_bit(&magnitude);
-        let mut sum = ExactSignedSum {
-            positive: magnitude,
-            negative: [0; EXACT_SUM_WORDS],
-            window: tight_window(&magnitude),
-            invalid: false,
-        };
+        let mut sum = ExactSignedSum::from_positive(&magnitude, tight_window(&magnitude));
         prop_assert_eq!(
             sum.finite_sum().map(|value| value.get().to_bits()),
             Some(bitwise_subnormal_sum(&magnitude, highest).get().to_bits())
@@ -487,7 +484,7 @@ fn window_holds_every_nonzero_word(sum: &ExactSignedSum) -> bool {
     let words = sum.window.words();
     (0..EXACT_SUM_WORDS)
         .filter(|index| !words.contains(index))
-        .all(|index| sum.positive[index] == 0 && sum.negative[index] == 0)
+        .all(|index| sum.word_pair(index) == (0, 0))
 }
 
 #[test]

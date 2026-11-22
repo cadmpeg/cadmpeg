@@ -20,9 +20,10 @@ use cadmpeg_ir::features::tree::{FeatureTreeNodeRole, TreeChildren};
 use cadmpeg_ir::features::{
     FeatureDefinition, FeatureId, FeatureOperation, FeatureSourceContent, UnresolvedFamily,
 };
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CurveId, EdgeId, LoopId, ProceduralSurfaceId, RegionId, ShellId, SurfaceId,

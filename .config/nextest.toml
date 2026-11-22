@@ -1,4 +1,6 @@
-# A test that runs past 600 seconds is terminated and reported as a timeout
-# with its name.
+# A test that runs past 15 seconds is reported as slow, with its time, in the
+# final status, so the tests that hold up the end of a run are named in the
+# CI log. One that runs past 600 seconds is terminated and reported as a
+# timeout with its name.
 [profile.default]
-slow-timeout = { period = "60s", terminate-after = 10 }
+slow-timeout = { period = "15s", terminate-after = 40 }

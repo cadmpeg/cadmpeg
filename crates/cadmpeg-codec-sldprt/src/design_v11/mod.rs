@@ -49,7 +49,7 @@ use crate::records::{FeatureHistory, FeatureInputLane};
 use crate::rollback::{Reading, Unread};
 
 pub(crate) use names::Persistent;
-pub(crate) use units::length_unit;
+pub(crate) use units::{length_places, length_unit};
 
 /// What a part's design is projected from.
 pub(crate) struct Part<'a> {
@@ -63,6 +63,9 @@ pub(crate) struct Part<'a> {
     pub(crate) persistent: Persistent<'a>,
     /// The part's length unit.
     pub(crate) length: Option<UnitSymbol>,
+    /// The number of decimal places at which the part shows lengths: the
+    /// largest its configurations state.
+    pub(crate) length_places: Option<u32>,
     /// What the stored marks state of the rollback position.
     pub(crate) rollback: Reading,
 }
@@ -86,6 +89,7 @@ pub(crate) fn project(
         bodies,
         persistent,
         length,
+        length_places,
         rollback,
     } = part;
     let mut timeline = tree::timeline(histories)?;
@@ -108,6 +112,7 @@ pub(crate) fn project(
     let readings = parameters::Readings {
         decoded: parameters::Decoded::new(&ir.model.parameters, lanes),
         length_unit: length,
+        length_places,
         bound: typed.bound,
         measured: typed.measured,
         driven: typed.references,
@@ -190,6 +195,7 @@ pub(crate) fn project(
         active_arrangements: BTreeSet::new(),
         occurrences: BTreeMap::new(),
         current,
+        unproduced: BTreeSet::default(),
     });
     ir.design.containers.push(container);
     ir.design.features.extend(features);

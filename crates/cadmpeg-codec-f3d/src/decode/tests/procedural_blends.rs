@@ -41,7 +41,9 @@ use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 #[test]
 fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
-    use cadmpeg_ir::geometry::{G2BlendFirstShape, LoftBridgeToken, ProceduralSurfaceDefinition};
+    use cadmpeg_ir::geometry::blends::G2BlendFirstShape;
+    use cadmpeg_ir::geometry::lofts::LoftBridgeToken;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     for name in ["g2_blend_spl_sur", "g2blnsur"] {
         for full in [true, false] {
@@ -193,7 +195,8 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
 
 #[test]
 fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
-    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, RollingBallRadiusSelector};
+    use cadmpeg_ir::geometry::blends::RollingBallRadiusSelector;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     for name in [
         "rb_blend_spl_sur",
@@ -216,7 +219,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
         };
         let (Some(native),) = (definition_payload
             .native()
-            .map(cadmpeg_ir::geometry::RollingBallConstruction::to_raw),)
+            .map(cadmpeg_ir::geometry::blends::RollingBallConstruction::to_raw),)
         else {
             panic!("expected complete rolling-ball graph")
         };
@@ -224,11 +227,11 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
         assert_eq!(native.revision.get(), 22507);
         assert_eq!(
             native.sides[0].support_kind,
-            cadmpeg_ir::geometry::VariableBlendSupportKind::Surface
+            cadmpeg_ir::geometry::variable_blends::VariableBlendSupportKind::Surface
         );
         assert_eq!(
             native.sides[1].support_kind,
-            cadmpeg_ir::geometry::VariableBlendSupportKind::Curve
+            cadmpeg_ir::geometry::variable_blends::VariableBlendSupportKind::Curve
         );
         assert_eq!(
             native.sides[0].location,
@@ -358,7 +361,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
         };
         let (Some(actual),) = (definition_payload
             .native()
-            .map(cadmpeg_ir::geometry::RollingBallConstruction::to_raw),)
+            .map(cadmpeg_ir::geometry::blends::RollingBallConstruction::to_raw),)
         else {
             panic!("expected complete round-trip rolling-ball graph")
         };
@@ -409,7 +412,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
 /// grammar and carries no native rolling-ball graph.
 #[test]
 fn a_non_positive_rolling_ball_revision_is_outside_the_complete_grammar() {
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     let mut stored = vec![0x04];
     stored.extend_from_slice(&22507_i64.to_le_bytes());
@@ -450,7 +453,7 @@ fn a_non_positive_rolling_ball_revision_is_outside_the_complete_grammar() {
 /// tail decode at their stored values only when the tail is framed exactly.
 #[test]
 fn parameterized_tail_form_decodes_in_every_blend_carrier() {
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     let decoded = F3dCodec
         .decode(
@@ -493,7 +496,7 @@ fn parameterized_tail_form_decodes_in_every_blend_carrier() {
         };
         let (Some(native),) = (definition_payload
             .native()
-            .map(cadmpeg_ir::geometry::RollingBallConstruction::to_raw),)
+            .map(cadmpeg_ir::geometry::blends::RollingBallConstruction::to_raw),)
         else {
             panic!("expected complete rolling-ball graph")
         };
@@ -538,7 +541,7 @@ fn parameterized_tail_form_decodes_in_every_blend_carrier() {
     };
     let Some(form) = definition_payload_0
         .revision_form()
-        .map(cadmpeg_ir::geometry::RevisionSurfaceForm::to_raw)
+        .map(cadmpeg_ir::geometry::revision_forms::RevisionSurfaceForm::to_raw)
     else {
         panic!("expected a parameterized revision-gated extrusion")
     };
@@ -556,9 +559,8 @@ fn parameterized_tail_form_decodes_in_every_blend_carrier() {
 
 #[test]
 fn stale_variable_blend_cache_yields_to_the_construction_carrier() {
-    use cadmpeg_ir::geometry::{
-        ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry,
-    };
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
     let current = F3dCodec
         .decode(
@@ -619,7 +621,7 @@ fn stale_variable_blend_cache_yields_to_the_construction_carrier() {
     stale_procedural.definition(), ProceduralSurfaceDefinition::VariableBlend(definition_payload) if matches!((definition_payload.construction(),), (construction,) if construction.cache.shape_prefix() == 0
             && matches!(
                 construction.cache,
-                cadmpeg_ir::geometry::VariableBlendCache::Stale {}
+                cadmpeg_ir::geometry::revision_forms::VariableBlendCache::Stale {}
             ))));
     assert!(!cadmpeg_ir::validate_neutral(stale.ir(), Vec::new())
         .expect("validate the neutral model")
@@ -634,7 +636,8 @@ fn stale_variable_blend_cache_yields_to_the_construction_carrier() {
 /// the stored parameterization rather than needing a cache it never had.
 #[test]
 fn parameterized_blend_tails_round_trip_source_less_generation() {
-    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SurfaceGeometry};
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::SurfaceGeometry;
 
     for stream in [
         synthetic_full_rolling_ball_with_tail_smbh("rb_blend_spl_sur", 2),
@@ -683,7 +686,7 @@ fn parameterized_blend_tails_round_trip_source_less_generation() {
             ProceduralSurfaceDefinition::Blend(definition_payload) => {
                 match (definition_payload
                     .native()
-                    .map(cadmpeg_ir::geometry::RollingBallConstruction::to_raw),)
+                    .map(cadmpeg_ir::geometry::blends::RollingBallConstruction::to_raw),)
                 {
                     (Some(native),) => (
                         native.cache.parameterization().is_some(),
@@ -713,7 +716,7 @@ fn parameterized_blend_tails_round_trip_source_less_generation() {
 
 #[test]
 fn variable_blend_second_interval_decodes_unbounded_upper_bound() {
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     // The tail's second interval carries a lower bound with an
     // unbounded-above marker: `(T lo, F)` decodes to `[Some(lo), None]`.
@@ -743,8 +746,9 @@ fn variable_blend_second_interval_decodes_unbounded_upper_bound() {
 
 #[test]
 fn generated_interp_radius_law_leaves_the_cross_section_enum_unconsumed() {
-    use cadmpeg_ir::geometry::{
-        ProceduralSurfaceDefinition, VariableBlendCrossSection, VariableBlendValuePayload,
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::variable_blends::{
+        VariableBlendCrossSection, VariableBlendValuePayload,
     };
 
     // An `interp` payload ends at its last radius point. The enum that follows
@@ -802,7 +806,8 @@ fn generated_interp_radius_law_leaves_the_cross_section_enum_unconsumed() {
 
 #[test]
 fn generated_edge_offset_radius_law_reads_two_parameters_and_one_offset() {
-    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, VariableBlendValuePayload};
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::variable_blends::VariableBlendValuePayload;
 
     // `edge_offset` without the leading sub-discriminator stores its law-domain
     // parameter range and one offset: the second field is a parameter, and only
@@ -836,8 +841,9 @@ fn generated_edge_offset_radius_law_reads_two_parameters_and_one_offset() {
 
 #[test]
 fn generated_variable_blends_decode_complete_single_radius_graphs() {
-    use cadmpeg_ir::geometry::{
-        ProceduralSurfaceDefinition, VariableBlendSurfaceSubtype, VariableBlendValuePayload,
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::variable_blends::{
+        VariableBlendSurfaceSubtype, VariableBlendValuePayload,
     };
 
     for (name, subtype) in [
@@ -887,11 +893,11 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         assert_eq!(construction.revision.get(), 23100);
         assert_eq!(
             construction.sides[0].support_kind,
-            cadmpeg_ir::geometry::VariableBlendSupportKind::Surface
+            cadmpeg_ir::geometry::variable_blends::VariableBlendSupportKind::Surface
         );
         assert_eq!(
             construction.sides[1].support_kind,
-            cadmpeg_ir::geometry::VariableBlendSupportKind::Curve
+            cadmpeg_ir::geometry::variable_blends::VariableBlendSupportKind::Curve
         );
         assert_eq!(
             construction.sides[0]
@@ -954,11 +960,11 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         );
         assert_eq!(
             construction.convexity,
-            cadmpeg_ir::geometry::VariableBlendConvexity::Convex
+            cadmpeg_ir::geometry::variable_blends::VariableBlendConvexity::Convex
         );
         assert_eq!(
             construction.render_mode,
-            cadmpeg_ir::geometry::VariableBlendRenderMode::RollingBallSnapshot
+            cadmpeg_ir::geometry::variable_blends::VariableBlendRenderMode::RollingBallSnapshot
         );
         assert_eq!(construction.post_range, [Some(0.0), Some(1.0)]);
         assert!(construction.post_curve.is_some());
@@ -1089,9 +1095,8 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
 
 #[test]
 fn generated_two_radii_variable_blend_round_trips_rounded_chamfer() {
-    use cadmpeg_ir::geometry::{
-        ProceduralSurfaceDefinition, VariableBlendRadii, VariableBlendValuePayload,
-    };
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::variable_blends::{VariableBlendRadii, VariableBlendValuePayload};
 
     let decoded = F3dCodec
         .decode(
@@ -1112,7 +1117,7 @@ fn generated_two_radii_variable_blend_round_trips_rounded_chamfer() {
     assert!(matches!(
         &construction.radii,
         VariableBlendRadii::Two {
-            second: cadmpeg_ir::geometry::VariableBlendValue {
+            second: cadmpeg_ir::geometry::variable_blends::VariableBlendValue {
                 payload: VariableBlendValuePayload::TwoEnds {
                     parameters: [0.1, 0.9],
                     radii: [35.0, 45.0],
@@ -1123,7 +1128,7 @@ fn generated_two_radii_variable_blend_round_trips_rounded_chamfer() {
             ..
         }
     ));
-    let Some(cadmpeg_ir::geometry::VariableBlendCrossSection::RoundedChamfer {
+    let Some(cadmpeg_ir::geometry::variable_blends::VariableBlendCrossSection::RoundedChamfer {
         radius: Some(radius),
     }) = &construction.cross_section
     else {
@@ -1162,7 +1167,8 @@ fn generated_two_radii_variable_blend_round_trips_rounded_chamfer() {
 
 #[test]
 fn generated_two_radii_variable_blend_decodes_explicit_circular_cross_section() {
-    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, VariableBlendRadii};
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::variable_blends::VariableBlendRadii;
 
     let decoded = F3dCodec
         .decode(
@@ -1185,7 +1191,7 @@ fn generated_two_radii_variable_blend_decodes_explicit_circular_cross_section() 
     assert!(matches!(construction.radii, VariableBlendRadii::Two { .. }));
     assert!(matches!(
         &construction.cross_section,
-        Some(cadmpeg_ir::geometry::VariableBlendCrossSection::Circular {})
+        Some(cadmpeg_ir::geometry::variable_blends::VariableBlendCrossSection::Circular {})
     ));
     let expected = construction.clone();
     let (mut source_less, _, _) = decoded.into_parts();
