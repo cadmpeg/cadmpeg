@@ -39,6 +39,44 @@ fn wide_document(comment: &str) -> Vec<u8> {
     frame
 }
 
+/// An eleven-byte discriminator-6 document parameter with the given comment
+/// and the ten-byte expression trailer.
+fn eleven_byte_document(comment: &str) -> Vec<u8> {
+    let mut frame = parameter_record(None, "37 mm", "User Parameter", Some("mm"), "w", 3.7);
+    frame[22..30].copy_from_slice(&6u64.to_le_bytes());
+    let expression_end = 36 + 4 + 2 * "37 mm".len();
+    frame.insert(expression_end, 0);
+    frame.splice(27..31, text_field(comment));
+    frame
+}
+
+#[test]
+fn eleven_byte_parameter_comment_moves_the_later_fields() {
+    let parameter =
+        parse_design_parameter_record(&eleven_byte_document("note")).expect("commented");
+    assert_eq!(parameter.kind(), DesignParameterKind::User);
+    assert_eq!(parameter.comment(), Some("note"));
+    assert_eq!(parameter.source_ordinal, 9);
+    assert_eq!(parameter.owner_record_index(), None);
+    assert_eq!(parameter.expression(), "37 mm");
+    assert_eq!(parameter.name(), "w");
+    assert_eq!(
+        parameter
+            .family_discriminator()
+            .map(|field| (field.value.code(), field.offset)),
+        Some((6, 22))
+    );
+    assert_eq!(
+        serde_json::to_value(&parameter).unwrap()["comment_offset"],
+        31
+    );
+    assert_eq!(parameter.expression_offset(), 48);
+
+    let plain = parse_design_parameter_record(&eleven_byte_document("")).expect("no comment");
+    assert_eq!(plain.comment(), None);
+    assert_eq!(plain.expression_offset(), 40);
+}
+
 #[test]
 fn wide_parameter_comment_moves_the_later_fields() {
     for comment in ["note", "Ø entraxe 12"] {
@@ -83,9 +121,12 @@ fn wide_parameter_keeps_whitespace_comment_and_offset() {
 #[test]
 fn wide_parameter_comment_requires_its_zero_byte_and_complete_code_units() {
     let mut marked = wide_owned("note");
-    assert_eq!(wide_parameter_comment(&marked), Some(("note".into(), 43)));
+    assert_eq!(
+        parameter_comment(&marked, WIDE_DISCRIMINATED_SHIFT),
+        Some(("note".into(), 43))
+    );
     marked[30] = 1;
-    assert!(wide_parameter_comment(&marked).is_none());
+    assert!(parameter_comment(&marked, WIDE_DISCRIMINATED_SHIFT).is_none());
     assert!(parse_design_parameter_record(&marked).is_none());
 
     let mut overlong = wide_owned("note");
