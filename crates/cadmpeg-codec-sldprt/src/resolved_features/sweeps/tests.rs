@@ -85,7 +85,7 @@ pub(super) fn operand(
     (contact, source, options)
 }
 
-fn head(bytes: &mut Vec<u8>) {
+pub(super) fn head(bytes: &mut Vec<u8>) {
     bytes.extend_from_slice(&[0xff, 0xff, 0x1f, 0, 3]);
     bytes.extend_from_slice(&[0xff; 8]);
     bytes.extend_from_slice(&(-1.0f32).to_le_bytes());

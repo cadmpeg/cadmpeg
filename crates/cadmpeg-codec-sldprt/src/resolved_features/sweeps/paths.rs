@@ -123,7 +123,7 @@ pub(super) fn spatial(
                 if owner_of_points.is_some_and(|value| value != owner) {
                     None
                 } else if later {
-                    continue;
+                    return None;
                 } else {
                     Some(sketch)
                 }
@@ -133,7 +133,12 @@ pub(super) fn spatial(
         };
         let form = curve_form(payload, offset, ListedReading::Complete);
         let CurveForm::Line { start, end } = (match (form, sketch) {
-            (None, None) => continue,
+            // An unlisted primary point record is read through the point roster; any
+            // other unlisted selected record may be a path member, so the path stays native.
+            (None, None) if View::u16_le_at(payload, offset + head::SELECTOR)? & 15 == 4 => {
+                continue;
+            }
+            (None, None) => return None,
             (Some(form), _) => form,
             (None, Some(_)) => return None,
         }) else {

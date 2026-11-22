@@ -181,3 +181,60 @@ fn an_unadmitted_selected_marker_retains_the_path() {
     lane.sketch_entities.push(marker);
     assert!(planar(&lane, "source").is_none());
 }
+
+fn append_selected_record(lane: &mut crate::records::FeatureInputLane, record: &[u8]) {
+    use crate::records::{SketchInputEntity, SketchInputKind};
+    let mut bytes = lane.native_payload.to_vec();
+    let offset = bytes.len();
+    bytes.extend_from_slice(record);
+    lane.native_payload = bytes.into();
+    let mut marker = SketchInputEntity::new(
+        format!("marker#{offset}"),
+        "lane#1",
+        9,
+        u64::try_from(offset).unwrap(),
+        SketchInputKind::LineOrCircle,
+    );
+    marker.feature_ref = Some("source".into());
+    lane.sketch_entities.push(marker);
+}
+
+#[test]
+fn a_selected_spatial_curve_in_a_later_list_retains_the_path() {
+    let mut lane = sketch(true);
+    assert_eq!(spatial(&lane, "source").map(|curves| curves.len()), Some(2));
+    let first = usize::try_from(lane.sketch_entities[0].offset()).unwrap();
+    let second = usize::try_from(lane.sketch_entities[1].offset()).unwrap();
+    let line = lane.native_payload[first..second].to_vec();
+    // A record that is neither a curve nor external ends the first curve list.
+    let mut separator = Vec::new();
+    crate::resolved_features::sweeps::tests::head(&mut separator);
+    separator.extend_from_slice(&[0; 40]);
+    let mut bytes = lane.native_payload.to_vec();
+    bytes.extend_from_slice(&separator);
+    lane.native_payload = bytes.into();
+    append_selected_record(&mut lane, &line);
+    let lists = SketchRecordLists::new(&lane.native_payload);
+    let offset = usize::try_from(lane.sketch_entities.last().unwrap().offset()).unwrap();
+    assert!(matches!(
+        lists.record(offset),
+        Some(ListedRecord::Curve { later: true, .. })
+    ));
+    assert!(spatial(&lane, "source").is_none());
+}
+
+#[test]
+fn a_selected_unlisted_spatial_record_retains_the_path() {
+    let mut lane = sketch(true);
+    let mut record = Vec::new();
+    crate::resolved_features::sweeps::tests::head(&mut record);
+    record.extend_from_slice(&[0; 40]);
+    // A selector other than the point selector `4` leaves a selected record unread.
+    record[head::SELECTOR..head::SELECTOR + 2].copy_from_slice(&2u16.to_le_bytes());
+    append_selected_record(&mut lane, &record);
+    let offset = usize::try_from(lane.sketch_entities.last().unwrap().offset()).unwrap();
+    assert!(SketchRecordLists::new(&lane.native_payload)
+        .record(offset)
+        .is_none());
+    assert!(spatial(&lane, "source").is_none());
+}
