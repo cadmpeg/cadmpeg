@@ -231,7 +231,7 @@ little-endian `u32` values.
 | constant block | 68 bytes |
 | four words | `0`, `0`, `1`, `1` |
 | owner | identifier of the `CLSID_JMPartOwner` object, or `0` in a document without features |
-| last feature | identifier of the last listed feature |
+| last feature | identifier of the last feature that the rollback position builds (§4.3) |
 | entry count | `M` |
 | entries | `M` pairs of `0` and an object identifier |
 | final word | |
@@ -265,3 +265,23 @@ byte. The function names are:
 | `JMFlangeFunction` | sheet-metal flange |
 
 A `CLSID_JMGroup` feature is a mirror copy or a pattern.
+
+### 4.3 Feature state and folders
+
+The `u32` at object offset 8 of a `CLSID_JMPart` object is its state word.
+Bit `0x10` set states that the feature is suppressed.
+
+The last-feature identifier of the navigator (§4.1) is the rollback
+position. The features up to and including that feature are built. The
+listed features after it are rolled back. When the identifier is the last
+listed feature, no feature is rolled back. The `CLSID_JMPartOwner` object
+stores the same position: after the ASCII text
+`JMTransmigrateAssocFunction` and its zero byte, the `u32` values at offsets
+60, 64 and 68 are `16`, `0x80000000` and the identifier of the last built
+feature, or `0` when no feature is rolled back.
+
+A `CLSID_JMFeatureGroup` object lists the features of one folder. The `u32`
+at object offset 8 is the member count `c`. `c` pairs follow it, each the
+`u32` value `1` and a member object identifier, in feature-tree order. The
+navigator lists the folder entry immediately before its first member, and
+lists each member as an entry of its own.
