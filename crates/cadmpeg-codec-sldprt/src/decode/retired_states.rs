@@ -45,18 +45,8 @@ pub(super) fn retire(
     }
     retire_model(ir, retired);
     let gone = |id: &str| retired.contains_key(id);
-    let mut dropped = BTreeSet::new();
     let mut presentation = BTreeMap::<&ConfigurationId, (usize, usize)>::new();
-    let mut unbound = BTreeSet::new();
-    for binding in &ir.model.appearance_bindings {
-        if let Some(configuration) =
-            target_id(&binding.target.entity).and_then(|id| retired.get(id))
-        {
-            presentation.entry(configuration).or_default().0 += 1;
-            dropped.insert(binding.id.as_str().to_owned());
-            unbound.insert(binding.appearance.clone());
-        }
-    }
+    let mut tessellations = BTreeMap::new();
     for tessellation in &ir.model.tessellations {
         let configuration = tessellation
             .body
@@ -71,7 +61,23 @@ pub(super) fn retire(
             .find_map(|id| retired.get(id));
         if let Some(configuration) = configuration {
             presentation.entry(configuration).or_default().1 += 1;
-            dropped.insert(tessellation.id.as_str().to_owned());
+            tessellations.insert(tessellation.id.as_str().to_owned(), configuration);
+        }
+    }
+    let mut dropped = tessellations.keys().cloned().collect::<BTreeSet<_>>();
+    let mut unbound = BTreeSet::new();
+    for binding in &ir.model.appearance_bindings {
+        let configuration = match &binding.target.entity {
+            AppearanceTarget::Tessellation(tessellation)
+            | AppearanceTarget::TriangleGroup { tessellation, .. } => {
+                tessellations.get(tessellation).copied()
+            }
+            target => target_id(target).and_then(|id| retired.get(id)),
+        };
+        if let Some(configuration) = configuration {
+            presentation.entry(configuration).or_default().0 += 1;
+            dropped.insert(binding.id.as_str().to_owned());
+            unbound.insert(binding.appearance.clone());
         }
     }
     for (configuration, (bindings, tessellations)) in presentation {
@@ -101,7 +107,9 @@ pub(super) fn retire(
     });
 
     for record in unknowns.iter_mut() {
-        record.links_mut().retain(|link| !gone(link));
+        record
+            .links_mut()
+            .retain(|link| !gone(link) && !dropped.contains(link));
     }
     let mut keep = |id: &str| !gone(id) && !dropped.contains(id);
     annotations.retain_provenance(&mut keep);
