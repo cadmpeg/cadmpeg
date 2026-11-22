@@ -37,9 +37,10 @@ pub(crate) fn file_root_id() -> ProductDefinitionId {
 pub(crate) fn state_root_definition(
     ctx: &DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
-) -> Result<(), CodecError> {
+) -> Result<Vec<LossNote>, CodecError> {
+    let mut losses = Vec::new();
     if ctx.container_only() {
-        return Ok(());
+        return Ok(losses);
     }
     let design = match ir.native.namespace("f3d") {
         Some(namespace) => namespace
@@ -53,11 +54,25 @@ pub(crate) fn state_root_definition(
         ir.state_root_definition(ctx, file_root_id(), ExternalDocument::default())?
     {
         if let (Some(identity), Storage::File { document, .. }) = (document, &mut root.storage) {
+            for (kind, kept, other) in [
+                ("lineage", &document.document_id, &identity.document_id),
+                ("version", &document.version, &identity.version),
+            ] {
+                if let (Some(kept), Some(other)) = (kept, other) {
+                    if kept != other {
+                        losses.push(F3dLossCode::XrefLineageDisagrees.note(format!(
+                            "file root {kind} {:?} (manifest terminal) disagrees with design ordinal 0 {kind} {:?}; the manifest terminal supplies the root identity",
+                            kept.as_str(),
+                            other.as_str()
+                        )));
+                    }
+                }
+            }
             document.document_id = document.document_id.take().or(identity.document_id);
             document.version = document.version.take().or(identity.version);
         }
     }
-    Ok(())
+    Ok(losses)
 }
 
 /// The file's root definition in `model`, added when it is absent.

@@ -224,6 +224,15 @@ fn api_export_with_identity_fields(
     terminal: Option<(u8, &str)>,
     blank: Option<&str>,
 ) -> Vec<u8> {
+    api_export_build(linked, terminal, blank, false)
+}
+
+fn api_export_build(
+    linked: bool,
+    terminal: Option<(u8, &str)>,
+    blank: Option<&str>,
+    keep_redirections: bool,
+) -> Vec<u8> {
     use std::io::Read;
     let bytes = f3d_with_identity_xrefs("assembly-design", "root.f3d", &[("child.f3d", XREF_ROLE)]);
     let mut source = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
@@ -232,7 +241,7 @@ fn api_export_with_identity_fields(
     for index in 0..source.len() {
         let mut entry = source.by_index(index).unwrap();
         let name = entry.name().unwrap().into_owned();
-        if name == "RedirectionsStream.dat" {
+        if name == "RedirectionsStream.dat" && !keep_redirections {
             continue;
         }
         let mut bytes = Vec::new();
@@ -367,6 +376,58 @@ fn api_export_manifest_terminal_lineage_identifies_root() {
             }
         }
     }
+}
+
+#[test]
+fn api_export_terminal_lineage_wins_over_design_zero_and_charges_loss() {
+    const TERMINAL: &str = "urn:adsk.wipprod:dm.lineage:TerminalKey";
+    let bytes = api_export_build(false, Some((1, TERMINAL)), None, true);
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let root = decoded
+        .ir()
+        .model
+        .product_definitions
+        .iter()
+        .find(|row| row.is_root())
+        .unwrap();
+    let Storage::File { document, .. } = &root.storage else {
+        panic!("file root")
+    };
+    assert_eq!(
+        document.document_id.as_ref().map(NonBlankString::as_str),
+        Some(TERMINAL)
+    );
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code.local_code() == "xref.lineage-disagrees"
+            && loss.message.contains(TERMINAL)
+            && loss.message.contains("urn:adsk.wipprod:dm.lineage:RootKey")
+    }));
+}
+
+#[test]
+fn api_export_without_terminal_takes_design_zero_lineage() {
+    let bytes = api_export_build(false, None, None, true);
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let root = decoded
+        .ir()
+        .model
+        .product_definitions
+        .iter()
+        .find(|row| row.is_root())
+        .unwrap();
+    let Storage::File { document, .. } = &root.storage else {
+        panic!("file root")
+    };
+    assert_identity(document, "RootKey");
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "xref.lineage-disagrees"));
 }
 
 #[test]

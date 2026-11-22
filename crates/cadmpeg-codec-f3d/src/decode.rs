@@ -4228,7 +4228,8 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 crate::tree::own_once(ctx, &mut decoded.ir, &std::collections::BTreeMap::new())?;
             decoded.body.losses.extend(owned);
             crate::design::owners::release_unbound(&mut decoded.ir.model);
-            crate::tree::state_root_definition(ctx, &mut decoded.ir)?;
+            let root_identity = crate::tree::state_root_definition(ctx, &mut decoded.ir)?;
+            decoded.body.losses.extend(root_identity);
             crate::design_v11::project(ctx, &mut decoded.ir, &mut decoded.body.losses)?;
             decoded.ir.finalize();
             let hash = cadmpeg_ir::hash::document_local_sha256(
@@ -5479,7 +5480,9 @@ fn decode_result(
         source_fidelity.mark_untyped(crate::ids::FILE_SOURCE_IMAGE_ID, retained.untyped)?;
     }
     if matches!(report_scope, crate::report::ReportScope::ArchiveMember(_)) {
-        crate::tree::state_root_definition(ctx, &mut ir)?;
+        report
+            .losses
+            .extend(crate::tree::state_root_definition(ctx, &mut ir)?);
     }
     let mut source = crate::report::classify_document(
         scan,
