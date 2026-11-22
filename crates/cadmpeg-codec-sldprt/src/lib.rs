@@ -262,28 +262,17 @@ impl SldprtCodec {
             .namespace("sldprt")
             .map(|namespace| native::SldprtNative::load(namespace).map_err(CodecError::from))
             .transpose()?;
-        let source_arena = cadmpeg_core::decode::DecodeArena::new();
-        let source_context = records
+        let source_image = records
             .iter()
             .find(|record| record.id.as_str() == SOURCE_IMAGE_ID)
             .and_then(|record| record.data)
-            .map(|bytes| {
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                    bytes,
-                    &source_arena,
-                    &cadmpeg_core::decode::DecodePolicy::desktop(),
+            .ok_or_else(|| {
+                CodecError::NotImplemented(
+                    "SLDPRT semantic writes need the retained source image".into(),
                 )
-            })
-            .transpose()?;
-        let source_scan = source_context
-            .as_ref()
-            .map(|(ctx, root)| container::scan(ctx, *root))
-            .transpose()?;
-        let stale_solid = history::write::brep_agreement::stale_solid_losses(
-            ir,
-            native.as_ref(),
-            source_scan.as_ref(),
-        )?;
+            })?;
+        let stale_solid =
+            history::write::brep_agreement::stale_solid_losses(ir, native.as_ref(), source_image)?;
         Ok(Written::Semantic {
             path: if records.is_empty() {
                 SemanticPath::Synthesized
