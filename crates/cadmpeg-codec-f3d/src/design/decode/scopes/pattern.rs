@@ -606,10 +606,16 @@ fn exact_rectangular_pattern_distribution(
     {
         return None;
     }
+    // A symmetric byte other than 0 or 1 leaves the distribution unread.
     let flag = |offset: usize| {
         let at = start + offset;
+        let value = match bytes.get(at)? {
+            0 => false,
+            1 => true,
+            _ => return None,
+        };
         Some(crate::records::identity::Located {
-            value: bytes.get(at) == Some(&1),
+            value,
             offset: u64::try_from(at).ok()?,
         })
     };

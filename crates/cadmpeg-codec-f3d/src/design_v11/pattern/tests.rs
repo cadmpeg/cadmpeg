@@ -207,6 +207,14 @@ fn an_inactive_u_direction_keeps_its_run_before_v() {
 }
 
 #[test]
+fn a_one_sided_distribution_states_one_side() {
+    let scope = scope([3, 1], [2.0, 0.0], 8, false);
+    let operation = operation(Some(Vector3::new(1.0, 0.0, 0.0)), None, false);
+    let (first, _) = linear(project(&operation, &scope).unwrap());
+    assert_eq!(first.run.sides, Some(RunSides::One));
+}
+
+#[test]
 fn a_symmetric_extent_keeps_the_total_count_and_per_side_span() {
     let scope = scope([3, 1], [2.0, 0.0], 8, true);
     let operation = operation(Some(Vector3::new(1.0, 0.0, 0.0)), None, true);
