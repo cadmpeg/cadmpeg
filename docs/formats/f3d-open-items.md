@@ -4029,6 +4029,18 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Note.** The decoder reads the flagged payload with the `{T: 3}` layout, retains the flag on the native split-stream record, and reports `mesh.component-flag-uninterpreted`.
 
+### DR-1029. Version-3 settings reference prefix
+
+**Question.** Where are the override mask and optional inputs in the version-3 sheet-metal settings reference prefix, and which control does its first reference supply?
+
+**Known.** The settings type GUID is `E75C86D6-76D8-4F1F-BC16-AB8CB74958B0`, version 3. After the primary indexed header and ten zero bytes, the primary frame contains a present local reference, twelve zero bytes, a second present local reference, two zero bytes, a third present local reference, one zero byte, and a fourth present local reference. The first reference targets type `ACE707B5-1490-4837-A69A-724A92CEB69F`, version 0. The second targets rule type `B42ED662-8999-4C1B-A744-759D1D446D55`, version 1. The third targets presentation type `6CCF41D5-40BE-48ED-A834-18F3EAED6C57`, version 1. The fourth targets the owning `Bend` scope. Its same-index paired header is followed by eight zero bytes and a present local reference. The mask-and-slots form in `f3d.md` §3.1 places a u32 mask before the optional inputs and rule reference.
+
+**Need.** Controlled saves must vary the rule, mask controls, and each optional input independently. Their typed links, indexed frame bounds, and final sheet geometry must establish the field order and input roles.
+
+**Conflict.** None.
+
+**Note.** The decoder preserves each unread frame in the source archive with `sheet-metal.settings-undecoded` and retains other Design records.
+
 ### DR-889. Extrude selection members in sketch text
 
 **Question.** Which glyph region of a sketch text does each Extrude selection member name?
