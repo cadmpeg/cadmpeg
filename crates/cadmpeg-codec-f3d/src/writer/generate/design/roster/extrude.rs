@@ -278,6 +278,7 @@ pub(super) fn write(
                 local,
                 kind,
                 value,
+                driven: false,
             },
         )?;
     }

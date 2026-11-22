@@ -434,10 +434,8 @@ pub(super) fn encode_document_parameters(
         // (f3d.md §3.1): u32 family discriminator, a zero byte, the comment
         // (empty when none), the ordinal, the null owner, the expression, the
         // ten-byte trailer with the document flag, and the empty text value.
-        let discriminator = u32::try_from(family_discriminator.value.code())
-            .map_err(|_| CodecError::Malformed("F3D parameter discriminator".into()))?;
         out.extend_from_slice(&[0; 11]);
-        out.extend_from_slice(&discriminator.to_le_bytes());
+        out.extend_from_slice(&family_discriminator.value.code().to_le_bytes());
         out.push(0);
         native_lp_utf16(&mut out, parameter.comment().unwrap_or_default())?;
         out.extend_from_slice(&parameter.source_ordinal.to_le_bytes());

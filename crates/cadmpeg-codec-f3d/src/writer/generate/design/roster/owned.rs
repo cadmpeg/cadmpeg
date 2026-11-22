@@ -2,7 +2,8 @@
 //! The records of a parameter a timeline item owns (f3d.md §3.1, "Owned
 //! parameters", "Sketch dimensions" and §3.1's parameter record forms): the
 //! 104-byte scalar owner with its paired part, the parameter in the
-//! discriminated form, and the owner's 58-byte parameter companion.
+//! discriminated form of its type version 8, and the owner's 58-byte
+//! parameter companion.
 
 use cadmpeg_core::CodecError;
 
@@ -12,10 +13,17 @@ use super::super::parameters::OwnedParameter;
 use super::super::types;
 use super::sketches::OWNER_COLLECTION;
 use super::{Context, PARAMETER_COLLECTION, PARAMETER_DISCRIMINATOR};
+use crate::design::decode::parameters::DRIVEN_FLAG;
+use crate::layout::design_parameter_discriminated_text_expression_trailer as trailer;
 
-/// The expression trailer of a parameter of the written type version 8: the
-/// text flag, four zero bytes and five flag bytes, all `0` (f3d.md §3.1).
-const TRAILER: [u8; 10] = [0; 10];
+/// The expression trailer of a parameter of the written type version 8
+/// (f3d.md §3.1): zero bytes, with the second flag byte, the driven flag,
+/// `1` in the parameter of a driven dimension (f3d-open-items.md DR-144).
+fn expression_trailer(driven: bool) -> [u8; trailer::LEN] {
+    let mut bytes = [0; trailer::LEN];
+    bytes[trailer::FLAGS + DRIVEN_FLAG] = u8::from(driven);
+    bytes
+}
 
 /// One owned parameter's records and where its owner sits.
 pub(super) struct Owned<'a> {
@@ -29,6 +37,8 @@ pub(super) struct Owned<'a> {
     /// The parameter's source kind.
     pub(super) kind: &'a str,
     pub(super) value: &'a OwnedParameter,
+    /// Whether it is the parameter of a driven dimension.
+    pub(super) driven: bool,
 }
 
 /// The owner, the parameter and the companion of `owned`.
@@ -45,6 +55,7 @@ pub(super) fn write(
         local,
         kind,
         value,
+        driven,
     } = owned;
     out.record(&ctx.class(types::PARAMETER_OWNER.guid)?, owner)
         .zeros(8)
@@ -66,12 +77,13 @@ pub(super) fn write(
         .reference(OWNER_COLLECTION);
     out.record(&ctx.class(types::PARAMETER.guid)?, parameter)
         .zeros(11)
-        .u64(PARAMETER_DISCRIMINATOR.code())
+        .u32(PARAMETER_DISCRIMINATOR.code())
         .byte(0)
+        .lp_utf16(value.comment.as_deref().unwrap_or_default())?
         .u32(value.ordinal)
         .reference(owner)
         .lp_utf16(&value.expression)?
-        .raw(&TRAILER)
+        .raw(&expression_trailer(driven))
         .lp_utf16(kind)?
         .u32(0)
         .lp_utf16(value.unit.name())?
