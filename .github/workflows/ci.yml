@@ -315,7 +315,7 @@ jobs:
       - name: Unit and integration tests
         # Compile selected packages and their dependencies before running.
         # A separate `cargo build` step would repeat that compilation. The
-        # memory line every 30 seconds stays in the log if the runner stops.
+        # memory line every 10 seconds stays in the log if the runner stops.
         shell: bash
         run: |
           (while sleep 10; do
