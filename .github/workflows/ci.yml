@@ -269,10 +269,20 @@ jobs:
       - name: Install pinned toolchain
         uses: ./.github/actions/pinned-rust
 
-      - name: Limit concurrent test links
-        # Link at most two test binaries at once, within the runner's memory.
+      - name: Match cargo's job count to the runner
+        uses: ./.github/actions/cargo-job-count
+
+      - name: Add swap for test builds
         shell: bash
-        run: echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
+        run: |
+          set -euo pipefail
+          df -h /mnt
+          sudo fallocate -l 4G /mnt/cadmpeg-swap
+          sudo chmod 600 /mnt/cadmpeg-swap
+          sudo mkswap /mnt/cadmpeg-swap
+          sudo swapon /mnt/cadmpeg-swap
+          swapon --show
+          free -m
 
       - name: Hash the Cargo profiles
         id: profiles
@@ -299,7 +309,10 @@ jobs:
         # memory line every 30 seconds stays in the log if the runner stops.
         shell: bash
         run: |
-          (while sleep 30; do free -m | awk 'NR==2 {print "memory used " $3 " of " $2 " MiB"}'; done) &
+          (while sleep 10; do
+            free -m | awk 'NR==2 {printf "memory used %s of %s MiB; ", $3, $2} NR==3 {printf "swap used %s of %s MiB; ", $3, $2}'
+            awk '/^pswpin / {printf "swap pages in %s; ", $2} /^pswpout / {print "swap pages out " $2}' /proc/vmstat
+          done) &
           python3 scripts/ci_cargo.py nextest run --bins --tests --no-fail-fast
 
       - name: Inventor CLI evidence tests
