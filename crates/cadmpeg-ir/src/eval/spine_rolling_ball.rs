@@ -15,11 +15,10 @@ use super::surface_jet;
 use super::EvaluationFailure;
 use super::UNREACHED_POINT;
 use crate::features::geometry::{FinitePoint3, FiniteVector3};
+use crate::geometry::blends::{BlendCrossSection, BlendRadiusLaw};
 use crate::geometry::nurbs::NurbsSurface;
 use crate::geometry::surface_payloads::BlendSurfacePayload;
-use crate::geometry::{
-    BlendCrossSection, BlendRadiusLaw, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
-};
+use crate::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
 use crate::ids::{CurveId, SurfaceId};
 use crate::math::portable::Portable;
 use crate::math::{Point3, Vector3};
@@ -627,7 +626,7 @@ fn support_geometry<'ir>(
     let procedural = index
         .procedural_surface_for_surface(surface.as_str(), admission)
         .map_err(EvaluationFailure::from)?;
-    if let Some(crate::geometry::ProceduralSurfaceDefinition::Blend(payload)) =
+    if let Some(crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Blend(payload)) =
         procedural.map(crate::geometry::ProceduralSurface::definition)
     {
         if let (BlendRadiusLaw::Constant { signed_radius }, Some(spine)) =

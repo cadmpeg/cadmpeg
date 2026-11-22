@@ -9,9 +9,8 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{self, admission::EvaluationAdmission};
 use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::pcurve::Pcurve;
-use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, DirectedParameterRange, SolvedCurveGeometry, Surface, SurfaceGeometry,
-};
+use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, VertexId,

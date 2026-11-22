@@ -236,7 +236,7 @@ fn revision_deformable_surface_mode3_preserves_its_distinct_frame() {
             revision_form
                 .cache
                 .fit_tolerance()
-                .map(cadmpeg_ir::geometry::FitTolerance::get),
+                .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
             Some(0.01)
         );
         assert_eq!(
@@ -248,7 +248,7 @@ fn revision_deformable_surface_mode3_preserves_its_distinct_frame() {
         else {
             panic!("expected resolved revision mode-3 data")
         };
-        let cadmpeg_ir::geometry::DeformableSurfaceData::RevisionMode3 {
+        let cadmpeg_ir::geometry::deformable_surfaces::DeformableSurfaceData::RevisionMode3 {
             leading_parameter,
             trailing_point,
             trailing_vectors,
@@ -351,15 +351,27 @@ fn taper_surface_uses_direct_construction_cache_then_variant_tail() {
             assert!((fit_tolerance - 0.01).abs() < f64::EPSILON * 10.0);
             assert!(matches!(
                 (kind, taper),
-                (0, cadmpeg_ir::geometry::TaperSurfaceKind::Standard {})
-                    | (
-                        1,
-                        cadmpeg_ir::geometry::TaperSurfaceKind::Orthogonal { sense: true }
-                    )
-                    | (2, cadmpeg_ir::geometry::TaperSurfaceKind::Edge { .. })
-                    | (3, cadmpeg_ir::geometry::TaperSurfaceKind::Shadow { .. })
-                    | (4, cadmpeg_ir::geometry::TaperSurfaceKind::Ruled { .. })
-                    | (5, cadmpeg_ir::geometry::TaperSurfaceKind::Swept { .. })
+                (
+                    0,
+                    cadmpeg_ir::geometry::procedural_surfaces::TaperSurfaceKind::Standard {}
+                ) | (
+                    1,
+                    cadmpeg_ir::geometry::procedural_surfaces::TaperSurfaceKind::Orthogonal {
+                        sense: true
+                    }
+                ) | (
+                    2,
+                    cadmpeg_ir::geometry::procedural_surfaces::TaperSurfaceKind::Edge { .. }
+                ) | (
+                    3,
+                    cadmpeg_ir::geometry::procedural_surfaces::TaperSurfaceKind::Shadow { .. }
+                ) | (
+                    4,
+                    cadmpeg_ir::geometry::procedural_surfaces::TaperSurfaceKind::Ruled { .. }
+                ) | (
+                    5,
+                    cadmpeg_ir::geometry::procedural_surfaces::TaperSurfaceKind::Swept { .. }
+                )
             ));
         }
     }
@@ -583,11 +595,11 @@ fn loft_surface_walks_bridge_to_direct_cache() {
             assert!(matches!(
                 bridge.as_slice(),
                 [
-                    cadmpeg_ir::geometry::LoftBridgeToken::Boolean(true),
-                    cadmpeg_ir::geometry::LoftBridgeToken::Integer(11),
-                    cadmpeg_ir::geometry::LoftBridgeToken::Double(value),
-                    cadmpeg_ir::geometry::LoftBridgeToken::Enum(12),
-                    cadmpeg_ir::geometry::LoftBridgeToken::Text(text),
+                    cadmpeg_ir::geometry::lofts::LoftBridgeToken::Boolean(true),
+                    cadmpeg_ir::geometry::lofts::LoftBridgeToken::Integer(11),
+                    cadmpeg_ir::geometry::lofts::LoftBridgeToken::Double(value),
+                    cadmpeg_ir::geometry::lofts::LoftBridgeToken::Enum(12),
+                    cadmpeg_ir::geometry::lofts::LoftBridgeToken::Text(text),
                 ] if (*value - 0.25).abs() < f64::EPSILON && text == "bridge"
             ));
             assert!((fit_tolerance - 0.01).abs() < f64::EPSILON * 10.0);
@@ -673,8 +685,10 @@ fn exact_surface_uses_leading_cache_ranges_then_extension() {
             let (definition, _) = decoded.into_parts();
             let DecodedProceduralSurfaceDefinition::Exact {
                 spline:
-                    cadmpeg_ir::geometry::ExactSpline::Legacy {
-                        ranges, extension, ..
+                    cadmpeg_ir::geometry::procedural_surfaces::ExactSpline::Legacy {
+                        ranges,
+                        extension,
+                        ..
                     },
             } = definition
             else {
@@ -1212,7 +1226,7 @@ fn three_surface_layout_walks_both_integer_widths() {
 
 #[test]
 fn surface_curve_layout_walks_each_family_at_both_widths() {
-    use cadmpeg_ir::geometry::SurfaceCurveFamilyKind;
+    use cadmpeg_ir::geometry::surface_curves::SurfaceCurveFamilyKind;
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         for (name, family) in [
             ("blend_int_cur", SurfaceCurveFamilyKind::Blend),
@@ -1717,9 +1731,9 @@ fn projection_layout_walks_both_tail_forms_at_both_widths() {
                             1.0,
                         );
                         let definition =
-                            cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection(cadmpeg_ir::geometry::curve_payloads::ProjectionCurvePayload::try_new(cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+                            cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Projection(cadmpeg_ir::geometry::curve_payloads::ProjectionCurvePayload::try_new(cadmpeg_ir::geometry::intersection_curves::IntcurveSupportContext::try_new(
                                     std::array::from_fn(|_| {
-                                        cadmpeg_ir::geometry::IntcurveSupportSide {
+                                        cadmpeg_ir::geometry::intersection_curves::IntcurveSupportSide {
                                             surface: None,
                                             pcurve: None,
                                         }
@@ -1728,10 +1742,10 @@ fn projection_layout_walks_both_tail_forms_at_both_widths() {
                                     [vec![0.25], vec![], vec![0.5, 0.75]],
                                 )
                                 .expect("valid projection support fixture"), true, cadmpeg_ir::ids::CurveId::mint("f3d:brep:entity#1")
-                                    .unwrap(), cadmpeg_ir::geometry::ProjectionTail::Ranged {
+                                    .unwrap(), cadmpeg_ir::geometry::surface_curves::ProjectionTail::Ranged {
                                     flag: false,
                                     parameter_range: [-1.0, 1.0],
-                                    role: cadmpeg_ir::geometry::ProjectionRole::Surf1,
+                                    role: cadmpeg_ir::geometry::surface_curves::ProjectionRole::Surf1,
                                 }).unwrap());
                         let before = malformed.clone();
                         assert!(matches!(
@@ -1752,7 +1766,7 @@ fn projection_layout_walks_both_tail_forms_at_both_widths() {
 
 #[test]
 fn silhouette_layout_walks_each_family_at_both_widths() {
-    use cadmpeg_ir::geometry::SilhouetteKind;
+    use cadmpeg_ir::geometry::surface_curves::SilhouetteKind;
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         for (name, kind) in [
             ("silh_int_cur", SilhouetteKind::Standard {}),
@@ -1868,9 +1882,8 @@ fn surface_offset_layout_walks_both_integer_widths() {
 #[test]
 fn a_reversed_intersection_context_patches_on_the_subtype_parameter() {
     use crate::sab::{Record, Token};
-    use cadmpeg_ir::geometry::{
-        IntcurveSupportContext, IntcurveSupportSide, ProceduralCurveDefinition,
-    };
+    use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 
     let int_width = RefWidth::Four;
     for (record_reversed, edge_reversed) in [(true, false), (false, true), (true, true)] {

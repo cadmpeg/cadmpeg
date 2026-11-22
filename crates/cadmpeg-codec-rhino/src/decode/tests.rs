@@ -702,7 +702,7 @@ fn tolerance_scaling_maps_unset_and_zero_to_none() {
     assert_eq!(
         crate::brep::BrepTolerance::new(0.5)
             .and_then(crate::brep::BrepTolerance::fit)
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         Some(0.5)
     );
     assert_eq!(crate::brep::BrepTolerance::new(-1.0), None);

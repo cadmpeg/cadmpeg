@@ -15,7 +15,7 @@ use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{
     Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
 };
-use cadmpeg_ir::geometry::DirectedParameterRange;
+use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::NonZeroLength;
 use cadmpeg_ir::sketches::{

@@ -266,10 +266,15 @@ fn a_definition_override_names_a_definition_the_scope_spans() {
     add_definition(&mut ir, "assembly");
     place(&mut ir, "assembly", "root", "part");
     place(&mut ir, "part", "other", "other");
-    assert_finding(&ir, "which is no definition the scope spans");
+    assert_no_design_finding(&ir);
     let mut ir = document();
     override_definition(&mut ir, "other");
     place(&mut ir, "part", "other", "other");
+    assert_no_design_finding(&ir);
+    definition_mut(&mut ir, "other").storage = Storage::File {
+        document: ExternalDocument::document_id("other"),
+        source: None,
+    };
     assert_finding(&ir, "which is no definition the scope spans");
 }
 

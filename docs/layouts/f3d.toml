@@ -13202,11 +13202,11 @@ size = 16
 note = "Offsets are relative to the byte after the compact repeated body-entry run. The result-record run begins at offset 16."
 
 [[record.field]]
-name = "separator"
+name = "flag"
 offset = 0
 type = "u8"
 source = "spec"
-anchor = "One zero byte and one marked u64 shared metadata-record index"
+anchor = "One flag byte and one marked u64 shared metadata-record index"
 
 [[record.field]]
 name = "metadata_marker"
@@ -28658,6 +28658,40 @@ source = "spec"
 anchor = "The compact profile-loop selection uses eleven-byte local references."
 
 [[record]]
+name = "compact_reference_sketchless_profile_chain_record"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A compact sketchless chain record stores fourteen zero bytes"
+size = 42
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed header precedes this field run."
+
+[[record.field]]
+name = "zero_run_14"
+offset = 11
+type = "bytes[14]"
+source = "spec"
+anchor = "A compact sketchless chain record stores fourteen zero bytes"
+
+[[record.field]]
+name = "chain_marker"
+offset = 25
+type = "bytes[6]"
+source = "spec"
+anchor = "A compact sketchless chain record stores fourteen zero bytes"
+
+[[record.field]]
+name = "selection_reference"
+offset = 31
+type = "bytes[11]"
+source = "spec"
+anchor = "A compact sketchless chain record stores fourteen zero bytes"
+
+[[record]]
 name = "compact_reference_profile_identity_record"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
 kind = "byte"
@@ -28927,6 +28961,68 @@ type = "bytes[42]"
 source = "spec"
 anchor = "The typed-reference zero-body form stores the same prefix with a 51-byte typed shared-metadata reference at offset 32"
 
+
+
+[[record]]
+name = "base_flange_scope"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/sheet_metal.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The fixed 416-byte `BaseFlange` form has four ordered references"
+size = 416
+
+[[record.gap]]
+offset = 0
+size = 82
+note = "Scope header and controls before the repeated settings index."
+
+[[record.field]]
+name = "settings_record_index"
+offset = 82
+type = "u32"
+source = "spec"
+anchor = "The scope repeats references three, two, and zero at primary-record offsets 82, 113, and 146"
+
+[[record.gap]]
+offset = 86
+size = 27
+note = "Controls before the repeated thickness-construction index."
+
+[[record.field]]
+name = "thickness_record_index"
+offset = 113
+type = "u32"
+source = "spec"
+anchor = "The scope repeats references three, two, and zero at primary-record offsets 82, 113, and 146"
+
+[[record.gap]]
+offset = 117
+size = 6
+note = "Marked-reference suffix."
+
+[[record.field]]
+name = "thickness_copy"
+offset = 123
+type = "f64"
+source = "spec"
+anchor = "A positive finite f64 at primary-record offset 123 stores a copy of a sheet thickness in centimetres"
+
+[[record.gap]]
+offset = 131
+size = 15
+note = "Controls before the repeated profile-group index."
+
+[[record.field]]
+name = "profile_group_record_index"
+offset = 146
+type = "u32"
+source = "spec"
+anchor = "The scope repeats references three, two, and zero at primary-record offsets 82, 113, and 146"
+
+[[record.gap]]
+offset = 150
+size = 266
+note = "Remaining scope controls and ordered references."
 
 [[record]]
 name = "sheet_metal_rule_v0_prefix"
@@ -29532,6 +29628,185 @@ offset = 307
 type = "bytes[2]"
 source = "spec"
 anchor = "The matrix form is 309 bytes"
+
+[[record]]
+name = "circular_pattern_axis_record"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The 220-byte circular-pattern axis frame"
+size = 220
+note = "Offsets are relative to the direction record's primary indexed header. The paired header starts at offset 220."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "After the indexed header and ten zero bytes"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "After the indexed header and ten zero bytes"
+
+[[record.field]]
+name = "selection_kind"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "selection kind `8` at offset 21"
+value = 8
+
+[[record.field]]
+name = "origin"
+offset = 25
+type = "f64[3]"
+source = "spec"
+anchor = "a three-component origin in centimetres at offset 25"
+
+[[record.field]]
+name = "displacement"
+offset = 49
+type = "f64[3]"
+source = "spec"
+anchor = "a three-component displacement in centimetres at offset 49"
+
+[[record.field]]
+name = "zero_run_16"
+offset = 73
+type = "bytes[16]"
+source = "spec"
+anchor = "Sixteen zero bytes follow the displacement."
+
+[[record.field]]
+name = "control"
+offset = 89
+type = "u32"
+source = "spec"
+anchor = "u32 control `7` at offset 89"
+value = 7
+
+[[record.field]]
+name = "negative_ones"
+offset = 93
+type = "f64[3]"
+source = "spec"
+anchor = "offsets 93, 101, and 109 store f64 `-1.0`"
+
+[[record.field]]
+name = "selection_count"
+offset = 117
+type = "u32"
+source = "spec"
+anchor = "Offset 117 stores u32 `1`"
+
+[[record.field]]
+name = "selection_reference"
+offset = 121
+type = "bytes[11]"
+source = "spec"
+anchor = "the marked selection-operand reference starts at offset 121, followed by two zero bytes"
+
+[[record.field]]
+name = "zero_run_2"
+offset = 132
+type = "bytes[2]"
+source = "spec"
+anchor = "the marked selection-operand reference starts at offset 121, followed by two zero bytes"
+
+[[record.field]]
+name = "auxiliary_count"
+offset = 134
+type = "u32"
+source = "spec"
+anchor = "Offset 134 stores u32 `1`"
+
+[[record.field]]
+name = "auxiliary_reference"
+offset = 138
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked reference starts at offset 138"
+
+[[record.field]]
+name = "role"
+offset = 149
+type = "u64"
+source = "spec"
+anchor = "Offset 149 stores u64 `0x0000000400000000`, followed by ten zero bytes."
+
+[[record.field]]
+name = "zero_run_after_role"
+offset = 157
+type = "bytes[10]"
+source = "spec"
+anchor = "Offset 149 stores u64 `0x0000000400000000`, followed by ten zero bytes."
+
+[[record.field]]
+name = "opaque_index"
+offset = 167
+type = "u32"
+source = "spec"
+anchor = "Offset 167 stores a nonzero u32"
+
+[[record.field]]
+name = "opaque_scalar"
+offset = 171
+type = "f64"
+source = "spec"
+anchor = "offset 171 a finite f64"
+
+[[record.field]]
+name = "opaque_index_repeat"
+offset = 179
+type = "u32"
+source = "spec"
+anchor = "offset 179 the same u32"
+
+[[record.field]]
+name = "index_plus_two_reference"
+offset = 183
+type = "bytes[11]"
+source = "spec"
+anchor = "Marked references to the direction record's index plus two and plus one start at offsets 183 and 197"
+
+[[record.field]]
+name = "separator_flag"
+offset = 194
+type = "u8"
+source = "spec"
+anchor = "`u8 1` and two zero bytes separate them"
+
+[[record.field]]
+name = "separator_zero_run"
+offset = 195
+type = "bytes[2]"
+source = "spec"
+anchor = "`u8 1` and two zero bytes separate them"
+
+[[record.field]]
+name = "index_plus_one_reference"
+offset = 197
+type = "bytes[11]"
+source = "spec"
+anchor = "Marked references to the direction record's index plus two and plus one start at offsets 183 and 197"
+
+[[record.field]]
+name = "scope_separator"
+offset = 208
+type = "u8"
+source = "spec"
+anchor = "One zero byte and the marked scope reference at offset 209 close the frame."
+
+[[record.field]]
+name = "scope_reference"
+offset = 209
+type = "bytes[11]"
+source = "spec"
+anchor = "One zero byte and the marked scope reference at offset 209 close the frame."
 
 [[record]]
 name = "rectangular_pattern_direction_record"
@@ -31203,10 +31478,9 @@ source = "spec"
 anchor = "The circular distribution block comes next"
 
 [[record.field]]
-name = "fixed_two"
+name = "compute_option"
 offset = 8
 type = "u32"
-value = 2
 source = "spec"
 anchor = "The circular distribution block comes next"
 
@@ -31244,7 +31518,7 @@ name = "rectangular_pattern_payload_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs"
 kind = "byte"
 section = "Assembly operands"
-anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+anchor = "The payload has a 133-byte prefix and a suffix of at least 37 bytes."
 size = 133
 
 [[record.field]]
@@ -31252,84 +31526,84 @@ name = "indexed_header"
 offset = 0
 type = "bytes[11]"
 source = "spec"
-anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+anchor = "The payload has a 133-byte prefix and a suffix of at least 37 bytes."
 
 [[record.field]]
 name = "zero_head"
 offset = 11
 type = "bytes[8]"
 source = "spec"
-anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+anchor = "The payload has a 133-byte prefix and a suffix of at least 37 bytes."
 
 [[record.field]]
 name = "flag"
 offset = 19
 type = "u8"
 source = "spec"
-anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+anchor = "The payload has a 133-byte prefix and a suffix of at least 37 bytes."
 
 [[record.field]]
 name = "count"
 offset = 20
 type = "u32"
 source = "spec"
-anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+anchor = "The payload has a 133-byte prefix and a suffix of at least 37 bytes."
 
 [[record.field]]
 name = "u_count"
 offset = 24
 type = "bytes[11]"
 source = "spec"
-anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+anchor = "The payload has a 133-byte prefix and a suffix of at least 37 bytes."
 
 [[record.field]]
 name = "zero_middle"
 offset = 35
 type = "bytes[4]"
 source = "spec"
-anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+anchor = "The payload has a 133-byte prefix and a suffix of at least 37 bytes."
 
 [[record.field]]
 name = "v_count"
 offset = 39
 type = "bytes[11]"
 source = "spec"
-anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+anchor = "The payload has a 133-byte prefix and a suffix of at least 37 bytes."
 
 [[record.field]]
 name = "zero_tail"
 offset = 50
 type = "bytes[9]"
 source = "spec"
-anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+anchor = "The payload has a 133-byte prefix and a suffix of at least 37 bytes."
 
 [[record.field]]
 name = "sentinel"
 offset = 59
 type = "u32"
 source = "spec"
-anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+anchor = "The payload has a 133-byte prefix and a suffix of at least 37 bytes."
 
 [[record.field]]
 name = "v_direction"
 offset = 63
 type = "f64[3]"
 source = "spec"
-anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+anchor = "The payload has a 133-byte prefix and a suffix of at least 37 bytes."
 
 [[record.field]]
 name = "u_distance"
 offset = 87
 type = "bytes[11]"
 source = "spec"
-anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+anchor = "The payload has a 133-byte prefix and a suffix of at least 37 bytes."
 
 [[record.field]]
 name = "v_distance"
 offset = 98
 type = "bytes[11]"
 source = "spec"
-anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+anchor = "The payload has a 133-byte prefix and a suffix of at least 37 bytes."
 
 [[record.field]]
 name = "symmetric"
@@ -31350,14 +31624,14 @@ name = "v_count_repeat"
 offset = 111
 type = "bytes[11]"
 source = "spec"
-anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+anchor = "The payload has a 133-byte prefix and a suffix of at least 37 bytes."
 
 [[record.field]]
 name = "u_direction"
 offset = 122
 type = "bytes[11]"
 source = "spec"
-anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+anchor = "The payload has a 133-byte prefix and a suffix of at least 37 bytes."
 
 [[record]]
 name = "rectangular_pattern_payload_distribution"
@@ -31422,7 +31696,7 @@ name = "rectangular_pattern_payload_suffix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs"
 kind = "byte"
 section = "Assembly operands"
-anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+anchor = "The payload has a 133-byte prefix and a suffix of at least 37 bytes."
 size = 37
 
 [[record.field]]
@@ -31430,28 +31704,28 @@ name = "u_count"
 offset = 0
 type = "bytes[11]"
 source = "spec"
-anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+anchor = "The payload has a 133-byte prefix and a suffix of at least 37 bytes."
 
 [[record.field]]
 name = "scope"
 offset = 11
 type = "bytes[11]"
 source = "spec"
-anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+anchor = "The payload has a 133-byte prefix and a suffix of at least 37 bytes."
 
 [[record.field]]
 name = "seed_group"
 offset = 22
 type = "bytes[11]"
 source = "spec"
-anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+anchor = "The payload has a 133-byte prefix and a suffix of at least 37 bytes."
 
 [[record.field]]
-name = "zero_tail"
+name = "suppressed_count"
 offset = 33
-type = "bytes[4]"
+type = "u32"
 source = "spec"
-anchor = "The payload has a 133-byte prefix and a 37-byte suffix."
+anchor = "followed by a u32 count of suppressed instances and that many u32 instance keys."
 
 [[record]]
 name = "sketch_geometry_ordinal_collection_reference"
@@ -43066,6 +43340,98 @@ size = 78
 note = "The common native tail precedes the same-index paired header."
 
 [[record]]
+name = "move_transform_omitted_matrix_frame_128"
+kind = "byte"
+section = "3.1"
+anchor = "A version-3 rigid-transform record with this layout has a 128-byte omitted-matrix frame"
+size = 128
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+
+[[record.field]]
+name = "header_zero"
+offset = 11
+type = "bytes[20]"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "first_reference"
+offset = 31
+type = "u8"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 0
+
+[[record.field]]
+name = "second_reference"
+offset = 32
+type = "u8"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 0
+
+[[record.field]]
+name = "third_reference"
+offset = 33
+type = "u8"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 0
+
+[[record.field]]
+name = "first_code"
+offset = 34
+type = "u32"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 0
+
+[[record.field]]
+name = "fourth_reference"
+offset = 38
+type = "u8"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 0
+
+[[record.field]]
+name = "second_code"
+offset = 39
+type = "u32"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 0
+
+[[record.field]]
+name = "form"
+offset = 43
+type = "u32"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 5
+
+[[record.field]]
+name = "matrix_omitted"
+offset = 47
+type = "u8"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 1
+
+[[record.gap]]
+offset = 48
+size = 80
+note = "The common native tail precedes the same-index paired header."
+
+[[record]]
 name = "rigid_transform_leading_prefix"
 kind = "byte"
 section = "3.1"
@@ -53538,6 +53904,38 @@ type = "bytes[11]"
 source = "spec"
 anchor = "`base_feature_browser_root_prefix`"
 
+[[record]]
+name = "manifest_reference_extension_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/xref/api_export.rs"
+kind = "byte"
+section = "1.4"
+anchor = "The reference-bearing prefix has flag"
+size = 9
+note = "Offsets are relative to the generation extension after the capability registry."
+
+[[record.field]]
+name = "zero_run"
+offset = 0
+type = "bytes[4]"
+value = [0, 0, 0, 0]
+source = "spec"
+anchor = "starts with four zero bytes and a u8 reference flag"
+
+[[record.field]]
+name = "reference_flag"
+offset = 4
+type = "u8"
+value = 1
+source = "spec"
+anchor = "The reference-bearing prefix has flag `1`"
+
+[[record.field]]
+name = "reference_count"
+offset = 5
+type = "u32"
+source = "spec"
+anchor = "followed by a nonzero u32 reference count"
+
 # --- §3.1 Records of a Sketch item (serializer magic 1234) -----------------
 
 [[record]]
@@ -53662,3 +54060,71 @@ offset = 78
 type = "u32"
 source = "spec"
 anchor = "The sketch collection of a component with `k` sketches stores, in order"
+
+[[record]]
+name = "compact_legacy_external_placement_members"
+kind = "byte"
+section = "1.4"
+anchor = "A compact legacy external placement uses the 88-byte legacy target prefix."
+size = 218
+parsed_by = "crates/cadmpeg-codec-f3d/src/xref.rs"
+note = "Offsets start after the complete property-presence block."
+
+[[record.field]]
+name = "ordinal"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "A compact legacy external placement uses the 88-byte legacy target prefix."
+
+[[record.field]]
+name = "metadata_guid_length"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "A compact legacy external placement uses the 88-byte legacy target prefix."
+value = 36
+
+[[record.field]]
+name = "metadata_guid"
+offset = 8
+type = "bytes[72]"
+source = "spec"
+anchor = "A compact legacy external placement uses the 88-byte legacy target prefix."
+
+[[record.field]]
+name = "occurrence_guid_length"
+offset = 80
+type = "u32"
+source = "spec"
+anchor = "A compact legacy external placement uses the 88-byte legacy target prefix."
+value = 36
+
+[[record.field]]
+name = "occurrence_guid"
+offset = 84
+type = "bytes[72]"
+source = "spec"
+anchor = "A compact legacy external placement uses the 88-byte legacy target prefix."
+
+[[record.field]]
+name = "separator"
+offset = 156
+type = "u8"
+source = "spec"
+anchor = "A compact legacy external placement uses the 88-byte legacy target prefix."
+value = 0
+
+[[record.field]]
+name = "repeated_target"
+offset = 157
+type = "bytes[60]"
+source = "spec"
+anchor = "A compact legacy external placement uses the 88-byte legacy target prefix."
+
+[[record.field]]
+name = "identity_flag"
+offset = 217
+type = "u8"
+source = "spec"
+anchor = "A compact legacy external placement uses the 88-byte legacy target prefix."
