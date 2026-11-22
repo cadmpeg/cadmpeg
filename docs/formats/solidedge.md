@@ -363,8 +363,8 @@ as `u32` object identifiers after the end of its function name (§4.2):
 | 212 | the sweep angle of a revolved feature |
 
 An identifier `0` names no object. A `Double Value Object` stores its value
-as the `f64` at object offset 8. A `CLSID_JDim` stores its value as the
-`f64` at object offset 202. Lengths are metres and angles are radians.
+as the `f64` at object offset 8. A `CLSID_JDim` stores its value as §7.1
+states. Lengths are metres and angles are radians.
 
 ### 6.2 Extent kind and side
 
@@ -390,4 +390,74 @@ The axis of a revolved feature is a `CLSID_JMRefAxis` object. Its byte at
 object offset 12 is `3`. The three `f64` at offset 13 are a point on the
 axis in model space, and the three `f64` at offset 37 are the unit axis
 direction. The sweep angle is a `Double Value Object` or a `CLSID_JDim`.
+
+## 7. Holes, rounds and chamfers
+
+### 7.1 Dimension values
+
+A `CLSID_JDim` object stores the `u32` value `1`, then the identifier `T` of
+the object it dimensions at offset `p`, then a `u32` type code. The `u32` at
+`p` + 50 is `T` again, and the `f64` at `p` + 54 is the value. `p` is 148 in
+the 459-byte and 466-byte layouts and 144 in the 455-byte layout.
+
+### 7.2 Holes
+
+A `CLSID_JMPart` feature with function `JMHoleFunction` stores these object
+identifiers after the end of its function name:
+
+| Bytes after the name | Object |
+| ---: | --- |
+| 68 | the profile (§5) |
+| 96 | the `CLSID_JMHolePropData` object |
+| 124 | the counterbore depth, a `CLSID_JDim`, or `0` |
+| 152 | the countersink angle, a `CLSID_JDim`, or `0` |
+| 208 | the extent kind (§6.2) |
+| 236 | the side (§6.2) |
+| 264 | the depth of a finite hole, a `CLSID_JDim`, or `0` |
+
+Each `CLSID_JHole2d` member of the profile is one hole position. Its `f64`
+values at object offsets 8 and 16 are the position x and y in the profile
+frame (§5.1).
+
+A `CLSID_JMHolePropData` object stores:
+
+| Offset | Field |
+| ---: | --- |
+| 8 | `u32` hole type: `0` simple, `1` countersink, `2` counterbore, `3` tapped |
+| 12 | `f64` hole diameter; the tap drill diameter of a tapped hole |
+| 20 | `f64` counterbore or countersink diameter |
+| 28 | `f64` counterbore depth |
+| 36 | `f64` countersink angle, in degrees |
+| 72 | `f64` hole depth |
+
+### 7.3 Rounds
+
+A `CLSID_JMPart` feature with function `JMRoundFunction` holds `n` edge sets.
+Its object identifiers after the end of its function name are:
+
+| Bytes after the name | Object |
+| ---: | --- |
+| 72 + 20·k | the `CLSID_JMTopologyProxy` that selects the edges of set `k` |
+| 84 + 20·n + 20·k | the kind of set `k`, a `Double Value Object` |
+| 96 + 40·n + 20·k | the radius of set `k`, a `CLSID_JDim` |
+
+`k` runs from `0` to `n` − 1. Set kind `1` is a constant radius. The count
+`n` is the number of consecutive `CLSID_JMTopologyProxy` identifiers from
+72 bytes after the name.
+
+### 7.4 Chamfers
+
+A `CLSID_JMPart` feature with function `JMChamferFunction` stores these
+object identifiers after the end of its function name:
+
+| Bytes after the name | Object |
+| ---: | --- |
+| 68 | the chamfer type, a `Double Value Object` |
+| 96 | the `CLSID_JMTopologyProxy` of the reference face, or `0` |
+| 128 | the `CLSID_JMTopologyProxy` of the edges |
+| 156 | the first setback, a `CLSID_JDim` |
+| 184 | the second setback or the angle, a `CLSID_JDim`, or `0` |
+
+Chamfer type `41` has one setback on both faces. Type `43` has two setbacks.
+Type `42` has a setback and an angle.
 
