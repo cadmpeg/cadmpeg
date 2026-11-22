@@ -161,7 +161,8 @@ pub(crate) enum SldprtLossCode {
     /// Extrusion keeps the travel its solid shows against its end-spec reversal flag.
     FeatureExtrudeReversalContradicted,
     /// Extrusion travels against its profile normal on its end-spec reversal
-    /// flag alone: the solid neither holds nor contradicts that travel.
+    /// flag alone: no solid that the decoder tests holds or contradicts that
+    /// travel.
     FeatureExtrudeReversalAssumed,
     /// Extrusion start condition is not the sketch plane and has no supported reading.
     FeatureExtrudeStartUnresolved,
@@ -318,8 +319,7 @@ pub(crate) enum SldprtLossCode {
     /// writer found no place to clear.
     WriterExtrudeReversalUnwritten,
     /// An edit cleared a decoded extrusion reversal, and the writer cleared
-    /// the flag in the lane of an inactive configuration whose state does
-    /// not travel along the profile normal.
+    /// the flag in a lane outside the active configuration.
     WriterExtrudeReversalConfigurationCleared,
     SourceDialectDisplaced,
     /// A source record states a property whose key holds no non-whitespace

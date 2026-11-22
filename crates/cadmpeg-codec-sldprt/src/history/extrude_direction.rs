@@ -122,15 +122,16 @@ struct Witness {
     solid: Solid,
 }
 
-/// The B-rep witness, where a feature can use it.
-fn witness(ir: &CadIr, work: &WorkBudget) -> Option<Witness> {
+/// The B-rep witness, where a feature of the model or one of `probes` can
+/// use it.
+fn witness(ir: &CadIr, probes: &[Feature], work: &WorkBudget) -> Option<Witness> {
     let placed = |profile| {
         profile_sketch(&ir.model, profile)
             .is_some_and(|sketch| sketch.resolved_placement().is_some())
     };
     let mut usable = false;
     let mut reversed = false;
-    for feature in &ir.model.features {
+    for feature in ir.model.features.iter().chain(probes) {
         if reversed_join(feature).is_some_and(placed) {
             usable = true;
             reversed = true;
@@ -148,7 +149,7 @@ fn witness(ir: &CadIr, work: &WorkBudget) -> Option<Witness> {
 
 pub(crate) fn contradicted_features(ir: &CadIr) -> HashSet<FeatureId> {
     let work = WorkBudget::new(MAX_WITNESS_WORK);
-    witness(ir, &work).map_or_else(HashSet::new, |witness| {
+    witness(ir, &[], &work).map_or_else(HashSet::new, |witness| {
         matching(&ir.model, &work, |feature| {
             verdict(&ir.model, feature, &witness, &work) == Some(false)
         })
@@ -187,13 +188,23 @@ pub(crate) struct Retained {
     pub(crate) assumed: Vec<String>,
     /// The configuration states that travel along the profile normal against
     /// their own reversal flag, as the active solid contradicts that flag for
-    /// the same extrusion: each configuration and extrusion, named by name
-    /// and id.
-    pub(crate) configuration_reversals: Vec<(String, String)>,
+    /// the same extrusion, by configuration.
+    pub(crate) configuration_reversals: Vec<ConfigurationStates>,
     /// The configuration states whose reversal rests on the end-spec flag of
-    /// their own lane alone, by configuration: each configuration and its
-    /// extrusions, named by name and id.
-    pub(crate) configuration_assumed: Vec<(String, Vec<String>)>,
+    /// their own lane alone, by configuration.
+    pub(crate) configuration_assumed: Vec<ConfigurationStates>,
+}
+
+/// Extrusion states of one configuration.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct ConfigurationStates {
+    /// The configuration, named by name and id.
+    pub(crate) configuration: String,
+    /// Whether the configuration is the active one, whose solid the decoded
+    /// B-rep is.
+    pub(crate) active: bool,
+    /// The extrusions, each named by name and id.
+    pub(crate) extrusions: Vec<String>,
 }
 
 /// Settles each extrusion's travel against the B-rep: a contradicted
@@ -206,7 +217,8 @@ pub(crate) fn retain_contradicted_directions(ir: &mut CadIr) -> Retained {
     let mut retained = Retained::default();
     let mut held = HashSet::new();
     let mut fallen = HashSet::new();
-    if let Some(witness) = witness(ir, &work) {
+    let probes = active_reversals(ir);
+    if let Some(witness) = witness(ir, &[], &work) {
         let contradicted = matching(&ir.model, &work, |feature| {
             match verdict(&ir.model, feature, &witness, &work) {
                 Some(true) => {
@@ -222,7 +234,21 @@ pub(crate) fn retain_contradicted_directions(ir: &mut CadIr) -> Retained {
         held.extend(confirmed.iter().cloned());
         fallen = settle_travel(ir, &contradicted, &confirmed, &mut retained);
     }
-    settle_configuration_reversals(ir, &held, &fallen, &mut retained);
+    let mut active_verdicts = HashMap::new();
+    if let Some(witness) = (!probes.is_empty())
+        .then(|| witness(ir, &probes, &work))
+        .flatten()
+    {
+        for probe in &probes {
+            if !work.charge() {
+                break;
+            }
+            if let Some(holds) = verdict(&ir.model, probe, &witness, &work) {
+                active_verdicts.insert(probe.id.clone(), holds);
+            }
+        }
+    }
+    settle_configuration_reversals(ir, &held, &fallen, &active_verdicts, &mut retained);
     retained.assumed = ir
         .model
         .features
@@ -291,21 +317,47 @@ fn settle_travel(
     fallen
 }
 
+/// Each model feature that does not travel against the profile normal, with
+/// the definition of its unsuppressed state in the active configuration
+/// where that state does: the probes that test that state against the
+/// active solid, which is the solid of the active configuration.
+fn active_reversals(ir: &CadIr) -> Vec<Feature> {
+    ir.model
+        .configurations
+        .iter()
+        .filter(|configuration| configuration.active)
+        .flat_map(|configuration| &configuration.feature_states)
+        .filter(|(_, state)| reversed(&state.definition) && !state.evaluation.is_suppressed())
+        .filter_map(|(id, state)| {
+            let feature = ir.model.features.iter().find(|feature| &feature.id == id)?;
+            if reversed(feature.evaluation.definition()) {
+                return None;
+            }
+            let mut probe = feature.clone();
+            probe.evaluation.set_definition(state.definition.clone());
+            Some(probe)
+        })
+        .collect()
+}
+
 /// Settles each configuration state that travels against the profile normal
 /// on the reversal flag of its own lane. The active solid is the solid of
 /// the active configuration: the model's reading stands for that
 /// configuration's state wherever the model feature travels against the
-/// normal, and only a state whose model feature does not is named. An
-/// inactive state shares the extrusion's geometry where its definition
-/// equals the model feature's or the active configuration's state, and the
-/// active solid holds it where it holds the model's reversal. A reversal of
-/// an extrusion whose model reversal fell back travels along the normal in
-/// every configuration, as the active solid contradicts the flag for that
-/// extrusion and its sketch. Each other reversal rests on its flag alone.
+/// normal, and `active_verdicts` holds the active solid's verdict on each
+/// other reversed state of that configuration. An inactive state shares the
+/// extrusion's geometry where its definition equals the model feature's or
+/// the active configuration's state, and the active solid holds it where it
+/// holds the model's reversal or that active state. Where the active solid
+/// contradicts the reversal of an extrusion, the reversal travels along the
+/// normal in every configuration, as the decoder takes the extrusion's
+/// sketch normal as the same in every configuration. Each other reversal
+/// rests on its flag alone.
 fn settle_configuration_reversals(
     ir: &mut CadIr,
     held: &HashSet<FeatureId>,
     fallen: &HashSet<FeatureId>,
+    active_verdicts: &HashMap<FeatureId, bool>,
     retained: &mut Retained,
 ) {
     let features: HashMap<&FeatureId, &Feature> = ir
@@ -325,6 +377,13 @@ fn settle_configuration_reversals(
         .collect();
     for configuration in &mut ir.model.configurations {
         let name = configuration_label(configuration);
+        let is_active = configuration.active;
+        let states = |extrusions| ConfigurationStates {
+            configuration: name.clone(),
+            active: is_active,
+            extrusions,
+        };
+        let mut contradicted = Vec::new();
         let mut assumed = Vec::new();
         for (id, state) in &mut configuration.feature_states {
             if !reversed(&state.definition) {
@@ -332,19 +391,19 @@ fn settle_configuration_reversals(
             }
             let feature = features.get(id).copied();
             let extrusion = feature.map_or_else(|| id.as_str().to_owned(), label);
-            if fallen.contains(id) {
+            let verdict = active_verdicts.get(id).copied();
+            if fallen.contains(id) || verdict == Some(false) {
                 retain(&mut state.definition);
-                if !configuration.active {
-                    retained
-                        .configuration_reversals
-                        .push((name.clone(), extrusion));
+                if !(is_active && fallen.contains(id)) {
+                    contradicted.push(extrusion);
                 }
                 continue;
             }
-            let covered = if configuration.active {
-                feature.is_some_and(|feature| reversed(feature.evaluation.definition()))
+            let covered = if is_active {
+                verdict == Some(true)
+                    || feature.is_some_and(|feature| reversed(feature.evaluation.definition()))
             } else {
-                held.contains(id)
+                (held.contains(id) || verdict == Some(true))
                     && (feature.is_some_and(|feature| {
                         *feature.evaluation.definition() == state.definition
                     }) || active.get(id) == Some(&state.definition))
@@ -353,8 +412,11 @@ fn settle_configuration_reversals(
                 assumed.push(extrusion);
             }
         }
+        if !contradicted.is_empty() {
+            retained.configuration_reversals.push(states(contradicted));
+        }
         if !assumed.is_empty() {
-            retained.configuration_assumed.push((name, assumed));
+            retained.configuration_assumed.push(states(assumed));
         }
     }
 }

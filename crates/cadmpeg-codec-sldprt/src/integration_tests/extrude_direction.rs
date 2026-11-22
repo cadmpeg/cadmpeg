@@ -256,8 +256,11 @@ fn cap(base: u16, owner: u16, z: f64, normal: f64) -> Vec<u8> {
 /// `z = caps`, and the extrusion's profile is a placed sketch; without, the
 /// solid can neither hold nor contradict the travel. With `alternate`, the
 /// part has a second, inactive configuration `Alternate` whose own lane
-/// states the same end spec; the partition of `Default` makes it active.
-fn lane_flagged(caps: Option<f64>, alternate: bool) -> (Vec<u8>, usize) {
+/// states the same end spec, with reversal flag `1` and that end-condition
+/// code; the partition of `Default` makes it active. Where the code is not
+/// blind (`0`), Keywords state no end condition, so that the lanes decide
+/// it.
+fn lane_flagged(caps: Option<f64>, alternate: Option<u8>) -> (Vec<u8>, usize) {
     use crate::test_support::history::resolved_features_payload;
     use crate::test_support::parasolid::{parasolid_with_body, triangle_body};
     let (mut source, mut payload, keywords) = match caps {
@@ -300,14 +303,20 @@ fn lane_flagged(caps: Option<f64>, alternate: bool) -> (Vec<u8>, usize) {
     payload.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
     payload.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0x80, 0xbf]);
     payload.resize(anchor + 200, 0);
-    let keywords = if alternate {
-        keywords.replacen(
-            "<Keywords>",
-            r#"<Keywords><Configuration Name="Default" SourceIndex="0"/><Configuration Name="Alternate" SourceIndex="1"/>"#,
-            1,
-        )
-    } else {
-        keywords.to_owned()
+    let keywords = match alternate {
+        Some(code) => {
+            let keywords = keywords.replacen(
+                "<Keywords>",
+                r#"<Keywords><Configuration Name="Default" SourceIndex="0"/><Configuration Name="Alternate" SourceIndex="1"/>"#,
+                1,
+            );
+            if code == 0 {
+                keywords
+            } else {
+                keywords.replacen(r#" EndCondition="Blind""#, "", 1)
+            }
+        }
+        None => keywords.to_owned(),
     };
     source.extend(make_block(0x42, "Contents/Keywords", keywords.as_bytes()));
     source.extend(make_block(
@@ -315,7 +324,9 @@ fn lane_flagged(caps: Option<f64>, alternate: bool) -> (Vec<u8>, usize) {
         "Contents/Config-0-ResolvedFeatures",
         &payload,
     ));
-    if alternate {
+    if let Some(code) = alternate {
+        let mut payload = payload;
+        payload[anchor + 18] = code;
         source.extend(make_block(
             0x45,
             "Contents/Config-1-ResolvedFeatures",
@@ -428,7 +439,7 @@ fn clear_and_write(
 /// word, and the written part decodes along the normal with no reversal.
 #[test]
 fn a_cleared_reversal_writes_a_zero_end_spec_word() {
-    let (bytes, anchor) = lane_flagged(None, false);
+    let (bytes, anchor) = lane_flagged(None, None);
     let decoded = decode(bytes);
     let (feature, direction, word) = extrusion_state(decoded.ir(), anchor);
     assert_eq!(direction, ExtrudeDirection::ReversedProfileNormal {});
@@ -466,7 +477,7 @@ fn a_cleared_reversal_writes_a_zero_end_spec_word() {
 /// written, with the `0` word, and named as a stale solid.
 #[test]
 fn a_cleared_reversal_over_its_stored_caps_is_written_and_named() {
-    let (bytes, anchor) = lane_flagged(Some(-1.0), false);
+    let (bytes, anchor) = lane_flagged(Some(-1.0), None);
     let decoded = decode(bytes);
     let (_, direction, word) = extrusion_state(decoded.ir(), anchor);
     assert_eq!(direction, ExtrudeDirection::ReversedProfileNormal {});
@@ -528,7 +539,7 @@ fn lane_words(ir: &cadmpeg_ir::CadIr, anchor: usize) -> Vec<Vec<u8>> {
 /// and the extrusion.
 #[test]
 fn an_inactive_configuration_reversal_without_a_witness_is_named() {
-    let (bytes, anchor) = lane_flagged(None, true);
+    let (bytes, anchor) = lane_flagged(None, Some(0));
     let decoded = decode(bytes);
     let (_, direction, _) = extrusion_state(decoded.ir(), anchor);
     assert_eq!(direction, ExtrudeDirection::ReversedProfileNormal {});
@@ -560,7 +571,7 @@ fn an_inactive_configuration_reversal_without_a_witness_is_named() {
 #[test]
 fn an_inactive_configuration_reversal_follows_the_active_solid() {
     for side in [1.0, -1.0] {
-        let (bytes, anchor) = lane_flagged(Some(side), true);
+        let (bytes, anchor) = lane_flagged(Some(side), Some(0));
         let decoded = decode(bytes);
         let expected = if side > 0.0 {
             ExtrudeDirection::ProfileNormal {}
@@ -598,12 +609,108 @@ fn an_inactive_configuration_reversal_follows_the_active_solid() {
     }
 }
 
+/// The direction of `Extrude` in the active configuration `Default`.
+fn default_direction(ir: &cadmpeg_ir::CadIr) -> ExtrudeDirection {
+    let feature = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Extrude"))
+        .expect("the extrusion");
+    let configuration = ir
+        .model
+        .configurations
+        .iter()
+        .find(|configuration| configuration.name.as_deref() == Some("Default"))
+        .expect("the configuration Default");
+    assert!(configuration.active);
+    let FeatureOperation::Extrude { direction, .. } = configuration.feature_states[&feature.id]
+        .definition
+        .operation()
+    else {
+        panic!("Extrude is no extrusion in Default");
+    };
+    direction.clone()
+}
+
+/// Where the lanes state different end conditions under flag `1`, the model
+/// feature travels along the normal, and the active solid tests the reversed
+/// state of the active configuration itself. Where the solid contradicts
+/// it, the state falls back and is named with its configuration, and the
+/// inactive state of the same extrusion follows it. Where the solid holds
+/// it, the state keeps it unnamed, and the inactive state, whose definition
+/// differs, rests on its flag and is named.
+#[test]
+fn an_active_configuration_reversal_takes_the_active_solid_verdict() {
+    for side in [1.0, -1.0] {
+        let (bytes, anchor) = lane_flagged(Some(side), Some(1));
+        let decoded = decode(bytes);
+        let (_, direction, _) = extrusion_state(decoded.ir(), anchor);
+        assert_ne!(
+            direction,
+            ExtrudeDirection::ReversedProfileNormal {},
+            "side={side}"
+        );
+        let decode_losses = losses(&decoded);
+        let contradicted = messages(
+            &decode_losses,
+            SldprtLossCode::FeatureExtrudeReversalContradicted,
+        );
+        let assumed = messages(
+            &decode_losses,
+            SldprtLossCode::FeatureExtrudeReversalAssumed,
+        );
+        if side > 0.0 {
+            assert_eq!(
+                default_direction(decoded.ir()),
+                ExtrudeDirection::ProfileNormal {}
+            );
+            assert_eq!(
+                alternate_direction(decoded.ir()),
+                ExtrudeDirection::ProfileNormal {}
+            );
+            assert_eq!(contradicted.len(), 2, "{decode_losses:?}");
+            assert!(
+                contradicted
+                    .iter()
+                    .any(|message| message.contains("configuration \"Default\" (")
+                        && message.contains("as the solid of that configuration shows")),
+                "{contradicted:?}"
+            );
+            assert!(
+                contradicted
+                    .iter()
+                    .any(|message| message.contains("configuration \"Alternate\" (")
+                        && message.contains("as the active solid contradicts that flag")),
+                "{contradicted:?}"
+            );
+            assert!(assumed.is_empty(), "{decode_losses:?}");
+        } else {
+            assert_eq!(
+                default_direction(decoded.ir()),
+                ExtrudeDirection::ReversedProfileNormal {}
+            );
+            assert_eq!(
+                alternate_direction(decoded.ir()),
+                ExtrudeDirection::ReversedProfileNormal {}
+            );
+            assert!(contradicted.is_empty(), "{decode_losses:?}");
+            assert_eq!(assumed.len(), 1, "{decode_losses:?}");
+            assert!(
+                assumed[0].contains("configuration \"Alternate\" (")
+                    && assumed[0].contains("the decoder tests no solid of that configuration"),
+                "{assumed:?}"
+            );
+        }
+    }
+}
+
 /// Clearing the model's reversal clears the flag in every lane. The write
 /// names the inactive configuration's lane, whose state still travels
 /// against the normal, and that configuration decodes along it.
 #[test]
 fn a_cleared_reversal_names_the_inactive_configuration_lane_it_clears() {
-    let (bytes, anchor) = lane_flagged(None, true);
+    let (bytes, anchor) = lane_flagged(None, Some(0));
     let decoded = decode(bytes);
     assert_eq!(
         lane_words(decoded.ir(), anchor),
