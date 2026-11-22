@@ -51,7 +51,7 @@ use crate::rollback::{Reading, Unread};
 
 pub(crate) use equations::{managers as equation_managers, Managers as EquationManagers};
 pub(crate) use names::Persistent;
-pub(crate) use units::length_unit;
+pub(crate) use units::{length_places, length_unit};
 
 /// What a part's design is projected from.
 pub(crate) struct Part<'a> {
@@ -67,6 +67,9 @@ pub(crate) struct Part<'a> {
     pub(crate) length: Option<UnitSymbol>,
     /// The equation managers of the configuration streams.
     pub(crate) equations: EquationManagers,
+    /// The number of decimal places at which the part shows lengths: the
+    /// largest its configurations state.
+    pub(crate) length_places: Option<u32>,
     /// What the stored marks state of the rollback position.
     pub(crate) rollback: Reading,
 }
@@ -92,6 +95,7 @@ pub(crate) fn project(
         persistent,
         length,
         equations: managers,
+        length_places,
         rollback,
     } = part;
     let active = equations::active_slot(histories, ir.source.as_ref());
@@ -116,6 +120,7 @@ pub(crate) fn project(
     let readings = parameters::Readings {
         decoded: parameters::Decoded::new(&ir.model.parameters, lanes),
         length_unit: length,
+        length_places,
         bound: typed.bound,
         measured: typed.measured,
         driven: typed.references,

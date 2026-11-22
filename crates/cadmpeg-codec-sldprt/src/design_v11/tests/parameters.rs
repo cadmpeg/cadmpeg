@@ -173,7 +173,7 @@ fn parameters_with_readings(
     Vec<cadmpeg_ir::design::parameter::DesignParameter>,
     Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
-    parameters_with_scalars(keywords, readings, classes, &[], &[], length_unit)
+    parameters_with_scalars(keywords, readings, classes, &[], &[], length_unit, None)
 }
 
 /// The scalars a history feature holds under a dimension's name: feature
@@ -181,8 +181,8 @@ fn parameters_with_readings(
 type NamedScalars<'a> = [(&'a str, &'a str, super::super::parameters::NamedScalar)];
 
 /// As [`parameters_with_readings`], with the parameters the records of the
-/// scalars `stated` state, and the scalars `named` the features hold under
-/// their dimensions' names.
+/// scalars `stated` state, the scalars `named` the features hold under their
+/// dimensions' names, and the part's length precision `length_places`.
 fn parameters_with_scalars(
     keywords: &[u8],
     readings: &[(
@@ -198,6 +198,7 @@ fn parameters_with_scalars(
     )],
     named: &NamedScalars<'_>,
     length_unit: Option<cadmpeg_ir::design::units::UnitSymbol>,
+    length_places: Option<u32>,
 ) -> (
     CadIr,
     Vec<cadmpeg_ir::design::parameter::DesignParameter>,
@@ -256,6 +257,7 @@ fn parameters_with_scalars(
                 &super::super::parameters::Readings {
                     decoded,
                     length_unit,
+                    length_places,
                     bound: std::collections::HashMap::new(),
                     measured: std::collections::HashMap::new(),
                     driven: std::collections::HashSet::new(),
@@ -596,7 +598,8 @@ fn a_bare_display_takes_the_class_and_value_its_scalar_record_states() {
         Some("scalar-d8"),
     )];
     let stated = [("scalar-d8", StatedParameter::Length(0.24))];
-    let read = |unit| parameters_with_scalars(keywords, &mistyped, &[], &stated, &named, unit);
+    let read =
+        |unit| parameters_with_scalars(keywords, &mistyped, &[], &stated, &named, unit, None);
     let named_in = |parameters: &[cadmpeg_ir::design::parameter::DesignParameter], name: &str| {
         parameters
             .iter()
@@ -688,6 +691,186 @@ fn a_bare_display_takes_the_class_and_value_its_scalar_record_states() {
         "{}",
         note.message
     );
+}
+
+#[test]
+fn a_bare_length_display_shows_its_scalar_at_the_part_length_precision() {
+    use super::super::parameters::NamedScalar;
+    use crate::resolved_features::parameter_classes::StatedParameter;
+    use cadmpeg_ir::design::parameter::ParameterValue;
+    use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
+
+    let keywords = br#"<Keywords Name="Bracket">
+            <Feature Name="Sketch1" Type="ProfileFeature" id="7">
+                <Dimension Name="D1">6</Dimension>
+                <Dimension Name="D2">6.42</Dimension>
+                <Dimension Name="D3">8</Dimension>
+                <Dimension Name="D4">30</Dimension>
+            </Feature>
+        </Keywords>"#;
+    let shown = |stated| NamedScalar {
+        stated: Some(stated),
+        driving: false,
+    };
+    let named = [
+        ("Sketch1", "D1", shown(StatedParameter::Length(0.006_418_3))),
+        ("Sketch1", "D2", shown(StatedParameter::Length(0.006_418_3))),
+        ("Sketch1", "D3", shown(StatedParameter::Length(0.008))),
+        (
+            "Sketch1",
+            "D4",
+            shown(StatedParameter::Angle(30.4f64.to_radians())),
+        ),
+    ];
+    let read = |places| {
+        parameters_with_scalars(
+            keywords,
+            &[],
+            &[],
+            &[],
+            &named,
+            Some(UnitSymbol::Mm),
+            places,
+        )
+    };
+    let value = |parameters: &[cadmpeg_ir::design::parameter::DesignParameter], name: &str| {
+        let parameter = parameters
+            .iter()
+            .find(|parameter| {
+                parameter
+                    .name
+                    .as_ref()
+                    .map(cadmpeg_core::text::NonBlankString::as_str)
+                    == Some(name)
+            })
+            .unwrap_or_else(|| panic!("{name}: {parameters:#?}"));
+        match (&parameter.kind, &parameter.value) {
+            (ValueKind::Quantity(quantity), Some(ParameterValue::Number(value))) => {
+                Some((*quantity, value.get()))
+            }
+            (ValueKind::Native(kind), None) if kind.as_str() == "sldprt:dimension" => None,
+            other => panic!("{name}: {other:?}"),
+        }
+    };
+    let length = |millimetres: f64| Some((Quantity::LENGTH, millimetres));
+    let close = |got: Option<(Quantity, f64)>, want: Option<(Quantity, f64)>| match (got, want) {
+        (Some((got_kind, got)), Some((want_kind, want))) => {
+            got_kind == want_kind && (got - want).abs() <= 1e-9
+        }
+        (got, want) => got.is_none() && want.is_none(),
+    };
+    let angle = Some((Quantity::ANGLE, 30.4f64.to_radians()));
+
+    // Two places: `6` is 6.00, which 6.4183 mm does not show; `6.42` is.
+    let (_, parameters, notes) = read(Some(2));
+    for (name, want) in [
+        ("D1", None),
+        ("D2", length(6.418_3)),
+        ("D3", length(8.0)),
+        ("D4", angle),
+    ] {
+        assert!(
+            close(value(&parameters, name), want),
+            "{name}: {parameters:#?}"
+        );
+    }
+    let note = note_of(
+        &notes,
+        crate::loss::SldprtLossCode::DesignParameterValueUnread,
+    )
+    .expect("D1 is named");
+    assert!(
+        note.message
+            .contains("1 whose stored values differ from the display or from each other"),
+        "{}",
+        note.message
+    );
+
+    // Four places: `6.42` is 6.4200, which 6.4183 mm does not show.
+    let (_, parameters, _) = read(Some(4));
+    assert!(close(value(&parameters, "D2"), None));
+    assert!(close(value(&parameters, "D3"), length(8.0)));
+
+    // No places, or none stated: the display's own last place.
+    for places in [Some(0), None] {
+        let (_, parameters, _) = read(places);
+        assert!(
+            close(value(&parameters, "D1"), length(6.418_3)),
+            "{places:?}"
+        );
+        assert!(
+            close(value(&parameters, "D2"), length(6.418_3)),
+            "{places:?}"
+        );
+    }
+}
+
+#[test]
+fn a_bound_scalar_shows_a_bare_length_display_at_the_part_length_precision() {
+    use crate::resolved_features::parameter_classes::StatedParameter;
+    use cadmpeg_ir::design::parameter::ParameterValue;
+    use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
+    use cadmpeg_ir::features::parameters::ParameterValue as V10;
+
+    let keywords = br#"<Keywords Name="Bracket">
+            <Feature Name="Sketch1" Type="ProfileFeature" id="7">
+                <Dimension Name="D1">6</Dimension>
+                <Dimension Name="D2">6.42</Dimension>
+            </Feature>
+        </Keywords>"#;
+    // The decoder's values carry no length, so only the bound scalars'
+    // records can make the dimensions lengths.
+    let real = || V10::Real(0.006_418_3.try_into().unwrap());
+    let bound = [
+        ("Sketch1", "D1", real(), Some("scalar-d1")),
+        ("Sketch1", "D2", real(), Some("scalar-d2")),
+    ];
+    let stated = [
+        ("scalar-d1", StatedParameter::Length(0.006_418_3)),
+        ("scalar-d2", StatedParameter::Length(0.006_418_3)),
+    ];
+    let read = |places| {
+        parameters_with_scalars(
+            keywords,
+            &bound,
+            &[],
+            &stated,
+            &[],
+            Some(UnitSymbol::Mm),
+            places,
+        )
+        .1
+    };
+    let reading = |parameters: &[cadmpeg_ir::design::parameter::DesignParameter], name: &str| {
+        let parameter = parameters
+            .iter()
+            .find(|parameter| {
+                parameter
+                    .name
+                    .as_ref()
+                    .map(cadmpeg_core::text::NonBlankString::as_str)
+                    == Some(name)
+            })
+            .unwrap_or_else(|| panic!("{name}: {parameters:#?}"));
+        match (&parameter.kind, &parameter.value) {
+            (ValueKind::Quantity(Quantity::LENGTH), Some(ParameterValue::Number(value))) => {
+                assert!((value.get() - 6.418_3).abs() <= 1e-9, "{name}: {value:?}");
+                true
+            }
+            (ValueKind::Native(kind), _) if kind.as_str() == "sldprt:dimension" => false,
+            other => panic!("{name}: {other:?}"),
+        }
+    };
+
+    // Two places: `6` is 6.00, which 6.4183 mm does not show; `6.42` is.
+    let parameters = read(Some(2));
+    assert!(!reading(&parameters, "D1"), "{parameters:#?}");
+    assert!(reading(&parameters, "D2"), "{parameters:#?}");
+
+    // None stated: the display's own last place, which 6.4183 mm shows.
+    let parameters = read(None);
+    assert!(reading(&parameters, "D1"), "{parameters:#?}");
+    assert!(reading(&parameters, "D2"), "{parameters:#?}");
 }
 
 #[test]
