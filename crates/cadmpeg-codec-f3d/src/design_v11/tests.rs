@@ -647,8 +647,8 @@ fn parameters_state_literals_and_source_text_in_their_scope() {
 
 /// The parameter of a driven (reference) dimension is `Driven` (§5.12, D11).
 /// Its value is the measured value its frame stores, not the value of the
-/// literal its record stores, and the native option `f3d:literal` keeps that
-/// literal; with no measured value it has no value. A driving dimension's
+/// literal its record stores, and the source setting `f3d:literal` keeps
+/// that literal; with no measured value it has no value. A driving dimension's
 /// parameter keeps its literal expression.
 #[test]
 fn the_parameter_of_a_driven_dimension_is_driven() {
@@ -713,7 +713,7 @@ fn the_parameter_of_a_driven_dimension_is_driven() {
     );
     assert_eq!(
         reference
-            .native_options
+            .source_settings
             .get(super::parameters::LITERAL)
             .cloned(),
         literal("12.5 mm")
@@ -722,7 +722,7 @@ fn the_parameter_of_a_driven_dimension_is_driven() {
     assert_eq!(unmeasured.value, None);
     assert_eq!(
         unmeasured
-            .native_options
+            .source_settings
             .get(super::parameters::LITERAL)
             .cloned(),
         literal("3 mm")
@@ -736,7 +736,11 @@ fn the_parameter_of_a_driven_dimension_is_driven() {
         driving.value,
         Some(ParameterValue::Number(FiniteReal::new(4.0).unwrap()))
     );
-    assert!(driving.native_options.is_empty());
+    assert_eq!(
+        driving.source_settings.get(super::parameters::LITERAL),
+        None
+    );
+    assert!(reference.native_options.is_empty());
 }
 
 #[test]

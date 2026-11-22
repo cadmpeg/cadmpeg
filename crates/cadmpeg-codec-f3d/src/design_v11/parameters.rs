@@ -15,7 +15,7 @@
 //! tokens. The parameter of a driven dimension is `Driven`. Its value is the
 //! measured value its dimension frame stores, and it has none where no frame
 //! states one; its record stores the value of its literal, which can differ
-//! (f3d.md §3.1, "Sketch dimensions"), and the native option `f3d:literal`
+//! (f3d.md §3.1, "Sketch dimensions"), and the source setting `f3d:literal`
 //! keeps that literal. The role Fusion stores on a model parameter is the
 //! source setting `f3d:role`.
 
@@ -56,7 +56,7 @@ const UNRESOLVED_OWNER: &str = "owner_record_index";
 const DRIVEN: &str = "driven";
 /// The v10 property that holds the measured value of a driven dimension.
 const MEASURED: &str = "measured_value";
-/// The native option that holds the literal the record of a driven
+/// The source setting that holds the literal the record of a driven
 /// dimension's parameter stores.
 pub(crate) const LITERAL: &str = "f3d:literal";
 
@@ -193,10 +193,10 @@ fn record(
         },
         cache,
     );
-    let mut native_options = NativeOptions::new();
+    let mut source_settings = NativeOptions::new();
     let (definition, value) = if property(DRIVEN) == Some("true") {
         if let Some(literal) = NonBlankString::new(parameter.expression.clone()) {
-            native_options.insert(
+            source_settings.insert(
                 cadmpeg_core::nonblank_literal!("f3d:literal"),
                 NativeOption::Text(Dimension::Literal(literal)),
             );
@@ -215,7 +215,6 @@ fn record(
         let expression = expression(&parameter.expression, &kind, &vocabulary);
         (ParameterDefinition::Expression(expression), value)
     };
-    let mut source_settings = NativeOptions::new();
     if let Some(role) = property(ROLE).and_then(|role| NonBlankString::new(role.to_owned())) {
         source_settings.insert(
             cadmpeg_core::nonblank_literal!("f3d:role"),
@@ -235,7 +234,7 @@ fn record(
         tolerance: None,
         decimals: None,
         comment: property(COMMENT).map(str::to_owned),
-        native_options,
+        native_options: NativeOptions::new(),
         source_settings,
         native_ref: parameter.native_ref.clone(),
     }

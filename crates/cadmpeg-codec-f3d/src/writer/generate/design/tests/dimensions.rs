@@ -958,9 +958,10 @@ fn a_driven_parameter_without_a_cached_value_states_the_measurement() {
 }
 
 /// The record of a driven dimension's parameter keeps the literal its source
-/// record stores (`f3d:literal`, 21 mm), which differs from the measured
-/// value (20 mm, the parameter's value) that its frame states. Read back, the
-/// parameter is `Driven` with the measured value, and keeps the literal.
+/// record stores (the source setting `f3d:literal`, 21 mm), which differs
+/// from the measured value (20 mm, the parameter's value) that its frame
+/// states. Read back, the parameter is `Driven` with the measured value, and
+/// keeps the literal.
 #[test]
 fn a_driven_parameter_keeps_the_literal_its_source_record_stores() {
     use cadmpeg_ir::design::options::NativeOption;
@@ -972,7 +973,7 @@ fn a_driven_parameter_keeps_the_literal_its_source_record_stores() {
     let mut ir = on_xy();
     drive(&mut ir, "gap");
     parameter_mut(&mut ir, "gap")
-        .native_options
+        .source_settings
         .insert(cadmpeg_core::nonblank_literal!("f3d:literal"), literal());
     let (_, decoded, bytes) = write_bytes(&ir);
     let gap = decoded
@@ -1018,7 +1019,7 @@ fn a_driven_parameter_keeps_the_literal_its_source_record_stores() {
         gap.value
     );
     assert_eq!(
-        gap.native_options
+        gap.source_settings
             .get(crate::design_v11::parameters::LITERAL)
             .cloned(),
         Some(literal())

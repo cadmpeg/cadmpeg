@@ -74,7 +74,7 @@ struct DrivenParameter {
 }
 
 /// The literal the record of a driven dimension's parameter stores (the
-/// native option `f3d:literal`), which can differ from its measured value
+/// source setting `f3d:literal`), which can differ from its measured value
 /// (f3d.md §3.1, "Sketch dimensions").
 #[derive(Clone)]
 pub(super) struct RecordLiteral {
@@ -84,11 +84,11 @@ pub(super) struct RecordLiteral {
 }
 
 impl RecordLiteral {
-    /// The literal of `parameter`'s native option `f3d:literal`, where it is
+    /// The literal of `parameter`'s source setting `f3d:literal`, where it is
     /// one number with a unit of the parameter's quantity.
     fn of(parameter: &DesignParameter, form: Form) -> Option<Self> {
         let Some(NativeOption::Text(Dimension::Literal(text))) = parameter
-            .native_options
+            .source_settings
             .get(crate::design_v11::parameters::LITERAL)
         else {
             return None;
