@@ -889,8 +889,8 @@ fn a_bare_display_number_states_no_unit() {
     assert_eq!(bare_display_number("17/32\""), None);
 }
 
-/// The v11 parameters and notes of a part in millimetres whose equation
-/// manager stores the metres of `manager` (feature, dimension, metres) beside
+/// The v11 parameters and notes of a part in millimetres, whose units table
+/// states the length precision `places`, whose equation manager stores the metres of `manager` (feature, dimension, metres) beside
 /// those dimensions, each confirmed by the line that drives it where
 /// `confirmed`, and whose decoder bound the dimensions `pmi` (feature,
 /// dimension) to a PMI record.
@@ -899,6 +899,7 @@ fn parameters_with_manager(
     manager: &[(&str, &str, f64)],
     confirmed: bool,
     pmi: &[(&str, &str)],
+    places: Option<u32>,
 ) -> (
     Vec<cadmpeg_ir::design::parameter::DesignParameter>,
     Vec<cadmpeg_ir::report::loss::LossNote>,
@@ -950,7 +951,7 @@ fn parameters_with_manager(
             &super::super::parameters::Readings {
                 decoded: super::super::parameters::Decoded::new(&v10, &[]),
                 length_unit: Some(cadmpeg_ir::design::units::UnitSymbol::Mm),
-                length_places: None,
+                length_places: places,
                 bound: std::collections::HashMap::new(),
                 measured: std::collections::HashMap::new(),
                 driven: std::collections::HashSet::new(),
@@ -997,6 +998,7 @@ fn a_pmi_bound_dimension_takes_no_length_the_manager_stores_beside_its_display()
         &[("Sketch1", "D1", 0.044), ("Sketch1", "D2", 0.044)],
         false,
         &[("Sketch1", "D2")],
+        None,
     );
     let (kind, number) = kind_and_number(&parameters, "D1");
     assert_eq!(kind, ValueKind::Quantity(Quantity::LENGTH));
@@ -1025,6 +1027,7 @@ fn a_pmi_bound_dimension_takes_no_length_its_line_gives() {
         &[("Sketch1", "D1", third), ("Sketch1", "D2", third)],
         true,
         &[("Sketch1", "D2")],
+        Some(2),
     );
     let (kind, number) = kind_and_number(&parameters, "D1");
     assert_eq!(kind, ValueKind::Quantity(Quantity::LENGTH));
@@ -1034,5 +1037,42 @@ fn a_pmi_bound_dimension_takes_no_length_its_line_gives() {
         matches!(&kind, ValueKind::Native(kind) if kind.as_str() == "sldprt:dimension")
             && number.is_none(),
         "{kind:?} {number:?}"
+    );
+}
+
+#[test]
+fn a_line_confirms_a_rounded_length_only_at_the_stored_precision() {
+    use cadmpeg_ir::design::units::{Quantity, ValueKind};
+
+    // Every length display is a whole number, so a precision estimated from
+    // the displays would allow half a millimetre. `8` shows the 7.823 mm that
+    // D1's line gives at no decimal places; at two it shows 8.00.
+    let keywords = br#"<Keywords Name="Bracket">
+            <Feature Name="Sketch1" Type="ProfileFeature" id="7">
+                <Dimension Name="D1">8</Dimension>
+                <Dimension Name="D2">20</Dimension>
+            </Feature>
+        </Keywords>"#;
+    let manager = [("Sketch1", "D1", 0.007_823), ("Sketch1", "D2", 0.02)];
+    let (parameters, _) = parameters_with_manager(keywords, &manager, true, &[], Some(0));
+    let (kind, number) = kind_and_number(&parameters, "D1");
+    assert_eq!(kind, ValueKind::Quantity(Quantity::LENGTH));
+    assert!((number.unwrap() - 7.823).abs() < 1e-9, "{number:?}");
+
+    let (parameters, notes) = parameters_with_manager(keywords, &manager, true, &[], Some(2));
+    let (kind, number) = kind_and_number(&parameters, "D2");
+    assert_eq!(kind, ValueKind::Quantity(Quantity::LENGTH));
+    assert!((number.unwrap() - 20.0).abs() < 1e-9, "{number:?}");
+    let (kind, number) = kind_and_number(&parameters, "D1");
+    assert!(
+        matches!(&kind, ValueKind::Native(kind) if kind.as_str() == "sldprt:dimension")
+            && number.is_none(),
+        "{kind:?} {number:?}"
+    );
+    assert!(
+        notes.iter().any(|note| note
+            .message
+            .contains("than the document's length precision")),
+        "{notes:#?}"
     );
 }

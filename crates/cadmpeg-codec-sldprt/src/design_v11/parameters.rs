@@ -28,9 +28,10 @@
 //! (Rule H1): a length at the part's length precision, where its units table
 //! states one, as Keywords rounds a length to that many places whether it
 //! drops trailing zeros or keeps them. A bare display that rounds the length
-//! the equation manager stores beside the dimension takes that length where
-//! the line that drives the dimension, evaluated over the values stored
-//! beside its names, gives it, unless the decoder bound it to a PMI record. A
+//! the equation manager stores beside the dimension at that precision takes
+//! that length where the line that drives the dimension, evaluated over the
+//! values stored beside its names, gives it, unless the decoder bound it to a
+//! PMI record. A
 //! dimension whose kind no record states keeps the number its bound scalar
 //! stores, as a `Native` kind holds it (§5.12). The
 //! `design.parameter-value-unread` note names each dimension whose text is a
@@ -575,18 +576,13 @@ impl<'a> Entries<'a> {
             .iter()
             .map(|entry| read(entry, &aliases, readings, None))
             .collect::<Vec<_>>();
-        if !readings.confirmed.is_empty() {
-            let finest = self
-                .list
-                .iter()
-                .zip(&read_entries)
-                .filter(|(_, reading)| reading.kind == ValueKind::Quantity(Quantity::LENGTH))
-                .filter_map(|(entry, _)| Shown::of(entry.text))
-                .map(|shown| shown.rounding)
-                .fold(f64::INFINITY, f64::min);
+        if let Some(places) = readings
+            .length_places
+            .filter(|_| !readings.confirmed.is_empty())
+        {
             for (entry, reading) in self.list.iter().zip(&mut read_entries) {
                 if readings.confirmed.contains(&entry.id) {
-                    *reading = read(entry, &aliases, readings, Some(finest));
+                    *reading = read(entry, &aliases, readings, Some(places));
                 }
             }
         }
@@ -725,7 +721,7 @@ enum Unvalued {
     Disagrees,
     /// The line that drives it gives the length the equation manager stores,
     /// and its display rounds that length at fewer decimal places than the
-    /// document's finest length display.
+    /// document's length precision.
     Coarse,
 }
 
@@ -751,23 +747,22 @@ impl Unvalued {
             Self::Disagrees => "whose stored values differ from the display or from each other",
             Self::Coarse => {
                 "whose display rounds the length their equation gives at fewer decimal places than \
-                 the document's finest length display"
+                 the document's length precision"
             }
         }
     }
 }
 
-/// The reading of `entry`. Keywords shows a length at the document's length
-/// precision and drops trailing zeros. `finest` stands for that precision:
-/// half a unit in the finest decimal place of the bare displays the decoder
-/// reads as lengths. A dimension in `readings.confirmed` takes its stored
-/// length where its display rounds that length within `finest`; `None`
-/// leaves every dimension unrounded.
+/// The reading of `entry`. Keywords shows a length rounded to the document's
+/// length precision `places`, the number of decimal places its units table
+/// states (`docs/formats/sldprt.md`). A dimension in `readings.confirmed`
+/// takes its stored length where its display is that length at `places`;
+/// `None` leaves every dimension unrounded.
 fn read(
     entry: &Entry<'_>,
     aliases: &Aliases,
     readings: &Readings<'_>,
-    finest: Option<f64>,
+    places: Option<u32>,
 ) -> Reading {
     let decoded = &readings.decoded;
     let user = entry.owner.is_none();
@@ -870,21 +865,21 @@ fn read(
             },
         },
     };
-    let (kind, value) = match (kind, value, finest) {
+    let (kind, value) = match (kind, value, places) {
         (
             kind @ (ValueKind::Quantity(Quantity::LENGTH) | ValueKind::Native(_)),
             None,
-            Some(finest),
+            Some(places),
         ) if !user && !references && readings.confirmed.contains(&entry.id) => {
-            let rounded = |rounding: f64| {
+            let rounded = |places| {
                 shown.zip(managed).and_then(|(shown, stored)| {
-                    manager_rounded(shown, *stored, readings.length_unit, rounding)
+                    manager_rounded(shown, *stored, readings.length_unit, places)
                 })
             };
-            match rounded(finest) {
+            match rounded(Some(places)) {
                 Some(value) => (ValueKind::Quantity(Quantity::LENGTH), Some(value)),
                 None => {
-                    if rounded(f64::INFINITY).is_some() {
+                    if rounded(None).is_some() {
                         unread = Some(Unvalued::Coarse);
                     }
                     (kind, None)
@@ -954,19 +949,17 @@ fn manager_length(number: f64, stored: f64, unit: Option<UnitSymbol>) -> Option<
 /// bare display `shown` rounds them, where the line that drives the dimension
 /// gives that value: the stored value, where `shown` is the stored value in
 /// exactly one of millimetres and inches, the part's length unit `unit`,
-/// within half a unit in its own last decimal place or `finest`, whichever is
-/// finer, and the text at its own places shows neither the stored number
-/// itself nor the stored number in degrees (`docs/formats/sldprt.md`).
+/// within half a unit in its own last decimal place or in the last of
+/// `places`, whichever is finer, and the text at its own places shows neither
+/// the stored number itself nor the stored number in degrees
+/// (`docs/formats/sldprt.md`).
 fn manager_rounded(
     shown: Shown,
     stored: f64,
     unit: Option<UnitSymbol>,
-    finest: f64,
+    places: Option<u32>,
 ) -> Option<ParameterValue> {
-    let allowed = Shown {
-        number: shown.number,
-        rounding: shown.rounding.min(finest),
-    };
+    let allowed = shown.at_places(places);
     let shows = |symbol| Some(allowed.shows(stored * MM_PER_M / canonical(symbol)?.1));
     let (millimetres, inches) = (shows(UnitSymbol::Mm)?, shows(UnitSymbol::In)?);
     let in_unit = match unit? {
