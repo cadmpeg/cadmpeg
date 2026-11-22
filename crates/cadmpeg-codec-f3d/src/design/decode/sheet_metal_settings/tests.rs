@@ -193,7 +193,9 @@ fn settings_decoder_skips_unregistered_bulk_without_requesting_a_metastream() {
     zip.write_all(&[]).unwrap();
     let bytes = zip.finish().unwrap().into_inner();
     crate::test_support::zip_test::with_scan(&bytes, |scan| {
-        assert!(super::decode_settings(scan).unwrap().is_empty());
+        assert!(super::decode_settings(scan, &mut Vec::new())
+            .unwrap()
+            .is_empty());
     });
 }
 
@@ -265,4 +267,85 @@ fn rule_thickness_is_the_first_entry_named_thickness() {
         .child(start, bytes.len())
         .unwrap();
     assert!(rule_thickness(record, 0, &types).is_none());
+}
+
+#[test]
+fn unreadable_settings_keep_the_sibling_settings() {
+    use std::io::{Cursor, Write};
+    for (version, tail, reference_prefix) in [(2, &[0; 4][..], false), (3, &[0; 2][..], true)] {
+        let (mut first, mut first_frame) = fixture(version, tail);
+        let (mut second, second_frame) = fixture(version, tail);
+        second[7..11].copy_from_slice(&150u32.to_le_bytes());
+        second[second_frame.member_end + 7..second_frame.member_end + 11]
+            .copy_from_slice(&150u32.to_le_bytes());
+        if reference_prefix {
+            let mut prefix = vec![1];
+            prefix.extend_from_slice(&51u64.to_le_bytes());
+            prefix.extend_from_slice(&[0; 14]);
+            prefix.push(1);
+            prefix.extend_from_slice(&55u64.to_le_bytes());
+            prefix.extend_from_slice(&[0; 4]);
+            let prefix_start =
+                crate::layout::indexed_design_record_header::LEN + settings_prefix::OVERRIDE_MASK;
+            let replaced_end = prefix_start + 4 + 9 + 11 + 2;
+            let added = prefix.len() - (replaced_end - prefix_start);
+            first.splice(prefix_start..replaced_end, prefix);
+            first_frame.member_end += added;
+            first_frame.end += added;
+        } else {
+            first[11] = 2;
+        }
+        let second_start = first.len();
+        first.extend_from_slice(&second);
+        let mut primary = vec![(50, 0), (150, u64_from_index(second_start))];
+        for entity in [51u64, 52, 53, 54]
+            .into_iter()
+            .chain(reference_prefix.then_some(55))
+        {
+            primary.push((entity, u64_from_index(first.len())));
+            first.extend_from_slice(&3u32.to_le_bytes());
+            first.extend_from_slice(b"258");
+            first.extend_from_slice(&u32::try_from(entity).unwrap().to_le_bytes());
+        }
+        let mut meta = crate::test_support::streams_test::design_metastream_with_records(
+            &[
+                (SETTINGS_GUID, "", version, "Fusion", &[50, 150]),
+                (PAIRED_GUID, "", 0, "Fusion", &[]),
+                (RULE_GUID, "", 0, "Fusion", &[51]),
+                (PRESENTATION_GUID, "", 0, "Fusion", &[52]),
+            ],
+            &primary,
+        );
+        let secondary_at = meta.len() - 20;
+        let mut secondary = 2u32.to_le_bytes().to_vec();
+        for (entity, offset) in [
+            (50u64, first_frame.member_end),
+            (150, second_start + second_frame.member_end),
+        ] {
+            secondary.extend_from_slice(&entity.to_le_bytes());
+            secondary.extend_from_slice(&u64_from_index(offset).to_le_bytes());
+        }
+        meta.splice(secondary_at..secondary_at + 4, secondary);
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+        crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+        zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
+            .unwrap();
+        zip.write_all(&first).unwrap();
+        zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+            .unwrap();
+        zip.write_all(&meta).unwrap();
+        let bytes = zip.finish().unwrap().into_inner();
+        crate::test_support::zip_test::with_scan(&bytes, |scan| {
+            let mut losses = Vec::new();
+            let settings = super::decode_settings(scan, &mut losses).unwrap();
+            assert_eq!(settings.len(), 1);
+            assert_eq!(settings[0].record_index, 150);
+            assert_eq!(losses.len(), 1);
+            assert_eq!(
+                losses[0].code,
+                crate::loss::F3dLossCode::SheetMetalSettingsUndecoded.kind()
+            );
+        });
+    }
 }

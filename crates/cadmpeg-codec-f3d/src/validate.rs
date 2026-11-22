@@ -2047,9 +2047,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 ]) && scope.base_flange_profile().is_some_and(|profile| {
                     profile.record_index == operation.profile_record_index
                         && profile.scope_reference_ordinal == 1
-                }) && scope
-                    .byte_offset()
-                    .checked_add(123)
+                }) && u64::try_from(crate::layout::base_flange_scope::THICKNESS_COPY)
+                    .ok()
+                    .and_then(|offset| scope.byte_offset().checked_add(offset))
                     .is_some_and(|expected_offset| operation.thickness_offset == expected_offset)
                     && operation.thickness_offset < scope.paired_byte_offset()
             }
@@ -7856,6 +7856,11 @@ fn validate_face_operands<'a>(
                                     && operand.recipe_kind
                                         == records::recipes::ConstructionRecipeKind::BoundedFace
                             }
+                            Some(design::DesignFeatureFamily::SheetMetalBend) => {
+                                group.is_some_and(|group| {
+                                    group.role() == DesignOperandRole::ROLE_0X10
+                                })
+                            }
                             Some(design::DesignFeatureFamily::SurfaceTrim) => {
                                 group.is_some_and(|group| {
                                     group.role() == DesignOperandRole::ROLE_0X9
@@ -8590,13 +8595,17 @@ fn validate_sketch_relations(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     let sketch_owner_ids = &ctx.sketch_owner_ids;
     for relation in &native.sketch_relations {
         let native_stream = design_stream(&relation.id);
-        let owner_matches = matches!(
-            (
-                sketch_owner_ids.get(&(native_stream, relation.owner_reference)),
-                relation.owner_entity_id.as_ref().map(cadmpeg_core::text::NonBlankString::as_str),
-            ),
-            (Some(expected), Some(actual)) if *expected == actual
-        );
+        let owner_matches = match (
+            sketch_owner_ids.get(&(native_stream, relation.owner_reference)),
+            relation
+                .owner_entity_id
+                .as_ref()
+                .map(cadmpeg_core::text::NonBlankString::as_str),
+        ) {
+            (Some(expected), Some(actual)) => *expected == actual,
+            (None, None) => true,
+            _ => false,
+        };
         if !owner_matches {
             push_constant_finding(
                 findings,
@@ -8720,22 +8729,24 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let companions_by_index = &ctx.companions_by_index;
     let placements_by_scope = &ctx.placements_by_scope;
     let sketch_owner_ids = &ctx.sketch_owner_ids;
-    let typed_sketch_records = native
+    let owned_sketch_records = native
         .sketch_points
         .iter()
-        .map(|point| (design_stream(&point.id), point.record_index))
+        .map(|point| (&point.id, point.record_index, point.owner_reference))
         .chain(
             native
                 .sketch_curve_identities
                 .iter()
-                .map(|curve| (design_stream(&curve.id), curve.record_index)),
+                .map(|curve| (&curve.id, curve.record_index, curve.owner_reference)),
         )
         .chain(
             native
                 .sketch_surfaces
                 .iter()
-                .map(|surface| (design_stream(&surface.id), surface.record_index)),
+                .map(|surface| (&surface.id, surface.record_index, surface.owner_reference)),
         )
+        .filter(|(_, _, owner_reference)| owner_reference.is_some())
+        .map(|(id, record_index, _)| (design_stream(id), record_index))
         .collect::<std::collections::HashSet<_>>();
     let sketch_operands = native
         .sketch_points
@@ -8824,8 +8835,11 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 "Fusion sketch relation typed operands disagree with its indexed references",
             );
         }
+        if !sketch_owner_ids.contains_key(&(native_stream, relation.owner_reference)) {
+            continue;
+        }
         for member in relation.all_member_indices() {
-            if !typed_sketch_records.contains(&(native_stream, member)) {
+            if !owned_sketch_records.contains(&(native_stream, member)) {
                 continue;
             }
             if relation_owners
@@ -8850,7 +8864,7 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
             continue;
         };
         for member in entity.member_values() {
-            if !typed_sketch_records.contains(&(native_stream, *member)) {
+            if !owned_sketch_records.contains(&(native_stream, *member)) {
                 continue;
             }
             if relation_owners
