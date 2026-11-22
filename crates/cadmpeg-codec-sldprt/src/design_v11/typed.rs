@@ -18,7 +18,7 @@ use cadmpeg_ir::sketches::SketchEntityId;
 
 use super::parameters::Entries;
 use super::profile_check::{Difference, Unchecked};
-use super::sketch::{Sketches, Unstored};
+use super::sketch::{DimensionCircle, Sketches};
 use super::tree::Timeline;
 use super::{extrude, sketch};
 use crate::loss::{SldprtLossCode, NAMED_INSTANCES_PER_NOTE};
@@ -39,9 +39,9 @@ pub(super) struct Typed {
     /// The note of the sketch curves stated construction for the state of
     /// their curve record.
     pub(super) state_construction: Option<LossNote>,
-    /// The note of the circles and arcs built from a dimension record that
-    /// are stated construction.
-    pub(super) dimension_construction: Option<LossNote>,
+    /// The note of the circles built from a dimension record that the
+    /// design leaves out or states construction.
+    pub(super) dimension_circles: Option<LossNote>,
     /// The note of the typed extrudes whose sketch's closed regions differ
     /// from the stored profile.
     pub(super) profile_differs: Option<LossNote>,
@@ -112,7 +112,7 @@ pub(super) fn project(
     let loss = loss(&sketches.unprojected, &extrudes.unprojected);
     let assumed = assumed(&extrudes.assumed);
     let state_construction = state_construction(&sketches.outside_profile);
-    let dimension_construction = dimension_construction(&sketches.dimension_curves);
+    let dimension_circles = dimension_circles(&sketches.dimension_circles);
     let profile_differs = profile_differs(&extrudes.differs);
     let (empty, unchecked): (Vec<_>, Vec<_>) = extrudes
         .unchecked
@@ -133,7 +133,7 @@ pub(super) fn project(
         loss,
         assumed,
         state_construction,
-        dimension_construction,
+        dimension_circles,
         profile_differs,
         sketch_empty,
         profile_unchecked,
@@ -176,26 +176,20 @@ fn state_construction(entities: &[SketchEntityId]) -> Option<LossNote> {
     )
 }
 
-/// One note naming each circle and arc built from a dimension record that
-/// the design states construction, with why: no curve record stores it, and
-/// it repeats another curve of its sketch or no face of the solid lies on it
-/// (open item DI-83).
-fn dimension_construction(entities: &[(SketchEntityId, Unstored)]) -> Option<LossNote> {
-    if entities.is_empty() {
+/// One note naming each circle built from a dimension record that the
+/// design leaves out or states construction, with what its sketch and the
+/// solid say of it and, for a circle left out on a stored curve, the
+/// dimensions that name that curve (open item DI-83).
+fn dimension_circles(circles: &[DimensionCircle]) -> Option<LossNote> {
+    if circles.is_empty() {
         return None;
     }
-    Some(
-        SldprtLossCode::DesignSketchDimensionCurveConstruction.note(format!(
-            "{} sketch circles and arcs built from a dimension record, which no curve record \
-             stores, are construction; their dimensions keep them as references (DI-83): {}",
-            entities.len(),
-            listed(entities.iter().map(|(entity, reason)| format!(
-                "{} ({})",
-                entity.as_str(),
-                reason.text()
-            ))),
-        )),
-    )
+    Some(SldprtLossCode::DesignSketchDimensionCircle.note(format!(
+        "{} sketch circles the decoder built from a dimension record are left out of the \
+         design or construction (DI-83): {}",
+        circles.len(),
+        listed(circles.iter().map(DimensionCircle::text)),
+    )))
 }
 
 /// One note naming each typed extrude whose `Sketch` pick's closed regions

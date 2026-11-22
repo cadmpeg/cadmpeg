@@ -11,11 +11,12 @@
 //! construction where the decoder marks it construction or reads it from a
 //! curve record of state `0`, which no profile uses, except in a sketch
 //! where another curve closes a loop only with the curves of state `0`;
-//! another entity states no flag. A circle or arc the decoder built from a
-//! dimension record, which no curve record stores, is construction too
-//! where it repeats the carrier of another circle or arc of its sketch or no
-//! cylindrical face of the solid lies on it: the dimension keeps it as its
-//! reference, and it bounds no region. A dimension binds the parameter that
+//! another entity states no flag. A circle the decoder built from a
+//! dimension record (open item DI-83) is left out where it repeats a stored
+//! circle or arc of its sketch, or its center lies on a stored curve of its
+//! radius, and the dimensions that named it name that curve; it is left out
+//! where no relation names it, and otherwise it is construction unless a
+//! cylindrical face of the solid lies on it. A dimension binds the parameter that
 //! holds its value, and states that parameter's quantity; a reference
 //! dimension makes the tree parameter it binds `Driven`, and one whose
 //! parameter no tree node lists binds a `Driven` parameter minted for it. A
@@ -89,29 +90,81 @@ pub(super) struct Sketches {
     /// The entities stated construction because their curve record has
     /// state `0`, whose construction the decoder does not mark.
     pub(super) outside_profile: Vec<SketchEntityId>,
-    /// The circles and arcs built from a dimension record that are stated
-    /// construction although the decoder does not mark them, with why.
-    pub(super) dimension_curves: Vec<(SketchEntityId, Unstored)>,
+    /// The circles built from a dimension record that the design leaves
+    /// out, or states construction although the decoder does not mark them.
+    pub(super) dimension_circles: Vec<DimensionCircle>,
 }
 
-/// Why a circle or arc built from a dimension record is not profile
-/// geometry.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Unstored {
-    /// It repeats the center and radius of another circle or arc of its
-    /// sketch.
-    Repeats,
-    /// No cylindrical face of the solid has its radius on an axis along the
-    /// sketch normal through its center.
+/// A circle built from a dimension record that the design does not keep as
+/// decoded: what its sketch and the solid say of it, and what the design
+/// does with it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct DimensionCircle {
+    entity: SketchEntityId,
+    reading: Reading,
+    outcome: Outcome,
+}
+
+/// What the sketch and the solid say of a built circle.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Reading {
+    /// It has the center and radius of this stored circle or arc.
+    Repeats(SketchEntityId),
+    /// Its center lies on this stored circle or arc, which has its radius.
+    OnCurve(SketchEntityId),
+    /// It has the center and radius of this earlier built circle.
+    RepeatsBuilt(SketchEntityId),
+    /// No stored curve of its sketch has its radius, and no cylindrical face
+    /// of the solid lies on it.
+    NoCurveOfRadius,
+    /// A stored curve of its radius lies elsewhere in its sketch, and no
+    /// cylindrical face of the solid lies on it.
     Unwitnessed,
+    /// Its sketch has no resolved frame to compare with the solid.
+    Unplaced,
 }
 
-impl Unstored {
-    pub(super) fn text(self) -> &'static str {
-        match self {
-            Self::Repeats => "repeats another curve of its sketch",
-            Self::Unwitnessed => "no face of the solid lies on it",
-        }
+/// What the design does with a built circle.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Outcome {
+    /// Left out; these dimensions, which named it, name the stored curve.
+    Redirected(Vec<String>),
+    /// Left out; no relation of the sketch names it.
+    Unnamed,
+    /// Stated construction; the relations that name it keep it.
+    Construction,
+}
+
+impl DimensionCircle {
+    /// The circle, the reading and the outcome, for a loss note.
+    pub(super) fn text(&self) -> String {
+        let reading = match &self.reading {
+            Reading::Repeats(curve) => format!("it repeats {}", curve.as_str()),
+            Reading::OnCurve(curve) => {
+                format!("its center lies on {}, of its radius", curve.as_str())
+            }
+            Reading::RepeatsBuilt(circle) => format!("it repeats {}", circle.as_str()),
+            Reading::NoCurveOfRadius => "no curve of its sketch has its radius and no face of \
+                                         the solid lies on it, so the profile lacks the circle \
+                                         its dimension measures"
+                .to_owned(),
+            Reading::Unwitnessed => "no face of the solid lies on it".to_owned(),
+            Reading::Unplaced => {
+                "its sketch has no resolved frame to compare with the solid".to_owned()
+            }
+        };
+        let outcome = match &self.outcome {
+            Outcome::Redirected(dimensions) => match dimensions.as_slice() {
+                [dimension] => format!("left out; the dimension {dimension} names that curve"),
+                _ => format!(
+                    "left out; the dimensions {} name that curve",
+                    dimensions.join(", ")
+                ),
+            },
+            Outcome::Unnamed => "left out; no relation names it".to_owned(),
+            Outcome::Construction => "construction".to_owned(),
+        };
+        format!("{} ({reading}; {outcome})", self.entity.as_str())
     }
 }
 
@@ -189,24 +242,20 @@ fn sketch(
     let mut failure = None;
     let mut sketch_entities = Vec::with_capacity(entities.len());
     let mut outside_profile = Vec::new();
-    let mut dimension_curves = Vec::new();
     let forms = entities
         .iter()
         .map(|entity| curve(&entity.geometry))
         .collect::<Vec<_>>();
-    let unstored_by_entity = (0..entities.len())
-        .map(|index| unstored(index, &entities, record, context.surfaces))
-        .collect::<Vec<_>>();
-    let needed = needed_state_zero(
-        &entities,
-        &forms,
-        &unstored_by_entity,
-        context.outside_profile,
-    );
-    for ((entity, form), unstored) in entities
+    let mut readings = Vec::with_capacity(entities.len());
+    for index in 0..entities.len() {
+        let reading = reading(index, &entities, &readings, record, context.surfaces);
+        readings.push(reading);
+    }
+    let needed = needed_state_zero(&entities, &forms, &readings, context.outside_profile);
+    for ((entity, form), reading) in entities
         .iter()
         .zip(forms.iter().cloned())
-        .zip(unstored_by_entity.iter().copied())
+        .zip(readings.iter())
     {
         let Some(form) = form else {
             failure.get_or_insert("a sketch entity has no planar curve");
@@ -217,15 +266,12 @@ fn sketch(
         if outside && !entity.construction {
             outside_profile.push(entity.id().clone());
         }
-        if let Some(reason) = unstored.filter(|_| !entity.construction && !outside) {
-            dimension_curves.push((entity.id().clone(), reason));
-        }
         sketch_entities.push(SketchEntity {
             id: entity.id().clone(),
             sketch: record.id.clone(),
             definition: EntityDefinition::Free(form),
             roles: roles.of(entity.id()),
-            construction: (entity.construction || outside || unstored.is_some()).then_some(true),
+            construction: (entity.construction || outside || reading.is_some()).then_some(true),
             centerline: None,
             native: None,
             native_options: NativeOptions::new(),
@@ -282,6 +328,12 @@ fn sketch(
     if let Some(reason) = failure {
         return Err(reason);
     }
+    let dimension_circles = settle(&entities, readings, &mut constraints);
+    sketch_entities.retain(|kept| {
+        dimension_circles
+            .iter()
+            .all(|(_, circle)| circle.outcome == Outcome::Construction || circle.entity != kept.id)
+    });
     out.records.push(Sketch {
         id: record.id.clone(),
         owner: feature.id.clone(),
@@ -297,7 +349,14 @@ fn sketch(
     });
     out.entities.extend(sketch_entities);
     out.outside_profile.extend(outside_profile);
-    out.dimension_curves.extend(dimension_curves);
+    out.dimension_circles.extend(
+        dimension_circles
+            .into_iter()
+            .filter(|(construction, circle)| {
+                !construction || circle.outcome != Outcome::Construction
+            })
+            .map(|(_, circle)| circle),
+    );
     out.measured.extend(
         constraints
             .iter()
@@ -493,47 +552,242 @@ impl Roles {
     }
 }
 
-/// Why the circle or arc `entities[index]`, built from a dimension record, is
-/// not profile geometry; `None` where no dimension record built it or a face
-/// of the solid witnesses it. A dimension record stores a radius and a
-/// handle whose coordinate the decoder reads as the center (`sldprt.md` §2,
-/// open item DI-83); no curve record stores the curve.
-fn unstored(
+/// What the sketch and the solid say of `entities[index]` where it is a
+/// circle built from a dimension record that the design does not keep as
+/// decoded; `None` for another entity and for a built circle a cylindrical
+/// face of the solid witnesses. A stored circle or arc the circle repeats
+/// comes first, then one its center lies on, each where the candidates share
+/// one carrier; then an earlier built circle it repeats, of those `earlier`
+/// does not read on a stored curve; then the faces of the solid.
+fn reading(
     index: usize,
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
+    earlier: &[Option<Reading>],
     record: &cadmpeg_ir::sketches::Sketch,
     surfaces: &[cadmpeg_ir::geometry::Surface],
-) -> Option<Unstored> {
-    let (center, radius) = dimension_carrier(entities.get(index)?)?;
-    let repeats = entities.iter().enumerate().any(|(other, candidate)| {
-        other != index
-            && (other < index || dimension_carrier(candidate).is_none())
-            && carrier(&candidate.geometry).is_some_and(|(at, size)| {
-                (at[0] - center[0]).hypot(at[1] - center[1]) <= LINEAR_RESOLUTION_MM
-                    && (size - radius).abs() <= LINEAR_RESOLUTION_MM
-            })
-    });
-    if repeats {
-        return Some(Unstored::Repeats);
+) -> Option<Reading> {
+    let (center, radius) = dimension_circle(entities.get(index)?)?;
+    let same_carrier = |(at, size): ([f64; 2], f64)| {
+        (at[0] - center[0]).hypot(at[1] - center[1]) <= LINEAR_RESOLUTION_MM
+            && (size - radius).abs() <= LINEAR_RESOLUTION_MM
+    };
+    let stored = entities
+        .iter()
+        .filter(|candidate| !built(candidate))
+        .filter_map(|candidate| Some((*candidate, carrier(&candidate.geometry)?)))
+        .collect::<Vec<_>>();
+    let repeated = stored
+        .iter()
+        .filter(|(_, at)| same_carrier(*at))
+        .copied()
+        .collect::<Vec<_>>();
+    if let Some(curve) = one_carrier(&repeated, center) {
+        return Some(Reading::Repeats(curve));
     }
-    let witnessed = record
-        .resolved_placement()
-        .is_some_and(|(origin, normal, u_axis)| {
-            let v_axis = [
-                normal.y * u_axis.z - normal.z * u_axis.y,
-                normal.z * u_axis.x - normal.x * u_axis.z,
-                normal.x * u_axis.y - normal.y * u_axis.x,
-            ];
-            let at = [
-                origin.x + center[0] * u_axis.x + center[1] * v_axis[0],
-                origin.y + center[0] * u_axis.y + center[1] * v_axis[1],
-                origin.z + center[0] * u_axis.z + center[1] * v_axis[2],
-            ];
-            surfaces
-                .iter()
-                .any(|surface| on_cylinder(surface, [normal.x, normal.y, normal.z], at, radius))
+    let of_radius = stored
+        .iter()
+        .filter(|(_, (_, size))| (size - radius).abs() <= LINEAR_RESOLUTION_MM)
+        .copied()
+        .collect::<Vec<_>>();
+    let through = of_radius
+        .iter()
+        .filter(|(candidate, _)| passes_through(&candidate.geometry, center))
+        .copied()
+        .collect::<Vec<_>>();
+    if let Some(curve) = one_carrier(&through, center) {
+        return Some(Reading::OnCurve(curve));
+    }
+    let repeats_built = entities[..index]
+        .iter()
+        .zip(earlier)
+        .find(|(candidate, reading)| {
+            !matches!(reading, Some(Reading::Repeats(_) | Reading::OnCurve(_)))
+                && dimension_circle(candidate).is_some_and(same_carrier)
         });
-    (!witnessed).then_some(Unstored::Unwitnessed)
+    if let Some((circle, _)) = repeats_built {
+        return Some(Reading::RepeatsBuilt(circle.id().clone()));
+    }
+    let Some((origin, normal, u_axis)) = record.resolved_placement() else {
+        return Some(Reading::Unplaced);
+    };
+    let v_axis = [
+        normal.y * u_axis.z - normal.z * u_axis.y,
+        normal.z * u_axis.x - normal.x * u_axis.z,
+        normal.x * u_axis.y - normal.y * u_axis.x,
+    ];
+    let at = [
+        origin.x + center[0] * u_axis.x + center[1] * v_axis[0],
+        origin.y + center[0] * u_axis.y + center[1] * v_axis[1],
+        origin.z + center[0] * u_axis.z + center[1] * v_axis[2],
+    ];
+    if surfaces
+        .iter()
+        .any(|surface| on_cylinder(surface, [normal.x, normal.y, normal.z], at, radius))
+    {
+        return None;
+    }
+    Some(if of_radius.is_empty() {
+        Reading::NoCurveOfRadius
+    } else {
+        Reading::Unwitnessed
+    })
+}
+
+/// The one curve of `candidates`, each with its carrier, that a dimension
+/// whose handle is at `handle` measures: where all lie on one carrier, the
+/// first with an end at `handle`, else the first; `None` where there are
+/// none or their carriers differ.
+fn one_carrier(
+    candidates: &[(&cadmpeg_ir::sketches::SketchEntity, ([f64; 2], f64))],
+    handle: [f64; 2],
+) -> Option<SketchEntityId> {
+    let (first, (at, size)) = candidates.first()?;
+    let one = candidates.iter().all(|(_, (other, other_size))| {
+        (other[0] - at[0]).hypot(other[1] - at[1]) <= LINEAR_RESOLUTION_MM
+            && (other_size - size).abs() <= LINEAR_RESOLUTION_MM
+    });
+    if !one {
+        return None;
+    }
+    let at_end = candidates.iter().find(|(candidate, _)| {
+        curve_ends(&candidate.geometry).is_some_and(|ends| {
+            ends.iter()
+                .any(|end| (end[0] - handle[0]).hypot(end[1] - handle[1]) <= LINEAR_RESOLUTION_MM)
+        })
+    });
+    Some(
+        at_end
+            .map_or(first, |(candidate, _)| candidate)
+            .id()
+            .clone(),
+    )
+}
+
+/// Whether `point` lies on the circle or arc `geometry`.
+fn passes_through(geometry: &cadmpeg_ir::sketches::SketchGeometry, point: [f64; 2]) -> bool {
+    use cadmpeg_ir::math::portable::Portable;
+    let Some((center, radius)) = carrier(geometry) else {
+        return false;
+    };
+    let offset = [point[0] - center[0], point[1] - center[1]];
+    if (offset[0].hypot(offset[1]) - radius).abs() > LINEAR_RESOLUTION_MM {
+        return false;
+    }
+    let Geometry::Arc {
+        start_angle,
+        end_angle,
+        ..
+    } = geometry.definition()
+    else {
+        return true;
+    };
+    let at_end = curve_ends(geometry).is_some_and(|ends| {
+        ends.iter()
+            .any(|end| (end[0] - point[0]).hypot(end[1] - point[1]) <= LINEAR_RESOLUTION_MM)
+    });
+    let tau = std::f64::consts::TAU;
+    let turn = (offset[1].portable_atan2(offset[0]) - start_angle.get()).rem_euclid(tau);
+    at_end || turn <= (end_angle.get() - start_angle.get()).rem_euclid(tau)
+}
+
+/// The built circles of `entities` with a reading, each with whether the
+/// decoder marks it construction and what the design does with it: a
+/// dimension that names a circle read on a stored curve names that curve
+/// instead, where only dimensions name the circle.
+fn settle(
+    entities: &[&cadmpeg_ir::sketches::SketchEntity],
+    readings: Vec<Option<Reading>>,
+    constraints: &mut [SketchConstraint<Planar>],
+) -> Vec<(bool, DimensionCircle)> {
+    let mut circles = Vec::new();
+    for (entity, reading) in entities.iter().zip(readings) {
+        let Some(reading) = reading else {
+            continue;
+        };
+        let id = entity.id();
+        let naming = (0..constraints.len())
+            .filter(|at| names(&constraints[*at].relation, id))
+            .collect::<Vec<_>>();
+        let outcome = match &reading {
+            _ if naming.is_empty() => Outcome::Unnamed,
+            Reading::Repeats(curve) | Reading::OnCurve(curve)
+                if naming
+                    .iter()
+                    .all(|at| measures(&constraints[*at].relation, id)) =>
+            {
+                for at in &naming {
+                    redirect(&mut constraints[*at].relation, id, curve);
+                }
+                Outcome::Redirected(
+                    naming
+                        .iter()
+                        .map(|at| constraints[*at].id.as_str().to_owned())
+                        .collect(),
+                )
+            }
+            _ => Outcome::Construction,
+        };
+        circles.push((
+            entity.construction,
+            DimensionCircle {
+                entity: id.clone(),
+                reading,
+                outcome,
+            },
+        ));
+    }
+    circles
+}
+
+/// Whether `relation` names `entity` anywhere among its operands; `true`
+/// where the relation does not serialize, so no circle a relation may name
+/// is left out.
+fn names(relation: &SketchRelation<Planar>, entity: &SketchEntityId) -> bool {
+    fn mentions(value: &serde_json::Value, id: &str) -> bool {
+        match value {
+            serde_json::Value::String(text) => text == id,
+            serde_json::Value::Array(items) => items.iter().any(|item| mentions(item, id)),
+            serde_json::Value::Object(fields) => fields.values().any(|item| mentions(item, id)),
+            _ => false,
+        }
+    }
+    match serde_json::to_value(relation) {
+        Ok(value) => mentions(&value, entity.as_str()),
+        Err(_) => true,
+    }
+}
+
+/// Whether `relation` is a dimension that measures `entity`: a radial
+/// dimension of it, or a native relation with a value that names it.
+fn measures(relation: &SketchRelation<Planar>, entity: &SketchEntityId) -> bool {
+    match relation {
+        SketchRelation::Radial { of, .. } => of == entity,
+        SketchRelation::Native {
+            operands, values, ..
+        } => !values.is_empty() && operands.contains(&Operand::Entity(entity.clone())),
+        _ => false,
+    }
+}
+
+/// Make the dimension `relation`, which `measures` `from`, name `to`.
+fn redirect(relation: &mut SketchRelation<Planar>, from: &SketchEntityId, to: &SketchEntityId) {
+    match relation {
+        SketchRelation::Radial { of, .. } => *of = to.clone(),
+        SketchRelation::Native { operands, .. } => {
+            let mut renamed = Vec::with_capacity(operands.len());
+            for operand in operands.drain(..) {
+                let operand = match operand {
+                    Operand::Entity(id) if &id == from => Operand::Entity(to.clone()),
+                    other => other,
+                };
+                if !renamed.contains(&operand) {
+                    renamed.push(operand);
+                }
+            }
+            *operands = renamed;
+        }
+        _ => {}
+    }
 }
 
 /// Whether `surface` is a cylinder of `radius` whose axis lies along
@@ -567,14 +821,24 @@ fn on_cylinder(
     off_axis[0].hypot(off_axis[1]).hypot(off_axis[2]) <= LINEAR_RESOLUTION_MM
 }
 
-/// The center and radius of a circle or arc whose geometry carrier is a
-/// relation record: one the decoder built from a dimension record.
-fn dimension_carrier(entity: &cadmpeg_ir::sketches::SketchEntity) -> Option<([f64; 2], f64)> {
+/// Whether the decoder built `entity` from a relation record: its geometry
+/// carrier is the relation instance.
+fn built(entity: &cadmpeg_ir::sketches::SketchEntity) -> bool {
     entity
         .geometry_ref
-        .as_deref()?
-        .strip_prefix(RELATION_INSTANCE_ID_PREFIX)?;
-    carrier(&entity.geometry)
+        .as_deref()
+        .is_some_and(|carrier| carrier.starts_with(RELATION_INSTANCE_ID_PREFIX))
+}
+
+/// The center and radius of a circle the decoder built from a dimension
+/// record.
+fn dimension_circle(entity: &cadmpeg_ir::sketches::SketchEntity) -> Option<([f64; 2], f64)> {
+    match entity.geometry.definition() {
+        Geometry::Circle { center, radius } if built(entity) => {
+            Some(([center.u, center.v], radius.get()))
+        }
+        _ => None,
+    }
 }
 
 /// The center and radius of a circle or an arc.
@@ -618,25 +882,25 @@ fn coincident(a: [f64; 2], b: [f64; 2]) -> bool {
 
 /// The curves of `entities` read from a curve record of state `0`, with
 /// their construction bit clear, where the sketch's other non-construction
-/// curves close only through them (`profile_check::needed`). A curve built
-/// from a dimension record that is not profile geometry (`unstored`) is
-/// none of those curves.
+/// curves close only through them (`profile_check::needed`). A built circle
+/// the design leaves out or states construction (`reading`) is none of the
+/// other curves.
 fn needed_state_zero<'a>(
     entities: &[&'a cadmpeg_ir::sketches::SketchEntity],
     forms: &'a [Option<PlanarCurve>],
-    unstored: &[Option<Unstored>],
+    readings: &[Option<Reading>],
     outside_profile: &HashSet<SketchEntityId>,
 ) -> HashSet<&'a SketchEntityId> {
     let mut live = HashMap::new();
     let mut state_zero = HashMap::new();
-    for ((entity, form), unstored) in entities.iter().zip(forms).zip(unstored) {
+    for ((entity, form), reading) in entities.iter().zip(forms).zip(readings) {
         let Some(form) = form
             .as_ref()
             .filter(|form| !matches!(form, PlanarCurve::Point(_)))
         else {
             continue;
         };
-        if entity.construction || unstored.is_some() {
+        if entity.construction || reading.is_some() {
             continue;
         }
         if outside_profile.contains(entity.id()) {
