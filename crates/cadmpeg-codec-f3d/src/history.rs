@@ -32,6 +32,7 @@ pub(crate) mod edge_recipe_scope;
 mod edge_samples;
 pub(crate) mod extrude_target;
 pub(crate) mod face_admission;
+mod face_envelopes;
 mod face_recipe;
 mod face_support;
 mod fallback_face;
@@ -9201,14 +9202,16 @@ fn historical_topology(
         .collect::<Vec<_>>();
     let mut blend_radii = HashMap::new();
     for (owner, procedural) in &brep.procedural_surfaces {
-        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend(definition_payload) =
-            procedural.definition()
+        let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Blend(
+            definition_payload,
+        ) = procedural.definition()
         else {
             continue;
         };
         let radius = definition_payload.radius();
 
-        let cadmpeg_ir::geometry::BlendRadiusLaw::Constant { signed_radius } = radius else {
+        let cadmpeg_ir::geometry::blends::BlendRadiusLaw::Constant { signed_radius } = radius
+        else {
             continue;
         };
         let Some(surface) = stable_ref(owner.as_str()) else {
@@ -9342,7 +9345,10 @@ fn historical_topology(
         }
     }
 
+    let (face_envelopes, edge_envelopes) = face_envelopes::derive(brep);
     let mut topology = AsmHistoricalTopology {
+        face_envelopes: face_envelopes.into(),
+        edge_envelopes: edge_envelopes.into(),
         bodies: topology_some!(refs(brep.bodies.iter().map(|entity| entity.id.as_str()))),
         regions: topology_some!(refs(brep.regions.iter().map(|entity| entity.id.as_str()))),
         shells: topology_some!(refs(brep.shells.iter().map(|entity| entity.id.as_str()))),

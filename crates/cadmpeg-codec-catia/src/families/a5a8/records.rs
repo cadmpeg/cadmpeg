@@ -11,11 +11,10 @@ use crate::wire::records::{
 use cadmpeg_core::decode::{index_from_u32, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::geometry::blends::{RollingBallJetDerivative, RollingBallJetSite};
 use cadmpeg_ir::geometry::nurbs::NurbsError;
-use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface},
-    ProceduralSurfaceDefinition, RollingBallJetDerivative, RollingBallJetSite,
-};
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal};
 use cadmpeg_ir::units::FiniteVector;
@@ -552,17 +551,19 @@ impl A5FreeformCurve {
         let stations = self
             .sites
             .iter()
-            .map(|sample| cadmpeg_ir::geometry::RollingBallJetStation {
-                knot: sample.knot,
-                multiplicity: Self::DEGREE + 1,
-                site: rolling_ball_jet_site(
-                    &sample.site,
-                    sample.first_derivatives,
-                    sample.second_derivatives,
-                ),
-            })
+            .map(
+                |sample| cadmpeg_ir::geometry::blends::RollingBallJetStation {
+                    knot: sample.knot,
+                    multiplicity: Self::DEGREE + 1,
+                    site: rolling_ball_jet_site(
+                        &sample.site,
+                        sample.first_derivatives,
+                        sample.second_derivatives,
+                    ),
+                },
+            )
             .collect();
-        cadmpeg_ir::geometry::RollingBallJetStations::from_parts(Self::DEGREE, stations)
+        cadmpeg_ir::geometry::blends::RollingBallJetStations::from_parts(Self::DEGREE, stations)
             .ok()
             .map(ProceduralSurfaceDefinition::RollingBallJet)
     }
@@ -1024,22 +1025,23 @@ pub(in crate::families) fn rolling_ball_jet_definition(
     }
     let mut stations = Vec::new();
 
-    stations.extend(
-        jet.sites
-            .iter()
-            .map(|sample| cadmpeg_ir::geometry::RollingBallJetStation {
-                knot: sample.knot,
-                multiplicity: sample.multiplicity,
-                site: rolling_ball_jet_site(
-                    &sample.site,
-                    sample.first_derivatives,
-                    sample.second_derivatives,
-                ),
-            }),
-    );
-    cadmpeg_ir::geometry::RollingBallJetStations::from_parts(A8FreeformCurve::DEGREE, stations)
-        .ok()
-        .map(ProceduralSurfaceDefinition::RollingBallJet)
+    stations.extend(jet.sites.iter().map(|sample| {
+        cadmpeg_ir::geometry::blends::RollingBallJetStation {
+            knot: sample.knot,
+            multiplicity: sample.multiplicity,
+            site: rolling_ball_jet_site(
+                &sample.site,
+                sample.first_derivatives,
+                sample.second_derivatives,
+            ),
+        }
+    }));
+    cadmpeg_ir::geometry::blends::RollingBallJetStations::from_parts(
+        A8FreeformCurve::DEGREE,
+        stations,
+    )
+    .ok()
+    .map(ProceduralSurfaceDefinition::RollingBallJet)
 }
 
 /// The admitted neutral jet site of one decoded rolling-ball site and its two

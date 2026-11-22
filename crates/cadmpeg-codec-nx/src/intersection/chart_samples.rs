@@ -2,7 +2,7 @@
 //! Checked physical chart layouts and paired samples for solved charts.
 
 use cadmpeg_ir::features::geometry::FinitePoint3;
-use cadmpeg_ir::geometry::FitTolerance;
+use cadmpeg_ir::geometry::legacy_cache::FitTolerance;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::{FiniteReal, Magnification, NonNegativeReal, NonZeroReal, PositiveReal};
 
@@ -405,7 +405,7 @@ mod tests {
             ChartPreamble::for_points(0.0, 1.0, 0.0, 0.0, &straight)
                 .unwrap()
                 .fit_tolerance()
-                .map(cadmpeg_ir::geometry::FitTolerance::get),
+                .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
             Some(0.0)
         );
         assert_eq!(
@@ -433,7 +433,7 @@ mod tests {
         assert_eq!(
             preamble
                 .fit_tolerance()
-                .map(cadmpeg_ir::geometry::FitTolerance::get),
+                .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
             Some(1.0e-5 * 1000.0)
         );
         let tiny = ChartPreamble::new(0.0, 1.0, f64::from_bits(1), 0.0).unwrap();

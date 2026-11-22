@@ -2,7 +2,7 @@
 //! Byte-offset and value constants generated from `docs/layouts/f3d.toml`.
 //!
 //! Do not edit by hand. Regenerate with:
-//! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`.
+//! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg-layout-tables`.
 
 /// Byte offsets for the `named_parameter_scope_tail` record.
 ///
@@ -8497,10 +8497,8 @@ pub(crate) mod circular_pattern_payload_distribution {
     pub(crate) const LEN: usize = 25;
     /// Offset of `zero_run` (`bytes[8]`). Spec §Assembly operands.
     pub(crate) const ZERO_RUN: usize = 0;
-    /// Offset of `fixed_two` (`u32`, little-endian). Spec §Assembly operands.
-    pub(crate) const FIXED_TWO: usize = 8;
-    /// Stated value of `fixed_two` (`u32`). Spec §Assembly operands.
-    pub(crate) const FIXED_TWO_VALUE: u32 = 0x0000_0002;
+    /// Offset of `compute_option` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const COMPUTE_OPTION: usize = 8;
     /// Offset of `sentinel` (`u32`, little-endian). Spec §Assembly operands.
     pub(crate) const SENTINEL: usize = 16;
     /// Offset of `fixed_one` (`u8`). Spec §Assembly operands.
@@ -8587,8 +8585,8 @@ pub(crate) mod rectangular_pattern_payload_suffix {
     pub(crate) const SCOPE: usize = 11;
     /// Offset of `seed_group` (`bytes[11]`). Spec §Assembly operands.
     pub(crate) const SEED_GROUP: usize = 22;
-    /// Offset of `zero_tail` (`bytes[4]`). Spec §Assembly operands.
-    pub(crate) const ZERO_TAIL: usize = 33;
+    /// Offset of `suppressed_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const SUPPRESSED_COUNT: usize = 33;
 }
 
 /// Byte offsets for the `sketch_geometry_ordinal_collection_reference` record.

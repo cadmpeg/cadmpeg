@@ -18,7 +18,7 @@ use crate::families::standard::topology::{
 use crate::families::standard::trim_packet::TrimPacket;
 use crate::layout::fbb_face_row as fbb_row;
 use crate::solve::incidence::{reconstruct_incidence_candidates, IncidenceEndpointDomains};
-use crate::solve::mesh_quotient::MeshQuotient;
+use crate::solve::mesh_quotient::quotient::MeshQuotient;
 use crate::solve::missing_edge::{expand_deferred_edge_port_components, motif_port_points};
 use crate::solve::union_find::UnionFind;
 use std::collections::{HashMap, HashSet};

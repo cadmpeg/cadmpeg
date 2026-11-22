@@ -293,7 +293,9 @@ fn cube_with_one_coedge_pcurve(
     coedge.pcurves = vec![crate::topology::PcurveUse {
         pcurve: id,
         isoparametric: None,
-        parameter_range: Some(crate::geometry::DirectedParameterRange::new(range).unwrap()),
+        parameter_range: Some(
+            crate::geometry::procedural_curves::DirectedParameterRange::new(range).unwrap(),
+        ),
     }];
     ir
 }
@@ -442,7 +444,7 @@ fn pcurve_requires_bounded_domain_preserves_session_depth_refusals() {
 
 #[test]
 fn carrier_law_walk_preserves_first_later_and_active_session_refusals() {
-    use crate::geometry::LawExpression;
+    use crate::geometry::laws::LawExpression;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let expression: LawExpression = LawExpression::Algebraic {
@@ -584,7 +586,8 @@ fn carrier_reachability_preserves_orphan_arena_order() {
 fn subset_edge_domain_findings(range: [f64; 2], cache: Option<SolvedCurveGeometry>) -> Vec<String> {
     use crate::geometry::analytic::LineCurve;
     use crate::geometry::curve_payloads::SubsetCurveConstruction;
-    use crate::geometry::{Curve, ProceduralCurve, ProceduralCurveDefinition};
+    use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+    use crate::geometry::{Curve, ProceduralCurve};
     use crate::ids::ProceduralCurveId;
     use crate::topology::ParameterInterval;
 
@@ -803,7 +806,7 @@ fn use_curve_on_a_procedural_carrier_with_no_cache_has_no_domain_finding() {
         .procedural_curves
         .push(crate::geometry::ProceduralCurve::new(
             construction.clone(),
-            crate::geometry::ProceduralCurveDefinition::Exact { cache: None },
+            crate::geometry::procedural_curves::ProceduralCurveDefinition::Exact { cache: None },
         ));
     ir.geometry
         .curves
@@ -835,7 +838,9 @@ fn range_domain_findings(geometry: CurveGeometry, range: [f64; 2]) -> Vec<String
             .procedural_curves
             .push(crate::geometry::ProceduralCurve::new(
                 construction.clone(),
-                crate::geometry::ProceduralCurveDefinition::Exact { cache: None },
+                crate::geometry::procedural_curves::ProceduralCurveDefinition::Exact {
+                    cache: None,
+                },
             ));
     }
     ir.geometry

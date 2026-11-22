@@ -826,7 +826,7 @@ pub(crate) fn write_semantic(
 /// which is the parameter of the curve it trims, negated on a reversed carrier.
 fn native_subset_shift(ir: &CadIr, curve: &cadmpeg_ir::ids::CurveId) -> Option<f64> {
     ir.geometry.procedural_curves.iter().find_map(|procedural| {
-        let cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(subset) =
+        let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Subset(subset) =
             procedural.definition()
         else {
             return None;
