@@ -222,3 +222,6 @@ pub(crate) fn restore(ir: &mut CadIr) -> BTreeMap<String, ConfigurationId> {
     ir.geometry.finalize();
     restored
 }
+
+#[cfg(test)]
+mod tests;
