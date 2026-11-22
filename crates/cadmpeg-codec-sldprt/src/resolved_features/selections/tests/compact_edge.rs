@@ -793,6 +793,7 @@ fn compact_edge_selection_preserves_an_idless_path_entry() {
         references: Vec::new(),
         producer_feature_refs: vec!["producer".into()],
         terminal_feature_ref: Some("producer".into()),
+        mark_reference: false,
     };
     assert_eq!(compact_edge_path_value(&selection), "4,_,4,0");
     assert_eq!(

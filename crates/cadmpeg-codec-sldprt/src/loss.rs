@@ -172,6 +172,10 @@ pub(crate) enum SldprtLossCode {
     /// The archive walk of a feature-input lane stopped before the stream's
     /// end, so the lane scalars keep no archive parameter class.
     FeatureInputArchiveWalkStopped,
+    /// A fillet or chamfer names its edges by the feature-local component paths
+    /// of the feature that made them; the sketch entities that generate those
+    /// edges are not established, so the selection keeps the paths.
+    FeatureBlendEdgeGeneratorUnstated,
     /// Typed feature retains native or unresolved required operation operands.
     FeatureTypedOperandIncomplete,
     /// Sweep path geometry keeps its native reference after an unreadable record.
@@ -465,6 +469,7 @@ impl SldprtLossCode {
         Self::FeatureInputObjectUnbound,
         Self::FeatureInputSolidBodyRetained,
         Self::FeatureInputArchiveWalkStopped,
+        Self::FeatureBlendEdgeGeneratorUnstated,
         Self::FeatureTypedOperandIncomplete,
         Self::FeatureSweepPathRetained,
         Self::FeatureSweepPathRosterAssumed,
@@ -623,6 +628,7 @@ impl SldprtLossCode {
             Self::FeatureInputObjectUnbound => "feature.input-object-unbound",
             Self::FeatureInputSolidBodyRetained => "feature.input-solid-body-retained",
             Self::FeatureInputArchiveWalkStopped => "feature.input-archive-walk-stopped",
+            Self::FeatureBlendEdgeGeneratorUnstated => "feature.blend-edge-generator-unstated",
             Self::FeatureTypedOperandIncomplete => "feature.typed-operand-incomplete",
             Self::FeatureSweepPathRetained => "feature.sweep-path-retained",
             Self::FeatureSweepPathRosterAssumed => "feature.sweep-path-roster-assumed",
@@ -820,6 +826,7 @@ impl SldprtLossCode {
             | Self::FeatureInputSolidBodyRetained
             | Self::FeatureInputObjectUnbound
             | Self::FeatureInputArchiveWalkStopped
+            | Self::FeatureBlendEdgeGeneratorUnstated
             | Self::FeatureTypedOperandIncomplete
             | Self::FeatureSweepPathRetained
             | Self::FeatureSweepPathRosterAssumed
@@ -1063,6 +1070,7 @@ impl SldprtLossCode {
             | Self::FeatureInputSolidBodyRetained
             | Self::FeatureInputObjectUnbound
             | Self::FeatureInputArchiveWalkStopped
+            | Self::FeatureBlendEdgeGeneratorUnstated
             | Self::FeatureTypedOperandIncomplete
             | Self::FeatureSweepPathRetained
             | Self::FeatureSweepPathRosterAssumed
@@ -1306,6 +1314,7 @@ mod tests {
                 "feature.input-object-unbound",
                 "feature.input-solid-body-retained",
                 "feature.input-archive-walk-stopped",
+                "feature.blend-edge-generator-unstated",
                 "feature.typed-operand-incomplete",
                 "feature.sweep-path-retained",
                 "feature.sweep-path-roster-assumed",

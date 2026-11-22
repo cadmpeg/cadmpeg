@@ -3460,7 +3460,7 @@ fn build_geometry_ir(
     let mut annotations = std::mem::take(&mut brep.annotations);
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let (mut lanes, exact_profiles, mark_owners) =
+    let (mut lanes, exact_profiles, mark_owners, mark_spans) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let rollback = part
         .then(|| crate::rollback::read(ctx, scan, &mark_owners, &mut pmi_losses))
@@ -3469,6 +3469,7 @@ fn build_geometry_ir(
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
     crate::resolved_features::bindings::bind_scalar_operands(ctx, &histories, &mut lanes)?;
+    crate::resolved_features::assembly::tag_mark_references(&mut lanes, &mark_spans);
     crate::resolved_features::bindings::bind_scalar_operands(
         ctx,
         &histories,
@@ -3555,6 +3556,10 @@ fn build_geometry_ir(
         &mut ir,
         &supplemental_config_lanes,
     )?;
+    crate::resolved_features::projections::note_blend_edge_generators(
+        &ir.model.features,
+        &mut pmi_losses,
+    );
     crate::resolved_features::profiles::project_compact_sketch_profiles(
         ctx,
         &mut ir.model.features,
@@ -4752,7 +4757,7 @@ fn build_metadata_ir(
     let mut annotations = Annotations::default();
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let (mut lanes, exact_profiles, mark_owners) =
+    let (mut lanes, exact_profiles, mark_owners, mark_spans) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let rollback = part
         .then(|| crate::rollback::read(ctx, scan, &mark_owners, &mut pmi_losses))
@@ -4761,6 +4766,7 @@ fn build_metadata_ir(
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
     crate::resolved_features::bindings::bind_scalar_operands(ctx, &histories, &mut lanes)?;
+    crate::resolved_features::assembly::tag_mark_references(&mut lanes, &mark_spans);
     crate::resolved_features::bindings::bind_scalar_operands(
         ctx,
         &histories,
@@ -4907,6 +4913,10 @@ fn build_metadata_ir(
         &mut ir,
         &supplemental_config_lanes,
     )?;
+    crate::resolved_features::projections::note_blend_edge_generators(
+        &ir.model.features,
+        &mut pmi_losses,
+    );
     crate::resolved_features::profiles::project_compact_sketch_profiles(
         ctx,
         &mut ir.model.features,

@@ -1134,6 +1134,14 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Need.** For each curve record of state `0` or `2`, its curve against the edges and faces of the feature that consumes its sketch, and the fields of its record that differ from those of a curve record of state `1`.
 
+### EV-33. Component paths of blend edge selections
+
+**Question.** What does each entry of the four-entry path of an edge in a fillet or chamfer edge list name, and which sketch entity generates a side face that a path names?
+
+**Known.** Every entry carries an instance cell and a local identifier. For a fillet or chamfer of a feature that extrudes a closed sketch, each pair equals the instance cell and local identifier of a generated-surface identity of the feature that holds the terminal component: instance cells of the end-face class with local identifiers 0 and 1, and instance cells of the side-face class with the side faces' local identifiers. A path of a vertical edge ends with the pairs of local identifiers 1 and 0 of the end-face class. A path of an edge on the end face with local identifier 1 begins with that pair.
+
+**Need.** The rule that orders the entries of a path and the entity each entry names for producers other than an extrusion, and the join from a side face's local identifier to the sketch entity that generates it (§5.7 states that this identifier is not established as the sketch segment's id). Until then a blend's selected edges keep their component paths.
+
 ### EV-24. Bytes after the last top-level object
 
 **Question.** What owns the four zero bytes some `ResolvedFeatures` streams write after their last top-level object, and the two zero bytes an in-context part writes after a top-level `moProfileFeature_c` whose sketch plane is written in place?

@@ -730,6 +730,10 @@ pub(crate) struct FeatureInputEdgeSelection {
         deserialize_with = "deserialize_terminal_feature_ref"
     )]
     pub(crate) terminal_feature_ref: Option<String>,
+    /// Whether the vector lies inside a `moPMarkRecord_c`, where it is one of
+    /// the record's edge references and not an operand of the feature.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) mark_reference: bool,
 }
 
 /// One compact feature-local surface-component selection.

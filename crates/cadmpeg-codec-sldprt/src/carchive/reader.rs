@@ -341,6 +341,8 @@ pub(crate) struct Reader<'b> {
 pub(crate) struct MarkOwner {
     /// Where the record's body starts, after its class tag.
     pub(crate) at: usize,
+    /// Where the record's body ends, after its last reference.
+    pub(crate) end: usize,
     /// The name of the innermost open named object around the record.
     pub(crate) owner: Option<String>,
 }
