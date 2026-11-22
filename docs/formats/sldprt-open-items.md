@@ -213,7 +213,7 @@ image in field data can therefore be classified as a new stream.
 
 **Question.** Which carrier controls membership when Keywords `id` differs from manifest `swID`, or a native explicit `SourceIndex` conflicts with the complete manifest join?
 
-**Known.** `sldprt.md` §2 defines the complete manifest-row, referenced-model, and decimal `swID` join for saved inactive and active configurations. A readable Keywords name must agree with that join. A missing or unreadable Keywords definition does not erase a complete saved identity. Missing partitions leave membership unresolved; decoded empty partitions establish empty membership. An update-required row can have a decoded partition: `140489.sldprt` has `NeedsUpdate="YES"` and a complete active partition-0 identity. The reader retains that saved identity without asserting regeneration freshness. Keywords `id` and `swID` coincide in the available paired witnesses, so their covariance does not establish interchangeable authority. Conflicting explicit `SourceIndex` values remain unresolved.
+**Known.** `sldprt.md` §2 defines the complete manifest-row, referenced-model, and decimal `swID` join for saved inactive and active configurations. A readable Keywords name must agree with that join. A missing or unreadable Keywords definition does not erase a complete saved identity. Missing partitions leave membership unresolved; decoded empty partitions establish empty membership. An update-required row can have a decoded partition: a row with `NeedsUpdate="YES"` can have a complete active partition-0 identity. The reader retains that saved identity without asserting regeneration freshness. Keywords `id` and `swID` coincide in the available paired witnesses, so their covariance does not establish interchangeable authority. Every stored Keywords `id` names a stored `Config-N` stream index, and the partition of a lone Keywords configuration has its `id` as `N`, so `sldprt.md` §2 binds a configuration without `SourceIndex` through its `id`. Conflicting explicit `SourceIndex` values remain unresolved.
 
 **Need.** A producer save or export must distinguish unequal Keywords `id` and manifest `swID`. A native dual-carrier witness must test explicit `SourceIndex` disagreement with the full manifest join.
 
@@ -531,13 +531,15 @@ Two omitted owner-qualified construction circles have separate current/extended 
 
 ### DI-28. Sweep reference child versions
 
-**Question.** Which placement grammar selects a component source record that follows a u32 version word, and which source-less forms establish an operand owner?
+**Question.** Which carrier selects a component-source placement after a u32 header word, and which source-less forms establish an operand owner?
 
-**Known.** `sldprt.md` §2 defines the ten-byte child prefix, the source-record placements at prefix +45, +69, and +81, and the two-handle and three-handle source records. A general-curve reference identifies the sweep cross-section. A component-reference curve identifies its path. An unresolved reference does not establish a sketch or a final B-rep curve. In a further form, prefix +45 through +60 is `ff` and prefix +81 stores a u32 equal to the version word of a complete three-handle record at prefix +85. A component profile of this form names a planar sketch, and a component-reference curve of this form names a composite curve.
+**Known.** `sldprt.md` §2 defines the ten-byte child prefix, the source-record placements at prefix +45, +69, and +81, and the two-handle and three-handle source records. The pre-contact and post-contact general-curve references identify the cross-section and path respectively. A component-reference curve is a path child. An unresolved reference does not establish a sketch or a final B-rep curve. In a further form, prefix +45 through +60 is `ff` and prefix +81 stores a u32 equal to the version word of a complete three-handle record at prefix +85. A component profile of this form names a planar sketch, and a component-reference curve of this form names a composite curve.
 
-**Need.** We must identify each version before reading its source field and prove the reference namespace before selecting geometry.
+**Need.** Identify the placement selector and the reference namespace of the remaining source-less forms.
 
 **Conflict.** In the version-word form, the named sketch has no decoded profile, and its decoded plane differs from the plane of the three-edge compressed-body profile in the same feature-input lane that otherwise binds as the cross-section. A neighboring sketch does not replace an explicit reference whose child form is unsupported.
+
+**Note.** A complete post-contact path source after a u32 header word supplies the path sketch with `feature.sweep-path-header-assumed`.
 
 ### DI-29. Composite sweep path identity
 
@@ -554,6 +556,8 @@ Two omitted owner-qualified construction circles have separate current/extended 
 **Known.** The Merge property is Boolean. An unrecognized compact word does not establish NewBody, Cut, or Intersect. A missing carrier does not establish Merge false. An owned unknown, malformed, or ambiguous operation cannot corroborate another lane.
 
 **Need.** Bind the complete Merge carrier to its owning feature with independent true and false controls. Retain unresolved operations when the carrier is unavailable.
+
+**Note.** A generated circular section supplies the solid construction and section diameter independently of Merge. The decoder applies the Merge reading to this construction and charges `feature.sweep-merge-assumed` whether or not a compact word resolved the shape.
 
 **Conflict.** For an unresolved solid sweep, the compact binder still projects Join when every owned lane supplies word `15`. An owned unknown, malformed or ambiguous lane prevents that consensus, but agreement on word `15` does not supply the independent Merge Boolean carrier required here.
 
@@ -990,7 +994,7 @@ resolve a seed feature?
 
 **Question.** What do the unnamed fields of the sketch record head, point and curve records, the `sgSketch` settings block and its 61 trailing bytes mean, what are the eight relation groups, and how are the compact `ff ff 07 00 01` records laid out?
 
-**Known.** In some sketches (about 17 streams; `Intake Final Drive Hex`, `105t HTD Belt…`) the dimension and relation groups hold one u16 count fewer than the usual three plus eight, with the same entries otherwise: a polygon that is the last group's entry elsewhere appears one group earlier. The header fields do not tell the two apart, but no group count has bit 15 set, so a reader detects the shorter form by the class tag that stands where the eighth count would be; which group is dropped is not known. The relation groups observed hold one-operand relations (types `4`, `5`, `17`) in the first group and two-operand relations (types `9`, `12`) in later groups. Some sketches write four zero bytes after the eight groups before the first `suObList` pointer. The zero bytes between the last curve record and the dimension count number 36 when the last curve list holds lines (106 of 115 sketches examined) and 22 when it holds arcs (187 of 220); 34 and 24 occur in the rest. The compact generation occurs in files whose sketches open their records with `ff ff 07 00 01`.
+**Known.** In some sketches (about 17 streams) the dimension and relation groups hold one u16 count fewer than the usual three plus eight, with the same entries otherwise: a polygon that is the last group's entry elsewhere appears one group earlier. The header fields do not tell the two apart, but no group count has bit 15 set, so a reader detects the shorter form by the class tag that stands where the eighth count would be; which group is dropped is not known. The relation groups observed hold one-operand relations (types `4`, `5`, `17`) in the first group and two-operand relations (types `9`, `12`) in later groups. Some sketches write four zero bytes after the eight groups before the first `suObList` pointer. The zero bytes between the last curve record and the dimension count number 36 when the last curve list holds lines (106 of 115 sketches examined) and 22 when it holds arcs (187 of 220); 34 and 24 occur in the rest. The compact generation occurs in files whose sketches open their records with `ff ff 07 00 01`.
 
 **Need.** A reader that recovers sketch geometry and constraints, and a writer that creates a sketch, have to read and write these fields.
 
@@ -1123,6 +1127,8 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 **Need.** For both trailer forms, the point pairs that each reading selects, compared with the B-rep line edges of the feature that consumes the sketch.
 
 **Conflict.** For one record, the §2 reading and the point-record positions can select different point pairs.
+
+**Note.** Sweep path lines with an identifier trailer use the framed point-roster reading with `feature.sweep-path-roster-assumed`.
 
 ### EV-30. Sketch curve records of curve type 2
 

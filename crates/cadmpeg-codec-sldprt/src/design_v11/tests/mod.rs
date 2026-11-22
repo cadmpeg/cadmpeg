@@ -291,6 +291,45 @@ fn configurations_mark_the_active_one() {
     assert_no_design_findings(&ir);
 }
 
+#[test]
+fn a_lone_configuration_without_source_index_is_the_active_one() {
+    let keywords: [&[u8]; 2] = [
+        br#"<Keywords Name="Bracket">
+            <Configuration Name="Default" id="0"/>
+            <Extrusion Name="Boss" Type="BossExtrude" id="7"/>
+        </Keywords>"#,
+        br#"<Keywords Name="Bracket">
+            <Configuration Name="Default"/>
+            <Extrusion Name="Boss" Type="BossExtrude" id="7"/>
+        </Keywords>"#,
+    ];
+    for keywords in keywords {
+        let ir = part_with_history(keywords, &[]);
+        let [configuration] = ir.model.configurations.as_slice() else {
+            panic!("one configuration: {:#?}", ir.model.configurations);
+        };
+        assert!(configuration.active);
+        assert!(configuration.native_ref.is_some());
+        assert_eq!(configuration.source_index, Some(0));
+        assert_eq!(
+            configuration.bodies.as_deref().map(|bodies| bodies
+                .iter()
+                .map(|body| body.as_str().to_owned())
+                .collect::<Vec<_>>()),
+            Some(body_ids(&ir))
+        );
+        let [scope] = ir.design.scopes.as_slice() else {
+            panic!("one scope");
+        };
+        let [design] = ir.design.configurations.as_slice() else {
+            panic!("one design configuration: {:#?}", ir.design.configurations);
+        };
+        assert_eq!(design.name, "Default");
+        assert_eq!(scope.active_configuration.as_ref(), Some(&design.id));
+        assert_no_design_findings(&ir);
+    }
+}
+
 /// The triangle body whose face carries the `FACE_ID_2001` list `face` and
 /// whose body carries the `ATOM_ID_2001` list `[body]`.
 fn identified_triangle(face: &[u32], body: u32) -> Vec<u8> {

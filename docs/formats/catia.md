@@ -6,7 +6,7 @@ All multi-byte integers are little-endian unless explicitly marked **BE**. Float
 
 ---
 
-Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/catia.md`](../layouts/catia.md), generated from `docs/layouts/catia.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg --test layout_tables` proves the two agree.
+Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/catia.md`](../layouts/catia.md), generated from `docs/layouts/catia.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg-layout-tables` proves the two agree.
 
 ## 1. Variant families
 
@@ -657,9 +657,9 @@ integer occupies more than one byte. The 57-byte tail prefix is:
 | `+41` | `f64le[2]` | maximal V limits |
 
 Every scalar is finite. Current U and V limits are ordered. The reference
-scalar is positive and bit-identical to the current V upper limit. Maximal V
-contains current V. The reference scalar does not replace a station's ball
-radius.
+scalar is positive. In the 79-byte, 87-byte, and `87 + 24*K`-byte forms, it
+is bit-identical to the current V upper limit. Maximal V contains current V.
+The station rails and center define the ball radius.
 
 The 79-byte form has this 22-byte suffix after the prefix:
 
@@ -680,6 +680,13 @@ The 89-byte form has a six-byte branch `05 00 a b 00 00`, where `a` and `b` are 
 | `+22` | `f64le` | reference-scalar copy |
 | `+30` | `bytes[2]` | zero terminal |
 
+The 89-byte form with branch `01 00 a b 00 00` uses the same suffix field
+offsets. Current V runs from zero to twice the reference scalar. Divide
+native V by the reference scalar to obtain the multiplier of the stored
+opening angle. The terminal scalar equals the reference scalar.
+For a variable-radius section, evaluate the first rail and center at the
+section's U parameter. Their distance is the section radius.
+
 The explicit scalar-jet form is `87 + 24*K` bytes. After the prefix it stores
 `01 01`, then three finite `f64le[K]` lanes in value, first-derivative, and
 second-derivative order. The derivatives use the rolling-ball U parameter.
@@ -687,10 +694,16 @@ The lanes define a scalar quintic Hermite jet on the same knots as the surface
 jet. A `u32le` terminal in `{0,1}` follows the lanes, then maximal U limits and
 one bit-identical reference-scalar copy. The tail carries no curve identity.
 
+The sheet-owned scalar-jet form has length `89 + 24*K`. Its suffix ends
+with a scalar equal to the current V upper limit, then two zero bytes.
+Current V starts at zero. Divide native V by the terminal scalar to obtain
+the multiplier of the stored opening angle.
+
 Maximal U is ordered and lies inside the knot domain. In the 89-byte branch with `b=1`, its upper limit may be below the current U upper limit; its lower limit remains at or below the current U lower limit. In the other branches, maximal U contains current U.
 In the sheet-owned 89-byte form, `a=1` also permits the maximal U
-lower limit to exceed the current U lower limit. The terminal transverse
-chart extent is positive and independent of the current V interval.
+lower limit to exceed the current U lower limit. In branch `05 00 a b 00 00`,
+the terminal transverse chart extent is positive and independent of the
+current V interval.
 Current and maximal U limits are separate from the knot extremes. Each tail
 production exhausts its declared logical frame. Retain the control, scalar
 jet, terminal, and both limit pairs in the source record independently of the
@@ -1078,6 +1091,13 @@ An A-family class-`34` carrier followed by four contiguous B-family class-`18` r
 
 A five-reference B-family class-`37` rolling-ball construction has payload `85 <allocation_ref[5]> 11 05 <radius:f64le> <middle0:u8> <middle1:u8> <zero:f64le> 01 05`. The radius is positive and the zero lane is exact zero. In the backward-distance form the middle controls are `03` or `05`. The five references select, in order, an `A:32` rolling-ball carrier, two support records of class `B:30` or `B:2e`, and two class-`20` A- or B-family support pcurves in the same contiguous logical record source. The two pcurves correspond by index to the two supports. The sheet-group allocation form also admits `01` in the first middle control.
 
+The seven-reference B-family class-`37` rolling-ball construction has payload
+`87 <allocation_ref[7]> 11 0d <controls:u8[3]> <zero:bytes[8]> 01 05`.
+Each control is `03` or `05`. The first reference selects an extended
+`A:32` carrier. The remaining references select B-family classes
+`(2e|38)`, `(27|30)`, `(18|20)`, `(18|20)`, `(2e|37|38)`, and `(18|20)`,
+in that order. The complete terminal exhausts the payload.
+
 An eight-reference B-family class-`37` construction payload is `88 <allocation_ref[8]> <tail:14B>`. Its complete tail is:
 
 | Tail offset | Encoding | Field |
@@ -1377,7 +1397,7 @@ payload after the five object references.
 | `2a` | 10 | selector2 |
 
 Distinct edge objects can have identical ordered curve, vertex, and parameter
-references with different terminals. In ssd-crucial-mx500-carter-inf, edge
+references with different terminals. In one part, edge
 objects 4425557, 4469071, and 4527226 all reference
 `(4425502,3978457,3978459,4425503,4425504)`; their terminals are `21`, `29`, and
 `29`, respectively. Keep their object identities distinct.

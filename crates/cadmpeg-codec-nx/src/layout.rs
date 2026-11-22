@@ -2,7 +2,7 @@
 //! Byte-offset and value constants generated from `docs/layouts/nx.toml`.
 //!
 //! Do not edit by hand. Regenerate with:
-//! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`.
+//! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg-layout-tables`.
 
 /// Tag constants from the table inventory.
 pub(crate) mod token {

@@ -165,6 +165,14 @@ pub(crate) enum SldprtLossCode {
     FeatureInputArchiveWalkStopped,
     /// Typed feature retains native or unresolved required operation operands.
     FeatureTypedOperandIncomplete,
+    /// Sweep path geometry keeps its native reference after an unreadable record.
+    FeatureSweepPathRetained,
+    /// Sweep path lines use their sketch point roster.
+    FeatureSweepPathRosterAssumed,
+    /// A sweep path component source follows a u32 header word.
+    FeatureSweepPathHeaderAssumed,
+    /// A generated solid sweep uses the Merge reading of its Boolean operation.
+    FeatureSweepMergeAssumed,
     /// Extrusion profile curve data remains unresolved.
     FeatureProfileCurvesUnavailable,
     /// Extrusion travel sense remains in its native feature-input lane.
@@ -436,6 +444,10 @@ impl SldprtLossCode {
         Self::FeatureInputSolidBodyRetained,
         Self::FeatureInputArchiveWalkStopped,
         Self::FeatureTypedOperandIncomplete,
+        Self::FeatureSweepPathRetained,
+        Self::FeatureSweepPathRosterAssumed,
+        Self::FeatureSweepPathHeaderAssumed,
+        Self::FeatureSweepMergeAssumed,
         Self::FeatureProfileCurvesUnavailable,
         Self::FeatureExtrudeDirectionUnresolved,
         Self::FeatureExtrudeStartUnresolved,
@@ -584,6 +596,10 @@ impl SldprtLossCode {
             Self::FeatureInputSolidBodyRetained => "feature.input-solid-body-retained",
             Self::FeatureInputArchiveWalkStopped => "feature.input-archive-walk-stopped",
             Self::FeatureTypedOperandIncomplete => "feature.typed-operand-incomplete",
+            Self::FeatureSweepPathRetained => "feature.sweep-path-retained",
+            Self::FeatureSweepPathRosterAssumed => "feature.sweep-path-roster-assumed",
+            Self::FeatureSweepPathHeaderAssumed => "feature.sweep-path-header-assumed",
+            Self::FeatureSweepMergeAssumed => "feature.sweep-merge-assumed",
             Self::FeatureProfileCurvesUnavailable => "feature.profile-curves-unavailable",
             Self::FeatureExtrudeDirectionUnresolved => "feature.extrude-direction-unresolved",
             Self::FeatureExtrudeStartUnresolved => "feature.extrude-start-unresolved",
@@ -767,6 +783,10 @@ impl SldprtLossCode {
             | Self::FeatureInputObjectUnbound
             | Self::FeatureInputArchiveWalkStopped
             | Self::FeatureTypedOperandIncomplete
+            | Self::FeatureSweepPathRetained
+            | Self::FeatureSweepPathRosterAssumed
+            | Self::FeatureSweepPathHeaderAssumed
+            | Self::FeatureSweepMergeAssumed
             | Self::FeatureProfileCurvesUnavailable
             | Self::FeatureExtrudeDirectionUnresolved
             | Self::FeatureExtrudeStartUnresolved
@@ -999,6 +1019,10 @@ impl SldprtLossCode {
             | Self::FeatureInputObjectUnbound
             | Self::FeatureInputArchiveWalkStopped
             | Self::FeatureTypedOperandIncomplete
+            | Self::FeatureSweepPathRetained
+            | Self::FeatureSweepPathRosterAssumed
+            | Self::FeatureSweepPathHeaderAssumed
+            | Self::FeatureSweepMergeAssumed
             | Self::FeatureProfileCurvesUnavailable
             | Self::FeatureExtrudeDirectionUnresolved
             | Self::FeatureExtrudeStartUnresolved
@@ -1235,6 +1259,10 @@ mod tests {
                 "feature.input-solid-body-retained",
                 "feature.input-archive-walk-stopped",
                 "feature.typed-operand-incomplete",
+                "feature.sweep-path-retained",
+                "feature.sweep-path-roster-assumed",
+                "feature.sweep-path-header-assumed",
+                "feature.sweep-merge-assumed",
                 "feature.profile-curves-unavailable",
                 "feature.extrude-direction-unresolved",
                 "feature.extrude-start-unresolved",
