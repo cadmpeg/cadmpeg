@@ -399,7 +399,7 @@ fn budgeted_nurbs_surface_inverse_refines_an_approximate_seed_before_global_sear
     let surface = bilinear_surface();
     let point = Point3::new(0.3, 0.7, 0.0);
     let exhausted_ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    let exhausted_budget = WorkBudget::new(256);
+    let exhausted_budget = WorkBudget::new(64);
     let exhausted = nurbs_surface_parameter_within_tolerance_with_budget(
         &exhausted_ctx,
         &surface,

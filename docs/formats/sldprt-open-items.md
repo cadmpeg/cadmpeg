@@ -229,6 +229,22 @@ image in field data can therefore be classified as a new stream.
 
 **Conflict.** The specification records a fixed value; the decoder admits every value.
 
+### CM-17. Keywords lead byte
+
+**Question.** What does the lead byte `85` or `86` before the Keywords XML text record?
+
+**Known.** `sldprt.md` §2 "An XML payload stores its text as UTF-8" defines both lead bytes; the decoder reads the text after either. Both forms declare UTF-8 and give the `Keywords` root the attributes `Name` and `id`. Every document with lead byte `85` holds an `Application` element with `Keyword` children. An `Application` element occurs after either lead byte, so that element does not select the byte. Both bytes occur in documents of the same `swVersion`.
+
+**Need.** The producer rule that selects the byte, before a writer generates a Keywords member with a lead byte.
+
+### CM-18. Keywords `Application` element
+
+**Question.** What do the `Application` element of a Keywords root and its `Keyword` children record?
+
+**Known.** The `Application` element is the first child element of the `Keywords` root. Its one attribute is `Name`, with the value `Simulation`. Its children are `Keyword` elements, each with a `Name` attribute and a text value, such as `Analysis type` with `Static` and `Mesh type` with `Solid Mesh`; the names and values are in the language of the document. Neither element has an `id` or a `Type` attribute. The element occurs after either lead byte of CM-17. The decoder keeps each `Application` element with its subtree as an item of the native history content, in source order, and the writer writes it back when it regenerates the Keywords text. Neither element is a feature, and `history.application-not-transferred` names each `Application` element and its children. The native history keeps 16 element levels of an `Application` element, the element itself being level 1; `history.application-nesting-cut` counts the elements below them and names the first. Corpus elements nest 2 levels.
+
+**Need.** The program state the keywords describe, and whether a target format has a record for it, before the decoder maps them to one.
+
 ## 4. Auxiliary lanes
 
 ### AL-01. DisplayLists face ranges
@@ -1086,7 +1102,7 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Question.** What do the endpoint and centre indices of a sketch curve record select when bit 0 of its selector (+37) is set?
 
-**Known.** The selector takes the values `4`, `5`, `12`, `13`, `68`, `69`, `132` and `133`. With bit 0 clear, the indices select point records of the same `sgSketch` object (`sldprt.md` §2.3 "In a curve record whose selector (+37) has bit 0 clear"). With bit 0 set, the centre index of a full circle can select the centre of a cylindrical face of the stored solid while its endpoint index selects a point record that is not on that face.
+**Known.** The selector takes the values `4`, `5`, `12`, `13`, `68`, `69`, `132` and `133`. Selectors `68` and `132` mark the compact legacy link-bearing forms of `sldprt.md` §2. With bit 0 clear and a locus other than `05 00 01 00`, the indices select point records of the same `sgSketch` object (`sldprt.md` §2.3 "In a curve record whose selector (+37) has bit 0 clear"). With bit 0 set, the centre index of a full circle can select the centre of a cylindrical face of the stored solid while its endpoint index selects a point record that is not on that face.
 
 **Need.** The field or list that gives such a record's curve, checked against the faces its feature produces.
 

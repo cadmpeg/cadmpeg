@@ -3291,6 +3291,40 @@ Offsets from the end of the ambient light's name string; the light's bytes end a
 | 24 | 8 | `value_24` | `f64` | little | spec | \| +24 \| little-endian f64 \| |
 | 32 | 4 | `word_32` | `u32` | little | spec | \| +32 \| little-endian u32 \| |
 
+## `length_user_units_base`
+
+Spec §Configuration objects · layout: byte offsets · size: 48 B
+
+The four-word base of the `moLengthUserUnits_c` object in a part's `moUnitsTable_c`, at the byte after its class declaration. In a compound document the u16 length unit code follows at +48; in a block-container document `length_user_units_block_base` extends the base. The three-word 44-byte form (DI-72) is another layout, which the decoder does not read.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/design_v11/units.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `precision` | `u32` | little | spec | The first u32 of a `moLengthUserUnits_c` base is the number of decimal places |
+| 44 | 4 | `last_word` | `u32` | little | spec | four u32, the last `1`, 48 bytes · value `1` |
+
+Unstated regions:
+
+- `4..44` (40 B): A u32, the f64 value, two u32, an f64 and three u32. The u32 at +16 holds 4 or 10 and is not the precision. The decoder reads none of them.
+
+## `length_user_units_block_base`
+
+Spec §Configuration objects · layout: byte offsets · size: 62 B
+
+The base of the `moLengthUserUnits_c` object in a block-container document: the four-word base (`length_user_units_base`) and three more fields. The u16 length unit code follows at +62.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/design_v11/units.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 48 | `base` | `bytes[48]` | little | spec | In its four-word base form |
+| 48 | 8 | `block_real` | `f64` | little | spec | an f64, a u32 and a u16 follow |
+| 56 | 4 | `block_word` | `u32` | little | spec | an f64, a u32 and a u16 follow |
+| 60 | 2 | `block_short` | `u16` | little | spec | an f64, a u32 and a u16 follow |
+
 ## `sketch_record_head`
 
 Spec §Sketch objects · layout: byte offsets · size: 64 B
@@ -3310,7 +3344,7 @@ Parsed by:
 | 13 | 4 | `attribute_minus_one` | `f32` | little | spec | and little-endian f32 `-1` |
 | 17 | 4 | `kind` | `u32` | little | spec | \| +17 \| little-endian u32 kind \| |
 | 21 | 2 | `zero_word` | `u16` | little | spec | \| +21 \| little-endian u16 `0` \| · value `0` |
-| 23 | 4 | `locus` | `u16[2]` | little | spec | two little-endian u16, the locus (`04 00 02 00` profile, `05 00 01 00` geometry) |
+| 23 | 4 | `locus` | `bytes[4]` | little | spec | two little-endian u16, the locus (`04 00 02 00` profile, `05 00 01 00` geometry) |
 | 27 | 2 | `role` | `u16` | little | spec | \| +27 \| little-endian u16 role \| |
 | 29 | 2 | `state` | `u16` | little | spec | \| +29 \| little-endian u16 state \| |
 | 31 | 4 | `minus_one` | `f32` | little | spec | \| +31 \| little-endian f32 `-1` \| |

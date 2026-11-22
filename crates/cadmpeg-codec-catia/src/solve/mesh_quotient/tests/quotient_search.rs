@@ -1,13 +1,14 @@
 use crate::families::standard::topology::{
     solve_boundary_orientation_constraints, EdgeBoundaryLayout, EdgeRow, StandardTopologyDraft,
 };
+use crate::solve::mesh_quotient::quotient::{initial_mesh_quotient, MeshQuotient};
 use crate::solve::mesh_quotient::selection_search::mesh_assignment_can_merge;
-use crate::solve::mesh_quotient::{
-    admit_orientation_option, deduplicate_mesh_quotient_assignments, initial_mesh_quotient,
-    orientation_fingerprint, orientation_options_equivalent, possible_face_choices,
-    possible_face_choices_within, possible_face_equations, MeshQuotient, MeshSelectionSearch,
-    SearchOutcome, MAX_MESH_CONSTRAINT_OPERATIONS,
+use crate::solve::mesh_quotient::selection_state::{
+    admit_orientation_option, deduplicate_mesh_quotient_assignments, orientation_fingerprint,
+    orientation_options_equivalent, possible_face_choices, possible_face_choices_within,
+    possible_face_equations, MeshSelectionSearch,
 };
+use crate::solve::mesh_quotient::{SearchOutcome, MAX_MESH_CONSTRAINT_OPERATIONS};
 use crate::solve::missing_edge::{
     MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment, MeshFaceBoundaryDomain,
 };
@@ -195,20 +196,21 @@ fn quotient_clones_share_unconstrained_point_domains() {
 #[test]
 fn port_quotient_completes_only_supported_unknown_edge_pairs() {
     let candidates = [vec![[0, 1]], Vec::new(), vec![[2, 3]]];
-    let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+    let mut quotient = crate::solve::mesh_quotient::quotient::initial_mesh_quotient(
         &candidates,
         5,
         &[[10, 11], [10, 12], [12, 13]],
     )
     .expect("build the initial mesh quotient")
     .expect("initial quotient");
-    let completed = crate::solve::mesh_quotient::complete_mesh_endpoint_candidates_from_quotient(
-        &candidates,
-        &mut quotient,
-        16,
-        32,
-    )
-    .expect("bounded quotient completion");
+    let completed =
+        crate::solve::mesh_quotient::quotient::complete_mesh_endpoint_candidates_from_quotient(
+            &candidates,
+            &mut quotient,
+            16,
+            32,
+        )
+        .expect("bounded quotient completion");
 
     assert_eq!(completed[0], vec![[0, 1]]);
     assert_eq!(completed[1], vec![[0, 2], [0, 3], [1, 2], [1, 3]]);
@@ -224,7 +226,7 @@ fn coordinate_root_fixpoint_removes_unsupported_edge_pairs() {
         vec![[0, 1]],
         vec![[2, 2]],
     ];
-    let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+    let mut quotient = crate::solve::mesh_quotient::quotient::initial_mesh_quotient(
         &candidates,
         3,
         &[[10, 11], [10, 12], [13, 11], [14, 14]],
@@ -250,7 +252,7 @@ fn coordinate_root_preparation_skips_on_an_exhausted_local_slice() {
         vec![[0, 1]],
         vec![[2, 2]],
     ];
-    let quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+    let quotient = crate::solve::mesh_quotient::quotient::initial_mesh_quotient(
         &candidates,
         3,
         &[[10, 11], [10, 12], [13, 11], [14, 14]],
@@ -290,7 +292,7 @@ fn coordinate_root_preparation_skips_on_an_exhausted_local_slice() {
 fn selected_edge_pair_propagates_through_shared_coordinate_roots() {
     catia_test_context!(ctx);
     let candidates = [vec![[0, 1], [0, 2]], vec![[1, 3], [2, 3]], vec![[2, 3]]];
-    let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+    let mut quotient = crate::solve::mesh_quotient::quotient::initial_mesh_quotient(
         &candidates,
         4,
         &[[10, 11], [11, 12], [13, 14]],
@@ -313,11 +315,11 @@ fn selected_edge_pair_propagates_through_shared_coordinate_roots() {
 fn port_quotient_declines_unbounded_unknown_edge_pairs() {
     let candidates = [Vec::new()];
     let mut quotient =
-        crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 100, &[[10, 11]])
+        crate::solve::mesh_quotient::quotient::initial_mesh_quotient(&candidates, 100, &[[10, 11]])
             .expect("build the initial mesh quotient")
             .expect("initial quotient");
     assert!(
-        crate::solve::mesh_quotient::complete_mesh_endpoint_candidates_from_quotient(
+        crate::solve::mesh_quotient::quotient::complete_mesh_endpoint_candidates_from_quotient(
             &candidates,
             &mut quotient,
             1_000,
@@ -332,7 +334,7 @@ fn coordinate_root_domains_keep_unknown_edge_pairs_implicit() {
     catia_test_context!(ctx);
     let candidates = [Vec::new()];
     let mut quotient =
-        crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 2, &[[10, 11]])
+        crate::solve::mesh_quotient::quotient::initial_mesh_quotient(&candidates, 2, &[[10, 11]])
             .expect("build the initial mesh quotient")
             .expect("initial quotient");
     let domains = quotient
@@ -363,10 +365,13 @@ fn coordinate_root_domains_keep_unknown_edge_pairs_implicit() {
 fn required_implicit_coordinate_pairs_scale_with_root_domains_not_their_product() {
     catia_test_context!(ctx);
     let candidates = [Vec::new(), Vec::new()];
-    let mut quotient =
-        crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 4, &[[10, 11], [12, 13]])
-            .expect("build the initial mesh quotient")
-            .expect("initial quotient");
+    let mut quotient = crate::solve::mesh_quotient::quotient::initial_mesh_quotient(
+        &candidates,
+        4,
+        &[[10, 11], [12, 13]],
+    )
+    .expect("build the initial mesh quotient")
+    .expect("initial quotient");
     let domains = quotient
         .prepare_coordinate_root_domains(&ctx, 4, &candidates, None)
         .expect("prepare the coordinate root domains")
@@ -405,9 +410,10 @@ fn coordinate_domain_preparation_scales_with_constraint_graph_work() {
             ]
         })
         .collect::<Vec<_>>();
-    let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 200, &ports)
-        .expect("build the initial mesh quotient")
-        .expect("initial quotient");
+    let mut quotient =
+        crate::solve::mesh_quotient::quotient::initial_mesh_quotient(&candidates, 200, &ports)
+            .expect("build the initial mesh quotient")
+            .expect("initial quotient");
 
     assert!(
         quotient
@@ -424,7 +430,7 @@ fn incidence_search_consumes_implicit_coordinate_root_pairs() {
 
     catia_test_context!(ctx);
     let candidates = vec![Vec::new(); 3];
-    let quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+    let quotient = crate::solve::mesh_quotient::quotient::initial_mesh_quotient(
         &candidates,
         3,
         &[[10, 11], [11, 12], [12, 10]],
@@ -454,7 +460,7 @@ fn incidence_search_consumes_implicit_coordinate_root_pairs() {
 fn ordered_face_equations_narrow_unknown_edge_roots_before_pair_completion() {
     catia_test_context!(ctx);
     let edge_candidates = vec![vec![[0, 1]], Vec::new(), vec![[0, 2]]];
-    let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+    let mut quotient = crate::solve::mesh_quotient::quotient::initial_mesh_quotient(
         &edge_candidates,
         3,
         &[[10, 11], [12, 13], [14, 15]],
@@ -475,7 +481,7 @@ fn ordered_face_equations_narrow_unknown_edge_roots_before_pair_completion() {
     ])];
     let budget = WorkBudget::new(10_000);
 
-    crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
+    crate::solve::mesh_quotient::common_propagation::propagate_common_ordered_face_quotients(
         &ctx,
         &domains,
         &edge_candidates,
@@ -484,13 +490,14 @@ fn ordered_face_equations_narrow_unknown_edge_roots_before_pair_completion() {
     )
     .expect("propagate common ordered face quotients")
     .expect("common face equations");
-    let completed = crate::solve::mesh_quotient::complete_mesh_endpoint_candidates_from_quotient(
-        &edge_candidates,
-        &mut quotient,
-        16,
-        32,
-    )
-    .expect("completed edge domain");
+    let completed =
+        crate::solve::mesh_quotient::quotient::complete_mesh_endpoint_candidates_from_quotient(
+            &edge_candidates,
+            &mut quotient,
+            16,
+            32,
+        )
+        .expect("completed edge domain");
 
     assert_eq!(completed[1], vec![[1, 2]]);
 }
@@ -1274,7 +1281,7 @@ fn coordinate_root_domains_drop_an_unsupported_candidate_pair() {
         vec![[0, 1]],
         vec![[2, 2]],
     ];
-    let quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+    let quotient = crate::solve::mesh_quotient::quotient::initial_mesh_quotient(
         &candidates,
         3,
         &[[10, 11], [10, 12], [13, 11], [14, 14]],
@@ -1314,7 +1321,7 @@ fn ordered_triangle_face_supports_three_corner_equations() {
     let mut quotient = initial_quotient.clone();
     let budget = WorkBudget::new(1_000);
     assert!(
-        crate::solve::mesh_quotient::common_supported_corner_equations(
+        crate::solve::mesh_quotient::common_propagation::common_supported_corner_equations(
             &mut quotient,
             std::slice::from_ref(&assignment),
             &budget,
@@ -1335,7 +1342,7 @@ fn ordered_triangle_face_supports_three_corner_equations() {
     let mut quotient = initial_quotient.clone();
     let budget = WorkBudget::new(1_000);
     assert_eq!(
-        crate::solve::mesh_quotient::common_supported_corner_equations(
+        crate::solve::mesh_quotient::common_propagation::common_supported_corner_equations(
             &mut quotient,
             std::slice::from_ref(&fixed_assignment),
             &budget,
@@ -1348,7 +1355,7 @@ fn ordered_triangle_face_supports_three_corner_equations() {
     let mut quotient = initial_quotient.clone();
     let budget = WorkBudget::new(1_000);
     assert_eq!(
-        crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
+        crate::solve::mesh_quotient::common_propagation::propagate_common_ordered_face_quotients(
             &service_ctx,
             &domains,
             &edge_candidates,
@@ -1376,11 +1383,12 @@ fn single_full_quotient_alternative_merges_into_the_common_quotient() {
         .expect("shared domain");
     let run = || {
         let mut quotient = base.clone();
-        let result = crate::solve::mesh_quotient::propagate_common_full_quotients(
-            vec![alternative.clone()],
-            &[Vec::new(), Vec::new()],
-            &mut quotient,
-        )?;
+        let result =
+            crate::solve::mesh_quotient::common_propagation::propagate_common_full_quotients(
+                vec![alternative.clone()],
+                &[Vec::new(), Vec::new()],
+                &mut quotient,
+            )?;
         Ok::<_, CodecError>((
             result,
             [

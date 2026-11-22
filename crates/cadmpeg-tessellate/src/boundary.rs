@@ -774,7 +774,7 @@ fn pcurve_trace(
     };
     let range = use_.parameter_range.map_or(
         [*first, *last],
-        cadmpeg_ir::geometry::DirectedParameterRange::endpoints,
+        cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints,
     );
     let span = last - first;
     let mut out = Vec::new();
