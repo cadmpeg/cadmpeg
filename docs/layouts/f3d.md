@@ -8906,6 +8906,45 @@ Unstated regions:
 
 - `0..11` (11 B): The indexed header precedes this field run.
 
+## `typed_reference_profile_status_record`
+
+Spec §3.1 · layout: byte offsets · size: 29 B
+
+Offsets are relative to the status record indexed header; the counted typed references begin at offset 29.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | The status record at the typed-reference profile selection's record index plus two stores nine zero bytes |
+| 20 | 4 | `constant_one` | `u32` | little | spec | The status record at the typed-reference profile selection's record index plus two stores nine zero bytes |
+| 24 | 1 | `zero_byte` | `u8` | little | spec | The status record at the typed-reference profile selection's record index plus two stores nine zero bytes |
+| 25 | 4 | `lost_reference_count` | `u32` | little | spec | The status record at the typed-reference profile selection's record index plus two stores nine zero bytes |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes this field run.
+
+## `typed_reference_profile_lost_record`
+
+Spec §3.1 · layout: byte offsets · size: 51 B
+
+Offsets are relative to the lost profile-reference record indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 14 | `zero_run_14` | `bytes[14]` | little | spec | A lost profile-reference record consists of its eleven-byte indexed header, fourteen zero bytes, `u32 22`, and ASCII `PROFILE_REFERENCE_LOST`. |
+| 25 | 4 | `marker_length` | `u32` | little | spec | A lost profile-reference record consists of its eleven-byte indexed header, fourteen zero bytes, `u32 22`, and ASCII `PROFILE_REFERENCE_LOST`. |
+| 29 | 22 | `marker` | `bytes[22]` | little | spec | A lost profile-reference record consists of its eleven-byte indexed header, fourteen zero bytes, `u32 22`, and ASCII `PROFILE_REFERENCE_LOST`. |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes this field run.
+
 ## `typed_reference_companion_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 98 B
