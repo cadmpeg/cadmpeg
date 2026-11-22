@@ -111,61 +111,42 @@ fn generated_feature_source_ids(
     features: &[cadmpeg_ir::features::Feature],
     native: &crate::native::SldprtNative,
 ) -> Result<HashMap<FeatureId, FeatureSource>, CodecError> {
-    let mut used = native
-        .feature_histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .filter_map(crate::records::Feature::source_value)
-        .collect::<HashSet<_>>();
+    let held = native.object_ids().collect::<HashSet<_>>();
     let existing = native
         .feature_histories
         .iter()
         .flat_map(|history| &history.features)
         .filter_map(|feature| Some((feature.id.as_str(), feature.source_value()?)))
         .collect::<HashMap<_, _>>();
-    // `next` is the lowest source id not yet offered. `None` states that the
-    // id space is exhausted: every allocation advances it, and the allocation
-    // that finds it exhausted is the one refusal. A part's default feature
-    // tree holds the identifiers below the first user feature's.
-    let mut next = Some(crate::writer::native::ids::FIRST_USER);
+    // An added feature takes an identifier past every identifier the part's
+    // objects hold, and the lowest one they do not hold once those run out.
+    // A part that holds none is numbered as a generated part is.
+    let start = held
+        .iter()
+        .max()
+        .map_or(crate::writer::native::ids::FIRST_USER, |largest| {
+            largest.saturating_add(1)
+        });
+    let mut free = (start..u32::MAX)
+        .chain(1..start)
+        .filter(|candidate| !held.contains(candidate));
     let mut allocated = HashMap::new();
     for feature in features
         .iter()
         .filter(|feature| feature.native_ref.is_none())
     {
         let record_id = generated_feature_record_id(&feature.id);
-        let source_id = if let Some(source_id) = existing.get(record_id.as_str()).copied() {
-            source_id
-        } else {
-            allocate_feature_source_id(&mut used, &mut next)?
-        };
-        let source_id = FeatureSource::from_value(source_id).ok_or_else(|| {
-            CodecError::Malformed("SLDPRT feature source-id space is exhausted".into())
+        let source_id = match existing.get(record_id.as_str()) {
+            Some(&source_id) => Some(source_id),
+            None => free.next(),
+        }
+        .and_then(FeatureSource::from_value)
+        .ok_or_else(|| {
+            CodecError::NotImplemented("SLDPRT feature source-id space is exhausted".into())
         })?;
         allocated.insert(feature.id.clone(), source_id);
     }
     Ok(allocated)
-}
-
-/// Take the lowest source id no feature holds, and advance `next` past it.
-///
-/// `next` states the lowest id not yet offered; `None` states that the previous
-/// allocation took `u32::MAX` and the id space holds no further id. Every exit
-/// from this function either returns an id no other feature holds or refuses,
-/// so no caller writes a source id twice and none saturates.
-fn allocate_feature_source_id(
-    used: &mut HashSet<u32>,
-    next: &mut Option<u32>,
-) -> Result<u32, CodecError> {
-    loop {
-        let candidate = next.ok_or_else(|| {
-            CodecError::NotImplemented("SLDPRT feature source-id space is exhausted".into())
-        })?;
-        *next = candidate.checked_add(1);
-        if used.insert(candidate) {
-            return Ok(candidate);
-        }
-    }
 }
 
 /// Apply neutral native-feature edits to the `SolidWorks` history used for writing.
@@ -701,10 +682,8 @@ mod tests {
     use crate::test_support::parasolid::triangle_body;
     use crate::test_support::plan_inherited_write;
     use crate::SldprtCodec;
-    use cadmpeg_core::CodecError;
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use cadmpeg_ir::features::FeatureId;
-    use std::collections::HashSet;
     use std::io::Cursor;
 
     /// A document whose one history feature is linked to one serialized object
@@ -833,31 +812,111 @@ mod tests {
         let projected = neutral_feature_id(&record).unwrap();
         assert!(cadmpeg_ir::ids::is_valid_identity(projected.as_str()));
     }
+    /// An added feature takes an identifier past every identifier the part's
+    /// objects hold: past the parameter `D1`, whose trailer identifier `133`
+    /// is above the history's largest, `132`, which `KeyWords` does not list.
     #[test]
-    fn the_source_id_allocator_skips_held_ids_and_refuses_an_exhausted_space() {
-        let mut used = HashSet::from([1, 2, 4]);
-        let mut next = Some(1);
-        assert_eq!(
-            super::allocate_feature_source_id(&mut used, &mut next).expect("first free id"),
-            3
-        );
-        assert_eq!(
-            super::allocate_feature_source_id(&mut used, &mut next).expect("second free id"),
-            5
-        );
+    fn an_added_feature_takes_an_identifier_past_every_identifier_the_part_holds() {
+        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
+        let mut resolved = resolved_feature_classes_with_ids(&[("moLPattern_c", "MatrizL1", 132)]);
+        resolved.extend([0x04, 0x80, 0xff, 0xfe, 0xff, 2]);
+        resolved.extend("D1".encode_utf16().flat_map(u16::to_le_bytes));
+        resolved.extend([
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00,
+            0x00, 0x00, 0xff, 0xfe, 0xff, 0x00, 0x00, 0x00,
+        ]);
+        resolved.extend(0.015_f64.to_le_bytes());
+        let mut trailer = [0_u8; 35];
+        trailer[3..7].copy_from_slice(&133_u32.to_le_bytes());
+        resolved.extend(trailer);
+        let mut source = sldprt_with_body(&triangle_body());
+        source.extend(make_block(
+            0x42,
+            "Contents/Keywords",
+            br#"<Keywords><Feature Name="MatrizL1" Type="MatrizL" id="132"><Dimension Name="D1">15</Dimension></Feature></Keywords>"#,
+        ));
+        source.extend(make_block(
+            0x42,
+            "Contents/Config-0-ResolvedFeatures",
+            &resolved,
+        ));
+        let decoded = SldprtCodec
+            .decode(
+                &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                    &source,
+                )),
+                &DecodeOptions::default(),
+            )
+            .expect("the fixture decodes");
+        let parameters = sldprt_native(decoded.ir()).feature_input_lanes[0]
+            .scalars
+            .iter()
+            .map(|scalar| scalar.object_id)
+            .collect::<Vec<_>>();
+        assert_eq!(parameters, [133]);
 
-        let mut used = HashSet::new();
-        let mut next = Some(u32::MAX);
-        assert_eq!(
-            super::allocate_feature_source_id(&mut used, &mut next).expect("last id"),
-            u32::MAX
-        );
-        assert_eq!(next, None);
-        let error = super::allocate_feature_source_id(&mut used, &mut next)
-            .expect_err("exhausted id space");
-        assert!(
-            matches!(&error, CodecError::NotImplemented(message) if message.contains("exhausted")),
-            "{error:?}"
-        );
+        let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+        let ordinal = u64::try_from(decoded.ir().model.features.len()).expect("ordinal");
+        decoded.ir_mut().model.features.push(Feature {
+            product_definition: None,
+            id: FeatureId::mint("synthetic:test:feature#added").expect("fixture identity"),
+            ordinal,
+            name: Some("Added".into()),
+            suppressed: Some(false),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::DatumPoint {
+                    position: cadmpeg_ir::features::geometry::FinitePoint3::new(
+                        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    )
+                    .expect("a finite point"),
+                    construction: None,
+                }),
+            ),
+            native_ref: None,
+        });
+        let mut encoded = Vec::new();
+        plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut encoded)
+            .expect("the edited part writes");
+        let written = SldprtCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .expect("the written part decodes");
+        let native = sldprt_native(written.ir());
+        let source_ids = |name: &str| {
+            native
+                .feature_histories
+                .iter()
+                .flat_map(|history| &history.features)
+                .filter(|record| record.name == name)
+                .map(crate::records::Feature::source_value)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(source_ids("MatrizL1"), [Some(132)]);
+        assert_eq!(source_ids("Added"), [Some(134)]);
+    }
+
+    #[test]
+    fn an_added_feature_takes_the_lowest_free_identifier_when_none_follows_the_largest() {
+        let mut source = sldprt_with_body(&triangle_body());
+        source.extend(make_block(
+            0x42,
+            "Contents/Keywords",
+            br#"<Keywords><Feature Name="Low" Type="MatrizL" id="1"><Dimension Name="D1">15</Dimension></Feature><Feature Name="High" Type="MatrizL" id="4294967294"><Dimension Name="D1">15</Dimension></Feature></Keywords>"#,
+        ));
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        let native = sldprt_native(decoded.ir());
+        assert_eq!(native.object_ids().max(), Some(u32::MAX - 1));
+        let mut added = decoded.ir().model.features[0].clone();
+        added.id = FeatureId::mint("synthetic:test:feature#added").expect("fixture identity");
+        added.native_ref = None;
+        let allocated = super::generated_feature_source_ids(std::slice::from_ref(&added), &native)
+            .expect("an identifier is free");
+        assert_eq!(allocated[&added.id].value(), Some(2));
     }
 }
