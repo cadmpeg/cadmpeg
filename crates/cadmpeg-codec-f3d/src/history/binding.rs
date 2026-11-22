@@ -11,8 +11,50 @@ use cadmpeg_asm::brep::attributes::{attribute_next, attribute_owner};
 use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_asm::sab::{Record, Token};
 use cadmpeg_core::decode::{work_units, WorkBudget};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::hash::{BuildHasherDefault, Hasher};
 use std::time::Duration;
+
+/// Fast non-cryptographic hasher for internal bounded slot-index tables.
+#[derive(Default)]
+struct SlotHasher(u64);
+
+impl SlotHasher {
+    #[inline]
+    fn mix(&mut self, value: u64) {
+        let mixed = self.0.rotate_left(5) ^ value;
+        // wrapping-exception: 64-bit multiplicative hash mixing operates modulo 2^64
+        self.0 = mixed.wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+}
+
+impl Hasher for SlotHasher {
+    #[inline]
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    #[inline]
+    fn write(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            self.mix(u64::from(byte));
+        }
+    }
+
+    #[inline]
+    fn write_i64(&mut self, value: i64) {
+        self.mix(u64::from_ne_bytes(value.to_ne_bytes()));
+    }
+
+    #[inline]
+    fn write_u64(&mut self, value: u64) {
+        self.mix(value);
+    }
+}
+
+type FastBuildHasher = BuildHasherDefault<SlotHasher>;
+type FastMap<K, V> = HashMap<K, V, FastBuildHasher>;
+type FastSet<T> = HashSet<T, FastBuildHasher>;
 
 mod indexed;
 pub(crate) mod transition_geometry;
@@ -278,12 +320,12 @@ fn same_tokens(left: &[Token], right: &[Token]) -> bool {
 }
 
 type Slots = BTreeSet<i64>;
-type Table<'a> = BTreeMap<i64, &'a Record>;
+type Table<'a> = FastMap<i64, &'a Record>;
 
 /// A face and the anchor of one of its parts: the face itself for the head
 /// or an unsplit unit, a loop for a loop part.
 type Part = (i64, i64);
-type Parts = BTreeSet<Part>;
+type Parts = FastSet<Part>;
 
 /// The dependencies of one face, split per loop when its chain is clean.
 ///
@@ -335,9 +377,9 @@ fn meets(left: &Slots, right: &Slots) -> bool {
 
 #[derive(Default)]
 struct Units {
-    faces: BTreeMap<i64, FaceUnit>,
-    reverse: BTreeMap<i64, Parts>,
-    edge_users: BTreeMap<i64, Slots>,
+    faces: FastMap<i64, FaceUnit>,
+    reverse: FastMap<i64, Parts>,
+    edge_users: FastMap<i64, FastSet<i64>>,
 }
 
 impl Units {
@@ -432,20 +474,20 @@ impl Units {
 /// Live indexes contain borrowed archive records. Only changed slots update them.
 struct Live<'a> {
     table: Table<'a>,
-    kinds: BTreeMap<&'a str, Slots>,
-    attributes: BTreeMap<i64, Slots>,
-    incoming: BTreeMap<i64, Slots>,
-    subtype_references: BTreeMap<i64, Vec<Option<usize>>>,
+    kinds: FastMap<&'a str, FastSet<i64>>,
+    attributes: FastMap<i64, FastSet<i64>>,
+    incoming: FastMap<i64, FastSet<i64>>,
+    subtype_references: FastMap<i64, Vec<Option<usize>>>,
 }
 
 impl<'a> Live<'a> {
     fn new() -> Self {
         Self {
-            table: BTreeMap::new(),
-            kinds: BTreeMap::new(),
-            attributes: BTreeMap::new(),
-            incoming: BTreeMap::new(),
-            subtype_references: BTreeMap::new(),
+            table: FastMap::default(),
+            kinds: FastMap::default(),
+            attributes: FastMap::default(),
+            incoming: FastMap::default(),
+            subtype_references: FastMap::default(),
         }
     }
 
@@ -500,7 +542,7 @@ impl<'a> Live<'a> {
     fn valid_changes(&self, changed: &Slots) -> bool {
         changed.iter().all(|slot| match self.table.get(slot) {
             Some(record) => record.tokens.iter().all(|token| !matches!(token, Token::Ref(reference) if *reference >= 0 && !self.table.contains_key(reference))),
-            None => self.incoming.get(slot).is_none_or(BTreeSet::is_empty),
+            None => self.incoming.get(slot).is_none_or(HashSet::is_empty),
         })
     }
 }
@@ -884,11 +926,11 @@ struct Binder<'a> {
     live: Live<'a>,
     archive: &'a HistoricalRecordArchive,
     units: Units,
-    containers: BTreeMap<i64, Slots>,
-    container_reverse: BTreeMap<i64, Slots>,
-    orphan_containers: Slots,
+    containers: FastMap<i64, Slots>,
+    container_reverse: FastMap<i64, FastSet<i64>>,
+    orphan_containers: FastSet<i64>,
     wires: Slots,
-    revision_subtypes: HashMap<i64, Subtypes>,
+    revision_subtypes: FastMap<i64, Subtypes>,
     saved_limit: Option<i64>,
     subtype_table: Option<cadmpeg_asm::nurbs::toks::SubtypeTable>,
     source_subtypes: Option<&'a cadmpeg_asm::nurbs::toks::SubtypeTable>,
@@ -911,9 +953,9 @@ impl<'a> Binder<'a> {
             archive,
             live: Live::new(),
             units: Units::default(),
-            containers: BTreeMap::new(),
-            container_reverse: BTreeMap::new(),
-            orphan_containers: Slots::new(),
+            containers: FastMap::default(),
+            container_reverse: FastMap::default(),
+            orphan_containers: FastSet::default(),
             wires: Slots::new(),
             revision_subtypes: archive
                 .iter()
@@ -1191,11 +1233,23 @@ impl<'a> Binder<'a> {
         let revisions = &revisions;
         let expanded = self.resolution_changes(revisions, versions);
         let changed = &expanded;
-        let saved_containers = previous.bodies().any(|slot| {
-            self.live
-                .table
-                .get(slot)
-                .is_none_or(|record| record.head() != "body")
+        let saved_containers: Slots = previous
+            .bodies()
+            .filter(|slot| {
+                self.live
+                    .table
+                    .get(slot)
+                    .is_none_or(|record| record.head() != "body")
+            })
+            .copied()
+            .collect();
+        let saved_container_ref_changed = saved_containers.iter().any(|slot| {
+            self.live.table.get(slot).is_some_and(|record| {
+                [3, 5, 8]
+                    .iter()
+                    .filter_map(|&field| record.ref_at(field))
+                    .any(|dep| changed.contains(&dep))
+            })
         });
         let orphan_containers = !self.orphan_containers.is_empty();
         let mut all_targets = self.attribute_targets(changed);
@@ -1246,7 +1300,7 @@ impl<'a> Binder<'a> {
                 next_units.insert(face, face_unit(&self.live, face));
             }
         }
-        let mut dirty = Parts::new();
+        let mut dirty = Parts::default();
         for &face in &rebuilt {
             let old = self.units.faces.get(&face);
             let new = next_units.get(&face);
@@ -1322,7 +1376,7 @@ impl<'a> Binder<'a> {
         let mut first = dirty.clone();
         first.extend(self.units.neighbours(&dirty));
         let old_first = self.units.slots(&first);
-        let mut second = self.units.neighbours(&first);
+        let mut second = self.units.touching(&old_first);
         second.extend(&first);
         let mut tangled = self.units.tangled(&second);
         for &face in &rebuilt {
@@ -1334,9 +1388,10 @@ impl<'a> Binder<'a> {
         first.extend(self.units.neighbours(&dirty));
         // A B-side neighbour may have A-side neighbours absent from the first
         // expansion. Its unchanged unit is already present in both indexes.
+        let new_first = self.units.slots(&first);
         let mut keys = old_first;
-        keys.extend(self.units.slots(&first));
-        second.extend(self.units.neighbours(&first));
+        keys.extend(&new_first);
+        second.extend(self.units.touching(&new_first));
         second.extend(first);
         tangled |= self.units.tangled(&second);
         let mut input = self.units.slots(&second);
@@ -1349,9 +1404,21 @@ impl<'a> Binder<'a> {
                 && *was_reached != self.units.edge_users.contains_key(slot)
         });
         let orphan_containers = orphan_containers || !self.orphan_containers.is_empty();
+        let saved_container_touched = !saved_containers.is_empty()
+            && (saved_container_ref_changed
+                || !saved_containers.is_disjoint(&container_keys)
+                || !saved_containers.is_disjoint(changed)
+                || saved_containers.iter().any(|slot| {
+                    self.live.table.get(slot).is_some_and(|record| {
+                        [3, 5, 8]
+                            .iter()
+                            .filter_map(|&field| record.ref_at(field))
+                            .any(|dep| changed.contains(&dep) || container_keys.contains(&dep))
+                    })
+                }));
         let reason = if orphan_containers {
             Some("orphan-container")
-        } else if saved_containers && !container_keys.is_empty() {
+        } else if saved_container_touched {
             Some("saved-free-containers")
         } else if saved_ownership_changed {
             Some("saved-edge-ownership")
