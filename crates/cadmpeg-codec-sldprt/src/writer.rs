@@ -972,18 +972,16 @@ pub(super) fn reserve_configuration_index(
     }
 }
 
-/// The model with the geometry of the state the design stores for a
-/// configuration whose body list the decoder moved into its evaluation.
+/// A document of the geometry of the state the design stores for a
+/// configuration whose body list the decoder moved into its evaluation:
+/// all that [`brep_body`] reads. Its faces carry their own colours.
 fn stored_state(
     ir: &CadIr,
     configuration: &cadmpeg_ir::features::parameters::DesignConfiguration,
 ) -> Option<CadIr> {
     let (_, records) = crate::decode::retired_states::stored_state(ir, configuration)?;
-    let mut subset = ir.clone();
+    let mut subset = CadIr::empty();
     subset.geometry = records.clone();
-    for definition in &mut subset.model.product_definitions {
-        definition.bodies = records.bodies.iter().map(|body| body.id.clone()).collect();
-    }
     Some(subset)
 }
 
