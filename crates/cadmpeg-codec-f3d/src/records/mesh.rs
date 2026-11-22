@@ -1888,6 +1888,8 @@ pub(crate) struct DesignMeshCollection {
     record: DesignMeshRecordIdentity,
     base_class_tag: DesignClassTag,
     body_count: u32,
+    /// Bodies the collection has received, when more than it lists.
+    received_count: Option<u32>,
     flagged: bool,
     pub(crate) flagged_data: Option<DesignMeshFlaggedCollection>,
 }
@@ -1967,9 +1969,24 @@ impl DesignMeshCollection {
             record,
             base_class_tag: base_record.class_tag,
             body_count,
+            received_count: None,
             flagged,
             flagged_data,
         })
+    }
+    /// Record the collection-prefix count of the bodies the collection has
+    /// received. A count equal to the listed bodies records nothing.
+    pub(crate) fn with_received_count(mut self, count: u32) -> Result<Self, String> {
+        if self.flagged || count < self.body_count {
+            return Err(
+                "a received count is at least the listed bodies of a plain collection".into(),
+            );
+        }
+        self.received_count = (count > self.body_count).then_some(count);
+        Ok(self)
+    }
+    pub(crate) fn received_count(&self) -> Option<u32> {
+        self.received_count
     }
     fn prefix_len(&self) -> u64 {
         if self.flagged {
@@ -2283,6 +2300,12 @@ struct DesignMeshFeatureWire {
         deserialize_with = "deserialize_collection_flagged_data"
     )]
     collection_flagged_data: Option<DesignMeshFlaggedCollection>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_collection_received_count"
+    )]
+    collection_received_count: Option<u32>,
     /// Typed `ParaMesh` texture-table record owned by the collection.
     texture_table_record: DesignMeshRecordIdentity,
     body_count_offsets: [u64; 2],
@@ -2324,6 +2347,11 @@ struct DesignMeshFeatureWire {
     operation_bodies: Vec<DesignMeshOperationBody>,
 }
 
+cadmpeg_core::named_optional_field!(
+    deserialize_collection_received_count,
+    u32,
+    "collection_received_count"
+);
 cadmpeg_core::named_optional_field!(
     deserialize_collection_flagged_data,
     DesignMeshFlaggedCollection,
@@ -2380,6 +2408,10 @@ impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
             u32::try_from(bodies.len()).map_err(|_| "bodies count must fit u32")?,
             wire.collection_flagged_data,
         )?;
+        let collection = match wire.collection_received_count {
+            Some(count) => collection.with_received_count(count)?,
+            None => collection,
+        };
         if collection.texture_table_reference_offset() != wire.texture_table_reference_offset {
             return Err(
                 "texture_table_reference_offset must locate the collection texture-table reference"
@@ -2483,6 +2515,7 @@ impl From<DesignMeshFeature> for DesignMeshFeatureWire {
             collection_record: value.collection.record().clone(),
             collection_base_record: value.collection.base_record(),
             collection_flagged_data: value.collection.flagged_data.clone(),
+            collection_received_count: value.collection.received_count(),
             texture_table_record,
             body_count_offsets,
             texture_table_reference_offset: value.collection.texture_table_reference_offset(),
