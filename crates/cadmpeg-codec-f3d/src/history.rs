@@ -5827,11 +5827,9 @@ fn bind_historical_face_operand_candidates<'a>(
     } = caches;
     let stream = crate::ids::native_stream(&operand.id);
     let feature_family = crate::design::design_feature_family(&scope.kind());
-    let has_extrude_face_group = feature_family
-        == Some(crate::design::DesignFeatureFamily::Extrude)
-        && operand_groups
-            .iter()
-            .filter(|group| {
+    let (extrude_face_role, selected_start_group) =
+        if feature_family == Some(crate::design::DesignFeatureFamily::Extrude) {
+            let mut extrude_face_groups = operand_groups.iter().filter(|group| {
                 crate::ids::native_stream(&group.id) == stream
                     && group.scope_record_index == scope.record_index
                     && Some(group.record_index) == operand.group_record_index()
@@ -5841,9 +5839,38 @@ fn bind_historical_face_operand_candidates<'a>(
                         .and_then(|ordinal| usize::try_from(ordinal).ok())
                         .and_then(|ordinal| group.members().get(ordinal))
                         .is_some_and(|member| member.value == operand.record_index())
+            });
+            extrude_face_groups
+                .next()
+                .filter(|_| extrude_face_groups.next().is_none())
+                .map_or((None, false), |group| {
+                    (
+                        group.extrude_face_role(),
+                        group.role() == DesignOperandRole::ROLE_0X5,
+                    )
+                })
+        } else {
+            (None, false)
+        };
+    let has_extrude_face_group = extrude_face_role.is_some();
+    let alternate_start_face = if selected_start_group
+        && extrude_face_role
+            == Some(crate::records::topology::extrude_selection::DesignExtrudeFaceRole::Start)
+        && operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::BoundedFace
+    {
+        recipe_record_indices
+            .get(operand.recipe_id.as_str())
+            .and_then(|record_index| {
+                recipe_topologies.get(topology).unique_alternate_face(
+                    &operand.recipe_references,
+                    *record_index,
+                    &operand.alternate_selector_candidate_faces,
+                    historical_brep_source(&history.id),
+                )
             })
-            .count()
-            == 1;
+    } else {
+        None
+    };
     for reference in &mut operand.recipe_references {
         bind_historical_recipe_reference_candidates(reference, topology, recipe_topologies)?;
     }
@@ -6184,6 +6211,35 @@ fn bind_historical_face_operand_candidates<'a>(
             operand.resolved_face_slots = vec![face];
         }
     }
+    let alternate_start_face = alternate_start_face.filter(|face| {
+        operand.resolved_face_slots.is_empty()
+            && operand.resolved_active_face.is_none()
+            && withdrawals.admits(
+                operand,
+                std::slice::from_ref(face),
+                topology,
+                topology_queries,
+            )
+    });
+    if let Some(face) = alternate_start_face {
+        let selected = vec![historical_face_id(face)?];
+        operand.preceding_candidate_faces.clone_from(&selected);
+        operand.changed_candidate_faces = if changed_faces.contains(&face) {
+            selected.clone()
+        } else {
+            Vec::new()
+        };
+        operand.historical_support_contexts = face_support::historical_face_support_contexts(
+            &selected,
+            history,
+            topology,
+            &changed_faces,
+            topology_queries,
+        );
+        operand.alternate_selector_candidate_faces = selected;
+        operand.resolved_face_slots = vec![face];
+    }
+
     Ok(())
 }
 
