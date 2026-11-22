@@ -138,6 +138,16 @@ pub(crate) enum SldprtLossCode {
     /// `sgSketch` curve record states an arc or another form that gives no
     /// entity.
     SketchArcRecordConflict,
+    /// A sketch marker that the marker layouts skip and only its `sgSketch`
+    /// record admits gives no entity, because that record gives none in the
+    /// sketch.
+    SketchMarkerRecordUnread,
+    /// A profile-stream sketch that no feature binds repeats the profile
+    /// loops of the marker sketch that a sketch feature binds.
+    SketchSecondReading,
+    /// The marker sketch of a sketch feature stays unbound beside the
+    /// profile-stream circle bound to the feature.
+    SketchMarkerReadingUnbound,
     /// A geometry-locus curve uses assumed zero-based sketch point-record indices.
     SketchPointRecordIndexBasisAssumed,
     /// A sketch handle takes the arc of its `sgSketch` curve record although
@@ -439,6 +449,9 @@ impl SldprtLossCode {
         Self::SketchHandleUnresolved,
         Self::SketchLineDegenerate,
         Self::SketchArcRecordConflict,
+        Self::SketchMarkerRecordUnread,
+        Self::SketchSecondReading,
+        Self::SketchMarkerReadingUnbound,
         Self::SketchPointRecordIndexBasisAssumed,
         Self::SketchArcRecordOffChord,
         Self::SketchProfileRejected,
@@ -596,6 +609,9 @@ impl SldprtLossCode {
             Self::SketchHandleUnresolved => "sketch.handle-unresolved",
             Self::SketchLineDegenerate => "sketch.line-degenerate",
             Self::SketchArcRecordConflict => "sketch.arc-record-conflict",
+            Self::SketchMarkerRecordUnread => "sketch.marker-record-unread",
+            Self::SketchSecondReading => "sketch.second-reading",
+            Self::SketchMarkerReadingUnbound => "sketch.marker-reading-unbound",
             Self::SketchPointRecordIndexBasisAssumed => "sketch.point-record-index-basis-assumed",
             Self::SketchArcRecordOffChord => "sketch.arc-record-off-chord",
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
@@ -786,6 +802,8 @@ impl SldprtLossCode {
             | Self::SketchHandleUnresolved
             | Self::SketchLineDegenerate
             | Self::SketchArcRecordConflict
+            | Self::SketchMarkerRecordUnread
+            | Self::SketchMarkerReadingUnbound
             | Self::SketchPointRecordIndexBasisAssumed
             | Self::SketchArcRecordOffChord
             | Self::SketchProfileRejected
@@ -881,6 +899,7 @@ impl SldprtLossCode {
             | Self::AssemblyConfigurationsNotTransferred
             | Self::AssemblyBomExclusionNotTransferred
             | Self::DesignFeatureUnresolved
+            | Self::SketchSecondReading
             | Self::HistoryRollbackMarkClassInferred => Severity::Info,
         }
     }
@@ -1024,6 +1043,9 @@ impl SldprtLossCode {
             | Self::SketchHandleUnresolved
             | Self::SketchLineDegenerate
             | Self::SketchArcRecordConflict
+            | Self::SketchMarkerRecordUnread
+            | Self::SketchSecondReading
+            | Self::SketchMarkerReadingUnbound
             | Self::SketchPointRecordIndexBasisAssumed
             | Self::SketchArcRecordOffChord
             | Self::SketchProfileRejected
@@ -1264,6 +1286,9 @@ mod tests {
                 "sketch.handle-unresolved",
                 "sketch.line-degenerate",
                 "sketch.arc-record-conflict",
+                "sketch.marker-record-unread",
+                "sketch.second-reading",
+                "sketch.marker-reading-unbound",
                 "sketch.point-record-index-basis-assumed",
                 "sketch.arc-record-off-chord",
                 "sketch.profile-rejected",

@@ -8,9 +8,10 @@
 //! selector-4 line with locus `05 00 01 00` that §2 reads, the endpoint and
 //! centre fields are zero-based indices into the point records of its own
 //! sketch, and the sense word selects a line, a counterclockwise arc or a
-//! clockwise arc. A marker whose record is one of these records takes its
-//! geometry from the record (`docs/formats/sldprt.md` §2, "A marker whose
-//! record is a point record or a curve record").
+//! clockwise arc. A curve record of state `0` stands outside the sketch's
+//! profile. A marker whose record is one of these records takes its geometry
+//! from the record (`docs/formats/sldprt.md` §2, "A marker whose record is a
+//! point record or a curve record").
 
 use super::{SKETCH_ANGLE_TOLERANCE, SKETCH_MARKER};
 use crate::brep::graph::LINEAR_RESOLUTION_MM;
@@ -19,12 +20,13 @@ use crate::layout::{
     sketch_record_head as head,
 };
 use crate::loss::SldprtLossCode;
+use crate::records::{FeatureInputLane, SketchInputEntity};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::f64::consts::TAU;
 
 /// The largest difference, in metres, between an arc's two endpoint radii.
@@ -53,6 +55,10 @@ const SELECTOR: usize = head::SELECTOR;
 const SELECTOR_OPEN_BIT: u16 = 1;
 /// The selector bit of a construction curve.
 const SELECTOR_CONSTRUCTION_BIT: u16 = 8;
+/// Where a record's u16 state stands.
+const STATE: usize = head::STATE;
+/// The state of a curve record outside the sketch's profile.
+const STATE_OUTSIDE_PROFILE: u16 = 0;
 /// The selectors of the curve records whose kind [`framed_curve`] and
 /// [`SketchRecordLists::listed_curve`] decide.
 const ROSTER_SELECTORS: [u16; 2] = [4, 12];
@@ -194,6 +200,14 @@ impl SketchRecordLists {
             .map(|(&offset, _)| offset)
     }
 
+    /// Whether a curve record starts at `offset`.
+    fn is_curve(&self, payload: &[u8], offset: usize) -> bool {
+        matches!(
+            self.records.get(&offset),
+            Some((_, RecordPlace::FirstCurveList | RecordPlace::LaterCurveList))
+        ) && curve_record(payload, offset)
+    }
+
     /// The form of the curve record of a sketch's first curve list that
     /// starts at `offset`, when it is in the current layout with selector `4`
     /// or `12` and [`curve_form`] reads it as a line or an arc.
@@ -235,6 +249,21 @@ impl SketchRecordLists {
             },
         })
     }
+}
+
+/// The ids of the markers of `lane` whose record is a curve record of an
+/// `sgSketch` object. Such a marker is a curve of its sketch, whatever its
+/// u32 at +17, and states no relation.
+pub(crate) fn curve_record_markers(lane: &FeatureInputLane) -> HashSet<&str> {
+    let lists = SketchRecordLists::new(&lane.native_payload);
+    lane.sketch_entities
+        .iter()
+        .filter(|marker| {
+            usize::try_from(marker.offset())
+                .is_ok_and(|offset| lists.is_curve(&lane.native_payload, offset))
+        })
+        .map(SketchInputEntity::id)
+        .collect()
 }
 
 /// The sketch whose first point record is `heads[first]`: the 14-byte header
@@ -517,6 +546,9 @@ pub(super) struct ListedEntity {
     pub(super) endpoints: Option<[usize; 2]>,
     /// The record is a curve record whose selector has bit 3 set.
     pub(super) construction: bool,
+    /// The record is a curve record of state `0`: a curve outside the
+    /// sketch's profile.
+    pub(super) outside_profile: bool,
     /// The record is a curve record on locus `05 00 01 00`
     /// ([`point_record_index_basis_loss`]).
     pub(super) index_basis_loss: Option<LossNote>,
@@ -578,9 +610,10 @@ impl std::fmt::Display for ChordConflict {
 /// point-record position: a point record's point, whatever its u32 at +17,
 /// or the line, arc or full circle of a curve record whose selector has
 /// bit 0 clear, between the point records at its indices, with selector bit 3
-/// marking construction. `owns` admits the point records a curve record may
-/// index: those of the marker's own feature object. `project` maps a
-/// coordinate pair in metres to sketch coordinates.
+/// marking construction and state `0` a curve outside the profile. `owns`
+/// admits the point records a curve record may index: those of the marker's
+/// own feature object. `project` maps a coordinate pair in metres to sketch
+/// coordinates.
 ///
 /// `None` when the offset starts no listed record, a point record writes no
 /// planar coordinates, a curve record indexes a point record `owns` does not
@@ -646,15 +679,19 @@ fn read_listed_entity(
                 .ok()?,
             endpoints: None,
             construction: false,
+            outside_profile: false,
             index_basis_loss: None,
         }));
     };
     let construction = construction_record(payload, offset);
+    let outside_profile =
+        View::u16_le_at(payload, offset.checked_add(STATE)?)? == STATE_OUTSIDE_PROFILE;
     let entity = |geometry, endpoints| {
         Some(Ok(ListedEntity {
             geometry,
             endpoints,
             construction,
+            outside_profile,
             index_basis_loss: point_record_index_basis_loss(payload, offset),
         }))
     };
