@@ -8,7 +8,7 @@ use std::io::{Cursor, Write};
 
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::report::Severity;
 use zip::CompressionMethod;
 
@@ -630,9 +630,9 @@ fn decode_frames_history_less_stream_whose_final_record_ends_at_eof() {
 
 #[test]
 fn stamped_law_intcurve_round_trips_byte_exactly() {
-    use cadmpeg_ir::geometry::{
-        LawExpression, LawFormula, ProceduralCurveDefinition, SolvedCurveGeometry,
-    };
+    use cadmpeg_ir::geometry::laws::{LawExpression, LawFormula};
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
     // Formula names exceed 255 bytes to exercise the u16 (`0x08`) length prefix
     // the serializer selects for long law text.
@@ -734,7 +734,8 @@ fn stamped_law_intcurve_round_trips_byte_exactly() {
 
 #[test]
 fn legacy_law_intcurve_round_trips_byte_exactly() {
-    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SolvedCurveGeometry};
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
     let smbh = synthetic_geometry_with_law_curve_smbh();
     let decoded = F3dCodec
@@ -811,7 +812,7 @@ fn legacy_law_intcurve_round_trips_byte_exactly() {
 
 #[test]
 fn generated_cache_first_spring_decodes_and_writes_source_less() {
-    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 
     let result = F3dCodec
         .decode(
@@ -836,7 +837,8 @@ fn generated_cache_first_spring_decodes_and_writes_source_less() {
     let layout = &definition_payload.layout().to_raw();
     let direction = definition_payload.direction();
 
-    let cadmpeg_ir::geometry::SpringLayout::CacheFirst { context, form } = layout else {
+    let cadmpeg_ir::geometry::surface_curves::SpringLayout::CacheFirst { context, form } = layout
+    else {
         panic!("expected cache-first spring layout")
     };
     assert_eq!(form.revision.get(), 23100);
@@ -870,7 +872,8 @@ fn generated_cache_first_spring_decodes_and_writes_source_less() {
 
 #[test]
 fn generated_cache_first_parametric_curve_decodes_and_writes_source_less() {
-    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SurfaceCurveFamily};
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::surface_curves::SurfaceCurveFamily;
 
     let result = F3dCodec
         .decode(
@@ -935,7 +938,7 @@ fn generated_cache_first_parametric_curve_decodes_and_writes_source_less() {
 
 #[test]
 fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
-    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 
     let result = F3dCodec
         .decode(
@@ -1036,10 +1039,10 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
                     .base_endpoints()
                     .map(|endpoint| endpoint.map(cadmpeg_ir::scalar::FiniteReal::get)),
             ),
-            cadmpeg_ir::geometry::CacheContract::from_form(
+            cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(
                 actual_payload
                     .cache_first()
-                    .map(cadmpeg_ir::geometry::CacheFirstCurveForm::to_raw),
+                    .map(cadmpeg_ir::geometry::surface_curves::CacheFirstCurveForm::to_raw),
             ),
             actual_payload.distance().get(),
             [actual_payload.shift().get(), actual_payload.scale().get()],
@@ -1126,8 +1129,9 @@ fn generated_parameterized_revision_offset_surface_round_trips() {
     let procedural = &result.ir().geometry.procedural_surfaces[0];
     // Cache form 2 stores no fit tolerance.
     assert_eq!(procedural.cache_fit_tolerance(), None);
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset(definition_payload) =
-        procedural.definition()
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Offset(
+        definition_payload,
+    ) = procedural.definition()
     else {
         panic!("expected offset surface construction")
     };
@@ -1205,14 +1209,16 @@ fn generated_revision_orthogonal_taper_decodes_sense_true() {
         .first()
         .expect("ortho construction")
         .definition();
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Taper(definition_payload) = definition
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Taper(
+        definition_payload,
+    ) = definition
     else {
         panic!("expected taper definition, got {definition:?}");
     };
     let taper = definition_payload.taper();
     assert_eq!(
         *taper,
-        cadmpeg_ir::geometry::TaperSurfaceKind::Orthogonal { sense: true }
+        cadmpeg_ir::geometry::procedural_surfaces::TaperSurfaceKind::Orthogonal { sense: true }
     );
 }
 
@@ -1284,14 +1290,15 @@ fn generated_parameterized_revision_loft_surface_round_trips() {
     let procedural = &result.ir().geometry.procedural_surfaces[0];
     // Cache form 2 stores no fit tolerance.
     assert_eq!(procedural.cache_fit_tolerance(), None);
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Loft(definition_payload) =
-        procedural.definition()
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Loft(
+        definition_payload,
+    ) = procedural.definition()
     else {
         panic!("expected a loft construction")
     };
     let revision_form = definition_payload
         .revision_form()
-        .map(cadmpeg_ir::geometry::LoftRevisionForm::to_raw);
+        .map(cadmpeg_ir::geometry::lofts::LoftRevisionForm::to_raw);
 
     let form = revision_form.as_ref().expect("revision form");
     assert_parameterized_tail(&form.cache);
@@ -1318,7 +1325,7 @@ fn revision_loft_member_omits_the_asm_integer_in_an_early_save_format_stream() {
     let member = decoded_revision_loft_member(decoded.ir());
     assert!(matches!(
         &member.form,
-        cadmpeg_ir::geometry::LoftMemberForm::Support {
+        cadmpeg_ir::geometry::lofts::LoftMemberForm::Support {
             type_code: 1,
             first_flag: false,
             asm_extension: None,
@@ -1342,7 +1349,7 @@ fn revision_loft_type_zero_member_stores_two_pcurve_slots() {
     let member = decoded_revision_loft_member(decoded.ir());
     assert!(matches!(
         &member.form,
-        cadmpeg_ir::geometry::LoftMemberForm::PcurvePair {
+        cadmpeg_ir::geometry::lofts::LoftMemberForm::PcurvePair {
             pcurve: Some(_),
             secondary_pcurve: None,
             asm_extension: Some(-1),

@@ -25,7 +25,6 @@ use crate::design::feature_project::scope_order::ScopeHistoryGraph;
 use crate::design::feature_project::scope_order::ScopeHistoryPredecessor;
 use crate::design::feature_project::scope_properties::scope_parameter_expressions;
 use crate::design::feature_project::scope_properties::scope_properties;
-use crate::design::feature_project::sheet_metal::project_base_flange;
 use crate::design::feature_project::sheet_metal::project_hem;
 use crate::design::feature_project::surface_edit::project_ruled_surface;
 use crate::design::feature_project::surface_edit::project_surface_stitch;
@@ -96,6 +95,7 @@ mod surface_untrim;
 pub(crate) mod sweep_fallback;
 pub(crate) mod thicken;
 mod thread_companions;
+mod thread_detail;
 mod unstitch;
 mod work_axes;
 
@@ -118,6 +118,7 @@ macro_rules! or_none {
 }
 
 mod base_face;
+mod base_flange;
 mod bend_lines;
 mod chamfer;
 mod coil;
@@ -648,6 +649,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     face_operands,
                     entity_selection_operands,
                     scopes,
+                    &source_ordinals,
                     &mut projection_losses,
                 )
                 .unwrap_or_else(|| {
@@ -658,6 +660,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             face_operands,
                             entity_selection_operands,
                             scopes,
+                            &source_ordinals,
+                            &mut projection_losses,
                         ),
                         pattern: PatternKind::UNRESOLVED_CIRCULAR,
                     })
@@ -669,6 +673,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         face_operands,
                         entity_selection_operands,
                         scopes,
+                        &source_ordinals,
                         &mut projection_losses,
                     )
                     .unwrap_or_else(|| {
@@ -679,6 +684,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 face_operands,
                                 entity_selection_operands,
                                 scopes,
+                                &source_ordinals,
+                                &mut projection_losses,
                             ),
                             pattern: PatternKind::UNRESOLVED_LINEAR,
                         })
@@ -690,6 +697,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     face_operands,
                     entity_selection_operands,
                     scopes,
+                    &source_ordinals,
                     &mut projection_losses,
                 )
                 .unwrap_or_else(|| {
@@ -700,6 +708,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             face_operands,
                             entity_selection_operands,
                             scopes,
+                            &source_ordinals,
+                            &mut projection_losses,
                         ),
                         pattern: PatternKind::UNRESOLVED_MIRROR,
                     })
@@ -829,6 +839,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 }
                 Some(DesignFeatureFamily::Thread) => {
                     let resolved = scope.thread_construction().and_then(|construction| {
+                        projection_losses.push(thread_detail::loss(&scope.id, construction));
                         thread_nominal_diameter(&scope.id, construction, &mut projection_losses)
                             .map(|size| (construction, size))
                     });
@@ -1020,11 +1031,12 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     } else if scope.kind()
                         == crate::records::feature::scope::DesignFeatureKind::BaseFlange
                     {
-                        project_base_flange(
+                        base_flange::project(
                             scope,
                             construction_groups,
                             placements,
                             sheet_metal_settings,
+                            &mut projection_losses,
                         )
                         .map_or_else(
                             || {
@@ -1033,8 +1045,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                     parameters: BTreeMap::new(),
                                 })
                             },
-                            |(definition, ruled)| {
-                                if !ruled {
+                            |(definition, stored_thickness)| {
+                                if stored_thickness {
                                     unruled_flange_thicknesses
                                         .set(unruled_flange_thicknesses.get() + 1);
                                 }

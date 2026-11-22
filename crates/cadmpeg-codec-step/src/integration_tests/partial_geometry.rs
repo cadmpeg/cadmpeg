@@ -6,7 +6,8 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
-use cadmpeg_ir::geometry::{DirectedParameterRange, SolvedSurfaceGeometry};
+use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::{BodyKind, EdgeCarrier, PcurveUse};
@@ -130,11 +131,11 @@ fn a_mesh_only_export_is_not_reported_as_empty() {
 #[test]
 fn a_fitting_resource_limit_is_reported_by_the_encoder() {
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
     use cadmpeg_ir::geometry::pcurve::PlacedPcurve;
-    use cadmpeg_ir::geometry::{
-        CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
-        ProceduralCurveDefinition, SupportPcurve, SurfaceCurveFamily, MAX_GEOMETRY_NESTING,
-    };
+    use cadmpeg_ir::geometry::procedural_curves::{ProceduralCurveDefinition, SupportPcurve};
+    use cadmpeg_ir::geometry::surface_curves::SurfaceCurveFamily;
+    use cadmpeg_ir::geometry::{CurveGeometry, ProceduralCurve, MAX_GEOMETRY_NESTING};
     use cadmpeg_ir::ids::ProceduralCurveId;
 
     let mut ir = unit_cube().unwrap();

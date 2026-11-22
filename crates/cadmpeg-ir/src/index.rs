@@ -418,8 +418,9 @@ fn merge_curve_use<'a>(
 mod tests {
     use super::ModelIndex;
     use crate::document::CadIr;
+    use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     use crate::geometry::{ProceduralSurface, Surface};
-    use crate::geometry::{ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
+    use crate::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
     use crate::{NativeNamespace, NativeRecord};
 
     use serde_json::Map;
@@ -485,7 +486,7 @@ mod tests {
             let mut definition = $definition;
             definition
                 .set_legacy_cache($cache_fit_tolerance.map(|value: f64| {
-                    crate::geometry::LegacyCache::try_new(value)
+                    crate::geometry::legacy_cache::LegacyCache::try_new(value)
                         .expect("admissible fit tolerance fixture")
                 }))
                 .expect("valid procedural surface cache fixture");

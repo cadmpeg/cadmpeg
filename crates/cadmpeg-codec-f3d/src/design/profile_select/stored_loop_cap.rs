@@ -41,7 +41,41 @@ pub(super) fn resolve(
     else {
         return Ok(None);
     };
-    certified_regions_bounded_by(source, &curves, scoped, states, sweep)
+    let candidate = certified_regions_bounded_by(source, &curves, scoped, states, sweep)?;
+    if candidate.is_some() {
+        return Ok(candidate);
+    }
+    let mut selections = resolution.profile_curves.iter().filter(|selection| {
+        native_stream(&selection.id) == Some(stream)
+            && selection.scope_record_index == group.scope_record_index
+            && selection.group_record_index == group.record_index
+    });
+    let Some(selection) = selections.next() else {
+        return Ok(None);
+    };
+    if selections.next().is_some() {
+        return Ok(None);
+    }
+    let [stored] = selection.groups.as_slice() else {
+        return Ok(None);
+    };
+    let [ring] = stored.region.as_slice() else {
+        return Ok(None);
+    };
+    if !ring.outer
+        || !stored.further.is_empty()
+        || ring.entries.iter().any(|entry| {
+            let [flag, ordinal, count] = entry.entry_fields;
+            flag > 1 || ordinal == 0 || ordinal > count
+        })
+    {
+        return Ok(None);
+    }
+    let named: Vec<SketchEntityId> = curves.iter().flatten().cloned().collect();
+    Ok(
+        cap_regions::joined::candidate(source, scoped, states, sweep, &named)?
+            .map(|profile| (profile, Vec::new())),
+    )
 }
 
 pub(super) fn resolve_stale(

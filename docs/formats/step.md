@@ -1787,9 +1787,28 @@ shell of the one sheet region. Curve-only and point-only sets remain
 standalone geometry. The writer states a region of a body that is not a
 solid and has no wire topology (a sheet or a general body) as a `GEOMETRIC_SET` of its faces' surfaces in a
 `GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION` when every face of the
-region is a forward face with no loops whose surface either carries no
-procedural construction and has a solved NURBS geometry, or is a rectangular
-parameter subset (written as a `RECTANGULAR_TRIMMED_SURFACE`). Other
+region is a forward face that either has no loops and a surface that carries
+no procedural construction and has a solved NURBS geometry, has no loops and
+a rectangular parameter subset surface (written as a
+`RECTANGULAR_TRIMMED_SURFACE`), or has a curve-bounded surface whose outer
+boundary its loops state and whose boundary curves pair one to one with its
+loops, each loop holding one coedge per segment
+of its boundary, on that segment's curve, in the segments' order or its
+reverse, with no face name and no coedge pcurve (a set member writes neither),
+and that no PMI annotation targets, through the face, an edge of its
+loops, a vertex of those edges, or the point of such a vertex. A set member
+states its own boundaries and no edge or vertex, and each member reads back
+in its own shell, with an edge for each boundary segment and a vertex for
+each segment's start, so a region takes the `OPEN_SHELL` path, which keeps
+the shared edge or vertex and the shell, when an edge is used twice, by one
+loop or by two; when two loops, of one face or of two, share a vertex; when
+a loop passes through a vertex twice, that is when more than two of its
+edge ends name the vertex; or when two faces share the curve of an edge. The
+writer states a curve-bounded face as a `CURVE_BOUNDED_SURFACE` on its support,
+with each boundary composite curve of the construction as a member of its
+boundary list. A boundary that shares a segment curve with the face's outer
+loop is an `OUTER_BOUNDARY_CURVE`; each other boundary is a
+`BOUNDARY_CURVE`. Other
 procedural surfaces, among them an exact NURBS whose retained ranges can make
 the written spline wider than the face and a sub-surface, which the writer
 states by its solved carrier rather than a trim to its ranges, take the

@@ -6,7 +6,8 @@ use std::f64::consts::PI;
 use std::fmt::Write as _;
 
 use cadmpeg_ir::codec::DecodeResult;
-use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SurfaceGeometry};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_measure::test_support::round_trip::measured;
 
 use crate::loss::StepLossCode;

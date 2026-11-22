@@ -368,13 +368,15 @@ fn decode_places_uniform_offset_circle_with_a_proper_transform() {
     assert!(vector_distance(ref_direction, Vector3::new(0.0, 1.0, 0.0)) < EPS_PLACED_OFFSET);
     assert!((radius - 1.5).abs() < EPS_PLACED_OFFSET);
     let procedural = &result.ir().geometry.procedural_curves[0];
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset(definition_payload_0) =
-        procedural.definition()
+    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Offset(
+        definition_payload_0,
+    ) = procedural.definition()
     else {
         panic!("expected an offset construction");
     };
     let source = definition_payload_0.source();
-    let cadmpeg_ir::geometry::OffsetSide::PlaneNormal { normal } = definition_payload_0.side()
+    let cadmpeg_ir::geometry::curve_offsets::OffsetSide::PlaneNormal { normal } =
+        definition_payload_0.side()
     else {
         panic!("expected an offset construction");
     };
@@ -580,8 +582,14 @@ fn decode_applies_declared_real_significance_to_curve_offset_normals() {
 #[test]
 fn decode_solves_a_parameter_linear_line_offset() {
     for (basis_code, expected_basis) in [
-        (1, cadmpeg_ir::geometry::CurveOffsetLawBasis::ArcLength),
-        (2, cadmpeg_ir::geometry::CurveOffsetLawBasis::Parameter),
+        (
+            1,
+            cadmpeg_ir::geometry::curve_offsets::CurveOffsetLawBasis::ArcLength,
+        ),
+        (
+            2,
+            cadmpeg_ir::geometry::curve_offsets::CurveOffsetLawBasis::Parameter,
+        ),
     ] {
         let result = IgesCodec
             .decode(
@@ -608,14 +616,15 @@ fn decode_solves_a_parameter_linear_line_offset() {
                 cadmpeg_ir::math::Point3::new(10.0, 3.0, 0.0),
             ]
         );
-        let cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset(definition_payload_0) =
-            &result.ir().geometry.procedural_curves[0].definition()
+        let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Offset(
+            definition_payload_0,
+        ) = &result.ir().geometry.procedural_curves[0].definition()
         else {
             panic!("expected a retained linear offset law");
         };
-        let Some(cadmpeg_ir::geometry::CurveOffsetRange::Variable {
+        let Some(cadmpeg_ir::geometry::curve_offsets::CurveOffsetRange::Variable {
             distance_law:
-                cadmpeg_ir::geometry::CurveOffsetDistanceLaw::Linear {
+                cadmpeg_ir::geometry::curve_offsets::CurveOffsetDistanceLaw::Linear {
                     basis,
                     distances,
                     control_range,
@@ -716,14 +725,15 @@ fn decode_solves_a_polynomial_coordinate_function_offset() {
             cadmpeg_ir::math::Point3::new(10.0, 3.0, 0.0),
         ]
     );
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset(definition_payload_0) =
-        &result.ir().geometry.procedural_curves[0].definition()
+    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Offset(
+        definition_payload_0,
+    ) = &result.ir().geometry.procedural_curves[0].definition()
     else {
         panic!("expected a retained coordinate-function offset law");
     };
-    let Some(cadmpeg_ir::geometry::CurveOffsetRange::Variable {
+    let Some(cadmpeg_ir::geometry::curve_offsets::CurveOffsetRange::Variable {
         distance_law:
-            cadmpeg_ir::geometry::CurveOffsetDistanceLaw::Coordinate {
+            cadmpeg_ir::geometry::curve_offsets::CurveOffsetDistanceLaw::Coordinate {
                 function,
                 coordinate,
                 basis,
@@ -737,7 +747,10 @@ fn decode_solves_a_polynomial_coordinate_function_offset() {
     };
     assert_eq!(function.as_str(), "iges:model:curve#D3");
     assert_eq!(coordinate.get(), 2);
-    assert_eq!(*basis, cadmpeg_ir::geometry::CurveOffsetLawBasis::Parameter);
+    assert_eq!(
+        *basis,
+        cadmpeg_ir::geometry::curve_offsets::CurveOffsetLawBasis::Parameter
+    );
     assert_eq!(function_parameter_offset.get(), 0.0);
     assert_eq!(function_parameter_scale.get(), 0.1);
     assert!(

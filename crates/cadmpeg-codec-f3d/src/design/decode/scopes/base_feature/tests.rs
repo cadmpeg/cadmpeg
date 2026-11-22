@@ -1152,6 +1152,40 @@ fn an_ordinary_frame_reads_the_flag_of_its_marked_null_reference() {
     }
 }
 
+/// The result-run flag of a decoded ordinary frame; `None` when it is refused.
+fn result_run_flag(bytes: &[u8], scope: &DesignParameterScope) -> Option<bool> {
+    super::exact_base_feature_construction_flagged(bytes, scope)
+        .unwrap()
+        .map(|(_, flagged)| flagged)
+}
+
+#[test]
+fn an_ordinary_frame_reads_the_byte_before_its_metadata_record() {
+    let (bytes, scope) = ordinary_frame(&[209], &[215], &[209], 0);
+    assert_eq!(result_run_flag(&bytes, &scope), Some(false));
+    // The byte follows the one repeated entry that ends at offset 80.
+    for (value, expected) in [(1, Some(true)), (2, None)] {
+        let mut changed = bytes.clone();
+        changed[80] = value;
+        assert_eq!(result_run_flag(&changed, &scope), expected, "byte {value}");
+    }
+    let mut changed = bytes;
+    changed[80] = 1;
+    let Some(DesignBaseFeatureConstruction::ResultBodies {
+        bodies,
+        metadata_record,
+        ..
+    }) = exact_base_feature_construction(&changed, &scope).unwrap()
+    else {
+        panic!("flagged ordinary frame reads its result bodies");
+    };
+    let body = bodies.iter().next().unwrap();
+    assert_eq!(
+        (body.entity.value, body.result.value, metadata_record),
+        (209, 220, 206)
+    );
+}
+
 #[test]
 fn a_flagged_ordinary_frame_of_65536_bodies_keeps_the_ordinary_reading() {
     let entities = (0..65_536u32)

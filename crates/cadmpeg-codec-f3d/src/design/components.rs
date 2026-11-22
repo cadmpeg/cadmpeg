@@ -2805,6 +2805,69 @@ mod tests {
     }
 
     #[test]
+    fn four_placements_of_one_document_below_a_moved_owner_keep_their_own_poses() {
+        let components = two_component_stream(Some(276));
+        let mut moved = super::IDENTITY;
+        moved[0] = [0.0, -1.0, 0.0, 3.0];
+        moved[1] = [1.0, 0.0, 0.0, 4.0];
+        let guid = "00000000-0000-4000-8000-000000000001";
+        let carriers = [carrier(100, guid, placed(1, moved), DOCUMENT_ROOT)];
+        let bodies = BTreeSet::new();
+        let sources = super::LocalComponentSources {
+            hidden_bodies: None,
+            scopes: &[],
+            occurrences: &carriers,
+            paths: &[],
+            components: &components,
+            body_bindings: &[],
+            bodies: Some(&bodies),
+            limits: cadmpeg_core::decode::ResourceLimits::default(),
+        };
+        let local = super::project_local_components(&sources).unwrap();
+        let mut table = external_owner_table(COMPONENT_ROOT);
+        let template = table.references.remove(0);
+        for placement in 0..4_u32 {
+            let mut reference = template.clone();
+            reference.id = format!("f3d:xref:reference#0-occurrence-{placement}");
+            reference.occurrence_ordinal = placement;
+            let mut matrix = super::IDENTITY;
+            matrix[0][3] = 2.0 + f64::from(placement);
+            reference.transform = Some(matrix.try_into().unwrap());
+            table.references.push(reference);
+        }
+        let projection =
+            crate::xref::project_occurrences(&table, &sources, &local.occurrences).unwrap();
+        let mut model = cadmpeg_ir::document::Model::default();
+        let local = crate::tree::Projected {
+            definitions: local.definitions.clone(),
+            occurrences: local.occurrences.clone(),
+            placements: local.placements.clone(),
+        };
+        crate::tree::assemble(&mut model, local, Some(projection));
+        let stated = crate::tree::stated(
+            crate::tree::Projected {
+                definitions: model.product_definitions.clone(),
+                occurrences: model.occurrences.clone(),
+                placements: Vec::new(),
+            },
+            None,
+        );
+        let poses = crate::tree::world_poses(&stated);
+        let parent = crate::ids::neutral_component_occurrence_id(&carriers[0].occurrence_guid);
+        // A placement matrix is relative to the component that holds it; the
+        // holder, rotated a quarter turn at 30 mm and 40 mm, carries each
+        // placement to its own place.
+        for placement in 0..4_u32 {
+            let id = crate::ids::neutral_xref_occurrence_id(0, placement);
+            let row = stated.occurrences.iter().find(|o| o.id == id).unwrap();
+            let shift = 10.0 * (2.0 + f64::from(placement));
+            assert!((row.transform.unwrap().rows()[0][3] - shift).abs() < 1e-9);
+            let world = poses[&crate::ids::nested_xref_occurrence_id(&parent, 0, placement)].rows();
+            assert!((world[0][3] - 30.0).abs() < 1e-9 && (world[1][3] - 40.0 - shift).abs() < 1e-9);
+        }
+    }
+
+    #[test]
     fn external_root_owner_stays_root_and_unresolved_owners_report_a_loss() {
         let components = two_component_stream(Some(276));
         let bodies = BTreeSet::new();

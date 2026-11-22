@@ -8,11 +8,11 @@ use cadmpeg_core::decode::ResourceLimit;
 
 use super::{finite_or_refusal, helix_differential, ModelCurveDifferential};
 use crate::features::geometry::{FinitePoint3, FiniteVector3};
+use crate::geometry::helix::{
+    HelixCurveConstruction, HelixFrame, HelixSurfaceConstruction, HelixSurfaceProfile,
+};
 use crate::geometry::nurbs::{
     NurbsCurve, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis, WeightedPole3,
-};
-use crate::geometry::{
-    HelixCurveConstruction, HelixFrame, HelixSurfaceConstruction, HelixSurfaceProfile,
 };
 use crate::math::{Point3, Vector3};
 use crate::scalar::{NonZeroReal, PositiveLength};

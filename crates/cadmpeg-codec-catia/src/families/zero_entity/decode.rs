@@ -8,10 +8,11 @@ use std::collections::HashMap;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::geometry::FinitePoint3;
-use cadmpeg_ir::geometry::{
-    pcurve::PcurveGeometry, Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide,
-    ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry, Surface, SurfaceCurveFamily,
-};
+use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::surface_curves::SurfaceCurveFamily;
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, ProceduralCurve, SolvedCurveGeometry, Surface};
 use cadmpeg_ir::ids::{
     BodyId, CurveId, EdgeId, PointId, ProceduralCurveId, RegionId, ShellId, SurfaceId, VertexId,
 };
@@ -48,7 +49,7 @@ struct WireCurveOrientation {
 struct WireSourceProcedural {
     construction_id: ProceduralCurveId,
     definition: ProceduralCurveDefinition,
-    cache_fit_tolerance: Option<cadmpeg_ir::geometry::FitTolerance>,
+    cache_fit_tolerance: Option<cadmpeg_ir::geometry::legacy_cache::FitTolerance>,
 }
 
 struct ClosedWireMember<'a> {
@@ -123,7 +124,7 @@ fn append_oriented_wire_curve(
     source_pos: usize,
     procedural: Option<(
         ProceduralCurveDefinition,
-        Option<cadmpeg_ir::geometry::FitTolerance>,
+        Option<cadmpeg_ir::geometry::legacy_cache::FitTolerance>,
     )>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let geometry = if let Some((definition, cache_fit_tolerance)) = procedural {
@@ -141,15 +142,16 @@ fn append_oriented_wire_curve(
         annotations.derived(&construction_id, "curve")?;
         annotations.derived(&construction_id, "definition")?;
         let mut definition = definition;
-        let cached = match cache_fit_tolerance.map(cadmpeg_ir::geometry::LegacyCache::new) {
-            Some(cache) => definition
-                .set_legacy_cache(cache)
-                .map_err(|error| error.to_string()),
-            None => {
-                definition.clear_legacy_cache();
-                Ok(())
-            }
-        };
+        let cached =
+            match cache_fit_tolerance.map(cadmpeg_ir::geometry::legacy_cache::LegacyCache::new) {
+                Some(cache) => definition
+                    .set_legacy_cache(cache)
+                    .map_err(|error| error.to_string()),
+                None => {
+                    definition.clear_legacy_cache();
+                    Ok(())
+                }
+            };
         let admitted = match cached {
             Ok(()) => Ok(ProceduralCurve::new(construction_id.clone(), definition)),
             Err(error) => Err(error),
@@ -1127,7 +1129,7 @@ mod tests {
     use crate::families::zero_entity::records::{ZeroEntityLoopClass, ZeroEntityLoopMembers};
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::features::geometry::FinitePoint3;
-    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
     use cadmpeg_ir::geometry::{
         nurbs::NurbsCurve, Curve, CurveGeometry, ProceduralCurve, SolvedCurveGeometry,
     };
@@ -1626,9 +1628,9 @@ mod tests {
             ProceduralCurveId::mint("catia:test:helix-construction#0".to_string())
                 .expect("identity grammar");
         let definition = ProceduralCurveDefinition::Helix(
-            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+            cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
                 [0.0, 1.0],
-                cadmpeg_ir::geometry::HelixFrame {
+                cadmpeg_ir::geometry::helix::HelixFrame {
                     center: Point3::new(0.0, 0.0, 0.0),
                     major: Vector3::new(1.0, 0.0, 0.0),
                     minor: Vector3::new(0.0, 1.0, 0.0),

@@ -9,28 +9,46 @@
 //! walk over a raw record; it is absent when a stored value is not finite.
 //! `to_raw` hands the raw values back to a reader that writes or edits them.
 
-use super::{
-    CacheContract, CacheFirstCurveForm, CacheFirstCurveParameterization, ClassicLoftProfileData,
-    CompoundComponent, CompoundLoftConstruction, CompoundLoftDirection, CompoundLoftScale,
-    CompoundLoftScaleMember, CompoundLoftScales, CompoundLoftTail, CurveOffsetDistanceLaw,
-    CurveOffsetRange, DeformableCurveData, DeformableSurfaceConstruction, DeformableSurfaceData,
-    DeformableSurfaceFrame, DeformableVectorFrame, ExactSpline, G2BlendConstruction,
-    G2BlendFirstShape, G2BlendSide, LawExpression, LawFormula, LawSurfaceConstruction,
-    LawSurfaceTail, LoftBridgeToken, LoftMemberForm, LoftPath, LoftPathCurve, LoftProfileMember,
-    LoftRevisionForm, LoftSection, LoftSectionEntry, LoftSubdata, LoftSubdataRow, LoftSubdataTable,
-    NetSurfaceConstruction, OffsetExtension, OffsetSide, ProjectionTail, RevisionCacheForm,
-    RevisionSurfaceForm, RevisionSurfaceParameterization, RollingBallConstruction,
+use super::blends::{
+    G2BlendConstruction, G2BlendFirstShape, G2BlendSide, RollingBallConstruction,
     RollingBallJetDerivative, RollingBallJetSite, RollingBallJetStation, RollingBallRadiusSelector,
     RollingBallSide, RollingBallSupportCurve, RollingBallSupportSurface, RollingBallThirdSide,
-    ScaledCompoundLoftBranch, ScaledCompoundLoftConstruction, ScaledCompoundLoftShape,
-    SkinSurfaceConstruction, SkinSurfaceLayout, SkinSurfaceProfile, SplineSurfaceParameters,
-    SpringLayout, SpringPcurve, SpringSupport, SweepRevisionForm, SweepSurfaceConstruction,
-    SweepSurfaceLayout, TaperSurfaceKind, VariableBlendCache, VariableBlendConstruction,
-    VariableBlendCrossSection, VariableBlendInterpolationPoint, VariableBlendRadii,
-    VariableBlendTerminal, VariableBlendValue, VariableBlendValuePayload, VertexBlendBoundary,
-    VertexBlendBoundaryGeometry, VertexBlendConstruction, VertexBlendTwists,
-    LAW_EXPRESSION_DEPTH_LIMIT,
+    VertexBlendBoundary, VertexBlendBoundaryGeometry, VertexBlendConstruction, VertexBlendTwists,
 };
+use super::curve_offsets::{CurveOffsetDistanceLaw, CurveOffsetRange, OffsetSide};
+use super::deformable_surfaces::{
+    DeformableSurfaceConstruction, DeformableSurfaceData, DeformableSurfaceFrame,
+    DeformableVectorFrame,
+};
+use super::laws::{
+    LawExpression, LawFormula, LawSurfaceConstruction, LawSurfaceTail, LAW_EXPRESSION_DEPTH_LIMIT,
+};
+use super::legacy_cache::CacheContract;
+use super::lofts::{
+    ClassicLoftProfileData, CompoundLoftConstruction, CompoundLoftDirection, CompoundLoftScale,
+    CompoundLoftScaleMember, CompoundLoftScales, CompoundLoftTail, LoftBridgeToken, LoftMemberForm,
+    LoftPath, LoftPathCurve, LoftProfileMember, LoftRevisionForm, LoftSection, LoftSectionEntry,
+    LoftSubdata, LoftSubdataRow, LoftSubdataTable, ScaledCompoundLoftBranch,
+    ScaledCompoundLoftConstruction, ScaledCompoundLoftShape,
+};
+use super::procedural_curves::{CompoundComponent, DeformableCurveData};
+use super::procedural_surfaces::{ExactSpline, SplineSurfaceParameters, TaperSurfaceKind};
+use super::revision_forms::{
+    RevisionCacheForm, RevisionSurfaceForm, RevisionSurfaceParameterization, VariableBlendCache,
+};
+use super::skin_surfaces::{
+    NetSurfaceConstruction, SkinSurfaceConstruction, SkinSurfaceLayout, SkinSurfaceProfile,
+};
+use super::surface_curves::{
+    CacheFirstCurveForm, CacheFirstCurveParameterization, ProjectionTail, SpringLayout,
+    SpringPcurve, SpringSupport,
+};
+use super::sweep_surfaces::{SweepRevisionForm, SweepSurfaceConstruction, SweepSurfaceLayout};
+use super::variable_blends::{
+    VariableBlendConstruction, VariableBlendCrossSection, VariableBlendInterpolationPoint,
+    VariableBlendRadii, VariableBlendTerminal, VariableBlendValue, VariableBlendValuePayload,
+};
+use super::OffsetExtension;
 use crate::features::geometry::{FinitePoint3, FiniteVector3};
 use crate::math::{Point3, Vector3};
 use crate::scalar::FiniteReal;
