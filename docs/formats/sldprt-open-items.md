@@ -1194,7 +1194,7 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Known.** `sldprt.md` §2.3 gives the codes `0` to `3`. The decoder states no length unit for a document that writes another code.
 
-**Need.** A document with no length unit gives its length dimensions no value.
+**Need.** A document that writes a code above `3` and stores a length scalar beside its Keywords display, so that their quotient names the unit.
 
 ### DI-77. The +17 value of a sketch curve record
 
