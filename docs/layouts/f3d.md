@@ -14431,6 +14431,9 @@ Spec §Records of a Sketch item · layout: byte offsets · size: 129 B
 
 Offsets are relative to the first byte after the property block.
 
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/dimensions.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 24 | `dimension_line_start` | `f64[3]` | little | spec | the dimension-line ends `P0` and `P1` |
@@ -14447,6 +14450,9 @@ Spec §Records of a Sketch item · layout: byte offsets · size: 153 B
 
 Offsets are relative to the first byte after the property block.
 
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/dimensions.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 96 | `curve_payload` | `f64[12]` | little | spec | the 96-byte analytic payload of the measured circular curve |
@@ -14460,6 +14466,9 @@ Offsets are relative to the first byte after the property block.
 Spec §Records of a Sketch item · layout: byte offsets · size: 146 B
 
 Offsets are relative to the first byte after the property block.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/dimensions.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -14479,6 +14488,9 @@ Offsets are relative to the first byte after the property block.
 Spec §Records of a Sketch item · layout: byte offsets · size: 91 B
 
 Offsets are relative to the first byte after the measurement. The LP-UTF16 prefix follows at 91. A legacy annotated dimension frame in a segment whose serializer magic is neither 1234 nor 134225558 or more stores offsets 0 to 17 only, and its LP-UTF16 prefix follows at 18.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/dimensions.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
