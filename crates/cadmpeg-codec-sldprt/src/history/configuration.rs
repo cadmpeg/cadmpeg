@@ -430,6 +430,12 @@ fn project_configuration_design_states_within(
         crate::resolved_features::bindings::bind_sweep_profile_inputs(&mut features);
         restore_configuration_tree_node_definitions(&mut features, &ir.model.features);
         let native_features = crate::records::HistoryFeatures::new(histories);
+        let base_features = ir
+            .model
+            .features
+            .iter()
+            .map(|feature| (&feature.id, feature))
+            .collect::<HashMap<_, _>>();
         let mut feature_states = BTreeMap::new();
         for mut feature in features {
             if let Some(base_definition) = base_definitions.get(&feature.id).copied() {
@@ -455,6 +461,14 @@ fn project_configuration_design_states_within(
                         );
                     });
                     result?;
+                    if let Some(base) = base_features.get(&feature.id) {
+                        inherit_hole_construction_dependencies(
+                            &mut feature,
+                            base,
+                            &base_features,
+                            &native_features,
+                        );
+                    }
                 }
             }
             let (id, state) = configuration_feature_state(feature);
@@ -992,6 +1006,42 @@ fn inherit_configuration_shared_semantics(
     inherit_configuration_hole_semantics(definition, base_definition, true)?;
 
     Ok(())
+}
+
+/// Add to a configuration hole state the dependencies of the document hole on
+/// the sketches its construction's `DissectableChildren` names, which the
+/// state inherits with the construction.
+fn inherit_hole_construction_dependencies(
+    feature: &mut cadmpeg_ir::features::Feature,
+    base: &cadmpeg_ir::features::Feature,
+    base_features: &HashMap<&FeatureId, &cadmpeg_ir::features::Feature>,
+    native_features: &crate::records::HistoryFeatures<'_>,
+) {
+    let Some(children) = base.source_properties.get("DissectableChildren") else {
+        return;
+    };
+    let children = children
+        .split(',')
+        .map(str::trim)
+        .filter(|child| !child.is_empty())
+        .collect::<Vec<_>>();
+    for dependency in &base.dependencies {
+        let Some(record) = base_features
+            .get(dependency)
+            .and_then(|feature| feature.native_ref.as_deref())
+            .and_then(|native_ref| native_features.get(native_ref))
+        else {
+            continue;
+        };
+        if children.iter().any(|child| {
+            *child == record.id
+                || child
+                    .parse::<u32>()
+                    .is_ok_and(|source| record.source_value() == Some(source))
+        }) {
+            feature.dependencies.insert(dependency.clone());
+        }
+    }
 }
 
 fn inherit_configuration_hole_semantics(
