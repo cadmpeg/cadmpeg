@@ -268,3 +268,42 @@ fn opaque_carriers_require_a_retained_partition_before_generated_accounting() {
         .to_string()
         .contains("without a retained native partition"));
 }
+
+#[test]
+fn a_driven_dimension_of_a_generated_sketch_has_a_counted_export_loss() {
+    use cadmpeg_ir::sketches::{
+        SketchConstraint, SketchConstraintDefinition, SketchConstraintDefinitionInput,
+        SketchConstraintId, SketchEntityId, SketchId, SketchLocus,
+    };
+    let mut ir = cube();
+    let point = |id: &str| SketchLocus::Entity(SketchEntityId::mint(id).unwrap());
+    ir.model.sketch_constraints.push(SketchConstraint {
+        id: SketchConstraintId::mint("synthetic:test:id#reference-dimension").unwrap(),
+        sketch: SketchId::mint("synthetic:test:id#sketch").unwrap(),
+        definition: SketchConstraintDefinition::try_from(
+            SketchConstraintDefinitionInput::DistanceLoci {
+                first: point("synthetic:test:id#first"),
+                second: point("synthetic:test:id#second"),
+                parameter: cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#width")
+                    .unwrap(),
+            },
+        )
+        .unwrap(),
+        name: None,
+        driving: Some(false),
+        active: None,
+        virtual_space: None,
+        visible: None,
+        orientation: None,
+        label_distance: None,
+        label_position: None,
+        metadata: None,
+        native_ref: None,
+    });
+    let losses = super::super::accounting::losses(&ir, false);
+    assert!(losses.iter().any(|loss| loss.code
+        == SldprtLossCode::WriterDrivenDimensionsOmitted.kind()
+        && loss
+            .message
+            .starts_with("1 driven (reference) sketch dimension record(s)")));
+}
