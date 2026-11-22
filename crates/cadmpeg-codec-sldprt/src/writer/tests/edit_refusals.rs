@@ -675,6 +675,38 @@ fn a_datum_axis_origin_edit_the_records_do_not_state_is_named() {
     assert_eq!(record(written.ir()), record(ftc_08().ir()));
 }
 
+/// A hole record the encoder cannot restate from any definition is kept for a
+/// source-property edit, and its loss says that the record cannot be restated.
+#[test]
+fn a_hole_record_the_encoder_cannot_restate_is_named_as_such() {
+    let mut decoded = EditableDecodeResult::from(ftc_06().clone());
+    {
+        let mut ir = decoded.ir_mut();
+        let hole = ir
+            .model
+            .features
+            .iter_mut()
+            .find(|feature| feature.name.as_deref() == Some("#97 (0.0059) Diameter Hole1"))
+            .unwrap();
+        hole.source_properties.insert(
+            cadmpeg_core::text::NonBlankString::new("Probe".to_owned()).unwrap(),
+            "x".into(),
+        );
+    }
+
+    let unwritten =
+        crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
+
+    assert_eq!(unwritten.len(), 1, "{unwritten:?}");
+    assert!(
+        unwritten[0].contains("cannot restate the stored record")
+            && unwritten[0].contains("source property Probe")
+            && !unwritten[0].contains("hole construction"),
+        "{}",
+        unwritten[0]
+    );
+}
+
 /// An integer value bound to a feature-input scalar is written to the scalar
 /// exactly.
 #[test]

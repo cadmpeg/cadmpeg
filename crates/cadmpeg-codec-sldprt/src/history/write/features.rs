@@ -475,6 +475,7 @@ pub(in crate::history) fn sync_neutral_features(
                 construction.into_iter().zip(unmoved).collect(),
             );
         }
+        let source_unrestatable = matches!(baseline, Some(Err(CodecError::NotImplemented(_))));
         // A stored record the encoder cannot restate from the neutral
         // definition is written as stored.
         let mut kept = false;
@@ -488,6 +489,14 @@ pub(in crate::history) fn sync_neutral_features(
                 if original.is_none_or(|original| {
                     !super::edits::construction_edits(original, feature).is_empty()
                 }) {
+                    let reason = if source_unrestatable {
+                        format!(
+                            "SLDPRT cannot restate the stored record of feature {} from its definition",
+                            feature.id
+                        )
+                    } else {
+                        reason
+                    };
                     edits.feature_unwritten(&feature.id, reason)?;
                 }
                 kept = true;
