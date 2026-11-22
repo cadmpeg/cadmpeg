@@ -421,6 +421,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-creo`     | `src/decode/sweep/profiles.rs`                     | `MAX_DEPTH`                               | `24`                                                    | 4    | Adaptive subdivision depth of one NURBS profile span. A span not flat at the limit leaves the profile unsampled, with the same refusal and loss as `MAX_NURBS_PROFILE_POINTS`.                                                                                             |
 | `cadmpeg-codec-creo`     | `src/decode/sketch/equations_coordinate.rs`        | `MAX_SIGNED_BRANCHES`                     | `4096`                                                  | 4    | Sign branches (`2^n`) of a distance component. A larger component is skipped and reports `section.sign-branches-capped`; source metadata resolves every definition with the loss sink in both build modes.                                                                    |
 | `cadmpeg-codec-sldprt`   | `src/container.rs`                                 | `MAX_UNCOMP`                              | `512 * 1024 * 1024`                                     | 2    | Declared uncompressed size of a block-marker candidate. Excess rejects the candidate and the marker walk continues.                                                                                                                                                          |
+| `cadmpeg-codec-sldprt` | `src/history/mod.rs` | `MAX_APPLICATION_LEVELS` | `16` | 2 | Element levels of one Keywords `Application` element kept in the native history. Each level is three containers of the stored record, and a CADIR document reads back 128 containers from its root. Elements below it are not kept and are counted in `history.application-nesting-cut`. |
 | `cadmpeg-codec-sldprt`   | `src/swift.rs`                                     | `MAX_DEPTH`                               | `32`                                                    | 2    | SWIFT entity nesting depth. A feature walk that meets a feature only past it leaves the targets or nominal it feeds unresolved and reports `pmi.swift-feature-walk-capped`.                                                                                                  |
 | `cadmpeg-codec-sldprt` | `src/swift/presentation.rs` | `MAX_PATH_FEATURES` | `8` | 1 | Largest feature count of a SWIFT presentation feature path. A larger count does not frame a path. |
 | `cadmpeg-codec-sldprt` | `src/swift/presentation/faces.rs` | `MAX_REFERENCE_HOPS` | `64` | 1 | Largest hop count of a presentation-archive identity reference header. A larger count does not frame a header. |
@@ -572,16 +573,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 350.
+Production `MAX_*` constants: 351.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 42    |
-| 2    | Per-input bound            | 78    |
+| 2    | Per-input bound            | 79    |
 | 3    | Session ceiling            | 0     |
 | 4    | Local work cap             | 175   |
 | N    | Not a decode bound         | 55    |
-|      | Total                      | 350   |
+|      | Total                      | 351   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -590,7 +591,7 @@ By crate: `cadmpeg-core` 3, `cadmpeg-ir` 19, `cadmpeg-parasolid` 1, `cadmpeg-mea
 `cadmpeg-protein` 3, `cadmpeg` 4, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 8,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 30,
-`cadmpeg-codec-nx` 27, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 38,
+`cadmpeg-codec-nx` 27, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 39,
 `cadmpeg-codec-catia` 80, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
 `cadmpeg-tessellate` 4.
 
