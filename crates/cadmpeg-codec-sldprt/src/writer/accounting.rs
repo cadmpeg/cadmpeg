@@ -91,6 +91,11 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
         SldprtLossCode::WriterAttributesOmitted,
         "attribute outside the sldprt namespace",
     );
+    charge(
+        crate::resolved_features::write_prepare::omitted_driven_dimensions(ir),
+        SldprtLossCode::WriterDrivenDimensionsOmitted,
+        "driven (reference) sketch dimension",
+    );
     let bound = ir
         .model
         .appearance_bindings
