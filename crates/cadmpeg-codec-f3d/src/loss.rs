@@ -822,7 +822,7 @@ pub(crate) enum F3dLossCode {
     FeatureProfilePartialEntryAssumed,
     /// Extrude profile selections took regions from the faces a cut changed, at one point per region.
     FeatureProfileCutRegionsAssumed,
-    /// A stored Cut transition certifies regions with stale curve identities.
+    /// A stored transition certifies regions with stale curve identities.
     FeatureProfileRegionIdentitiesStale,
     /// The status record of a typed profile member lists a
     /// `PROFILE_REFERENCE_LOST` record. The member contributes a region only

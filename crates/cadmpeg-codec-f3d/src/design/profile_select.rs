@@ -687,6 +687,21 @@ pub(crate) fn bind_extrude_profile_selections(
                                     }
                                     break 'feature_edit;
                                 }
+                                if let Some((selection, selection_losses)) = stored_loop_cap::resolve_stale(
+                                    group,
+                                    path_resolution,
+                                    scoped_resolution,
+                                    states,
+                                    cap_regions::compact::Sweep { operation: op, start, direction, extent },
+                                )? {
+                                    *profile = ProfileRef::Planar(selection);
+                                    for code in selection_losses {
+                                        losses.push(code.note(format!(
+                                            "Feature {} uses the closed boundary of its surviving typed profile members, certified by its stored transition, with stale curve identities retained in the native selection.", feature.id
+                                        )));
+                                    }
+                                    break 'feature_edit;
+                                }
                             }
                         }
                     }
@@ -5093,7 +5108,8 @@ fn resolve_profile_curve_regions(
 ) -> Option<cadmpeg_ir::features::profiles::ProfileRef> {
     use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef, SketchProfileRegion};
     let stream = native_stream(&group.id)?;
-    let (sketch, curves) = profile_curve_selection_candidates(group, stream, resolution, false)?;
+    let (sketch, curves) =
+        profile_curve_selection_candidates(group, stream, resolution, false, false)?;
     let source = resolution
         .sketches
         .iter()
@@ -5590,6 +5606,7 @@ fn profile_curve_selection_candidates(
     stream: &str,
     resolution: &EntitySelectionPathResolution<'_>,
     allow_compact_fragments: bool,
+    allow_missing: bool,
 ) -> Option<(
     cadmpeg_ir::sketches::SketchId,
     Vec<Vec<cadmpeg_ir::sketches::SketchEntityId>>,
@@ -5698,7 +5715,7 @@ fn profile_curve_selection_candidates(
                     }
                 })
                 .collect();
-            if ids.is_empty() {
+            if ids.is_empty() && !allow_missing {
                 return None;
             }
             candidates.push(ids);
@@ -5730,8 +5747,13 @@ fn profile_curve_selection_curves(
     cadmpeg_ir::sketches::SketchId,
     Vec<cadmpeg_ir::sketches::SketchEntityId>,
 )> {
-    let (sketch, entries) =
-        profile_curve_selection_candidates(group, stream, resolution, allow_compact_fragments)?;
+    let (sketch, entries) = profile_curve_selection_candidates(
+        group,
+        stream,
+        resolution,
+        allow_compact_fragments,
+        false,
+    )?;
     let curves = entries
         .into_iter()
         .map(|mut ids| (ids.len() == 1).then(|| ids.remove(0)))
