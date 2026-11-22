@@ -592,6 +592,8 @@ pub(crate) enum Member2d {
     Constraint,
     /// The identifier `0xFFFFFFFF`, which names no object.
     None,
+    /// A hole position by x and y.
+    Hole([f64; 2]),
 }
 
 /// The frame of a synthetic profile: origin, normal `A` and x axis `B`.
@@ -687,6 +689,11 @@ pub(crate) fn profile_group(
             Member2d::Arc(values) => (10, arc_body(values)),
             Member2d::Keypoint => (11, vec![0; 8]),
             Member2d::Constraint => (12, vec![0; 8]),
+            Member2d::Hole(values) => {
+                let mut bytes = vec![0_u8; 24 - 8];
+                put_reals(&mut bytes, 8, &values[..]);
+                (17, bytes)
+            }
         };
         stored.push(Object {
             id,
@@ -827,8 +834,12 @@ pub(crate) enum Slot {
     Empty,
     /// A `Double Value Object` with this value.
     Double(f64),
-    /// A `CLSID_JDim` with this value.
+    /// A `CLSID_JDim` with this value, in the layout with `p` = 148.
     Dim(f64),
+    /// A `CLSID_JDim` with this value, in the layout with `p` = 144.
+    DimCompact(f64),
+    /// A `CLSID_JDim` whose repeated target differs from its target.
+    DimBroken(f64),
     /// A `CLSID_JMRefAxis` through `point` along `direction`.
     Axis {
         point: [f64; 3],
@@ -851,15 +862,23 @@ const SLOT_OBJECT: u32 = 400;
 /// The profile set of [`extent_document`].
 pub(crate) const EXTENT_SET: u32 = 100;
 
+/// The bytes after the frame of a `CLSID_JDim` with `p`, the target and its
+/// repeat, and the value (§7.1).
+fn dim_body(p: usize, target: u32, repeat: u32, value: f64) -> Vec<u8> {
+    let mut body = vec![0_u8; p + 62 - 8];
+    put_words(&mut body, p - 4, &[1, target]);
+    put_words(&mut body, p + 50, &[repeat]);
+    put_reals(&mut body, p + 54, &[value]);
+    body
+}
+
 fn slot_object(id: u32, slot: Slot) -> Option<Object> {
     let (form, body) = match slot {
         Slot::Empty => return None,
         Slot::Double(value) => (14, value.to_le_bytes().to_vec()),
-        Slot::Dim(value) => {
-            let mut body = vec![0_u8; 202 - 8];
-            body.extend_from_slice(&value.to_le_bytes());
-            (15, body)
-        }
+        Slot::Dim(value) => (15, dim_body(148, 7, 7, value)),
+        Slot::DimCompact(value) => (15, dim_body(144, 7, 7, value)),
+        Slot::DimBroken(value) => (15, dim_body(148, 7, 8, value)),
         Slot::Axis { point, direction } => {
             let mut body = vec![0_u8; 61 - 8];
             body[12 - 8] = 3;
@@ -904,4 +923,103 @@ pub(crate) fn extent_document(
         }
     }
     feature_with_groups(body, extra, &EXTENT_CLASSES)
+}
+
+/// The class names of [`dressup_document`], by form.
+pub(crate) const DRESSUP_CLASSES: [&str; 20] = [
+    "ReferencePlaneObject",
+    "CLSID_JMPart",
+    "CLSID_JMGroup",
+    "CLSID_JMPartOwner",
+    "FeatureNavigatorObject",
+    "CLSID_JProfileSet",
+    "CLSID_JProfile",
+    "CLSID_JProfile2d",
+    "CLSID_JLine2d",
+    "CLSID_JCircle2d",
+    "CLSID_JArc2d",
+    "CLSID_JKeyPoint2d",
+    "CLSID_JConstraint2d",
+    "CLSID_JPatternProfile",
+    "Double Value Object",
+    "CLSID_JDim",
+    "CLSID_JMRefAxis",
+    "CLSID_JHole2d",
+    "CLSID_JMHolePropData",
+    "CLSID_JMTopologyProxy",
+];
+
+/// The parameters of a `CLSID_JMHolePropData` object (§7.2).
+#[derive(Clone, Copy)]
+pub(crate) struct HoleProps {
+    pub(crate) kind: u32,
+    pub(crate) diameter: f64,
+    pub(crate) head_diameter: f64,
+    pub(crate) head_depth: f64,
+    pub(crate) sink_degrees: f64,
+    pub(crate) depth: f64,
+}
+
+/// An object a hole, round or chamfer slot names.
+#[derive(Clone, Copy)]
+pub(crate) enum Dress {
+    /// A slot object of [`Slot`].
+    Value(Slot),
+    /// A `CLSID_JMTopologyProxy`.
+    Proxy,
+    /// A `CLSID_JMHolePropData`.
+    Props(HoleProps),
+}
+
+/// Bytes after the function name that every synthetic hole, round or chamfer
+/// block holds, so that an empty slot reads as `0`.
+const MIN_BLOCK: usize = 264;
+
+/// A document with one feature of `function` whose slots hold `slots`, each
+/// by its byte count after the function name. A `profile` is stored 68 bytes
+/// after the name, as a hole stores it. The feature is object 10.
+pub(crate) fn dressup_document(
+    function: &str,
+    profile: Option<(&ProfileFrame, &[Member2d])>,
+    slots: &[(usize, Dress)],
+) -> Vec<u8> {
+    let mut body = part_body(function);
+    let end = body.len();
+    let last = slots.iter().map(|(after, _)| *after).max().unwrap_or(0);
+    body.resize(end + last.max(MIN_BLOCK) + 4, 0);
+    let mut extra = Vec::new();
+    if let Some((frame, members)) = profile {
+        body[end + 68..end + 72].copy_from_slice(&(EXTENT_SET + 1).to_le_bytes());
+        extra = profile_group(EXTENT_SET, frame, 1, 200, members);
+    }
+    for (index, (after, dress)) in slots.iter().enumerate() {
+        let id = SLOT_OBJECT + u32::try_from(index).unwrap();
+        let object = match dress {
+            Dress::Value(slot) => slot_object(id, *slot),
+            Dress::Proxy => Some(Object {
+                id,
+                form: 19,
+                flags: 0,
+                body: vec![0; 8],
+            }),
+            Dress::Props(props) => {
+                let mut bytes = vec![0_u8; 80 - 8];
+                put_words(&mut bytes, 8, &[props.kind]);
+                put_reals(&mut bytes, 12, &[props.diameter, props.head_diameter]);
+                put_reals(&mut bytes, 28, &[props.head_depth, props.sink_degrees]);
+                put_reals(&mut bytes, 72, &[props.depth]);
+                Some(Object {
+                    id,
+                    form: 18,
+                    flags: 0,
+                    body: bytes,
+                })
+            }
+        };
+        if let Some(object) = object {
+            body[end + after..end + after + 4].copy_from_slice(&id.to_le_bytes());
+            extra.push(object);
+        }
+    }
+    feature_with_groups(body, extra, &DRESSUP_CLASSES)
 }

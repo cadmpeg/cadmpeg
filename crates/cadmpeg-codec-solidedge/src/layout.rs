@@ -192,10 +192,62 @@ pub(crate) mod double_value {
 
 /// Byte offsets for the `dimension` record.
 ///
-/// Spec §6.1. Record length 210 B.
+/// Spec §7.1. Record length 210 B.
 pub(crate) mod dimension {
-    /// Offset of `value` (`f64`, little-endian). Spec §6.1.
+    /// Offset of `marker` (`u32`, little-endian). Spec §7.1.
+    pub(crate) const MARKER: usize = 144;
+    /// Stated value of `marker` (`u32`). Spec §7.1.
+    pub(crate) const MARKER_VALUE: u32 = 0x0000_0001;
+    /// Offset of `target` (`u32`, little-endian). Spec §7.1.
+    pub(crate) const TARGET: usize = 148;
+    /// Offset of `target_repeat` (`u32`, little-endian). Spec §7.1.
+    pub(crate) const TARGET_REPEAT: usize = 198;
+    /// Offset of `value` (`f64`, little-endian). Spec §7.1.
     pub(crate) const VALUE: usize = 202;
+}
+
+/// Byte offsets for the `dimension_compact` record.
+///
+/// Spec §7.1. Record length 206 B.
+pub(crate) mod dimension_compact {
+    /// Offset of `marker` (`u32`, little-endian). Spec §7.1.
+    pub(crate) const MARKER: usize = 140;
+    /// Stated value of `marker` (`u32`). Spec §7.1.
+    pub(crate) const MARKER_VALUE: u32 = 0x0000_0001;
+    /// Offset of `target` (`u32`, little-endian). Spec §7.1.
+    pub(crate) const TARGET: usize = 144;
+    /// Offset of `target_repeat` (`u32`, little-endian). Spec §7.1.
+    pub(crate) const TARGET_REPEAT: usize = 194;
+    /// Offset of `value` (`f64`, little-endian). Spec §7.1.
+    pub(crate) const VALUE: usize = 198;
+}
+
+/// Byte offsets for the `hole_prop_data` record.
+///
+/// Spec §7.2. Record length 80 B.
+pub(crate) mod hole_prop_data {
+    /// Offset of `hole_type` (`u32`, little-endian). Spec §7.2.
+    pub(crate) const HOLE_TYPE: usize = 8;
+    /// Offset of `diameter` (`f64`, little-endian). Spec §7.2.
+    pub(crate) const DIAMETER: usize = 12;
+    /// Offset of `head_diameter` (`f64`, little-endian). Spec §7.2.
+    pub(crate) const HEAD_DIAMETER: usize = 20;
+    /// Offset of `head_depth` (`f64`, little-endian). Spec §7.2.
+    pub(crate) const HEAD_DEPTH: usize = 28;
+    /// Offset of `sink_angle` (`f64`, little-endian). Spec §7.2.
+    pub(crate) const SINK_ANGLE: usize = 36;
+    /// Offset of `depth` (`f64`, little-endian). Spec §7.2.
+    pub(crate) const DEPTH: usize = 72;
+}
+
+/// Byte offsets for the `hole_2d` record.
+///
+/// Spec §7.2. Record length 24 B.
+pub(crate) mod hole_2d {
+    /// Offset of `x` (`f64`, little-endian). Spec §7.2.
+    pub(crate) const X: usize = 8;
+    /// Offset of `y` (`f64`, little-endian). Spec §7.2.
+    pub(crate) const Y: usize = 16;
 }
 
 /// Byte offsets for the `ref_axis` record.
