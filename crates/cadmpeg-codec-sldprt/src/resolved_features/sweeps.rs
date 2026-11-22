@@ -324,14 +324,12 @@ pub(crate) fn bind(
                 if let Some(region) = circular {
                     let op = match shape {
                         SweepShape::Solid { op, .. } => *op,
-                        _ => {
-                            losses.push(SldprtLossCode::FeatureSweepMergeAssumed.note(format!(
-                                "{} reads the generated solid sweep with Merge enabled.",
-                                record.id
-                            )));
-                            SolidSweepOperation::Join
-                        }
+                        _ => SolidSweepOperation::Join,
                     };
+                    losses.push(SldprtLossCode::FeatureSweepMergeAssumed.note(format!(
+                        "{} reads the generated solid sweep with Merge enabled.",
+                        record.id
+                    )));
                     *shape = SweepShape::Solid {
                         op,
                         section: SweepSection::Generated(GeneratedSweepSection::CircularRegion {

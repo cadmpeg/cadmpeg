@@ -64,11 +64,13 @@ pub(super) fn planar(lane: &FeatureInputLane, owner: &str) -> Option<Vec<Curve<S
         if !selected_curve(&lane.native_payload, offset) {
             continue;
         }
+        // A selected marker that is not an admitted curve may be the first or last
+        // path member; ordering cannot detect its absence, so the path stays native.
         if !matches!(
             lists.record(offset),
             Some(ListedRecord::Curve { later: false, .. })
         ) {
-            continue;
+            return None;
         }
         let geometry = listed_record_geometry(
             &lane.native_payload,

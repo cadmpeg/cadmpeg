@@ -539,9 +539,9 @@ Two omitted owner-qualified construction circles have separate current/extended 
 
 **Known.** The Merge property is Boolean. An unrecognized compact word does not establish NewBody, Cut, or Intersect. A missing carrier does not establish Merge false. An owned unknown, malformed, or ambiguous operation cannot corroborate another lane.
 
-**Need.** Bind the complete Merge carrier to its owning feature with independent true and false controls.
+**Need.** Bind the complete Merge carrier to its owning feature with independent true and false controls. Retain unresolved operations when the carrier is unavailable.
 
-**Note.** A generated circular section supplies the solid construction and section diameter independently of Merge. The decoder applies Merge enabled to this construction and charges `feature.sweep-merge-assumed`.
+**Note.** A generated circular section supplies the solid construction and section diameter independently of Merge. The decoder applies the Merge reading to this construction and charges `feature.sweep-merge-assumed` whether or not a compact word resolved the shape.
 
 **Conflict.** For an unresolved solid sweep, the compact binder still projects Join when every owned lane supplies word `15`. An owned unknown, malformed or ambiguous lane prevents that consensus, but agreement on word `15` does not supply the independent Merge Boolean carrier required here.
 

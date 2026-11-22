@@ -161,3 +161,23 @@ fn an_unreadable_primary_point_keeps_its_roster_position() {
     lane.native_payload[point + 66..point + 74].copy_from_slice(&f64::NAN.to_le_bytes());
     assert!(spatial(&lane, "source").is_none());
 }
+
+#[test]
+fn an_unadmitted_selected_marker_retains_the_path() {
+    use crate::records::{SketchInputEntity, SketchInputKind};
+    let mut lane = sketch(false);
+    assert!(planar(&lane, "source").is_some());
+    // The first point record carries the selected head but is not a listed curve.
+    let offset = 32 + 4 + 6 + 4;
+    assert!(selected_curve(&lane.native_payload, offset));
+    let mut marker = SketchInputEntity::new(
+        String::from("marker#point"),
+        "lane#1",
+        9,
+        u64::try_from(offset).unwrap(),
+        SketchInputKind::LineOrCircle,
+    );
+    marker.feature_ref = Some("source".into());
+    lane.sketch_entities.push(marker);
+    assert!(planar(&lane, "source").is_none());
+}

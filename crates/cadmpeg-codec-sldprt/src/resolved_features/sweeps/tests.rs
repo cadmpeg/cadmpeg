@@ -551,3 +551,21 @@ fn a_represented_path_curve_keeps_its_model_identity() {
         matches!(input.features[1].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep { path: Some(PathRef::SketchCurves { curves, .. }), .. }) if curves.first() == Some(&id))
     );
 }
+
+#[test]
+fn a_solid_shape_with_a_circular_region_charges_the_merge_assumption() {
+    let mut input = input(false, true);
+    input.features[1].evaluation.edit(|definition, _| {
+        if let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) = definition {
+            *shape = SweepShape::Solid {
+                op: SolidSweepOperation::Join,
+                section: SweepSection::Profile(PlanarProfileRef::Native("authored-section".into())),
+                sections: Vec::new(),
+            };
+        }
+    });
+    let losses = apply(&mut input);
+    assert!(losses
+        .iter()
+        .any(|note| note.code == SldprtLossCode::FeatureSweepMergeAssumed.kind()));
+}
