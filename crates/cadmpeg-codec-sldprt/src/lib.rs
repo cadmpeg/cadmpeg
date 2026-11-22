@@ -279,7 +279,11 @@ impl SldprtCodec {
             .as_ref()
             .map(|(ctx, root)| container::scan(ctx, *root))
             .transpose()?;
-        history::write::brep_agreement::validate(ir, native.as_ref(), source_scan.as_ref())?;
+        let stale_solid = history::write::brep_agreement::stale_solid_losses(
+            ir,
+            native.as_ref(),
+            source_scan.as_ref(),
+        )?;
         Ok(Written::Semantic {
             path: if records.is_empty() {
                 SemanticPath::Synthesized
@@ -290,6 +294,7 @@ impl SldprtCodec {
             fidelity,
             coverage,
             omitted_envelope_bytes,
+            stale_solid,
         })
     }
 }
@@ -368,6 +373,9 @@ enum Written {
         fidelity: SemanticFidelity,
         coverage: ArenaDispositions,
         omitted_envelope_bytes: usize,
+        /// One loss per construction edit that shapes the solid: the output
+        /// keeps the stored solid, which shows the state before the edit.
+        stale_solid: Vec<cadmpeg_ir::report::loss::LossNote>,
     },
 }
 

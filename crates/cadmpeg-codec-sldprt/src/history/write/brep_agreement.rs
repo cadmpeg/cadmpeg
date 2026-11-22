@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Agreement between edited construction history and the output B-rep.
+//!
+//! The writer cannot regenerate a solid. An edit that shapes it is written as
+//! edited over the stored solid, and `writer.solid-stale-after-edit` names it.
 
 use std::collections::{BTreeSet, HashSet};
 use std::io::Cursor;
@@ -8,23 +11,27 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::features::parameters::DesignParameter;
-use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+use cadmpeg_ir::report::loss::LossNote;
 
 use crate::history::hash::{
     configuration_feature_state_hash, configuration_hash, configuration_parameter_value_hash,
     feature_hash, history_hash, parameter_hash,
 };
 use crate::history::parameters::project_parameters;
+use crate::loss::SldprtLossCode;
 
 use super::project_features_with_native_inputs;
 
-/// Refuse edited construction controls that this writer cannot evaluate into
-/// the output B-rep. The source history is the baseline for native edits.
-pub(crate) fn validate(
+/// The stale-solid losses of one write: one per construction edit that shapes
+/// the solid. The writer has no modeling kernel, so the output keeps the stored
+/// solid and its caches as they were before the edit, and each loss names what
+/// was edited. The source history is the baseline for native edits.
+pub(crate) fn stale_solid_losses(
     ir: &cadmpeg_ir::CadIr,
     native: Option<&crate::native::SldprtNative>,
     source_scan: Option<&crate::container::ContainerScan<'_>>,
-) -> Result<(), CodecError> {
+) -> Result<Vec<LossNote>, CodecError> {
     let hash_arena = cadmpeg_core::decode::DecodeArena::new();
     let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         source_scan.map_or(&[][..], |scan| scan.source_image),
@@ -32,11 +39,15 @@ pub(crate) fn validate(
         &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
 
+    let mut losses = Vec::new();
+    // Features a model-level loss names; the active configuration mirrors the
+    // model, so its state edit of the same feature is the same edit.
+    let mut named = HashSet::new();
     let Some(source) = ir.source.as_ref() else {
-        return Ok(());
+        return Ok(losses);
     };
     let Some(native) = native else {
-        return Ok(());
+        return Ok(losses);
     };
     let neutral_feature_baseline = source.attributes.get("sldprt_neutral_feature_local_sha256");
     let neutral_features_changed = match neutral_feature_baseline {
@@ -52,41 +63,67 @@ pub(crate) fn validate(
     };
     if neutral_features_changed {
         let baseline = project_features_with_native_inputs(native)?;
-        let mut nongeometric_construction_changed = false;
+        // Whether a construction edit, a removal or an output edit explains the
+        // changed feature digest; only an unexplained change is a tree edit.
+        let mut explained = false;
         for feature in &ir.model.features {
-            let original = baseline.iter().find(|original| original.id == feature.id);
-            if original.is_some_and(|original| {
-                original.evaluation.outputs() != feature.evaluation.outputs()
-            }) {
-                return Err(CodecError::NotImplemented(format!(
-                    "SLDPRT writer cannot regenerate B-rep after feature output edit {}",
-                    feature.id.as_str()
-                )));
-            }
-            if original.is_none_or(|original| construction_changed(original, feature)) {
+            let Some(original) = baseline.iter().find(|original| original.id == feature.id) else {
+                explained = true;
                 if feature_affects_brep(feature, &ir.model.features) {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT writer cannot regenerate B-rep after feature edit {}",
-                        feature.id.as_str()
+                    named.insert(feature.id.clone());
+                    losses.push(stale(format!(
+                        "Feature {} is added to the written history, and the stored solid does not include it.",
+                        feature_label(feature)
                     )));
                 }
-                nongeometric_construction_changed = true;
+                continue;
+            };
+            if original.evaluation.outputs() != feature.evaluation.outputs() {
+                explained = true;
+                named.insert(feature.id.clone());
+                losses.push(stale(format!(
+                    "Feature {} is written with its edited output bodies, and the stored solid shows the state before the edit.",
+                    feature_label(feature)
+                )));
+                continue;
+            }
+            if !construction_changed(original, feature) {
+                continue;
+            }
+            explained = true;
+            if feature_affects_brep(feature, &ir.model.features) {
+                let edit = match feature.suppressed {
+                    Some(true) if original.suppressed != feature.suppressed => {
+                        "written suppressed as edited"
+                    }
+                    Some(false) if original.suppressed != feature.suppressed => {
+                        "written unsuppressed as edited"
+                    }
+                    _ => "written as edited",
+                };
+                named.insert(feature.id.clone());
+                losses.push(stale(format!(
+                    "Feature {} is {edit}, and the stored solid shows the state before the edit.",
+                    feature_label(feature)
+                )));
             }
         }
-        if let Some(removed) = baseline.iter().find(|original| {
-            feature_affects_brep(original, &baseline)
-                && !ir
-                    .model
-                    .features
-                    .iter()
-                    .any(|feature| feature.id == original.id)
+        for removed in baseline.iter().filter(|original| {
+            !ir.model
+                .features
+                .iter()
+                .any(|feature| feature.id == original.id)
         }) {
-            return Err(CodecError::NotImplemented(format!(
-                "SLDPRT writer cannot regenerate B-rep after feature removal {}",
-                removed.id.as_str()
-            )));
+            explained = true;
+            if feature_affects_brep(removed, &baseline) {
+                named.insert(removed.id.clone());
+                losses.push(stale(format!(
+                    "Feature {} is removed from the written history, and the stored solid still includes it.",
+                    feature_label(removed)
+                )));
+            }
         }
-        if !nongeometric_construction_changed {
+        if !explained {
             let mut naming_only = ir.model.clone();
             for feature in &mut naming_only.features {
                 if let Some(original) = baseline.iter().find(|original| original.id == feature.id) {
@@ -97,16 +134,34 @@ pub(crate) fn validate(
                 Some(expected) => expected != &feature_hash(&hash_ctx, &naming_only)?,
                 None => false,
             };
-            if residual_change {
-                if let Some(feature) = ir
-                    .model
-                    .features
+            let shaping = ir
+                .model
+                .features
+                .iter()
+                .filter(|feature| feature_affects_brep(feature, &ir.model.features))
+                .collect::<Vec<_>>();
+            if residual_change && !shaping.is_empty() {
+                let moved = shaping
                     .iter()
-                    .find(|feature| feature_affects_brep(feature, &ir.model.features))
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT writer cannot regenerate B-rep after feature result edit {}",
-                        feature.id.as_str()
+                    .filter(|feature| {
+                        baseline
+                            .iter()
+                            .find(|original| original.id == feature.id)
+                            .is_some_and(|original| {
+                                original.ordinal != feature.ordinal
+                                    || original.native_ref != feature.native_ref
+                            })
+                    })
+                    .collect::<Vec<_>>();
+                if moved.is_empty() {
+                    losses.push(stale(
+                        "The written feature tree is edited in order or placement, and the stored solid shows the state before the edit.",
+                    ));
+                }
+                for feature in moved {
+                    losses.push(stale(format!(
+                        "Feature {} is written at its edited place in the feature tree, and the stored solid shows the state before the edit.",
+                        feature_label(feature)
                     )));
                 }
             }
@@ -124,27 +179,33 @@ pub(crate) fn validate(
         let baseline = project_parameters(&ctx, &native.feature_histories)?;
         for parameter in &ir.model.parameters {
             let original = baseline.iter().find(|original| original.id == parameter.id);
-            if original.is_none_or(|original| driving_parameter_changed(original, parameter))
-                && parameter_affects_brep(parameter, ir)
-            {
-                return Err(CodecError::NotImplemented(format!(
-                    "SLDPRT writer cannot regenerate B-rep after parameter edit {}",
-                    parameter.id.as_str()
+            if original.is_some_and(|original| !driving_parameter_changed(original, parameter)) {
+                continue;
+            }
+            let driven = driven_features(parameter, ir);
+            if !driven.is_empty() {
+                losses.push(stale(format!(
+                    "Parameter {} is written as edited ({}), and the stored solid shows {} before the edit.",
+                    parameter_label(parameter),
+                    parameter.expression,
+                    features_label(&driven)
                 )));
             }
         }
-        if let Some(removed) = baseline.iter().find(|original| {
-            parameter_affects_brep(original, ir)
-                && !ir
-                    .model
-                    .parameters
-                    .iter()
-                    .any(|parameter| parameter.id == original.id)
+        for removed in baseline.iter().filter(|original| {
+            !ir.model
+                .parameters
+                .iter()
+                .any(|parameter| parameter.id == original.id)
         }) {
-            return Err(CodecError::NotImplemented(format!(
-                "SLDPRT writer cannot regenerate B-rep after parameter removal {}",
-                removed.id.as_str()
-            )));
+            let driven = driven_features(removed, ir);
+            if !driven.is_empty() {
+                losses.push(stale(format!(
+                    "Parameter {} is removed from the written history, and the stored solid shows {} before the edit.",
+                    parameter_label(removed),
+                    features_label(&driven)
+                )));
+            }
         }
     }
     let native_history_changed = match source.attributes.get("sldprt_native_history_sha256") {
@@ -156,8 +217,8 @@ pub(crate) fn validate(
         let (ctx, _) =
             DecodeContext::from_root_bytes(scan.source_image, &arena, &DecodePolicy::service())?;
         let mut annotations = cadmpeg_ir::Annotations::default();
-        let mut losses = Vec::new();
-        let baseline = crate::history::histories(&ctx, scan, &mut annotations, &mut losses)?;
+        let mut decode_losses = Vec::new();
+        let baseline = crate::history::histories(&ctx, scan, &mut annotations, &mut decode_losses)?;
         for feature in native
             .feature_histories
             .iter()
@@ -176,59 +237,59 @@ pub(crate) fn validate(
             if modeling
                 && original.is_none_or(|original| native_construction_changed(original, feature))
             {
-                return Err(CodecError::NotImplemented(format!(
-                    "SLDPRT writer cannot regenerate B-rep after native feature edit {}",
-                    feature.id
+                losses.push(stale(format!(
+                    "Native feature {} is written as edited, and the stored solid shows the state before the edit.",
+                    native_label(feature)
                 )));
             }
         }
-        if let Some(removed) =
-            baseline
-                .iter()
-                .flat_map(|history| &history.features)
-                .find(|original| {
-                    !native
-                        .feature_histories
-                        .iter()
-                        .flat_map(|history| &history.features)
-                        .any(|feature| feature.id == original.id)
-                })
-        {
+        let removed = baseline
+            .iter()
+            .flat_map(|history| &history.features)
+            .filter(|original| {
+                !native
+                    .feature_histories
+                    .iter()
+                    .flat_map(|history| &history.features)
+                    .any(|feature| feature.id == original.id)
+            })
+            .collect::<Vec<_>>();
+        if !removed.is_empty() {
             let baseline_features = crate::history::project::project_features(&baseline)?;
-            let neutral = ir
-                .model
-                .features
-                .iter()
-                .find(|feature| feature.native_ref.as_deref() == Some(removed.id.as_str()))
-                .or_else(|| {
-                    baseline_features
-                        .iter()
-                        .find(|feature| feature.native_ref.as_deref() == Some(removed.id.as_str()))
-                });
-            if neutral.is_none_or(|feature| feature_affects_brep(feature, &baseline_features)) {
-                return Err(CodecError::NotImplemented(format!(
-                    "SLDPRT writer cannot regenerate B-rep after native feature removal {}",
-                    removed.id
-                )));
+            for removed in removed {
+                let neutral = ir
+                    .model
+                    .features
+                    .iter()
+                    .find(|feature| feature.native_ref.as_deref() == Some(removed.id.as_str()))
+                    .or_else(|| {
+                        baseline_features.iter().find(|feature| {
+                            feature.native_ref.as_deref() == Some(removed.id.as_str())
+                        })
+                    });
+                if neutral.is_none_or(|feature| feature_affects_brep(feature, &baseline_features)) {
+                    losses.push(stale(format!(
+                        "Native feature {} is removed from the written history, and the stored solid still includes it.",
+                        native_label(removed)
+                    )));
+                }
             }
         }
-    } else if native_history_changed {
-        if let Some(feature) = native
+    } else if native_history_changed
+        && native
             .feature_histories
             .iter()
             .flat_map(|history| &history.features)
-            .find(|feature| {
+            .any(|feature| {
                 ir.model.features.iter().any(|neutral| {
                     neutral.native_ref.as_deref() == Some(feature.id.as_str())
                         && feature_affects_brep(neutral, &ir.model.features)
                 })
             })
-        {
-            return Err(CodecError::NotImplemented(format!(
-                "SLDPRT writer cannot regenerate B-rep after native history edit {} without retained source image",
-                feature.id
-            )));
-        }
+    {
+        losses.push(stale(
+            "The native feature history is edited, and without the retained source image the writer cannot tell which record changed; the stored solid shows the state before the edit.",
+        ));
     }
     if let Some(expected) = source
         .attributes
@@ -236,11 +297,11 @@ pub(crate) fn validate(
     {
         if expected != &configuration_hash(&hash_ctx, &ir.model.configurations)? {
             if let Some(scan) = source_scan {
-                validate_configuration_design_edits(ir, scan)?;
+                configuration_design_edits(ir, scan, &named, &mut losses)?;
             } else {
                 let configurations = crate::writer::configurations_without_synthesized_snapshot(ir);
                 if expected == &configuration_hash(&hash_ctx, &configurations)? {
-                    return Ok(());
+                    return Ok(losses);
                 }
                 let parameter_values_changed = match source
                     .attributes
@@ -266,20 +327,21 @@ pub(crate) fn validate(
                         .iter()
                         .any(|configuration| !configuration.parameter_overrides.is_empty())
                 {
-                    return Err(CodecError::NotImplemented(
-                        "SLDPRT writer cannot regenerate B-rep after configuration design-state edit without retained source image"
-                            .into(),
+                    losses.push(stale(
+                        "A configuration design state is edited, and without the retained source image the writer cannot tell which; the stored configuration solids show the state before the edit.",
                     ));
                 }
             }
         }
     }
-    Ok(())
+    Ok(losses)
 }
 
-fn validate_configuration_design_edits(
+fn configuration_design_edits(
     ir: &cadmpeg_ir::CadIr,
     source_scan: &crate::container::ContainerScan<'_>,
+    named: &HashSet<FeatureId>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let source = crate::SldprtCodec
         .decode(
@@ -299,6 +361,10 @@ fn validate_configuration_design_edits(
             .configurations
             .iter()
             .find(|candidate| candidate.id == configuration.id);
+        let configuration_label = match configuration.name.as_deref() {
+            Some(name) => format!("\"{name}\" ({})", configuration.id.as_str()),
+            None => configuration.id.as_str().to_owned(),
+        };
         let parameter_ids = configuration
             .parameter_values
             .keys()
@@ -320,25 +386,35 @@ fn validate_configuration_design_edits(
                     || configuration.parameter_overrides.get(id)
                         != value.parameter_overrides.get(id)
             });
-            if changed {
-                let parameter = ir
-                    .model
-                    .parameters
-                    .iter()
-                    .find(|parameter| &parameter.id == id)
-                    .or_else(|| {
-                        baseline
-                            .model
-                            .parameters
-                            .iter()
-                            .find(|parameter| &parameter.id == id)
-                    });
-                if parameter.is_none_or(|parameter| parameter_affects_brep(parameter, ir)) {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT writer cannot regenerate B-rep after configuration parameter edit {} in {}",
-                        id.as_str(),
-                        configuration.id.as_str()
-                    )));
+            if !changed {
+                continue;
+            }
+            let parameter = ir
+                .model
+                .parameters
+                .iter()
+                .find(|parameter| &parameter.id == id)
+                .or_else(|| {
+                    baseline
+                        .model
+                        .parameters
+                        .iter()
+                        .find(|parameter| &parameter.id == id)
+                });
+            match parameter {
+                None => losses.push(stale(format!(
+                    "Parameter {} in configuration {configuration_label} is written as edited, and that configuration's stored solid shows the state before the edit.",
+                    id.as_str()
+                ))),
+                Some(parameter) => {
+                    let driven = driven_features(parameter, ir);
+                    if !driven.is_empty() {
+                        losses.push(stale(format!(
+                            "Parameter {} in configuration {configuration_label} is written as edited, and that configuration's stored solid shows {} before the edit.",
+                            parameter_label(parameter),
+                            features_label(&driven)
+                        )));
+                    }
                 }
             }
         }
@@ -355,31 +431,68 @@ fn validate_configuration_design_edits(
             let changed = original.is_none_or(|value| {
                 configuration.feature_states.get(id) != value.feature_states.get(id)
             });
-            if changed {
-                let current = ir.model.features.iter().find(|feature| &feature.id == id);
-                let baseline_feature = baseline
-                    .model
-                    .features
-                    .iter()
-                    .find(|feature| &feature.id == id);
-                let modeling = current
-                    .map(|feature| feature_affects_brep(feature, &ir.model.features))
-                    .or_else(|| {
-                        baseline_feature
-                            .map(|feature| feature_affects_brep(feature, &baseline.model.features))
-                    })
-                    .unwrap_or(true);
-                if modeling {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT writer cannot regenerate B-rep after configuration feature edit {} in {}",
-                        id.as_str(),
-                        configuration.id.as_str()
-                    )));
-                }
+            if !changed || (configuration.active && named.contains(id)) {
+                continue;
+            }
+            let current = ir.model.features.iter().find(|feature| &feature.id == id);
+            let baseline_feature = baseline
+                .model
+                .features
+                .iter()
+                .find(|feature| &feature.id == id);
+            let modeling = current
+                .map(|feature| feature_affects_brep(feature, &ir.model.features))
+                .or_else(|| {
+                    baseline_feature
+                        .map(|feature| feature_affects_brep(feature, &baseline.model.features))
+                })
+                .unwrap_or(true);
+            if modeling {
+                let label = current
+                    .or(baseline_feature)
+                    .map_or_else(|| id.as_str().to_owned(), feature_label);
+                losses.push(stale(format!(
+                    "Feature {label} in configuration {configuration_label} is written with its edited state, and that configuration's stored solid shows the state before the edit."
+                )));
             }
         }
     }
     Ok(())
+}
+
+/// One stale-solid loss.
+fn stale(message: impl Into<String>) -> LossNote {
+    SldprtLossCode::WriterSolidStaleAfterEdit.note(message)
+}
+
+fn feature_label(feature: &Feature) -> String {
+    match feature.name.as_deref() {
+        Some(name) if !name.trim().is_empty() => format!("\"{name}\" ({})", feature.id.as_str()),
+        _ => feature.id.as_str().to_owned(),
+    }
+}
+
+fn features_label(features: &[&Feature]) -> String {
+    let labels = features
+        .iter()
+        .map(|feature| feature_label(feature))
+        .collect::<Vec<_>>();
+    match labels.as_slice() {
+        [one] => format!("feature {one}"),
+        _ => format!("features {}", labels.join(", ")),
+    }
+}
+
+fn parameter_label(parameter: &DesignParameter) -> String {
+    format!("\"{}\" ({})", parameter.name, parameter.id.as_str())
+}
+
+fn native_label(feature: &crate::records::Feature) -> String {
+    if feature.name.trim().is_empty() {
+        feature.id.clone()
+    } else {
+        format!("\"{}\" ({})", feature.name, feature.id)
+    }
 }
 
 fn native_construction_changed(
@@ -467,41 +580,48 @@ fn driving_parameter_changed(original: &DesignParameter, current: &DesignParamet
         || original.owner != current.owner
 }
 
-fn parameter_affects_brep(parameter: &DesignParameter, ir: &cadmpeg_ir::CadIr) -> bool {
-    if parameter.owner.as_ref().is_some_and(|owner| {
-        ir.model
-            .features
-            .iter()
-            .find(|feature| &feature.id == owner)
-            .is_some_and(|feature| feature_affects_brep(feature, &ir.model.features))
-    }) {
-        return true;
-    }
+/// The features that shape the solid and that `parameter` drives, through its
+/// owner or through any parameter whose expression depends on it.
+fn driven_features<'a>(parameter: &DesignParameter, ir: &'a cadmpeg_ir::CadIr) -> Vec<&'a Feature> {
+    let mut driven = Vec::new();
+    push_shaping_owner(&mut driven, parameter.owner.as_ref(), ir);
     let mut visited = HashSet::new();
     let mut pending = vec![parameter.id.clone()];
     while let Some(id) = pending.pop() {
         if !visited.insert(id.clone()) {
             continue;
         }
-        for parameter in &ir.model.parameters {
-            if parameter.id == id
-                || parameter
+        for candidate in &ir.model.parameters {
+            if candidate.id == id
+                || candidate
                     .dependencies
                     .iter()
                     .any(|dependency| dependency == &id)
             {
-                if parameter.owner.as_ref().is_some_and(|owner| {
-                    ir.model
-                        .features
-                        .iter()
-                        .find(|feature| &feature.id == owner)
-                        .is_some_and(|feature| feature_affects_brep(feature, &ir.model.features))
-                }) {
-                    return true;
-                }
-                pending.push(parameter.id.clone());
+                push_shaping_owner(&mut driven, candidate.owner.as_ref(), ir);
+                pending.push(candidate.id.clone());
             }
         }
     }
-    false
+    driven
+}
+
+fn push_shaping_owner<'a>(
+    driven: &mut Vec<&'a Feature>,
+    owner: Option<&FeatureId>,
+    ir: &'a cadmpeg_ir::CadIr,
+) {
+    let Some(feature) = owner.and_then(|owner| {
+        ir.model
+            .features
+            .iter()
+            .find(|feature| &feature.id == owner)
+    }) else {
+        return;
+    };
+    if feature_affects_brep(feature, &ir.model.features)
+        && !driven.iter().any(|known| known.id == feature.id)
+    {
+        driven.push(feature);
+    }
 }
