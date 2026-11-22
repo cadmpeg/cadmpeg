@@ -3712,11 +3712,11 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 ### DR-760. Structured Chamfer recipes on faces with several deleted boundary edges
 
-**Question.** Which input edge does a member of a counted Chamfer group select when its standard edge recipe has a two-sided recipe structure and its primary-reference faces own several boundary edges that the operation transition deletes?
+**Question.** Which input edge does a member of a counted Chamfer group select when its standard edge recipe has a two-sided structure, complete counted-prefix operand ordinals, and primary-reference face boundaries with several transition-deleted edges?
 
-**Known.** The scope binds to one ASM history through the BREP of its edge-recipe faces, as DR-150 records. The member recipe then resolves against the input state of that history. Each side of the recipe structure lists boundary-edge counts and topology triplets of incident edges and vertices. A member whose primary-reference faces own exactly one candidate edge resolves to that edge. The other members name two faces, or a face set, whose boundaries hold eight or more edges of the transition-deleted set, and no recipe proof selects one of them. The projector retains the resolved edges and the unresolved operand identities in a partial historical selection.
+**Known.** The scope binds to one ASM history through the BREP of its edge-recipe faces, as DR-150 records. Each counted operand keeps one program ordinal across its names and their Design-reference lists. The member recipe resolves against the input state of that history. Each side lists boundary-edge counts and topology triplets of incident edges and vertices. Two groups have twenty members each and input state 62. Their transition to state 63 deletes 34 edges. Each group resolves slots 929, 980, 1033, 1037, 1047, and 1051. Fourteen members retain multiple candidate edges or unresolved reference contexts. Their primary-reference face boundaries hold eight or more transition-deleted edges. The projector retains the six resolved edges and fourteen operand identities in a partial historical selection.
 
-**Need.** A rule that maps the side entries and topology triplets of the recipe structure to one boundary edge of the input topology, or a group rule that assigns every transition-deleted edge to one member.
+**Need.** A rule that maps the side entries and topology triplets, with complete prefix-operand grouping, to one input edge, or a group assignment that distinguishes selected edges from the other transition-deleted edges.
 
 **Conflict.** None.
 
