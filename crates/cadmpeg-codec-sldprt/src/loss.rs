@@ -134,16 +134,15 @@ pub(crate) enum SldprtLossCode {
     /// A sketch line handle keeps its marker role because its two read
     /// endpoints coincide.
     SketchLineDegenerate,
-    /// A sketch line keeps the chord its marker reading gives although its
-    /// `sgSketch` curve record states an arc or another form.
+    /// A sketch line keeps the line its marker reading gives although its
+    /// `sgSketch` curve record states an arc or another form that gives no
+    /// entity.
     SketchArcRecordConflict,
-    /// A sketch handle takes its `sgSketch` curve record's geometry by
-    /// point-record position, a reading the format does not establish for a
-    /// line with an identifier trailer and that the handle's own read
-    /// endpoints contradict when they coincide.
-    SketchHandleReadingAssumed,
     /// A geometry-locus curve uses assumed zero-based sketch point-record indices.
     SketchPointRecordIndexBasisAssumed,
+    /// A sketch handle takes the arc of its `sgSketch` curve record although
+    /// the arc, placed in the sketch, ends off its endpoint point records.
+    SketchArcRecordOffChord,
     /// A compact sketch profile failed neutral profile admission.
     SketchProfileRejected,
     /// A list line with profile role 1 is marked construction from selector bit 3 (DI-77).
@@ -167,7 +166,8 @@ pub(crate) enum SldprtLossCode {
     FeatureTypedOperandIncomplete,
     /// Sweep path geometry keeps its native reference after an unreadable record.
     FeatureSweepPathRetained,
-    /// Sweep path lines use their sketch point roster.
+    /// Unframed spatial sweep path lines with an identifier trailer use their
+    /// primary-point roster.
     FeatureSweepPathRosterAssumed,
     /// A sweep path component source follows a u32 header word.
     FeatureSweepPathHeaderAssumed,
@@ -426,8 +426,8 @@ impl SldprtLossCode {
         Self::SketchHandleUnresolved,
         Self::SketchLineDegenerate,
         Self::SketchArcRecordConflict,
-        Self::SketchHandleReadingAssumed,
         Self::SketchPointRecordIndexBasisAssumed,
+        Self::SketchArcRecordOffChord,
         Self::SketchProfileRejected,
         Self::SketchListedLineConstructionAssumed,
         Self::SketchListedCurveRelationDropped,
@@ -579,8 +579,8 @@ impl SldprtLossCode {
             Self::SketchHandleUnresolved => "sketch.handle-unresolved",
             Self::SketchLineDegenerate => "sketch.line-degenerate",
             Self::SketchArcRecordConflict => "sketch.arc-record-conflict",
-            Self::SketchHandleReadingAssumed => "sketch.handle-reading-assumed",
             Self::SketchPointRecordIndexBasisAssumed => "sketch.point-record-index-basis-assumed",
+            Self::SketchArcRecordOffChord => "sketch.arc-record-off-chord",
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
             Self::SketchRelationMultiplyProjected => "sketch.relation-multiply-projected",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
@@ -762,7 +762,7 @@ impl SldprtLossCode {
             | Self::SketchLineDegenerate
             | Self::SketchArcRecordConflict
             | Self::SketchPointRecordIndexBasisAssumed
-            | Self::SketchHandleReadingAssumed
+            | Self::SketchArcRecordOffChord
             | Self::SketchProfileRejected
             | Self::SketchListedLineConstructionAssumed
             | Self::SketchListedCurveRelationDropped
@@ -993,7 +993,7 @@ impl SldprtLossCode {
             | Self::SketchLineDegenerate
             | Self::SketchArcRecordConflict
             | Self::SketchPointRecordIndexBasisAssumed
-            | Self::SketchHandleReadingAssumed
+            | Self::SketchArcRecordOffChord
             | Self::SketchProfileRejected
             | Self::SketchListedLineConstructionAssumed
             | Self::SketchListedCurveRelationDropped
@@ -1232,8 +1232,8 @@ mod tests {
                 "sketch.handle-unresolved",
                 "sketch.line-degenerate",
                 "sketch.arc-record-conflict",
-                "sketch.handle-reading-assumed",
                 "sketch.point-record-index-basis-assumed",
+                "sketch.arc-record-off-chord",
                 "sketch.profile-rejected",
                 "sketch.listed-line-construction-assumed",
                 "sketch.listed-curve-relation-dropped",
