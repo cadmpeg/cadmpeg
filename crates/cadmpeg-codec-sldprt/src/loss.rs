@@ -320,6 +320,8 @@ pub(crate) enum SldprtLossCode {
     WriterNativeStreamsOmitted,
     /// Export writes generated sketch marker records with no owning native object.
     WriterNativeSketchLaneOrphan,
+    /// Export writes native extrusions that name the faces of their body by no reference.
+    WriterNativeBodyIdentityOmitted,
     /// Export writes the named configurations with a name or partition index it assigned.
     WriterConfigurationIdentityAssigned,
     /// Export omits the named bodies.
@@ -526,6 +528,7 @@ impl SldprtLossCode {
         Self::WriterNativeSkeletonOmitted,
         Self::WriterNativeStreamsOmitted,
         Self::WriterNativeSketchLaneOrphan,
+        Self::WriterNativeBodyIdentityOmitted,
         Self::WriterConfigurationIdentityAssigned,
         Self::WriterBodiesOmitted,
         Self::WriterFaceNamesOmitted,
@@ -692,6 +695,7 @@ impl SldprtLossCode {
             Self::WriterNativeSkeletonOmitted => "writer.native-skeleton-omitted",
             Self::WriterNativeStreamsOmitted => "writer.native-streams-omitted",
             Self::WriterNativeSketchLaneOrphan => "writer.native-sketch-lane-orphan",
+            Self::WriterNativeBodyIdentityOmitted => "writer.native-body-identity-omitted",
             Self::WriterConfigurationIdentityAssigned => "writer.configuration-identity-assigned",
             Self::WriterBodiesOmitted => "writer.bodies-omitted",
             Self::WriterFaceNamesOmitted => "writer.face-names-omitted",
@@ -756,6 +760,7 @@ impl SldprtLossCode {
             Self::WriterNativeSkeletonOmitted => Severity::Warning,
             Self::WriterNativeStreamsOmitted => Severity::Warning,
             Self::WriterNativeSketchLaneOrphan => Severity::Warning,
+            Self::WriterNativeBodyIdentityOmitted => Severity::Warning,
             Self::WriterConfigurationIdentityAssigned => Severity::Warning,
             Self::WriterBodiesOmitted => Severity::Warning,
             Self::WriterFaceNamesOmitted => Severity::Warning,
@@ -919,6 +924,7 @@ impl SldprtLossCode {
             Self::WriterNativeSkeletonOmitted => LossTaxonomy::MetadataNotTransferred,
             Self::WriterNativeStreamsOmitted => LossTaxonomy::MetadataNotTransferred,
             Self::WriterNativeSketchLaneOrphan => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterNativeBodyIdentityOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterConfigurationIdentityAssigned => LossTaxonomy::MetadataNotTransferred,
             Self::WriterBodiesOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::WriterFaceNamesOmitted => LossTaxonomy::AttributesNotTransferred,
@@ -1371,6 +1377,7 @@ mod tests {
                 "writer.native-skeleton-omitted",
                 "writer.native-streams-omitted",
                 "writer.native-sketch-lane-orphan",
+                "writer.native-body-identity-omitted",
                 "writer.configuration-identity-assigned",
                 "writer.bodies-omitted",
                 "writer.face-names-omitted",

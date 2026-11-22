@@ -667,6 +667,7 @@ fn native_skeleton(
         summarized,
         lane_reason.filter(|_| lane_merged),
         !features.is_empty(),
+        extruded,
     ))
 }
 
@@ -708,6 +709,7 @@ fn native_skeleton_losses(
     summarized: Option<(String, Vec<String>)>,
     lane_follows: Option<String>,
     features: bool,
+    extruded: bool,
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     use crate::loss::SldprtLossCode;
     let mut losses = Vec::new();
@@ -752,6 +754,14 @@ fn native_skeleton_losses(
              exact walk of the stream stops at the first of them; the tree writes no sketch \
              natively because {reason}"
         )));
+    }
+    if extruded {
+        losses.push(SldprtLossCode::WriterNativeBodyIdentityOmitted.note(
+            "the native extrusions name no face of the body they make: each \
+             moPerBodyChooserData_c holds no face reference, where native parts of swVersion \
+             14000 hold two whose hops name the extrusion and a sketch entity, and the \
+             partition's faces carry no FACE_ID_2001 attribute naming the feature that made them",
+        ));
     }
     losses
 }
