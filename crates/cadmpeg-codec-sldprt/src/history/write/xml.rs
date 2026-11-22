@@ -169,13 +169,56 @@ pub(super) fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String
     tag.into()
 }
 
+/// Whether `name` is an XML name without a colon, the only element or
+/// attribute name a written Keywords text can hold.
+///
+/// The reader parses with namespaces: a colon starts a prefix, and the text
+/// declares none. The ranges are the `NameStartChar` and `NameChar`
+/// productions of XML 1.0, which the reader applies.
 pub(crate) fn valid_xml_name(name: &str) -> bool {
-    let mut bytes = name.bytes();
-    bytes
-        .next()
-        .is_some_and(|byte| byte.is_ascii_alphabetic() || matches!(byte, b'_' | b':'))
-        && bytes
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b':' | b'-' | b'.'))
+    let mut chars = name.chars();
+    chars.next().is_some_and(name_start)
+        && chars.all(|character| {
+            name_start(character)
+                || matches!(
+                    character,
+                    '-' | '.'
+                        | '0'..='9'
+                        | '\u{b7}'
+                        | '\u{300}'..='\u{36f}'
+                        | '\u{203f}'..='\u{2040}'
+                )
+        })
+}
+
+fn name_start(character: char) -> bool {
+    matches!(
+        character,
+        'A'..='Z'
+            | '_'
+            | 'a'..='z'
+            | '\u{c0}'..='\u{d6}'
+            | '\u{d8}'..='\u{f6}'
+            | '\u{f8}'..='\u{2ff}'
+            | '\u{370}'..='\u{37d}'
+            | '\u{37f}'..='\u{1fff}'
+            | '\u{200c}'..='\u{200d}'
+            | '\u{2070}'..='\u{218f}'
+            | '\u{2c00}'..='\u{2fef}'
+            | '\u{3001}'..='\u{d7ff}'
+            | '\u{f900}'..='\u{fdcf}'
+            | '\u{fdf0}'..='\u{fffd}'
+            | '\u{10000}'..='\u{effff}'
+    )
+}
+
+/// Whether an XML document can hold `character`, literally or as a character
+/// reference (the `Char` production of XML 1.0).
+pub(crate) fn xml_char(character: char) -> bool {
+    matches!(
+        character,
+        '\t' | '\n' | '\r' | '\u{20}'..='\u{d7ff}' | '\u{e000}'..='\u{fffd}' | '\u{10000}'..
+    )
 }
 
 #[cfg(test)]
