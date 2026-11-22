@@ -6,8 +6,9 @@
 //! The sketch writes its point records, then its lines and its arcs and
 //! circles as curve records, its dimensions and relations, no display or
 //! region objects, the settings block, a `moSketchChain_c` per profile chain,
-//! and the tail with the profile body and the plane. Byte runs `sldprt.md`
-//! gives as lengths only are zero.
+//! and the tail with the profile body and the plane. A sketch of one circle
+//! about the origin also holds the origin point's projection, as native ones
+//! do. Byte runs `sldprt.md` gives as lengths only are zero.
 
 use std::io::Write as _;
 
@@ -307,7 +308,8 @@ pub(super) fn profile_feature(
     relation_groups(archive, sketch, about_origin);
     archive.object("suObList");
     archive.u16(0);
-    // The in-context block of a sketch with no external references.
+    // The in-context block with no group, which native sketches holding the
+    // origin point's projection write too.
     archive.zeros(12);
     settings(archive);
     archive.object("suObList");
