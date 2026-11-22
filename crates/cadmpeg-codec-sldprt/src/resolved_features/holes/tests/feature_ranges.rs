@@ -137,6 +137,7 @@ fn own_principal_component_record_names_the_profile_plane() {
                 [context, start, payload.len()],
                 &sketch,
                 QUANTUM,
+                plane == PrincipalPlane::Top,
             )
             .unwrap();
             // Both frames read the marker pair as local sketch coordinates:
@@ -247,6 +248,7 @@ fn serialized_offset_component_uses_model_plane_and_local_markers() {
             [0, 0, payload.len()],
             &sketch,
             QUANTUM,
+            false,
         )
         .expect("local marker coordinates");
         let point = quantize(Point2::new(3.0, -2.0), QUANTUM);
@@ -269,6 +271,7 @@ fn serialized_offset_component_uses_model_plane_and_local_markers() {
             [0, 0, payload.len()],
             &sketch,
             QUANTUM,
+            false,
         )
         .unwrap();
         assert_ne!(rejected.apply(point), point.cells());
@@ -471,4 +474,55 @@ fn own_declared_front_record_keeps_the_principal_plane_in_both_numberings() {
             ))
         );
     }
+}
+
+/// A marker sketch whose own lane gives no frame takes the frame table's
+/// principal Top frame, and reads its marker pairs as Top sketch coordinates
+/// (`sldprt.md` §3.3) by the same decision: the projected entities and the
+/// readers that follow the feature's coordinate tag agree.
+#[test]
+fn table_top_frame_reads_marker_pairs_by_the_same_decision() {
+    use crate::resolved_features::compact_reference_planes::principal_sketch_frame;
+    use crate::resolved_features::grid::quantize;
+    use crate::resolved_features::transforms::feature_sketch_marker_transform;
+    use cadmpeg_ir::features::PrincipalPlane;
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+
+    let (history, lanes, position) = super::table_top_position_sketch();
+    let mut features = vec![position];
+    let (sketches, entities) = super::project_marker_sketches(&mut features, &history, &lanes);
+
+    let [sketch] = sketches.as_slice() else {
+        panic!("one marker sketch: {sketches:?}");
+    };
+    let (origin, normal, u_axis) = principal_sketch_frame(PrincipalPlane::Top);
+    assert_eq!(
+        sketch.resolved_placement().map(|(origin, normal, u_axis)| (
+            origin.get(),
+            normal.get(),
+            u_axis.get()
+        )),
+        Some((origin, normal, u_axis))
+    );
+    assert_eq!(
+        features[0]
+            .source_properties
+            .get("MarkerCoordinateSystem")
+            .map(String::as_str),
+        Some("principal-top-component")
+    );
+    let [entity] = entities.as_slice() else {
+        panic!("one point entity: {entities:?}");
+    };
+    assert!(matches!(
+        *entity.geometry.definition(),
+        SketchGeometryDefinition::Point { position } if position.get() == Point2::new(2.0, 3.0)
+    ));
+    let stored = quantize(Point2::new(2.0, 3.0), 1.0e-8);
+    assert_eq!(
+        feature_sketch_marker_transform(sketch, 1.0e-8, &features)
+            .and_then(|transform| transform.apply(stored)),
+        stored.cells()
+    );
 }

@@ -54,8 +54,9 @@ use super::sketch_lists::{
     FramedCurve, ListedReading, SketchRecordLists,
 };
 use super::transforms::{
-    record_top_marker_coordinates, sketch_frame_marker_transform, COMPACT_SKETCH_KIND,
-    LEGACY_CONFIG_SKETCH_KIND, MARKER_SKETCH_KIND,
+    component_sketch_marker_transform, record_top_marker_coordinates,
+    sketch_frame_marker_transform, COMPACT_SKETCH_KIND, LEGACY_CONFIG_SKETCH_KIND,
+    MARKER_SKETCH_KIND,
 };
 use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
@@ -754,6 +755,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 [context_start, start, end],
                 &sketch,
                 QUANTUM,
+                top_component,
             ) else {
                 continue;
             };
@@ -1657,6 +1659,7 @@ pub(crate) fn project_marker_backed_sketches(
                 [context_start, start, end],
                 &sketch,
                 QUANTUM,
+                top_component,
             ) else {
                 continue;
             };
@@ -3463,7 +3466,12 @@ fn project_detached_legacy_config_sketches(
                     profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
                     native_ref: Some(lane.id.clone()),
                 };
-                let Some(transform) = sketch_frame_marker_transform(&sketch, QUANTUM) else {
+                // The principal Top record that named the frame also names the
+                // reading of the marker pairs (`sldprt.md` §3.3).
+                let top =
+                    binding == PlaneBinding::Principal(cadmpeg_ir::features::PrincipalPlane::Top);
+                let Some(transform) = component_sketch_marker_transform(&sketch, QUANTUM, top)
+                else {
                     break 'feature_edit;
                 };
                 let project = |coordinates: [f64; 2]| {
@@ -3504,6 +3512,7 @@ fn project_detached_legacy_config_sketches(
                 sketch_entities.append(&mut entities);
                 sketches.push(sketch);
                 plane_bindings.record(&sketch_id, binding);
+                record_top_marker_coordinates(feature, top);
                 feature
                     .evaluation
                     .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
@@ -4978,8 +4987,9 @@ mod detached_legacy_sketch_tests {
         }
     }
 
-    #[test]
-    fn collinear_dimension_grammar_projects_four_lines_and_unique_points() {
+    /// A supplemental configuration lane holding one collinear dimension
+    /// sketch object of the feature `feature`.
+    fn collinear_lane() -> FeatureInputLane {
         let mut payload = vec![0; 400];
         payload[56..58].copy_from_slice(&[0x1e, 0x00]);
         payload[58..66].copy_from_slice(&(-1.0f64).to_le_bytes());
@@ -5001,7 +5011,7 @@ mod detached_legacy_sketch_tests {
                 Some([f64::from(ordinal), 1.0]),
             ));
         }
-        let lane = FeatureInputLane {
+        FeatureInputLane {
             id: "sldprt:feature-input:config-objects#1".into(),
             configuration: None,
             native_payload: payload.into(),
@@ -5016,7 +5026,12 @@ mod detached_legacy_sketch_tests {
             generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: markers,
-        };
+        }
+    }
+
+    #[test]
+    fn collinear_dimension_grammar_projects_four_lines_and_unique_points() {
+        let lane = collinear_lane();
         let refs = lane.sketch_entities.iter().collect::<Vec<_>>();
         let (_, entities) =
             legacy_config_collinear_sketch(&lane, &feature(), &sketch(), &refs, &|coordinates| {
@@ -5044,6 +5059,90 @@ mod detached_legacy_sketch_tests {
                 .count(),
             11
         );
+    }
+
+    /// A legacy configuration sketch whose frame the feature's principal Top
+    /// record gives reads its marker pairs as Top sketch coordinates
+    /// (`sldprt.md` §3.3), and its feature carries the coordinate tag that
+    /// later readers follow; a stored frame equal to the Top frame keeps the
+    /// model-component reading (open item DI-80).
+    #[test]
+    fn legacy_configuration_sketch_reads_markers_by_its_principal_top_binding() {
+        use super::super::compact_reference_planes::principal_sketch_frame;
+        use super::super::transforms::feature_sketch_marker_transform;
+        use super::SupportFrame;
+        use super::{project_detached_legacy_config_sketches, PlaneBinding, PlaneBindings};
+        use cadmpeg_ir::features::PrincipalPlane;
+
+        let histories = [FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![feature()],
+        }];
+        let lanes = [collinear_lane()];
+        for (binding, v) in [
+            (PlaneBinding::Principal(PrincipalPlane::Top), 1000.0),
+            (PlaneBinding::Stored, -1000.0),
+        ] {
+            let mut features = [cadmpeg_ir::features::Feature {
+                product_definition: None,
+                id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#legacy-profile")
+                    .unwrap(),
+                ordinal: 30,
+                name: Some("profile".into()),
+                suppressed: Some(false),
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+                source_properties: BTreeMap::new(),
+                source_tag: None,
+                source_text: None,
+                source_content: cadmpeg_ir::features::FeatureContent::default(),
+                evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+                    FeatureDefinition::Operation(FeatureOperation::Sketch {
+                        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+                    }),
+                ),
+                native_ref: Some("feature".into()),
+            }];
+            let frames = HashMap::from([(
+                "feature".to_owned(),
+                SupportFrame {
+                    frame: principal_sketch_frame(PrincipalPlane::Top),
+                    binding,
+                },
+            )]);
+            let mut sketches = Vec::new();
+            let mut entities = Vec::new();
+            project_detached_legacy_config_sketches(
+                &mut features,
+                &mut sketches,
+                &mut entities,
+                &crate::records::HistoryFeatures::new(&histories),
+                &lanes,
+                &frames,
+                &mut PlaneBindings::default(),
+            );
+            let [sketch] = sketches.as_slice() else {
+                panic!("one legacy sketch: {sketches:?}");
+            };
+            let points = entities
+                .iter()
+                .filter_map(|entity| match *entity.geometry.definition() {
+                    SketchGeometryDefinition::Point { position } => Some(position.get()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert!(points.contains(&Point2::new(8000.0, v)), "{points:?}");
+            assert!(!points.contains(&Point2::new(8000.0, -v)), "{points:?}");
+            let stored = crate::resolved_features::grid::quantize(Point2::new(8.0, 1.0), 1.0);
+            assert_eq!(
+                feature_sketch_marker_transform(sketch, 1.0, &features)
+                    .and_then(|transform| transform.apply(stored)),
+                Some((8, if v > 0.0 { 1 } else { -1 }))
+            );
+        }
     }
 
     #[test]
