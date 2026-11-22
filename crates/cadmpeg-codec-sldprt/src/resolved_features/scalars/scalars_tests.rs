@@ -153,6 +153,52 @@ fn value_only_scalar_header_ends_at_the_value() {
     assert!(scalar.operands.is_empty());
 }
 
+/// A value-only scalar named `D1` whose f64 `value` follows four zero bytes
+/// after its header, with the scalar trailer `object_id` after the value, and
+/// the offset of that value.
+fn padded_value_only_scalar(value: f64, object_id: u32) -> (Vec<u8>, usize) {
+    let mut payload = Vec::new();
+    payload.extend_from_slice(NAME_MARKER);
+    payload.push(2);
+    for unit in "D1".encode_utf16() {
+        payload.extend_from_slice(&unit.to_le_bytes());
+    }
+    payload.extend_from_slice(VALUE_ONLY_SCALAR_HEADER);
+    payload.extend_from_slice(&[0; 4]);
+    let value_offset = payload.len();
+    payload.extend_from_slice(&value.to_le_bytes());
+    let trailer = payload.len();
+    payload.resize(trailer + 24, 0);
+    payload[trailer + 3..trailer + 7].copy_from_slice(&object_id.to_le_bytes());
+    (payload, value_offset)
+}
+
+#[test]
+fn padded_value_only_scalar_value_follows_its_four_zero_bytes() {
+    for value in [0.000_76, 2.0, 0.0127] {
+        let (payload, value_offset) = padded_value_only_scalar(value, 0x465);
+        let names = decoded_names(&payload);
+        let scalars = named_scalars(&payload, "lane", &names).unwrap();
+        let [scalar] = scalars.as_slice() else {
+            panic!("expected one scalar");
+        };
+        assert_eq!(scalar.value.get(), value);
+        assert_eq!(
+            scalar.offset,
+            cadmpeg_core::decode::u64_from_index(value_offset)
+        );
+        assert_eq!(scalar.object_id, 0x465);
+        assert_eq!(scalar.role, crate::records::FeatureInputScalarRole::Native);
+        let [name] = names.as_slice() else {
+            panic!("expected one name");
+        };
+        assert_eq!(
+            super::super::parameters::value_only_scalar_offset(&payload, name),
+            Some(value_offset)
+        );
+    }
+}
+
 #[test]
 fn legacy_scalar_layout_carries_shifted_role_and_operand() {
     let mut payload = Vec::new();

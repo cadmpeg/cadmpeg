@@ -159,7 +159,7 @@ fn count_cell(payload: &[u8], value: usize) -> Option<usize> {
 
 /// Whether a count's trailer begins at `at`: three zero bytes, then the
 /// nonzero scalar object identifier, below 2^24.
-fn count_trailer(payload: &[u8], at: usize) -> bool {
+pub(super) fn count_trailer(payload: &[u8], at: usize) -> bool {
     let Some(id_at) = at.checked_add(TRAILER_OBJECT_ID) else {
         return false;
     };

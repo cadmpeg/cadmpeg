@@ -1,6 +1,6 @@
 //! Design parameter enrichment and scalar synchronisation.
 
-use super::scalars::FeatureObjectNames;
+use super::scalars::{value_only_value_offset, FeatureObjectNames};
 use super::{NAME_MARKER, VALUE_ONLY_SCALAR_HEADER};
 use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputName, FeatureInputRelationFamily,
@@ -338,9 +338,9 @@ pub(super) fn value_only_scalar_offset(payload: &[u8], name: &FeatureInputName) 
     let header_offset = name_offset
         .checked_add(NAME_MARKER.len() + 1)?
         .checked_add(name.value.encode_utf16().count().checked_mul(2)?)?;
-    (payload.get(header_offset..header_offset + VALUE_ONLY_SCALAR_HEADER.len())
-        == Some(VALUE_ONLY_SCALAR_HEADER))
-    .then_some(header_offset + VALUE_ONLY_SCALAR_HEADER.len())
+    let header_end = header_offset.checked_add(VALUE_ONLY_SCALAR_HEADER.len())?;
+    (payload.get(header_offset..header_end) == Some(VALUE_ONLY_SCALAR_HEADER))
+        .then(|| value_only_value_offset(payload, header_end))
 }
 
 fn native_scalar_matches_discrete_parameter(
