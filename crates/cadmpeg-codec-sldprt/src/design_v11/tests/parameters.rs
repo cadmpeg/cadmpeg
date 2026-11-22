@@ -542,7 +542,7 @@ fn a_length_display_is_a_literal_in_the_part_length_unit() {
 #[test]
 fn a_bare_display_takes_the_class_and_value_its_scalar_record_states() {
     use super::super::parameters::NamedScalar;
-    use crate::resolved_features::parameter_classes::StatedParameter;
+    use crate::resolved_features::parameter_classes::{StatedParameter, Statement};
     use cadmpeg_ir::design::parameter::ParameterValue;
     use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
     use cadmpeg_ir::features::parameters::ParameterValue as V10;
@@ -558,14 +558,15 @@ fn a_bare_display_takes_the_class_and_value_its_scalar_record_states() {
                 <Dimension Name="D6">30</Dimension>
                 <Dimension Name="D7">8</Dimension>
                 <Dimension Name="D8">240</Dimension>
+                <Dimension Name="D9">5</Dimension>
             </Feature>
         </Keywords>"#;
     let driving = |stated| NamedScalar {
-        stated: Some(stated),
+        stated: Some(Statement::Parameter(stated)),
         driving: true,
     };
     let shown = |stated| NamedScalar {
-        stated: Some(stated),
+        stated: Some(Statement::Parameter(stated)),
         driving: false,
     };
     let named = [
@@ -587,6 +588,14 @@ fn a_bare_display_takes_the_class_and_value_its_scalar_record_states() {
             driving(StatedParameter::Angle(30f64.to_radians())),
         ),
         ("Sketch1", "D7", shown(StatedParameter::Length(0.008))),
+        (
+            "Sketch1",
+            "D9",
+            NamedScalar {
+                stated: Some(Statement::Contested),
+                driving: true,
+            },
+        ),
     ];
     let mistyped = [(
         "Sketch1",
@@ -636,7 +645,7 @@ fn a_bare_display_takes_the_class_and_value_its_scalar_record_states() {
     let d8 = named_in(&parameters, "D8");
     assert_eq!(d8.kind, ValueKind::Quantity(Quantity::LENGTH));
     assert!((number(&d8).unwrap() - 240.0).abs() <= 1e-9);
-    for name in ["D2", "D4", "D5"] {
+    for name in ["D2", "D4", "D5", "D9"] {
         assert!(unread(&named_in(&parameters, name)), "{name}");
     }
     let note = note_of(
@@ -656,6 +665,10 @@ fn a_bare_display_takes_the_class_and_value_its_scalar_record_states() {
         (
             "D5",
             "whose feature holds no scalar under the dimension's name",
+        ),
+        (
+            "D9",
+            "whose scalars' class tokens the decoder's class sources name differently",
         ),
     ] {
         let id = named_in(&parameters, name).id;

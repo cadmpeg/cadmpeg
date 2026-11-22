@@ -61,7 +61,7 @@ use crate::records::{
     ArchiveParameterClass, Feature, FeatureHistory, FeatureInputLane, FeatureInputScalarRole,
 };
 use crate::resolved_features::assembly::ConfigurationMaps;
-use crate::resolved_features::parameter_classes::{stated_parameters, StatedParameter};
+use crate::resolved_features::parameter_classes::{stated_parameters, StatedParameter, Statement};
 
 /// The kind of a dimension whose quantity the decoder has not read: a bare
 /// number, or an expression over other parameters, that no stored record
@@ -91,11 +91,11 @@ pub(super) struct Decoded<'a> {
     pub(super) named: HashMap<(&'a str, &'a str), Vec<NamedScalar>>,
 }
 
-/// A scalar a history feature holds under a dimension's name: the parameter
-/// its record states, and whether it drives the model.
+/// A scalar a history feature holds under a dimension's name: what its
+/// record states of its parameter, and whether it drives the model.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct NamedScalar {
-    pub(super) stated: Option<StatedParameter>,
+    pub(super) stated: Option<Statement>,
     pub(super) driving: bool,
 }
 
@@ -140,7 +140,14 @@ impl<'a> Decoded<'a> {
                     driving: scalar.role == FeatureInputScalarRole::Driving,
                 });
             }
-            stated.extend(lane_stated);
+            stated.extend(
+                lane_stated
+                    .into_iter()
+                    .filter_map(|(id, statement)| match statement {
+                        Statement::Parameter(parameter) => Some((id, parameter)),
+                        Statement::Contested => None,
+                    }),
+            );
         }
         Self {
             parameters: parameters
@@ -225,9 +232,16 @@ impl<'a> Decoded<'a> {
         let mut counted = Vec::new();
         let mut reason = Unvalued::NoScalar;
         for scalar in scalars {
-            let Some(stated) = scalar.stated else {
-                reason = reason.max(Unvalued::ClassUnread);
-                continue;
+            let stated = match scalar.stated {
+                Some(Statement::Parameter(stated)) => stated,
+                Some(Statement::Contested) => {
+                    reason = reason.max(Unvalued::ClassesDisagree);
+                    continue;
+                }
+                None => {
+                    reason = reason.max(Unvalued::ClassUnread);
+                    continue;
+                }
             };
             match agrees(stated, display, unit) {
                 Some(true) => counted.push(*scalar),
@@ -245,7 +259,10 @@ impl<'a> Decoded<'a> {
         if counted.iter().any(|scalar| scalar.stated != first.stated) {
             return Err(Unvalued::Disagrees);
         }
-        first.stated.and_then(typed).ok_or(Unvalued::Disagrees)
+        let Some(Statement::Parameter(stated)) = first.stated else {
+            return Err(Unvalued::Disagrees);
+        };
+        typed(stated).ok_or(Unvalued::Disagrees)
     }
 
     /// The cache of a dimension whose kind no record states: the value of the
@@ -649,6 +666,9 @@ enum Unvalued {
     /// No record of a scalar under its name states a parameter class the
     /// decoder reads.
     ClassUnread,
+    /// The sources of the class of a scalar's class token under its name
+    /// name different classes.
+    ClassesDisagree,
     /// The dimension is a length and the part's length unit is not read.
     LengthUnit,
     /// The stored values of the scalars under its name differ from its
@@ -657,10 +677,11 @@ enum Unvalued {
 }
 
 impl Unvalued {
-    const ALL: [Self; 5] = [
+    const ALL: [Self; 6] = [
         Self::Kind,
         Self::NoScalar,
         Self::ClassUnread,
+        Self::ClassesDisagree,
         Self::LengthUnit,
         Self::Disagrees,
     ];
@@ -672,6 +693,9 @@ impl Unvalued {
             Self::NoScalar => "whose feature holds no scalar under the dimension's name",
             Self::ClassUnread => {
                 "whose scalars' records state no parameter class the decoder reads"
+            }
+            Self::ClassesDisagree => {
+                "whose scalars' class tokens the decoder's class sources name differently"
             }
             Self::LengthUnit => "lengths in a part whose length unit is not read",
             Self::Disagrees => "whose stored values differ from the display or from each other",
