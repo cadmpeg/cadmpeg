@@ -160,3 +160,21 @@ fn support_plane_sketch_kinds_read_markers_as_sketch_coordinates() {
         MarkerTransform::identity()
     );
 }
+
+/// The Front lane fallback frame is the decoder's: a marker sketch on it keeps
+/// the model-component reading, `(a, b)` at `(a, 0, b)`.
+#[test]
+fn front_lane_fallback_frame_keeps_the_model_component_reading() {
+    let frame = Frame {
+        origin: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(0.0, -1.0, 0.0),
+        u_axis: Vector3::new(0.0, 0.0, -1.0),
+    };
+    let transform = frame.transform(MARKER_SKETCH);
+    assert!(
+        frame
+            .place(transform, (10.0, 20.0))
+            .distance(Point3::new(10.0, 0.0, 20.0))
+            <= TOLERANCE
+    );
+}

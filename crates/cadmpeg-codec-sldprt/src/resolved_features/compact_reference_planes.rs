@@ -136,11 +136,7 @@ impl CompactReferencePlaneIndex {
             COMPACT_COMPONENT_PLANE_RECORD_LEN,
             |offset| *offset,
         );
-        (!records.is_empty()).then_some((
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, -1.0, 0.0),
-            Vector3::new(0.0, 0.0, -1.0),
-        ))
+        (!records.is_empty()).then(front_lane_fallback_frame)
     }
 
     fn declared_source(&self, start: usize, end: usize) -> Option<u32> {
@@ -457,6 +453,16 @@ fn compact_component_plane_frame_record(bytes: &[u8]) -> Option<PlaneFrame> {
         normal,
         u_axis,
     ))
+}
+
+/// The frame the decoder keeps for a Front reference with a deferred principal
+/// component record (`sldprt-open-items.md` SF-01). No support plane stores it.
+pub(super) fn front_lane_fallback_frame() -> PlaneFrame {
+    (
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, -1.0, 0.0),
+        Vector3::new(0.0, 0.0, -1.0),
+    )
 }
 
 /// The model-space `(origin, normal, u-axis)` frame of a principal plane

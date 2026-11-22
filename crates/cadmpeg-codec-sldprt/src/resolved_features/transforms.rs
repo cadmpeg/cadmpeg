@@ -282,7 +282,8 @@ pub(super) const LEGACY_CONFIG_SKETCH_KIND: &str = "legacy-config";
 /// support plane: the marker and compact sketches (`feature_input_sketch_frame`)
 /// and the legacy-configuration sketches (the same table, or the unique frame of
 /// their lane). `bore:` sketches take their frame from the same table but project
-/// their points from model space, so their pair is not a sketch coordinate.
+/// their points from model space, so their pair is not a sketch coordinate. The
+/// Front lane fallback frame is the decoder's, not a support plane's.
 fn placement_is_support_plane_frame(sketch: &cadmpeg_ir::sketches::Sketch) -> bool {
     sketch
         .id
@@ -297,6 +298,10 @@ fn placement_is_support_plane_frame(sketch: &cadmpeg_ir::sketches::Sketch) -> bo
             ]
             .contains(&kind)
         })
+        && sketch
+            .resolved_placement()
+            .map(|(origin, normal, u_axis)| (origin.get(), normal.get(), u_axis.get()))
+            != Some(super::compact_reference_planes::front_lane_fallback_frame())
 }
 
 /// The model-component reading of the feature-input marker pair on a frame the
