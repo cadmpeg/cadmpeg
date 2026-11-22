@@ -1621,6 +1621,44 @@ pub(crate) mod mesh_convert_output_prefix {
     pub(crate) const GUID_LENGTH: usize = 21;
 }
 
+/// Byte offsets for the `mesh_tessellate_scope_prefix` record.
+///
+/// Spec §3.1. Record length 69 B.
+///
+/// ```text
+/// The counted operand references, byte 01, the refinement selector, and four zero bytes follow the count.
+/// ```
+pub(crate) mod mesh_tessellate_scope_prefix {
+    /// Record length in bytes. Spec §3.1.
+    #[cfg(test)]
+    pub(crate) const LEN: usize = 69;
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_9: usize = 11;
+    /// Offset of `flag` (`u8`). Spec §3.1.
+    pub(crate) const FLAG: usize = 20;
+    /// Stated value of `flag` (`u8`). Spec §3.1.
+    pub(crate) const FLAG_VALUE: u8 = 0;
+    /// Offset of `edge_length_owner` (`bytes[11]`). Spec §3.1.
+    pub(crate) const EDGE_LENGTH_OWNER: usize = 21;
+    /// Offset of `operand_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERAND_COUNT: usize = 65;
+}
+
+/// Byte offsets for the `mesh_tessellate_operand` record.
+///
+/// Spec §3.1. Record length 49 B.
+pub(crate) mod mesh_tessellate_operand {
+    /// Record length in bytes. Spec §3.1.
+    #[cfg(test)]
+    pub(crate) const LEN: usize = 49;
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const GROUP_REFERENCE: usize = 21;
+    /// Offset of `body_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const BODY_REFERENCE: usize = 32;
+}
+
 /// Byte offsets for the `mesh_operation_group_prefix` record.
 ///
 /// Spec §3.1. Record length 25 B.

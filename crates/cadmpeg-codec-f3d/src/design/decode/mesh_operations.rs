@@ -15,6 +15,7 @@ pub(crate) mod combine;
 pub(crate) mod convert;
 pub(crate) mod plane_cut;
 pub(crate) mod separate;
+pub(crate) mod tessellate;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MeshOperationKind {
