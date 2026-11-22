@@ -488,7 +488,7 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 4 | `key` | `u32` | little | spec | \| 0 \| `u32` key: the index in bits 24..31, the group in bits 0..7 \| |
+| 0 | 4 | `key` | `u32` | little | spec | \| 0 \| `u32` key \| |
 | 4 | 4 | `index` | `u32` | little | spec | \| 4 \| `u32` index \| |
 | 8 | 4 | `object` | `u32` | little | spec | \| 8 \| `u32` identifier of the cluster-0 `Double Value Object` that holds the variable \| |
 | 12 | 2 | `unit` | `u16` | little | spec | \| 12 \| `u16` unit type: `1` length in metres, `16` density, `58` unitless \| |

@@ -170,6 +170,16 @@ fn truncated_table_adds_a_loss() {
 }
 
 #[test]
+fn mismatched_key_adds_a_loss() {
+    let mut table = variable_table(12, &records(0.0));
+    // Index 2 keyed as `2 << 24` instead of `1 << 24 | 2`.
+    table[8..12].copy_from_slice(&(2_u32 << 24).to_le_bytes());
+    let result = base_tab(0.002, 2.0, Some(table));
+    assert!(result.ir().design.sheet_metal_rules.is_empty());
+    assert!(codes(&result).contains(&"sheet-metal.rule-unread".to_owned()));
+}
+
+#[test]
 fn base_tab_states_a_wall() {
     let result = base_tab(0.002, 2.0, Some(variable_table(12, &records(0.0))));
     let feature = &result.ir().design.features[0];
