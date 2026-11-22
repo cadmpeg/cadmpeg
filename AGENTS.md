@@ -10,6 +10,14 @@ Writing:
   - Good: "every value decodes"; "the decoder stores the word in `outer_version`"; cut the tail.
 - Specifications state the settled format model as fact: byte semantics and invariants only. They carry no corpus, sample, experiment, or provenance qualifiers, and no research history, project status, implementation bugs, or export behavior.
 - Genuine unknowns go in `docs/formats/*-open-items.md`, with the fields Question, Known, Need, Conflict, and Note only. Finite evidence is not an unknown. When an item is settled, write the answer into the specification and delete the item in the same change.
+- An open item is self-contained. A reader who holds no CAD file must understand what is known, what is unknown, and what evidence settles it. Write the Known as a description of the stored form: the record or frame, its length, its fields and their offsets, the values they take, and how its records relate to each other. A fact that came from one file is still a fact about a form; state the form.
+  - Do not send the reader to a file. Name no file, design, or sample, and do not describe one in place of its name ("one public design", "a pulley model"). A description is the same reference with the name removed.
+  - Do not locate a fact by a value that has meaning only inside one file: an absolute record index, a stream offset, an entity identity, or a feature label such as "Extrude 3". State the relation that the values show ("the profile group is the record after the scope"), and state it only when the specification, the layout table, or the decoder confirms it. Without that confirmation, give the stored values as an instance of the form and leave the locator out.
+  - Do not count files or records as evidence ("in 70 designs", "nine such scopes"). State what the form stores and which values it takes.
+  - Write the Need as the save that would settle the question: the model to build, the control to change, and the records to compare.
+  - Bad: "In `<name>.f3d`, C-Pattern 10 stores a 220-byte frame at record 4197"; the same sentence with "a public pulley design" in place of the name.
+  - Good: "A 220-byte frame stores control `7` at offset 89 and three consecutive marked references at offsets 97, 108, and 119."
+- Text in this repository refers only to CAD files committed under `corpus/`. This holds for specifications, open items, code, tests, commit messages, pull request titles and descriptions, and review comments. Each author applies it to the text they write.
 - Fixed byte offsets live in `docs/layouts/<format>.toml`. Read the table before you derive an offset, and record a settled fixed-offset layout there. `docs/layouts/README.md` gives the check and regeneration commands.
 
 Code:

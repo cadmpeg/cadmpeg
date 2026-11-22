@@ -59,7 +59,7 @@ fn configurations<'a>(scan: &'a ContainerScan<'a>) -> impl Iterator<Item = (&'a 
 
 /// Whether `stream` is a configuration's own stream, `Contents/Config-N`,
 /// in either separator and any letter case.
-fn is_configuration(stream: &str) -> bool {
+pub(super) fn is_configuration(stream: &str) -> bool {
     const PREFIX: &str = "contents/config-";
     let stream = stream.replace('\\', "/");
     stream.len() > PREFIX.len()

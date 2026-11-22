@@ -58,7 +58,7 @@ pub(super) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<Genera
             reduction.ir(),
             reduction.writes_design(),
             reduction.writes_neutral_design(),
-            reduction.sketch_failure(),
+            reduction.fallback(),
             &mut staged,
         ) {
             Ok((coverage, losses)) => break (staged, coverage, losses),
@@ -87,7 +87,7 @@ fn writes_alone(target: &CadIr, native: &crate::native::F3dNative, stage: Stage)
             target,
             false,
             false,
-            None,
+            &design::Fallback::default(),
             &mut std::io::Cursor::new(Vec::new()),
         )
         .is_ok(),
@@ -107,14 +107,14 @@ fn encode_brep(
 
 /// Write `target` once. `write_design` states whether its native Design
 /// records are written, and `write_neutral` whether its design scope is;
-/// `sketch_failure` is why the design scope is written without its `Sketch`
-/// items. A failure names the stage that failed. Returns the arena coverage
+/// `fallback` names the parts of the design scope's form dropped after a
+/// failure. A failure names the stage that failed. Returns the arena coverage
 /// and the losses of the design scope's records.
 fn attempt<W: Write + Seek>(
     target: &CadIr,
     write_design: bool,
     write_neutral: bool,
-    sketch_failure: Option<&str>,
+    fallback: &design::Fallback,
     staged: W,
 ) -> Result<(ArenaDispositions, Vec<LossNote>), Failure> {
     #[cfg(test)]
@@ -122,7 +122,7 @@ fn attempt<W: Write + Seek>(
         return Err(Failure::neutral_design(error));
     }
     let mut neutral = if write_neutral {
-        design::plan(target, sketch_failure).map_err(Failure::neutral_design)?
+        design::plan(target, fallback).map_err(Failure::neutral_design)?
     } else {
         None
     };
@@ -226,7 +226,7 @@ fn attempt<W: Write + Seek>(
         losses.extend(unstated_visibility);
         losses.extend(cadmpeg_ir::codec::write::value_unwritable(
             "F3D",
-            "writes these bodies as visible: the Base Feature design records hold no body visibility",
+            "writes these bodies as visible: the written Design records hold no body visibility",
             target
                 .geometry
                 .bodies
@@ -358,7 +358,7 @@ fn roster_losses(target: &CadIr, native: &crate::native::F3dNative) -> Vec<LossN
     losses.extend(reduce::named_loss(
         crate::loss::F3dLossCode::WriterAppearanceOmitted,
         "appearance",
-        "a Base Feature design stores the one Protein package its asset manager names",
+        "the written design stores the one Protein package its asset manager names",
         target
             .model
             .appearances
@@ -386,7 +386,7 @@ fn roster_losses(target: &CadIr, native: &crate::native::F3dNative) -> Vec<LossN
     ];
     losses.extend(cadmpeg_ir::codec::write::native_records_omitted(
         "F3D",
-        "writes the Design stream as a Base Feature roster, whose record indices these native records would reuse",
+        "writes its own Design records, whose record indices these native records would reuse",
         kinds
             .into_iter()
             .filter(|(_, count)| *count > 0)

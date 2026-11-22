@@ -42,6 +42,86 @@ fn decode(bytes: &[u8]) -> Option<DesignComponentOccurrence> {
     })
 }
 
+fn source_matrix_frame(local_matrix: bool) -> (Vec<u8>, usize) {
+    let mut bytes = frame(
+        &[
+            ("GatedByParent", "IntrinsicMetaTypebool", "false"),
+            ("ResolutionTime", "IntrinsicMetaTypeHString", ""),
+            ("SelfGated", "IntrinsicMetaTypebool", "false"),
+        ],
+        true,
+    );
+    let guid_at = bytes
+        .windows(4)
+        .position(|value| value == 36_u32.to_le_bytes())
+        .unwrap();
+    bytes[guid_at - 1] = 0;
+    let source: [[f64; 4]; 4] = [
+        [0.0, -1.0, 0.0, 7.0],
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    bytes.splice(
+        guid_at..guid_at,
+        source.into_iter().flatten().flat_map(f64::to_le_bytes),
+    );
+    if !local_matrix {
+        let local_at = bytes.len() - 128 - 20;
+        bytes[local_at - 1] = 1;
+        bytes.drain(local_at..local_at + 128);
+    }
+    (bytes, guid_at)
+}
+
+#[test]
+fn attributed_source_matrix_keeps_the_independent_closing_placement() {
+    for local_matrix in [false, true] {
+        let (bytes, source_at) = source_matrix_frame(local_matrix);
+        let occurrence = decode(&bytes).unwrap();
+        assert_eq!(occurrence.occurrence_ordinal(), 1);
+        assert_eq!(occurrence.transform().is_some(), local_matrix);
+        if let Some(transform) = occurrence.transform() {
+            assert_eq!(transform.value.rows()[0][3], 2.0);
+            assert_eq!(transform.value.rows()[0][0], 1.0);
+        }
+        let wire = serde_json::to_value(&occurrence).unwrap();
+        assert_eq!(wire["attributed"]["guid_marker"], 0);
+        assert_eq!(wire["attributed"]["source_transform"][0][3], 7.0);
+        assert_eq!(wire["attributed"]["source_transform"][0][1], -1.0);
+        assert_eq!(wire["component_guid_offset"], source_at + 128 + 4);
+        let restored: DesignComponentOccurrence = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(restored, occurrence);
+        for field in ["guid_marker", "source_transform"] {
+            let mut incomplete = wire.clone();
+            incomplete["attributed"]
+                .as_object_mut()
+                .unwrap()
+                .remove(field);
+            assert!(serde_json::from_value::<DesignComponentOccurrence>(incomplete).is_err());
+        }
+        for length in 0..bytes.len() {
+            assert!(decode(&bytes[..length]).is_none(), "truncated at {length}");
+        }
+    }
+}
+
+#[test]
+fn attributed_source_matrix_requires_a_rigid_frame_and_complete_envelope() {
+    let (bytes, source_at) = source_matrix_frame(true);
+    for (offset, value) in [(source_at - 1, 2), (24, 0)] {
+        let mut changed = bytes.clone();
+        changed[offset] = value;
+        assert!(decode(&changed).is_none());
+    }
+    let mut nonrigid = bytes.clone();
+    nonrigid[source_at..source_at + 8].copy_from_slice(&2.0_f64.to_le_bytes());
+    assert!(decode(&nonrigid).is_none());
+    let mut extra = bytes;
+    extra.push(0);
+    assert!(decode(&extra).is_none());
+}
+
 #[test]
 fn empty_attributes_retain_the_identity_namespace_and_closing_pose() {
     let bytes = frame(&[], false);

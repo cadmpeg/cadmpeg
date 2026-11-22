@@ -19,6 +19,7 @@ fn typed_profile_validator_checks_region_offsets_and_exterior_cardinality() {
         scope_sketch_containers: Vec::new(),
         identity_record_offset: 100,
         identity_end_offset: 274,
+        lost_reference_records: Vec::new(),
         groups: vec![
             crate::records::topology::entity_selection::DesignProfileRegionGroup {
                 region: vec![
@@ -47,7 +48,7 @@ fn typed_profile_validator_checks_region_offsets_and_exterior_cardinality() {
     };
     let validate = |selection: &DesignProfileCurveSelection| {
         let mut findings = Vec::new();
-        super::super::validate_profile_curve_selection(selection, &mut findings);
+        super::super::sketches::validate_profile_curve_selection(selection, &mut findings);
         findings
     };
     assert!(validate(&selection).is_empty());
