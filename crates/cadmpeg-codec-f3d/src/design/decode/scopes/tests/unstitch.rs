@@ -8,7 +8,8 @@ use crate::design::test_support::{indexed_record_offsets_for_test, with_test_dec
 use crate::loss::F3dLossCode;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::test_support::lp_utf16;
-use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 const SCOPE_ID: &str = "f3d:Design/BulkStream.dat:scope#77";
 const GROUP_ID: &str = "f3d:Design/BulkStream.dat:group#100";

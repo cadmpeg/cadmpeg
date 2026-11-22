@@ -24,9 +24,9 @@ use crate::decode::surfaces::cylinders::{
 use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::edge_treatments::RadiusSpec;
+use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
 use cadmpeg_ir::features::FeatureDefinition as IrFeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation as IrFeatureOperation;
-use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, LinearTermination};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -1262,15 +1262,16 @@ fn opposite_reference_caps_select_one_round_envelope_axis() {
         crate::reference::ReferenceCircle::try_new(
             entity_id,
             crate::reference::ReferenceCircleCenter::Stored(
-                cadmpeg_ir::features::FinitePoint3::new(center.into())
+                cadmpeg_ir::features::geometry::FinitePoint3::new(center.into())
                     .expect("finite circle center"),
             ),
             cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
             cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(axis))
                 .expect("unit axis"),
             [
-                cadmpeg_ir::features::FinitePoint3::new(start.into()).expect("finite start"),
-                cadmpeg_ir::features::FinitePoint3::new(end.into()).expect("finite end"),
+                cadmpeg_ir::features::geometry::FinitePoint3::new(start.into())
+                    .expect("finite start"),
+                cadmpeg_ir::features::geometry::FinitePoint3::new(end.into()).expect("finite end"),
             ],
             0,
         )
@@ -1313,14 +1314,16 @@ fn coaxial_reference_circles_define_a_cylinder_frame() {
         crate::reference::ReferenceCircle::try_new(
             entity_id,
             crate::reference::ReferenceCircleCenter::Stored(
-                cadmpeg_ir::features::FinitePoint3::new(center.into()).expect("finite center"),
+                cadmpeg_ir::features::geometry::FinitePoint3::new(center.into())
+                    .expect("finite center"),
             ),
             cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
             cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(axis))
                 .expect("unit axis"),
             [
-                cadmpeg_ir::features::FinitePoint3::new(start.into()).expect("finite start"),
-                cadmpeg_ir::features::FinitePoint3::new(
+                cadmpeg_ir::features::geometry::FinitePoint3::new(start.into())
+                    .expect("finite start"),
+                cadmpeg_ir::features::geometry::FinitePoint3::new(
                     std::array::from_fn::<_, 3, _>(|lane| 2.0 * center[lane] - start[lane]).into(),
                 )
                 .expect("on-circle end"),
@@ -1353,8 +1356,9 @@ fn coaxial_reference_circles_define_a_cylinder_frame() {
         cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("positive radius"),
         second.axis(),
         [
-            cadmpeg_ir::features::FinitePoint3::new([2.0, 5.0, 4.0].into()).expect("start"),
-            cadmpeg_ir::features::FinitePoint3::new([4.0, 5.0, 4.0].into()).expect("end"),
+            cadmpeg_ir::features::geometry::FinitePoint3::new([2.0, 5.0, 4.0].into())
+                .expect("start"),
+            cadmpeg_ir::features::geometry::FinitePoint3::new([4.0, 5.0, 4.0].into()).expect("end"),
         ],
         second.offset,
     )

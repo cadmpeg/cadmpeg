@@ -73,13 +73,12 @@ pub(super) fn project_work_point_construction(
     parameters: &[(u32, &DesignParameter)],
     edge_operands: &[DesignEdgeOperand],
     scope_ids: &HashMap<(&str, u32), cadmpeg_ir::features::FeatureId>,
-) -> Option<cadmpeg_ir::features::DatumPointConstruction> {
+) -> Option<cadmpeg_ir::features::datums::DatumPointConstruction> {
     use crate::records::feature::work_geometry::{
         DesignWorkPointInput, DesignWorkPointInputCarrier, DesignWorkPointRuleForm,
     };
-    use cadmpeg_ir::features::{
-        DatumPlaneReference, DatumPointConstruction, EdgeSelection, VertexSelection,
-    };
+    use cadmpeg_ir::features::datums::{DatumPlaneReference, DatumPointConstruction};
+    use cadmpeg_ir::features::selections::{EdgeSelection, VertexSelection};
 
     let stream = native_stream(&scope.id)?;
     let edge = |input: &DesignWorkPointInput| -> Option<EdgeSelection> {
@@ -93,7 +92,7 @@ pub(super) fn project_work_point_construction(
         let feature_id = crate::ids::neutral_feature_id(scope);
         let prefix = crate::ids::feature_input_prefix(&feature_id, state_id);
         Some(
-            match cadmpeg_ir::features::EdgeSelection::historical(
+            match cadmpeg_ir::features::selections::EdgeSelection::historical(
                 crate::ids::feature_input_topology_id(&feature_id, state_id),
                 vec![crate::ids::history_input_edge_id(&prefix, edge_slot)],
                 operand.id.clone(),
@@ -198,9 +197,8 @@ pub(super) fn project_work_plane(
     scope: &DesignParameterScope,
     transform: [[f64; 4]; 4],
 ) -> cadmpeg_ir::features::FeatureDefinition {
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, UnresolvedFamily, VertexSelection,
-    };
+    use cadmpeg_ir::features::selections::VertexSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, UnresolvedFamily};
 
     let Some(frame) = work_plane_datum_frame(transform) else {
         return FeatureDefinition::Operation(FeatureOperation::Unresolved {
@@ -236,9 +234,9 @@ pub(super) fn project_work_plane(
             family: UnresolvedFamily::DatumPlane,
         });
     };
-    let Ok(points) =
-        cadmpeg_ir::features::ThreePointSelection::try_from(Box::new([first, second, third]))
-    else {
+    let Ok(points) = cadmpeg_ir::features::profiles::ThreePointSelection::try_from(Box::new([
+        first, second, third,
+    ])) else {
         return FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumPlane,
         });
@@ -256,9 +254,8 @@ pub(crate) fn bind_work_point_sketch_point_constructions(
     sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
     spatial_sketch_entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
 ) {
-    use cadmpeg_ir::features::{
-        DatumPointConstruction, FeatureDefinition, FeatureOperation, SketchPointSelection,
-    };
+    use cadmpeg_ir::features::datums::{DatumPointConstruction, SketchPointSelection};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     for feature in features.iter_mut() {
         feature.evaluation.edit(|definition, _| 'feature_edit: {

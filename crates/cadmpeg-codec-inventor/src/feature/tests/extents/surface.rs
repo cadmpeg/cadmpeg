@@ -114,7 +114,7 @@ fn through_all_surface_extrusion_is_a_new_sheet_with_a_selected_profile() {
     assert_eq!(*solid, Some(false));
     assert!(matches!(
         start,
-        cadmpeg_ir::features::ExtrudeStart::ProfilePlane {}
+        cadmpeg_ir::features::extents::ExtrudeStart::ProfilePlane {}
     ));
     assert!(matches!(
         extent,
@@ -127,8 +127,8 @@ fn through_all_surface_extrusion_is_a_new_sheet_with_a_selected_profile() {
     ));
     assert!(matches!(
         profile,
-        cadmpeg_ir::features::ProfileRef::Planar(
-            cadmpeg_ir::features::PlanarProfileRef::SketchSelection { .. }
+        cadmpeg_ir::features::profiles::ProfileRef::Planar(
+            cadmpeg_ir::features::profiles::PlanarProfileRef::SketchSelection { .. }
         )
     ));
 }

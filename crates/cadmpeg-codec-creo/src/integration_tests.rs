@@ -19,10 +19,10 @@ use std::sync::LazyLock;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
-use cadmpeg_ir::features::{
-    BooleanOp, ExtrudeExtent, FeatureDefinition, FeatureOperation, LinearTermination,
-    PlanarProfileRef,
-};
+use cadmpeg_ir::features::extents::{ExtrudeExtent, LinearTermination};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::PlanarProfileRef;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
 use cadmpeg_ir::topology::BodyKind;

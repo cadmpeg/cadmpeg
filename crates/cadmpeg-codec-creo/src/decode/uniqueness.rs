@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::ProfileRef;
+use cadmpeg_ir::features::profiles::ProfileRef;
 
 use crate::container::ContainerScan;
 

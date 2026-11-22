@@ -6,9 +6,9 @@ mod vertex_tolerance;
 use crate::loss::F3dLossCode;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::geometry::{
-    curve_payloads::SpringCurvePayload, ProceduralCurveDefinition, SpringLayout,
-};
+use cadmpeg_ir::geometry::curve_payloads::SpringCurvePayload;
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::surface_curves::SpringLayout;
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
@@ -74,7 +74,7 @@ pub(super) fn admit(
             spring.support_context(),
             curve
                 .cache_fit_tolerance()
-                .map(cadmpeg_ir::geometry::FitTolerance::get),
+                .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         )?;
         if sides.is_empty() {
             continue;

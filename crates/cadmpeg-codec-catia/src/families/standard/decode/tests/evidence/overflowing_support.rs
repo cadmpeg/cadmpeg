@@ -67,8 +67,12 @@ fn a_native_endpoint_pair_reads_from_the_finite_support_when_its_partner_overflo
             Point::new(
                 PointId::mint(format!("catia:test:point#overflow-{index}"))
                     .expect("identity grammar"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(angle.cos(), angle.sin(), 0.0))
-                    .expect("a finite position is a point"),
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                    angle.cos(),
+                    angle.sin(),
+                    0.0,
+                ))
+                .expect("a finite position is a point"),
                 None,
             )
         })
@@ -110,8 +114,12 @@ fn a_native_endpoint_pair_reads_from_the_finite_support_when_its_placed_partner_
             Point::new(
                 PointId::mint(format!("catia:test:point#placed-overflow-{index}"))
                     .expect("identity grammar"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(angle.cos(), angle.sin(), 0.0))
-                    .expect("a finite position is a point"),
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                    angle.cos(),
+                    angle.sin(),
+                    0.0,
+                ))
+                .expect("a finite position is a point"),
                 None,
             )
         })
@@ -142,7 +150,7 @@ fn native_support_helpers_preserve_session_depth_refusal() {
     });
     let points = [Point::new(
         PointId::mint("catia:test:point#depth-trigger").expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
             .expect("finite depth-trigger point"),
         None,
     )];

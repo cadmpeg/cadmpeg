@@ -27,8 +27,9 @@ use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::{
     construction::DesignConstructionOperandGroupFrame, extrude_selection::DesignOperandRole,
 };
+use cadmpeg_ir::features::selections::FaceSelection;
 use cadmpeg_ir::features::FeatureOperation;
-use cadmpeg_ir::features::{FaceSelection, Feature, FeatureDefinition};
+use cadmpeg_ir::features::{Feature, FeatureDefinition};
 use std::collections::HashMap;
 
 fn tested_surface_extend_operation(
@@ -617,9 +618,9 @@ pub(super) fn fixed_kind_tail_operations(
     assert!(matches!(
         crate::design::feature_project::thicken::project_thicken(&thicken_scope, &[], std::slice::from_ref(&thicken_group), &mut Vec::new()),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Thicken {
-            faces: cadmpeg_ir::features::FaceSelection::Native(native),
+            faces: cadmpeg_ir::features::selections::FaceSelection::Native(native),
             thickness: Some(actual_thickness),
-            side: Some(cadmpeg_ir::features::ThickenSide::Reverse), .. })) if (native == "thicken-group") && actual_thickness.get() == 10.0
+            side: Some(cadmpeg_ir::features::direct_edit::ThickenSide::Reverse), .. })) if (native == "thicken-group") && actual_thickness.get() == 10.0
     ));
     let mut bounded_face_thicken_group = thicken_group.clone();
     bounded_face_thicken_group.operand_role =
@@ -629,7 +630,7 @@ pub(super) fn fixed_kind_tail_operations(
     assert!(matches!(
         crate::design::feature_project::thicken::project_thicken(&thicken_scope, &[], std::slice::from_ref(&bounded_face_thicken_group), &mut Vec::new()),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Thicken {
-            faces: cadmpeg_ir::features::FaceSelection::Native(native),
+            faces: cadmpeg_ir::features::selections::FaceSelection::Native(native),
             ..
         })) if native == "thicken-group"
     ));
@@ -672,7 +673,7 @@ pub(super) fn fixed_kind_tail_operations(
     assert!(matches!(
         crate::design::feature_project::direct_face::project_shell(&shell_scope, &[], std::slice::from_ref(&shell_group)).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Shell {
-            removed_faces: cadmpeg_ir::features::FaceSelection::Native(native),
+            removed_faces: cadmpeg_ir::features::selections::FaceSelection::Native(native),
             thickness: Some(actual_thickness),
             outward: Some(true),
             ..
@@ -708,8 +709,8 @@ pub(super) fn fixed_kind_tail_operations(
     assert!(matches!(
         crate::design::feature_project::direct_face::project_shell(&compact_shell_scope, &[], std::slice::from_ref(&shell_group)).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Shell {
-            bodies: Some(cadmpeg_ir::features::BodySelection::Native(body)),
-            removed_faces: cadmpeg_ir::features::FaceSelection::Faces(removed),
+            bodies: Some(cadmpeg_ir::features::selections::BodySelection::Native(body)),
+            removed_faces: cadmpeg_ir::features::selections::FaceSelection::Faces(removed),
             thickness: Some(actual_thickness),
             outward: Some(true),
             ..
@@ -752,8 +753,8 @@ pub(super) fn fixed_kind_tail_operations(
     assert!(matches!(
         crate::design::feature_project::direct_face::project_offset_faces(&offset_scope, &[], &[], std::slice::from_ref(&offset_group)).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::MoveFace {
-            faces: cadmpeg_ir::features::FaceSelection::Native(native),
-            motion: cadmpeg_ir::features::FaceMotion::Offset {
+            faces: cadmpeg_ir::features::selections::FaceSelection::Native(native),
+            motion: cadmpeg_ir::features::direct_edit::FaceMotion::Offset {
                 distance: actual_distance
             },
         })) if (native == "offset-group") && actual_distance.get() == 2.54
@@ -1045,7 +1046,7 @@ pub(super) fn fixed_kind_tail_operations(
         }] if matches!((evaluation.definition(),), (FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
                 faces: FaceSelection::Native(native),
                 distance: Some(distance),
-                method: cadmpeg_ir::features::SurfaceExtension::Unresolved,
+                method: cadmpeg_ir::features::surface_inputs::SurfaceExtension::Unresolved,
             }),) if native.ends_with(":design-record#500") && distance.get() == 0.4)));
 
     bytes[extend_distance_at + 40..extend_distance_at + 48]

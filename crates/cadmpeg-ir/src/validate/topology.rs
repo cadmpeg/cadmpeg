@@ -9,15 +9,15 @@ use cadmpeg_core::CodecError;
 
 use crate::document::CadIr;
 use crate::features::boundary_fill::BoundaryFillCell;
-use crate::features::{
-    patterns::{PatternKind, PatternSeed, PatternTransform},
-    BodySelection, DatumPlaneReference, ExtrudeStart, FaceSelection, Feature, FeatureSourceContent,
-    SplitBodyTool, SplitFaceTool, UnresolvedFamily,
-};
-use crate::geometry::{
-    CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, SurfaceGeometry,
-};
+use crate::features::datums::DatumPlaneReference;
+use crate::features::direct_edit::{SplitBodyTool, SplitFaceTool};
+use crate::features::extents::ExtrudeStart;
+use crate::features::patterns::{PatternKind, PatternSeed, PatternTransform};
+use crate::features::selections::{BodySelection, FaceSelection};
+use crate::features::{Feature, FeatureSourceContent, UnresolvedFamily};
+use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use crate::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
 use crate::report::{
     check::{Check, Finding},
     Severity,
@@ -63,7 +63,7 @@ fn check_split_face_input_run(
 
 fn collect_pattern_paths<'a>(
     pattern: &'a PatternKind,
-    paths: &mut Vec<&'a crate::features::PathRef>,
+    paths: &mut Vec<&'a crate::features::profiles::PathRef>,
 ) {
     match pattern.definition() {
         PatternTransform::CurveDriven {
@@ -84,7 +84,7 @@ fn collect_pattern_paths<'a>(
 /// A composite stage applies one transform, so its paths do not recurse.
 fn collect_stage_pattern_paths<'a>(
     pattern: &'a crate::features::patterns::StagePatternKind,
-    paths: &mut Vec<&'a crate::features::PathRef>,
+    paths: &mut Vec<&'a crate::features::profiles::PathRef>,
 ) {
     match pattern.definition() {
         PatternTransform::CurveDriven {
@@ -133,7 +133,7 @@ fn ref_error(
 /// Edge geometry names edges and faces of its own input state, once per edge.
 fn validate_input_edge_geometry(
     findings: &mut Vec<Finding>,
-    state: &crate::features::FeatureInputTopology,
+    state: &crate::features::evaluation::FeatureInputTopology,
 ) {
     if state.edge_geometry.is_empty() {
         return;
@@ -178,14 +178,14 @@ fn validate_input_edge_geometry(
 
 fn check_law_curves<R, V, P>(
     ctx: &DecodeContext<'_>,
-    expression: &crate::geometry::LawExpression<R, V, P>,
+    expression: &crate::geometry::laws::LawExpression<R, V, P>,
     ids: &ModelIndex<'_>,
     procedural: &crate::geometry::ProceduralSurface,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let _depth = ctx.enter_nested("law reference depth")?;
     match expression {
-        crate::geometry::LawExpression::Edge { curve, .. } => {
+        crate::geometry::laws::LawExpression::Edge { curve, .. } => {
             if ids
                 .curves(curve.id.as_str(), crate::index::StandardIndex)
                 .is_none()
@@ -193,7 +193,7 @@ fn check_law_curves<R, V, P>(
                 ref_error(findings, procedural.id.as_str(), "curve", curve.id.as_str());
             }
         }
-        crate::geometry::LawExpression::Algebraic { operands, .. } => {
+        crate::geometry::laws::LawExpression::Algebraic { operands, .. } => {
             for operand in operands {
                 check_law_curves(ctx, operand, ids, procedural, findings)?;
             }
@@ -833,11 +833,11 @@ pub(super) fn check_references(
                 };
                 let mut scales = (construction.scales.as_slice().iter()).collect::<Vec<_>>();
                 match &construction.tail {
-                    crate::geometry::CompoundLoftTail::Six { scale, curve, .. } => {
+                    crate::geometry::lofts::CompoundLoftTail::Six { scale, curve, .. } => {
                         scales.push(scale.as_ref());
                         check_curve(curve, findings);
                     }
-                    crate::geometry::CompoundLoftTail::Seven {
+                    crate::geometry::lofts::CompoundLoftTail::Seven {
                         first_scale,
                         second_scale,
                         ..
@@ -845,9 +845,10 @@ pub(super) fn check_references(
                         scales.extend(first_scale.iter().map(Box::as_ref));
                         scales.push(second_scale.as_ref());
                     }
-                    crate::geometry::CompoundLoftTail::Zero { direction, .. } => {
-                        if let crate::geometry::CompoundLoftDirection::Curve { curve, .. } =
-                            direction
+                    crate::geometry::lofts::CompoundLoftTail::Zero { direction, .. } => {
+                        if let crate::geometry::lofts::CompoundLoftDirection::Curve {
+                            curve, ..
+                        } = direction
                         {
                             check_curve(curve, findings);
                         }
@@ -888,7 +889,7 @@ pub(super) fn check_references(
                 };
                 let mut scales = (construction.scales.as_slice().iter()).collect::<Vec<_>>();
                 match &construction.branch {
-                    crate::geometry::ScaledCompoundLoftBranch::ExtendedVector {
+                    crate::geometry::lofts::ScaledCompoundLoftBranch::ExtendedVector {
                         first_scale,
                         second_scale,
                         ..
@@ -896,7 +897,7 @@ pub(super) fn check_references(
                         scales.extend(first_scale.iter().map(Box::as_ref));
                         scales.push(second_scale.as_ref());
                     }
-                    crate::geometry::ScaledCompoundLoftBranch::ExtendedCurve {
+                    crate::geometry::lofts::ScaledCompoundLoftBranch::ExtendedCurve {
                         scale,
                         curve,
                         ..
@@ -904,9 +905,12 @@ pub(super) fn check_references(
                         scales.extend(scale.iter().map(Box::as_ref));
                         check_curve(curve, findings);
                     }
-                    crate::geometry::ScaledCompoundLoftBranch::Direct { direction, .. } => {
-                        if let crate::geometry::CompoundLoftDirection::Curve { curve, .. } =
-                            direction
+                    crate::geometry::lofts::ScaledCompoundLoftBranch::Direct {
+                        direction, ..
+                    } => {
+                        if let crate::geometry::lofts::CompoundLoftDirection::Curve {
+                            curve, ..
+                        } = direction
                         {
                             check_curve(curve, findings);
                         }
@@ -946,7 +950,11 @@ pub(super) fn check_references(
                     }
                 };
                 match &construction.layout {
-                    crate::geometry::SkinSurfaceLayout::Profiles { profiles, path, .. } => {
+                    crate::geometry::skin_surfaces::SkinSurfaceLayout::Profiles {
+                        profiles,
+                        path,
+                        ..
+                    } => {
                         check_curve(path, findings);
                         for profile in profiles {
                             check_curve(&profile.curve, findings);
@@ -964,7 +972,7 @@ pub(super) fn check_references(
                             }
                         }
                     }
-                    crate::geometry::SkinSurfaceLayout::Compact {
+                    crate::geometry::skin_surfaces::SkinSurfaceLayout::Compact {
                         curve,
                         secondary_curve,
                         ..
@@ -1052,7 +1060,7 @@ pub(super) fn check_references(
                         );
                     }
                 }
-                if let crate::geometry::G2BlendFirstShape::Full {
+                if let crate::geometry::blends::G2BlendFirstShape::Full {
                     support: Some(support),
                 } = &construction.first_shape
                 {
@@ -1173,8 +1181,10 @@ pub(super) fn check_references(
                             .chain(path.auxiliaries.iter())
                     })
                     .chain(match construction.direction() {
-                        crate::geometry::CompoundLoftDirection::Vector { .. } => None,
-                        crate::geometry::CompoundLoftDirection::Curve { curve, .. } => Some(curve),
+                        crate::geometry::lofts::CompoundLoftDirection::Vector { .. } => None,
+                        crate::geometry::lofts::CompoundLoftDirection::Curve { curve, .. } => {
+                            Some(curve)
+                        }
                     })
                     .chain(construction.tail().curve())
                 {
@@ -1232,8 +1242,14 @@ pub(super) fn check_references(
 
                 for boundary in &construction.boundaries {
                     match &boundary.geometry {
-                        crate::geometry::VertexBlendBoundaryGeometry::Circle { curve, .. }
-                        | crate::geometry::VertexBlendBoundaryGeometry::Plane { curve, .. } => {
+                        crate::geometry::blends::VertexBlendBoundaryGeometry::Circle {
+                            curve,
+                            ..
+                        }
+                        | crate::geometry::blends::VertexBlendBoundaryGeometry::Plane {
+                            curve,
+                            ..
+                        } => {
                             if ids
                                 .curves(curve.as_str(), crate::index::StandardIndex)
                                 .is_none()
@@ -1246,8 +1262,9 @@ pub(super) fn check_references(
                                 );
                             }
                         }
-                        crate::geometry::VertexBlendBoundaryGeometry::Pcurve {
-                            surface, ..
+                        crate::geometry::blends::VertexBlendBoundaryGeometry::Pcurve {
+                            surface,
+                            ..
                         } => {
                             if ids
                                 .surfaces(surface.as_str(), crate::index::StandardIndex)
@@ -1261,7 +1278,9 @@ pub(super) fn check_references(
                                 );
                             }
                         }
-                        crate::geometry::VertexBlendBoundaryGeometry::Degenerate { .. } => {}
+                        crate::geometry::blends::VertexBlendBoundaryGeometry::Degenerate {
+                            ..
+                        } => {}
                     }
                 }
             }
@@ -1339,14 +1358,17 @@ pub(super) fn check_references(
                 }
                 if let Some(native) = native {
                     let formulas = match &native.layout {
-                        crate::geometry::SweepSurfaceLayout::ProfileFirst { formulas, .. } => {
-                            (formulas.iter()).collect::<Vec<_>>()
-                        }
-                        crate::geometry::SweepSurfaceLayout::ExplicitFormula {
-                            formula, ..
+                        crate::geometry::sweep_surfaces::SweepSurfaceLayout::ProfileFirst {
+                            formulas,
+                            ..
+                        } => (formulas.iter()).collect::<Vec<_>>(),
+                        crate::geometry::sweep_surfaces::SweepSurfaceLayout::ExplicitFormula {
+                            formula,
+                            ..
                         } => ([formula]).into_iter().collect::<Vec<_>>(),
-                        crate::geometry::SweepSurfaceLayout::ExplicitGuide {
-                            guide_curve, ..
+                        crate::geometry::sweep_surfaces::SweepSurfaceLayout::ExplicitGuide {
+                            guide_curve,
+                            ..
                         } => {
                             if ids
                                 .curves(guide_curve.as_str(), crate::index::StandardIndex)
@@ -1361,7 +1383,7 @@ pub(super) fn check_references(
                             }
                             Vec::new()
                         }
-                        crate::geometry::SweepSurfaceLayout::ExplicitSurface {
+                        crate::geometry::sweep_surfaces::SweepSurfaceLayout::ExplicitSurface {
                             support_surface,
                             auxiliary_curve,
                             ..
@@ -1392,7 +1414,7 @@ pub(super) fn check_references(
                             }
                             Vec::new()
                         }
-                        crate::geometry::SweepSurfaceLayout::LawDriven {
+                        crate::geometry::sweep_surfaces::SweepSurfaceLayout::LawDriven {
                             first_law,
                             second_law,
                             formula,
@@ -1613,11 +1635,16 @@ pub(super) fn check_references(
                         construction.support.as_str(),
                     );
                 }
-                if let crate::geometry::DeformableSurfaceData::SurfaceCurve {
-                    surface, curve, ..
+                if let crate::geometry::deformable_surfaces::DeformableSurfaceData::SurfaceCurve {
+                    surface,
+                    curve,
+                    ..
                 }
-                | crate::geometry::DeformableSurfaceData::Full { surface, curve, .. } =
-                    &construction.data
+                | crate::geometry::deformable_surfaces::DeformableSurfaceData::Full {
+                    surface,
+                    curve,
+                    ..
+                } = &construction.data
                 {
                     if ids
                         .surfaces(surface.as_str(), crate::index::StandardIndex)
@@ -1651,14 +1678,14 @@ pub(super) fn check_references(
             } => {
                 fn check<R, V, P>(
                     ctx: &DecodeContext<'_>,
-                    expression: &crate::geometry::LawExpression<R, V, P>,
+                    expression: &crate::geometry::laws::LawExpression<R, V, P>,
                     ids: &ModelIndex<'_>,
                     procedural: &crate::geometry::ProceduralCurve,
                     findings: &mut Vec<Finding>,
                 ) -> Result<(), CodecError> {
                     let _depth = ctx.enter_nested("law reference depth")?;
                     match expression {
-                        crate::geometry::LawExpression::Edge { curve, .. } => {
+                        crate::geometry::laws::LawExpression::Edge { curve, .. } => {
                             if ids
                                 .curves(curve.id.as_str(), crate::index::StandardIndex)
                                 .is_none()
@@ -1671,7 +1698,7 @@ pub(super) fn check_references(
                                 );
                             }
                         }
-                        crate::geometry::LawExpression::Algebraic { operands, .. } => {
+                        crate::geometry::laws::LawExpression::Algebraic { operands, .. } => {
                             for operand in operands {
                                 check(ctx, operand, ids, procedural, findings)?;
                             }
@@ -1871,7 +1898,10 @@ pub(super) fn check_references(
                 let context = definition_payload.context();
                 let source = definition_payload.source();
                 {
-                    if let crate::geometry::DeformableCurveSource::Curve { curve } = source {
+                    if let crate::geometry::procedural_curves::DeformableCurveSource::Curve {
+                        curve,
+                    } = source
+                    {
                         if ids
                             .curves(curve.as_str(), crate::index::StandardIndex)
                             .is_none()
@@ -1933,7 +1963,7 @@ pub(super) fn check_references(
                     {
                         ref_error(findings, procedural.id.as_str(), "curve", source.as_str());
                     }
-                    if let crate::geometry::OffsetSide::Direction {
+                    if let crate::geometry::curve_offsets::OffsetSide::Direction {
                         support: Some(support),
                         ..
                     } = side
@@ -1950,9 +1980,12 @@ pub(super) fn check_references(
                             );
                         }
                     }
-                    if let Some(crate::geometry::CurveOffsetRange::Variable {
+                    if let Some(crate::geometry::curve_offsets::CurveOffsetRange::Variable {
                         distance_law:
-                            crate::geometry::CurveOffsetDistanceLaw::Coordinate { function, .. },
+                            crate::geometry::curve_offsets::CurveOffsetDistanceLaw::Coordinate {
+                                function,
+                                ..
+                            },
                         ..
                     }) = range
                     {
@@ -2089,13 +2122,12 @@ pub(super) fn check_references(
                 ref_error(findings, parameter.id.as_str(), "feature", owner.as_str());
             }
         }
-        if scoped_parameters
-            .iter()
-            .any(|previous: &&crate::features::DesignParameter| {
+        if scoped_parameters.iter().any(
+            |previous: &&crate::features::parameters::DesignParameter| {
                 same_feature_owner(previous.owner.as_ref(), parameter.owner.as_ref())
                     && (previous.name.as_str() == parameter.name.as_str())
-            })
-        {
+            },
+        ) {
             super::record_related_finding(
                 findings,
                 Check::Counts,
@@ -2112,13 +2144,12 @@ pub(super) fn check_references(
                 ),
             );
         }
-        if scoped_parameters
-            .iter()
-            .any(|previous: &&crate::features::DesignParameter| {
+        if scoped_parameters.iter().any(
+            |previous: &&crate::features::parameters::DesignParameter| {
                 same_feature_owner(previous.owner.as_ref(), parameter.owner.as_ref())
                     && previous.ordinal == parameter.ordinal
-            })
-        {
+            },
+        ) {
             super::record_related_finding(
                 findings,
                 Check::Counts,
@@ -2599,9 +2630,10 @@ fn check_feature_references(
     ids: &ModelIndex<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    use crate::features::{
-        EdgeSelection, FeatureDefinition, FeatureOperation, PathRef, PlanarProfileRef, ScaleCenter,
-    };
+    use crate::features::direct_edit::ScaleCenter;
+    use crate::features::profiles::{PathRef, PlanarProfileRef};
+    use crate::features::selections::EdgeSelection;
+    use crate::features::{FeatureDefinition, FeatureOperation};
 
     if let Err(error) = crate::document::feature_parents::validate(&[&ir.model]) {
         use crate::document::feature_parents::ParentError;
@@ -3374,8 +3406,9 @@ fn check_feature_references(
             FeatureOperation::Extrude {
                 direction, start, ..
             } => {
-                if let crate::features::ExtrudeDirection::Explicit {
-                    source: Some(crate::features::ExtrusionDirectionSource::Edge { reference }),
+                if let crate::features::extents::ExtrudeDirection::Explicit {
+                    source:
+                        Some(crate::features::extents::ExtrusionDirectionSource::Edge { reference }),
                     ..
                 } = direction
                 {
@@ -3431,7 +3464,7 @@ fn check_feature_references(
                 if let Some(edges) = &construction.edges {
                     edge_selections.push(edges);
                 }
-                if matches!(&construction.height, Some(crate::features::SheetMetalFlangeHeight::ToObject(target)) if matches!(&target.target, Some(crate::features::SheetMetalFlangeHeightTarget::Native(native)) if native.is_empty()))
+                if matches!(&construction.height, Some(crate::features::sheet_metal_forms::SheetMetalFlangeHeight::ToObject(target)) if matches!(&target.target, Some(crate::features::sheet_metal_forms::SheetMetalFlangeHeightTarget::Native(native)) if native.is_empty()))
                 {
                     geometry_error(
                         findings,
@@ -3521,11 +3554,13 @@ fn check_feature_references(
                 if let Some(guide_rail) = guide_rail {
                     paths.push(&guide_rail.path);
                 }
-                if let Some(crate::features::SweepOrientation::Auxiliary { path, .. }) = orientation
+                if let Some(crate::features::sweeps::SweepOrientation::Auxiliary { path, .. }) =
+                    orientation
                 {
                     paths.push(path);
                 }
-                if let Some(crate::features::SweepOrientation::GuideSurface { faces }) = orientation
+                if let Some(crate::features::sweeps::SweepOrientation::GuideSurface { faces }) =
+                    orientation
                 {
                     face_selections.push(faces);
                 }
@@ -3535,15 +3570,15 @@ fn check_feature_references(
             } => {
                 for section in sections {
                     match section {
-                        crate::features::LoftSection::Profile(_) => {}
-                        crate::features::LoftSection::Point(
-                            crate::features::LoftPointSection::Native(_),
+                        crate::features::profiles::LoftSection::Profile(_) => {}
+                        crate::features::profiles::LoftSection::Point(
+                            crate::features::profiles::LoftPointSection::Native(_),
                         ) => {}
-                        crate::features::LoftSection::Point(
-                            crate::features::LoftPointSection::Point(_),
+                        crate::features::profiles::LoftSection::Point(
+                            crate::features::profiles::LoftPointSection::Point(_),
                         ) => {}
-                        crate::features::LoftSection::Point(
-                            crate::features::LoftPointSection::Vertex(vertex),
+                        crate::features::profiles::LoftSection::Point(
+                            crate::features::profiles::LoftPointSection::Vertex(vertex),
                         ) => check_ids(
                             findings,
                             feature.id.as_str(),
@@ -3602,7 +3637,11 @@ fn check_feature_references(
             }
             FeatureOperation::Thicken { faces, result, .. } => {
                 face_selections.push(faces);
-                if let Some(crate::features::SolidFeatureResult::Boolean { targets, .. }) = result {
+                if let Some(crate::features::operation_settings::SolidFeatureResult::Boolean {
+                    targets,
+                    ..
+                }) = result
+                {
                     body_selections.push(targets);
                 }
             }
@@ -3622,10 +3661,12 @@ fn check_feature_references(
                 ..
             } => {
                 match boundary {
-                    crate::features::SurfaceBoundary::Edges(edges) => {
+                    crate::features::surface_inputs::SurfaceBoundary::Edges(edges) => {
                         edge_selections.push(edges);
                     }
-                    crate::features::SurfaceBoundary::Path(path) => paths.push(path),
+                    crate::features::surface_inputs::SurfaceBoundary::Path(path) => {
+                        paths.push(path);
+                    }
                 }
                 face_selections.push(support_faces);
                 paths.extend(interior_constraints);
@@ -3660,7 +3701,10 @@ fn check_feature_references(
                 if second_side.is_some()
                     && !matches!(
                         anchor,
-                        crate::features::DraftAnchor::NeutralPlane { pull: Some(_), .. }
+                        crate::features::direct_edit::DraftAnchor::NeutralPlane {
+                            pull: Some(_),
+                            ..
+                        }
                     )
                 {
                     geometry_error(
@@ -3671,10 +3715,10 @@ fn check_feature_references(
                 }
                 face_selections.push(faces);
                 match anchor {
-                    crate::features::DraftAnchor::NeutralPlane { plane, .. } => {
+                    crate::features::direct_edit::DraftAnchor::NeutralPlane { plane, .. } => {
                         face_selections.push(plane);
                     }
-                    crate::features::DraftAnchor::PartingLine { tool, .. } => {
+                    crate::features::direct_edit::DraftAnchor::PartingLine { tool, .. } => {
                         face_selections.push(tool);
                     }
                 }
@@ -3931,7 +3975,7 @@ fn check_feature_references(
             FeatureOperation::Helix { .. } => {}
             FeatureOperation::HelixNativeAxis { .. } => {}
             FeatureOperation::Coil { result, .. } => {
-                use crate::features::SolidFeatureResult;
+                use crate::features::operation_settings::SolidFeatureResult;
                 if let SolidFeatureResult::Boolean { targets, .. } = result {
                     body_selections.push(targets);
                 }
@@ -3947,13 +3991,16 @@ fn check_feature_references(
                         .iter()
                         .map(|source| &source.target)
                         .chain(match construction {
-                            crate::features::BinderConstruction::SubShape { context, .. } => {
-                                context.as_ref()
-                            }
-                            crate::features::BinderConstruction::Shape { .. } => None,
+                            crate::features::binders::BinderConstruction::SubShape {
+                                context,
+                                ..
+                            } => context.as_ref(),
+                            crate::features::binders::BinderConstruction::Shape { .. } => None,
                         })
                 {
-                    if let crate::features::BinderTarget::Feature { feature: target } = target {
+                    if let crate::features::binders::BinderTarget::Feature { feature: target } =
+                        target
+                    {
                         match features.get(target.as_str()) {
                             None => ref_error(
                                 findings,
@@ -4022,21 +4069,21 @@ fn check_feature_references(
                 let mut plane_references = Vec::new();
                 if let Some(construction) = construction.as_deref() {
                     match construction {
-                        crate::features::DatumPointConstruction::CircleCenter { edge }
-                        | crate::features::DatumPointConstruction::DistanceOnEdge {
+                        crate::features::datums::DatumPointConstruction::CircleCenter { edge }
+                        | crate::features::datums::DatumPointConstruction::DistanceOnEdge {
                             edge, ..
                         } => edge_selections.push(edge),
-                        crate::features::DatumPointConstruction::TwoEdgeIntersection { edges } => {
+                        crate::features::datums::DatumPointConstruction::TwoEdgeIntersection { edges } => {
                             edge_selections.extend(edges);
                         }
-                        crate::features::DatumPointConstruction::ThreePlaneIntersection {
+                        crate::features::datums::DatumPointConstruction::ThreePlaneIntersection {
                             planes,
                         } => plane_references.extend(planes.iter()),
-                        crate::features::DatumPointConstruction::Vertex { vertex } => {
+                        crate::features::datums::DatumPointConstruction::Vertex { vertex } => {
                             vertex_selections.push((vertex, "datum-point"));
                         }
-                        crate::features::DatumPointConstruction::SketchPoint { .. } => {}
-                        crate::features::DatumPointConstruction::EdgePlaneIntersection {
+                        crate::features::datums::DatumPointConstruction::SketchPoint { .. } => {}
+                        crate::features::datums::DatumPointConstruction::EdgePlaneIntersection {
                             edge,
                             plane,
                         } => {
@@ -4414,7 +4461,7 @@ fn check_feature_references(
         }
         for (selection, consumer) in vertex_selections {
             match selection {
-                crate::features::VertexSelection::Generated { vertex, .. } => {
+                crate::features::selections::VertexSelection::Generated { vertex, .. } => {
                     if features
                         .get(vertex.feature.as_str())
                         .is_none_or(|ordinal| *ordinal >= feature.ordinal)
@@ -4438,7 +4485,7 @@ fn check_feature_references(
                         );
                     }
                 }
-                crate::features::VertexSelection::Historical {
+                crate::features::selections::VertexSelection::Historical {
                     state,
                     vertex,
                     native: _,
@@ -4455,8 +4502,8 @@ fn check_feature_references(
                             .map(crate::ids::HistoricalVertexId::as_str)
                     },
                 ),
-                crate::features::VertexSelection::Unresolved
-                | crate::features::VertexSelection::Native(_) => {}
+                crate::features::selections::VertexSelection::Unresolved
+                | crate::features::selections::VertexSelection::Native(_) => {}
             }
         }
         for selection in edge_selections {
@@ -4690,11 +4737,11 @@ fn check_historical_members<'a, I, F, M>(
     feature: &crate::features::FeatureId,
     selection: (&crate::ids::FeatureInputTopologyId, I),
     kind: &str,
-    states: &BorrowedIdentities<'a, &'a crate::features::FeatureInputTopology>,
+    states: &BorrowedIdentities<'a, &'a crate::features::evaluation::FeatureInputTopology>,
     members: F,
 ) where
     I: IntoIterator<Item = &'a str>,
-    F: FnOnce(&'a crate::features::FeatureInputTopology) -> M,
+    F: FnOnce(&'a crate::features::evaluation::FeatureInputTopology) -> M,
     M: IntoIterator<Item = &'a str>,
 {
     let (state_id, selected) = selection;
@@ -4757,10 +4804,12 @@ fn regeneration_references(
         }
         crate::features::FeatureOperation::DatumThreePointPlane { points, .. } => {
             for reference in points.iter().filter_map(|point| match point {
-                crate::features::VertexSelection::Generated { vertex, .. } => Some(&vertex.feature),
-                crate::features::VertexSelection::Historical { .. }
-                | crate::features::VertexSelection::Native(_)
-                | crate::features::VertexSelection::Unresolved => None,
+                crate::features::selections::VertexSelection::Generated { vertex, .. } => {
+                    Some(&vertex.feature)
+                }
+                crate::features::selections::VertexSelection::Historical { .. }
+                | crate::features::selections::VertexSelection::Native(_)
+                | crate::features::selections::VertexSelection::Unresolved => None,
             }) {
                 references.insert_unique(reference.as_str(), reference);
             }
@@ -4792,7 +4841,7 @@ fn regeneration_references(
         _ => {}
     }
     for termination in definition_terminations(definition) {
-        if let Some(crate::features::VertexSelection::Generated { vertex, .. }) =
+        if let Some(crate::features::selections::VertexSelection::Generated { vertex, .. }) =
             termination.vertex()
         {
             references.insert_unique(vertex.feature.as_str(), &vertex.feature);
@@ -4800,10 +4849,10 @@ fn regeneration_references(
     }
     for profile in definition_profiles(definition) {
         match profile {
-            crate::features::PlanarProfileRef::Feature(feature) => {
+            crate::features::profiles::PlanarProfileRef::Feature(feature) => {
                 references.insert_unique(feature.as_str(), feature);
             }
-            crate::features::PlanarProfileRef::Generated { curves, .. } => {
+            crate::features::profiles::PlanarProfileRef::Generated { curves, .. } => {
                 for reference in curves.iter().map(|curve| &curve.feature) {
                     references.insert_unique(reference.as_str(), reference);
                 }
@@ -4818,7 +4867,7 @@ fn regeneration_references(
 
 fn definition_profiles(
     definition: &crate::features::FeatureOperation,
-) -> Vec<&crate::features::PlanarProfileRef> {
+) -> Vec<&crate::features::profiles::PlanarProfileRef> {
     let mut profiles = Vec::new();
     match definition {
         crate::features::FeatureOperation::Extrude { profile, .. } => {
@@ -4844,7 +4893,7 @@ fn definition_profiles(
         }
         crate::features::FeatureOperation::Loft { sections, .. } => {
             for section in sections {
-                if let crate::features::LoftSection::Profile(profile) = section {
+                if let crate::features::profiles::LoftSection::Profile(profile) = section {
                     profiles.extend(profile.planar());
                 }
             }
@@ -4860,33 +4909,35 @@ fn definition_profiles(
 
 #[derive(Clone, Copy)]
 enum TerminationRef<'a> {
-    Linear(&'a crate::features::LinearTermination),
-    Angular(&'a crate::features::AngularTermination),
+    Linear(&'a crate::features::extents::LinearTermination),
+    Angular(&'a crate::features::extents::AngularTermination),
 }
 
 impl<'a> TerminationRef<'a> {
-    fn face(self) -> Option<&'a crate::features::FaceSelection> {
+    fn face(self) -> Option<&'a crate::features::selections::FaceSelection> {
         match self {
-            Self::Linear(crate::features::LinearTermination::ToFace { face, .. })
-            | Self::Angular(crate::features::AngularTermination::ToFace { face, .. }) => Some(face),
+            Self::Linear(crate::features::extents::LinearTermination::ToFace { face, .. })
+            | Self::Angular(crate::features::extents::AngularTermination::ToFace {
+                face, ..
+            }) => Some(face),
             _ => None,
         }
     }
 
-    fn shape(self) -> Option<&'a crate::features::FaceSelection> {
+    fn shape(self) -> Option<&'a crate::features::selections::FaceSelection> {
         match self {
-            Self::Linear(crate::features::LinearTermination::ToShape { target })
-            | Self::Angular(crate::features::AngularTermination::ToShape { target }) => {
+            Self::Linear(crate::features::extents::LinearTermination::ToShape { target })
+            | Self::Angular(crate::features::extents::AngularTermination::ToShape { target }) => {
                 Some(target)
             }
             _ => None,
         }
     }
 
-    fn vertex(self) -> Option<&'a crate::features::VertexSelection> {
+    fn vertex(self) -> Option<&'a crate::features::selections::VertexSelection> {
         match self {
-            Self::Linear(crate::features::LinearTermination::ToVertex { vertex })
-            | Self::Angular(crate::features::AngularTermination::ToVertex { vertex }) => {
+            Self::Linear(crate::features::extents::LinearTermination::ToVertex { vertex })
+            | Self::Angular(crate::features::extents::AngularTermination::ToVertex { vertex }) => {
                 Some(vertex)
             }
             _ => None,
@@ -4900,11 +4951,11 @@ fn definition_terminations(
     let mut terminations = Vec::new();
     match definition {
         crate::features::FeatureOperation::Extrude { extent, .. } => match extent {
-            crate::features::ExtrudeExtent::OneSided { side }
-            | crate::features::ExtrudeExtent::Symmetric { side } => {
+            crate::features::extents::ExtrudeExtent::OneSided { side }
+            | crate::features::extents::ExtrudeExtent::Symmetric { side } => {
                 terminations.push(TerminationRef::Linear(&side.termination));
             }
-            crate::features::ExtrudeExtent::TwoSided { first, second } => {
+            crate::features::extents::ExtrudeExtent::TwoSided { first, second } => {
                 terminations.extend([
                     TerminationRef::Linear(&first.termination),
                     TerminationRef::Linear(&second.termination),
@@ -4914,11 +4965,11 @@ fn definition_terminations(
         crate::features::FeatureOperation::SheetMetalContourFlange { construction } => {
             if let Some(extent) = &construction.extent {
                 match extent {
-                    crate::features::ExtrudeExtent::OneSided { side }
-                    | crate::features::ExtrudeExtent::Symmetric { side } => {
+                    crate::features::extents::ExtrudeExtent::OneSided { side }
+                    | crate::features::extents::ExtrudeExtent::Symmetric { side } => {
                         terminations.push(TerminationRef::Linear(&side.termination));
                     }
-                    crate::features::ExtrudeExtent::TwoSided { first, second } => {
+                    crate::features::extents::ExtrudeExtent::TwoSided { first, second } => {
                         terminations.extend([
                             TerminationRef::Linear(&first.termination),
                             TerminationRef::Linear(&second.termination),
@@ -4930,10 +4981,10 @@ fn definition_terminations(
         crate::features::FeatureOperation::Revolve { construction, .. } => {
             match construction.extent() {
                 Some(
-                    crate::features::RevolveExtent::OneSided { termination }
-                    | crate::features::RevolveExtent::Symmetric { termination },
+                    crate::features::revolve::RevolveExtent::OneSided { termination }
+                    | crate::features::revolve::RevolveExtent::Symmetric { termination },
                 ) => terminations.push(TerminationRef::Angular(termination)),
-                Some(crate::features::RevolveExtent::TwoSided { first, second }) => {
+                Some(crate::features::revolve::RevolveExtent::TwoSided { first, second }) => {
                     terminations.extend([
                         TerminationRef::Angular(first),
                         TerminationRef::Angular(second),
@@ -4952,7 +5003,7 @@ fn definition_terminations(
 }
 
 fn check_configuration_state_closure(
-    configuration: &crate::features::DesignConfiguration,
+    configuration: &crate::features::parameters::DesignConfiguration,
     findings: &mut Vec<Finding>,
 ) {
     if configuration.feature_states.is_empty() {
@@ -5089,7 +5140,7 @@ fn check_ids<'a>(
 
 #[derive(Clone, Copy)]
 enum ProfileReference<'a> {
-    Planar(&'a crate::features::PlanarProfileRef),
+    Planar(&'a crate::features::profiles::PlanarProfileRef),
     SpatialSketchProfiles {
         sketch: &'a crate::sketches::SpatialSketchId,
         profiles: &'a [u32],
@@ -5099,14 +5150,14 @@ enum ProfileReference<'a> {
     },
 }
 
-impl<'a> From<&'a crate::features::ProfileRef> for ProfileReference<'a> {
-    fn from(profile: &'a crate::features::ProfileRef) -> Self {
+impl<'a> From<&'a crate::features::profiles::ProfileRef> for ProfileReference<'a> {
+    fn from(profile: &'a crate::features::profiles::ProfileRef) -> Self {
         match profile {
-            crate::features::ProfileRef::Planar(profile) => Self::Planar(profile),
-            crate::features::ProfileRef::SpatialSketchProfiles { sketch, profiles } => {
+            crate::features::profiles::ProfileRef::Planar(profile) => Self::Planar(profile),
+            crate::features::profiles::ProfileRef::SpatialSketchProfiles { sketch, profiles } => {
                 Self::SpatialSketchProfiles { sketch, profiles }
             }
-            crate::features::ProfileRef::SpatialSketchSelection { sketch, .. } => {
+            crate::features::profiles::ProfileRef::SpatialSketchSelection { sketch, .. } => {
                 Self::SpatialSketchSelection { sketch }
             }
         }
@@ -5118,9 +5169,9 @@ fn check_feature_sketch_references(
     sketches: &BorrowedIdentities<'_>,
     findings: &mut Vec<Finding>,
 ) {
-    use crate::features::{
-        FeatureDefinition, FeatureOperation, PathRef, PlanarProfileRef, SketchPointSelection,
-    };
+    use crate::features::datums::SketchPointSelection;
+    use crate::features::profiles::{PathRef, PlanarProfileRef};
+    use crate::features::{FeatureDefinition, FeatureOperation};
 
     let spatial_sketches = BorrowedIdentities::build(|add| {
         for sketch in &ir.model.spatial_sketches {
@@ -5215,7 +5266,8 @@ fn check_feature_sketch_references(
         else {
             continue;
         };
-        let crate::features::DatumPointConstruction::SketchPoint { point } = construction.as_ref()
+        let crate::features::datums::DatumPointConstruction::SketchPoint { point } =
+            construction.as_ref()
         else {
             continue;
         };
@@ -5321,7 +5373,7 @@ fn check_feature_sketch_references(
                 sections, guidance, ..
             } => {
                 for section in sections {
-                    if let crate::features::LoftSection::Profile(profile) = section {
+                    if let crate::features::profiles::LoftSection::Profile(profile) = section {
                         profiles.push(ProfileReference::from(profile));
                     }
                 }
@@ -5411,7 +5463,7 @@ fn check_feature_sketch_references(
                         .copied()
                         .unwrap_or(0);
                     let invalid = regions.iter().any(|region| match region {
-                        crate::features::SketchProfileRegion::Loops { loops } => {
+                        crate::features::profiles::SketchProfileRegion::Loops { loops } => {
                             cadmpeg_core::decode::index_from_u32(loops.outer())
                                 >= sketch_profile_count
                                 || loops.holes().iter().any(|index| {
@@ -5419,12 +5471,12 @@ fn check_feature_sketch_references(
                                         >= sketch_profile_count
                                 })
                         }
-                        crate::features::SketchProfileRegion::Trimmed {
+                        crate::features::profiles::SketchProfileRegion::Trimmed {
                             outer_boundary,
                             hole_boundaries,
                         } => {
                             let valid_ring =
-                                |ring: &[crate::features::SketchProfileBoundaryUse]| {
+                                |ring: &[crate::features::profiles::SketchProfileBoundaryUse]| {
                                     ring.iter().all(|use_| {
                                         sketch_entity_memberships
                                             .contains(&(use_.entity.as_str(), sketch.as_str()))

@@ -239,7 +239,8 @@
             "occurrences": {},
             "roots": [
               "nx:feature-history:timeline#root"
-            ]
+            ],
+            "unproduced": []
           }
         ],
         "sheet_metal_rules": [],

@@ -6,11 +6,10 @@ use super::super::{
 };
 use super::law_operand;
 use crate::eval::sweep_law::{scalar_sweep_law_differential, scalar_unary_sweep_law_differential};
+use crate::geometry::laws::LawExpression;
+use crate::geometry::nurbs::{NurbsCurve, NurbsSurface};
 use crate::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
-use crate::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface},
-    LawExpression, SolvedCurveGeometry,
-};
+use crate::geometry::SolvedCurveGeometry;
 use crate::math::{Point2, Point3, Vector3};
 
 #[test]

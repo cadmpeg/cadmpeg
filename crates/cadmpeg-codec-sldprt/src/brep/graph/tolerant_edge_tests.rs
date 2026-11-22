@@ -6,10 +6,12 @@ use crate::brep::sp_curve::SurfaceCurveCarrier;
 use crate::brep::topology::Coedge;
 use cadmpeg_ir::annotations::{AnnotationBuilder, StreamHandle};
 use cadmpeg_ir::geometry::analytic::{CylinderSurface, PlaneSurface};
+use cadmpeg_ir::geometry::legacy_cache::FitTolerance;
 use cadmpeg_ir::geometry::pcurve::{LinePcurve, PcurveGeometry, PcurveNurbs};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::surface_curves::SurfaceCurveFamily;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, FitTolerance, ProceduralCurveDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface, SurfaceCurveFamily, SurfaceGeometry,
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};

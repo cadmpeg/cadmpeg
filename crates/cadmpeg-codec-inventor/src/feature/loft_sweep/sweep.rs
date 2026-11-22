@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Circular sweep operands and first-refusal losses.
 
-use cadmpeg_ir::features::{
-    FeatureDefinition, FeatureOperation, ParameterValue, SolidSweepOperation, SweepSection,
-    SweepShape,
-};
+use cadmpeg_ir::features::parameters::ParameterValue;
+use cadmpeg_ir::features::sweeps::{SolidSweepOperation, SweepSection, SweepShape};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 use crate::design::PmDcParameter;
 use crate::feature::{

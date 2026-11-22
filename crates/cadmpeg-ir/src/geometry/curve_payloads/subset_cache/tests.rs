@@ -4,7 +4,7 @@ use std::f64::consts::{FRAC_PI_2, PI};
 
 use crate::eval::admission::EvaluationAdmission;
 use crate::eval::decode::curve_point;
-use crate::features::FinitePoint3;
+use crate::features::geometry::FinitePoint3;
 use crate::geometry::analytic::{CircleCurve, EllipseCurve, LineCurve};
 use crate::geometry::curve_payloads::SubsetCurveConstruction;
 use crate::geometry::nurbs::{NurbsCurve, NurbsPoles3};

@@ -141,7 +141,7 @@ fn point_evaluation_borrows_only_indexed_nurbs_and_polyline_rows() {
         curve
             .pole_rows()
             .point_at(1)
-            .map(crate::features::FinitePoint3::get),
+            .map(crate::features::geometry::FinitePoint3::get),
         Some(Point3::new(2.0, 0.0, 0.0))
     );
     assert_eq!(curve.pole_rows().weight_at(1), Some(2.0));
@@ -152,7 +152,7 @@ fn point_evaluation_borrows_only_indexed_nurbs_and_polyline_rows() {
             &curve,
             0.5
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(4.0 / 3.0, 0.0, 0.0))
     );
 
@@ -166,7 +166,9 @@ fn point_evaluation_borrows_only_indexed_nurbs_and_polyline_rows() {
     )
     .unwrap();
     assert_eq!(
-        polyline.point_at(1).map(crate::features::FinitePoint3::get),
+        polyline
+            .point_at(1)
+            .map(crate::features::geometry::FinitePoint3::get),
         Some(Point3::new(2.0, 0.0, 0.0))
     );
     assert_eq!(
@@ -181,7 +183,7 @@ fn point_evaluation_borrows_only_indexed_nurbs_and_polyline_rows() {
             &geometry,
             0.5
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(1.0, 0.0, 0.0))
     );
 }
@@ -250,7 +252,7 @@ fn analytic_parabola_and_hyperbola_use_step_parameterization() {
             &parabola,
             1.5
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(4.5, 6.0, 0.0))
     );
 
@@ -302,7 +304,7 @@ fn transformed_carriers_preserve_basis_parameters() {
             &curve,
             3.0
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(-4.0, 5.0, 6.0))
     );
 
@@ -327,7 +329,7 @@ fn transformed_carriers_preserve_basis_parameters() {
             2.0,
             3.0
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(0.0, 11.0, 6.0))
     );
 }
@@ -355,7 +357,7 @@ fn polyline_carriers_evaluate_in_both_parameter_directions() {
             &increasing,
             2.0
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(1.0, 0.0, 0.0))
     );
 
@@ -380,7 +382,7 @@ fn polyline_carriers_evaluate_in_both_parameter_directions() {
             &decreasing,
             2.5
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(0.5, 0.0, 0.0))
     );
 }
@@ -423,7 +425,7 @@ fn analytic_surface_points_that_overflow_report_the_non_finite_point() {
             -f64::MAX,
             0.0
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(0.0, 0.0, 0.0))
     );
     assert_eq!(
@@ -434,7 +436,7 @@ fn analytic_surface_points_that_overflow_report_the_non_finite_point() {
                 -f64::MAX,
                 0.0
             ))
-            .map(crate::features::FinitePoint3::get),
+            .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(0.0, 0.0, 0.0))
     );
 }
@@ -496,7 +498,7 @@ fn a_placed_surface_reports_the_point_its_placement_reaches_where_its_basis_poin
             -f64::MAX,
             0.0
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(0.0, 0.0, 1.0))
     );
 }
@@ -752,7 +754,7 @@ fn conic_arms_refuse_points_and_derivatives_that_overflow() {
 
 #[test]
 fn curve_evaluators_hand_back_admitted_values_and_refuse_overflow() {
-    use crate::features::{FinitePoint3, FiniteVector3};
+    use crate::features::geometry::{FinitePoint3, FiniteVector3};
 
     let line = |origin: Point3| {
         SolvedCurveGeometry::Line(
@@ -940,7 +942,7 @@ fn a_subset_whose_support_parameter_overflows_reports_the_support_evaluation() {
     ir.geometry
         .add_procedural_surface(&subset_id, procedural_surface! {
                 id: subset_construction,
-                definition: crate::geometry::ProceduralSurfaceDefinition::Subset(crate::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(base_id, [[1.0e308, 0.0], [0.0, 1.0]], Some(true), None, None).unwrap()),
+                definition: crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Subset(crate::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(base_id, [[1.0e308, 0.0], [0.0, 1.0]], Some(true), None, None).unwrap()),
                 cache_fit_tolerance: None,
                 record_bounds: None,
             })
@@ -975,7 +977,7 @@ fn a_subset_whose_support_parameter_overflows_reports_the_support_evaluation() {
             0.0,
             0.5
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(1.0e308, 0.5, 0.0))
     );
 }

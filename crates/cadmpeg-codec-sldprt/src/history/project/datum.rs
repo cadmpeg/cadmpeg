@@ -2,14 +2,14 @@
 //! Datum, curve, helix, and wrap projection.
 
 use crate::records::Feature;
-use cadmpeg_ir::{
-    features::{
-        CurveProjectionDirection, CurveProjectionDirectionState, DatumPlaneReference,
-        FaceSelection, FeatureDefinition, FeatureId, FeatureOperation, PathRef, PlanarProfileRef,
-        WrapMode,
-    },
-    scalar::Angle,
+use cadmpeg_ir::features::datums::DatumPlaneReference;
+use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef};
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::surface_inputs::{
+    CurveProjectionDirection, CurveProjectionDirectionState, WrapMode,
 };
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
+use cadmpeg_ir::scalar::Angle;
 use std::collections::HashMap;
 
 use crate::history::literals::{
@@ -24,10 +24,10 @@ pub(super) fn project_datum_plane(feature: &Feature) -> Option<FeatureDefinition
     let u_axis = parse_vector3(feature.properties.get("UAxis")?)?;
     valid_plane_frame(normal, u_axis).then_some(FeatureDefinition::Operation(
         FeatureOperation::DatumPlane {
-            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::from_parts(
+            frame: cadmpeg_ir::features::geometry::FeatureDatumPlaneFrame::from_parts(
                 origin,
-                cadmpeg_ir::features::FeatureDirection3::new(normal)?,
-                cadmpeg_ir::features::FeatureDirection3::new(u_axis)?,
+                cadmpeg_ir::features::geometry::FeatureDirection3::new(normal)?,
+                cadmpeg_ir::features::geometry::FeatureDirection3::new(u_axis)?,
             )?,
         },
     ))
@@ -42,12 +42,12 @@ pub(in crate::history) fn project_offset_plane(
         .get("D1")
         .and_then(|value| parse_dimension_length_mm(value))?;
     let resolved_frame = || {
-        cadmpeg_ir::features::FeatureSupportPlaneFrame::from_parts(
+        cadmpeg_ir::features::geometry::FeatureSupportPlaneFrame::from_parts(
             parse_point3_mm(feature.properties.get("ReferenceFaceOrigin")?)?,
-            cadmpeg_ir::features::FeatureDirection3::new(parse_vector3(
+            cadmpeg_ir::features::geometry::FeatureDirection3::new(parse_vector3(
                 feature.properties.get("ReferenceFaceNormal")?,
             )?)?,
-            cadmpeg_ir::features::FeatureDirection3::new(parse_vector3(
+            cadmpeg_ir::features::geometry::FeatureDirection3::new(parse_vector3(
                 feature.properties.get("ReferenceFaceUAxis")?,
             )?)?,
         )
@@ -85,7 +85,7 @@ pub(super) fn project_datum_axis(feature: &Feature) -> Option<FeatureDefinition>
     valid_direction(direction).then_some(FeatureDefinition::Operation(
         FeatureOperation::datum_axis(
             origin,
-            cadmpeg_ir::features::FeatureDirection3::new(direction)?,
+            cadmpeg_ir::features::geometry::FeatureDirection3::new(direction)?,
         ),
     ))
 }
@@ -104,8 +104,8 @@ pub(super) fn project_datum_coordinate_system(feature: &Feature) -> Option<Featu
     let z_axis = parse_vector3(feature.properties.get("ZAxis")?)?;
     Some(FeatureDefinition::Operation(
         FeatureOperation::DatumCoordinateSystem {
-            frame: cadmpeg_ir::features::FeatureCoordinateFrame::from_parts(
-                cadmpeg_ir::features::FeatureUnitPlaneFrame::from_parts(
+            frame: cadmpeg_ir::features::geometry::FeatureCoordinateFrame::from_parts(
+                cadmpeg_ir::features::geometry::FeatureUnitPlaneFrame::from_parts(
                     origin,
                     cadmpeg_ir::units::UnitVector3::new(x_axis)?,
                     cadmpeg_ir::units::UnitVector3::new(y_axis)?,
@@ -132,7 +132,7 @@ pub(super) fn project_equation_curve(feature: &Feature) -> Option<FeatureDefinit
             feature.properties.get("End")?.trim().parse::<f64>().ok()?,
         ))
     })()?;
-    cadmpeg_ir::features::FeatureEquationCurve::new(
+    cadmpeg_ir::features::geometry::FeatureEquationCurve::new(
         parameter.to_owned(),
         x_expression.to_owned(),
         y_expression.to_owned(),
@@ -230,7 +230,7 @@ pub(super) fn project_helix(feature: &Feature) -> Option<FeatureDefinition> {
         axis_origin,
         axis_direction,
         radius,
-        shape: cadmpeg_ir::features::HelixShape::Cylindrical {
+        shape: cadmpeg_ir::features::sweeps::HelixShape::Cylindrical {
             pitch: cadmpeg_ir::scalar::NonZeroLength::try_from(pitch).ok()?,
         },
         revolutions,

@@ -4,7 +4,7 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::{analytic::CircleCurve, Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveLength;
@@ -328,7 +328,8 @@ fn an_unbounded_near_full_arc_uses_endpoint_parameters() {
 
 #[test]
 fn an_unbounded_replica_uses_the_source_period() {
-    use cadmpeg_ir::geometry::{ProceduralCurve, ProceduralCurveDefinition};
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::ProceduralCurve;
     use cadmpeg_ir::ids::{CurveId, ProceduralCurveId};
     let mut ir = arc_wire(UNCERTAINTY * 0.5, false);
     let mut source = ir.geometry.curves[0].clone();

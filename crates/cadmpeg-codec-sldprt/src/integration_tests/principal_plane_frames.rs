@@ -4,9 +4,8 @@ use crate::history::project::project_features;
 use crate::records::{Feature, FeatureHistory, FeatureInputLane, FeatureSource};
 use crate::resolved_features::curves::lane_sketch_plane_frames;
 use crate::resolved_features::holes::coplanar_plane_frames;
-use cadmpeg_ir::features::{
-    DatumPlaneReference, FeatureDefinition, FeatureOperation, PrincipalPlane,
-};
+use cadmpeg_ir::features::datums::DatumPlaneReference;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PrincipalPlane};
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::BTreeMap;
 

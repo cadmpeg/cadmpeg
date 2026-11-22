@@ -3,26 +3,29 @@
 use cadmpeg_core::decode::unique_index;
 use cadmpeg_ir::native::bytes::NativeBytes;
 
-use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef, RevolveConstruction};
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::revolve::RevolveConstruction;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::edge_treatments::{ChamferGroup, FilletGroup, RadiusSpec};
+use cadmpeg_ir::features::evaluation::FeatureResultTopology;
+use cadmpeg_ir::features::extents::{
+    ExtrudeDirection, ExtrudeSide, ExtrusionDirectionSource, LinearTermination,
+};
+use cadmpeg_ir::features::holes::HoleKind;
+use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
+use cadmpeg_ir::features::selections::{DistinctMembers, EdgeSelection};
+use cadmpeg_ir::features::{
+    Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
+};
 use cadmpeg_ir::ids::FeatureResultTopologyId;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::Sketch;
 use cadmpeg_ir::CadIr;
-use cadmpeg_ir::{
-    features::{
-        edge_treatments::{ChamferGroup, FilletGroup, RadiusSpec},
-        holes::HoleKind,
-        DesignParameter, DistinctMembers, EdgeSelection, ExtrudeDirection, ExtrudeSide,
-        ExtrusionDirectionSource, Feature, FeatureContent, FeatureDefinition, FeatureId,
-        FeatureOperation, FeatureResultTopology, LinearTermination, ParameterValue,
-    },
-    scalar::{Angle, Length},
-};
 use serde::{Deserialize, Serialize};
 
 use crate::layout::pm_dc_work_point_fields as work_point;
@@ -223,7 +226,7 @@ pub(crate) struct FeatureInventory {
 pub(crate) struct FeatureProjection {
     pub(crate) features: Vec<Feature>,
     pub(crate) result_topologies: Vec<FeatureResultTopology>,
-    pub(crate) input_topologies: Vec<cadmpeg_ir::features::FeatureInputTopology>,
+    pub(crate) input_topologies: Vec<cadmpeg_ir::features::evaluation::FeatureInputTopology>,
     pub(crate) unresolved_features: usize,
     pub(crate) unresolved_states: usize,
     pub(crate) extrusion_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
@@ -2095,7 +2098,7 @@ impl FeatureFamily {
                 FeatureDefinition::Operation(
                     FeatureOperation::Thicken { .. }
                         | FeatureOperation::MoveFace {
-                            motion: cadmpeg_ir::features::FaceMotion::Offset { .. },
+                            motion: cadmpeg_ir::features::direct_edit::FaceMotion::Offset { .. },
                             ..
                         }
                 )
@@ -2175,7 +2178,7 @@ pub(crate) struct ProjectionIndex<'a> {
     body_joins: Option<&'a HashMap<String, cadmpeg_ir::ids::BodyId>>,
     result_model: Option<&'a CadIr>,
     thread_definitions: &'a [thread::Definition],
-    edge_names: HashMap<(String, u32), Option<cadmpeg_ir::features::GeneratedEdgeRef>>,
+    edge_names: HashMap<(String, u32), Option<cadmpeg_ir::features::selections::GeneratedEdgeRef>>,
     dimensions: HashMap<(&'a str, u32), Option<&'a revolve::Dimension>>,
     sketch_entities: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcSketchEntity>>,
     properties: HashMap<(&'a str, u32), Option<&'a PmDcFeatureProperty>>,
@@ -3117,7 +3120,9 @@ fn native_feature(
         source_tag: Some("native".into()),
         source_text: None,
         source_content: FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            definition,
+        ),
         native_ref: Some(native_id),
     })
 }
@@ -3143,7 +3148,7 @@ fn sketch_feature(
         source_tag: Some("sketch".into()),
         source_text: None,
         source_content: FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(sketch),
             }),
@@ -3336,9 +3341,9 @@ fn project_thread(
         source_tag: Some("thread".into()),
         source_text: None,
         source_content: FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
-                face: cadmpeg_ir::features::FaceSelection::Native(faces.id()),
+                face: cadmpeg_ir::features::selections::FaceSelection::Native(faces.id()),
                 diameter: thread_fields.diameter,
                 extent: None,
                 standard: thread_fields.standard,
@@ -3497,11 +3502,11 @@ fn project_extrusion(
         source_text: None,
         source_content: FeatureContent::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(profile),
                 direction: ExtrudeDirection::Explicit {
-                    vector: cadmpeg_ir::features::FeatureDirection3::from(direction),
+                    vector: cadmpeg_ir::features::geometry::FeatureDirection3::from(direction),
                     source: Some(ExtrusionDirectionSource::Custom {}),
                 },
                 start,
@@ -3591,11 +3596,11 @@ fn project_surface_extrusion(
         source_tag: Some("extrude".into()),
         source_text: None,
         source_content: FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(profile),
                 direction: ExtrudeDirection::Explicit {
-                    vector: cadmpeg_ir::features::FeatureDirection3::from(direction),
+                    vector: cadmpeg_ir::features::geometry::FeatureDirection3::from(direction),
                     source: Some(ExtrusionDirectionSource::Custom {}),
                 },
                 start,
@@ -3656,7 +3661,7 @@ fn project_revolve(
         source_tag: Some("revolve".into()),
         source_text: None,
         source_content: FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Revolve {
                 construction: RevolveConstruction::Resolved {
                     profile,
@@ -3821,7 +3826,7 @@ fn project_plate(
         source_tag: Some("sheet_metal_face".into()),
         source_text: None,
         source_content: FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
                 profile,
                 thickness: Some(thickness),
@@ -3837,8 +3842,8 @@ fn plate_profile(
     source: &PmDcFeature,
     index: &ProjectionIndex<'_>,
 ) -> Option<(
-    cadmpeg_ir::features::PlanarProfileRef,
-    cadmpeg_ir::features::FiniteVector3,
+    cadmpeg_ir::features::profiles::PlanarProfileRef,
+    cadmpeg_ir::features::geometry::FiniteVector3,
 )> {
     let token = source.identity.segment_token.as_str();
     let selection = slot_property(source, 0, index)?;
@@ -3865,20 +3870,20 @@ fn plate_profile(
 fn plate_side(
     source: &PmDcFeature,
     index: &ProjectionIndex<'_>,
-) -> Option<cadmpeg_ir::features::SheetMetalThicknessSide> {
+) -> Option<cadmpeg_ir::features::sheet_metal_forms::SheetMetalThicknessSide> {
     Some(match slot_property(source, 2, index)?.kind {
         PmDcFeaturePropertyKind::Boolean { value, .. } => {
             if value {
-                cadmpeg_ir::features::SheetMetalThicknessSide::Reverse
+                cadmpeg_ir::features::sheet_metal_forms::SheetMetalThicknessSide::Reverse
             } else {
-                cadmpeg_ir::features::SheetMetalThicknessSide::Forward
+                cadmpeg_ir::features::sheet_metal_forms::SheetMetalThicknessSide::Forward
             }
         }
         PmDcFeaturePropertyKind::Enumeration {
             family: PmDcFeatureEnumFamily::PlateSide,
             type_value: 2,
             value: 0,
-        } => cadmpeg_ir::features::SheetMetalThicknessSide::Forward,
+        } => cadmpeg_ir::features::sheet_metal_forms::SheetMetalThicknessSide::Forward,
         _ => return None,
     })
 }
@@ -3921,7 +3926,7 @@ fn body_result(
     if !matches!(body.kind, PmDcFeaturePropertyKind::SurfaceBody { .. }) {
         return None;
     }
-    let members = cadmpeg_ir::features::FeatureResultMembers::new(
+    let members = cadmpeg_ir::features::evaluation::FeatureResultMembers::new(
         vec![cadmpeg_core::text::NonBlankString::new(body.id())?],
         Vec::new(),
         Vec::new(),
@@ -4100,9 +4105,9 @@ fn extent_target_plane(
     flag_slot: usize,
     surface_slot: usize,
 ) -> Option<(
-    cadmpeg_ir::features::FeatureSupportPlaneFrame,
+    cadmpeg_ir::features::geometry::FeatureSupportPlaneFrame,
     cadmpeg_core::text::NonBlankString,
-    cadmpeg_ir::features::PlaneTargetSource,
+    cadmpeg_ir::features::extents::PlaneTargetSource,
 )> {
     let references = source.properties.references();
     let plane = references.get(plane_slot)?.index();
@@ -4121,7 +4126,7 @@ fn extent_target_plane(
         return Some((
             frame,
             native,
-            cadmpeg_ir::features::PlaneTargetSource::WorkPlane,
+            cadmpeg_ir::features::extents::PlaneTargetSource::WorkPlane,
         ));
     }
     let flag = resolve_property(token, flag, index)?;
@@ -4164,7 +4169,7 @@ fn extent_target_plane(
     Some((
         plane,
         native,
-        cadmpeg_ir::features::PlaneTargetSource::FaceSurface,
+        cadmpeg_ir::features::extents::PlaneTargetSource::FaceSurface,
     ))
 }
 
@@ -4176,14 +4181,14 @@ fn target_plane(
     v_axis: [cadmpeg_ir::scalar::FiniteReal; 3],
     native: String,
 ) -> Option<(
-    cadmpeg_ir::features::FeatureSupportPlaneFrame,
+    cadmpeg_ir::features::geometry::FeatureSupportPlaneFrame,
     cadmpeg_core::text::NonBlankString,
 )> {
     let vector = |value: [cadmpeg_ir::scalar::FiniteReal; 3]| {
         Vector3::new(value[0].get(), value[1].get(), value[2].get())
     };
     let u_axis = vector(u_axis);
-    let plane = cadmpeg_ir::features::FeatureSupportPlaneFrame::new(
+    let plane = cadmpeg_ir::features::geometry::FeatureSupportPlaneFrame::new(
         Point3::new(
             origin[0].get() * 10.0,
             origin[1].get() * 10.0,
@@ -4255,7 +4260,7 @@ fn project_fillet(
             source_text: None,
             source_content: FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Fillet {
                     groups: groups.try_into().ok()?,
                 }),
@@ -4313,9 +4318,9 @@ fn project_chamfer(
             source_text: None,
             source_content: FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Chamfer {
-                    groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
+                    groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(ChamferGroup {
                         edges: if direct {
                             edge_selection::resolve(edges, index)
                         } else {
@@ -4366,9 +4371,9 @@ fn project_shell(
     let thickness =
         cadmpeg_ir::scalar::PositiveLength::try_from(length_parameter(source, 3, index)?).ok()?;
     let removed_faces = if items.references().is_empty() {
-        cadmpeg_ir::features::FaceSelection::Faces(Vec::new())
+        cadmpeg_ir::features::selections::FaceSelection::Faces(Vec::new())
     } else {
-        cadmpeg_ir::features::FaceSelection::Native(faces.id())
+        cadmpeg_ir::features::selections::FaceSelection::Native(faces.id())
     };
     let (feature_id, result) = match feature_result(ctx, source, 9, index)? {
         Ok(value) => value,
@@ -4389,7 +4394,7 @@ fn project_shell(
             source_tag: Some("shell".into()),
             source_text: None,
             source_content: FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Shell {
                     bodies: None,
                     removed_faces,
@@ -4504,7 +4509,7 @@ fn project_hole(
             source_text: None,
             source_content: FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Hole {
                     profile: None,
                     profile_filter: None,
@@ -4559,12 +4564,12 @@ pub(crate) fn thicken_operand_losses<'a>(
         .filter(|feature| match feature.evaluation.definition() {
             FeatureDefinition::Operation(FeatureOperation::Thicken { .. }) => true,
             FeatureDefinition::Operation(FeatureOperation::MoveFace {
-                motion: cadmpeg_ir::features::FaceMotion::Offset { .. },
+                motion: cadmpeg_ir::features::direct_edit::FaceMotion::Offset { .. },
                 faces,
             }) => {
                 !matches!(
                     faces,
-                    cadmpeg_ir::features::FaceSelection::Historical { .. }
+                    cadmpeg_ir::features::selections::FaceSelection::Historical { .. }
                 ) && feature
                     .native_ref
                     .as_ref()
@@ -4662,7 +4667,7 @@ fn project_thicken(
             source_tag: Some("thicken".into()),
             source_text: None,
             source_content: FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(operation),
             ),
             native_ref: Some(source.id()),
@@ -4715,9 +4720,13 @@ fn feature_result_members(
     if bodies.is_empty() {
         return None;
     }
-    let members =
-        cadmpeg_ir::features::FeatureResultMembers::new(bodies, Vec::new(), Vec::new(), Vec::new())
-            .ok()?;
+    let members = cadmpeg_ir::features::evaluation::FeatureResultMembers::new(
+        bodies,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .ok()?;
     if let Err(error) = ctx.charge_entities(1, "project Inventor feature result topology") {
         return Some(Err(error));
     }
@@ -4990,13 +4999,17 @@ pub(crate) mod tests {
     };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, View};
     use cadmpeg_core::CodecError;
-    use cadmpeg_ir::features::{
-        edge_treatments::{ChamferSpec, RadiusSpec},
-        holes::{HoleKind, HolePlacement},
-        BooleanOp, DesignParameter, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, Feature,
-        FeatureDefinition, FeatureOperation, FeatureResultTopology, LinearTermination,
+    use cadmpeg_ir::features::edge_treatments::{ChamferSpec, RadiusSpec};
+    use cadmpeg_ir::features::evaluation::FeatureResultTopology;
+    use cadmpeg_ir::features::extents::{
+        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, LinearTermination,
     };
-    use cadmpeg_ir::features::{ParameterId, ParameterValue};
+    use cadmpeg_ir::features::holes::{HoleKind, HolePlacement};
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::parameters::DesignParameter;
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::features::ParameterId;
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::scalar::{Angle, Length};
     use cadmpeg_ir::sketches::Sketch;
@@ -5520,7 +5533,7 @@ pub(crate) mod tests {
             expression: String::new(),
             display: None,
             value: Some(value),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: Some(raw.id()),
@@ -6039,7 +6052,7 @@ pub(crate) mod tests {
                     .expect("fillet projection");
                 assert!(matches!(feature.evaluation.definition(),
                     FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
-                        if matches!(&groups[0].edges, cadmpeg_ir::features::EdgeSelection::Native(id)
+                        if matches!(&groups[0].edges, cadmpeg_ir::features::selections::EdgeSelection::Native(id)
                             if id == &properties[2].id())
                         && matches!(groups[0].radius, RadiusSpec::Constant { radius } if radius.get() == 2.5)
                 ));
@@ -6072,10 +6085,10 @@ pub(crate) mod tests {
             &[],
             &[],
         );
-        let generated_edge = cadmpeg_ir::features::GeneratedEdgeRef {
+        let generated_edge = cadmpeg_ir::features::selections::GeneratedEdgeRef {
             feature: super::history_feature_id(&test_feature(90, 0, &[]).identity)
                 .expect("valid named feature fixture"),
-            local_id: cadmpeg_ir::features::SelectionReference::new(
+            local_id: cadmpeg_ir::features::selections::SelectionReference::new(
                 "inventor:nmx:INV_NMX_SWEEPGENERATED_TAG:3:0:18".into(),
             )
             .expect("valid named feature fixture"),
@@ -6096,7 +6109,7 @@ pub(crate) mod tests {
             .expect("named fillet projection");
         assert!(
             matches!(named.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
-            if matches!(&groups[0].edges, cadmpeg_ir::features::EdgeSelection::Generated { edges, native }
+            if matches!(&groups[0].edges, cadmpeg_ir::features::selections::EdgeSelection::Generated { edges, native }
                 if edges.as_slice() == [generated_edge.clone()] && native.as_str() == named_properties[3].id()))
         );
 
@@ -6198,7 +6211,7 @@ pub(crate) mod tests {
             .expect("named chamfer projection");
         assert!(
             matches!(named.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
-            if matches!(&groups[0].edges, cadmpeg_ir::features::EdgeSelection::Generated { edges, native }
+            if matches!(&groups[0].edges, cadmpeg_ir::features::selections::EdgeSelection::Generated { edges, native }
                 if edges.as_slice() == [generated_edge] && native.as_str() == chamfer_properties[0].id()))
         );
     }
