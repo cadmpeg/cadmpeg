@@ -5624,7 +5624,7 @@ Offsets are relative to the curve record's primary indexed header. The record en
 | 33 | 4 | `entry_kind` | `u32` | little | spec | after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve · value `3` |
 | 37 | 8 | `primary_identity` | `u64` | little | spec | after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve |
 | 45 | 8 | `secondary_identity` | `u64` | little | spec | the secondary identity of the loop entry, the sense, operands `1` and `1`, and eight zero bytes |
-| 53 | 4 | `sense` | `u32` | little | spec | The sense is `1` when the side face comes from an entry of an exterior loop of the profile, and `0xffffffff` when it comes from an entry of a hole loop |
+| 53 | 4 | `sense` | `u32` | little | spec | the sense is `1` when the side face comes from an entry of the exterior loop, and `0xffffffff` when it comes from an entry of a hole loop |
 | 57 | 4 | `first_operand` | `u32` | little | spec | the secondary identity of the loop entry, the sense, operands `1` and `1`, and eight zero bytes · value `1` |
 | 61 | 4 | `second_operand` | `u32` | little | spec | the secondary identity of the loop entry, the sense, operands `1` and `1`, and eight zero bytes · value `1` |
 | 65 | 8 | `entry_zero_run_8` | `bytes[8]` | little | spec | the secondary identity of the loop entry, the sense, operands `1` and `1`, and eight zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0]` |

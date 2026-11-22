@@ -17998,7 +17998,7 @@ name = "sense"
 offset = 53
 type = "u32"
 source = "spec"
-anchor = "The sense is `1` when the side face comes from an entry of an exterior loop of the profile, and `0xffffffff` when it comes from an entry of a hole loop"
+anchor = "the sense is `1` when the side face comes from an entry of the exterior loop, and `0xffffffff` when it comes from an entry of a hole loop"
 
 [[record.field]]
 name = "first_operand"
