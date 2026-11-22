@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Borrowed structural views of native construction payloads.
 
-use super::{
-    CacheContract, CompoundComponent, CompoundCurveConstruction, LegacyCache, RevisionSurfaceForm,
-    TSplineSubtransform, TSplineSurfaceConstruction,
-};
+use super::legacy_cache::{CacheContract, LegacyCache};
+use super::procedural_curves::{CompoundComponent, CompoundCurveConstruction};
+use super::revision_forms::RevisionSurfaceForm;
+use super::tsplines::{TSplineSubtransform, TSplineSurfaceConstruction};
 use crate::ids::CurveId;
 use crate::scalar::FiniteReal;
 use crate::topology::ParameterInterval;

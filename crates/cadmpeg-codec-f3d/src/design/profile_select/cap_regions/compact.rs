@@ -168,13 +168,7 @@ pub(in crate::design::profile_select) fn selection_agrees(
         if covered.iter().any(|index| !selected.contains(index)) {
             return Ok(false);
         }
-        let mut cap = Cap {
-            loops: Vec::new(),
-            pieces: Vec::new(),
-            corners: Vec::new(),
-            area: 0.0,
-            measured: Vec::new(),
-        };
+        let mut cap = Cap::new(Vec::new(), Vec::new(), Vec::new(), 0.0, Vec::new());
         let endpoints: Vec<_> = plane
             .before
             .iter()
@@ -437,7 +431,11 @@ fn inserted_sides_agree(
     side_count > 0
 }
 
-fn split_piece(piece: &Piece, points: &[cadmpeg_ir::math::Point2], tolerance: f64) -> Vec<Piece> {
+pub(super) fn split_piece(
+    piece: &Piece,
+    points: &[cadmpeg_ir::math::Point2],
+    tolerance: f64,
+) -> Vec<Piece> {
     let length = match *piece {
         Piece::Line(start, end) => distance(start, end),
         Piece::Arc { radius, sweep, .. } => radius * sweep.abs(),
@@ -681,7 +679,7 @@ fn signed_length(sweep: &Sweep<'_>) -> Option<f64> {
     blind_length(sweep)
 }
 
-fn blind_length(sweep: &Sweep<'_>) -> Option<f64> {
+pub(super) fn blind_length(sweep: &Sweep<'_>) -> Option<f64> {
     if !matches!(sweep.start, ExtrudeStart::ProfilePlane {}) {
         return None;
     }

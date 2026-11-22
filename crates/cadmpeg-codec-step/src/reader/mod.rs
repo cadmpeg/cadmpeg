@@ -862,7 +862,7 @@ fn retain_unowned_carriers(
         }
     }
     for surface in &ir.geometry.procedural_surfaces {
-        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded {
+        let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::CurveBounded {
             boundary_pcurves,
             ..
         } = surface.definition()

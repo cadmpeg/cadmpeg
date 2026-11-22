@@ -2023,7 +2023,7 @@ fn append_legacy_brep(
                         (trim.tolerance_2d > 0.0)
                             .then_some(trim.tolerance_2d)
                             .map(|value| {
-                                cadmpeg_ir::geometry::FitTolerance::try_new(value).map_err(|_| {
+                                cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(value).map_err(|_| {
                                     cadmpeg_ir::geometry::pcurve::PcurveMetadata::INVALID_FIT_TOLERANCE
                                 })
                             })
@@ -2057,8 +2057,10 @@ fn append_legacy_brep(
                         pcurve: pcurve_id,
                         isoparametric: None,
                         parameter_range: Some(
-                            cadmpeg_ir::geometry::DirectedParameterRange::new(pcurve_domain)
-                                .map_err(CodecError::malformed)?,
+                            cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new(
+                                pcurve_domain,
+                            )
+                            .map_err(CodecError::malformed)?,
                         ),
                     }],
                     use_curve: None,

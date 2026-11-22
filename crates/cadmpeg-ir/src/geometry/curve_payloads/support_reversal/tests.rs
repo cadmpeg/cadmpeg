@@ -4,11 +4,13 @@ use crate::geometry::curve_payloads::{
     SilhouetteCurveConstruction, SpringCurvePayload, SurfaceOffsetCurveConstruction,
     ThreeSurfaceIntersectionCurvePayload, TwoSidedOffsetCurveConstruction,
 };
+use crate::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+use crate::geometry::legacy_cache::CacheContract;
 use crate::geometry::pcurve::{LinePcurve, PcurveGeometry};
-use crate::geometry::{
-    CacheContract, CacheFirstCurveForm, CacheFirstCurveParameterization, IntcurveSupportContext,
-    IntcurveSupportSide, ProceduralCurveDefinition, RevisionCacheForm, SilhouetteKind,
-    SpringLayout, SupportPcurve,
+use crate::geometry::procedural_curves::{ProceduralCurveDefinition, SupportPcurve};
+use crate::geometry::revision_forms::RevisionCacheForm;
+use crate::geometry::surface_curves::{
+    CacheFirstCurveForm, CacheFirstCurveParameterization, SilhouetteKind, SpringLayout,
 };
 use crate::ids::{CurveId, SurfaceId};
 use crate::math::{Point2, Vector3};
