@@ -369,6 +369,12 @@ pub(crate) enum SldprtLossCode {
     /// Extrudes whose blind depth is bound to their record's only dimension,
     /// whose name is neither `Depth` nor `D1`.
     DesignExtrudeDepthAssumed,
+    /// Equation-manager lines that the decoder does not read into the
+    /// expression of the parameter they assign.
+    DesignEquationUnread,
+    /// Parameters whose equation-manager line is stated as `SolidWorks`
+    /// source text.
+    DesignEquationSource,
 }
 
 impl SldprtLossCode {
@@ -523,6 +529,8 @@ impl SldprtLossCode {
         Self::DesignParameterDisplayRounded,
         Self::DesignParameterValueUnread,
         Self::DesignExtrudeDepthAssumed,
+        Self::DesignEquationUnread,
+        Self::DesignEquationSource,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -699,6 +707,8 @@ impl SldprtLossCode {
             Self::DesignParameterDisplayRounded => "design.parameter-display-rounded",
             Self::DesignParameterValueUnread => "design.parameter-value-unread",
             Self::DesignExtrudeDepthAssumed => "design.extrude-depth-assumed",
+            Self::DesignEquationUnread => "design.equation-unread",
+            Self::DesignEquationSource => "design.equation-source",
         }
     }
 
@@ -846,7 +856,9 @@ impl SldprtLossCode {
             | Self::DesignFolderDropped
             | Self::DesignParameterDisplayRounded
             | Self::DesignParameterValueUnread
-            | Self::DesignExtrudeDepthAssumed => Severity::Warning,
+            | Self::DesignExtrudeDepthAssumed
+            | Self::DesignEquationUnread
+            | Self::DesignEquationSource => Severity::Warning,
             Self::AssemblyStructureNotTransferred => Severity::Blocking,
             Self::AssemblyPlacementUnresolved => Severity::Error,
             Self::AssemblyComponentsExternal
@@ -899,11 +911,14 @@ impl SldprtLossCode {
             | Self::AssemblyBomExclusionNotTransferred => {
                 LossTaxonomy::AssemblyPlacementsNotTransferred
             }
-            Self::DesignFeatureUnresolved => LossTaxonomy::RecordNotTyped,
+            Self::DesignFeatureUnresolved | Self::DesignEquationUnread => {
+                LossTaxonomy::RecordNotTyped
+            }
             Self::DesignFolderDropped => LossTaxonomy::MetadataNotTransferred,
             Self::DesignParameterDisplayRounded
             | Self::DesignParameterValueUnread
-            | Self::DesignExtrudeDepthAssumed => LossTaxonomy::DecodeDiagnostic,
+            | Self::DesignExtrudeDepthAssumed
+            | Self::DesignEquationSource => LossTaxonomy::DecodeDiagnostic,
             Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
             Self::TopologyFaceUnclaimed
             | Self::TopologyOwnershipWithheld
@@ -1329,6 +1344,8 @@ mod tests {
                 "design.parameter-display-rounded",
                 "design.parameter-value-unread",
                 "design.extrude-depth-assumed",
+                "design.equation-unread",
+                "design.equation-source",
             ]
         );
     }
