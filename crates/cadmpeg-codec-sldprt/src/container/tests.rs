@@ -640,6 +640,39 @@ fn oversized_block_candidate_is_skipped_without_fusing_the_session() {
 }
 
 #[test]
+fn history_zlb_stream_that_does_not_inflate_is_unread() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let keywords = container::compound_stream(
+        &ctx,
+        "swXmlContents/KeyWords__ZLB".into(),
+        1,
+        0,
+        b"\x00\x01 not a deflate stream".to_vec(),
+        None,
+    )
+    .unwrap();
+    let scan =
+        container::completed_scan(&ctx, &[], 0, vec![], vec![], vec![], vec![keywords]).unwrap();
+    let mut annotations = cadmpeg_ir::annotations::Annotations::default();
+    let mut losses = Vec::new();
+    let histories = crate::history::histories(&ctx, &scan, &mut annotations, &mut losses).unwrap();
+    assert!(histories.is_empty());
+    let unread = losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::SldprtLossCode::HistoryUnread.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(unread.len(), 1);
+    assert!(
+        unread[0]
+            .message
+            .contains("no XML payload is decoded from it"),
+        "{}",
+        unread[0].message
+    );
+}
+
+#[test]
 fn compound_scan_preserves_malformed_open_error() {
     let error = container::scan(
         &cadmpeg_core::decode::test_support::service_decode_context(),

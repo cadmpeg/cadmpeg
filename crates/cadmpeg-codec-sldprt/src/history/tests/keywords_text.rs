@@ -8,6 +8,7 @@ use crate::test_support::container::{make_block, outer_header};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 
 struct Decoded {
     histories: Vec<FeatureHistory>,
@@ -149,6 +150,21 @@ fn history_member_with_another_root_is_unread() {
     assert_eq!(codes(&decoded.losses), [SldprtLossCode::HistoryUnread]);
     let message = &decoded.losses[0].message;
     assert!(message.contains(r#"its root element "Other""#), "{message}");
+}
+
+#[test]
+fn history_whose_xml_is_refused_is_unread() {
+    let attributes = (0..257).fold(String::new(), |mut text, index| {
+        write!(text, " a{index}=\"{index}\"").unwrap();
+        text
+    });
+    let text =
+        format!(r#"<Keywords Name="Part"><Feature id="1" Name="Boss"{attributes}/></Keywords>"#);
+    let decoded = decode("swXmlContents/KeyWords", text.as_bytes());
+    assert!(decoded.histories.is_empty());
+    assert_eq!(codes(&decoded.losses), [SldprtLossCode::HistoryUnread]);
+    let message = &decoded.losses[0].message;
+    assert!(message.contains("its XML is refused: "), "{message}");
 }
 
 #[test]
