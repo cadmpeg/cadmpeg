@@ -2047,9 +2047,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 ]) && scope.base_flange_profile().is_some_and(|profile| {
                     profile.record_index == operation.profile_record_index
                         && profile.scope_reference_ordinal == 1
-                }) && scope
-                    .byte_offset()
-                    .checked_add(123)
+                }) && u64::try_from(crate::layout::base_flange_scope::THICKNESS_COPY)
+                    .ok()
+                    .and_then(|offset| scope.byte_offset().checked_add(offset))
                     .is_some_and(|expected_offset| operation.thickness_offset == expected_offset)
                     && operation.thickness_offset < scope.paired_byte_offset()
             }
