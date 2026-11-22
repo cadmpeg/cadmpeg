@@ -185,7 +185,7 @@ pub(crate) fn measure_edge<'ir>(
         (Ok(chart), Ok(range)) => (
             settle(curve_length(eval, chart, *range, scale).map_err(|failure| failure.at(id)))?,
             match work {
-                Work::Row | Work::Box => {
+                Work::Row | Work::Body | Work::Box => {
                     settle(curve_box(eval, chart, *range).map_err(|failure| failure.at(id)))?
                 }
                 Work::Orientation => Err(Missing {

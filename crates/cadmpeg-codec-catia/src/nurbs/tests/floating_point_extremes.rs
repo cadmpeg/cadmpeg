@@ -5,10 +5,8 @@ use crate::nurbs::{
     reverse_nurbs_curve, reverse_pcurve_geometry, CurveGeometry, LaneRefusals, PcurveGeometry,
     PcurveNurbs, SolvedCurveGeometry,
 };
-use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
-    ProceduralCurveDefinition,
-};
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 const RELATIVE_ROUNDOFF: f64 = 32.0 * f64::EPSILON;
@@ -348,9 +346,9 @@ fn helix_cache_computes_finite_sagitta_without_doubling_radius() {
         (1e308, 1e-165, 1e-4),
     ] {
         let definition = ProceduralCurveDefinition::Helix(
-            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+            cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
                 [0.0, sweep],
-                cadmpeg_ir::geometry::HelixFrame {
+                cadmpeg_ir::geometry::helix::HelixFrame {
                     center: Point3::new(0.0, 0.0, 0.0),
                     major: Vector3::new(radius, 0.0, 0.0),
                     minor: Vector3::new(0.0, radius, 0.0),

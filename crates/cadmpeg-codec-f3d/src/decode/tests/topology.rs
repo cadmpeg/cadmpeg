@@ -1405,7 +1405,8 @@ fn decode_keeps_face_on_unknown_surface() {
 
 #[test]
 fn cached_unmodeled_spline_families_retain_exact_shape_and_opaque_construction() {
-    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SolvedSurfaceGeometry};
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
     for family in ["VBL_OFFSURF", "offsetvbsur", "skin_spl_sur2"] {
         let result = F3dCodec

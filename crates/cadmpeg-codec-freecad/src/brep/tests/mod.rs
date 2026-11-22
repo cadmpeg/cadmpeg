@@ -1495,8 +1495,9 @@ fn transfers_occt_revolution_surface_parameter_order() {
     })
     .unwrap();
     assert!(match surfaces.procedural[0].1.definition() {
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(matched_payload) =>
-            matches!((matched_payload.transposed(),), (true,)),
+        cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Revolution(
+            matched_payload,
+        ) => matches!((matched_payload.transposed(),), (true,)),
         _ => false,
     });
 }

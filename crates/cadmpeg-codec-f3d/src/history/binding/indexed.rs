@@ -7,22 +7,86 @@ use crate::history_records::{
     AsmHistoricalPoint, AsmHistoricalRelation, AsmHistoricalSurfaceAxis,
     AsmHistoricalSurfaceRadius, AsmHistoricalTopology,
 };
+use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 
 /// One bit per topology family.
 type Families = u64;
+
+/// Inline storage for the common single-row key, spilling to a heap vector
+/// only when multiple rows share the same key.
+enum Rows<T> {
+    One(T),
+    Many(Vec<T>),
+}
+
+impl<T> Rows<T> {
+    #[inline]
+    fn push(&mut self, value: T) {
+        match self {
+            Self::Many(items) => items.push(value),
+            Self::One(_) => {
+                let Self::One(first) = std::mem::replace(self, Self::Many(Vec::new())) else {
+                    return;
+                };
+                *self = Self::Many(vec![first, value]);
+            }
+        }
+    }
+
+    #[inline]
+    fn as_slice(&self) -> &[T] {
+        match self {
+            Self::One(item) => std::slice::from_ref(item),
+            Self::Many(items) => items.as_slice(),
+        }
+    }
+}
+
+impl<T: Clone> Rows<T> {
+    #[inline]
+    fn from_slice(rows: &[T]) -> Self {
+        match rows {
+            [single] => Self::One(single.clone()),
+            _ => Self::Many(rows.to_vec()),
+        }
+    }
+
+    #[inline]
+    fn extend_from_slice(&mut self, rows: &[T]) {
+        match self {
+            Self::Many(items) => items.extend_from_slice(rows),
+            Self::One(_) => {
+                let Self::One(first) = std::mem::replace(self, Self::Many(Vec::new())) else {
+                    return;
+                };
+                let mut items = Vec::with_capacity(1 + rows.len());
+                items.push(first);
+                items.extend_from_slice(rows);
+                *self = Self::Many(items);
+            }
+        }
+    }
+}
 
 fn group<T>(
     rows: Vec<T>,
     key: impl Fn(&T) -> i64,
     family: Families,
     families: &mut BTreeMap<i64, Families>,
-) -> BTreeMap<i64, Vec<T>> {
-    let mut groups = BTreeMap::<i64, Vec<T>>::new();
+) -> BTreeMap<i64, Rows<T>> {
+    let mut groups = BTreeMap::<i64, Rows<T>>::new();
     for row in rows {
         let slot = key(&row);
         *families.entry(slot).or_default() |= family;
-        groups.entry(slot).or_default().push(row);
+        match groups.entry(slot) {
+            Entry::Vacant(vacant) => {
+                vacant.insert(Rows::One(row));
+            }
+            Entry::Occupied(mut occupied) => {
+                occupied.get_mut().push(row);
+            }
+        }
     }
     groups
 }
@@ -39,10 +103,10 @@ struct KeyEdit {
     written: Families,
 }
 
-/// Overwrite the rows of each edited key in place. A key's first run clears
+/// Overwrite the rows of each edited key in place. A key's first run replaces
 /// its old rows and later runs append, so an unsorted part keeps every row.
 fn write_family<T: Clone>(
-    current: &mut BTreeMap<i64, Vec<T>>,
+    current: &mut BTreeMap<i64, Rows<T>>,
     edits: &mut [KeyEdit],
     rows: &[T],
     key: impl Fn(&T) -> i64,
@@ -53,12 +117,12 @@ fn write_family<T: Clone>(
         let Ok(at) = edits.binary_search_by_key(&slot, |edit| edit.key) else {
             continue;
         };
-        let target = current.entry(slot).or_default();
         if edits[at].written & family == 0 {
-            target.clear();
+            current.insert(slot, Rows::from_slice(run));
             edits[at].written |= family;
+        } else if let Some(target) = current.get_mut(&slot) {
+            target.extend_from_slice(run);
         }
-        target.extend_from_slice(run);
     }
 }
 
@@ -70,8 +134,8 @@ macro_rules! indexed_topology {
         #[derive(Default)]
         pub(super) struct IndexedTopology {
             families: BTreeMap<i64, Families>,
-            $($entity: BTreeMap<i64, Vec<$ety>>),*,
-            $($container: BTreeMap<i64, Vec<$cty>>),*
+            $($entity: BTreeMap<i64, Rows<$ety>>),*,
+            $($container: BTreeMap<i64, Rows<$cty>>),*
         }
         impl IndexedTopology {
             const ENTITIES: Families = $((1 << $ebit))|*;
@@ -98,8 +162,8 @@ macro_rules! indexed_topology {
             pub(super) fn bodies(&self) -> impl Iterator<Item = &i64> { self.bodies.keys() }
             pub(super) fn materialize(&self) -> AsmHistoricalTopology {
                 AsmHistoricalTopology {
-                    $($entity: self.$entity.values().flatten().cloned().collect()),*,
-                    $($container: self.$container.values().flatten().cloned().collect()),*
+                    $($entity: self.$entity.values().flat_map(Rows::as_slice).cloned().collect()),*,
+                    $($container: self.$container.values().flat_map(Rows::as_slice).cloned().collect()),*
                 }
             }
             pub(super) fn project(&self, keys: &Slots, containers: bool) -> AsmHistoricalTopology {
@@ -110,11 +174,15 @@ macro_rules! indexed_topology {
                     };
                     if containers {
                         $(if present & (1 << $cbit) != 0 {
-                            out.$container.extend(self.$container.get(key).into_iter().flatten().cloned());
+                            if let Some(rows) = self.$container.get(key) {
+                                out.$container.extend_from_slice(rows.as_slice());
+                            }
                         })*
                     } else {
                         $(if present & (1 << $ebit) != 0 {
-                            out.$entity.extend(self.$entity.get(key).into_iter().flatten().cloned());
+                            if let Some(rows) = self.$entity.get(key) {
+                                out.$entity.extend_from_slice(rows.as_slice());
+                            }
                         })*
                     }
                 }

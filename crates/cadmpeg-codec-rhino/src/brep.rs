@@ -72,11 +72,11 @@ impl BrepTolerance {
         }
     }
 
-    pub(crate) fn fit(self) -> Option<cadmpeg_ir::geometry::FitTolerance> {
+    pub(crate) fn fit(self) -> Option<cadmpeg_ir::geometry::legacy_cache::FitTolerance> {
         match self {
             Self::NonNegative(value) => value
                 .positive()
-                .map(|_| cadmpeg_ir::geometry::FitTolerance::from(value)),
+                .map(|_| cadmpeg_ir::geometry::legacy_cache::FitTolerance::from(value)),
             Self::Unset => None,
         }
     }

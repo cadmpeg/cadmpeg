@@ -209,7 +209,7 @@ impl<'ir> UseFrame<'_, 'ir> {
         let pcurve = self.pcurve(use_)?;
         let fit = pcurve
             .fit_tolerance()
-            .map_or(0.0, cadmpeg_ir::geometry::FitTolerance::get);
+            .map_or(0.0, cadmpeg_ir::geometry::legacy_cache::FitTolerance::get);
         let span = |[t0, t1]: [f64; 2]| Span {
             geometry: &pcurve.geometry,
             t0,
@@ -477,7 +477,7 @@ impl<'ir> UseFrame<'_, 'ir> {
             let pcurve = self.pcurve(use_)?;
             let range = match use_
                 .parameter_range
-                .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints)
+                .map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints)
                 .or_else(|| {
                     pcurve
                         .parameter_range()
@@ -504,7 +504,7 @@ impl<'ir> UseFrame<'_, 'ir> {
                 t1: range[1],
                 fit: pcurve
                     .fit_tolerance()
-                    .map_or(0.0, cadmpeg_ir::geometry::FitTolerance::get),
+                    .map_or(0.0, cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
             });
         }
         let reversed: Vec<Span<'ir>> = spans

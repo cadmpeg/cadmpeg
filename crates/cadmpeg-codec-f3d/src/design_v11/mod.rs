@@ -22,6 +22,7 @@
 //! of its own belong to no scope here, and a loss names each of them.
 
 mod configurations;
+mod datum;
 mod operation;
 mod parameters;
 #[cfg(test)]
@@ -184,6 +185,7 @@ pub(crate) fn project(
             active_arrangements: BTreeSet::new(),
             occurrences: BTreeMap::new(),
             current,
+            unproduced: BTreeSet::default(),
         });
         ir.design.containers.extend(projected.containers);
         ir.design.features.extend(projected.features);

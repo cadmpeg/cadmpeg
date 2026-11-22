@@ -34,7 +34,10 @@ pub(super) fn project_curve(
     curve: &NurbsCurve,
     plane: &PlaneSurface,
     refusal: &mut LaneRefusals,
-) -> Option<(PcurveGeometry, cadmpeg_ir::geometry::FitTolerance)> {
+) -> Option<(
+    PcurveGeometry,
+    cadmpeg_ir::geometry::legacy_cache::FitTolerance,
+)> {
     use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
     use cadmpeg_ir::math::Point2;
 
@@ -77,7 +80,7 @@ pub(super) fn project_curve(
     )?;
     Some((
         PcurveGeometry::Nurbs { nurbs },
-        cadmpeg_ir::geometry::FitTolerance::try_new(gap_mm).ok()?,
+        cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(gap_mm).ok()?,
     ))
 }
 

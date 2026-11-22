@@ -1590,7 +1590,7 @@ fn standard_freeform_tag_resolves_standalone_a8_rolling_ball() {
                 source:
                     crate::families::standard::decode::StandardRollingBallSource::ObjectStreamA8,
             }
-        ) if matches!(definition.as_ref(), cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(jet) if jet.degree() == 5)));
+        ) if matches!(definition.as_ref(), cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::RollingBallJet(jet) if jet.degree() == 5)));
 }
 
 #[test]
@@ -1728,7 +1728,7 @@ fn standard_face_resolves_a_rolling_ball_result_carrier() {
                 source:
                     crate::families::standard::decode::StandardRollingBallSource::ObjectStreamA8,
             }
-        ) if matches!(definition.as_ref(), cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(_))
+        ) if matches!(definition.as_ref(), cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::RollingBallJet(_))
     ));
 }
 

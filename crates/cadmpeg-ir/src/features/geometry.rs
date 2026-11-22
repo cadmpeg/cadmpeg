@@ -809,7 +809,7 @@ pub struct FeatureCircularArc {
     center: FinitePoint3,
     normal: FeatureDirection3,
     radius: PositiveLength,
-    angles: crate::geometry::DirectedParameterRange,
+    angles: crate::geometry::procedural_curves::DirectedParameterRange,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -834,7 +834,7 @@ impl FeatureCircularArc {
         center: Point3,
         normal: Vector3,
         radius: PositiveLength,
-        angles: crate::geometry::DirectedParameterRange,
+        angles: crate::geometry::procedural_curves::DirectedParameterRange,
     ) -> Option<Self> {
         Some(Self::from_parts(
             FinitePoint3::new(center)?,
@@ -850,7 +850,7 @@ impl FeatureCircularArc {
         center: FinitePoint3,
         normal: FeatureDirection3,
         radius: PositiveLength,
-        angles: crate::geometry::DirectedParameterRange,
+        angles: crate::geometry::procedural_curves::DirectedParameterRange,
     ) -> Self {
         Self {
             center,
@@ -876,7 +876,7 @@ impl FeatureCircularArc {
     }
 
     /// Return the directed angular interval in radians.
-    pub fn angles(self) -> crate::geometry::DirectedParameterRange {
+    pub fn angles(self) -> crate::geometry::procedural_curves::DirectedParameterRange {
         self.angles
     }
 }
@@ -884,9 +884,11 @@ impl FeatureCircularArc {
 impl TryFrom<FeatureCircularArcWire> for FeatureCircularArc {
     type Error = &'static str;
     fn try_from(wire: FeatureCircularArcWire) -> Result<Self, Self::Error> {
-        let angles =
-            crate::geometry::DirectedParameterRange::new([wire.start_angle, wire.end_angle])
-                .map_err(|_| "arc start_angle and end_angle must be finite and distinct")?;
+        let angles = crate::geometry::procedural_curves::DirectedParameterRange::new([
+            wire.start_angle,
+            wire.end_angle,
+        ])
+        .map_err(|_| "arc start_angle and end_angle must be finite and distinct")?;
         Self::new(wire.center, wire.normal, wire.radius, angles)
             .ok_or("circular-arc center must be finite and normal must have finite nonzero norm")
     }
@@ -914,7 +916,7 @@ pub struct FeatureEllipticArc {
     normal: FeatureDirection3,
     major_axis: FeatureDirection3,
     radii: [PositiveLength; 2],
-    angles: crate::geometry::DirectedParameterRange,
+    angles: crate::geometry::procedural_curves::DirectedParameterRange,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -944,7 +946,7 @@ impl FeatureEllipticArc {
         normal: Vector3,
         major_axis: Vector3,
         radii: [PositiveLength; 2],
-        angles: crate::geometry::DirectedParameterRange,
+        angles: crate::geometry::procedural_curves::DirectedParameterRange,
     ) -> Option<Self> {
         let center = FinitePoint3::new(center)?;
         let normal = FeatureDirection3::new(normal)?;
@@ -1006,7 +1008,7 @@ impl FeatureEllipticArc {
     }
 
     /// Return the directed angular interval in radians.
-    pub fn angles(self) -> crate::geometry::DirectedParameterRange {
+    pub fn angles(self) -> crate::geometry::procedural_curves::DirectedParameterRange {
         self.angles
     }
 }
@@ -1014,9 +1016,11 @@ impl FeatureEllipticArc {
 impl TryFrom<FeatureEllipticArcWire> for FeatureEllipticArc {
     type Error = &'static str;
     fn try_from(wire: FeatureEllipticArcWire) -> Result<Self, Self::Error> {
-        let angles =
-            crate::geometry::DirectedParameterRange::new([wire.start_angle, wire.end_angle])
-                .map_err(|_| "arc start_angle and end_angle must be finite and distinct")?;
+        let angles = crate::geometry::procedural_curves::DirectedParameterRange::new([
+            wire.start_angle,
+            wire.end_angle,
+        ])
+        .map_err(|_| "arc start_angle and end_angle must be finite and distinct")?;
         Self::new(
             wire.center,
             wire.normal,

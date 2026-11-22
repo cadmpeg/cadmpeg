@@ -23,9 +23,11 @@ use super::super::surfaces::revolution_surface;
 use crate::families::b5::graph::vertex_refs::B5VertexRef;
 use cadmpeg_ir::document::CadIr;
 
+use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 use cadmpeg_ir::geometry::{
-    nurbs::NurbsCurve, pcurve::PcurveGeometry, CurveGeometry, ProceduralCurveDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};

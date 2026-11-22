@@ -19,10 +19,9 @@ use cadmpeg_ir::eval::model_surface_point_by_id;
 use cadmpeg_ir::eval::nurbs_curve_parameter_domain;
 use cadmpeg_ir::eval::nurbs_pcurve_parameter_domain;
 use cadmpeg_ir::eval::pcurve_tangent;
-use cadmpeg_ir::geometry::{
-    pcurve::PcurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
-};
+use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, IdentityKey, IdentityKeyTail, LoopId, PcurveId,
     PointId, RegionId, ShellId, SurfaceId, VertexId,
@@ -1983,7 +1982,7 @@ fn segment_parameter_range(index: &ModelIndex<'_>, curve: &CurveId) -> Option<[f
         .procedural_curves_for_curve(curve.as_str(), cadmpeg_ir::index::StandardIndex)
         .and_then(|procedurals| procedurals.first().copied())
     {
-        let cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(subset) =
+        let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Subset(subset) =
             procedural.definition()
         else {
             return None;
@@ -3634,7 +3633,7 @@ fn build_one(
                     let mut pcurve_uses = Vec::new();
                     for (pcurve, parameter_range) in pcurves {
                         let parameter_range = match parameter_range
-                            .map(cadmpeg_ir::geometry::DirectedParameterRange::new)
+                            .map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new)
                             .transpose()
                         {
                             Ok(range) => range,
@@ -5426,7 +5425,7 @@ fn surface_selection_parameter_domains(
         Some(ProceduralSurfaceDefinition::Subset(definition_payload)) => {
             let parameter_ranges = definition_payload
                 .parameter_ranges()
-                .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints);
+                .map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints);
             [
                 subset_parameter_domain(parameter_ranges[0]),
                 subset_parameter_domain(parameter_ranges[1]),

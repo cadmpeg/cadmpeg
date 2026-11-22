@@ -4,10 +4,9 @@ use super::*;
 
 const CHORD_BOUND_TOLERANCE: f64 = 1e-10;
 use crate::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
-use crate::geometry::{
-    Curve, ProceduralSurface, RevisionSurfaceParameterization, Surface, SweepRevisionForm,
-    SweepSurfaceConstruction,
-};
+use crate::geometry::revision_forms::RevisionSurfaceParameterization;
+use crate::geometry::sweep_surfaces::{SweepRevisionForm, SweepSurfaceConstruction};
+use crate::geometry::{Curve, ProceduralSurface, Surface};
 use crate::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 
 fn bilinear(domain: [f64; 2], scale: f64) -> NurbsSurface {
@@ -85,14 +84,14 @@ fn fixture(scale: f64) -> (crate::CadIr, SurfaceId) {
                 spine_id,
                 Some(Box::new(SweepSurfaceConstruction {
                     primary_kind: 0,
-                    cache: crate::geometry::CacheContract::Revision {
+                    cache: crate::geometry::legacy_cache::CacheContract::Revision {
                         form: SweepRevisionForm {
                             revision: crate::scalar::PositiveI64::new(22601)
                                 .expect("positive revision"),
                             primary_flag: true,
                             profile_endpoints: [None, None],
                             path_endpoints: [None, None],
-                            cache: crate::geometry::RevisionCacheForm::Parameterization(
+                            cache: crate::geometry::revision_forms::RevisionCacheForm::Parameterization(
                                 RevisionSurfaceParameterization::default(),
                             ),
                         },

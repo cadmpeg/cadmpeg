@@ -604,7 +604,7 @@ pub struct PcurveUse {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_parameter_range"
     )]
-    pub parameter_range: Option<crate::geometry::DirectedParameterRange>,
+    pub parameter_range: Option<crate::geometry::procedural_curves::DirectedParameterRange>,
 }
 
 /// The mutually exclusive forms of a loop boundary.
@@ -1642,7 +1642,7 @@ mod tests {
     #[test]
     fn parameter_interval_admission_preserves_direction_contracts() {
         use super::{EdgeCarrier, ParameterInterval};
-        use crate::geometry::DirectedParameterRange;
+        use crate::geometry::procedural_curves::DirectedParameterRange;
         assert!(ParameterInterval::new([2.0, 1.0]).is_err());
         assert!(ParameterInterval::new([f64::INFINITY, 1.0]).is_err());
         assert_eq!(
@@ -2421,7 +2421,7 @@ cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
 cadmpeg_core::named_optional_field!(deserialize_isoparametric, bool, "isoparametric");
 cadmpeg_core::named_optional_field!(
     deserialize_parameter_range,
-    crate::geometry::DirectedParameterRange,
+    crate::geometry::procedural_curves::DirectedParameterRange,
     "parameter_range"
 );
 cadmpeg_core::named_optional_field!(deserialize_use_curve, CoedgeUseCurve, "use_curve");
