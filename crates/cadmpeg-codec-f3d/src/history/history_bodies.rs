@@ -205,7 +205,7 @@ pub(crate) fn derived_base_snapshots(
 pub(crate) struct ConsumerContext {
     pub(crate) bindings: HashMap<String, String>,
     pub(crate) remaining_work: usize,
-    pub(crate) tails: Vec<super::body_history_tail::BodyHistoryTail>,
+    pub(crate) tails: super::body_history_tail::BodyHistoryTails,
 }
 
 pub(crate) fn fill(

@@ -138,8 +138,8 @@ fn a_later_body_change_retains_a_native_operation_owned_by_the_target() {
     foreign.product_definition = Some("test:model:component#guide".try_into().unwrap());
     foreign.evaluation.set_outputs(Default::default());
     let features = vec![before, foreign];
-    let tails = collect(&features, &[scope], &[history()], None);
-    assert_eq!(tails.len(), 1);
+    let found = collect(&features, &[scope], &[history()], None);
+    assert_eq!(found.tails.len(), 1);
     let definition = definition();
     let mut guide = definition.clone();
     guide.id = features[1].product_definition.clone().unwrap();
@@ -148,7 +148,7 @@ fn a_later_body_change_retains_a_native_operation_owned_by_the_target() {
     model.features.clone_from(&features);
     model.product_definitions = vec![definition.clone(), guide];
     let mut losses = Vec::new();
-    append(&mut model, &tails, &mut losses).unwrap();
+    append(&mut model, &found, &mut losses).unwrap();
     assert_eq!(&model.features[..2], features.as_slice());
     let retained = &model.features[2];
     assert_eq!(retained.product_definition, Some(definition.id.clone()));
@@ -180,13 +180,17 @@ fn a_later_body_change_retains_a_native_operation_owned_by_the_target() {
 #[test]
 fn a_change_to_another_body_preserves_the_linked_history() {
     let scope = scope(59);
-    assert!(collect(&[feature(&scope, 2)], &[scope], &[history()], None).is_empty());
+    assert!(collect(&[feature(&scope, 2)], &[scope], &[history()], None)
+        .tails
+        .is_empty());
 }
 
 #[test]
 fn a_feature_that_reaches_the_head_has_no_tail() {
     let scope = scope(64);
-    assert!(collect(&[feature(&scope, 1)], &[scope], &[history()], None).is_empty());
+    assert!(collect(&[feature(&scope, 1)], &[scope], &[history()], None)
+        .tails
+        .is_empty());
 }
 
 #[test]
@@ -198,7 +202,9 @@ fn a_geometry_unchanged_tail_preserves_the_linked_history() {
         .as_mut()
         .unwrap()
         .geometry_unchanged = true;
-    assert!(collect(&[feature(&scope, 1)], &[scope], &[history], None).is_empty());
+    assert!(collect(&[feature(&scope, 1)], &[scope], &[history], None)
+        .tails
+        .is_empty());
 }
 
 #[test]
@@ -211,7 +217,9 @@ fn a_suppressed_feature_does_not_claim_the_tail() {
     suppressed.ordinal = 2;
     suppressed.suppressed = Some(true);
     assert_eq!(
-        collect(&[before, suppressed], &[old, new], &[history()], None).len(),
+        collect(&[before, suppressed], &[old, new], &[history()], None)
+            .tails
+            .len(),
         1
     );
 }
@@ -243,7 +251,28 @@ fn matching_state_numbers_in_another_brep_do_not_claim_the_target() {
     let scope = scope(59);
     let mut other = history();
     other.id = "f3d:BREP.other.smbh:asm-history#0".into();
-    assert!(collect(&[feature(&scope, 1)], &[scope], &[other], None).is_empty());
+    assert!(collect(&[feature(&scope, 1)], &[scope], &[other], None)
+        .tails
+        .is_empty());
+}
+
+#[test]
+fn a_body_no_decoded_history_holds_gets_no_interval_and_the_unread_loss() {
+    let scope = scope(59);
+    let before = feature(&scope, 1);
+    let mut other = history();
+    other.id = "f3d:BREP.other.smbh:asm-history#0".into();
+    let found = collect(std::slice::from_ref(&before), &[scope], &[other], None);
+    assert!(found.tails.is_empty());
+    assert_eq!(found.unread, vec![(body(1), before.id.clone())]);
+    let mut model = Model::default();
+    model.features.push(before.clone());
+    let mut losses = Vec::new();
+    append(&mut model, &found, &mut losses).unwrap();
+    assert_eq!(model.features.len(), 1);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code, F3dLossCode::FeatureBodyHistoryUnread.kind());
+    assert!(losses[0].message.contains(&body(1).to_string()));
 }
 
 #[test]
@@ -262,13 +291,13 @@ fn a_body_in_two_product_definitions_retains_an_unowned_native_operation() {
 fn assert_unresolved_owner(definitions: Vec<ProductDefinition>, gap: &str) {
     let scope = scope(59);
     let before = feature(&scope, 1);
-    let tails = collect(std::slice::from_ref(&before), &[scope], &[history()], None);
-    assert_eq!(tails.len(), 1);
+    let found = collect(std::slice::from_ref(&before), &[scope], &[history()], None);
+    assert_eq!(found.tails.len(), 1);
     let mut model = Model::default();
     model.features.push(before.clone());
     model.product_definitions = definitions;
     let mut losses = Vec::new();
-    append(&mut model, &tails, &mut losses).unwrap();
+    append(&mut model, &found, &mut losses).unwrap();
     assert_eq!(model.features.len(), 2);
     assert_eq!(model.features[0], before);
     let retained = &model.features[1];
@@ -307,15 +336,15 @@ fn assert_unproved(
     histories: &[AsmHistory],
     native: &str,
 ) {
-    let tails = collect(features, scopes, histories, None);
-    assert_eq!(tails.len(), 1);
+    let found = collect(features, scopes, histories, None);
+    assert_eq!(found.tails.len(), 1);
     let mut model = Model::default();
     model.features.extend_from_slice(features);
     let mut owner = definition();
-    owner.bodies = features[0].evaluation.outputs().to_vec();
+    owner.bodies = features[0].evaluation.outputs().clone();
     model.product_definitions = vec![owner];
     let mut losses = Vec::new();
-    append(&mut model, &tails, &mut losses).unwrap();
+    append(&mut model, &found, &mut losses).unwrap();
     let retained = model.features.last().unwrap();
     assert_eq!(retained.source_tag.as_deref(), Some("Body history change"));
     assert_eq!(retained.native_ref.as_deref(), Some(native));

@@ -30,12 +30,20 @@ pub(crate) struct BodyHistoryTail {
     bounded: bool,
 }
 
+/// Bodies whose changes after the last feature are retained or not checked.
+#[derive(Debug, Default)]
+pub(crate) struct BodyHistoryTails {
+    pub(crate) tails: Vec<BodyHistoryTail>,
+    /// Bodies no decoded history holds, with the last feature that outputs each.
+    pub(crate) unread: Vec<(BodyId, FeatureId)>,
+}
+
 pub(crate) fn collect(
     features: &[Feature],
     scopes: &[DesignParameterScope],
     histories: &[AsmHistory],
     primary_brep: Option<&str>,
-) -> Vec<BodyHistoryTail> {
+) -> BodyHistoryTails {
     let mut latest = BTreeMap::<&BodyId, &Feature>::new();
     for feature in features
         .iter()
@@ -51,15 +59,15 @@ pub(crate) fn collect(
         }
     }
     let mut tails = Vec::new();
+    let mut unread = Vec::new();
     for (body, feature) in latest {
-        let Some(history_id) = super::history_bodies::output_history(
+        let Some(history) = super::history_bodies::output_history(
             std::iter::once(body.as_str()),
             histories,
             primary_brep,
-        ) else {
-            continue;
-        };
-        let Some(history) = histories.iter().find(|history| history.id == history_id) else {
+        )
+        .and_then(|id| histories.iter().find(|history| history.id == id)) else {
+            unread.push((body.clone(), feature.id.clone()));
             continue;
         };
         let unproved = |native: String, previous_state, state, bounded| BodyHistoryTail {
@@ -104,7 +112,7 @@ pub(crate) fn collect(
             ));
         }
     }
-    tails
+    BodyHistoryTails { tails, unread }
 }
 
 fn changed_after(
@@ -198,9 +206,15 @@ fn state_text(state: Option<i64>, noun: &str) -> String {
 
 pub(crate) fn append(
     model: &mut Model,
-    tails: &[BodyHistoryTail],
+    found: &BodyHistoryTails,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
+    for (body, feature) in &found.unread {
+        losses.push(F3dLossCode::FeatureBodyHistoryUnread.note(format!(
+            "No single decoded history holds body {body}; changes after feature {feature} are not checked."
+        )));
+    }
+    let tails = &found.tails;
     let mut ordinal = model
         .features
         .iter()
