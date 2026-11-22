@@ -624,7 +624,7 @@ pub(super) fn synchronize_history_content_order(native: &mut crate::native::Sldp
                         .map_or_else(String::new, |(_, id)| id.clone());
                     feature_index += 1;
                 }
-                HistoryContent::Text(_) => {}
+                HistoryContent::Text(_) | HistoryContent::Element(_) => {}
             }
         }
         history.content.retain(|item| {

@@ -12,10 +12,14 @@ use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::options::NativeOption;
 use cadmpeg_ir::design::parameter::{FitDeviations, Tolerance};
 use cadmpeg_ir::eval::helix_nurbs::{helix_nurbs, helix_surface_nurbs};
+use cadmpeg_ir::geometry::analytic::TorusSurface;
+use cadmpeg_ir::geometry::helix::{HelixCurveConstruction, HelixSurfaceConstruction};
+use cadmpeg_ir::geometry::pcurve::Pcurve;
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    analytic::TorusSurface, pcurve::Pcurve, Curve, CurveGeometry, HelixCurveConstruction,
-    HelixSurfaceConstruction, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface,
 };
 use cadmpeg_ir::ids::{
     AppearanceBindingId, AppearanceId, EdgeId, LoopId, OccurrenceId, ProductDefinitionId, ShellId,
@@ -2869,16 +2873,21 @@ impl<'a> Builder<'a> {
                 let ranges =
                     self.procedural_surfaces
                         .get(surface_id.as_str())
-                        .and_then(|procedural| match procedural.definition() {
-                            ProceduralSurfaceDefinition::Exact(payload) => match payload.spline() {
-                                cadmpeg_ir::geometry::ExactSpline::Legacy { ranges, .. } => {
-                                    Some(ranges.map(|range| {
-                                        range.map(cadmpeg_ir::scalar::FiniteReal::get)
-                                    }))
-                                }
-                                cadmpeg_ir::geometry::ExactSpline::Revision { .. } => None,
-                            },
-                            _ => None,
+                        .and_then(|procedural| {
+                            match procedural.definition() {
+                        ProceduralSurfaceDefinition::Exact(payload) => match payload.spline() {
+                            cadmpeg_ir::geometry::procedural_surfaces::ExactSpline::Legacy {
+                                ranges,
+                                ..
+                            } => Some(
+                                ranges.map(|range| range.map(cadmpeg_ir::scalar::FiniteReal::get)),
+                            ),
+                            cadmpeg_ir::geometry::procedural_surfaces::ExactSpline::Revision {
+                                ..
+                            } => None,
+                        },
+                        _ => None,
+                    }
                         });
                 let reference = match ranges {
                     Some(ranges) => self.emit_rectangular_trim(
@@ -3713,7 +3722,7 @@ impl<'a> Builder<'a> {
             };
             let Some([first, second]) = use_
                 .parameter_range
-                .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints)
+                .map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints)
                 .or_else(|| {
                     pcurve
                         .parameter_range()
@@ -4330,14 +4339,14 @@ impl<'a> Builder<'a> {
     fn directed_use_range(
         &self,
         pcurve: &cadmpeg_ir::geometry::pcurve::PcurveGeometry,
-        range: Option<cadmpeg_ir::geometry::DirectedParameterRange>,
+        range: Option<cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange>,
         surface: &str,
         edge: &Edge,
     ) -> Result<Option<[f64; 2]>, cadmpeg_core::decode::ResourceLimit> {
         use cadmpeg_ir::eval::admission::EvaluationAdmission;
         use cadmpeg_ir::eval::finite_or_refusal;
         let Some([first, second]) =
-            range.map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints)
+            range.map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints)
         else {
             return Ok(None);
         };
@@ -4583,9 +4592,9 @@ impl<'a> Builder<'a> {
             }
             ProceduralSurfaceDefinition::Subset(payload) => {
                 let support = payload.support();
-                let parameter_ranges = payload
-                    .parameter_ranges()
-                    .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints);
+                let parameter_ranges = payload.parameter_ranges().map(
+                    cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints,
+                );
                 let u_sense = payload.u_sense().as_ref()?;
                 let v_sense = payload.v_sense().as_ref()?;
                 let support = self.emit_surface(support.as_str())?;

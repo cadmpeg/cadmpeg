@@ -309,7 +309,7 @@ fn topology(
         }
     }
     for surface in &value.procedural_surfaces {
-        if let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded {
+        if let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::CurveBounded {
             support,
             boundary_pcurves,
             ..
@@ -553,10 +553,10 @@ mod tests {
 
     #[test]
     fn axis_conversion_reaches_witness_topology_and_chart_metadata() {
+        use cadmpeg_ir::geometry::legacy_cache::FitTolerance;
         use cadmpeg_ir::geometry::pcurve::{
             LinePcurve, Pcurve, PcurveGeneralForm, PcurveGeometry, PcurveMetadata,
         };
-        use cadmpeg_ir::geometry::FitTolerance;
         use cadmpeg_ir::units::FiniteVector;
         let mut body = cadmpeg_ir::examples::unit_cube()
             .expect("cube witness")

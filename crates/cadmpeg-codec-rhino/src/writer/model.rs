@@ -692,7 +692,7 @@ impl<'a> WritableModel<'a> {
                 let fit_tolerance = pcurve
                     .as_ref()
                     .and_then(|pcurve| pcurve.source.fit_tolerance())
-                    .map_or(0.0, cadmpeg_ir::geometry::FitTolerance::get);
+                    .map_or(0.0, cadmpeg_ir::geometry::legacy_cache::FitTolerance::get);
                 let face = &faces[loops[owner_loop].face];
                 let c2 = match surfaces[face.surface] {
                     WritableFaceSurface::Plane { origin, normal, u_axis } => {

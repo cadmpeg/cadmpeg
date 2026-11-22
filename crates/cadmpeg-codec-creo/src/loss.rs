@@ -262,6 +262,9 @@ pub(crate) enum CreoLossCode {
     FeatureRegenerationParentDropped,
     /// Typed history features retain an explicitly unresolved construction.
     FeatureConstructionUnresolved,
+    /// Parameters that hold a parameter the decoder resolved as their
+    /// dependency as text, or omit it, and state no dependency on it.
+    DesignParameterReferenceAsText,
     /// Declared section segment rows did not decode.
     SectionSegmentMissing,
     /// Declared section relation rows did not decode.
@@ -451,6 +454,7 @@ impl CreoLossCode {
             Self::FeatureStateSelectionUnresolved => "feature.state-selection-unresolved",
             Self::FeatureRegenerationParentDropped => "feature.regeneration-parent-dropped",
             Self::FeatureConstructionUnresolved => "feature.construction-unresolved",
+            Self::DesignParameterReferenceAsText => "design.parameter-reference-as-text",
             Self::SectionSegmentMissing => "section.segment-missing",
             Self::SectionRelationMissing => "section.relation-missing",
             Self::SectionRelationTableMalformed => "section.relation-table-malformed",
@@ -623,7 +627,8 @@ impl CreoLossCode {
             | Self::AssemblyMemberTableIncomplete
             | Self::AssemblyPlacementUnresolved
             | Self::AssemblyMemberReferenceUnresolved
-            | Self::AssemblyConstraintsNotTransferred => Severity::Warning,
+            | Self::AssemblyConstraintsNotTransferred
+            | Self::DesignParameterReferenceAsText => Severity::Warning,
         }
     }
 
@@ -767,6 +772,7 @@ impl CreoLossCode {
             Self::AssemblyComponentsExternal | Self::AssemblyMemberReferenceUnresolved => {
                 LossTaxonomy::AssemblyComponentsExternal
             }
+            Self::DesignParameterReferenceAsText => LossTaxonomy::ParametricRecordOmitted,
             Self::AssemblyMemberTableIncomplete
             | Self::AssemblyPlacementUnresolved
             | Self::AssemblyConstraintsNotTransferred => {
@@ -799,6 +805,9 @@ impl CreoLossCode {
         LossNote::new(self.kind(), message).with_severity(self.severity())
     }
 }
+
+/// Instances an aggregated loss note names before it only counts the rest.
+pub(crate) const NAMED_INSTANCES_PER_NOTE: usize = 8;
 
 #[cfg(test)]
 mod tests {
@@ -926,6 +935,7 @@ mod tests {
                 "feature.state-selection-unresolved",
                 "feature.regeneration-parent-dropped",
                 "feature.construction-unresolved",
+                "design.parameter-reference-as-text",
                 "section.segment-missing",
                 "section.relation-missing",
                 "section.relation-table-malformed",

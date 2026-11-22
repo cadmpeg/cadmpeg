@@ -3,10 +3,10 @@
 use crate::eval::model_curve_differential_by_id;
 use crate::eval::model_curve_parameter_near_point_with_tolerance;
 use crate::eval::model_curve_point_by_id;
+use crate::geometry::procedural_curves::ProceduralCurveDefinition;
 use crate::geometry::Curve;
 use crate::geometry::CurveGeometry;
 use crate::geometry::ProceduralCurve;
-use crate::geometry::ProceduralCurveDefinition;
 use crate::geometry::SolvedCurveGeometry;
 use crate::ids::CurveId;
 use crate::math::Point3;
