@@ -322,7 +322,7 @@ pub(super) fn install_scope(
     push(
         &mut ir.design.scopes,
         json!({"definition":definition,"roots":[container],"active_arrangements":[],"occurrences":{},
-        "current":[{"at":at,"bodies":bodies,"poses":[],"status":"current"}]}),
+        "current":[{"at":at,"bodies":bodies,"poses":[],"status":"current"}],"unproduced":[]}),
     )?;
     Ok(())
 }
