@@ -71,18 +71,21 @@ pub(crate) struct SemanticOutput {
     pub(crate) coverage: ArenaDispositions,
     pub(crate) omitted_envelope_bytes: usize,
     /// The edits the native records cannot carry, kept as stored.
-    pub(crate) unwritten: Vec<cadmpeg_ir::report::loss::LossNote>,
+    pub(crate) unwritten: crate::history::write::edits::UnwrittenLosses,
     /// Which edits `unwritten` names: the stale-solid check reads no edit of
     /// these as written.
     pub(crate) written: crate::history::write::edits::UnwrittenEdits,
+    /// The construction edits of the written features, for the read-back.
+    pub(crate) claims: Vec<crate::history::write::edits::FeatureClaims>,
 }
 
 /// Writes a semantic document and returns the dialect and arena coverage it
-/// wrote.
+/// wrote. Each feature of `withheld` keeps its stored definition record.
 pub(crate) fn write_semantic_with_records(
     ir: &CadIr,
     annotations: &Annotations,
     retained_records: &[SourceRecord<'_>],
+    withheld: &[cadmpeg_ir::features::FeatureId],
     writer: &mut dyn Write,
 ) -> Result<SemanticOutput, CodecError> {
     let digest_arena = DecodeArena::new();
@@ -169,6 +172,7 @@ pub(crate) fn write_semantic_with_records(
         ir,
         native.as_ref(),
         source_baseline.as_ref().map(|baseline| &baseline.ir),
+        withheld,
     )?;
     let feature_name_changes =
         crate::history::write::feature_name_changes(&normalized, native.as_ref());
@@ -205,6 +209,7 @@ pub(crate) fn write_semantic_with_records(
     )?;
     let crate::history::write::edits::EditOutcome {
         mut unwritten,
+        claims,
         written,
         edited_parameters,
         source_lanes,
@@ -483,6 +488,7 @@ pub(crate) fn write_semantic_with_records(
         omitted_envelope_bytes: envelope.omitted_envelope_bytes,
         unwritten,
         written,
+        claims,
     })
 }
 

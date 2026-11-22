@@ -260,13 +260,39 @@ impl SldprtCodec {
         fidelity: SemanticFidelity,
         writer: &mut dyn Write,
     ) -> Result<Written, CodecError> {
+        // An edit the full decoder does not read back from the written part
+        // is written again with its feature's stored record.
+        let mut withheld = Vec::new();
+        let (bytes, output, read_back) = loop {
+            let mut bytes = Vec::new();
+            let output = writer::write_semantic_with_records(
+                ir,
+                annotations,
+                records,
+                &withheld,
+                &mut bytes,
+            )?;
+            let read_back = history::write::edits::ReadBack::of_written(&output.claims, &bytes);
+            let before = withheld.len();
+            for id in &read_back.withhold {
+                if !withheld.contains(id) {
+                    withheld.push(id.clone());
+                }
+            }
+            if withheld.len() == before {
+                break (bytes, output, read_back);
+            }
+        };
+        writer.write_all(&bytes)?;
         let writer::SemanticOutput {
             dialect,
             coverage,
             omitted_envelope_bytes,
             unwritten,
             written,
-        } = writer::write_semantic_with_records(ir, annotations, records, writer)?;
+            claims: _,
+        } = output;
+        let unwritten = unwritten.render(&read_back);
         let native = ir
             .native
             .namespace("sldprt")

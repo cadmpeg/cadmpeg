@@ -44,6 +44,7 @@ fn semantic_writer_reclassifies_the_final_retained_envelope() {
         &ir,
         &fidelity.annotations,
         &records,
+        &[],
         &mut written,
     )
     .expect("semantic write succeeds")

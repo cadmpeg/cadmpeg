@@ -479,6 +479,59 @@ fn a_kept_fillet_names_its_radius_edit_beside_the_selection() {
     );
 }
 
+/// A kept fillet whose radius edit its parameter carries reads back with the
+/// edited radius, and its loss names the selection only.
+#[test]
+fn a_kept_fillet_does_not_name_the_radius_its_parameter_carries() {
+    const RADIUS: &str = "/value/value/groups/0/radius/radius";
+    // The part states the radius dimension in inches: `R0.25` is 6.35 mm.
+    const EDITED: f64 = 6.35;
+    let mut decoded = ftc_08_with_fillet_selection_edited(|fillet| {
+        edit_definition(fillet, |wire| {
+            *wire.pointer_mut(RADIUS).unwrap() = serde_json::json!(EDITED);
+        });
+    });
+    let name = {
+        let mut ir = decoded.ir_mut();
+        let fillet = ir
+            .model
+            .features
+            .iter()
+            .find(|feature| is_fillet(feature))
+            .unwrap();
+        let (id, name) = (fillet.id.clone(), fillet.name.clone().unwrap());
+        let parameter = ir
+            .model
+            .parameters
+            .iter_mut()
+            .find(|parameter| parameter.owner.as_ref() == Some(&id) && parameter.name == "D1")
+            .unwrap();
+        parameter.expression = "R0.25".into();
+        parameter.value = Some(ParameterValue::Length(Length::new(EDITED).unwrap()));
+        name
+    };
+
+    let (report, output) = write(&decoded);
+
+    let unwritten = unwritten(&report);
+    assert_eq!(unwritten.len(), 1, "{unwritten:?}");
+    assert!(
+        unwritten[0].contains("definition groups[0].edges") && !unwritten[0].contains("radius"),
+        "{}",
+        unwritten[0]
+    );
+    let written = decode(output);
+    let fillet = written
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some(name.as_str()))
+        .unwrap();
+    let wire = serde_json::to_value(fillet.evaluation.definition()).unwrap();
+    assert!((wire.pointer(RADIUS).unwrap().as_f64().unwrap() - EDITED).abs() <= 1.0e-9);
+}
+
 /// A fillet whose selection edit keeps its stored record keeps its stored
 /// source properties: a property edit beside it is named, and no stale-solid
 /// loss calls the fillet written.
@@ -577,8 +630,8 @@ fn a_hole_placement_edit_the_records_do_not_state_is_named() {
 }
 
 /// A reference axis's origin is read from its feature-input lane, which a
-/// definition edit does not change: the write names the edit, and the axis
-/// reads back as stored.
+/// definition edit does not change: the write names the edit, the axis reads
+/// back as stored, and its record keeps its stored properties.
 #[test]
 fn a_datum_axis_origin_edit_the_records_do_not_state_is_named() {
     let mut decoded = EditableDecodeResult::from(ftc_08().clone());
@@ -599,6 +652,8 @@ fn a_datum_axis_origin_edit_the_records_do_not_state_is_named() {
 
     let unwritten =
         crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
+    let (_, written) =
+        crate::test_support::write_unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
 
     assert_eq!(unwritten.len(), 1, "{unwritten:?}");
     assert!(
@@ -606,6 +661,18 @@ fn a_datum_axis_origin_edit_the_records_do_not_state_is_named() {
         "{}",
         unwritten[0]
     );
+    let record = |ir: &CadIr| {
+        crate::native::SldprtNative::load(ir.native.namespace("sldprt").unwrap())
+            .unwrap()
+            .feature_histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .find(|feature| feature.name == "Axis1")
+            .unwrap()
+            .properties
+            .clone()
+    };
+    assert_eq!(record(written.ir()), record(ftc_08().ir()));
 }
 
 /// An integer value bound to a feature-input scalar is written to the scalar

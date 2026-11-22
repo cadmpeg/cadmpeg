@@ -11,6 +11,8 @@ use cadmpeg_ir::features::parameters::DesignParameter;
 use cadmpeg_ir::features::{Feature, FeatureId, ParameterId};
 use cadmpeg_ir::report::loss::LossNote;
 
+use serde_json::Value;
+
 use crate::loss::SldprtLossCode;
 use crate::native::SldprtNative;
 use crate::records::FeatureInputLane;
@@ -66,6 +68,7 @@ pub(crate) struct SourceEdits<'source> {
     /// names.
     unwritten_features: HashMap<FeatureId, FeatureLoss>,
     written: UnwrittenEdits,
+    claims: Vec<FeatureClaims>,
 }
 
 /// An unwritten-edit loss as it is collected.
@@ -73,6 +76,22 @@ enum PendingLoss {
     Note(LossNote),
     /// The loss of a feature whose stored definition record is kept.
     Feature(FeatureId),
+    /// Construction edits of feature `id` that its written records state as
+    /// the source does; `whole` states that no other edit of its construction
+    /// is written.
+    Construction {
+        id: FeatureId,
+        labels: Vec<String>,
+        whole: bool,
+    },
+}
+
+/// The unwritten-edit losses of one write, rendered once the written part is
+/// read back: a construction edit that the written part reads back as edited
+/// is not named.
+pub(crate) struct UnwrittenLosses {
+    pending: Vec<PendingLoss>,
+    features: HashMap<FeatureId, FeatureLoss>,
 }
 
 /// Why a feature keeps its stored definition record, and the edits of its
@@ -86,7 +105,9 @@ struct FeatureLoss {
 /// What a write's edit comparison leaves for the rest of the write.
 pub(crate) struct EditOutcome {
     /// The unwritten-edit losses.
-    pub(crate) unwritten: Vec<LossNote>,
+    pub(crate) unwritten: UnwrittenLosses,
+    /// The construction edits of the written features, for the read-back.
+    pub(crate) claims: Vec<FeatureClaims>,
     /// The edits the output does not carry.
     pub(crate) written: UnwrittenEdits,
     /// The caller's parameters that differ from the source's.
@@ -102,6 +123,7 @@ pub(crate) struct ConstructionEdit {
     leaf: ConstructionLeaf,
 }
 
+#[derive(Clone)]
 enum ConstructionLeaf {
     /// A JSON pointer into the wire form of the definition.
     Definition(String),
@@ -141,6 +163,39 @@ impl ConstructionEdit {
             },
         }
         Some(applied)
+    }
+
+    /// This edit of `current` against `original` as a claim of the write;
+    /// `None` for the dependencies, whose ids move across a write.
+    fn claim(&self, original: &Feature, current: &Feature, written: bool) -> Option<EditClaim> {
+        let (source, edited) = match &self.leaf {
+            ConstructionLeaf::Definition(pointer) => {
+                let at = |feature: &Feature| {
+                    serde_json::to_value(feature.evaluation.definition())
+                        .ok()
+                        .and_then(|wire| wire.pointer(pointer).cloned())
+                        .unwrap_or(Value::Null)
+                };
+                (at(original), at(current))
+            }
+            ConstructionLeaf::Dependencies => return None,
+            ConstructionLeaf::SourceProperty(key) => {
+                let at = |feature: &Feature| {
+                    feature
+                        .source_properties
+                        .get(key)
+                        .map_or(Value::Null, |value| Value::String(value.clone()))
+                };
+                (at(original), at(current))
+            }
+        };
+        Some(EditClaim {
+            label: self.label.clone(),
+            leaf: self.leaf.clone(),
+            source,
+            edited,
+            written,
+        })
     }
 
     /// Whether `written`, the written records read back, states this leaf as
@@ -204,6 +259,288 @@ pub(crate) fn construction_edits(original: &Feature, current: &Feature) -> Vec<C
         }
     }
     edits
+}
+
+/// One construction edit as the write states it: the leaf, its source and
+/// edited values in wire form, and whether the written records carry it.
+pub(crate) struct EditClaim {
+    label: String,
+    leaf: ConstructionLeaf,
+    source: Value,
+    edited: Value,
+    written: bool,
+}
+
+/// The construction edits of one feature with a stored record, as the write
+/// states them.
+pub(crate) struct FeatureClaims {
+    id: FeatureId,
+    /// The caller's and the source's name: a rename is written, and ids move
+    /// across a write.
+    names: [Option<String>; 2],
+    ordinal: u64,
+    source_definition: Value,
+    /// An edit moves a record field and the written records read back as the
+    /// source: the record would state an edit the output does not carry.
+    withhold: bool,
+    edits: Vec<EditClaim>,
+}
+
+/// What the full decoder reads back from a written part for the claims of
+/// the write.
+#[derive(Default)]
+pub(crate) struct ReadBack {
+    /// Features to write again with their stored definition record: an edit
+    /// the write calls written does not read back as edited.
+    pub(crate) withhold: Vec<FeatureId>,
+    /// Edits called unwritten that read back as edited.
+    carried: HashSet<(FeatureId, String)>,
+    /// Edits called unwritten that read back as neither the source nor the
+    /// edit, by feature.
+    neither: Vec<(FeatureId, Vec<String>)>,
+}
+
+/// The relative difference up to which two real numbers read back the same:
+/// a millimetre value stored in metres moves in its last bits.
+const READ_BACK_RELATIVE_TOLERANCE: f64 = 1.0e-9;
+
+/// Whether `left` and `right` are equal up to the read-back tolerance on each
+/// real number; with `ids_move`, every two native ids count as equal.
+pub(crate) fn same_read_back(left: &Value, right: &Value, ids_move: bool) -> bool {
+    match (left, right) {
+        (Value::Number(left), Value::Number(right)) => match (left.as_f64(), right.as_f64()) {
+            (Some(left), Some(right)) => {
+                (left - right).abs()
+                    <= READ_BACK_RELATIVE_TOLERANCE * left.abs().max(right.abs()).max(1.0)
+            }
+            _ => left == right,
+        },
+        (Value::String(left), Value::String(right)) if ids_move => {
+            left == right || (left.starts_with("sldprt:") && right.starts_with("sldprt:"))
+        }
+        (Value::Array(left), Value::Array(right)) => {
+            left.len() == right.len()
+                && left
+                    .iter()
+                    .zip(right)
+                    .all(|(left, right)| same_read_back(left, right, ids_move))
+        }
+        (Value::Object(left), Value::Object(right)) => {
+            left.len() == right.len()
+                && left.iter().all(|(key, value)| {
+                    right
+                        .get(key)
+                        .is_some_and(|other| same_read_back(value, other, ids_move))
+                })
+        }
+        _ => left == right,
+    }
+}
+
+/// Sets the place `pointer` of `value` to `leaf`, or removes it for `None`.
+fn put(value: &mut Value, pointer: &str, leaf: Option<Value>) {
+    let Some((parent, key)) = pointer.rsplit_once('/') else {
+        if let Some(leaf) = leaf {
+            *value = leaf;
+        }
+        return;
+    };
+    let key = key.replace("~1", "/").replace("~0", "~");
+    match (value.pointer_mut(parent), leaf) {
+        (Some(Value::Object(fields)), Some(leaf)) => {
+            fields.insert(key, leaf);
+        }
+        (Some(Value::Object(fields)), None) => {
+            fields.remove(&key);
+        }
+        (Some(Value::Array(items)), Some(leaf)) => {
+            if let Some(slot) = key
+                .parse::<usize>()
+                .ok()
+                .and_then(|index| items.get_mut(index))
+            {
+                *slot = leaf;
+            }
+        }
+        _ => {}
+    }
+}
+
+impl FeatureClaims {
+    /// Whether the write calls an edit of this feature written.
+    fn any_written(&self) -> bool {
+        self.edits.iter().any(|edit| edit.written)
+    }
+
+    /// The feature of `written` with this feature's ordinal and name.
+    fn read<'a>(&self, written: &'a CadIr) -> Option<&'a Feature> {
+        let mut found = written.model.features.iter().filter(|feature| {
+            feature.ordinal == self.ordinal && self.names.contains(&feature.name)
+        });
+        let feature = found.next()?;
+        found.next().is_none().then_some(feature)
+    }
+}
+
+impl ReadBack {
+    /// Judges `claims` against `bytes`, the written part, decoded with the
+    /// full decoder. A claim that asks to withhold its feature needs no
+    /// decode: that part is written again.
+    pub(crate) fn of_written(claims: &[FeatureClaims], bytes: &[u8]) -> Self {
+        use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+        if claims.is_empty() {
+            return Self::default();
+        }
+        let withhold = claims
+            .iter()
+            .filter(|claim| claim.withhold)
+            .map(|claim| claim.id.clone())
+            .collect::<Vec<_>>();
+        if !withhold.is_empty() {
+            return Self {
+                withhold,
+                ..Self::default()
+            };
+        }
+        let decoded = crate::SldprtCodec
+            .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+            .ok();
+        Self::of(
+            claims,
+            decoded.as_ref().map(cadmpeg_ir::codec::DecodeResult::ir),
+        )
+    }
+
+    /// Judges `claims` against `written`, the written part decoded; `None`
+    /// when it does not decode.
+    fn of(claims: &[FeatureClaims], written: Option<&CadIr>) -> Self {
+        let mut read_back = Self::default();
+        for claim in claims {
+            if claim.withhold {
+                read_back.withhold.push(claim.id.clone());
+                continue;
+            }
+            let read = written
+                .and_then(|written| claim.read(written))
+                .and_then(|read| {
+                    Some((
+                        read,
+                        serde_json::to_value(read.evaluation.definition()).ok()?,
+                    ))
+                });
+            let Some((read, read_definition)) = read else {
+                if claim.any_written() {
+                    read_back.withhold.push(claim.id.clone());
+                }
+                continue;
+            };
+            let mut expected = claim.source_definition.clone();
+            let mut failed = false;
+            let mut neither = Vec::new();
+            for edit in &claim.edits {
+                let got = match &edit.leaf {
+                    ConstructionLeaf::Definition(pointer) => {
+                        let got = read_definition.pointer(pointer).cloned();
+                        put(&mut expected, pointer, got.clone());
+                        got.unwrap_or(Value::Null)
+                    }
+                    ConstructionLeaf::SourceProperty(key) => read
+                        .source_properties
+                        .get(key)
+                        .map_or(Value::Null, |value| Value::String(value.clone())),
+                    ConstructionLeaf::Dependencies => continue,
+                };
+                let as_edited = same_read_back(&got, &edit.edited, true);
+                if edit.written {
+                    failed |= !as_edited;
+                } else if !same_read_back(&got, &edit.source, true) {
+                    if as_edited {
+                        read_back
+                            .carried
+                            .insert((claim.id.clone(), edit.label.clone()));
+                    } else {
+                        neither.push(edit.label.clone());
+                    }
+                }
+            }
+            if !same_read_back(&expected, &read_definition, true) {
+                failed = true;
+                neither.push("the rest of its definition".into());
+            }
+            if failed && claim.any_written() {
+                read_back.withhold.push(claim.id.clone());
+            } else if !neither.is_empty() {
+                read_back.neither.push((claim.id.clone(), neither));
+            }
+        }
+        read_back
+    }
+}
+
+impl UnwrittenLosses {
+    /// Adds losses that need no read-back.
+    pub(crate) fn extend(&mut self, notes: impl IntoIterator<Item = LossNote>) {
+        self.pending
+            .extend(notes.into_iter().map(PendingLoss::Note));
+    }
+
+    /// The losses, with each edit that `read_back` finds carried left out and
+    /// each edit it reads back as neither the source nor the edit named.
+    pub(crate) fn render(self, read_back: &ReadBack) -> Vec<LossNote> {
+        let Self {
+            pending,
+            mut features,
+        } = self;
+        let unread = |id: &FeatureId, labels: Vec<String>| {
+            labels
+                .into_iter()
+                .filter(|label| !read_back.carried.contains(&(id.clone(), label.clone())))
+                .collect::<Vec<_>>()
+        };
+        let mut notes = pending
+            .into_iter()
+            .filter_map(|pending| match pending {
+                PendingLoss::Note(note) => Some(note),
+                PendingLoss::Feature(id) => {
+                    let loss = features.remove(&id)?;
+                    let dropped = unread(&id, loss.dropped);
+                    let mut message = format!(
+                        "{}; the written record keeps the stored state",
+                        loss.reasons.join("; ")
+                    );
+                    if !dropped.is_empty() {
+                        message.push_str(" and does not carry its edits of ");
+                        message.push_str(&listed(&dropped));
+                    }
+                    message.push('.');
+                    Some(SldprtLossCode::WriterFeatureEditUnwritten.note(message))
+                }
+                PendingLoss::Construction { id, labels, whole } => {
+                    let labels = unread(&id, labels);
+                    if labels.is_empty() {
+                        return None;
+                    }
+                    let rest = if whole {
+                        "they read back as stored"
+                    } else {
+                        "they read back as stored, and the rest of its edit is written"
+                    };
+                    Some(SldprtLossCode::WriterFeatureEditUnwritten.note(format!(
+                        "SLDPRT feature {id} changes {}, which its written records do not state; {rest}.",
+                        listed(&labels)
+                    )))
+                }
+            })
+            .collect::<Vec<_>>();
+        notes.extend(read_back.neither.iter().map(|(id, labels)| {
+            SldprtLossCode::WriterFeatureEditUnwritten.note(format!(
+                "SLDPRT feature {id} changes {}, and its written part reads them back as neither the source nor the edit states.",
+                listed(labels)
+            ))
+        }));
+        notes
+    }
 }
 
 /// Pushes a definition leaf for each place where `current` differs from
@@ -295,11 +632,14 @@ fn listed(labels: &[String]) -> String {
 
 impl<'source> SourceEdits<'source> {
     /// Compares the caller's document `input` and its native records with the
-    /// retained source image decoded again.
+    /// retained source image decoded again. Each feature of `withheld` keeps
+    /// its stored definition record: an earlier write of it did not read back
+    /// as edited.
     pub(crate) fn new(
         input: &CadIr,
         input_native: Option<&SldprtNative>,
         source: Option<&'source CadIr>,
+        withheld: &[FeatureId],
     ) -> Result<Self, CodecError> {
         let Some(source) = source else {
             return Ok(Self::without_source(input));
@@ -322,7 +662,7 @@ impl<'source> SourceEdits<'source> {
             .namespace("sldprt")
             .map(|namespace| SldprtNative::load(namespace).map_err(CodecError::from))
             .transpose()?;
-        Ok(Self {
+        let mut edits = Self {
             source: Some(source),
             features: Some(
                 source
@@ -339,7 +679,15 @@ impl<'source> SourceEdits<'source> {
             unwritten: Vec::new(),
             unwritten_features: HashMap::new(),
             written: UnwrittenEdits::default(),
-        })
+            claims: Vec::new(),
+        };
+        for id in withheld {
+            edits.feature_unwritten(
+                id,
+                format!("SLDPRT feature {id} does not read back as edited from records that state its edit"),
+            )?;
+        }
+        Ok(edits)
     }
 
     /// No decoded source: every parameter counts as edited, and the native
@@ -360,6 +708,7 @@ impl<'source> SourceEdits<'source> {
             unwritten: Vec::new(),
             unwritten_features: HashMap::new(),
             written: UnwrittenEdits::default(),
+            claims: Vec::new(),
         }
     }
 
@@ -518,20 +867,45 @@ impl<'source> SourceEdits<'source> {
         labels: &[String],
         whole: bool,
     ) {
-        let rest = if whole {
-            "they read back as stored"
-        } else {
-            "they read back as stored, and the rest of its edit is written"
-        };
-        self.unwritten.push(PendingLoss::Note(
-            SldprtLossCode::WriterFeatureEditUnwritten.note(format!(
-                "SLDPRT feature {id} changes {}, which its written records do not state; {rest}.",
-                listed(labels)
-            )),
-        ));
+        self.unwritten.push(PendingLoss::Construction {
+            id: id.clone(),
+            labels: labels.to_vec(),
+            whole,
+        });
         if whole {
             self.written.kept_definitions.insert(id.clone());
         }
+    }
+
+    /// Records the construction edits `edits` of `current` against its source
+    /// feature `original`, each with whether the written records carry it.
+    /// `withhold` states that an edit moves a record field while the written
+    /// records read back as the source.
+    pub(crate) fn claim(
+        &mut self,
+        original: &Feature,
+        current: &Feature,
+        edits: impl IntoIterator<Item = (ConstructionEdit, bool)>,
+        withhold: bool,
+    ) {
+        let edits = edits
+            .into_iter()
+            .filter_map(|(edit, written)| edit.claim(original, current, written))
+            .collect::<Vec<_>>();
+        let Ok(source_definition) = serde_json::to_value(original.evaluation.definition()) else {
+            return;
+        };
+        if edits.is_empty() && !withhold {
+            return;
+        }
+        self.claims.push(FeatureClaims {
+            id: current.id.clone(),
+            names: [current.name.clone(), original.name.clone()],
+            ordinal: current.ordinal,
+            source_definition,
+            withhold,
+            edits,
+        });
     }
 
     /// Whether an edit of feature `id` is not written.
@@ -561,32 +935,18 @@ impl<'source> SourceEdits<'source> {
         let Self {
             source_native,
             unwritten,
-            mut unwritten_features,
+            unwritten_features,
             written,
             edited_parameters,
+            claims,
             ..
         } = self;
-        let unwritten = unwritten
-            .into_iter()
-            .filter_map(|pending| match pending {
-                PendingLoss::Note(note) => Some(note),
-                PendingLoss::Feature(id) => {
-                    let loss = unwritten_features.remove(&id)?;
-                    let mut message = format!(
-                        "{}; the written record keeps the stored state",
-                        loss.reasons.join("; ")
-                    );
-                    if !loss.dropped.is_empty() {
-                        message.push_str(" and does not carry its edits of ");
-                        message.push_str(&listed(&loss.dropped));
-                    }
-                    message.push('.');
-                    Some(SldprtLossCode::WriterFeatureEditUnwritten.note(message))
-                }
-            })
-            .collect();
         EditOutcome {
-            unwritten,
+            unwritten: UnwrittenLosses {
+                pending: unwritten,
+                features: unwritten_features,
+            },
+            claims,
             written,
             edited_parameters,
             source_lanes: source_native

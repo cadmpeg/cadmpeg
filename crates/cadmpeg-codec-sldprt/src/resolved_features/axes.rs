@@ -1019,9 +1019,7 @@ pub(crate) fn enrich_history_revolution_inputs(
             if !votes.iter().all(|vote| vote.as_ref() == Some(first)) {
                 continue;
             }
-            if !feature.properties.contains_key("AxisOrigin")
-                && !feature.properties.contains_key("AxisDirection")
-            {
+            if !feature.states_any(&crate::records::REVOLUTION_AXIS_PROPERTIES) {
                 let origin = format!(
                     "{}mm,{}mm,{}mm",
                     first.0.get().x,

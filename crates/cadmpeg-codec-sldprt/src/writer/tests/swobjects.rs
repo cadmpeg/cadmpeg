@@ -1379,6 +1379,7 @@ fn configuration_manager_retention_is_checked_at_the_writer_entry() {
             &ir,
             &fidelity.annotations,
             &records,
+            &[],
             &mut written,
         );
         if change >= 2 {
@@ -1403,6 +1404,7 @@ fn configuration_manager_retention_is_checked_at_the_writer_entry() {
     assert!(crate::writer::write_semantic_with_records(
         &baseline,
         &fidelity.annotations,
+        &[],
         &[],
         &mut Vec::new(),
     )

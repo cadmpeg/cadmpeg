@@ -234,7 +234,7 @@ fn source_less_writer_refuses_saved_properties() {
     });
     let mut bytes = Vec::new();
     assert!(
-        matches!(crate::writer::write_semantic_with_records(&ir, &cadmpeg_ir::annotations::Annotations::default(), &[], &mut bytes), Err(CodecError::NotImplemented(message)) if message == "SLDPRT saved properties require their retained source carrier")
+        matches!(crate::writer::write_semantic_with_records(&ir, &cadmpeg_ir::annotations::Annotations::default(), &[], &[], &mut bytes), Err(CodecError::NotImplemented(message)) if message == "SLDPRT saved properties require their retained source carrier")
     );
     assert!(bytes.is_empty());
 }

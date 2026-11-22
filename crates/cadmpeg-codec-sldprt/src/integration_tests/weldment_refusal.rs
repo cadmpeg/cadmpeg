@@ -131,6 +131,7 @@ fn malformed_auxiliary_owner_blocks_semantic_writes() {
         decoded.ir(),
         &decoded.source_fidelity().annotations,
         &records,
+        &[],
         &mut output,
     );
     assert!(

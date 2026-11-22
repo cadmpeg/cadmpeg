@@ -532,8 +532,14 @@ pub(in crate::history) fn sync_neutral_features(
             if kind == baseline.kind {
                 kind.clone_from(&record.kind);
             }
-            parameters = stored_unless_moved(&record.parameters, parameters, &baseline.parameters);
-            properties = stored_unless_moved(&record.properties, properties, &baseline.properties);
+            parameters =
+                stored_unless_moved(&record.parameters, parameters, &baseline.parameters, &[]);
+            properties = stored_unless_moved(
+                &record.properties,
+                properties,
+                &baseline.properties,
+                &crate::records::LANE_DERIVED_PROPERTY_GROUPS,
+            );
         }
         if kept {
             edits.keep_stored_definition(feature)?;
@@ -683,15 +689,22 @@ pub(in crate::history) fn sync_neutral_features(
     // source states it.
     let mut dependencies_unwritten = HashSet::new();
     for feature in features {
-        let (Some(construction), Some(original)) = (
-            edited_constructions.get(&feature.id),
-            edits.source_feature(&feature.id),
-        ) else {
+        let Some(original) = edits.source_feature(&feature.id) else {
             continue;
         };
         if edits.operands_kept(&feature.id) {
+            let construction = super::edits::construction_edits(original, feature);
+            edits.claim(
+                original,
+                feature,
+                construction.into_iter().map(|edit| (edit, false)),
+                false,
+            );
             continue;
         }
+        let Some(construction) = edited_constructions.remove(&feature.id) else {
+            continue;
+        };
         let written = projected_features.get(&neutral_feature_id(&record_ids[&feature.id])?);
         let source_dependencies = original
             .dependencies
@@ -711,21 +724,25 @@ pub(in crate::history) fn sync_neutral_features(
                 serde_json::to_value(written.evaluation.definition()).ok()?,
             ))
         });
+        let as_source = construction
+            .iter()
+            .map(|(edit, _)| {
+                definitions.as_ref().is_some_and(
+                    |(source_definition, written, written_definition)| {
+                        edit.reads_back_as_source(
+                            (original, source_definition),
+                            (written, written_definition),
+                            dependencies_as_source,
+                        )
+                    },
+                )
+            })
+            .collect::<Vec<_>>();
         let unwritten = construction
             .iter()
-            .filter(|(edit, unmoved)| {
-                *unmoved
-                    || definitions.as_ref().is_some_and(
-                        |(source_definition, written, written_definition)| {
-                            edit.reads_back_as_source(
-                                (original, source_definition),
-                                (written, written_definition),
-                                dependencies_as_source,
-                            )
-                        },
-                    )
-            })
-            .map(|(edit, _)| edit)
+            .zip(&as_source)
+            .filter(|((_, unmoved), as_source)| *unmoved || **as_source)
+            .map(|((edit, _), _)| edit)
             .collect::<Vec<_>>();
         if unwritten.iter().any(|edit| edit.is_dependencies()) {
             dependencies_unwritten.insert(feature.id.clone());
@@ -740,6 +757,22 @@ pub(in crate::history) fn sync_neutral_features(
                 unwritten.len() == construction.len(),
             );
         }
+        // An edit that moves a record field while the records read back as
+        // the source would leave the record stating what the output does not
+        // carry.
+        let withhold = construction
+            .iter()
+            .zip(&as_source)
+            .any(|((_, unmoved), as_source)| !unmoved && *as_source);
+        edits.claim(
+            original,
+            feature,
+            construction
+                .into_iter()
+                .zip(as_source)
+                .map(|((edit, unmoved), as_source)| (edit, !unmoved && !as_source)),
+            withhold,
+        );
     }
     // A stored record keeps its stored operands, and a dependency edit that
     // reads back as the source is named above.
@@ -782,18 +815,34 @@ pub(in crate::history) fn sync_neutral_features(
 
 /// The stored entries of a record field, with each entry whose encoding
 /// `written` moves from the source feature's encoding `baseline` written as
-/// `written` states it.
+/// `written` states it. A moved entry of one of `groups` that `stored` states
+/// none of is written with the rest of its group: the decoder fills such a
+/// group from the lane only while the record states none of it.
 fn stored_unless_moved<V: Clone + PartialEq>(
     stored: &BTreeMap<cadmpeg_core::text::NonBlankString, V>,
     written: BTreeMap<cadmpeg_core::text::NonBlankString, V>,
     baseline: &BTreeMap<cadmpeg_core::text::NonBlankString, V>,
+    groups: &[&[&str]],
 ) -> BTreeMap<cadmpeg_core::text::NonBlankString, V> {
+    let moved = written
+        .iter()
+        .filter(|(key, value)| baseline.get(*key) != Some(*value))
+        .map(|(key, _)| key.as_str().to_owned())
+        .collect::<HashSet<_>>();
+    let with_group = groups
+        .iter()
+        .filter(|group| {
+            group.iter().any(|member| moved.contains(*member))
+                && !group.iter().any(|member| stored.contains_key(*member))
+        })
+        .flat_map(|group| group.iter().copied())
+        .collect::<HashSet<_>>();
     let mut merged = stored.clone();
     for key in baseline.keys().filter(|key| !written.contains_key(*key)) {
         merged.remove(key);
     }
     for (key, value) in written {
-        if baseline.get(&key) != Some(&value) {
+        if moved.contains(key.as_str()) || with_group.contains(key.as_str()) {
             merged.insert(key, value);
         }
     }

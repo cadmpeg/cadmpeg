@@ -327,7 +327,39 @@ impl Feature {
     pub(crate) fn source_value(&self) -> Option<u32> {
         self.source_id.and_then(FeatureSource::value)
     }
+
+    /// Whether the record states any of the properties `keys`.
+    pub(crate) fn states_any(&self, keys: &[&str]) -> bool {
+        keys.iter().any(|key| self.properties.contains_key(*key))
+    }
 }
+
+/// The revolution axis, filled from the feature-input lane.
+pub(crate) const REVOLUTION_AXIS_PROPERTIES: [&str; 2] = ["AxisOrigin", "AxisDirection"];
+/// The frame of a coordinate system, filled from the feature-input lane.
+pub(crate) const COORDINATE_SYSTEM_PROPERTIES: [&str; 4] = ["Origin", "XAxis", "YAxis", "ZAxis"];
+/// The frame of a reference plane, filled from the feature-input lane.
+pub(crate) const REFERENCE_PLANE_FRAME_PROPERTIES: [&str; 3] = ["Origin", "Normal", "UAxis"];
+/// The frame of a reference axis, filled from its two construction planes.
+pub(crate) const REFERENCE_AXIS_FRAME_PROPERTIES: [&str; 2] = ["Origin", "Direction"];
+/// The translation of a move-face feature, filled from the feature-input lane.
+pub(crate) const MOVE_FACE_PROPERTIES: [&str; 2] = ["Mode", "Direction"];
+/// The end conditions of an extrusion, filled from the lane while the record
+/// states no `EndCondition`.
+pub(crate) const EXTRUSION_TERMINATION_PROPERTIES: [&str; 4] =
+    ["EndCondition", "EndCondition2", "Vertex", "Face"];
+
+/// Record properties the decoder fills from the feature-input lane together,
+/// and only while the record states none of the group. A record that states
+/// one member is read for the whole group.
+pub(crate) const LANE_DERIVED_PROPERTY_GROUPS: [&[&str]; 6] = [
+    &REVOLUTION_AXIS_PROPERTIES,
+    &COORDINATE_SYSTEM_PROPERTIES,
+    &REFERENCE_PLANE_FRAME_PROPERTIES,
+    &REFERENCE_AXIS_FRAME_PROPERTIES,
+    &MOVE_FACE_PROPERTIES,
+    &EXTRUSION_TERMINATION_PROPERTIES,
+];
 
 /// One parametric construction-history feature (e.g. an extrude or fillet operation).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

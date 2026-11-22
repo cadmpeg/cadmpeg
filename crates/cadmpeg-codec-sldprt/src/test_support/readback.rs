@@ -147,6 +147,26 @@ fn canonical_text(text: String, names: &HashMap<String, String>) -> String {
         .join(":")
 }
 
+/// The definition of feature `key` (`F:<feature name>`) in `expected` and in
+/// `written`, with ids replaced by names, when the two differ.
+pub(crate) fn definition_difference(
+    expected: &CadIr,
+    written: &CadIr,
+    key: &str,
+) -> Option<(Value, Value)> {
+    let definition = |ir: &CadIr| {
+        summary(ir)
+            .features
+            .get(key)
+            .and_then(|feature| feature.get("definition"))
+            .cloned()
+            .unwrap_or(Value::Null)
+    };
+    let (expected, written) = (definition(expected), definition(written));
+    (!crate::history::write::edits::same_read_back(&expected, &written, false))
+        .then_some((expected, written))
+}
+
 /// Every feature and parameter of `expected` that `written` does not state
 /// the same way, other than the features and parameters `skipped` names
 /// (`F:<feature name>`, `P:F:<owner name>.<parameter name>`); empty when the
@@ -165,7 +185,7 @@ pub(crate) fn differences(expected: &CadIr, written: &CadIr, skipped: &[&str]) -
             }
             match written.get(key) {
                 None => differences.push(format!("{arena} {key} is missing")),
-                Some(read) if read != value => {
+                Some(read) if !crate::history::write::edits::same_read_back(read, value, false) => {
                     differences.push(format!("{arena} {key}: {value} reads back {read}"));
                 }
                 Some(_) => {}
