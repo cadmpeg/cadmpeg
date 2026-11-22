@@ -1982,7 +1982,7 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 **Question.** Which body slot of its creating state does the browser node of a body-pattern copy name when that state inserts several bodies and the body is not history-only?
 
-**Known.** `f3d.md` §3.1 binds an operand-list `Combine` tool through the single body that its creating state inserts, or through the history-only body-map pair of its body entity. A consumed pattern copy has a history-only pair and binds as the generated body of the pattern feature. In a three-element body pattern whose `Combine` keeps its tools, the creating state of the two copies inserts slots `3` and `4`. The body-map pairs of the two copy entities store selectors `20` and `21`, and those keys select the BREP body records `3` and `4`.
+**Known.** `f3d.md` §3.1 binds an operand-list `Combine` tool through the single body that its creating state inserts, or through the history-only body-map pair of its body entity. A consumed pattern copy has a history-only pair and binds as the generated body of the pattern feature. A three-element body pattern makes two copies. When a later `Combine` keeps these copies as tools, the creating state of the copies inserts one body slot for each copy, and the body-map pair of each copy entity is not history-only. The selector of each pair is a key that selects one BREP body record. The index of that record is equal to the slot that the creating state inserts for the same copy.
 
 **Need.** Body patterns whose copies a later feature changes before a keep-tools `Combine`, with the readback of each copy body, to show whether the body record index of the pair selector names the inserted slot in every history.
 
