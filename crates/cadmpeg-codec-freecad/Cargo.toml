@@ -25,9 +25,6 @@ roxmltree.workspace = true
 zip.workspace = true
 tempfile.workspace = true
 
-[[bin]]
-name = "fcstd-profile"
-path = "src/bin/fcstd_profile.rs"
 
 # Local census helper. cargo-dist would otherwise ship it as a release app.
 [package.metadata.dist]

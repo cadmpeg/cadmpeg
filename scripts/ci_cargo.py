@@ -26,7 +26,8 @@ def command(arguments: list[str], packages: list[str], *, full: bool = False,
             if dependency.startswith('dep:cadmpeg-codec-')
         }
         scope += ['--no-default-features', '--features', ','.join(
-            f'cadmpeg/{codec_features[codec]}' for codec in codecs)]
+            f'{package}/{codec_features[codec]}' for codec in codecs
+            for package in ('cadmpeg', 'cadmpeg-registry') if package in packages)]
     if arguments[0] == 'nextest':
         return ['cargo', 'nextest', *arguments[1:2], '--cargo-quiet', '--status-level', 'fail',
                 '--final-status-level', 'slow', *scope, *arguments[2:]]

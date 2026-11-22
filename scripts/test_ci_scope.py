@@ -123,7 +123,7 @@ class ScopeTests(unittest.TestCase):
     def test_codec_features_use_registry_feature_names(self):
         result = command(['check'], ['cadmpeg', 'cadmpeg-registry'], codecs=['freecad', 'inventor'])
         self.assertIn('--no-default-features', result)
-        self.assertIn('cadmpeg/fcstd,cadmpeg/inventor', result)
+        self.assertIn('cadmpeg/fcstd,cadmpeg-registry/fcstd,cadmpeg/inventor,cadmpeg-registry/inventor', result)
 
     def test_documentation_source_scan_requires_only_prose(self):
         self.assertTrue(select(ROOT, ['docs/formats/f3d.md'])['prose_only'])

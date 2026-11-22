@@ -6,11 +6,8 @@
 use predicates::prelude::{predicate, PredicateBooleanExt};
 use tempfile::tempdir;
 
-mod query_support;
-mod support;
-
+use crate::binary_support::cadmpeg;
 use crate::query_support::write;
-use crate::support::cadmpeg;
 
 const CHECK_REPORT: &str = r#"{
   "ir_version": "11",
