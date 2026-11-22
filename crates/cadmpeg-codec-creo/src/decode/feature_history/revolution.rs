@@ -33,9 +33,10 @@ use crate::identity::{
     compose_checked, FEATURE_EXTRUSION_VERTEX_ORBIT, FEATURE_REVOLUTION_VERTEX_ORBIT,
 };
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
@@ -480,7 +481,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     )?
                     .into(),
                     false,
-                    cadmpeg_ir::geometry::CacheContract::from_form(None),
+                    cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                 )
                 .map(|admitted_payload| {
                     ProceduralSurface::new(

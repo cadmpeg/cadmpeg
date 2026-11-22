@@ -7,7 +7,7 @@ use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::codec::DecodeOptions;
 
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
-use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 
 use cadmpeg_ir::math::Point2;

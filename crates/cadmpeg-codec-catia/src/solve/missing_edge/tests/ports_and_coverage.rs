@@ -178,17 +178,19 @@ fn standard_mesh_candidate_quotient_defers_occurrence_direction() {
     let prematurely_oriented_ports = [[0, 1], [1, 2], [3, 1]];
 
     assert!(
-        crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 4, &local_ports)
+        crate::solve::mesh_quotient::quotient::initial_mesh_quotient(&candidates, 4, &local_ports)
             .expect("build the initial mesh quotient")
             .is_some()
     );
-    assert!(crate::solve::mesh_quotient::initial_mesh_quotient(
-        &candidates,
-        4,
-        &prematurely_oriented_ports
-    )
-    .expect("build the initial mesh quotient")
-    .is_none());
+    assert!(
+        crate::solve::mesh_quotient::quotient::initial_mesh_quotient(
+            &candidates,
+            4,
+            &prematurely_oriented_ports
+        )
+        .expect("build the initial mesh quotient")
+        .is_none()
+    );
 }
 
 #[test]
