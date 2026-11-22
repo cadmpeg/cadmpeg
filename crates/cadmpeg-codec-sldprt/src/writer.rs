@@ -673,9 +673,9 @@ fn native_skeleton_losses(
     let (runs, bytes) = native::detailing_zero_runs();
     losses.extend([
         SldprtLossCode::WriterNativeSkeletonUnlaidRuns.note(format!(
-            "the native skeleton writes as zero bytes byte runs whose fields sldprt.md does not \
-             lay out and in which native parts of swVersion 14000 hold values: {runs} runs \
-             ({bytes} bytes) of the moRelMgr_c detailing settings (EV-19), {}; \
+            "the native skeleton writes as zero bytes the byte runs whose fields sldprt.md does \
+             not lay out, and native parts of swVersion 14000 hold values in most of them: {runs} \
+             runs ({bytes} bytes) of the moRelMgr_c detailing settings (EV-19), {}; \
              swXmlContents/Features declares no swVersion, so the part names 14000 only in the \
              _MO_VERSION_14000 storage name and in moPart_c's version word",
             native::OTHER_ZERO_RUNS

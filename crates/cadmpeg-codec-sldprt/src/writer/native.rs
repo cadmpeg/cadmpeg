@@ -161,9 +161,10 @@ pub(super) fn detailing_zero_runs() -> (usize, usize) {
 
 /// The skeleton's other zero byte runs in which native parts of the version
 /// hold values.
-pub(super) const OTHER_ZERO_RUNS: &str = "the 64 bytes of the moAtom_c, the 30-byte runs of the \
-     sketch-block manager and its moPMarkRecord_c, and the origin sketch's 76-byte and 42-byte \
-     settings runs";
+pub(super) const OTHER_ZERO_RUNS: &str = "the twenty bytes after the part's visual properties, \
+     the 64 bytes of the moAtom_c, the twelve identifier bytes of the sketch-block manager and the \
+     30 bytes of its moPMarkRecord_c, the 26 bytes after the exploded-view manager, and the \
+     origin sketch's 76-byte and 42-byte settings runs";
 
 /// The streams every native part of the version holds that the skeleton
 /// leaves out.
