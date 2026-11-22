@@ -1,5 +1,6 @@
 //! Named scalar records, operands and feature object names.
 
+use super::parameter_classes::count_trailer;
 use super::relation_records::{
     compact_scalar_layout, legacy_scalar_layout, scalar_role, shifted_value_only_scalar_trailer,
 };
@@ -92,7 +93,26 @@ fn scalar_value_offset(payload: &[u8], name_offset: usize) -> Option<usize> {
         return Some(shifted_value_offset);
     }
     (payload.get(header_offset..value_only_offset) == Some(VALUE_ONLY_SCALAR_HEADER))
-        .then_some(value_only_offset)
+        .then(|| value_only_value_offset(payload, value_only_offset))
+}
+
+/// The value offset of a value-only scalar whose 14-byte header ends at
+/// `header_end`: after four zero bytes where a scalar trailer begins twelve
+/// bytes after the header and no count trailer four bytes after it, else at
+/// the header's end. The shifted record with a role is not this form.
+pub(super) fn value_only_value_offset(payload: &[u8], header_end: usize) -> usize {
+    header_end
+        .checked_add(4)
+        .filter(|&value| {
+            payload.get(header_end..value) == Some(&[0; 4])
+                && !count_trailer(payload, value)
+                && View::f64_le_at(payload, value).is_some_and(f64::is_finite)
+                && value.checked_add(8).is_some_and(|trailer| {
+                    count_trailer(payload, trailer)
+                        && !shifted_value_only_scalar_trailer(payload, trailer)
+                })
+        })
+        .unwrap_or(header_end)
 }
 
 pub(crate) fn scalar_indices_match(
