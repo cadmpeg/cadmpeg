@@ -12,6 +12,9 @@ use crate::report::{
 };
 
 pub(super) fn check_drawings(ir: &CadIr, all_ids: &dyn IdentitySet, findings: &mut Vec<Finding>) {
+    if ir.model.drawings.is_empty() {
+        return;
+    }
     let records = DesignRecords::of(ir);
     let mut orders = std::collections::BTreeSet::new();
     for drawing in &ir.model.drawings {

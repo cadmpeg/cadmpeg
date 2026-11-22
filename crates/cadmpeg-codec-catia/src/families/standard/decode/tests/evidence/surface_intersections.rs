@@ -9,11 +9,11 @@ use crate::families::standard::decode::SPHERE_SECTION_ENDPOINT_TOLERANCE;
 use crate::families::standard::records::StandardCurveGeometry;
 use crate::families::standard::records::StandardCurveSupport;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::geometry::blends::RollingBallJetDerivative;
+use cadmpeg_ir::geometry::blends::RollingBallJetSite;
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
-use cadmpeg_ir::geometry::ProceduralCurveDefinition;
-use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
-use cadmpeg_ir::geometry::RollingBallJetDerivative;
-use cadmpeg_ir::geometry::RollingBallJetSite;
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::geometry::Surface;
@@ -505,11 +505,11 @@ fn standard_spline_retains_a_procedural_rolling_ball_support() {
         )),
     );
     let rolling_ball_definition = ProceduralSurfaceDefinition::RollingBallJet(
-        cadmpeg_ir::geometry::RollingBallJetStations::try_new(
+        cadmpeg_ir::geometry::blends::RollingBallJetStations::try_new(
             5,
             [0.0, 1.0]
                 .into_iter()
-                .map(|knot| cadmpeg_ir::geometry::RollingBallJetStation {
+                .map(|knot| cadmpeg_ir::geometry::blends::RollingBallJetStation {
                     knot,
                     multiplicity: 6,
                     site: RollingBallJetSite {

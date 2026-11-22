@@ -43,7 +43,8 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
     use cadmpeg_ir::geometry::pcurve::{
         Pcurve, PcurveGeometry, PcurveMetadata, PcurveNurbs, PcurveNurbsPoles,
     };
-    use cadmpeg_ir::geometry::{DirectedParameterRange, SolvedSurfaceGeometry, SurfaceGeometry};
+    use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
     use cadmpeg_ir::ids::{CoedgeId, EdgeId, PcurveId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::topology::{Coedge, Edge, EdgeCarrier, PcurveUse, Sense};
@@ -443,7 +444,8 @@ fn cube_with_a_seam_ring(case: SeamRing) -> CadIr {
     use cadmpeg_ir::geometry::pcurve::{
         Pcurve, PcurveGeometry, PcurveMetadata, PcurveNurbs, PcurveNurbsPoles,
     };
-    use cadmpeg_ir::geometry::{DirectedParameterRange, SolvedSurfaceGeometry, SurfaceGeometry};
+    use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
     use cadmpeg_ir::ids::{CoedgeId, EdgeId, LoopId, PcurveId};
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::topology::{

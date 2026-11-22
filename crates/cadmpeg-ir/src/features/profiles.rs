@@ -33,7 +33,7 @@ pub struct SketchProfileBoundaryUse {
     /// or circle by its angle in radians; an ellipse by its eccentric angle in radians; a
     /// NURBS curve by its knot-domain coordinate.
     #[serde(deserialize_with = "deserialize_profile_parameter_range")]
-    pub parameter_range: crate::geometry::DirectedParameterRange,
+    pub parameter_range: crate::geometry::procedural_curves::DirectedParameterRange,
     /// Whether boundary traversal opposes the interval's stored direction.
     pub reversed: bool,
 }

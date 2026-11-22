@@ -80,7 +80,7 @@ pub(crate) fn synthetic_revision_surface_smbh(
 }
 
 pub(super) fn scrubbed_definition(
-    definition: &cadmpeg_ir::geometry::ProceduralSurfaceDefinition,
+    definition: &cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition,
 ) -> String {
     let text = serde_json::to_string(definition).expect("definition JSON");
     let mut out = String::with_capacity(text.len());
@@ -149,8 +149,10 @@ pub(crate) fn push_revision_loft_body(
 /// The single revision-gated profile member of a decoded loft construction.
 pub(crate) fn decoded_revision_loft_member(
     ir: &cadmpeg_ir::document::CadIr,
-) -> cadmpeg_ir::geometry::LoftProfileMember {
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Loft(definition_payload) = &ir
+) -> cadmpeg_ir::geometry::lofts::LoftProfileMember {
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Loft(
+        definition_payload,
+    ) = &ir
         .geometry
         .procedural_surfaces
         .first()
@@ -230,7 +232,9 @@ pub(crate) fn synthetic_revision_surface_subtype_span(smbh: &[u8]) -> Vec<u8> {
 }
 
 /// The parameterization the shared form-`2` tail builder writes.
-pub(crate) fn assert_parameterized_tail(cache: &cadmpeg_ir::geometry::RevisionCacheForm) {
+pub(crate) fn assert_parameterized_tail(
+    cache: &cadmpeg_ir::geometry::revision_forms::RevisionCacheForm,
+) {
     let parameterization = cache.parameterization().expect("tail parameterization");
     assert_eq!(parameterization.u_interval, [Some(0.25), None]);
     assert_eq!(parameterization.v_interval, [Some(-1.5), Some(3.5)]);

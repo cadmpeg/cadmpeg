@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::geometry::{
-    CacheContractError, FitTolerance, RevisionSurfaceParameterization, VariableBlendCache,
-};
+use crate::geometry::legacy_cache::{CacheContractError, FitTolerance};
+use crate::geometry::revision_forms::{RevisionSurfaceParameterization, VariableBlendCache};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::num::NonZeroI64;
@@ -16,7 +15,7 @@ fn the_variable_blend_cache_is_one_tagged_object_carrying_its_own_tolerance() {
     for prefix in [-3, 1, 11] {
         let cache = VariableBlendCache::Current {
             shape_prefix: NonZeroI64::new(prefix).unwrap(),
-            fit_tolerance: crate::geometry::FitTolerance::try_new(0.125).unwrap(),
+            fit_tolerance: crate::geometry::legacy_cache::FitTolerance::try_new(0.125).unwrap(),
         };
         let wire = serde_json::to_value(CacheWire {
             cache: cache.clone(),
