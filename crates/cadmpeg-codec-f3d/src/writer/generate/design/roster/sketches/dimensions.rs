@@ -314,10 +314,6 @@ pub(in crate::writer::generate::design::roster) fn losses(ctx: &Context<'_>) -> 
                 driven.join(", ")
             ));
         }
-        values.push(format!(
-            "record 198 (timeline context: context value {}, the largest source ordinal of an owned parameter; f3d.md states the value for a design whose every parameter is named d<n>)",
-            ctx.context_value()
-        ));
     }
     cadmpeg_ir::codec::write::record_residual_unavailable(
         "F3D",
