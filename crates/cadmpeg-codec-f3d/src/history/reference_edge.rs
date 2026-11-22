@@ -54,7 +54,7 @@ mod tests {
     ];
 
     fn structure() -> DesignEdgeRecipeStructure {
-        crate::design::decode::operands::edge_recipe_structure(
+        crate::design::decode::operands::recipe_structure::edge_recipe_structure(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             PROGRAM,
         )
@@ -65,12 +65,14 @@ mod tests {
     #[test]
     fn primary_reference_program_refuses_each_truncation() {
         for end in 0..PROGRAM.len() {
-            assert!(crate::design::decode::operands::edge_recipe_structure(
-                &cadmpeg_core::decode::test_support::service_decode_context(),
-                &PROGRAM[..end],
-            )
-            .unwrap()
-            .is_none());
+            assert!(
+                crate::design::decode::operands::recipe_structure::edge_recipe_structure(
+                    &cadmpeg_core::decode::test_support::service_decode_context(),
+                    &PROGRAM[..end],
+                )
+                .unwrap()
+                .is_none()
+            );
         }
     }
 

@@ -13,8 +13,8 @@ use super::super::super::sketch::dimensions::{
     DimensionKind, Measure, PlannedDimension, DRIVEN_DECIMALS,
 };
 use super::super::super::types;
-use super::super::owned::{Owned, DISCRIMINATOR};
-use super::super::{count, Context};
+use super::super::owned::Owned;
+use super::super::{count, Context, PARAMETER_DISCRIMINATOR};
 use super::{curve_payload, Item};
 use crate::writer::generate::presentation::TypeRow;
 
@@ -304,8 +304,9 @@ pub(in crate::writer::generate::design::roster) fn losses(ctx: &Context<'_>) -> 
                 frames.join(" ")
             ),
             format!(
-                "dimension parameters {} (family discriminator {DISCRIMINATOR}, the owner's parameter number the source ordinal, the dimension suffix {FIRST_SUFFIX} for a sketch's first dimension of a kind and one more for each later one; the expression trailer of ten zero bytes for a driving dimension)",
-                parameters.join(" ")
+                "dimension parameters {} (family discriminator {}, the owner's parameter number the source ordinal, the dimension suffix {FIRST_SUFFIX} for a sketch's first dimension of a kind and one more for each later one; the expression trailer of ten zero bytes for a driving dimension)",
+                parameters.join(" "),
+                PARAMETER_DISCRIMINATOR.code()
             ),
         ]);
         if !driven.is_empty() {

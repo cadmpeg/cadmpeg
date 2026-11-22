@@ -21,11 +21,12 @@ fn fragment_blend_operand(
             "recipe_prefix_bytes":"", "recipe_references":[], "recipe_program_offset":0,
             "recipe_program":[], "next_record_index":11, "next_byte_offset":160,
         })).unwrap();
-    operand.recipe_structure = crate::design::decode::operands::edge_recipe_structure(
-        &cadmpeg_core::decode::test_support::service_decode_context(),
-        &program,
-    )
-    .unwrap();
+    operand.recipe_structure =
+        crate::design::decode::operands::recipe_structure::edge_recipe_structure(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &program,
+        )
+        .unwrap();
     operand.recipe_state_id = Some(1);
     let boundaries = crate::history::face_boundary_contexts_for_slots(
         &[10, 13, 11],

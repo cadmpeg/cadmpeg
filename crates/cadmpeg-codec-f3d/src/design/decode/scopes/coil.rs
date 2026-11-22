@@ -7,9 +7,9 @@ use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::marked_record_reference;
 use crate::bytes::f64s_at;
 use crate::bytes::lp_ascii_filtered_view;
-use crate::design::decode::operands::parse_entity_selection_frame;
-use crate::design::decode::operands::parse_entity_selection_prefix;
-use crate::design::decode::operands::parse_face_operand;
+use crate::design::decode::operands::entity_selections::parse_entity_selection_frame;
+use crate::design::decode::operands::entity_selections::parse_entity_selection_prefix;
+use crate::design::decode::operands::face_operand_frames::parse_face_operand;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::ids::native_stream;
 use crate::layout::coil_compact_placement_identity_frame as coil_identity;
@@ -469,7 +469,7 @@ fn exact_coil_face_selection(
             ctx,
             bytes,
             records,
-            crate::design::decode::operands::FaceOperandFrame {
+            crate::design::decode::operands::face_operand_frames::FaceOperandFrame {
                 registered_frame: None,
                 scope,
                 scope_reference_ordinal: 0,

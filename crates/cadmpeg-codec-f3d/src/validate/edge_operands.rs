@@ -61,11 +61,13 @@ pub(super) fn validate_edge_operands<'a>(
             .map(|record_index| i64::from(record_index.value))
             .filter(|value| *value >= 0);
         let expected_faces = match design_reference {
-            Some(design_reference) => design::decode::operands::edge_operand_candidate_faces(
-                design_reference,
-                &native.persistent_subentity_tags,
-                Some(&operand.id),
-            ),
+            Some(design_reference) => {
+                design::decode::operands::operand_candidates::edge_operand_candidate_faces(
+                    design_reference,
+                    &native.persistent_subentity_tags,
+                    Some(&operand.id),
+                )
+            }
             None => Vec::new(),
         };
         let mut expected_references = design::decode::dimension_frames::decode_recipe_references(
@@ -86,7 +88,7 @@ pub(super) fn validate_edge_operands<'a>(
                 scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfacePatch
             })
             .and_then(|_| {
-                design::decode::operands::surface_patch_recipe_structure(
+                design::decode::operands::recipe_structure::surface_patch_recipe_structure(
                     &operand.recipe_program,
                     operand.recipe_references.len(),
                 )
@@ -101,7 +103,7 @@ pub(super) fn validate_edge_operands<'a>(
                         == Some(&operand.record_index())
             });
         let valid = scope.is_some_and(|scope| {
-            design::decode::operands::has_edge_recipe_operands(&scope.kind())
+            design::decode::operands::edge_operands::has_edge_recipe_operands(&scope.kind())
                 && usize::try_from(operand.scope_reference_ordinal)
                     .ok()
                     .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
@@ -111,7 +113,7 @@ pub(super) fn validate_edge_operands<'a>(
         }) && (operand
             .record_index()
             .checked_add(scope.map_or(4, |scope| {
-                design::decode::operands::edge_recipe_terminal_delta(&scope.kind())
+                design::decode::operands::edge_operands::edge_recipe_terminal_delta(&scope.kind())
             }))
             .is_some_and(|expected_offset| operand.next_record_index == expected_offset)
             || terminal_group_member)
@@ -131,7 +133,7 @@ pub(super) fn validate_edge_operands<'a>(
                     && recipe.byte_offset > operand.recipe_record_byte_offset()
                     && recipe.byte_offset < operand.next_byte_offset()
             })
-            && design::decode::operands::edge_recipe_structure(
+            && design::decode::operands::recipe_structure::edge_recipe_structure(
                 ctx.decode,
                 &operand.recipe_program,
             )? == operand.recipe_structure
@@ -342,7 +344,7 @@ pub(super) fn validate_edge_treatment_vertex_operands<'a>(
         );
         let valid = operand.id == expected_id
             && scope.is_some_and(|scope| {
-                design::decode::operands::has_edge_recipe_operands(&scope.kind())
+                design::decode::operands::edge_operands::has_edge_recipe_operands(&scope.kind())
                     && usize::try_from(operand.scope_reference_ordinal)
                         .ok()
                         .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
