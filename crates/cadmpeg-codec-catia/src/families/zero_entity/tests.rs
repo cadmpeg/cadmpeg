@@ -576,8 +576,12 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
     // A support model endpoint holds an admitted point, so a non-finite
     // coordinate is refused before a native record can hold it.
     assert!(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(f64::NAN, 6.0, 3.0))
-            .is_none()
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            f64::NAN,
+            6.0,
+            3.0
+        ))
+        .is_none()
     );
 
     let mut invalid = native;

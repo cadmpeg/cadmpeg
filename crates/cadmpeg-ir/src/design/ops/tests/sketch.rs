@@ -31,7 +31,7 @@ use crate::design::ops::sketch::{
 use crate::design::options::{NativeOptions, ProjectionDirection};
 use crate::design::selection::PrincipalEntity;
 use crate::document::{CadIr, Design};
-use crate::features::FinitePoint3;
+use crate::features::geometry::FinitePoint3;
 use crate::geometry::analytic::LineCurve;
 use crate::geometry::SolvedCurveGeometry;
 use crate::sketches::{

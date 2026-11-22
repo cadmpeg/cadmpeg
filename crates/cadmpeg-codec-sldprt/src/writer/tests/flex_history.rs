@@ -22,18 +22,16 @@ use crate::SldprtCodec;
 
 #[test]
 fn encoder_writes_authored_with_retained_native_envelope_curved_sketches() {
+    use cadmpeg_ir::features::parameters::{DesignParameter, DimensionDisplay, ParameterValue};
+    use cadmpeg_ir::features::{
+        Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
+    };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::scalar::{Angle, Length};
     use cadmpeg_ir::sketches::{
         Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
         SketchCoordinateAxis, SketchEntity, SketchEntityId, SketchEntityUse,
         SketchGeometryDefinition, SketchId, SketchLocus,
-    };
-    use cadmpeg_ir::{
-        features::{
-            DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId,
-            FeatureOperation, ParameterId, ParameterValue,
-        },
-        scalar::{Angle, Length},
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
@@ -266,12 +264,12 @@ fn encoder_writes_authored_with_retained_native_envelope_curved_sketches() {
         ordinal: 0,
         name: Some("Curves".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
             }),
@@ -369,7 +367,7 @@ fn encoder_writes_authored_with_retained_native_envelope_curved_sketches() {
             expression: expression.into(),
             display,
             value: Some(value),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -956,12 +954,12 @@ fn encoder_binds_multiple_authored_with_retained_native_envelope_sketches_by_obj
             ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
             name: Some(name.into()),
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
                 }),
@@ -1009,17 +1007,15 @@ fn encoder_binds_multiple_authored_with_retained_native_envelope_sketches_by_obj
 
 #[test]
 fn encoder_writes_authored_with_retained_native_envelope_native_features() {
+    use cadmpeg_ir::features::direct_edit::FaceMotion;
+    use cadmpeg_ir::features::edge_treatments::{ChamferSpec, RadiusSpec};
+    use cadmpeg_ir::features::extents::LinearTermination;
+    use cadmpeg_ir::features::holes::HoleKind;
+    use cadmpeg_ir::features::patterns::{PatternKind, PatternTransform};
+    use cadmpeg_ir::features::selections::{BodySelection, EdgeSelection, FaceSelection};
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::math::{Point3, Vector3};
-    use cadmpeg_ir::{
-        features::{
-            edge_treatments::{ChamferSpec, RadiusSpec},
-            holes::HoleKind,
-            patterns::{PatternKind, PatternTransform},
-            BodySelection, EdgeSelection, FaceMotion, FaceSelection, Feature, FeatureDefinition,
-            FeatureId, FeatureOperation, LinearTermination,
-        },
-        scalar::Angle,
-    };
+    use cadmpeg_ir::scalar::Angle;
     use std::collections::BTreeMap;
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
@@ -1039,12 +1035,12 @@ fn encoder_writes_authored_with_retained_native_envelope_native_features() {
         ordinal: 0,
         name: Some("Boss".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "BossExtrude".into(),
                 parameters: BTreeMap::from([(
@@ -1057,7 +1053,7 @@ fn encoder_writes_authored_with_retained_native_envelope_native_features() {
     });
     let definitions = vec![
         FeatureDefinition::Operation(FeatureOperation::Fillet {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(
+            groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(
                 cadmpeg_ir::features::edge_treatments::FilletGroup {
                     edges: EdgeSelection::Resolved {
                         edges: vec![ir.geometry.edges[0].id.clone()],
@@ -1071,7 +1067,7 @@ fn encoder_writes_authored_with_retained_native_envelope_native_features() {
             ),
         }),
         FeatureDefinition::Operation(FeatureOperation::Chamfer {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(
+            groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(
                 cadmpeg_ir::features::edge_treatments::ChamferGroup {
                     edges: EdgeSelection::Native("edge-c".into()),
                     spec: ChamferSpec::TwoDistances {
@@ -1097,11 +1093,13 @@ fn encoder_writes_authored_with_retained_native_envelope_native_features() {
         }),
         FeatureDefinition::Operation(FeatureOperation::Draft {
             faces: FaceSelection::Native("face-b".into()),
-            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+            anchor: cadmpeg_ir::features::direct_edit::DraftAnchor::NeutralPlane {
                 plane: FaceSelection::Native("face-c".into()),
-                pull: Some(cadmpeg_ir::features::DraftPull::new(
-                    cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
-                        .unwrap(),
+                pull: Some(cadmpeg_ir::features::direct_edit::DraftPull::new(
+                    cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                        0.0, 0.0, 1.0,
+                    ))
+                    .unwrap(),
                     None,
                 )),
             },
@@ -1112,7 +1110,7 @@ fn encoder_writes_authored_with_retained_native_envelope_native_features() {
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Resolved {
-                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![ir
+                    bodies: cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![ir
                         .geometry
                         .bodies[0]
                         .id
@@ -1123,10 +1121,10 @@ fn encoder_writes_authored_with_retained_native_envelope_native_features() {
                 BodySelection::Native("body-b,body-c".into()),
             )
             .unwrap(),
-            op: cadmpeg_ir::features::BooleanKind::Join,
+            op: cadmpeg_ir::features::operation_settings::BooleanKind::Join,
             keep_tools: false,
 
-            destination: cadmpeg_ir::features::CombineDestination::default(),
+            destination: cadmpeg_ir::features::operation_settings::CombineDestination::default(),
         }),
         FeatureDefinition::Operation(FeatureOperation::DeleteFace {
             faces: FaceSelection::Native("face-d".into()),
@@ -1135,10 +1133,14 @@ fn encoder_writes_authored_with_retained_native_envelope_native_features() {
         FeatureDefinition::Operation(FeatureOperation::MoveFace {
             faces: FaceSelection::Native("face-e".into()),
             motion: FaceMotion::Rotate {
-                axis_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
-                    .unwrap(),
-                axis_dir: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
-                    .unwrap(),
+                axis_origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                    1.0, 2.0, 3.0,
+                ))
+                .unwrap(),
+                axis_dir: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                    0.0, 1.0, 0.0,
+                ))
+                .unwrap(),
                 angle: Angle::new(0.4).unwrap(),
             },
         }),
@@ -1154,9 +1156,11 @@ fn encoder_writes_authored_with_retained_native_envelope_native_features() {
             face: Some(FaceSelection::Native("face-g".into())),
             direction: None,
             placements: Some(vec![cadmpeg_ir::features::holes::HolePlacement::Directed {
-                position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(3.0, 4.0, 5.0))
-                    .unwrap(),
-                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                position: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                    3.0, 4.0, 5.0,
+                ))
+                .unwrap(),
+                direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
                     0.0, 0.0, -1.0,
                 ))
                 .unwrap(),
@@ -1186,24 +1190,27 @@ fn encoder_writes_authored_with_retained_native_envelope_native_features() {
             ordinal: cadmpeg_core::decode::u64_from_index(index) + 1,
             name: Some(format!("Direct {index}")),
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+                definition,
+            ),
             native_ref: None,
         });
     }
     let patterns = [
         PatternKind::new(PatternTransform::Linear {
             direction: Some(
-                cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
+                cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
+                    .unwrap(),
             ),
             spacing: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
             count: 3,
             second: Some(cadmpeg_ir::features::patterns::LinearPatternDirection {
-                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
                     0.0, 1.0, 0.0,
                 ))
                 .unwrap(),
@@ -1216,19 +1223,27 @@ fn encoder_writes_authored_with_retained_native_envelope_native_features() {
         })
         .unwrap(),
         PatternKind::new(PatternTransform::Circular {
-            axis_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                .unwrap(),
-            axis_dir: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
-                .unwrap(),
+            axis_origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                0.0, 0.0, 0.0,
+            ))
+            .unwrap(),
+            axis_dir: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                0.0, 0.0, 1.0,
+            ))
+            .unwrap(),
             angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap(),
             count: 6,
         })
         .unwrap(),
         PatternKind::new(PatternTransform::Mirror {
-            plane_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                .unwrap(),
-            plane_normal: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
-                .unwrap(),
+            plane_origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                0.0, 0.0, 0.0,
+            ))
+            .unwrap(),
+            plane_normal: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                1.0, 0.0, 0.0,
+            ))
+            .unwrap(),
         })
         .unwrap(),
     ];
@@ -1240,13 +1255,15 @@ fn encoder_writes_authored_with_retained_native_envelope_native_features() {
             ordinal: cadmpeg_core::decode::u64_from_index(index) + 10,
             name: Some(format!("Pattern {index}")),
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(vec![seed_id.clone()])
-                .unwrap(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+                seed_id.clone(),
+            ])
+            .unwrap(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Pattern {
                     seeds: vec![cadmpeg_ir::features::patterns::PatternSeed::Feature(
                         seed_id.clone(),
@@ -1278,15 +1295,15 @@ fn encoder_writes_authored_with_retained_native_envelope_native_features() {
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
-            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::LinearTermination::Blind {
+            extent: cadmpeg_ir::features::extents::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::extents::ExtrudeSide {
+                    termination: cadmpeg_ir::features::extents::LinearTermination::Blind {
                         length: actual_length,
                     },
                     ..
                 }
             },
-            op: cadmpeg_ir::features::BooleanOp::Join,
+            op: cadmpeg_ir::features::operation_settings::BooleanOp::Join,
             ..
         }) if actual_length.get() == 25.0
     ));
@@ -1373,10 +1390,9 @@ fn encoder_writes_authored_with_retained_native_envelope_native_features() {
 
 #[test]
 fn semantic_writer_round_trips_flex_operations() {
-    use cadmpeg_ir::{
-        features::{FeatureDefinition, FeatureOperation, FlexMode},
-        scalar::Angle,
-    };
+    use cadmpeg_ir::features::direct_edit::FlexMode;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::scalar::Angle;
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -1398,7 +1414,7 @@ fn semantic_writer_round_trips_flex_operations() {
             panic!("typed flex feature");
         };
         assert_eq!(
-            axis.map(cadmpeg_ir::features::FeatureDirection3::get),
+            axis.map(cadmpeg_ir::features::geometry::FeatureDirection3::get),
             Some(cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0))
         );
         assert!(matches!(
@@ -1431,17 +1447,16 @@ fn semantic_writer_round_trips_flex_operations() {
         FeatureDefinition::Operation(FeatureOperation::Flex {
             axis,
             mode: FlexMode::Twisting { angle },
-        }) if axis.map(cadmpeg_ir::features::FeatureDirection3::get) == Some(cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0))
+        }) if axis.map(cadmpeg_ir::features::geometry::FeatureDirection3::get) == Some(cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0))
             && (angle.get() - 0.75).abs() < 1.0e-12
     ));
 }
 
 #[test]
 fn semantic_writer_round_trips_all_flex_modes() {
-    use cadmpeg_ir::{
-        features::{FeatureDefinition, FeatureOperation, FlexMode},
-        scalar::{Angle, Length},
-    };
+    use cadmpeg_ir::features::direct_edit::FlexMode;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::scalar::{Angle, Length};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -1531,7 +1546,8 @@ fn semantic_writer_round_trips_all_flex_modes() {
 
 #[test]
 fn semantic_writer_retains_partial_native_flex_construction() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, FlexForm, FlexMode};
+    use cadmpeg_ir::features::direct_edit::{FlexForm, FlexMode};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(

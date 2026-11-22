@@ -71,12 +71,12 @@ fn by_ids<'a, O: MemberOrder>(
 /// model or in their producers' results, each by its name, and by the
 /// selection's native record where the listed edges are neither.
 pub(super) fn edges(
-    value: &old::EdgeSelection,
+    value: &cadmpeg_ir::features::selections::EdgeSelection,
     holder: &FeatureId,
     stated: &Stated<'_>,
 ) -> Option<OrderedSelection> {
     match value {
-        old::EdgeSelection::Resolved { edges, native } => by_ids(
+        cadmpeg_ir::features::selections::EdgeSelection::Resolved { edges, native } => by_ids(
             edges.iter().map(cadmpeg_ir::ids::EdgeId::as_str),
             names::EDGE,
             NameKind::Edge,
@@ -85,8 +85,10 @@ pub(super) fn edges(
             stated,
         )
         .or_else(|| selections::unread(native)),
-        old::EdgeSelection::Native(native) => selections::unread(native),
-        old::EdgeSelection::Generated { edges, native } => by_ids(
+        cadmpeg_ir::features::selections::EdgeSelection::Native(native) => {
+            selections::unread(native)
+        }
+        cadmpeg_ir::features::selections::EdgeSelection::Generated { edges, native } => by_ids(
             edges.iter().map(|edge| edge.local_id.as_str()),
             GENERATED_EDGE,
             NameKind::Edge,
@@ -102,12 +104,12 @@ pub(super) fn edges(
 /// A face operand: the faces of the surfaces the source names, by their
 /// names.
 pub(super) fn faces(
-    value: &old::FaceSelection,
+    value: &cadmpeg_ir::features::selections::FaceSelection,
     holder: &FeatureId,
     stated: &Stated<'_>,
 ) -> Option<SetSelection> {
     match value {
-        old::FaceSelection::Resolved { faces, native } => by_ids(
+        cadmpeg_ir::features::selections::FaceSelection::Resolved { faces, native } => by_ids(
             faces.iter().map(cadmpeg_ir::ids::FaceId::as_str),
             names::FACE,
             NameKind::Face,
@@ -116,7 +118,7 @@ pub(super) fn faces(
             stated,
         )
         .or_else(|| selections::unread(native)),
-        old::FaceSelection::Native(native) => by_ids(
+        cadmpeg_ir::features::selections::FaceSelection::Native(native) => by_ids(
             [native.as_str()],
             names::SURFACE,
             NameKind::Face,
@@ -125,7 +127,7 @@ pub(super) fn faces(
             stated,
         )
         .or_else(|| selections::unread(native)),
-        old::FaceSelection::Generated { faces, native } => by_ids(
+        cadmpeg_ir::features::selections::FaceSelection::Generated { faces, native } => by_ids(
             faces.iter().map(|face| face.local_id.as_str()),
             GENERATED_FACE,
             NameKind::Face,
@@ -324,12 +326,12 @@ fn hole(
         (None, drill_point) => drill_point,
     };
     let extent = match extent {
-        Some(old::LinearTermination::Blind { length }) => {
+        Some(cadmpeg_ir::features::extents::LinearTermination::Blind { length }) => {
             Some(cadmpeg_ir::design::ops::shared::Limit::Amount(
                 Dimension::Literal(Length::new(length.get())?),
             ))
         }
-        Some(old::LinearTermination::ThroughAll {}) => {
+        Some(cadmpeg_ir::features::extents::LinearTermination::ThroughAll {}) => {
             Some(cadmpeg_ir::design::ops::shared::Limit::ThroughAll)
         }
         _ => None,

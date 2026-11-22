@@ -1122,8 +1122,8 @@ pub struct Bounds<Q> {
 pub enum Coupling {
     /// A gear.
     Gear {
-        /// The second member's rotation per rotation of the first, as a
-        /// magnitude whose sign the frames give.
+        /// The second member's rotation per rotation of the first, each about
+        /// its own axis: negative when the members turn opposite ways.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
@@ -1135,8 +1135,8 @@ pub enum Coupling {
     },
     /// A belt.
     Belt {
-        /// The second member's rotation per rotation of the first, as a
-        /// magnitude whose sign the frames give.
+        /// The second member's rotation per rotation of the first, each about
+        /// its own axis: negative when the members turn opposite ways.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
@@ -1148,8 +1148,9 @@ pub enum Coupling {
     },
     /// A rack and pinion.
     RackPinion {
-        /// The pinion rotation in radians per millimetre of rack travel, as a
-        /// magnitude whose sign the frames give.
+        /// The pinion rotation in radians per millimetre of rack travel:
+        /// positive when the rack moves along its axis as the pinion turns
+        /// positively about its own.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",

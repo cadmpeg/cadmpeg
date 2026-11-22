@@ -314,7 +314,7 @@ pub(super) fn sketch_brep(
                 .colon(cadmpeg_ir::identity_key!("free-vertex"))
                 .colon(ordinal),
         );
-        let finite_position = cadmpeg_ir::features::FinitePoint3::new(lift_point(
+        let finite_position = cadmpeg_ir::features::geometry::FinitePoint3::new(lift_point(
             position.get(),
             origin,
             u_axis,
@@ -536,7 +536,7 @@ fn generated_sketch_curve(
                 vector(major_angle.get().cos(), major_angle.get().sin()),
             )
             .ok_or_else(|| cadmpeg_core::CodecError::malformed("EllipseCurve.axis/major_direction must form an orthonormal frame"))?;
-            let center_3d = cadmpeg_ir::features::FinitePoint3::new(lift(center.get()))
+            let center_3d = cadmpeg_ir::features::geometry::FinitePoint3::new(lift(center.get()))
                 .ok_or_else(|| cadmpeg_core::CodecError::malformed("EllipseCurve.center must be finite"))?;
             Ok(GeneratedSketchCurve {
                 curve: CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(cadmpeg_ir::geometry::analytic::EllipseCurve::new(center_3d, frame, *radii))),
@@ -619,10 +619,11 @@ fn sketch_vertex(
             .colon(cadmpeg_ir::identity_key!("vertex"))
             .colon(ordinal),
     );
-    let finite_position =
-        cadmpeg_ir::features::FinitePoint3::new(lift_point(position, origin, u_axis, v_axis))
-            .ok_or(Point::NON_FINITE_POSITION)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+    let finite_position = cadmpeg_ir::features::geometry::FinitePoint3::new(lift_point(
+        position, origin, u_axis, v_axis,
+    ))
+    .ok_or(Point::NON_FINITE_POSITION)
+    .map_err(cadmpeg_core::CodecError::malformed)?;
     ir.geometry
         .points
         .push(Point::new(point_id.clone(), finite_position, None));
@@ -891,8 +892,8 @@ struct CurvePatch {
     start_attr: u32,
     end_attr: u32,
     geometry: PatchCurve,
-    origin: cadmpeg_ir::features::FinitePoint3,
-    u_axis: cadmpeg_ir::features::FiniteVector3,
+    origin: cadmpeg_ir::features::geometry::FinitePoint3,
+    u_axis: cadmpeg_ir::features::geometry::FiniteVector3,
     v_axis: Vector3,
 }
 
@@ -950,7 +951,7 @@ fn patch_direct_curve_body(
             ));
         }
     };
-    let center = cadmpeg_ir::features::FinitePoint3::new(lift_point(
+    let center = cadmpeg_ir::features::geometry::FinitePoint3::new(lift_point(
         center_2d.get(),
         request.origin.get(),
         request.u_axis.get(),
@@ -1155,7 +1156,7 @@ fn patch_direct_ellipse(
                 "EllipseCurve.axis/major_direction must form an orthonormal frame",
             )
         })?;
-    let center_3d = cadmpeg_ir::features::FinitePoint3::new(center_3d)
+    let center_3d = cadmpeg_ir::features::geometry::FinitePoint3::new(center_3d)
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("EllipseCurve.center must be finite"))?;
     let curve = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
         cadmpeg_ir::geometry::analytic::EllipseCurve::new(center_3d, frame, radii),

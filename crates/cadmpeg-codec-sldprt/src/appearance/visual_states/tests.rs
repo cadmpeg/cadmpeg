@@ -137,7 +137,11 @@ fn feature_scope_keeps_distinct_four_word_owners_and_requires_unique_history_obj
     assert!(run(&histories, &lanes, 0x6523_4178).is_none());
 }
 
-fn configuration(id: u32, name: &str, active: bool) -> cadmpeg_ir::features::DesignConfiguration {
+fn configuration(
+    id: u32,
+    name: &str,
+    active: bool,
+) -> cadmpeg_ir::features::parameters::DesignConfiguration {
     serde_json::from_value(
         serde_json::json!({"id":format!("sldprt:model:configuration#{id}"),
         "ordinal":id,"active":active,"name":name,"bodies":[format!("sldprt:brep:body#{id}")],

@@ -110,13 +110,13 @@ fn nx_inch_expression_values_are_attached_in_millimeters() {
 
     assert_eq!(
         ir.model.parameters[0].value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(2.0 * 25.4).unwrap()
         ))
     );
     assert_eq!(
         ir.model.parameters[1].value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(6.0 * 25.4).unwrap()
         ))
     );

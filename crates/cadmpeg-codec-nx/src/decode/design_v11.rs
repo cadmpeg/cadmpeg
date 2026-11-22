@@ -20,9 +20,10 @@ use cadmpeg_ir::design::ids::{ArrangementId, ContainerId};
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
 use cadmpeg_ir::features::{
-    BodySelection, Feature as LegacyFeature, FeatureOperation as LegacyOperation,
-    FeatureTreeNodeRole, UnresolvedFamily,
+    Feature as LegacyFeature, FeatureOperation as LegacyOperation, UnresolvedFamily,
 };
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitionKind};
@@ -80,6 +81,7 @@ pub(super) fn project(ir: &mut CadIr, definition: ProductDefinitionId) -> Result
         active_arrangements,
         occurrences: BTreeMap::default(),
         current,
+        unproduced: BTreeSet::default(),
     });
     design.containers.push(container);
     design.features.extend(features);

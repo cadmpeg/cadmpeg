@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_ir::features::{
-    BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
-    PlanarProfileRef, SketchProfileRegion,
+use cadmpeg_ir::features::extents::{
+    ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
 };
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, SketchProfileRegion};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::NonZeroLength;
 use cadmpeg_ir::sketches::{
@@ -16,6 +17,7 @@ use super::super::ScopedExtrudeProfileResolution;
 use super::certified_regions_bounded_by;
 use crate::design::geometry::ProfileGeometryWork;
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
+use crate::loss::F3dLossCode;
 
 const TOLERANCE: f64 = 1.0e-6;
 
@@ -66,6 +68,14 @@ fn divided_rectangle() -> Vec<SketchEntity> {
 /// The region set certified for the stored curves `stored` when a Join of
 /// length 2 from the sketch plane adds the prism over the whole rectangle.
 fn select(entities: &[SketchEntity], stored: &[usize]) -> Option<Vec<SketchProfileRegion>> {
+    let stored = stored.iter().map(|index| vec![*index]).collect::<Vec<_>>();
+    select_candidates(entities, &stored).map(|(regions, _)| regions)
+}
+
+fn select_candidates(
+    entities: &[SketchEntity],
+    stored: &[Vec<usize>],
+) -> Option<(Vec<SketchProfileRegion>, Vec<F3dLossCode>)> {
     let states = [(2, prism_over(2.0)), (1, AsmHistoricalTopology::default())]
         .into_iter()
         .map(|(state_id, topology)| {
@@ -100,7 +110,12 @@ fn select(entities: &[SketchEntity], stored: &[usize]) -> Option<Vec<SketchProfi
     );
     let stored: Vec<_> = stored
         .iter()
-        .map(|index| entities[*index].id().clone())
+        .map(|pieces| {
+            pieces
+                .iter()
+                .map(|index| entities[*index].id().clone())
+                .collect::<Vec<_>>()
+        })
         .collect();
     let selected = crate::test_support::with_decode_context(|ctx| {
         let work = ProfileGeometryWork::new();
@@ -134,16 +149,23 @@ fn select(entities: &[SketchEntity], stored: &[usize]) -> Option<Vec<SketchProfi
         )
     })
     .unwrap();
-    selected.map(|profile| match profile {
-        PlanarProfileRef::SketchRegions { regions, .. } => regions.to_vec(),
-        _ => panic!("sketch regions"),
+    selected.map(|(profile, losses)| {
+        (
+            match profile {
+                PlanarProfileRef::SketchRegions { regions, .. } => regions.to_vec(),
+                _ => panic!("sketch regions"),
+            },
+            losses,
+        )
     })
 }
 
 #[test]
 fn a_cap_that_a_curve_outside_the_stored_loop_divides_selects_each_region() {
     let entities = divided_rectangle();
-    let regions = select(&entities, &[0, 1, 2, 3]).expect("certified regions");
+    let (regions, losses) = select_candidates(&entities, &[vec![0], vec![1], vec![2], vec![3]])
+        .expect("certified regions");
+    assert!(losses.is_empty());
     assert_eq!(regions.len(), 2);
     let divider = entities[4].id();
     for region in &regions {
@@ -163,4 +185,76 @@ fn a_cap_that_a_curve_outside_the_stored_loop_divides_selects_each_region() {
 fn a_stored_curve_that_bounds_no_certified_region_selects_nothing() {
     let entities = divided_rectangle();
     assert!(select(&entities, &[0, 1, 2, 3, 5]).is_none());
+}
+
+fn split_rectangle() -> Vec<SketchEntity> {
+    let mut entities = divided_rectangle();
+    for (name, low, high) in [("right-outside", 1.0, 2.0), ("right-far", 2.0, 3.0)] {
+        entities.push(SketchEntity::new(
+            SketchEntityId::mint(format!("synthetic:test:curve#{name}")).unwrap(),
+            xy_sketch().id,
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: Point2::new(2.0, low),
+                end: Point2::new(2.0, high),
+            })
+            .unwrap(),
+        ));
+    }
+    entities
+}
+
+#[test]
+fn a_split_identity_uses_its_piece_on_the_certified_boundary() {
+    let entities = split_rectangle();
+    let (regions, losses) = select_candidates(&entities, &[vec![0], vec![1, 6], vec![2], vec![3]])
+        .expect("certified boundary piece");
+    assert_eq!(losses, vec![F3dLossCode::FeatureProfilePartialEntryAssumed]);
+    assert_eq!(regions.len(), 2);
+    assert!(regions.iter().any(|region| matches!(region,
+        SketchProfileRegion::Trimmed { outer_boundary, .. }
+            if outer_boundary.iter().any(|use_| use_.entity == *entities[1].id()))));
+    assert!(regions.iter().all(|region| matches!(region,
+        SketchProfileRegion::Trimmed { outer_boundary, .. }
+            if outer_boundary.iter().all(|use_| use_.entity != *entities[6].id()))));
+}
+
+#[test]
+fn a_split_identity_without_a_boundary_piece_stays_native() {
+    let entities = split_rectangle();
+    assert!(
+        select_candidates(&entities, &[vec![0], vec![1], vec![2], vec![3], vec![6, 7]],).is_none()
+    );
+}
+
+#[test]
+fn an_entry_without_decoded_pieces_stays_native() {
+    let entities = divided_rectangle();
+    assert!(
+        select_candidates(&entities, &[vec![0], vec![1], vec![2], vec![3], Vec::new()],).is_none()
+    );
+}
+
+#[test]
+fn a_reversed_coincident_boundary_curve_uses_the_certified_interval() {
+    let mut entities = divided_rectangle();
+    entities.push(SketchEntity::new(
+        SketchEntityId::mint("synthetic:test:curve#right-alias").unwrap(),
+        xy_sketch().id,
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: Point2::new(2.0, 1.0),
+            end: Point2::new(2.0, 0.0),
+        })
+        .unwrap(),
+    ));
+    let (regions, losses) =
+        select_candidates(&entities, &[vec![0], vec![1], vec![2], vec![3], vec![6]])
+            .expect("coincident boundary");
+    assert_eq!(
+        losses,
+        vec![
+            F3dLossCode::FeatureProfilePartialEntryAssumed,
+            F3dLossCode::FeatureProfileCoincidentBoundaryAssumed,
+        ]
+    );
+    assert_eq!(regions.len(), 2);
 }

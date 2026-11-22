@@ -95,7 +95,7 @@ fn exact_circle_extrusion_reduces_to_cylinder_only_along_normal() {
             if index == 3 {
                 point.x += 1.0e-5;
             }
-            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+            cadmpeg_ir::features::geometry::FinitePoint3::new(point).ok_or_else(|| {
                 cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                     "control_points contains a non-finite point".into(),
                 )
@@ -209,7 +209,7 @@ fn exact_circle_recognition_is_projective_and_degree_invariant() {
             if index == 5 {
                 point.x += 1.0e-5;
             }
-            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+            cadmpeg_ir::features::geometry::FinitePoint3::new(point).ok_or_else(|| {
                 cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                     "control_points contains a non-finite point".into(),
                 )
@@ -296,7 +296,7 @@ fn constant_circular_plane_plane_blend_reduces_to_tangent_cylinder() {
             if index == 1 {
                 point.x = 2.1;
             }
-            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+            cadmpeg_ir::features::geometry::FinitePoint3::new(point).ok_or_else(|| {
                 cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                     "control_points contains a non-finite point".into(),
                 )
@@ -315,7 +315,7 @@ fn constant_circular_plane_cylinder_blend_reduces_to_tangent_torus() {
             point.x -= 2.0;
             point.y -= 3.0;
             point.z -= 3.0;
-            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+            cadmpeg_ir::features::geometry::FinitePoint3::new(point).ok_or_else(|| {
                 cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                     "control_points contains a non-finite point".into(),
                 )

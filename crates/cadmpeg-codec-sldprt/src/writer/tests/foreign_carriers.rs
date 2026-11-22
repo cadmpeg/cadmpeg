@@ -4,7 +4,7 @@
 #![allow(clippy::unwrap_used)]
 
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{BodyId, LoopId, PointId, ProceduralCurveId, ProceduralSurfaceId, VertexId};
 use cadmpeg_ir::math::Point3;
@@ -319,8 +319,10 @@ fn a_procedural_surface_without_a_cache_leaves_its_body_out() {
 /// states them: each feature carries that format's own native reference.
 fn cube_with_foreign_history() -> cadmpeg_ir::CadIr {
     use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
-        FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
+        extents::{ExtrudeExtent, ExtrudeSide, LinearTermination},
+        operation_settings::BooleanOp,
+        profiles::{PlanarProfileRef, ProfileRef},
+        Feature, FeatureDefinition, FeatureId, FeatureOperation,
     };
     use cadmpeg_ir::math::{Point2, Vector3};
     use cadmpeg_ir::sketches::{
@@ -377,12 +379,14 @@ fn cube_with_foreign_history() -> cadmpeg_ir::CadIr {
         ordinal,
         name: Some(name.into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            definition,
+        ),
         native_ref: Some(format!("other:native#{name}")),
     };
     let sketch_feature = feature(
@@ -399,12 +403,14 @@ fn cube_with_foreign_history() -> cadmpeg_ir::CadIr {
         "Boss",
         FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: ProfileRef::Planar(PlanarProfileRef::Sketch(sketch_id)),
-            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
-                vector: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
-                    .unwrap(),
+            direction: cadmpeg_ir::features::extents::ExtrudeDirection::Explicit {
+                vector: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                    0.0, 0.0, 1.0,
+                ))
+                .unwrap(),
                 source: None,
             },
-            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
+            start: cadmpeg_ir::features::extents::ExtrudeStart::ProfilePlane {},
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
@@ -550,12 +556,12 @@ fn two_coincident_circles_are_written_without_a_shared_seam_vertex() {
         ordinal: 0,
         name: Some("Circles".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             }),
@@ -710,7 +716,10 @@ fn a_face_binding_whose_colour_differs_from_the_face_colour_is_named_and_the_bod
 
 #[test]
 fn an_equation_is_written_as_its_displayed_value_and_named() {
-    use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
+    use cadmpeg_ir::features::{
+        parameters::{DesignParameter, ParameterValue},
+        ParameterId,
+    };
     let mut ir = cube_with_foreign_history();
     let owner = ir.model.features[1].id.clone();
     let base = ParameterId::mint("other:model:parameter#d5").unwrap();
@@ -736,7 +745,7 @@ fn an_equation_is_written_as_its_displayed_value_and_named() {
         0,
         "d5",
         "12.7 mm",
-        cadmpeg_ir::features::DistinctMembers::default(),
+        cadmpeg_ir::features::selections::DistinctMembers::default(),
     ));
     ir.model.parameters.push(parameter(
         ParameterId::mint("other:model:parameter#d6").unwrap(),
@@ -786,7 +795,10 @@ fn an_equation_is_written_as_its_displayed_value_and_named() {
 
 #[test]
 fn a_displayed_value_parameter_the_history_drop_removes_is_named_by_that_drop_alone() {
-    use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
+    use cadmpeg_ir::features::{
+        parameters::{DesignParameter, ParameterValue},
+        ParameterId,
+    };
     let mut ir = cube_with_foreign_history();
     let owner = ir.model.features[1].id.clone();
     let parameter = |name: &str, owner| DesignParameter {
@@ -800,7 +812,7 @@ fn a_displayed_value_parameter_the_history_drop_removes_is_named_by_that_drop_al
         value: Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(12.7).unwrap(),
         )),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: std::collections::BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -903,12 +915,12 @@ fn a_curve_shared_by_two_profiles_is_written_once() {
         ordinal: 0,
         name: Some("Squares".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             }),
@@ -1045,12 +1057,12 @@ fn a_nurbs_sketch_curve_used_reversed_decodes_back_with_its_profile() {
         ordinal: 0,
         name: Some("Spline".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
             }),

@@ -3,7 +3,7 @@
 
 use super::super::edge_span;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{CircleCurve, EllipseCurve, LineCurve};
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
