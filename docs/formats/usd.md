@@ -997,7 +997,7 @@ The surface normal is the cross product `∂S/∂u × ∂S/∂v` for `orientatio
 
 The trim curves are in the `(u, v)` parameter space of the patch. The curves of one loop join end to start and form a closed loop. The loops of `trimCurve:counts` follow each other; their curves follow each other in the flat arrays.
 
-The sum of `trimCurve:counts` is the number of trim curves. `trimCurve:orders`, `trimCurve:vertexCounts`, and `trimCurve:ranges` have one entry for each trim curve. Trim curve `k` of order `o` and `n` control points has `n + o` knots and `n` points. The range `(min, max)` of a trim curve is the part of its knot domain `[knots[o-1], knots[n]]` that the loop uses, with `min < max`.
+The sum of `trimCurve:counts` is the number of trim curves. `trimCurve:orders`, `trimCurve:vertexCounts`, and `trimCurve:ranges` have one entry for each trim curve. Trim curve `k` of order `o` and `n` control points has `n + o` knots and `n` points. The range `(min, max)` of a trim curve is the part of its knot domain `[knots[o-1], knots[n]]` that the loop uses, with `min < max`. When `trimCurve:ranges` is absent, each trim curve uses its whole knot domain.
 
 A trim-curve point `(x, y, w)` is homogeneous: its parameter-space position is `(x / w, y / w)` and its weight is `w`.
 

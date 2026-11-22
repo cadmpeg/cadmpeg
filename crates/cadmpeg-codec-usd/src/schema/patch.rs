@@ -2,7 +2,7 @@
 //! The `NurbsPatch` schema (spec §14).
 
 use crate::schema::{index, integer, integers, reals, token, vector, vectors3, Issues};
-use crate::stage::Prim;
+use crate::stage::{Prim, Resolved};
 
 /// One trim curve in the parameter space of its patch (§14.1).
 #[derive(Debug, Clone, PartialEq)]
@@ -91,11 +91,40 @@ fn trims(prim: &Prim<'_>, issues: &mut Issues) -> (Vec<Vec<TrimCurve>>, bool) {
     let Some(loop_counts) = integers(prim, "trimCurve:counts", issues) else {
         return (Vec::new(), false);
     };
+    let Some(loop_counts) = loop_counts
+        .into_iter()
+        .map(index)
+        .collect::<Option<Vec<usize>>>()
+    else {
+        return (Vec::new(), true);
+    };
+    let Some(curve_count) = loop_counts
+        .iter()
+        .try_fold(0_usize, |sum, count| sum.checked_add(*count))
+    else {
+        return (Vec::new(), true);
+    };
+    if curve_count == 0 {
+        return (Vec::new(), false);
+    }
     let parsed = (|| {
-        let orders = integers(prim, "trimCurve:orders", issues)?;
-        let vertex_counts = integers(prim, "trimCurve:vertexCounts", issues)?;
+        let orders = integers(prim, "trimCurve:orders", issues)
+            .filter(|orders| orders.len() == curve_count)?;
+        let vertex_counts = integers(prim, "trimCurve:vertexCounts", issues)
+            .filter(|counts| counts.len() == curve_count)?;
         let knots = reals(prim, "trimCurve:knots", 1, issues)?;
-        let ranges = reals(prim, "trimCurve:ranges", 2, issues);
+        let ranges = match reals(prim, "trimCurve:ranges", 2, issues) {
+            Some(ranges) if curve_count.checked_mul(2) == Some(ranges.len()) => Some(ranges),
+            Some(_) => return None,
+            None if matches!(
+                prim.resolve("trimCurve:ranges"),
+                Some(Resolved::Default(..) | Resolved::FirstSample(..))
+            ) =>
+            {
+                return None
+            }
+            None => None,
+        };
         let points = vectors3(prim, "trimCurve:points", issues)?;
         let mut curve = 0_usize;
         let mut knot_start = 0_usize;
@@ -103,7 +132,7 @@ fn trims(prim: &Prim<'_>, issues: &mut Issues) -> (Vec<Vec<TrimCurve>>, bool) {
         let mut loops = Vec::new();
         for loop_count in &loop_counts {
             let mut curves = Vec::new();
-            for _ in 0..index(*loop_count)? {
+            for _ in 0..*loop_count {
                 let order = orders.get(curve).copied().and_then(index)?;
                 let count = vertex_counts.get(curve).copied().and_then(index)?;
                 if order == 0 || order > count {
@@ -139,7 +168,7 @@ fn trims(prim: &Prim<'_>, issues: &mut Issues) -> (Vec<Vec<TrimCurve>>, bool) {
             }
             loops.push(curves);
         }
-        Some(loops)
+        (knot_start == knots.len() && point_start == points.len()).then_some(loops)
     })();
     match parsed {
         Some(loops) => (loops, false),

@@ -411,6 +411,41 @@ fn a_side_that_meets_in_one_point_is_a_pole_of_the_loop() {
     }
 }
 
+/// The trim attributes of two closed triangles, the second inside the first
+/// and clockwise, with the `trimCurve:ranges` line `ranges`.
+fn two_triangles(ranges: &str) -> String {
+    format!("    int[] trimCurve:counts = [1, 1]\n    int[] trimCurve:orders = [2, 2]\n    int[] trimCurve:vertexCounts = [4, 4]\n    double[] trimCurve:knots = [0, 0, 1, 2, 3, 3, 0, 0, 1, 2, 3, 3]\n{ranges}    double3[] trimCurve:points = [(0.1, 0.1, 1), (0.9, 0.1, 1), (0.9, 0.9, 1), (0.1, 0.1, 1), (0.5, 0.2, 1), (0.8, 0.5, 1), (0.8, 0.2, 1), (0.5, 0.2, 1)]\n")
+}
+
+#[test]
+fn trim_arrays_with_one_entry_for_each_curve_trim_the_face() {
+    for ranges in ["", "    double2[] trimCurve:ranges = [(0, 3), (0, 3)]\n"] {
+        let trims = two_triangles(ranges);
+        let result = decode(&layer(&format!("{PLANE}{trims}")));
+        assert_valid(&result);
+        assert_eq!(result.ir().geometry.faces[0].loops.len(), 2, "{trims}");
+        assert!(
+            !has_loss(&result, UsdLossCode::NurbsTrimNotTransferred),
+            "{trims}"
+        );
+    }
+}
+
+#[test]
+fn trim_counts_that_sum_to_zero_leave_the_natural_boundary_without_a_loss() {
+    for counts in ["[]", "[0, 0]"] {
+        let result = decode(&layer(&format!(
+            "{PLANE}    int[] trimCurve:counts = {counts}\n"
+        )));
+        assert_valid(&result);
+        assert_eq!(rings(result.ir()), vec![(4, 0)], "{counts}");
+        assert!(
+            !has_loss(&result, UsdLossCode::NurbsTrimNotTransferred),
+            "{counts}"
+        );
+    }
+}
+
 #[test]
 fn malformed_trims_leave_the_natural_boundary_and_a_loss() {
     let cases = [
@@ -431,7 +466,23 @@ fn malformed_trims_leave_the_natural_boundary_and_a_loss() {
         // A range outside the curve domain.
         "    int[] trimCurve:counts = [1]\n    int[] trimCurve:orders = [2]\n    int[] trimCurve:vertexCounts = [4]\n    double[] trimCurve:knots = [0, 0, 1, 2, 3, 3]\n    double2[] trimCurve:ranges = [(-1, 7)]\n    double3[] trimCurve:points = [(0.1, 0.1, 1), (0.9, 0.1, 1), (0.9, 0.9, 1), (0.1, 0.1, 1)]\n",
     ];
-    for trims in cases {
+    let mismatched = [
+        // Fewer ranges than trim curves.
+        two_triangles("    double2[] trimCurve:ranges = [(0, 3)]\n"),
+        // More ranges than trim curves.
+        two_triangles("    double2[] trimCurve:ranges = [(0, 3), (0, 3), (0, 3)]\n"),
+        // Ranges that are not pairs.
+        two_triangles("    double[] trimCurve:ranges = [0, 3, 0, 3]\n"),
+        // More orders than trim curves.
+        two_triangles("").replace("orders = [2, 2]", "orders = [2, 2, 2]"),
+        // More vertex counts than trim curves.
+        two_triangles("").replace("vertexCounts = [4, 4]", "vertexCounts = [4, 4, 4]"),
+        // Knots after the last trim curve.
+        two_triangles("").replace("3, 3]\n    double3", "3, 3, 3]\n    double3"),
+        // Points after the last trim curve.
+        two_triangles("").replace("(0.5, 0.2, 1)]", "(0.5, 0.2, 1), (0.5, 0.2, 1)]"),
+    ];
+    for trims in cases.into_iter().map(str::to_owned).chain(mismatched) {
         let result = decode(&layer(&format!("{PLANE}{trims}")));
         assert_valid(&result);
         assert_eq!(rings(result.ir()), vec![(4, 0)], "{trims}");
