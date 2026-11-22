@@ -5,7 +5,7 @@ use crate::canonical::curve::inversion::{
     nearest_boundary_witness, BoundaryWitness, MAX_CACHED_CURVE_POINTS,
 };
 use cadmpeg_core::decode::ResourceLimit;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::FiniteReal;
 

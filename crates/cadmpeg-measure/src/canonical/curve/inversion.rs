@@ -15,7 +15,7 @@ use cadmpeg_ir::eval::{
     curve_tangent_solved, finite_or_refusal, nurbs_curve_parameter_domain,
     nurbs_curve_parameter_near_point,
 };
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::nurbs::bounds::speed_bound_by;
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoles3};
 use cadmpeg_ir::geometry::SolvedCurveGeometry;

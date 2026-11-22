@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Candidate boundaries for repeated inverse queries.
 
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::FiniteReal;
 

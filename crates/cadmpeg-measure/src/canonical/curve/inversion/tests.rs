@@ -7,7 +7,7 @@ use cadmpeg_core::CodecError;
 
 use super::{CurveInverter, CurvePoints, MAX_CACHED_CURVE_POINTS};
 use cadmpeg_ir::eval::{decode::nurbs_curve_point_at, nurbs_curve_parameter_near_point};
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::math::Point3;
