@@ -160,7 +160,10 @@ fn read_back(section: &str, member: &[u8], text: &str) -> Result<(), CodecError>
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&block, &arena, &DecodePolicy::desktop())?;
     let allowance = ctx.per_expand_allowance();
-    if u64::try_from(member.len()).unwrap_or(u64::MAX) > allowance {
+    if u64::try_from(member.len())
+        .ok()
+        .is_none_or(|length| length > allowance)
+    {
         return Err(CodecError::NotImplemented(format!(
             "the {}-byte member expands past the {allowance}-byte per-expansion allowance of its {}-byte block",
             member.len(),
