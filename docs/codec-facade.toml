@@ -103,3 +103,9 @@ fuzz = "required"
 id = "usd"
 names = ["UsdCodec"]
 fuzz = "required"
+
+[[crate]]
+id = "onshape"
+names = ["OnshapeCodec"]
+fuzz = "absent"
+fuzz_reason = "synthetic bundles exercise OnshapeCodec"

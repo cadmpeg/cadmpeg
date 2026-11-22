@@ -1645,3 +1645,19 @@ unknown_kind = "recovered-residual"
 title = "Parasolid stream with an unrecognized schema token"
 discriminants = { schema = "any other SCH_ token" }
 witness = "code:crates/cadmpeg-parasolid/src/lib.rs"
+
+[format.onshape]
+complete = false
+
+[[dialect]]
+id = "onshape:bundle-1"
+title = "Onshape offline bundle version 1"
+discriminants = { schema = "dutchman.onshape-bundle/1" }
+witness = "spec:docs/formats/onshape.md"
+
+[[dialect]]
+id = "onshape:unknown"
+unknown_kind = "refused-residual"
+title = "Onshape bundle with another schema"
+discriminants = { schema = "other" }
+witness = "code:crates/cadmpeg-codec-onshape/src/dialect.rs"

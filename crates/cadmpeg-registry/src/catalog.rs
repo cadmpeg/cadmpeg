@@ -220,7 +220,8 @@ impl InputCatalog {
                             feature = "sat",
                             feature = "pvz",
                             feature = "edrawings",
-                            feature = "usd"
+                            feature = "usd",
+                            feature = "onshape"
                         ))]
                         crate::descriptors::FormatKind::Native(native) => InputKind::Native {
                             native,
@@ -493,6 +494,9 @@ mod tests {
         }
         if cfg!(feature = "pvz") {
             expected.push("pvz");
+        }
+        if cfg!(feature = "onshape") {
+            expected.push("onshape");
         }
         assert_eq!(
             tie.candidates()

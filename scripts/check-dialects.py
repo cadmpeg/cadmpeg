@@ -83,6 +83,7 @@ GENERATED_ID_OWNERS = {
     "edrawings": GeneratedIdOwner(
         Path("crates/cadmpeg-codec-edrawings/src/dialect/registry_ids.rs"), "pub(crate)"
     ),
+    "onshape": GeneratedIdOwner(Path("crates/cadmpeg-codec-onshape/src/dialect/registry_ids.rs"), "pub(crate)"),
     "pvz": GeneratedIdOwner(
         Path("crates/cadmpeg-codec-pvz/src/dialect/registry_ids.rs"), "pub(crate)"
     ),

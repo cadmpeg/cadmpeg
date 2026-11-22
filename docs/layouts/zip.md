@@ -73,6 +73,7 @@ Spec §3 · layout: byte offsets · size: 22 B
 
 Parsed by:
 - `crates/cadmpeg-container/src/archive/probe.rs`
+- `crates/cadmpeg-container/src/archive/admission.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -91,6 +92,7 @@ Spec §3 · layout: byte offsets · size: 56 B
 
 Parsed by:
 - `crates/cadmpeg-container/src/archive/probe.rs`
+- `crates/cadmpeg-container/src/archive/admission.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -111,6 +113,7 @@ Spec §3 · layout: byte offsets · size: 20 B
 
 Parsed by:
 - `crates/cadmpeg-container/src/archive/probe.rs`
+- `crates/cadmpeg-container/src/archive/admission.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
