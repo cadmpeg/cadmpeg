@@ -144,9 +144,9 @@ impl CompactReferencePlaneIndex {
     }
 
     /// The declared records of `[start, end)` that follow the lane's class
-    /// name. A lane writes the class name once, ahead of its records of the
-    /// class, so a record need not hold the name in its own object
-    /// (`sldprt.md` §2).
+    /// name. A lane that writes the class name writes it once, ahead of its
+    /// records of the class, so a record need not hold the name in its own
+    /// object (`sldprt.md` §2). A lane without the name yields none (DI-73).
     fn declared_in(&self, start: usize, end: usize) -> &[(usize, u32)] {
         let Some(class_end) = self.class_end else {
             return &self.declared[..0];

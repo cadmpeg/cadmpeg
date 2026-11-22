@@ -319,10 +319,10 @@ fn top_component_frame_requires_a_complete_local_unmixed_record() {
     );
 }
 
-/// A lane writes the `moCompRefPlane_c` class name once, so a later profile's
-/// own declared record follows the name without holding it; it is still that
-/// profile's own record. A lane without the class name holds no declared
-/// record.
+/// A lane that writes the `moCompRefPlane_c` class name writes it once, so a
+/// later profile's own declared record follows the name without holding it; it
+/// is still that profile's own record. The decoder reads no declared record in
+/// a lane without the class name (DI-73).
 #[test]
 fn own_declared_record_after_the_lane_class_name_is_the_profile_source() {
     use super::SourceRoute;
