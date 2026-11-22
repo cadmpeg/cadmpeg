@@ -562,8 +562,9 @@ mod tests {
 
     #[test]
     fn canvas_projection_emits_one_asset() {
+        use cadmpeg_ir::features::evaluation::FeatureEvaluation;
         use cadmpeg_ir::features::{
-            Feature, FeatureDefinition, FeatureEvaluation, FeatureOperation, SketchFeatureBinding,
+            Feature, FeatureDefinition, FeatureOperation, SketchFeatureBinding,
         };
         use std::collections::BTreeMap;
         use std::io::{Cursor, Write};
@@ -578,7 +579,7 @@ mod tests {
             ordinal: 0,
             name: None,
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,

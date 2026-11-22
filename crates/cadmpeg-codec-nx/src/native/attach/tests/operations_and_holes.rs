@@ -29,7 +29,9 @@ use std::collections::BTreeMap;
 
 #[test]
 fn nx_boolean_keeps_body_namespace_proofs_atomic() {
-    use cadmpeg_ir::features::{BodySelection, BooleanKind, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::operation_settings::BooleanKind;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::ids::BodyId;
     use std::collections::BTreeMap;
 
@@ -64,7 +66,7 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
             op: BooleanKind::Cut,
             keep_tools: false,
 
-            destination: cadmpeg_ir::features::CombineDestination::default(),
+            destination: cadmpeg_ir::features::operation_settings::CombineDestination::default(),
         })
     );
     assert_eq!(
@@ -88,7 +90,7 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
             op: BooleanKind::Cut,
             keep_tools: false,
 
-            destination: cadmpeg_ir::features::CombineDestination::default(),
+            destination: cadmpeg_ir::features::operation_settings::CombineDestination::default(),
         })
     );
 
@@ -125,7 +127,7 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
             op: BooleanKind::Cut,
             keep_tools: false,
 
-            destination: cadmpeg_ir::features::CombineDestination::default(),
+            destination: cadmpeg_ir::features::operation_settings::CombineDestination::default(),
         })
     );
 
@@ -163,14 +165,15 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
             op: BooleanKind::Join,
             keep_tools: false,
 
-            destination: cadmpeg_ir::features::CombineDestination::default(),
+            destination: cadmpeg_ir::features::operation_settings::CombineDestination::default(),
         })
     );
 }
 
 #[test]
 fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::ids::BodyId;
     use std::collections::BTreeMap;
 
@@ -248,7 +251,7 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
         sew_body_feature_definition(Some(10), &[], &references, &roots, &resolved,),
         Some(FeatureDefinition::Operation(FeatureOperation::SewBodies {
             bodies: (BodySelection::Resolved {
-                bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![
+                bodies: cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
                     BodyId::mint("test:model:entity#target".to_string()).expect("identity grammar"),
                     BodyId::mint("test:model:entity#first-tool".to_string())
                         .expect("identity grammar"),
@@ -352,9 +355,9 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
 
 #[test]
 fn nx_delete_body_requires_a_primary_body_field() {
-    use cadmpeg_ir::features::{
-        BodyRetentionMode, BodySelection, FeatureDefinition, FeatureOperation,
-    };
+    use cadmpeg_ir::features::operation_settings::BodyRetentionMode;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use std::collections::BTreeMap;
 
     let roots = BTreeMap::from([(20, 20)]);
@@ -402,7 +405,9 @@ fn nx_delete_body_requires_a_primary_body_field() {
 
 #[test]
 fn nx_trim_body_retains_exact_input_store_target_and_tools() {
-    use cadmpeg_ir::features::{BodySelection, BodyTrimSide, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::operation_settings::BodyTrimSide;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let body = (114, "nx:om-data-blocks-2:block#114".to_string());
     let operand = crate::native::features::FeatureOperationBodyOperand {
@@ -465,7 +470,9 @@ fn nx_trim_body_retains_exact_input_store_target_and_tools() {
 
 #[test]
 fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
-    use cadmpeg_ir::features::{BodySelection, BodyTrimSide, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::operation_settings::BodyTrimSide;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::ids::BodyId;
     use std::collections::BTreeMap;
 
@@ -520,18 +527,18 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
         FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::Resolved {
-                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
-                        "test:model:entity#target".to_string()
-                    )
-                    .expect("identity grammar")],)
+                    bodies: cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+                        BodyId::mint("test:model:entity#target".to_string())
+                            .expect("identity grammar")
+                    ],)
                     .expect("distinct bodies"),
                     native: "nx:om-object-index#10".to_string(),
                 },
                 BodySelection::Resolved {
-                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
-                        "test:model:entity#tool".to_string()
-                    )
-                    .expect("identity grammar")],)
+                    bodies: cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+                        BodyId::mint("test:model:entity#tool".to_string())
+                            .expect("identity grammar")
+                    ],)
                     .expect("distinct bodies"),
                     native: "nx:om-object-indices#20".to_string(),
                 },
@@ -618,7 +625,7 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
             face: None,
             placements: None,
             shape,
-            extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll {}),
+            extent: Some(cadmpeg_ir::features::extents::LinearTermination::ThroughAll {}),
             ..
         }) if matches!((shape.construction(), shape.exit_kind(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: cadmpeg_ir::features::holes::HoleKind::Unresolved(Some(
@@ -644,7 +651,7 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
         ), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Hole {
             shape,
 
-            extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll {}),
+            extent: Some(cadmpeg_ir::features::extents::LinearTermination::ThroughAll {}),
             ..
         }) if matches!((shape.construction(), shape.exit_kind(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: cadmpeg_ir::features::holes::HoleKind::Unresolved(Some(
@@ -678,7 +685,7 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
         ), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Hole {
             shape,
 
-            extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll {}),
+            extent: Some(cadmpeg_ir::features::extents::LinearTermination::ThroughAll {}),
             ..
         }) if matches!((shape.construction(), shape.exit_kind(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: cadmpeg_ir::features::holes::HoleKind::Unresolved(Some(
@@ -738,7 +745,7 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
         non_boolean_feature_definition("MASTER SNAPSHOT BODY", &[], None, None, None,),
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::BaseFeature {
-                bodies: cadmpeg_ir::features::BodySelection::Unresolved,
+                bodies: cadmpeg_ir::features::selections::BodySelection::Unresolved,
             }
         )
     ));
@@ -902,7 +909,8 @@ fn nx_text_payload_projects_semantic_text_and_font_family() {
 
 #[test]
 fn nx_extract_body_projects_its_primary_source_namespace() {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::ids::BodyId;
     use std::collections::BTreeMap;
 
@@ -915,10 +923,9 @@ fn nx_extract_body_projects_its_primary_source_namespace() {
         extract_body_feature_definition(Some(20), &[], &roots, &bodies),
         FeatureDefinition::Operation(FeatureOperation::ExtractBody {
             source: BodySelection::Resolved {
-                bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
-                    "test:model:entity#body".to_string()
-                )
-                .expect("identity grammar")],)
+                bodies: cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+                    BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")
+                ],)
                 .expect("distinct bodies"),
                 native: "nx:om-object-index#20".to_string(),
             },
@@ -957,11 +964,13 @@ fn nx_extract_body_projects_its_primary_source_namespace() {
 
 #[test]
 fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
-    use cadmpeg_ir::features::{
-        edge_treatments::ChamferSpec, holes::HoleKind, patterns::PatternTransform, BodySelection,
-        BodyTrimSide, BooleanKind, BooleanOp, EdgeSelection, FaceSelection, FeatureDefinition,
-        FeatureOperation, RibDraft,
-    };
+    use cadmpeg_ir::features::edge_treatments::ChamferSpec;
+    use cadmpeg_ir::features::holes::HoleKind;
+    use cadmpeg_ir::features::operation_settings::{BodyTrimSide, BooleanKind, BooleanOp};
+    use cadmpeg_ir::features::patterns::PatternTransform;
+    use cadmpeg_ir::features::revolve::RibDraft;
+    use cadmpeg_ir::features::selections::{BodySelection, EdgeSelection, FaceSelection};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     for (kind, op) in [
         ("UNITE", BooleanKind::Join),
@@ -980,7 +989,8 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
                 op,
                 keep_tools: false,
 
-                destination: cadmpeg_ir::features::CombineDestination::default(),
+                destination: cadmpeg_ir::features::operation_settings::CombineDestination::default(
+                ),
             })
         );
     }
@@ -1042,7 +1052,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
     assert!(matches!(
         non_boolean_feature_definition("RIB", &[], None, None, None),
         FeatureDefinition::Operation(FeatureOperation::Rib {
-            construction: cadmpeg_ir::features::RibConstruction {
+            construction: cadmpeg_ir::features::revolve::RibConstruction {
                 draft: RibDraft::Unresolved,
                 ..
             },
@@ -1066,10 +1076,10 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
     assert_eq!(
         non_boolean_feature_definition("CPROJ", &[], None, None, None),
         FeatureDefinition::Operation(FeatureOperation::ProjectedCurve {
-            source: cadmpeg_ir::features::PathRef::Unresolved("nx:unresolved".into()),
+            source: cadmpeg_ir::features::profiles::PathRef::Unresolved("nx:unresolved".into()),
             target_faces: FaceSelection::Unresolved,
-            direction: cadmpeg_ir::features::CurveProjectionDirection::State(
-                cadmpeg_ir::features::CurveProjectionDirectionState::Unresolved,
+            direction: cadmpeg_ir::features::surface_inputs::CurveProjectionDirection::State(
+                cadmpeg_ir::features::surface_inputs::CurveProjectionDirectionState::Unresolved,
             ),
             bidirectional: None,
         })
@@ -1085,8 +1095,8 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         non_boolean_feature_definition("TRIMMED_SH", &[], None, None, None),
         FeatureDefinition::Operation(FeatureOperation::TrimSurface {
             faces: FaceSelection::Unresolved,
-            tool: cadmpeg_ir::features::PathRef::Unresolved("nx:unresolved".into()),
-            keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+            tool: cadmpeg_ir::features::profiles::PathRef::Unresolved("nx:unresolved".into()),
+            keep: cadmpeg_ir::features::surface_inputs::TrimRegion::Unresolved,
         })
     );
     assert_eq!(
@@ -1094,7 +1104,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
             faces: FaceSelection::Unresolved,
             distance: None,
-            method: cadmpeg_ir::features::SurfaceExtension::Unresolved,
+            method: cadmpeg_ir::features::surface_inputs::SurfaceExtension::Unresolved,
         })
     );
     assert!(matches!(
@@ -1129,18 +1139,18 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
     assert_eq!(
         non_boolean_feature_definition("EXTRUDE", &[], None, None, None),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Planar(
-                cadmpeg_ir::features::PlanarProfileRef::Unresolved("EXTRUDE".into())
+            profile: cadmpeg_ir::features::profiles::ProfileRef::Planar(
+                cadmpeg_ir::features::profiles::PlanarProfileRef::Unresolved("EXTRUDE".into())
             ),
-            direction: cadmpeg_ir::features::ExtrudeDirection::Unresolved {},
-            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::LinearTermination::Unresolved {},
+            direction: cadmpeg_ir::features::extents::ExtrudeDirection::Unresolved {},
+            extent: cadmpeg_ir::features::extents::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::extents::ExtrudeSide {
+                    termination: cadmpeg_ir::features::extents::LinearTermination::Unresolved {},
                     draft: None,
                 },
             },
             op: BooleanOp::Unresolved,
-            start: cadmpeg_ir::features::ExtrudeStart::Unresolved {},
+            start: cadmpeg_ir::features::extents::ExtrudeStart::Unresolved {},
             solid: None,
             face_maker: None,
             inner_wire_taper: None,
@@ -1442,7 +1452,7 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
             sphere(&ir, &[]),
             Some((
                 body.clone(),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(1., 2., 3.))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1., 2., 3.))
                     .expect("literal sphere center is finite"),
                 cadmpeg_ir::scalar::PositiveLength::new(f64::EPSILON)
                     .expect("the sphere radius is positive")
@@ -1452,7 +1462,7 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
             sphere(&ir, std::slice::from_ref(&body)),
             Some((
                 body.clone(),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(1., 2., 3.))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1., 2., 3.))
                     .expect("literal sphere center is finite"),
                 cadmpeg_ir::scalar::PositiveLength::new(f64::EPSILON)
                     .expect("the sphere radius is positive")

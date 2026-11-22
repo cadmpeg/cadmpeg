@@ -1086,7 +1086,7 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Question.** What do the endpoint and centre indices of a sketch curve record select when bit 0 of its selector (+37) is set?
 
-**Known.** The selector takes the values `4`, `5`, `12`, `13`, `68`, `69`, `132` and `133`. With bit 0 clear, the indices select point records of the same `sgSketch` object (`sldprt.md` §2.3 "In a curve record whose selector (+37) has bit 0 clear"). With bit 0 set, the centre index of a full circle can select the centre of a cylindrical face of the stored solid while its endpoint index selects a point record that is not on that face.
+**Known.** The selector takes the values `4`, `5`, `12`, `13`, `68`, `69`, `132` and `133`. Selectors `68` and `132` mark the compact legacy link-bearing forms of `sldprt.md` §2. With bit 0 clear and a locus other than `05 00 01 00`, the indices select point records of the same `sgSketch` object (`sldprt.md` §2.3 "In a curve record whose selector (+37) has bit 0 clear"). With bit 0 set, the centre index of a full circle can select the centre of a cylindrical face of the stored solid while its endpoint index selects a point record that is not on that face.
 
 **Need.** The field or list that gives such a record's curve, checked against the faces its feature produces.
 
@@ -1182,3 +1182,37 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Need.** Documents of each form that store a length scalar beside its Keywords display, so the quotient names the unit.
 
+
+### DI-77. The +17 value of a sketch curve record
+
+**Question.** What does the little-endian u32 at +17 of a curve record in an `sgSketch` curve list hold? Which construction state does selector `12` declare for a full circle with role u16 `1` at +27?
+
+**Known.** For current-layout list curves with selector `4` or `12`, `framed_curve` decides type `0` as a line. Type `1` followed by u16 `0`, or type `0xffff` followed by u16 `0xffff`, is an arc or circle when four i32 `-2` words follow the centre index (`sldprt.md` §2 and §2.3). Lines and arcs in these cases both carry +17 values `1`, `2` and `4`. A line with value `4` (the horizontal relation code) or `5` (the vertical relation code) can run in any direction in its sketch. The decoder selects the geometry kind from the curve type for these cases. It reports every overridden constraint-owning relation code on a framed list curve with `sketch.listed-curve-relation-dropped`, naming the curve form and +17 code. Other list curves keep their current layout-selected reading of +17, including relation kinds, and remain open under DI-77. These include current-layout selector-4 style splines of type `0x40` and selector-68 list curves. Selector bit 3 marks construction geometry. The decoder reads a full circle with role u16 `1` at +27 as profile geometry on every projection path; no selector-12 list curve is such a circle. The decoder marks selector-12 role-1 list lines as construction from bit 3 and reports `sketch.listed-line-construction-assumed`. Of 86 current-layout selector-12 list lines with role `1`, 29 have resolved geometry to compare with the edges of the final solid.
+
+**Need.** The value compared with the relation and dimension groups of the same `sgSketch` object and with the record's handles. For the construction state, selector-12 role-1 circles and lines with a known construction state and profile-to-face binding.
+
+**Conflict.** Two of the 29 compared selector-12 role-1 lines, one with ordinal endpoints and one with roster indices, lie on edges of faces of the final solid; the other 27 lie on none.
+
+### DI-73. Sketch plane of profile sketches whose curves fit another principal plane
+
+**Question.** Which reference gives the plane of a profile sketch whose curves lie on faces of the solid only when the sketch is placed on a principal plane other than the plane read for it?
+
+**Known.** For 50 extrusion profile sketches in 38 parts and 36 designs, no curve that is not construction geometry lies on a face of the solid in the plane read for the sketch, and the curves lie on faces in another principal plane through the origin. The plane read is most often the `XY` plane through the origin (21 sketches) or the plane with normal `-Y` through the origin (15).
+
+**Need.** The plane reference at the end of these `sgSketch` objects (`sldprt.md` §2.3, the pointer to the `moCompRefPlane_c` that names the sketch plane), compared with the faces of the solid.
+
+### DI-74. `sgSketch` objects inside a sheet-metal feature object
+
+**Question.** Which sketch do the `sgSketch` objects written inside the span of a `Sheet-Metal` feature object hold, and which feature consumes their curves?
+
+**Known.** In 4 parts of 4 designs, 57 `sgSketch` objects with readable curve records (`sldprt.md` §2.3) lie in the span of a `Sheet-Metal` feature object and before the next named feature object. No sketch feature object encloses them, so no neutral sketch receives their curves. A `Break-Corner` and a `SketchBend` feature object each enclose one such object.
+
+**Need.** The object that writes each `sgSketch` (the sheet-metal feature itself, a sketch it absorbs, or a flat-pattern sketch), and the curves compared with the faces of the stored solid and its flat pattern.
+
+### DI-75. The `sgSketch` object that holds a profile body in a stream read without a complete object walk
+
+**Question.** In a `ResolvedFeatures` stream whose object walk (§2.3) stops before the end, which `sgSketch` object, and so which sketch feature, holds each profile body?
+
+**Known.** A profile body follows little-endian u32 `3` and a zero flag byte (`sldprt.md` §2.3) and belongs to the innermost profile-family object that holds it. Without a complete walk, the feature-name records do not delimit those objects. In 149 parts, 383 profile bodies have curves whose radii or lengths can be compared with the curve records of the `sgSketch` lists of the same stream. For 366 bodies, some list shares a radius or length with the body. The list before the body is that list for 141 bodies. For 99 bodies only one list shares a value with the body. That list is the list before the body for 8 of them, stands one to eight lists earlier for 90, and follows the body for 1. The name span that holds a body binds it to a sketch feature whose own list shares no value with the body for 189 of 349 sketch features in 79 designs.
+
+**Need.** A complete object walk of these streams, or the field of the profile-family object that points to its `sgSketch` object, compared with the faces each consuming feature produces.

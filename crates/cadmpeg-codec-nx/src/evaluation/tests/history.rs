@@ -11,21 +11,21 @@ use crate::evaluation::BodyCensusEvaluation;
 use crate::evaluation::FeatureBoundary;
 use crate::evaluation::UnsupportedBodyCensusReason;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::BodyRetentionMode;
-use cadmpeg_ir::features::BodySelection;
-use cadmpeg_ir::features::BooleanOp;
-use cadmpeg_ir::features::CurveProjectionDirection;
-use cadmpeg_ir::features::CurveProjectionDirectionState;
-use cadmpeg_ir::features::FaceSelection;
+use cadmpeg_ir::features::operation_settings::BodyRetentionMode;
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::revolve::RevolveConstruction;
+use cadmpeg_ir::features::revolve::RibConstruction;
+use cadmpeg_ir::features::revolve::RibDraft;
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::surface_inputs::CurveProjectionDirection;
+use cadmpeg_ir::features::surface_inputs::CurveProjectionDirectionState;
+use cadmpeg_ir::features::sweeps::SweepMode;
+use cadmpeg_ir::features::sweeps::SweepSection;
 use cadmpeg_ir::features::Feature;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureId;
-use cadmpeg_ir::features::PathRef;
-use cadmpeg_ir::features::RevolveConstruction;
-use cadmpeg_ir::features::RibConstruction;
-use cadmpeg_ir::features::RibDraft;
-use cadmpeg_ir::features::SweepMode;
-use cadmpeg_ir::features::SweepSection;
 use cadmpeg_ir::features::UnresolvedFamily;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::Point3;
@@ -57,20 +57,23 @@ fn complete_sphere_rederives_a_new_body() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::Sphere {
-                center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
-                    .unwrap(),
+                center: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                    1.0, 2.0, 3.0,
+                ))
+                .unwrap(),
                 radius: cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
                 op: BooleanOp::NewBody,
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(vec![body.clone()]).unwrap(),
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![body.clone()])
+                .unwrap(),
         ),
         native_ref: None,
     });
@@ -94,16 +97,16 @@ fn exact_empty_replay_input_precedes_a_new_body_construction() {
             ordinal: 0,
             name: Some("Retained history input".to_string()),
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                     bodies: BodySelection::Resolved {
-                        bodies: cadmpeg_ir::features::DistinctMembers::default(),
+                        bodies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                         native: "nx:segment-body-bindings".to_string(),
                     },
                 }),
@@ -249,7 +252,7 @@ fn boolean_block_preserves_its_existing_output_body() {
                 cadmpeg_ir::scalar::PositiveLength::new(0.5).unwrap(),
                 cadmpeg_ir::scalar::PositiveLength::new(0.5).unwrap(),
             ]),
-            placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::identity()),
+            placement: Some(cadmpeg_ir::features::geometry::FeatureRigidPlacement::identity()),
             op: BooleanOp::Join,
         }),
     ));
@@ -274,7 +277,7 @@ fn unresolved_block_mode_preserves_a_proven_existing_output() {
                 cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
                 cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap(),
             ]),
-            placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::identity()),
+            placement: Some(cadmpeg_ir::features::geometry::FeatureRigidPlacement::identity()),
             op: BooleanOp::Unresolved,
         }),
     ));
@@ -406,7 +409,7 @@ fn profile_driven_families_report_incomplete_construction_before_lineage() {
         .clone(),
         FeatureDefinition::Operation(FeatureOperation::Revolve {
             construction: RevolveConstruction::Unresolved(
-                cadmpeg_ir::features::PartialRevolveConstruction::Profile {
+                cadmpeg_ir::features::revolve::PartialRevolveConstruction::Profile {
                     axis: None,
                     extent: None,
                     solid: None,
@@ -428,7 +431,7 @@ fn profile_driven_families_report_incomplete_construction_before_lineage() {
             op: BooleanOp::Join,
         }),
         FeatureDefinition::Operation(FeatureOperation::Sweep {
-            shape: cadmpeg_ir::features::SweepShape::sheet_sections(
+            shape: cadmpeg_ir::features::sweeps::SweepShape::sheet_sections(
                 SweepMode::Unresolved {},
                 SweepSection::Unresolved(None),
                 Vec::new(),
@@ -649,7 +652,7 @@ fn base_feature_introduces_its_complete_selected_outputs() {
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::BaseFeature {
                 bodies: BodySelection::Bodies(
-                    cadmpeg_ir::features::DistinctMembers::try_from(vec![body.clone()])
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![body.clone()])
                         .expect("distinct bodies"),
                 ),
             },
@@ -674,20 +677,21 @@ fn extract_body_copies_each_existing_source_to_one_new_output() {
         ordinal: 1,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::ExtractBody {
                 source: BodySelection::Bodies(
-                    cadmpeg_ir::features::DistinctMembers::try_from(vec![source])
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![source])
                         .expect("distinct bodies"),
                 ),
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(vec![extracted.clone()]).unwrap(),
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![extracted.clone()])
+                .unwrap(),
         ),
         native_ref: None,
     });
@@ -712,13 +716,13 @@ fn output_free_local_extract_does_not_change_the_saved_body_census() {
         ordinal: 1,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::ExtractBody {
                 source: BodySelection::local(
                     vec!["nx:om-data-blocks-2:block#736".to_string()],
@@ -747,16 +751,16 @@ fn delete_body_removes_an_existing_selected_body() {
         ordinal: 1,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DeleteBody {
                 bodies: BodySelection::Bodies(
-                    cadmpeg_ir::features::DistinctMembers::try_from(vec![body])
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![body])
                         .expect("distinct bodies"),
                 ),
                 mode: BodyRetentionMode::DeleteSelected,
@@ -782,13 +786,13 @@ fn delete_body_ignores_a_complete_feature_local_body() {
         ordinal: 1,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DeleteBody {
                 bodies: BodySelection::local(
                     vec!["input-body".to_string()],
@@ -818,16 +822,16 @@ fn unresolved_suppression_of_a_resolved_delete_remains_a_boundary() {
         ordinal: 1,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DeleteBody {
                 bodies: BodySelection::Bodies(
-                    cadmpeg_ir::features::DistinctMembers::try_from(vec![body])
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![body])
                         .expect("distinct bodies"),
                 ),
                 mode: BodyRetentionMode::DeleteSelected,
@@ -864,7 +868,7 @@ fn keep_selected_removes_every_unselected_body() {
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::BaseFeature {
                 bodies: BodySelection::Bodies(
-                    cadmpeg_ir::features::DistinctMembers::try_from(vec![
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
                         retained.clone(),
                         removed.clone(),
                     ])
@@ -877,7 +881,7 @@ fn keep_selected_removes_every_unselected_body() {
         1,
         FeatureDefinition::Operation(FeatureOperation::DeleteBody {
             bodies: BodySelection::Bodies(
-                cadmpeg_ir::features::DistinctMembers::try_from(vec![retained.clone()])
+                cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![retained.clone()])
                     .expect("distinct bodies"),
             ),
             mode: BodyRetentionMode::KeepSelected,

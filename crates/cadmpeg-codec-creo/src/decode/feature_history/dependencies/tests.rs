@@ -5,10 +5,13 @@ use super::{
     feature_generated_dependencies, reconciled_dependencies,
 };
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::edge_treatments::RadiusSpec;
+use cadmpeg_ir::features::selections::{
+    EdgeSelection, FaceSelection, GeneratedEdgeRef, GeneratedFaceRef,
+};
 use cadmpeg_ir::features::{
-    edge_treatments::RadiusSpec, EdgeSelection, FaceSelection,
     FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
-    FeatureOperation as IrFeatureOperation, GeneratedEdgeRef, GeneratedFaceRef,
+    FeatureOperation as IrFeatureOperation,
 };
 use std::collections::BTreeMap;
 
@@ -165,12 +168,12 @@ fn reconciliation_ir_with_generated_dependency() -> CadIr {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             one_generated_face_dependency(),
         ),
         native_ref: None,
@@ -183,7 +186,7 @@ fn reconciliation_ir_with_emitted_parent() -> CadIr {
     let mut parent = ir.model.features[0].clone();
     parent.id = IrFeatureId::mint("creo:model:feature#3").expect("fixture parent ID");
     parent.ordinal = 0;
-    parent.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+    parent.evaluation = cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
         IrFeatureDefinition::Operation(IrFeatureOperation::KnitSurface {
             faces: FaceSelection::Unresolved,
             merge_entities: Some(true),
@@ -199,7 +202,7 @@ fn reconciliation_ir_with_emitted_parent() -> CadIr {
 fn reconciliation_ir_for_ordering() -> CadIr {
     let mut ir = reconciliation_ir_with_emitted_parent();
     for feature in &mut ir.model.features {
-        feature.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        feature.evaluation = cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             IrFeatureDefinition::Operation(IrFeatureOperation::KnitSurface {
                 faces: FaceSelection::Unresolved,
                 merge_entities: Some(true),
@@ -288,7 +291,7 @@ fn recipe_parent_that_depends_on_its_child_drops_that_edge() {
         feature.ordinal = cadmpeg_core::decode::u64_from_index(ordinal);
         if feature.id == parent {
             feature.dependencies =
-                cadmpeg_ir::features::DistinctMembers::try_from(vec![child.clone()])
+                cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![child.clone()])
                     .expect("one dependency");
         }
     }
@@ -351,7 +354,7 @@ fn duplicate_generated_edges_keep_one_dependency() {
     )
     .expect("valid edge selection");
     let definition = IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
-        groups: cadmpeg_ir::features::NonEmptyMembers::one(
+        groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(
             cadmpeg_ir::features::edge_treatments::FilletGroup {
                 edges,
                 radius: RadiusSpec::Unresolved { form: None },
@@ -379,7 +382,7 @@ fn generated_edge_dependencies_follow_the_producer_feature() {
     )
     .expect("valid test fixture");
     let fillet = IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
-        groups: cadmpeg_ir::features::NonEmptyMembers::one(
+        groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(
             cadmpeg_ir::features::edge_treatments::FilletGroup {
                 edges: generated_edges.clone(),
                 radius: RadiusSpec::Unresolved { form: None },
@@ -397,7 +400,7 @@ fn generated_edge_dependencies_follow_the_producer_feature() {
     );
 
     let chamfer = IrFeatureDefinition::Operation(IrFeatureOperation::Chamfer {
-        groups: cadmpeg_ir::features::NonEmptyMembers::one(
+        groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(
             cadmpeg_ir::features::edge_treatments::ChamferGroup {
                 edges: generated_edges,
                 spec: cadmpeg_ir::features::edge_treatments::ChamferSpec::Unresolved { form: None },
@@ -445,7 +448,7 @@ fn recipe_parent_in_a_cycle_stored_first_keeps_its_edge() {
     for feature in &mut ir.model.features {
         if feature.id == parent {
             feature.dependencies =
-                cadmpeg_ir::features::DistinctMembers::try_from(vec![child.clone()])
+                cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![child.clone()])
                     .expect("one dependency");
         }
     }

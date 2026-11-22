@@ -278,7 +278,9 @@ fn notes(
         source_tag: Some("Extrude".into()),
         source_text: None,
         source_content: Default::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            definition,
+        ),
         native_ref: Some(SCOPE_ID.into()),
     });
     let mut report = cadmpeg_ir::codec::DecodeBody {
@@ -384,6 +386,37 @@ fn distance_and_through_all_reports_its_auxiliary_selection() {
 
     native.design_construction_operand_groups.clear();
     assert!(notes(&native, definition(SCOPE_ID, profile_plane(), extent), code).is_empty());
+}
+
+#[test]
+fn one_sided_distance_reports_its_auxiliary_selection() {
+    let code = F3dLossCode::FeatureExtrudeAuxiliarySelectionNative;
+    let mut native = native_with(scope(
+        DesignExtrudeExtent::OneSidedDistance,
+        DesignExtrudeStart::ProfilePlane,
+    ));
+    native.design_construction_operand_groups.push(group(
+        13,
+        DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5),
+    ));
+    assert_eq!(
+        notes(
+            &native,
+            definition(SCOPE_ID, profile_plane(), one_sided()),
+            code
+        ),
+        [format!(
+            "Extrude {FEATURE_ID} retains an auxiliary selection in its native scope (DR-328)."
+        )]
+    );
+
+    native.design_construction_operand_groups.clear();
+    assert!(notes(
+        &native,
+        definition(SCOPE_ID, profile_plane(), one_sided()),
+        code
+    )
+    .is_empty());
 }
 
 #[test]

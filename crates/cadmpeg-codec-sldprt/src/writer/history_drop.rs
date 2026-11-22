@@ -175,7 +175,7 @@ pub(super) fn equations_as_displayed_values(ir: &mut CadIr) -> (DisplayedValues,
             ),
         ));
         parameter.expression = displayed;
-        parameter.dependencies = cadmpeg_ir::features::DistinctMembers::default();
+        parameter.dependencies = cadmpeg_ir::features::selections::DistinctMembers::default();
     }
     let mut notes = Vec::new();
     if !valueless.is_empty() {

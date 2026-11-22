@@ -7,7 +7,9 @@ use super::{
 };
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{PlanarProfileRef, SketchProfileBoundaryUse, SketchProfileRegion};
+use cadmpeg_ir::features::profiles::{
+    PlanarProfileRef, SketchProfileBoundaryUse, SketchProfileRegion,
+};
 
 pub(super) fn resolve(
     group: &DesignConstructionOperandGroup,
@@ -84,7 +86,8 @@ pub(super) fn resolve(
     else {
         return Ok(None);
     };
-    if initial.coincident
+    if initial.crossing_runs_assumed()
+        || initial.coincident
         || initial.island_absence
         || initial.regions.len() != 1
         || work.assumed_flags().into_iter().any(|assumed| assumed)
@@ -123,7 +126,7 @@ pub(super) fn resolve(
         }
     }
     let candidate = match sweep.operation {
-        cadmpeg_ir::features::BooleanOp::Cut => {
+        cadmpeg_ir::features::operation_settings::BooleanOp::Cut => {
             cap_regions::compact::removed_candidate(sketch, scoped, states, sweep)?
         }
         _ => cap_regions::compact::added_candidate(sketch, scoped, states, sweep)?,

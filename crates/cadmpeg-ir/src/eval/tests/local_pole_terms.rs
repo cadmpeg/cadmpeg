@@ -30,7 +30,7 @@ fn rational_grid() -> NurbsSurface {
     .expect("a consistent grid")
 }
 
-type Term = Option<([f64; 2], f64, crate::features::FinitePoint3)>;
+type Term = Option<([f64; 2], f64, crate::features::geometry::FinitePoint3)>;
 
 /// A draw's bounds before it, and the term it drew.
 type Draw = ((usize, Option<usize>), Option<Term>);

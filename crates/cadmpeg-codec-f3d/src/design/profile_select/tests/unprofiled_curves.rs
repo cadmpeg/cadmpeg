@@ -2,11 +2,18 @@
 
 use crate::design::profile_select::unprofiled_curve_losses;
 use crate::loss::F3dLossCode;
-use cadmpeg_ir::features::{
-    BooleanOp, DistinctMembers, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
-    Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
-    LinearTermination, PlanarProfileRef, ProfileRef, SketchProfileBoundaryUse, SketchProfileRegion,
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::extents::{
+    ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
+};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::{
+    PlanarProfileRef, ProfileRef, SketchProfileBoundaryUse, SketchProfileRegion,
     SketchProfileRegions,
+};
+use cadmpeg_ir::features::selections::DistinctMembers;
+use cadmpeg_ir::features::{
+    Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
 };
 use cadmpeg_ir::geometry::DirectedParameterRange;
 use cadmpeg_ir::math::Point2;

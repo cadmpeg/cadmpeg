@@ -21,7 +21,7 @@
 //! restrictions. This replaces the separate zero check used before checked
 //! constructor composition; callers must not depend on the old error precedence.
 
-use crate::features::FinitePoint3;
+use crate::features::geometry::FinitePoint3;
 use crate::math::{Point3, Vector3};
 use crate::scalar::{Angle, NonNegativeLength, NonZeroLength, PositiveLength, PositiveReal};
 use crate::sketches::OrderedMajorRadius;
@@ -1065,7 +1065,7 @@ impl EllipseCurve {
     /// minor radius is not above it, so only its sign is tested.
     ///
     /// ```
-    /// use cadmpeg_ir::features::FinitePoint3;
+    /// use cadmpeg_ir::features::geometry::FinitePoint3;
     /// use cadmpeg_ir::geometry::analytic::EllipseCurve;
     /// use cadmpeg_ir::math::{Point3, Vector3};
     /// use cadmpeg_ir::scalar::PositiveReal;

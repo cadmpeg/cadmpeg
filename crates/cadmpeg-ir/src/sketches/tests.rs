@@ -514,8 +514,8 @@ fn coordinate_equation_constraints_round_trip_and_validate_geometry() {
 
 #[test]
 fn sketch_regions_round_trip_with_explicit_boundary_roles() {
-    use crate::features::PlanarProfileRef;
-    use crate::features::{ProfileRef, SketchProfileBoundaryUse, SketchProfileRegion};
+    use crate::features::profiles::PlanarProfileRef;
+    use crate::features::profiles::{ProfileRef, SketchProfileBoundaryUse, SketchProfileRegion};
     use crate::sketches::{SketchEntityId, SketchId};
 
     let profile = PlanarProfileRef::sketch_regions(

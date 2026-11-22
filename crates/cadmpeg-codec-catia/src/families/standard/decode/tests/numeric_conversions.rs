@@ -4,7 +4,7 @@ use crate::families::standard::decode::{
 };
 use crate::families::standard::records::{StandardCurveGeometry, StandardCurveSupport};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::ids::PointId;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::Point;
