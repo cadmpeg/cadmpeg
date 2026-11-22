@@ -1275,6 +1275,31 @@ A relation whose byte 1 after its text is `02` or `03` stores its sides as token
 
 A global-variable name token directly follows a counted string that holds the variable's evaluated number as decimal text. That string is empty on the assigned side. The number has no unit. A dimension reference opens with the class tag of `moRelDimension_c`, four zero bytes, the class tag of `moDimRefWrapper_c`, and the dimension's value as a little-endian f64: metres, radians, or a count. The dimension's handle objects follow, then its name token: the first counted string after the value that holds the quoted name and whose lead word is 1. The handle objects hold counted strings and, in the first relation of a stream, their class declarations. The wrapper class is declared directly after the relation-dimension class, so its repeat token is that class's plus two. On the assigned side the reference follows the side's tag and count. In the expression it follows the previous token's four words. A global-variable reference opens with the class tag of `moRelGlobalVar_c`, two zero bytes, the class tag of `moGlobalVarRefWrapper_c`, and its handle objects, of class `moCompGlobalVar_c`; the reference stores no f64.
 
+A token's four words are 16 bytes after its counted string, at these offsets from the string's end:
+
+| Offset | Type | Field |
+| --- | --- | --- |
+| +0 | u32 | token_lead_word |
+| +4 | u32 | token_first_character |
+| +8 | u32 | token_end_character |
+| +12 | u32 | token_kind |
+
+The ten bytes before the expression side follow the repeated assigned name:
+
+| Offset | Type | Field |
+| --- | --- | --- |
+| +0 | bytes[8] | separator_lead, `00 00 00 00 01 00 00 00` |
+| +8 | u16 | separator_word |
+
+A dimension reference whose two classes the stream has already declared is 16 bytes: the relation-dimension class's repeat token, four zero bytes, the wrapper class's repeat token, and the value.
+
+| Offset | Type | Field |
+| --- | --- | --- |
+| +0 | u16 | dimension_class_token |
+| +2 | bytes[4] | dimension_pad, zero |
+| +6 | u16 | wrapper_class_token, `dimension_class_token` + 2 |
+| +8 | f64 | stored_value |
+
 The name in a token is the name the manager resolved. It can differ from the line's text in letter case, and it differs wholly when the line names a dimension that does not resolve. An assigned name without `@` can be stored as a dimension reference. The value stored on the assigned side is not recomputed from the line and can be the result of an earlier input. In a part that stores several streams it can be another configuration's value while the value stored where the dimension is read is the stream's own, and a whole stream can hold another configuration's values.
 
 A complete native-class roster selects one feature-manager allocation layout. The current layout has `moDocsFolder_c`, `moCommentsFolder_c`, `moSolidBodyFolder_c`, and `moSurfaceBodyFolder_c` at source IDs `7`, `8`, `9`, and `10`. The legacy layout has `moOriginProfileFeature_c`, `moSurfaceBodyFolder_c`, `moSolidBodyFolder_c`, `moDocsFolder_c`, and `moCommentsFolder_c` at source IDs `6`, `9`, `10`, `12`, and `13`. The default-frame layouts have `moDetailCabinet_c`, three `moRefPlane_c` records, and `moOriginProfileFeature_c` at source IDs `1` through `5`. One default-frame layout has classless light nodes at `6`, `7`, and `8`. Another also has `moSolidBodyFolder_c` and `moSurfaceBodyFolder_c` at `7` and `8`, with classless light nodes at `6`, `10`, `11`, and `12`. The origin-at-six layout has `moDetailCabinet_c` at `1`, three `moRefPlane_c` records at `3`, `4`, and `5`, `moOriginProfileFeature_c` at `6`, and classless light nodes at `2`, `7`, and `8`. A layout is valid only when exactly one complete roster matches.

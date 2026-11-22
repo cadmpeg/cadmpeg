@@ -6,6 +6,7 @@
 //! A relation whose byte 1 after its text is `02` or `03` stores its sides as
 //! tokens. The assigned side holds one operand; the assigned name follows,
 //! repeated, then ten bytes, then the expression side's tag and token count.
+//! The offsets are records of `docs/layouts/sldprt.toml`.
 //! A dimension reference opens its operand and holds the value; its handle
 //! objects follow, then its name token, a counted string with four words of
 //! which the first is 1. Operators and numbers are class-tagged tokens whose
@@ -15,6 +16,9 @@ use cadmpeg_core::decode::View;
 
 use super::line::{self, Line, Segment};
 use super::{counted, find, REPEAT, STRING};
+use crate::layout::equation_dimension_reference_token as reference;
+use crate::layout::equation_expression_separator as separator;
+use crate::layout::equation_token_words as words;
 
 /// The declaration of the relation-dimension class and of its wrapper, which
 /// holds the dimension's value.
@@ -23,14 +27,8 @@ const WRAPPER: &[u8] = b"\xff\xff\x01\x00\x11\x00moDimRefWrapper_c";
 /// A new-class tag and schema 1, which open a class declaration; the u16
 /// length of the class name and the name follow.
 const NEW_CLASS: &[u8] = b"\xff\xff\x01\x00";
-/// The four zero bytes between a relation-dimension tag and its wrapper.
-const DIMENSION_PAD: [u8; 4] = [0; 4];
 /// The wrapper's repeat token is the relation-dimension token plus this.
 const WRAPPER_AFTER_DIMENSION: u16 = 2;
-/// The bytes between the repeated assigned name and the expression side.
-const BEFORE_EXPRESSION: usize = 10;
-/// A token's four u32 words after its text.
-const WORDS: usize = 16;
 /// The first word of a name token.
 const NAME_LEAD: u32 = 1;
 
@@ -57,7 +55,11 @@ pub(super) fn read(payload: &[u8], side: usize, form: u8, line: &Line) -> Option
     }
     let (assigned, end) = operand(payload, side + 2, &line.name)?;
     let (_, repeated) = counted(payload, end)?;
-    let mut cursor = class_end(payload, repeated.checked_add(BEFORE_EXPRESSION)?)?;
+    let lead = &separator::SEPARATOR_LEAD_VALUE;
+    if payload.get(repeated..repeated.checked_add(lead.len())?)? != lead {
+        return None;
+    }
+    let mut cursor = class_end(payload, repeated.checked_add(separator::LEN)?)?;
     let tokens = View::u16_le_at(payload, cursor)?;
     cursor += 2;
     let mut names = line.segments.iter().filter_map(|segment| match segment {
@@ -102,30 +104,38 @@ fn operand(payload: &[u8], at: usize, name: &str) -> Option<(Option<f64>, usize)
 
 /// The value of the dimension reference at `at`, and the offset after it: the
 /// relation-dimension class tag, four zero bytes, the wrapper's class tag, and
-/// a little-endian f64.
+/// a little-endian f64. A stream's first reference declares the two classes;
+/// a later one repeats them by token (`docs/layouts/sldprt.toml`
+/// `equation_dimension_reference_token`).
 fn dimension(payload: &[u8], at: usize) -> Option<(f64, usize)> {
+    let pad = &reference::DIMENSION_PAD_VALUE;
     let value = if payload.get(at..)?.starts_with(DIMENSION) {
-        let pad = at + DIMENSION.len();
-        let wrapper = pad + DIMENSION_PAD.len();
-        if payload.get(pad..wrapper)? != DIMENSION_PAD {
+        let from = at.checked_add(DIMENSION.len())?;
+        let wrapper = from.checked_add(pad.len())?;
+        if payload.get(from..wrapper)? != pad {
             return None;
         }
         if payload.get(wrapper..)?.starts_with(WRAPPER) {
-            wrapper + WRAPPER.len()
+            wrapper.checked_add(WRAPPER.len())?
         } else {
             repeat_token(payload, wrapper)?;
-            wrapper + 2
+            wrapper.checked_add(std::mem::size_of::<u16>())?
         }
     } else {
         let token = repeat_token(payload, at)?;
-        if payload.get(at + 2..at + 6)? != DIMENSION_PAD
-            || View::u16_le_at(payload, at + 6) != token.checked_add(WRAPPER_AFTER_DIMENSION)
+        let from = at.checked_add(reference::DIMENSION_PAD)?;
+        if payload.get(from..from.checked_add(pad.len())?)? != pad
+            || View::u16_le_at(payload, at.checked_add(reference::WRAPPER_CLASS_TOKEN)?)
+                != token.checked_add(WRAPPER_AFTER_DIMENSION)
         {
             return None;
         }
-        at + 8
+        at.checked_add(reference::STORED_VALUE)?
     };
-    Some((View::f64_le_at(payload, value)?, value + 8))
+    Some((
+        View::f64_le_at(payload, value)?,
+        value.checked_add(std::mem::size_of::<f64>())?,
+    ))
 }
 
 /// The class repeat token at `at`: bit 15 set, and not the new-class tag.
@@ -142,8 +152,9 @@ fn class_end(payload: &[u8], at: usize) -> Option<usize> {
     repeat_token(payload, at).map(|_| at + 2)
 }
 
-/// The token at `at`, after its class tag if it has one: its text, its first
-/// word, and the offset after its words.
+/// The token at `at`, after its class tag if it has one: its text, its lead
+/// word, and the offset after its words (`docs/layouts/sldprt.toml`
+/// `equation_token_words`, whose first field is the lead word).
 fn token(payload: &[u8], at: usize) -> Option<(String, u32, usize)> {
     let start = if payload.get(at..)?.starts_with(STRING) {
         at
@@ -152,7 +163,7 @@ fn token(payload: &[u8], at: usize) -> Option<(String, u32, usize)> {
     };
     let (text, end) = counted(payload, start)?;
     let lead = View::u32_le_at(payload, end)?;
-    let after = end.checked_add(WORDS)?;
+    let after = end.checked_add(words::LEN)?;
     (after <= payload.len()).then_some((text, lead, after))
 }
 
