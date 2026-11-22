@@ -41,7 +41,7 @@ fn decode_solves_a_tabulated_cylinder_as_an_exact_extrusion() {
             0.5,
             0.5
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(cadmpeg_ir::math::Point3::new(0.5, 0.0, 1.0))
     );
     assert!(result.report().losses.is_empty());
@@ -410,7 +410,7 @@ fn decode_places_a_nurbs_tabulated_surface_and_its_exact_directrix() {
                 directrix_geometry,
                 0.5
             )
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
             Ok(Point3::new(10.5, 20.0, 30.0))
         );
         assert_eq!(
@@ -420,7 +420,7 @@ fn decode_places_a_nurbs_tabulated_surface_and_its_exact_directrix() {
                 0.5,
                 0.5
             )
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
             Ok(Point3::new(10.5, 20.0, 31.0))
         );
         assert!(

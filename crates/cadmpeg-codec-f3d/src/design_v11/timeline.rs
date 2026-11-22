@@ -26,8 +26,9 @@ use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation, StoredOrigin};
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::refs::Member;
+use cadmpeg_ir::features::selections::BodySelection;
 use cadmpeg_ir::features::{
-    BodySelection, Feature as LegacyFeature, FeatureId, FeatureOperation as LegacyOperation,
+    Feature as LegacyFeature, FeatureId, FeatureOperation as LegacyOperation,
 };
 use cadmpeg_ir::ids::IdentityKeyTail;
 use cadmpeg_ir::report::loss::LossNote;

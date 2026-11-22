@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::features::{
-    BodyMember, BodyMembers, BodySelection, DistinctMembers, FaceSelection, FeatureId,
-    GeneratedBodyRef, GeneratedFaceRef, NativeSelections, NonEmptyMembers, SelectionMembers,
+use crate::features::selections::{
+    BodyMember, BodyMembers, BodySelection, DistinctMembers, FaceSelection, GeneratedBodyRef,
+    GeneratedFaceRef, NativeSelections, NonEmptyMembers, SelectionMembers,
 };
+use crate::features::FeatureId;
 use crate::ids::{BodyId, FaceId, FeatureInputTopologyId, HistoricalBodyId, HistoricalFaceId};
 
 fn state(name: &str) -> FeatureInputTopologyId {

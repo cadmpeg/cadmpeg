@@ -13,11 +13,12 @@ use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::classification::NativeClassKind;
 use crate::history::classify::{feature_family, feature_input_class, is_chamfer, is_fillet};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{
-    edge_treatments::{ChamferGroup, ChamferSpec, FilletGroup, RadiusSpec},
-    AxisAngle, BodyRetentionMode, BodySelection, EdgeSelection, FaceMotion, FaceSelection,
-    FlexMode, ScaleCenter, ScaleFactors,
+use cadmpeg_ir::features::direct_edit::{
+    AxisAngle, FaceMotion, FlexMode, ScaleCenter, ScaleFactors,
 };
+use cadmpeg_ir::features::edge_treatments::{ChamferGroup, ChamferSpec, FilletGroup, RadiusSpec};
+use cadmpeg_ir::features::operation_settings::BodyRetentionMode;
+use cadmpeg_ir::features::selections::{BodySelection, EdgeSelection, FaceSelection};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 impl NeutralFeatureEncoder<'_, '_, '_> {
@@ -339,7 +340,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         &self,
         target: &BodySelection,
         tools: &BodySelection,
-        op: cadmpeg_ir::features::BooleanKind,
+        op: cadmpeg_ir::features::operation_settings::BooleanKind,
         keep_tools: bool,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
@@ -655,7 +656,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 ))
             })?;
             require_same_family(existing, &feature.id, &["MoveBody", "MoveCopyBody"])?;
-            let Some(translation) = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+            let Some(translation) = cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
                 translation.x,
                 translation.y,
                 translation.z,
@@ -770,7 +771,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_flex(
         &self,
-        axis: Option<&cadmpeg_ir::features::FeatureDirection3>,
+        axis: Option<&cadmpeg_ir::features::geometry::FeatureDirection3>,
         mode: &FlexMode,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;

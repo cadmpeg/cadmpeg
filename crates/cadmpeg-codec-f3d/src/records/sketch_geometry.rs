@@ -5,7 +5,7 @@ use cadmpeg_ir::native::bytes::NativeBytes;
 
 use super::references::DesignClassTag;
 use super::serde_column::SliceColumn;
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{
     Angle, FiniteReal, NonNegativeLength, NonNegativeReal, PositiveLength, PositiveReal,
@@ -2553,7 +2553,7 @@ mod tests {
     #[test]
     fn sketch_geometry_constructors_preserve_standard_values() {
         use super::{SketchNurbsGeometry, SketchNurbsPoles, SketchSurfaceGeometry};
-        use cadmpeg_ir::features::FinitePoint3;
+        use cadmpeg_ir::features::geometry::FinitePoint3;
         use cadmpeg_ir::math::Point3;
         use cadmpeg_ir::scalar::NonNegativeLength;
 

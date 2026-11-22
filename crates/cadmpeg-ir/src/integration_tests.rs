@@ -83,7 +83,7 @@ fn source_association_is_a_free_carrier_root() {
 fn point(id: &str) -> Point {
     Point::new(
         PointId::mint(id.to_owned()).expect("valid identity"),
-        crate::features::FinitePoint3::new(Point3 {
+        crate::features::geometry::FinitePoint3::new(Point3 {
             x: 0.0,
             y: 0.0,
             z: 0.0,

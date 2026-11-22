@@ -9,7 +9,7 @@ use cadmpeg_ir::declared_measures::{
     DeclaredMeasure, DeclaredMeasureProvenance, DeclaredQuantity, DeclaredTarget,
 };
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::ids::{DeclaredMeasureId, IdentityKey, ProductDefinitionId};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;

@@ -207,9 +207,10 @@ fn work_point_validator_checks_direction_controls_and_plane_frame() {
                 let LinearTermination::ToPlane { plane, .. } = &mut side.termination else {
                     panic!("plane");
                 };
-                *plane =
-                    cadmpeg_ir::features::FeatureSupportPlaneFrame::new(origin, normal, u_axis)
-                        .expect("plane");
+                *plane = cadmpeg_ir::features::geometry::FeatureSupportPlaneFrame::new(
+                    origin, normal, u_axis,
+                )
+                .expect("plane");
                 assert!(!crate::feature::extrusion::matches(
                     index, source, label, &changed
                 ));

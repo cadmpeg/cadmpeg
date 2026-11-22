@@ -40,7 +40,7 @@ fn solved_frame(
     let frame = super::checked_solved_frame(placement)?;
     if construction.is_some() || matches!(placement.type_version, 8 | 16) {
         let [x, y, z, _] = frame.value.rows();
-        cadmpeg_ir::features::FeatureRigidPlacement::new(
+        cadmpeg_ir::features::geometry::FeatureRigidPlacement::new(
             cadmpeg_ir::transform::Transform::affine([x, y, z])?,
         )?;
     }

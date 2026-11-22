@@ -840,22 +840,30 @@ impl<'a> DimensionDefinition<'a> {
     }
 
     /// The display semantics a driving parameter must carry for this form.
-    fn display(&self) -> Option<cadmpeg_ir::features::DimensionDisplay> {
+    fn display(&self) -> Option<cadmpeg_ir::features::parameters::DimensionDisplay> {
         match self {
-            Self::Radius { .. } => Some(cadmpeg_ir::features::DimensionDisplay::Radius),
-            Self::Diameter { .. } => Some(cadmpeg_ir::features::DimensionDisplay::Diameter),
+            Self::Radius { .. } => Some(cadmpeg_ir::features::parameters::DimensionDisplay::Radius),
+            Self::Diameter { .. } => {
+                Some(cadmpeg_ir::features::parameters::DimensionDisplay::Diameter)
+            }
             _ => None,
         }
     }
 
     /// The evaluated magnitude this form measures, when the parameter carries a compatible value.
-    fn magnitude(&self, value: Option<&cadmpeg_ir::features::ParameterValue>) -> Option<f64> {
+    fn magnitude(
+        &self,
+        value: Option<&cadmpeg_ir::features::parameters::ParameterValue>,
+    ) -> Option<f64> {
         match (self, value) {
-            (Self::Angle { .. }, Some(cadmpeg_ir::features::ParameterValue::Angle(angle))) => {
-                Some(angle.get())
-            }
+            (
+                Self::Angle { .. },
+                Some(cadmpeg_ir::features::parameters::ParameterValue::Angle(angle)),
+            ) => Some(angle.get()),
             (Self::Angle { .. }, _) => None,
-            (_, Some(cadmpeg_ir::features::ParameterValue::Length(length))) => Some(length.get()),
+            (_, Some(cadmpeg_ir::features::parameters::ParameterValue::Length(length))) => {
+                Some(length.get())
+            }
             (_, _) => None,
         }
     }
@@ -1739,12 +1747,12 @@ mod source_less_lane_tests {
             ordinal: 0,
             name: Some("Sketch".into()),
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::default(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Sketch {
                         sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(

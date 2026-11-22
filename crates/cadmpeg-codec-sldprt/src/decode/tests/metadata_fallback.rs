@@ -229,7 +229,7 @@ fn metadata_fallback_binds_resolved_feature_scalars() {
         .expect("metadata D1 parameter");
     assert_eq!(
         parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(25.0).unwrap()
         ))
     );
@@ -273,7 +273,7 @@ fn metadata_fallback_binds_resolved_extrusion_operation() {
         feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Extrude {
-                op: cadmpeg_ir::features::BooleanOp::Join,
+                op: cadmpeg_ir::features::operation_settings::BooleanOp::Join,
                 ..
             }
         )

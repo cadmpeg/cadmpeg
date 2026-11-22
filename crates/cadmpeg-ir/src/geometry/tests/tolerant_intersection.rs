@@ -35,7 +35,7 @@ fn tolerant_intersection_rejects_equal_supports_and_invalid_numeric_bounds() {
 #[test]
 fn tolerant_intersection_from_parts_refuses_only_equal_supports() {
     let endpoints = [Point3::new(1.0, -0.0, 5.0e-324), Point3::new(2.0, 3.0, 4.0)]
-        .map(|point| crate::features::FinitePoint3::new(point).unwrap());
+        .map(|point| crate::features::geometry::FinitePoint3::new(point).unwrap());
     let tolerance = crate::scalar::NonNegativeReal::new(0.25).unwrap();
     let built = TolerantIntersectionConstruction::from_parts(supports(), endpoints, tolerance)
         .expect("distinct supports");
@@ -43,7 +43,7 @@ fn tolerant_intersection_from_parts_refuses_only_equal_supports() {
         Ok(built),
         TolerantIntersectionConstruction::try_new(
             supports(),
-            endpoints.map(crate::features::FinitePoint3::get),
+            endpoints.map(crate::features::geometry::FinitePoint3::get),
             0.25
         )
     );
@@ -133,7 +133,7 @@ fn tolerant_intersection_hands_back_its_admitted_tolerance() {
 
 #[test]
 fn a_tolerant_intersection_holds_its_admitted_endpoints() {
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
 
     let endpoints = [Point3::new(1.0, 2.0, 3.0), Point3::new(-4.0, 5.0, 6.0)];
     let construction =
