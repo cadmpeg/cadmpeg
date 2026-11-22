@@ -228,17 +228,17 @@ pub(in crate::history) fn sync_neutral_features(
         &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
     // The end specs whose reversal flag an edit clears, read from the stored
-    // records as the decoder read them. A scan the context refuses finds no
-    // flag, and the write names each reversal it could not clear.
+    // records as the decoder read them; `None` where the context refuses the
+    // scan.
     let reversed_end_specs = if features.iter().any(cleared_reversal) {
         crate::resolved_features::terminations::reversed_end_specs(
             &ctx,
             &native.feature_histories,
             &native.feature_input_lanes,
         )
-        .unwrap_or_default()
+        .ok()
     } else {
-        HashMap::new()
+        Some(HashMap::new())
     };
     let mut cleared = Vec::new();
     enrich_history_parameters_semantic(&mut resolved_histories, &native.feature_input_lanes);
@@ -520,8 +520,9 @@ pub(in crate::history) fn sync_neutral_features(
     }
     let losses = clear_reversals(
         &cleared,
-        &reversed_end_specs,
+        reversed_end_specs.as_ref(),
         &contradicted_travel,
+        &ir.model.configurations,
         &mut native.feature_input_lanes,
     );
     synchronize_neutral_feature_content(features, parameters, &record_ids, native)?;
@@ -585,24 +586,38 @@ pub(in crate::history) fn sync_neutral_features(
 
 /// Writes `0` to the end-spec reversal word of each extrusion whose decoded
 /// reversal an edit cleared, each paired with whether its record states the
-/// flag as a Keywords attribute, which the encoder already dropped. Names
-/// each extrusion whose flag the write could not clear, and each whose
-/// stored solid still shows the reversed travel.
+/// flag as a Keywords attribute, which the encoder already dropped.
+/// `reversed_end_specs` is `None` where the writer could not scan the stored
+/// end specs. Names each extrusion whose flag the write could not clear, each
+/// inactive configuration lane whose flag it cleared under a state that still
+/// travels off the profile normal, and each extrusion whose stored solid
+/// still shows the reversed travel.
 fn clear_reversals(
     cleared: &[(&cadmpeg_ir::features::Feature, bool)],
-    reversed_end_specs: &HashMap<String, Vec<EndSpecAnchor>>,
+    reversed_end_specs: Option<&HashMap<String, Vec<EndSpecAnchor>>>,
     contradicted_travel: &HashSet<FeatureId>,
+    configurations: &[cadmpeg_ir::features::parameters::DesignConfiguration],
     lanes: &mut [crate::records::FeatureInputLane],
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     use crate::layout::extrusion_end_spec_header::REVERSAL;
+    use cadmpeg_ir::features::extents::ExtrudeDirection;
+    let inactive_lanes =
+        crate::history::configuration::configuration_lane_assignments(configurations, lanes)
+            .into_iter()
+            .filter_map(|(configuration, lane)| {
+                let configuration = &configurations[configuration];
+                (!configuration.active).then_some((lane, configuration))
+            })
+            .collect::<HashMap<_, _>>();
     let mut losses = Vec::new();
     for (feature, stated) in cleared {
         let anchors = feature
             .native_ref
             .as_deref()
-            .and_then(|record| reversed_end_specs.get(record))
+            .and_then(|record| reversed_end_specs?.get(record))
             .map_or(&[][..], Vec::as_slice);
-        let mut unwritten = anchors.is_empty() && !stated;
+        let mut unwritten = anchors.is_empty() && (!stated || reversed_end_specs.is_none());
+        let mut configuration_lanes = std::collections::BTreeMap::new();
         for anchor in anchors {
             let at = anchor.offset + REVERSAL;
             match lanes
@@ -610,13 +625,48 @@ fn clear_reversals(
                 .and_then(|lane| lane.native_payload.get_mut(at..at + 4))
             {
                 Some(word) => word.copy_from_slice(&0_u32.to_le_bytes()),
-                None => unwritten = true,
+                None => {
+                    unwritten = true;
+                    continue;
+                }
             }
+            let Some(configuration) = inactive_lanes.get(&anchor.lane) else {
+                continue;
+            };
+            let state = match configuration
+                .feature_states
+                .get(&feature.id)
+                .map(|state| state.definition.operation())
+            {
+                Some(FeatureOperation::Extrude {
+                    direction: ExtrudeDirection::ProfileNormal {},
+                    ..
+                }) => continue,
+                Some(FeatureOperation::Extrude {
+                    direction: ExtrudeDirection::ReversedProfileNormal {},
+                    ..
+                }) => "whose state there travels against the normal",
+                _ => "which states no resolved travel for it",
+            };
+            configuration_lanes.insert(anchor.lane, state);
         }
         let extrusion = crate::history::extrude_direction::label(feature);
         if unwritten {
+            let cause = if reversed_end_specs.is_none() {
+                "the writer could not read the end specs of the stored records"
+            } else {
+                "the writer found no end-spec reversal flag to clear"
+            };
             losses.push(SldprtLossCode::WriterExtrudeReversalUnwritten.note(format!(
-                "Extrusion {extrusion} is edited to travel along the profile normal, and the writer found no end-spec reversal flag to clear, so the written record keeps the stored reversal."
+                "Extrusion {extrusion} is edited to travel along the profile normal, and {cause}, so the written record keeps the stored reversal."
+            )));
+        }
+        for (lane, state) in configuration_lanes {
+            let configuration =
+                crate::history::extrude_direction::configuration_label(inactive_lanes[&lane]);
+            losses.push(SldprtLossCode::WriterExtrudeReversalConfigurationCleared.note(format!(
+                "Extrusion {extrusion} is edited to travel along the profile normal, and the writer also cleared its end-spec reversal flag in lane {} of configuration {configuration}, {state}: that configuration is written along it.",
+                lanes[lane].id
             )));
         }
         if contradicted_travel.contains(&feature.id) {
@@ -952,5 +1002,73 @@ mod tests {
             matches!(&error, CodecError::NotImplemented(message) if message.contains("exhausted")),
             "{error:?}"
         );
+    }
+
+    /// A cleared reversal with no end-spec flag to clear is named, unless its
+    /// record states the flag as a Keywords attribute, which the encoder
+    /// drops. Where the writer could not scan the stored end specs, every
+    /// cleared reversal is named, the stated one too.
+    #[test]
+    fn a_cleared_reversal_without_a_flag_to_clear_is_named() {
+        use crate::loss::SldprtLossCode;
+        use crate::resolved_features::terminations::EndSpecAnchor;
+        use cadmpeg_ir::features::extents::ExtrudeDirection;
+        use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+        use std::collections::HashMap;
+        let history: crate::records::FeatureHistory = serde_json::from_value(serde_json::json!({
+            "id":"history", "features":[{
+                "id":"native", "parent":"history", "ordinal":0,
+                "name":"Extrude", "kind":"BossExtrude", "xml_tag":"Extrusion",
+                "input_class":"moExtrusion_c", "parameters":{"Depth":"10mm"},
+                "properties":{"EndCondition":"Blind", "Operation":"Join", "Reverse":"true"}
+            }]
+        }))
+        .expect("synthetic history");
+        let mut feature = crate::history::project::project_features(&[history])
+            .expect("feature projection")
+            .into_iter()
+            .next()
+            .expect("the extrusion");
+        feature.evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::Extrude { direction, .. }) =
+                definition
+            {
+                *direction = ExtrudeDirection::ProfileNormal {};
+            }
+        });
+        assert!(crate::history::extrude_direction::cleared_reversal(
+            &feature
+        ));
+        let scanned = HashMap::<String, Vec<EndSpecAnchor>>::new();
+        let unwritten = |stated: bool, end_specs: Option<&HashMap<String, Vec<EndSpecAnchor>>>| {
+            super::clear_reversals(
+                &[(&feature, stated)],
+                end_specs,
+                &HashSet::new(),
+                &[],
+                &mut [],
+            )
+            .into_iter()
+            .map(|loss| {
+                assert_eq!(
+                    loss.code,
+                    SldprtLossCode::WriterExtrudeReversalUnwritten.kind()
+                );
+                loss.message
+            })
+            .collect::<Vec<_>>()
+        };
+        let named = unwritten(false, Some(&scanned));
+        assert_eq!(named.len(), 1, "{named:?}");
+        assert!(named[0].contains("Extrusion \"Extrude\" ("), "{named:?}");
+        assert!(unwritten(true, Some(&scanned)).is_empty());
+        for stated in [false, true] {
+            let named = unwritten(stated, None);
+            assert_eq!(named.len(), 1, "{named:?}");
+            assert!(
+                named[0].contains("could not read the end specs"),
+                "{named:?}"
+            );
+        }
     }
 }

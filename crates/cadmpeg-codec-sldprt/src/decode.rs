@@ -4289,6 +4289,18 @@ fn build_geometry_ir(
             assumed.count()
         )));
     }
+    for (configuration, extrusion) in &retained.configuration_reversals {
+        pmi_losses.push(SldprtLossCode::FeatureExtrudeReversalContradicted.note(format!(
+            "Extrusion {extrusion} travels along the profile normal in configuration {configuration}, against the reversal flag of its end spec there, as the active solid contradicts that flag for the same extrusion."
+        )));
+    }
+    for (configuration, extrusions) in &retained.configuration_assumed {
+        pmi_losses.push(SldprtLossCode::FeatureExtrudeReversalAssumed.note(format!(
+            "{} extrusion(s) travel against the profile normal in configuration {configuration} on the reversal flag of their end spec there alone, as no solid of that configuration holds or contradicts that travel: {}. Assumed: the flag gives the side of a one-direction extrusion that adds material.",
+            extrusions.len(),
+            extrusions.join(", ")
+        )));
+    }
     if retained.changed {
         stamp_feature_baseline(ctx, &mut ir)?;
     }

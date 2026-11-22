@@ -317,6 +317,10 @@ pub(crate) enum SldprtLossCode {
     /// An edit cleared a decoded extrusion reversal whose end-spec flag the
     /// writer found no place to clear.
     WriterExtrudeReversalUnwritten,
+    /// An edit cleared a decoded extrusion reversal, and the writer cleared
+    /// the flag in the lane of an inactive configuration whose state does
+    /// not travel along the profile normal.
+    WriterExtrudeReversalConfigurationCleared,
     SourceDialectDisplaced,
     /// A source record states a property whose key holds no non-whitespace
     /// character, so the property cannot be keyed and is not transferred.
@@ -491,6 +495,7 @@ impl SldprtLossCode {
         Self::WriterNativeEnvelopeAuxiliaryOmitted,
         Self::WriterExtrudeSolidStale,
         Self::WriterExtrudeReversalUnwritten,
+        Self::WriterExtrudeReversalConfigurationCleared,
         Self::SourceDialectDisplaced,
         Self::SourcePropertyKeyBlank,
         Self::AssemblyStructureNotTransferred,
@@ -642,6 +647,9 @@ impl SldprtLossCode {
             }
             Self::WriterExtrudeSolidStale => "writer.extrude-solid-stale",
             Self::WriterExtrudeReversalUnwritten => "writer.extrude-reversal-unwritten",
+            Self::WriterExtrudeReversalConfigurationCleared => {
+                "writer.extrude-reversal-configuration-cleared"
+            }
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::SourcePropertyKeyBlank => "source.property-key-blank",
             Self::MetadataPartRootUnsupported => "metadata.part-root-unsupported",
@@ -688,6 +696,7 @@ impl SldprtLossCode {
             Self::WriterNativeEnvelopeAuxiliaryOmitted => Severity::Warning,
             Self::WriterExtrudeSolidStale => Severity::Warning,
             Self::WriterExtrudeReversalUnwritten => Severity::Warning,
+            Self::WriterExtrudeReversalConfigurationCleared => Severity::Warning,
             Self::WriterUnboundAppearancesOmitted => Severity::Warning,
             Self::WriterAttributesOmitted => Severity::Warning,
             Self::WriterAppearanceBindingsOmitted => Severity::Warning,
@@ -834,7 +843,9 @@ impl SldprtLossCode {
         match self {
             Self::WriterTessellationMetadataOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => LossTaxonomy::MetadataNotTransferred,
-            Self::WriterExtrudeSolidStale | Self::WriterExtrudeReversalUnwritten => {
+            Self::WriterExtrudeSolidStale
+            | Self::WriterExtrudeReversalUnwritten
+            | Self::WriterExtrudeReversalConfigurationCleared => {
                 LossTaxonomy::FeatureHistoryRetained
             }
             Self::WriterUnboundAppearancesOmitted => LossTaxonomy::AppearanceReduced,
@@ -1277,6 +1288,7 @@ mod tests {
                 "writer.native-envelope-auxiliary-omitted",
                 "writer.extrude-solid-stale",
                 "writer.extrude-reversal-unwritten",
+                "writer.extrude-reversal-configuration-cleared",
                 "target.source-dialect-displaced",
                 "source.property-key-blank",
                 "assembly.structure-not-transferred",
