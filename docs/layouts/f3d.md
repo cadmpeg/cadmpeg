@@ -4184,7 +4184,7 @@ Offsets are relative to the byte after the compact repeated body-entry run. The 
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 1 | `separator` | `u8` | little | spec | One zero byte and one marked u64 shared metadata-record index |
+| 0 | 1 | `flag` | `u8` | little | spec | One flag byte and one marked u64 shared metadata-record index |
 | 1 | 1 | `metadata_marker` | `u8` | little | spec | one marked u64 shared metadata-record index |
 | 2 | 8 | `metadata_record` | `u64` | little | spec | shared metadata-record index |
 | 10 | 2 | `metadata_field` | `bytes[2]` | little | spec | its shared metadata-record index has a two-byte trailing field |
@@ -8988,6 +8988,28 @@ Parsed by:
 Unstated regions:
 
 - `0..11` (11 B): The indexed header precedes this field run.
+
+## `base_flange_scope`
+
+Spec §3.1 · layout: byte offsets · size: 416 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/sheet_metal.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 82 | 4 | `settings_record_index` | `u32` | little | spec | The scope repeats references three, two, and zero at primary-record offsets 82, 113, and 146 |
+| 113 | 4 | `thickness_record_index` | `u32` | little | spec | The scope repeats references three, two, and zero at primary-record offsets 82, 113, and 146 |
+| 123 | 8 | `thickness_copy` | `f64` | little | spec | A positive finite f64 at primary-record offset 123 stores a copy of a sheet thickness in centimetres |
+| 146 | 4 | `profile_group_record_index` | `u32` | little | spec | The scope repeats references three, two, and zero at primary-record offsets 82, 113, and 146 |
+
+Unstated regions:
+
+- `0..82` (82 B): Scope header and controls before the repeated settings index.
+- `86..113` (27 B): Controls before the repeated thickness-construction index.
+- `117..123` (6 B): Marked-reference suffix.
+- `131..146` (15 B): Controls before the repeated profile-group index.
+- `150..416` (266 B): Remaining scope controls and ordered references.
 
 ## `sheet_metal_rule_v0_prefix`
 
@@ -15597,6 +15619,21 @@ Browser record 0 through the component-node reference; the entry-map pairs are i
 | 57 | 4 | `entry_count` | `u32` | little | spec | `base_feature_browser_root_prefix` · value `24` |
 | 61 | 624 | `entry_pairs` | `bytes[624]` | little | spec | `base_feature_browser_root_prefix` |
 | 685 | 11 | `component_node` | `bytes[11]` | little | spec | `base_feature_browser_root_prefix` |
+
+## `manifest_reference_extension_prefix`
+
+Spec §1.4 · layout: byte offsets · size: 9 B
+
+Offsets are relative to the generation extension after the capability registry.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/xref/api_export.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `zero_run` | `bytes[4]` | little | spec | starts with four zero bytes and a u8 reference flag · value `[0, 0, 0, 0]` |
+| 4 | 1 | `reference_flag` | `u8` | little | spec | The reference-bearing prefix has flag `1` · value `1` |
+| 5 | 4 | `reference_count` | `u32` | little | spec | followed by a nonzero u32 reference count |
 
 ## `sketch_item_sketches_root_head`
 

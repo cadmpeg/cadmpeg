@@ -3169,6 +3169,7 @@ struct GeometryIndex {
 struct DecodeSessionState {
     admitted_entities: u64,
     report_scope: crate::report::ReportScope,
+    model_selection_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 struct DeferredBodylessInputs {
@@ -3303,6 +3304,7 @@ impl<'a> F3dDecodeSession<'a> {
         let DecodeSessionState {
             admitted_entities: _,
             report_scope,
+            model_selection_losses,
         } = session_state;
         let mut untyped = std::collections::BTreeSet::new();
         let stats = &brep.asm.stats;
@@ -3321,6 +3323,7 @@ impl<'a> F3dDecodeSession<'a> {
             cadmpeg_ir::report::decode::DecodeTransfer::at(ctx.depth(), true),
             geometry_losses(&brep),
         )?;
+        report.losses.extend(model_selection_losses);
         if undecoded_candidates != 0 {
             push_loss_vec(
                 &mut report.losses,
@@ -3400,6 +3403,7 @@ impl<'a> F3dDecodeSession<'a> {
         let DecodeSessionState {
             admitted_entities,
             report_scope,
+            model_selection_losses,
         } = session_state;
         let MetadataIr {
             mut ir,
@@ -3412,6 +3416,7 @@ impl<'a> F3dDecodeSession<'a> {
             cadmpeg_ir::report::decode::DecodeTransfer::at(ctx.depth(), false),
             container_losses(scan, brep_outcome),
         )?;
+        report.losses.extend(model_selection_losses);
         let mesh_projection = project_mesh_bodies(ctx, scan, &mut ir, &mut native, &mut report)?;
         let mut untyped = std::collections::BTreeSet::new();
         if container::design_breps(scan).next().is_some()
@@ -3868,6 +3873,11 @@ impl<'a> F3dDecodeSession<'a> {
             external,
         );
         self.report.losses.extend(external_losses);
+        crate::xref::api_export::state_file_identity(
+            &mut self.ir.model,
+            prereqs.xref_table(),
+            self.scan.manifest_lineage_urn.as_deref(),
+        );
         let mesh_projection = match &finalize_path {
             FinalizePath::Geometry(index) => &index.mesh_projection,
             FinalizePath::Bodyless(inputs) => &inputs.mesh_projection,
@@ -4236,7 +4246,8 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 crate::tree::own_once(ctx, &mut decoded.ir, &std::collections::BTreeMap::new())?;
             decoded.body.losses.extend(owned);
             crate::design::owners::release_unbound(&mut decoded.ir.model);
-            crate::tree::state_root_definition(ctx, &mut decoded.ir)?;
+            let root_identity = crate::tree::state_root_definition(ctx, &mut decoded.ir)?;
+            decoded.body.losses.extend(root_identity);
             crate::design_v11::project(
                 ctx,
                 &mut decoded.ir,
@@ -4490,6 +4501,7 @@ fn decode_scanned_document<'a>(
                 DecodeSessionState {
                     admitted_entities,
                     report_scope,
+                    model_selection_losses: model_selection.losses,
                 },
             );
         }
@@ -4508,6 +4520,7 @@ fn decode_scanned_document<'a>(
             DecodeSessionState {
                 admitted_entities,
                 report_scope,
+                model_selection_losses: model_selection.losses,
             },
         );
     }
@@ -4519,6 +4532,7 @@ fn decode_scanned_document<'a>(
         DecodeSessionState {
             admitted_entities,
             report_scope,
+            model_selection_losses: model_selection.losses,
         },
         &brep_outcome,
     )?;
@@ -5126,7 +5140,6 @@ fn annotate_docstruct(
     Ok(())
 }
 
-/// A warning for a present but unparseable `RedirectionsStream.dat`.
 fn report_xref_parse_loss(report: &mut DecodeBody, error: &CodecError) {
     push_loss_vec(
         &mut report.losses,
@@ -5494,7 +5507,9 @@ fn decode_result(
     }
     let archive_member = matches!(report_scope, crate::report::ReportScope::ArchiveMember(_));
     if archive_member {
-        crate::tree::state_root_definition(ctx, &mut ir)?;
+        report
+            .losses
+            .extend(crate::tree::state_root_definition(ctx, &mut ir)?);
     }
     let mut source = crate::report::classify_document(
         scan,

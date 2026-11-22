@@ -8046,6 +8046,22 @@ pub(crate) mod base_feature_typed_reference_zero_body {
     pub(crate) const SHARED_METADATA_FIELD: usize = 41;
 }
 
+/// Byte offsets for the `base_flange_scope` record.
+///
+/// Spec §3.1. Record length 416 B.
+pub(crate) mod base_flange_scope {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 416;
+    /// Offset of `settings_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SETTINGS_RECORD_INDEX: usize = 82;
+    /// Offset of `thickness_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const THICKNESS_RECORD_INDEX: usize = 113;
+    /// Offset of `thickness_copy` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const THICKNESS_COPY: usize = 123;
+    /// Offset of `profile_group_record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PROFILE_GROUP_RECORD_INDEX: usize = 146;
+}
+
 /// Byte offsets for the `sheet_metal_rule_prefix` record.
 ///
 /// Spec §3.1.
@@ -13518,4 +13534,20 @@ pub(crate) mod base_feature_browser_root_prefix {
     ];
     /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
     pub(crate) const UNSTATED: [(usize, usize); 4] = [(0, 11), (41, 15), (61, 624), (685, 11)];
+}
+
+/// Byte offsets for the `manifest_reference_extension_prefix` record.
+///
+/// Spec §1.4. Record length 9 B.
+///
+/// ```text
+/// Offsets are relative to the generation extension after the capability registry.
+/// ```
+pub(crate) mod manifest_reference_extension_prefix {
+    /// Record length in bytes. Spec §1.4.
+    pub(crate) const LEN: usize = 9;
+    /// Stated value of `zero_run` (`bytes[4]`). Spec §1.4.
+    pub(crate) const ZERO_RUN_VALUE: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
+    /// Stated value of `reference_flag` (`u8`). Spec §1.4.
+    pub(crate) const REFERENCE_FLAG_VALUE: u8 = 1;
 }

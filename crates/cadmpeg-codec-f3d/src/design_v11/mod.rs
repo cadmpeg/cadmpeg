@@ -25,6 +25,7 @@ mod configurations;
 mod datum;
 mod operation;
 mod parameters;
+mod sheet_metal;
 #[cfg(test)]
 mod tests;
 mod thread;
@@ -203,6 +204,7 @@ pub(crate) fn project(
     ir.design
         .configurations
         .extend(scoped_configurations.records);
+    sheet_metal::project(ctx, ir, &definitions, losses)?;
     thread::project(ctx, ir, losses)?;
     Ok(())
 }

@@ -13301,11 +13301,11 @@ size = 16
 note = "Offsets are relative to the byte after the compact repeated body-entry run. The result-record run begins at offset 16."
 
 [[record.field]]
-name = "separator"
+name = "flag"
 offset = 0
 type = "u8"
 source = "spec"
-anchor = "One zero byte and one marked u64 shared metadata-record index"
+anchor = "One flag byte and one marked u64 shared metadata-record index"
 
 [[record.field]]
 name = "metadata_marker"
@@ -29060,6 +29060,68 @@ type = "bytes[42]"
 source = "spec"
 anchor = "The typed-reference zero-body form stores the same prefix with a 51-byte typed shared-metadata reference at offset 32"
 
+
+
+[[record]]
+name = "base_flange_scope"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/sheet_metal.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The fixed 416-byte `BaseFlange` form has four ordered references"
+size = 416
+
+[[record.gap]]
+offset = 0
+size = 82
+note = "Scope header and controls before the repeated settings index."
+
+[[record.field]]
+name = "settings_record_index"
+offset = 82
+type = "u32"
+source = "spec"
+anchor = "The scope repeats references three, two, and zero at primary-record offsets 82, 113, and 146"
+
+[[record.gap]]
+offset = 86
+size = 27
+note = "Controls before the repeated thickness-construction index."
+
+[[record.field]]
+name = "thickness_record_index"
+offset = 113
+type = "u32"
+source = "spec"
+anchor = "The scope repeats references three, two, and zero at primary-record offsets 82, 113, and 146"
+
+[[record.gap]]
+offset = 117
+size = 6
+note = "Marked-reference suffix."
+
+[[record.field]]
+name = "thickness_copy"
+offset = 123
+type = "f64"
+source = "spec"
+anchor = "A positive finite f64 at primary-record offset 123 stores a copy of a sheet thickness in centimetres"
+
+[[record.gap]]
+offset = 131
+size = 15
+note = "Controls before the repeated profile-group index."
+
+[[record.field]]
+name = "profile_group_record_index"
+offset = 146
+type = "u32"
+source = "spec"
+anchor = "The scope repeats references three, two, and zero at primary-record offsets 82, 113, and 146"
+
+[[record.gap]]
+offset = 150
+size = 266
+note = "Remaining scope controls and ordered references."
 
 [[record]]
 name = "sheet_metal_rule_v0_prefix"
@@ -53940,6 +54002,38 @@ offset = 685
 type = "bytes[11]"
 source = "spec"
 anchor = "`base_feature_browser_root_prefix`"
+
+[[record]]
+name = "manifest_reference_extension_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/xref/api_export.rs"
+kind = "byte"
+section = "1.4"
+anchor = "The reference-bearing prefix has flag"
+size = 9
+note = "Offsets are relative to the generation extension after the capability registry."
+
+[[record.field]]
+name = "zero_run"
+offset = 0
+type = "bytes[4]"
+value = [0, 0, 0, 0]
+source = "spec"
+anchor = "starts with four zero bytes and a u8 reference flag"
+
+[[record.field]]
+name = "reference_flag"
+offset = 4
+type = "u8"
+value = 1
+source = "spec"
+anchor = "The reference-bearing prefix has flag `1`"
+
+[[record.field]]
+name = "reference_count"
+offset = 5
+type = "u32"
+source = "spec"
+anchor = "followed by a nonzero u32 reference count"
 
 # --- §3.1 Records of a Sketch item (serializer magic 1234) -----------------
 
