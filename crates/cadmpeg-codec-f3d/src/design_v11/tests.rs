@@ -645,6 +645,58 @@ fn parameters_state_literals_and_source_text_in_their_scope() {
     );
 }
 
+/// The parameter of a driven (reference) dimension is `Driven`, with the
+/// decoder's cache as its value (§5.12, D11); a driving dimension's
+/// parameter keeps its literal expression.
+#[test]
+fn the_parameter_of_a_driven_dimension_is_driven() {
+    use cadmpeg_ir::design::parameter::{ParameterDefinition, ParameterValue};
+    use cadmpeg_ir::features::parameters::ParameterValue as V10;
+    use cadmpeg_ir::scalar::{FiniteReal, Length};
+    const OWNER: &str = "f3d:model:feature#sketch:20";
+    let legacy = [
+        parameter(
+            "reference",
+            Some(OWNER),
+            "12.5 mm",
+            Some(V10::Length(Length::new(12.5).unwrap())),
+            &[],
+            &[("source_kind", "Linear Dimension-2"), ("driven", "true")],
+        ),
+        parameter(
+            "driving",
+            Some(OWNER),
+            "4 mm",
+            Some(V10::Length(Length::new(4.0).unwrap())),
+            &[],
+            &[("source_kind", "Linear Dimension-3")],
+        ),
+    ];
+    let scopes = BTreeMap::from([(String::new(), crate::tree::file_root_id())]);
+    let mut losses = Vec::new();
+    let projected = super::parameters::project(
+        &legacy,
+        &scopes,
+        &BTreeSet::new(),
+        &BTreeSet::from([OWNER]),
+        &mut losses,
+    );
+    assert!(losses.is_empty(), "{losses:?}");
+    let [reference, driving] = projected.as_slice() else {
+        panic!("two parameters: {projected:?}")
+    };
+    assert!(matches!(reference.definition, ParameterDefinition::Driven));
+    assert_eq!(
+        reference.value,
+        Some(ParameterValue::Number(FiniteReal::new(12.5).unwrap()))
+    );
+    assert!(matches!(
+        &driving.definition,
+        ParameterDefinition::Expression(expression)
+            if expression == &number(4.0, Some(UnitSymbol::Mm))
+    ));
+}
+
 #[test]
 fn a_hosted_referenced_designs_user_parameters_stay_off_the_scope_that_hosts_it() {
     use cadmpeg_ir::features::parameters::ParameterValue as V10;

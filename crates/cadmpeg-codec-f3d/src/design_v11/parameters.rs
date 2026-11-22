@@ -12,7 +12,9 @@
 //! the unit the text states, and a name of one parameter alone is a `Neutral`
 //! reference. Any other text is a `Source` expression in the
 //! `Fusion` dialect whose names of the parameters it reads are reference
-//! tokens. The role Fusion stores on a model parameter is the source setting
+//! tokens. The parameter of a driven dimension is `Driven`, and its value is
+//! the measurement the decoder read.
+//! The role Fusion stores on a model parameter is the source setting
 //! `f3d:role`.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -48,6 +50,8 @@ const COMMENT: &str = "comment";
 const UNIT: &str = "unit";
 /// The v10 property that marks a model parameter whose owner is unresolved.
 const UNRESOLVED_OWNER: &str = "owner_record_index";
+/// The v10 property that marks the parameter of a driven dimension.
+const DRIVEN: &str = "driven";
 
 /// The parameters of the scopes keyed by document prefix in `scopes`.
 /// `features` holds the ids of the scopes' features. A parameter owned by a
@@ -182,12 +186,16 @@ fn record(
         },
         cache,
     );
-    let vocabulary = parameter
-        .dependencies
-        .iter()
-        .filter_map(|id| Some((*names.get(id)?, id)))
-        .collect::<HashMap<_, _>>();
-    let expression = expression(&parameter.expression, &kind, &vocabulary);
+    let definition = if property(DRIVEN) == Some("true") {
+        ParameterDefinition::Driven
+    } else {
+        let vocabulary = parameter
+            .dependencies
+            .iter()
+            .filter_map(|id| Some((*names.get(id)?, id)))
+            .collect::<HashMap<_, _>>();
+        ParameterDefinition::Expression(expression(&parameter.expression, &kind, &vocabulary))
+    };
     let mut source_settings = NativeOptions::new();
     if let Some(role) = property(ROLE).and_then(|role| NonBlankString::new(role.to_owned())) {
         source_settings.insert(
@@ -202,7 +210,7 @@ fn record(
         name: Some(name),
         kind,
         unit: None,
-        definition: ParameterDefinition::Expression(expression),
+        definition,
         value,
         display: None,
         tolerance: None,

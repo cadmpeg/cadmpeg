@@ -245,6 +245,47 @@ pub(crate) fn project_dimension_constraints_with_presentations(
     retain_planar_dimension_constraints(inputs.placements, spatial_sketches, constraints)
 }
 
+/// States the property `driven` on each parameter of `neutral` whose record
+/// is the parameter of a driven dimension: its expression trailer states the
+/// driven flag, or its dimension frame stores the text-frame style byte of a
+/// driven dimension (f3d.md §3.1, "Sketch dimensions").
+pub(crate) fn mark_driven_parameters(
+    neutral: &mut [cadmpeg_ir::features::parameters::DesignParameter],
+    inputs: &DimensionConstraintInputs<'_>,
+    presentation_frames: &[crate::records::dimensions::DesignDimensionPresentationFrame],
+) {
+    let mut by_record = HashMap::new();
+    for parameter in inputs.parameters {
+        if let Some(scope) = native_stream(&parameter.id) {
+            by_record.insert((scope, parameter.record_index), parameter);
+        }
+    }
+    let frame_driven = frame_driven_parameters(
+        presentation_frames,
+        inputs.annotation_frames,
+        inputs.owners,
+        &by_record,
+    );
+    let driven = inputs
+        .parameters
+        .iter()
+        .filter(|parameter| {
+            parameter.driving() == Some(false)
+                || native_stream(&parameter.id)
+                    .is_some_and(|scope| frame_driven.contains(&(scope, parameter.record_index)))
+        })
+        .map(crate::ids::neutral_parameter_id)
+        .collect::<HashSet<_>>();
+    for parameter in neutral
+        .iter_mut()
+        .filter(|parameter| driven.contains(&parameter.id))
+    {
+        parameter
+            .properties
+            .insert(cadmpeg_core::nonblank_literal!("driven"), "true".to_owned());
+    }
+}
+
 fn retain_planar_dimension_constraints(
     placements: &[DesignSketchPlacement],
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],

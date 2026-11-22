@@ -197,3 +197,74 @@ fn a_driven_text_style_makes_the_constraint_driven() {
         }
     }
 }
+
+/// The v10 parameter of a driven dimension states the property `driven`:
+/// its record's trailer states the driven flag, or its annotation or
+/// presentation frame stores the driven text style.
+#[test]
+fn the_parameter_of_a_driven_dimension_states_it_is_driven() {
+    let ExactPair {
+        stream,
+        placement,
+        parameter,
+        owner,
+        companion,
+        pair,
+        group,
+        points,
+        entities,
+        ..
+    } = exact_pair();
+    let flagged = parameter
+        .clone()
+        .with_flags(crate::records::parameters::DesignParameterFlags {
+            driven: true,
+            favorite: false,
+        })
+        .unwrap();
+    let mark = |record: &crate::records::parameters::DesignParameter,
+                annotation_frames: &[DesignDimensionAnnotationFrame],
+                presentation_frames: &[DesignDimensionPresentationFrame]| {
+        let mut neutral = [cadmpeg_ir::features::parameters::DesignParameter {
+            product_definition: None,
+            id: crate::ids::neutral_parameter_id(record),
+            owner: None,
+            ordinal: 0,
+            name: record.name().to_owned(),
+            expression: record.expression().to_owned(),
+            display: None,
+            value: None,
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+            properties: std::collections::BTreeMap::new(),
+            pmi: None,
+            native_ref: Some(record.id.clone()),
+        }];
+        crate::design::dimensions::mark_driven_parameters(
+            &mut neutral,
+            &crate::design::dimensions::DimensionConstraintInputs {
+                placements: std::slice::from_ref(&placement),
+                parameters: std::slice::from_ref(record),
+                owners: std::slice::from_ref(&owner),
+                pairs: std::slice::from_ref(&pair),
+                groups: std::slice::from_ref(&group),
+                annotation_frames,
+                null_pairs: &[],
+                companions: std::slice::from_ref(&companion),
+                recipe_records: &[],
+                points: &points,
+                curves: &[],
+                entities: &entities,
+            },
+            presentation_frames,
+        );
+        let [neutral] = neutral;
+        neutral.properties.get("driven").cloned()
+    };
+    let driven = Some("true".to_owned());
+    assert_eq!(mark(&flagged, &[], &[]), driven);
+    assert_eq!(mark(&parameter, &[annotation(stream, 1)], &[]), driven);
+    assert_eq!(mark(&parameter, &[], &[presentation(stream, 1)]), driven);
+    assert_eq!(mark(&parameter, &[], &[]), None);
+    assert_eq!(mark(&parameter, &[annotation(stream, 0)], &[]), None);
+    assert_eq!(mark(&parameter, &[], &[presentation(stream, 0)]), None);
+}
