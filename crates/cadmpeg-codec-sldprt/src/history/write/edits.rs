@@ -157,9 +157,13 @@ impl<'source> SourceEdits<'source> {
         })
     }
 
-    /// The unwritten-edit losses, and the features written with their stored
-    /// definition record.
-    pub(crate) fn into_parts(self) -> (Vec<LossNote>, HashSet<FeatureId>) {
-        (self.unwritten, self.kept_definitions)
+    /// The unwritten-edit losses, the features written with their stored
+    /// definition record, and the edited parameters.
+    pub(crate) fn into_parts(self) -> (Vec<LossNote>, HashSet<FeatureId>, HashSet<ParameterId>) {
+        (
+            self.unwritten,
+            self.kept_definitions,
+            self.edited_parameters,
+        )
     }
 }

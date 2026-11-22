@@ -1079,7 +1079,7 @@ fn u16_precision_survives_plain_patch_round_trip() {
         .iter()
         .any(|p| p.pmi.is_some()));
     let original = payload.clone();
-    patch_payload(decoded.ir(), &record.parent, &mut payload).unwrap();
+    patch_payload(decoded.ir(), &record.parent, &mut payload, &|_| true).unwrap();
     assert_eq!(&payload[offset..offset + 3], &[0xcd, 0x00, 0x03]);
     assert_eq!(payload, original);
 }
@@ -1137,7 +1137,7 @@ fn patching_a_count_beyond_float_precision_is_refused_not_rounded() {
         parameter.pmi.as_mut().unwrap().subtype = PmiDimensionSubtype::Count;
     }
     let mut patched = payload;
-    let error = patch_payload(decoded.ir(), &parent, &mut patched).unwrap_err();
+    let error = patch_payload(decoded.ir(), &parent, &mut patched, &|_| true).unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
 }
 
@@ -1204,7 +1204,7 @@ fn pmi_patch_admits_records_at_the_maximum_field_depth() {
         ));
     }
     assert!(!matches!(
-        patch_payload(&ir, "block", &mut []),
+        patch_payload(&ir, "block", &mut [], &|_| true),
         Err(cadmpeg_core::CodecError::ResourceLimit(_))
     ));
 }

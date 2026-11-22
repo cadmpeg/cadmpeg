@@ -213,10 +213,14 @@ pub(crate) fn enrich_history_parameters_with_features(
     }
 }
 
+/// Writes the PMI dimension records of block `block_id` from the parameters
+/// that bind them; a record of a parameter that is not `edited` keeps its
+/// stored bytes.
 pub(crate) fn patch_payload(
     ir: &cadmpeg_ir::CadIr,
     block_id: &str,
     payload: &mut [u8],
+    edited: &dyn Fn(&cadmpeg_ir::features::ParameterId) -> bool,
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::parameters::{ParameterValue, PmiDimensionSubtype};
 
@@ -254,6 +258,9 @@ pub(crate) fn patch_payload(
                 "multiple parameters reference PMI record {}",
                 record.id
             )));
+        }
+        if !edited(&parameter.id) {
+            continue;
         }
         let empty_subtype_is_count = semantic.subtype == PmiDimensionSubtype::Count;
         let subtype = dimension_subtype(record, empty_subtype_is_count);

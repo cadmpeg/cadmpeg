@@ -202,7 +202,7 @@ pub(crate) fn write_semantic_with_records(
                 .transpose()
         },
     )?;
-    let (unwritten, kept_definitions) = edits.into_parts();
+    let (unwritten, kept_definitions, edited_parameters) = edits.into_parts();
     let validation = validate_with_model_snapshot(&mut normalized)?;
     let ir = &normalized;
     if !validation.is_ok() {
@@ -215,7 +215,7 @@ pub(crate) fn write_semantic_with_records(
             });
         return Err(CodecError::Malformed(detail.into()));
     }
-    check_semantic_support(ir, annotations)?;
+    check_semantic_support(ir, annotations, retained_partition.is_some())?;
     if ir.geometry.faces.is_empty() {
         return Err(CodecError::NotImplemented(
             "semantic SLDPRT writing requires a B-rep".into(),
@@ -420,7 +420,10 @@ pub(crate) fn write_semantic_with_records(
         &generated_partition_sections,
         &emitted_sections,
         retain_native_brep,
-        patch_active_configuration,
+        RetainedBlockPatches {
+            active_configuration: patch_active_configuration,
+            edited_parameters: &edited_parameters,
+        },
     )?;
     let document_envelope = crate::container::first_solidworks_envelope(
         opaque.iter().map(|(_, payload)| payload.as_slice()),
@@ -808,7 +811,13 @@ fn section_type_ids(
         .collect()
 }
 
-fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), CodecError> {
+/// Refuses what the semantic writer cannot encode. The surface carriers and
+/// edge ranges are encoded only when the stored partition is not retained.
+fn check_semantic_support(
+    ir: &CadIr,
+    annotations: &Annotations,
+    partition_retained: bool,
+) -> Result<(), CodecError> {
     let pmi_baseline = ir
         .source
         .as_ref()
@@ -853,7 +862,7 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
             "SLDPRT semantic writer does not support SubD surfaces".into(),
         ));
     }
-    for surface in &ir.geometry.surfaces {
+    for surface in ir.geometry.surfaces.iter().filter(|_| !partition_retained) {
         match &surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
                 let ratio = cone_surface.ratio().get();
@@ -912,17 +921,19 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
             "SLDPRT semantic writer does not encode face names".into(),
         ));
     }
-    if ir.geometry.edges.iter().any(|edge| {
-        edge.param_range().is_some()
-            && annotations
-                .exactness()
-                .get(edge.id.as_str())
-                .is_none_or(|note| {
-                    note.entity() != cadmpeg_ir::Exactness::Derived
-                        && note.fields().get("carrier.param_range")
-                            != Some(&cadmpeg_ir::Exactness::Derived)
-                })
-    }) {
+    if !partition_retained
+        && ir.geometry.edges.iter().any(|edge| {
+            edge.param_range().is_some()
+                && annotations
+                    .exactness()
+                    .get(edge.id.as_str())
+                    .is_none_or(|note| {
+                        note.entity() != cadmpeg_ir::Exactness::Derived
+                            && note.fields().get("carrier.param_range")
+                                != Some(&cadmpeg_ir::Exactness::Derived)
+                    })
+        })
+    {
         return Err(CodecError::NotImplemented(
             "SLDPRT semantic writer does not encode explicit edge parameter ranges".into(),
         ));
@@ -1169,6 +1180,15 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
     Ok(subset)
 }
 
+/// What the writer patches into the retained blocks it writes.
+#[derive(Clone, Copy)]
+struct RetainedBlockPatches<'a> {
+    /// The active configuration name in the document XML.
+    active_configuration: bool,
+    /// The PMI records of these parameters; other records keep their bytes.
+    edited_parameters: &'a HashSet<cadmpeg_ir::features::ParameterId>,
+}
+
 fn opaque_blocks(
     ir: &CadIr,
     records: &[SourceRecord<'_>],
@@ -1176,7 +1196,7 @@ fn opaque_blocks(
     generated_partitions: &HashSet<String>,
     emitted_sections: &HashSet<String>,
     retain_native_brep: bool,
-    patch_active_configuration: bool,
+    patches: RetainedBlockPatches<'_>,
 ) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
     let native = ir
         .native
@@ -1227,7 +1247,10 @@ fn opaque_blocks(
             }
             let mut payload = record.data?.to_vec();
             if lower.contains("pmisemanticdatadb") {
-                if let Err(error) = crate::pmi::patch_payload(ir, record.id.as_str(), &mut payload)
+                if let Err(error) =
+                    crate::pmi::patch_payload(ir, record.id.as_str(), &mut payload, &|id| {
+                        patches.edited_parameters.contains(id)
+                    })
                 {
                     return Some(Err(error));
                 }
@@ -1236,7 +1259,7 @@ fn opaque_blocks(
                 .model
                 .configurations
                 .iter()
-                .find(|value| value.active && patch_active_configuration)
+                .find(|value| value.active && patches.active_configuration)
             {
                 let Some(active_name) = active.name.as_deref() else {
                     return Some(Err(CodecError::Malformed(
@@ -4674,7 +4697,7 @@ mod nurbs_write_tests {
                 hash,
             )]),
         ));
-        assert!(check_semantic_support(&ir, &Annotations::default()).is_ok());
+        assert!(check_semantic_support(&ir, &Annotations::default(), false).is_ok());
 
         let cadmpeg_ir::PmiDefinition::Datum { identification } =
             &mut ir.model.pmi.first_mut().expect("PMI annotation").definition
@@ -4683,13 +4706,13 @@ mod nurbs_write_tests {
         };
         *identification = "B".into();
         assert!(matches!(
-            check_semantic_support(&ir, &Annotations::default()),
+            check_semantic_support(&ir, &Annotations::default(), false),
             Err(CodecError::NotImplemented(message)) if message.contains("SWIFT semantic PMI")
         ));
 
         ir.model.pmi.clear();
         assert!(matches!(
-            check_semantic_support(&ir, &Annotations::default()),
+            check_semantic_support(&ir, &Annotations::default(), false),
             Err(CodecError::NotImplemented(message)) if message.contains("SWIFT semantic PMI")
         ));
     }
