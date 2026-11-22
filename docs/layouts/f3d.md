@@ -15557,6 +15557,21 @@ Browser record 0 through the component-node reference; the entry-map pairs are i
 | 61 | 624 | `entry_pairs` | `bytes[624]` | little | spec | `base_feature_browser_root_prefix` |
 | 685 | 11 | `component_node` | `bytes[11]` | little | spec | `base_feature_browser_root_prefix` |
 
+## `manifest_reference_extension_prefix`
+
+Spec §1.4 · layout: byte offsets · size: 9 B
+
+Offsets are relative to the generation extension after the capability registry.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/xref/api_export.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `zero_run` | `bytes[4]` | little | spec | starts with four zero bytes and a u8 reference flag · value `[0, 0, 0, 0]` |
+| 4 | 1 | `reference_flag` | `u8` | little | spec | The reference-bearing prefix has flag `1` · value `1` |
+| 5 | 4 | `reference_count` | `u32` | little | spec | followed by a nonzero u32 reference count |
+
 ## `sketch_item_sketches_root_head`
 
 Spec §Records of a Sketch item · layout: byte offsets · size: 53 B

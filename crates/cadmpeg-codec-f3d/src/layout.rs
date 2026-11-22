@@ -13481,3 +13481,19 @@ pub(crate) mod base_feature_browser_root_prefix {
     /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
     pub(crate) const UNSTATED: [(usize, usize); 4] = [(0, 11), (41, 15), (61, 624), (685, 11)];
 }
+
+/// Byte offsets for the `manifest_reference_extension_prefix` record.
+///
+/// Spec §1.4. Record length 9 B.
+///
+/// ```text
+/// Offsets are relative to the generation extension after the capability registry.
+/// ```
+pub(crate) mod manifest_reference_extension_prefix {
+    /// Record length in bytes. Spec §1.4.
+    pub(crate) const LEN: usize = 9;
+    /// Stated value of `zero_run` (`bytes[4]`). Spec §1.4.
+    pub(crate) const ZERO_RUN_VALUE: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
+    /// Stated value of `reference_flag` (`u8`). Spec §1.4.
+    pub(crate) const REFERENCE_FLAG_VALUE: u8 = 1;
+}

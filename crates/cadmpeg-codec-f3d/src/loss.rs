@@ -1109,6 +1109,10 @@ pub(crate) enum F3dLossCode {
     MeshScopePrefixUninterpreted,
     /// The external-reference table was present but not decoded.
     XrefTableUndecoded,
+    XrefLineageDisagrees,
+    XrefIdentityBlank,
+    XrefArchiveIdentityDisagrees,
+
     /// A typed occurrence placement failed its frame grammar.
     XrefPlacementUndecoded,
     /// An external reference has no admitted occurrence placement.
@@ -2027,6 +2031,9 @@ impl F3dLossCode {
         Self::MeshOwnerBytesUninterpreted,
         Self::MeshScopePrefixUninterpreted,
         Self::XrefTableUndecoded,
+        Self::XrefLineageDisagrees,
+        Self::XrefIdentityBlank,
+        Self::XrefArchiveIdentityDisagrees,
         Self::XrefPlacementUndecoded,
         Self::XrefOccurrenceUnplaced,
         Self::XrefPlacementIdentityAssumed,
@@ -3190,6 +3197,10 @@ impl F3dLossCode {
             Self::MeshOwnerBytesUninterpreted => "mesh.owner-bytes-uninterpreted",
             Self::MeshScopePrefixUninterpreted => "mesh.scope-prefix-uninterpreted",
             Self::XrefTableUndecoded => "xref.table-undecoded",
+            Self::XrefLineageDisagrees => "xref.lineage-disagrees",
+            Self::XrefIdentityBlank => "xref.identity-blank",
+            Self::XrefArchiveIdentityDisagrees => "xref.archive-identity-disagrees",
+
             Self::XrefPlacementUndecoded => "xref.placement-undecoded",
             Self::XrefOccurrenceUnplaced => "xref.occurrence-unplaced",
             Self::XrefPlacementIdentityAssumed => "xref.placement-identity-assumed",
@@ -4042,6 +4053,9 @@ impl F3dLossCode {
             | Self::MeshFaceGroupsAssumed
             | Self::MeshBodyWordsNative
             | Self::MeshCollectionWordsNative
+            | Self::XrefLineageDisagrees
+            | Self::XrefIdentityBlank
+            | Self::XrefArchiveIdentityDisagrees
             | Self::XrefTableUndecoded
             | Self::XrefPlacementUndecoded
             | Self::XrefOccurrenceUnplaced
@@ -4258,6 +4272,9 @@ impl F3dLossCode {
             | Self::MeshWrapperBytesUninterpreted
             | Self::MeshOwnerBytesUninterpreted
             | Self::MeshScopePrefixUninterpreted
+            | Self::XrefLineageDisagrees
+            | Self::XrefIdentityBlank
+            | Self::XrefArchiveIdentityDisagrees
             | Self::XrefTableUndecoded => LossTaxonomy::MetadataNotTransferred,
             Self::ActComponentLinkUnresolved
             | Self::AssemblyComponentsExternal
@@ -5642,6 +5659,9 @@ mod tests {
                 "mesh.owner-bytes-uninterpreted",
                 "mesh.scope-prefix-uninterpreted",
                 "xref.table-undecoded",
+                "xref.lineage-disagrees",
+                "xref.identity-blank",
+                "xref.archive-identity-disagrees",
                 "xref.placement-undecoded",
                 "xref.occurrence-unplaced",
                 "xref.placement-identity-assumed",
