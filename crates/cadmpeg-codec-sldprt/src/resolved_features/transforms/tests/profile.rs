@@ -587,8 +587,11 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
             projected: &mut entities,
             held: &mut HeldMarkerGeometry::default(),
         },
-        &histories,
-        &lanes,
+        crate::resolved_features::profiles::MarkerSources {
+            histories: &histories,
+            lanes: &lanes,
+            solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
+        },
         &mut Vec::new(),
     )
     .expect("marker profile projection fits service policy");
@@ -641,8 +644,11 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
             projected: &mut entities,
             held: &mut HeldMarkerGeometry::default(),
         },
-        &histories,
-        &lanes,
+        crate::resolved_features::profiles::MarkerSources {
+            histories: &histories,
+            lanes: &lanes,
+            solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
+        },
         &mut Vec::new(),
     )
     .expect("configured marker profile projection fits service policy");
@@ -685,8 +691,11 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
             projected: &mut replacement_entities,
             held: &mut HeldMarkerGeometry::default(),
         },
-        &histories,
-        &lanes,
+        crate::resolved_features::profiles::MarkerSources {
+            histories: &histories,
+            lanes: &lanes,
+            solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
+        },
         &mut Vec::new(),
     )
     .expect("replacement marker profile projection fits service policy");
@@ -777,8 +786,11 @@ fn marker_backed_sketch_preserves_geometry_when_placement_is_unresolved() {
             projected: &mut entities,
             held: &mut HeldMarkerGeometry::default(),
         },
-        &histories,
-        &lanes,
+        crate::resolved_features::profiles::MarkerSources {
+            histories: &histories,
+            lanes: &lanes,
+            solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
+        },
         &mut Vec::new(),
     )
     .expect("marker profile projection fits service policy");

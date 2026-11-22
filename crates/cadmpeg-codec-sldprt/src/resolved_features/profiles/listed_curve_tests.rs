@@ -11,7 +11,7 @@ use cadmpeg_ir::sketches::{SketchEntity, SketchGeometry, SketchGeometryDefinitio
 
 use super::{
     marker_is_construction, project_marker_backed_sketches, HeldMarkerGeometry,
-    MarkerSketchEntities, SketchRecordLists,
+    MarkerSketchEntities, MarkerSources, SketchRecordLists,
 };
 use crate::loss::SldprtLossCode;
 use crate::records::{
@@ -217,8 +217,11 @@ fn projected_curve(
             projected: &mut entities,
             held: &mut held,
         },
-        &histories,
-        &lanes,
+        MarkerSources {
+            histories: &histories,
+            lanes: &lanes,
+            solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
+        },
         &mut losses,
     )
     .expect("projection fits service policy");
