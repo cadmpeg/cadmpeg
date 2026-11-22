@@ -5799,9 +5799,9 @@ fn attach_standard_topology(
                     .collect::<Vec<_>>();
                 let preferred_budget =
                     solve_budget.child_slice(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
-                let preferred = mesh_quotient::parse_standard_mesh_candidate_outcome(
+                let preferred = mesh_quotient::standard_candidate::parse_standard_mesh_candidate_outcome(
                     ctx,
-                    crate::solve::mesh_quotient::ParseStandardMeshCandidateOutcomeInputs {
+                    crate::solve::mesh_quotient::standard_candidate::ParseStandardMeshCandidateOutcomeInputs {
                         bytes: spine,
                         edge_faces: selected_edge_faces,
                         edge_candidates: &solver_options,
@@ -5857,9 +5857,9 @@ fn attach_standard_topology(
                     // an invalid endpoint relation in both searches.
                     let fallback_budget =
                         solve_budget.child_slice(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
-                    let fallback = mesh_quotient::parse_standard_mesh_candidate_outcome(
+                    let fallback = mesh_quotient::standard_candidate::parse_standard_mesh_candidate_outcome(
                         ctx,
-                        crate::solve::mesh_quotient::ParseStandardMeshCandidateOutcomeInputs {
+                        crate::solve::mesh_quotient::standard_candidate::ParseStandardMeshCandidateOutcomeInputs {
                             bytes: spine,
                             edge_faces: selected_edge_faces,
                             edge_candidates: &solver_options,
@@ -5912,7 +5912,7 @@ fn attach_standard_topology(
                     face_count,
                 },
             );
-            match mesh_quotient::parse_standard_mesh_candidate_outcome_with_face_assignments(
+            match mesh_quotient::standard_candidate::parse_standard_mesh_candidate_outcome_with_face_assignments(
                 face_assignments,
                 work_budget,
                 |selected_edge_faces, branch_budget| {
