@@ -9,8 +9,8 @@
 //! that several curves name is one point entity with a role for each, so a
 //! coincidence of two of its ends is that entity's. An entity is
 //! construction where the decoder marks it construction or reads it from a
-//! curve record of state `0`, which no profile uses; another entity states
-//! no flag. A dimension binds the parameter that holds its value, and states
+//! curve record of state `0`, which no profile uses, unless the sketch's
+//! other curves close only through it; another entity states no flag. A dimension binds the parameter that holds its value, and states
 //! that parameter's quantity; a reference dimension makes the tree parameter
 //! it binds `Driven`, and one whose parameter no tree node lists binds a
 //! `Driven` parameter minted for it. A sketch with a dimension that binds no
@@ -51,6 +51,7 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::units::{UnitVector2, UnitVector3};
 
 use super::parameters::Entries;
+use super::profile_check;
 
 /// Distance within which a stored point lies on a plane or at a curve's end,
 /// in millimetres per millimetre of the larger coordinate.
@@ -151,12 +152,18 @@ fn sketch(
     let mut failure = None;
     let mut sketch_entities = Vec::with_capacity(entities.len());
     let mut outside_profile = Vec::new();
-    for entity in &entities {
-        let Some(form) = curve(&entity.geometry) else {
+    let forms = entities
+        .iter()
+        .map(|entity| curve(&entity.geometry))
+        .collect::<Vec<_>>();
+    let needed = needed_state_zero(&entities, &forms, context.outside_profile);
+    for (entity, form) in entities.iter().zip(forms.iter().cloned()) {
+        let Some(form) = form else {
             failure.get_or_insert("a sketch entity has no planar curve");
             continue;
         };
-        let outside = context.outside_profile.contains(entity.id());
+        let outside =
+            context.outside_profile.contains(entity.id()) && !needed.contains(entity.id());
         if outside && !entity.construction {
             outside_profile.push(entity.id().clone());
         }
@@ -459,6 +466,35 @@ fn coincident(a: [f64; 2], b: [f64; 2]) -> bool {
         .fold(1.0_f64, |scale, value| scale.max(value.abs()));
     (a[0] - b[0]).abs() <= EPS_SKETCH_INCIDENCE * scale
         && (a[1] - b[1]).abs() <= EPS_SKETCH_INCIDENCE * scale
+}
+
+/// The curves of `entities` read from a curve record of state `0`, with
+/// their construction bit clear, that the sketch's other non-construction
+/// curves need to close as they do with them (`profile_check::needed`).
+fn needed_state_zero<'a>(
+    entities: &[&'a cadmpeg_ir::sketches::SketchEntity],
+    forms: &'a [Option<PlanarCurve>],
+    outside_profile: &HashSet<SketchEntityId>,
+) -> HashSet<&'a SketchEntityId> {
+    let mut live = HashMap::new();
+    let mut state_zero = HashMap::new();
+    for (entity, form) in entities.iter().zip(forms) {
+        let Some(form) = form
+            .as_ref()
+            .filter(|form| !matches!(form, PlanarCurve::Point(_)))
+        else {
+            continue;
+        };
+        if entity.construction {
+            continue;
+        }
+        if outside_profile.contains(entity.id()) {
+            state_zero.insert(entity.id(), form);
+        } else {
+            live.insert(entity.id(), form);
+        }
+    }
+    profile_check::needed(&live, &state_zero)
 }
 
 /// The v11 curve of a decoded sketch entity, or `None` for a geometry the

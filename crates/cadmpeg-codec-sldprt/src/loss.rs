@@ -357,6 +357,12 @@ pub(crate) enum SldprtLossCode {
     /// Typed extrudes whose `Sketch` pick's closed regions differ from the
     /// profile loops read from the stored records.
     DesignExtrudeProfileDiffers,
+    /// Typed extrudes whose sketch holds no profile curve, so their `Sketch`
+    /// pick takes no region.
+    DesignExtrudeSketchEmpty,
+    /// Typed extrudes whose `Sketch` pick's closed regions the decoder did
+    /// not compare with the stored profile loops.
+    DesignExtrudeProfileUnchecked,
 }
 
 impl SldprtLossCode {
@@ -506,6 +512,8 @@ impl SldprtLossCode {
         Self::DesignExtrudeDepthAssumed,
         Self::DesignSketchConstructionAssumed,
         Self::DesignExtrudeProfileDiffers,
+        Self::DesignExtrudeSketchEmpty,
+        Self::DesignExtrudeProfileUnchecked,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -677,6 +685,8 @@ impl SldprtLossCode {
             Self::DesignExtrudeDepthAssumed => "design.extrude-depth-assumed",
             Self::DesignSketchConstructionAssumed => "design.sketch-construction-assumed",
             Self::DesignExtrudeProfileDiffers => "design.extrude-profile-differs",
+            Self::DesignExtrudeSketchEmpty => "design.extrude-sketch-empty",
+            Self::DesignExtrudeProfileUnchecked => "design.extrude-profile-unchecked",
         }
     }
 
@@ -818,7 +828,8 @@ impl SldprtLossCode {
             | Self::DesignParameterDisplayRounded
             | Self::DesignExtrudeDepthAssumed
             | Self::DesignSketchConstructionAssumed
-            | Self::DesignExtrudeProfileDiffers => Severity::Warning,
+            | Self::DesignExtrudeProfileDiffers
+            | Self::DesignExtrudeSketchEmpty => Severity::Warning,
             Self::AssemblyStructureNotTransferred => Severity::Blocking,
             Self::AssemblyPlacementUnresolved => Severity::Error,
             Self::AssemblyComponentsExternal
@@ -826,6 +837,7 @@ impl SldprtLossCode {
             | Self::AssemblyConfigurationsNotTransferred
             | Self::AssemblyBomExclusionNotTransferred
             | Self::DesignFeatureUnresolved
+            | Self::DesignExtrudeProfileUnchecked
             | Self::HistoryRollbackMarkClassInferred => Severity::Info,
         }
     }
@@ -876,7 +888,9 @@ impl SldprtLossCode {
             Self::DesignParameterDisplayRounded
             | Self::DesignExtrudeDepthAssumed
             | Self::DesignSketchConstructionAssumed
-            | Self::DesignExtrudeProfileDiffers => LossTaxonomy::DecodeDiagnostic,
+            | Self::DesignExtrudeProfileDiffers
+            | Self::DesignExtrudeSketchEmpty
+            | Self::DesignExtrudeProfileUnchecked => LossTaxonomy::DecodeDiagnostic,
             Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
             Self::TopologyFaceUnclaimed
             | Self::TopologyOwnershipWithheld
@@ -1290,6 +1304,8 @@ mod tests {
                 "design.extrude-depth-assumed",
                 "design.sketch-construction-assumed",
                 "design.extrude-profile-differs",
+                "design.extrude-sketch-empty",
+                "design.extrude-profile-unchecked",
             ]
         );
     }

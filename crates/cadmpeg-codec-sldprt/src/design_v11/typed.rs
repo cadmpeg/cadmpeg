@@ -17,7 +17,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::sketches::SketchEntityId;
 
 use super::parameters::Entries;
-use super::profile_check::Difference;
+use super::profile_check::{Difference, Unchecked};
 use super::sketch::Sketches;
 use super::tree::Timeline;
 use super::{extrude, sketch};
@@ -42,6 +42,11 @@ pub(super) struct Typed {
     /// The note of the typed extrudes whose sketch's closed regions differ
     /// from the stored profile.
     pub(super) profile_differs: Option<LossNote>,
+    /// The note of the typed extrudes whose sketch holds no profile curve.
+    pub(super) sketch_empty: Option<LossNote>,
+    /// The note of the typed extrudes whose sketch's closed regions the
+    /// check did not compare with the stored profile.
+    pub(super) profile_unchecked: Option<LossNote>,
 }
 
 /// The scope the typed records belong to, and what the decoder read of
@@ -102,6 +107,12 @@ pub(super) fn project(
     let assumed = assumed(&extrudes.assumed);
     let state_construction = state_construction(&sketches.outside_profile);
     let profile_differs = profile_differs(&extrudes.differs);
+    let (empty, unchecked): (Vec<_>, Vec<_>) = extrudes
+        .unchecked
+        .iter()
+        .partition(|(_, _, why)| *why == Unchecked::NoProfileCurve);
+    let sketch_empty = sketch_empty(&empty);
+    let profile_unchecked = profile_unchecked(&unchecked);
     let measured = std::mem::take(&mut sketches.measured);
     let references = std::mem::take(&mut sketches.references);
     Typed {
@@ -116,6 +127,8 @@ pub(super) fn project(
         assumed,
         state_construction,
         profile_differs,
+        sketch_empty,
+        profile_unchecked,
     }
 }
 
@@ -167,11 +180,8 @@ fn profile_differs(extrudes: &[(FeatureId, Option<String>, Vec<Difference>)]) ->
          the decoder read from the stored records: {}",
         extrudes.len(),
         listed(extrudes.iter().map(|(feature, name, differences)| format!(
-            "{}{} ({})",
-            feature.as_str(),
-            name.as_ref()
-                .map(|name| format!(" \"{name}\""))
-                .unwrap_or_default(),
+            "{} ({})",
+            named(feature, name.as_deref()),
             differences
                 .iter()
                 .copied()
@@ -180,6 +190,51 @@ fn profile_differs(extrudes: &[(FeatureId, Option<String>, Vec<Difference>)]) ->
                 .join("; ")
         ))),
     )))
+}
+
+/// One note naming each typed extrude whose `Sketch` pick takes no region,
+/// because its sketch holds no curve other than points and construction
+/// curves.
+fn sketch_empty(extrudes: &[&(FeatureId, Option<String>, Unchecked)]) -> Option<LossNote> {
+    if extrudes.is_empty() {
+        return None;
+    }
+    Some(SldprtLossCode::DesignExtrudeSketchEmpty.note(format!(
+        "{} extrudes pick their whole sketch, which holds no profile curve, so the pick takes \
+         no region: {}",
+        extrudes.len(),
+        listed(
+            extrudes
+                .iter()
+                .map(|(feature, name, _)| named(feature, name.as_deref()))
+        ),
+    )))
+}
+
+/// One note naming each typed extrude whose `Sketch` pick's closed regions
+/// the check did not compare with the stored profile, with why.
+fn profile_unchecked(extrudes: &[&(FeatureId, Option<String>, Unchecked)]) -> Option<LossNote> {
+    if extrudes.is_empty() {
+        return None;
+    }
+    Some(SldprtLossCode::DesignExtrudeProfileUnchecked.note(format!(
+        "{} extrudes pick their whole sketch, whose closed regions the decoder did not compare \
+         with the stored profile: {}",
+        extrudes.len(),
+        listed(extrudes.iter().map(|(feature, name, why)| format!(
+            "{} ({})",
+            named(feature, name.as_deref()),
+            why.text()
+        ))),
+    )))
+}
+
+/// A feature's id, and its name where it has one.
+fn named(feature: &FeatureId, name: Option<&str>) -> String {
+    match name {
+        Some(name) => format!("{} \"{name}\"", feature.as_str()),
+        None => feature.as_str().to_owned(),
+    }
 }
 
 /// One note naming each typed extrude whose blind depth is bound to its

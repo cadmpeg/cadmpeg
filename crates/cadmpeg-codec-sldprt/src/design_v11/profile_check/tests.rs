@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::f64::consts::PI;
 
 use cadmpeg_ir::design::ops::sketch::PlanarCurve;
@@ -9,7 +9,7 @@ use cadmpeg_ir::scalar::{Angle, PositiveLength};
 use cadmpeg_ir::sketches::{SketchEntityId, SketchEntityUse};
 use cadmpeg_ir::units::FinitePoint2;
 
-use super::{differences, Difference};
+use super::{check as compare, needed, Difference, Unchecked};
 
 fn id(key: &str) -> SketchEntityId {
     SketchEntityId::mint(format!("synthetic:test:id#{key}")).unwrap()
@@ -42,16 +42,20 @@ fn arc(radius: f64, start: f64, end: f64) -> PlanarCurve {
     }
 }
 
+fn map(curves: &[(SketchEntityId, PlanarCurve)]) -> HashMap<&SketchEntityId, &PlanarCurve> {
+    curves.iter().map(|(id, curve)| (id, curve)).collect()
+}
+
 /// The differences of a sketch of `curves` from the stored `loops`.
-fn check(curves: &[(&str, PlanarCurve)], loops: &[&[(&str, bool)]]) -> Vec<Difference> {
+fn check(
+    curves: &[(&str, PlanarCurve)],
+    loops: &[&[(&str, bool)]],
+) -> Result<Vec<Difference>, Unchecked> {
     let ids = curves
         .iter()
         .map(|(key, curve)| (id(key), curve.clone()))
         .collect::<Vec<_>>();
-    let curves = ids
-        .iter()
-        .map(|(id, curve)| (id, curve))
-        .collect::<HashMap<_, _>>();
+    let curves = map(&ids);
     let loops = loops
         .iter()
         .map(|uses| {
@@ -63,7 +67,7 @@ fn check(curves: &[(&str, PlanarCurve)], loops: &[&[(&str, bool)]]) -> Vec<Diffe
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
-    differences(&loops, &curves)
+    compare(&loops, &curves)
 }
 
 /// A 50 by 30 rectangle, `l0` to `l3` counterclockwise from the origin.
@@ -99,40 +103,46 @@ const C_RING: &[(&str, bool)] = &[
 fn a_sketch_whose_regions_are_the_stored_loops_differs_in_nothing() {
     let mut curves = rectangle();
     curves.push(("hole", circle([25.0, 15.0], 5.0)));
-    assert_eq!(check(&curves, &[RECTANGLE, &[("hole", false)]]), []);
-    assert_eq!(check(&c_ring(), &[C_RING]), []);
+    assert_eq!(check(&curves, &[RECTANGLE, &[("hole", false)]]), Ok(vec![]));
+    assert_eq!(check(&c_ring(), &[C_RING]), Ok(vec![]));
 }
 
 #[test]
 fn a_line_closing_the_inner_arc_of_a_c_ring_is_an_extra_region() {
     let mut curves = c_ring();
     curves.push(("chord", line([-5.0, 0.0], [5.0, 0.0])));
-    assert_eq!(check(&curves, &[C_RING]), [Difference::Extra]);
+    assert_eq!(check(&curves, &[C_RING]), Ok(vec![Difference::Extra]));
 }
 
 #[test]
 fn a_diagonal_of_the_rectangle_is_an_internal_edge() {
     let mut curves = rectangle();
     curves.push(("diagonal", line([0.0, 0.0], [50.0, 30.0])));
-    assert_eq!(check(&curves, &[RECTANGLE]), [Difference::InternalEdge]);
+    assert_eq!(
+        check(&curves, &[RECTANGLE]),
+        Ok(vec![Difference::InternalEdge])
+    );
 }
 
 #[test]
 fn a_circle_inside_the_profile_that_it_leaves_out_is_a_hole() {
     let mut curves = rectangle();
     curves.push(("hole", circle([25.0, 15.0], 5.0)));
-    assert_eq!(check(&curves, &[RECTANGLE]), [Difference::Hole]);
+    assert_eq!(check(&curves, &[RECTANGLE]), Ok(vec![Difference::Hole]));
 }
 
 #[test]
 fn a_rectangle_around_the_profile_is_an_extra_region() {
     let mut curves = vec![("disc", circle([25.0, 15.0], 5.0))];
     curves.extend(rectangle());
-    assert_eq!(check(&curves, &[&[("disc", false)]]), [Difference::Extra]);
+    assert_eq!(
+        check(&curves, &[&[("disc", false)]]),
+        Ok(vec![Difference::Extra])
+    );
 }
 
 #[test]
-fn dangling_curves_and_bridges_close_nothing() {
+fn dangling_curves_and_bridges_close_nothing_and_are_dangling() {
     let mut curves = rectangle();
     curves.push(("stray", line([0.0, 0.0], [20.0, 10.0])));
     curves.push(("bridge", line([50.0, 0.0], [60.0, 0.0])));
@@ -147,7 +157,10 @@ fn dangling_curves_and_bridges_close_nothing() {
         curves.push((["t0", "t1", "t2"][index], line(from, to)));
     }
     let triangle: &[(&str, bool)] = &[("t0", false), ("t1", false), ("t2", false)];
-    assert_eq!(check(&curves, &[RECTANGLE, triangle]), []);
+    assert_eq!(
+        check(&curves, &[RECTANGLE, triangle]),
+        Ok(vec![Difference::Dangling])
+    );
 }
 
 #[test]
@@ -156,14 +169,14 @@ fn a_stored_curve_the_sketch_leaves_out_is_a_missing_region() {
         .into_iter()
         .filter(|(key, _)| *key != "l2")
         .collect::<Vec<_>>();
-    assert_eq!(check(&curves, &[RECTANGLE]), [Difference::Missing]);
+    assert_eq!(check(&curves, &[RECTANGLE]), Ok(vec![Difference::Missing]));
 }
 
 #[test]
 fn a_sketch_without_stored_loops_or_with_an_ellipse_is_not_compared() {
     let mut curves = rectangle();
     curves.push(("chord", line([0.0, 0.0], [50.0, 30.0])));
-    assert_eq!(check(&curves, &[]), []);
+    assert_eq!(check(&curves, &[]), Err(Unchecked::NoStoredLoop));
     curves.push((
         "ellipse",
         PlanarCurve::Ellipse {
@@ -176,5 +189,118 @@ fn a_sketch_without_stored_loops_or_with_an_ellipse_is_not_compared() {
             range: None,
         },
     ));
-    assert_eq!(check(&curves, &[RECTANGLE]), []);
+    assert_eq!(check(&curves, &[RECTANGLE]), Err(Unchecked::CurveKind));
+}
+
+#[test]
+fn a_sketch_of_points_only_or_a_zero_sweep_arc_is_not_compared() {
+    assert_eq!(check(&[], &[RECTANGLE]), Err(Unchecked::NoProfileCurve));
+    let mut curves = rectangle();
+    curves.push(("flat", arc(5.0, 1.0, 1.0)));
+    assert_eq!(check(&curves, &[RECTANGLE]), Err(Unchecked::Unplaced));
+}
+
+#[test]
+fn a_second_copy_of_a_stored_curve_is_a_duplicate() {
+    let mut curves = rectangle();
+    curves.push(("hole", circle([25.0, 15.0], 5.0)));
+    curves.push(("copy", circle([25.0, 15.0], 5.0)));
+    assert_eq!(
+        check(&curves, &[RECTANGLE, &[("hole", false)]]),
+        Ok(vec![Difference::Duplicate])
+    );
+    let mut curves = rectangle();
+    curves.push(("copy", line([50.0, 30.0], [0.0, 30.0])));
+    assert_eq!(
+        check(&curves, &[RECTANGLE]),
+        Ok(vec![Difference::Duplicate])
+    );
+}
+
+/// A line along the bottom edge from its middle to past the corner: the
+/// part along the edge repeats it, and the part past the corner dangles.
+#[test]
+fn a_line_along_part_of_a_stored_curve_repeats_that_part() {
+    let mut curves = rectangle();
+    curves.push(("along", line([25.0, 0.0], [70.0, 0.0])));
+    assert_eq!(
+        check(&curves, &[RECTANGLE]),
+        Ok(vec![Difference::Duplicate, Difference::Dangling])
+    );
+}
+
+/// Two circles joined by the two lines that touch both: the stored profile
+/// is the circles, and the lines and the circles also bound the web between
+/// them.
+#[test]
+fn lines_that_end_on_circles_close_a_region_through_them() {
+    let curves = vec![
+        ("hub", circle([0.0, 0.0], 10.0)),
+        ("eye", circle([100.0, 0.0], 10.0)),
+        ("upper", line([0.0, 10.0], [100.0, 10.0])),
+        ("lower", line([0.0, -10.0], [100.0, -10.0])),
+    ];
+    assert_eq!(
+        check(&curves, &[&[("hub", false)], &[("eye", false)]]),
+        Ok(vec![Difference::Extra])
+    );
+}
+
+#[test]
+fn a_line_ending_mid_span_on_two_edges_is_an_internal_edge() {
+    let mut curves = rectangle();
+    curves.push(("split", line([25.0, 0.0], [25.0, 30.0])));
+    assert_eq!(
+        check(&curves, &[RECTANGLE]),
+        Ok(vec![Difference::InternalEdge])
+    );
+}
+
+/// A line across the rectangle and past both sides: the part inside splits
+/// it, and the parts outside dangle.
+#[test]
+fn a_line_crossing_the_profile_is_cut_where_it_crosses() {
+    let mut curves = rectangle();
+    curves.push(("across", line([-10.0, 15.0], [60.0, 15.0])));
+    assert_eq!(
+        check(&curves, &[RECTANGLE]),
+        Ok(vec![Difference::InternalEdge, Difference::Dangling])
+    );
+}
+
+/// The top edge has state `0`, as does a second copy of the bottom edge and
+/// a rectangle around the profile: only the top edge closes the profile.
+#[test]
+fn a_state_zero_curve_is_needed_where_live_curves_close_only_through_it() {
+    let rectangle = rectangle();
+    let outer = [[-10.0, -10.0], [60.0, -10.0], [60.0, 40.0], [-10.0, 40.0]];
+    let mut zero = vec![
+        ("l2", rectangle[2].1.clone()),
+        ("copy", line([0.0, 0.0], [50.0, 0.0])),
+    ];
+    for index in 0..4 {
+        zero.push((
+            ["o0", "o1", "o2", "o3"][index],
+            line(outer[index], outer[(index + 1) % 4]),
+        ));
+    }
+    let keyed = |curves: &[(&str, PlanarCurve)]| {
+        curves
+            .iter()
+            .map(|(key, curve)| (id(key), curve.clone()))
+            .collect::<Vec<_>>()
+    };
+    let live = keyed(
+        &rectangle
+            .iter()
+            .filter(|(key, _)| *key != "l2")
+            .cloned()
+            .collect::<Vec<_>>(),
+    );
+    let zero = keyed(&zero);
+    let (live, zero) = (map(&live), map(&zero));
+    let l2 = id("l2");
+    assert_eq!(needed(&live, &zero), HashSet::from([&l2]));
+    let none = HashMap::new();
+    assert_eq!(needed(&none, &zero), HashSet::new());
 }
