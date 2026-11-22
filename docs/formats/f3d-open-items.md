@@ -1472,6 +1472,16 @@ The first closing reference run identifies a direct contained child by its local
 
 **Conflict.** If the first flag byte of the ten-byte trailer and the opaque flag of the compact owned trailer state the same property, the trailers align at that byte, and the second flag byte is the driven flag.
 
+### DR-1007. Header flag of a discriminated parameter record
+
+**Question.** Does the header flag state that a sheet-metal rule holds the parameter, and what sets the byte at the same offset of a compact document parameter?
+
+**Known.** `f3d.md` §3.1 "The form of an indexed parameter record follows the version of its type" places the flag in the discriminated form. A parameter that sets it is a `Thickness` parameter with the null owner, a ten-byte expression trailer of zero bytes, and an empty text value. A sheet-metal rule record, type `B42ED662-8999-4C1B-A744-759D1D446D55`, references each parameter that sets the flag and no parameter that clears it. A `Thickness` parameter that a timeline item owns clears the flag. The compact forms store a byte at the same offset, the eleventh of their fifteen zero bytes. It is `1` in each `Thickness` parameter that a rule record references. It is also `1` in some document parameters that an occurrence-source record of type `8ACBA2E5-5A4C-4438-8351-276DE96E6982` references, and `0` in other document parameters that such a record references. A frame that sets the byte closes the grammar of its form with the byte read as `0`.
+
+**Need.** A discriminated parameter that sets the flag in a stream with no rule record that references it, or the stored property that separates the compact document parameters that set the byte from those that clear it.
+
+**Note.** The decoder reads the flag in the discriminated form, keeps it unprojected, and reports `parameter.header-flag-uninterpreted` for each Design stream with a decoded parameter that sets it.
+
 ### DR-222. `MoveFace` and `OffsetFaces` member recipes that resolve no face
 
 **Question.** Which face does a `MoveFace` or `OffsetFaces` bounded-face member select when the `DeleteFace` bounded-face rule resolves no unique face for its recipe?

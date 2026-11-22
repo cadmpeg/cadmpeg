@@ -1156,7 +1156,7 @@ name = "design_parameter_discriminated_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs"
 kind = "byte"
 section = "3.1"
-anchor = "The discriminated form extends the indexed header with eleven zero bytes, a u32 family discriminator"
+anchor = "The discriminated form extends the indexed header with ten zero bytes, the header flag at offset 21, a u32 family discriminator"
 size = 31
 note = "Offsets are relative to the indexed header of a discriminated parameter through the comment code-unit count. The comment code units follow, and every later field moves on by their byte length. The wide discriminated form stores every field from the zero run on four bytes later."
 
@@ -1165,28 +1165,35 @@ name = "indexed_header"
 offset = 0
 type = "bytes[11]"
 source = "spec"
-anchor = "The discriminated form extends the indexed header with eleven zero bytes"
+anchor = "The discriminated form extends the indexed header with ten zero bytes"
 
 [[record.field]]
-name = "zero_run_11"
+name = "zero_run_10"
 offset = 11
-type = "bytes[11]"
+type = "bytes[10]"
 source = "spec"
-anchor = "The discriminated form extends the indexed header with eleven zero bytes"
+anchor = "The discriminated form extends the indexed header with ten zero bytes"
+
+[[record.field]]
+name = "header_flag"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "the header flag at offset 21"
 
 [[record.field]]
 name = "family_discriminator"
 offset = 22
 type = "u32"
 source = "spec"
-anchor = "eleven zero bytes, a u32 family discriminator, a zero byte"
+anchor = "the header flag at offset 21, a u32 family discriminator, a zero byte"
 
 [[record.field]]
 name = "reserved_26"
 offset = 26
 type = "u8"
 source = "spec"
-anchor = "eleven zero bytes, a u32 family discriminator, a zero byte"
+anchor = "the header flag at offset 21, a u32 family discriminator, a zero byte"
 value = 0
 
 [[record.field]]
