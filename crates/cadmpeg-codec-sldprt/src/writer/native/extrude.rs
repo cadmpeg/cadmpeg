@@ -4,7 +4,7 @@
 //! display objects"). Byte runs `sldprt.md` gives as lengths only are zero.
 
 use super::archive::Archive;
-use super::block::{block_close, block_open, named, Oid, Schema, Tail, TAIL};
+use super::block::{block_close, block_open, named, named_operation, Oid, Schema, Tail, TAIL};
 use super::config::FIRST_BODY_ID;
 
 /// A blind extrusion the tree writes.
@@ -24,6 +24,12 @@ pub(in crate::writer) struct Extrusion {
     /// Whether it travels against the sketch plane's normal.
     pub(in crate::writer) reversed: bool,
 }
+
+/// The named-head family word of an extrusion that joins its result.
+const JOIN_FAMILY: u16 = 0x0140;
+
+/// The named-head family word of an extrusion that cuts its result.
+const CUT_FAMILY: u16 = 0x01ca;
 
 /// The block word of an extrusion.
 const EXTRUSION_BLOCK_WORD: u32 = 104;
@@ -66,11 +72,15 @@ pub(super) fn extrusion(
     } else {
         "moExtrusion_c"
     });
-    named(
+    named_operation(
         archive,
-        Some(&extrusion.name),
-        Schema::Plain,
-        Oid::Plain(extrusion.feature_id),
+        &extrusion.name,
+        extrusion.feature_id,
+        if extrusion.cut {
+            CUT_FAMILY
+        } else {
+            JOIN_FAMILY
+        },
     );
     block_open(archive, 1);
     archive.reference(profile);

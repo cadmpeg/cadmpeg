@@ -577,8 +577,15 @@ fn a_blind_extrusion_is_a_native_feature_in_place_of_the_stored_body() {
         .iter()
         .find_map(|feature| match feature.evaluation.definition() {
             FeatureDefinition::Operation(FeatureOperation::Extrude {
-                extent, profile, ..
-            }) => Some((extent.clone(), profile.clone())),
+                extent,
+                profile,
+                op,
+                ..
+            }) => {
+                // The source's operation survives the family word 0x0140.
+                assert_eq!(*op, cadmpeg_ir::features::BooleanOp::NewBody);
+                Some((extent.clone(), profile.clone()))
+            }
             _ => None,
         })
         .expect("the extrusion decodes");
