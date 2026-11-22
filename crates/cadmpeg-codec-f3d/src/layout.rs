@@ -13589,3 +13589,19 @@ pub(crate) mod manifest_reference_extension_prefix {
     /// Stated value of `reference_flag` (`u8`). Spec §1.4.
     pub(crate) const REFERENCE_FLAG_VALUE: u8 = 1;
 }
+
+/// Byte offsets for the `local_component_occurrence_attributed_source_matrix` record.
+///
+/// Spec §3.1. Record length 129 B.
+///
+/// ```text
+/// Offsets are relative to the source flag after the occurrence ordinal. The carrier GUID follows this matrix.
+/// ```
+pub(crate) mod local_component_occurrence_attributed_source_matrix {
+    /// Offset of `source_flag` (`u8`). Spec §3.1.
+    pub(crate) const SOURCE_FLAG: usize = 0;
+    /// Stated value of `source_flag` (`u8`). Spec §3.1.
+    pub(crate) const SOURCE_FLAG_VALUE: u8 = 0;
+    /// Offset of `source_matrix` (`bytes[128]`). Spec §3.1.
+    pub(crate) const SOURCE_MATRIX: usize = 1;
+}
