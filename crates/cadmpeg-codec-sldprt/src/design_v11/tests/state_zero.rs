@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The profile an extrude picks: its whole sketch, whose curves of state
-//! `0` are construction and bound no region (§6 "Sources"; §6.1 "Flags" and
-//! "Profiles and regions").
+//! `0` are construction and bound no region, and the note charged where the
+//! sketch's closed regions differ from the stored profile (§6 "Sources";
+//! §6.1 "Flags" and "Profiles and regions").
 
 use std::collections::HashSet;
 
@@ -114,6 +115,11 @@ fn an_extrude_picks_its_whole_sketch() {
         "{:?}",
         typed.state_construction
     );
+    assert!(
+        typed.profile_differs.is_none(),
+        "{:?}",
+        typed.profile_differs
+    );
     assert_no_design_findings(&ir);
 }
 
@@ -160,5 +166,106 @@ fn a_curve_of_state_zero_is_construction() {
         crate::loss::SldprtLossCode::DesignSketchConstructionAssumed.kind()
     );
     assert!(note.message.contains(entity("diagonal").as_str()));
+    assert!(
+        typed.profile_differs.is_none(),
+        "{:?}",
+        typed.profile_differs
+    );
+    assert_no_design_findings(&ir);
+}
+
+/// Adds the upper half of a ring about (100, 0), radii 5 and 10, to the
+/// fixture's sketch: two arcs and the two lines that join their ends.
+fn add_c_ring(ir: &mut CadIr) {
+    let sketch = ir.model.sketches[0].id.as_str().to_owned();
+    let arc = |key: &str, radius: f64| {
+        serde_json::json!({"id": entity(key).as_str(), "sketch": sketch, "construction": false,
+            "endpoint_refs": [], "geometry": {"kind": "arc", "center": {"u": 100.0, "v": 0.0},
+            "radius": radius, "start_angle": 0.0, "end_angle": std::f64::consts::PI}})
+    };
+    for added in [
+        arc("outer", 10.0),
+        arc("inner", 5.0),
+        line(&sketch, "left", [90.0, 0.0], [95.0, 0.0]),
+        line(&sketch, "right", [105.0, 0.0], [110.0, 0.0]),
+    ] {
+        ir.model
+            .sketch_entities
+            .push(serde_json::from_value(added).unwrap());
+    }
+}
+
+fn line(sketch: &str, key: &str, from: [f64; 2], to: [f64; 2]) -> serde_json::Value {
+    serde_json::json!({"id": entity(key).as_str(), "sketch": sketch, "construction": false,
+        "endpoint_refs": [], "geometry": {"kind": "line",
+        "start": {"u": from[0], "v": from[1]}, "end": {"u": to[0], "v": to[1]}}})
+}
+
+const PROFILE: &[&[(&str, bool)]] = &[
+    &[("l0", false), ("l1", false), ("l2", false), ("l3", false)],
+    &[("hole", false)],
+    &[
+        ("outer", false),
+        ("left", false),
+        ("inner", true),
+        ("right", false),
+    ],
+];
+
+/// The stored profile holds the rectangle, its circle and a C-shaped ring,
+/// and the sketch holds nothing else: the whole-sketch pick's regions are
+/// that profile, and no note is charged.
+#[test]
+fn a_sketch_whose_regions_are_the_stored_profile_charges_nothing() {
+    let (mut ir, _) = sketch_and_extrude();
+    add_c_ring(&mut ir);
+    set_profiles(&mut ir, PROFILE);
+    let (_, typed) = project(&mut ir, &HashSet::new());
+    assert!(
+        typed.profile_differs.is_none(),
+        "{:?}",
+        typed.profile_differs
+    );
+}
+
+/// A line joins the ends of the C-shaped ring's inner arc, which the stored
+/// profile leaves out: the whole-sketch pick also takes the half disc the
+/// line closes, which `SolidWorks` did not extrude, and the note names the
+/// extrude and the extra region.
+#[test]
+fn a_line_closing_a_c_ring_charges_an_extra_region() {
+    let (mut ir, _) = sketch_and_extrude();
+    add_c_ring(&mut ir);
+    let sketch = ir.model.sketches[0].id.as_str().to_owned();
+    ir.model
+        .sketch_entities
+        .push(serde_json::from_value(line(&sketch, "chord", [95.0, 0.0], [105.0, 0.0])).unwrap());
+    set_profiles(&mut ir, PROFILE);
+    let (extrude, typed) = project(&mut ir, &HashSet::new());
+    assert_eq!(
+        targets(&extrude),
+        vec![PickTarget::Sketch(ir.model.sketches[0].id.clone())]
+    );
+    let note = typed
+        .profile_differs
+        .expect("the difference from the stored profile is reported");
+    assert_eq!(
+        note.code,
+        crate::loss::SldprtLossCode::DesignExtrudeProfileDiffers.kind()
+    );
+    assert_eq!(note.severity, cadmpeg_ir::report::Severity::Warning);
+    let boss = ir
+        .design
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Boss"))
+        .unwrap();
+    assert!(note.message.contains(boss.id.as_str()), "{}", note.message);
+    assert!(
+        note.message
+            .contains("(extra region outside the stored profile)"),
+        "{}",
+        note.message
+    );
     assert_no_design_findings(&ir);
 }

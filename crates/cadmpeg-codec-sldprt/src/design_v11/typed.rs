@@ -17,6 +17,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::sketches::SketchEntityId;
 
 use super::parameters::Entries;
+use super::profile_check::Difference;
 use super::sketch::Sketches;
 use super::tree::Timeline;
 use super::{extrude, sketch};
@@ -38,6 +39,9 @@ pub(super) struct Typed {
     /// The note of the sketch curves stated construction for the state of
     /// their curve record.
     pub(super) state_construction: Option<LossNote>,
+    /// The note of the typed extrudes whose sketch's closed regions differ
+    /// from the stored profile.
+    pub(super) profile_differs: Option<LossNote>,
 }
 
 /// The scope the typed records belong to, and what the decoder read of
@@ -80,6 +84,7 @@ pub(super) fn project(
             histories,
             entries,
             sketches: &stated,
+            entities: &sketches.entities,
         },
     );
     let mut bound = HashMap::<ParameterId, Option<Quantity>>::new();
@@ -96,6 +101,7 @@ pub(super) fn project(
     let loss = loss(&sketches.unprojected, &extrudes.unprojected);
     let assumed = assumed(&extrudes.assumed);
     let state_construction = state_construction(&sketches.outside_profile);
+    let profile_differs = profile_differs(&extrudes.differs);
     let measured = std::mem::take(&mut sketches.measured);
     let references = std::mem::take(&mut sketches.references);
     Typed {
@@ -109,6 +115,7 @@ pub(super) fn project(
         loss,
         assumed,
         state_construction,
+        profile_differs,
     }
 }
 
@@ -146,6 +153,33 @@ fn state_construction(entities: &[SketchEntityId]) -> Option<LossNote> {
             listed(entities.iter().map(|entity| entity.as_str().to_owned())),
         )),
     )
+}
+
+/// One note naming each typed extrude whose `Sketch` pick's closed regions
+/// differ from the profile loops the decoder resolved from the stored
+/// records, with how they differ (§6 "Sources").
+fn profile_differs(extrudes: &[(FeatureId, Option<String>, Vec<Difference>)]) -> Option<LossNote> {
+    if extrudes.is_empty() {
+        return None;
+    }
+    Some(SldprtLossCode::DesignExtrudeProfileDiffers.note(format!(
+        "{} extrudes pick their whole sketch, whose closed regions differ from the profile \
+         the decoder read from the stored records: {}",
+        extrudes.len(),
+        listed(extrudes.iter().map(|(feature, name, differences)| format!(
+            "{}{} ({})",
+            feature.as_str(),
+            name.as_ref()
+                .map(|name| format!(" \"{name}\""))
+                .unwrap_or_default(),
+            differences
+                .iter()
+                .copied()
+                .map(Difference::text)
+                .collect::<Vec<_>>()
+                .join("; ")
+        ))),
+    )))
 }
 
 /// One note naming each typed extrude whose blind depth is bound to its

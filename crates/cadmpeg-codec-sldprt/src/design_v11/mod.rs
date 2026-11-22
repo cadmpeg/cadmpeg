@@ -18,6 +18,7 @@ mod names;
 mod operation;
 mod order;
 mod parameters;
+mod profile_check;
 mod sketch;
 mod states;
 #[cfg(test)]
@@ -113,6 +114,7 @@ pub(crate) fn project(
     losses.extend(typed.loss);
     losses.extend(typed.assumed);
     losses.extend(typed.state_construction);
+    losses.extend(typed.profile_differs);
     let readings = parameters::Readings {
         decoded: parameters::Decoded::new(&ir.model.parameters, lanes),
         length_unit: length,
