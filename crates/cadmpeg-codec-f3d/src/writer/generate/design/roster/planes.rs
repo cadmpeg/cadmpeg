@@ -231,6 +231,7 @@ impl Item<'_> {
                     local,
                     kind,
                     value,
+                    driven: false,
                 },
             )?;
         }

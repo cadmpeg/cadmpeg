@@ -278,6 +278,7 @@ pub(super) fn write(
                 local,
                 kind,
                 value,
+                driven: false,
             },
         )?;
     }
@@ -689,9 +690,6 @@ pub(super) fn losses(
     ];
     let single = ctx.sketches.len() == 1;
     if !single {
-        entries.push(
-            format!("record 198 (timeline context: context value {}, the largest source ordinal of an owned parameter, where f3d-open-items.md DR-882 states no value for this item set)", ctx.context_value()),
-        );
         entries.push(
             "records 199, 200 and 201 (owner collection, B65B5682 and dependency table: f3d-open-items.md DR-891's orders, stated for one Sketch item, applied item by item)".to_owned(),
         );

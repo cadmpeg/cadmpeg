@@ -9,7 +9,9 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 
 use super::super::super::frames::DesignRecords;
-use super::super::super::sketch::dimensions::{DimensionKind, Measure, PlannedDimension};
+use super::super::super::sketch::dimensions::{
+    DimensionKind, Measure, PlannedDimension, DRIVEN_DECIMALS,
+};
 use super::super::super::types;
 use super::super::owned::{Owned, DISCRIMINATOR};
 use super::super::{count, Context};
@@ -26,6 +28,9 @@ const FIRST_SUFFIX: u32 = 2;
 /// The text frame's default style byte and values.
 const STYLE: u8 = 0;
 const STYLE_VALUES: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
+/// The text frame's style byte and values in a driven dimension.
+const DRIVEN_STYLE: u8 = 1;
+const DRIVEN_STYLE_VALUES: [f32; 4] = [0.25, 0.25, 0.25, 1.0];
 /// The text frame's byte before its zero byte.
 const TEXT_MARKER: u8 = 1;
 /// The text frame's origin and axes.
@@ -69,7 +74,16 @@ impl Item<'_> {
         }
         let paired = self.ctx.class(types::DIMENSION_FRAME_PAIRED.guid)?;
         let mut stems = HashMap::<&str, u32>::new();
-        for ((local, dimension), [frame, parameter, owner, companion]) in (0u32..)
+        for (
+            (local, dimension),
+            super::DimensionRecords {
+                frame,
+                parameter,
+                owner,
+                companion,
+                ..
+            },
+        ) in (0u32..)
             .zip(&self.planned.dimensions)
             .zip(&records.dimensions)
         {
@@ -97,14 +111,13 @@ impl Item<'_> {
             }
             out.byte(0);
             self.measurement(out, dimension)?;
-            text_frame(out);
+            text_frame(out, dimension.driven);
             let mut prefix = String::new();
             if dimension.parameter.names_parameter {
                 prefix.push_str(FORMULA_PREFIX);
             }
             prefix.push_str(dimension.kind.symbol());
-            out.lp_utf16(&prefix)?
-                .lp_utf16(&dimension.parameter.expression)?;
+            out.lp_utf16(&prefix)?.lp_utf16(&dimension.text())?;
             kind_block(out, dimension)?;
             out.reference(*owner).u32(count(semantic.len())?);
             for member in &semantic {
@@ -133,6 +146,7 @@ impl Item<'_> {
                     local,
                     kind: &kind,
                     value: &dimension.parameter,
+                    driven: dimension.driven,
                 },
             )?;
         }
@@ -218,11 +232,17 @@ fn position(out: &mut DesignRecords, [u, v]: [f64; 2]) {
     out.f64(u).f64(v).f64(0.0);
 }
 
-/// The 91-byte text frame in the default style, its origin at the sketch
-/// origin and its axes the sketch axes.
-fn text_frame(out: &mut DesignRecords) {
-    out.byte(STYLE);
-    for value in STYLE_VALUES {
+/// The 91-byte text frame in the default style, or the driven style for a
+/// driven dimension, its origin at the sketch origin and its axes the sketch
+/// axes.
+fn text_frame(out: &mut DesignRecords, driven: bool) {
+    let (style, values) = if driven {
+        (DRIVEN_STYLE, DRIVEN_STYLE_VALUES)
+    } else {
+        (STYLE, STYLE_VALUES)
+    };
+    out.byte(style);
+    for value in values {
         out.f32(value);
     }
     out.byte(TEXT_MARKER).byte(0);
@@ -258,12 +278,16 @@ pub(in crate::writer::generate::design::roster) fn losses(ctx: &Context<'_>) -> 
     let mut related = Vec::new();
     let mut frames = Vec::new();
     let mut parameters = Vec::new();
+    let mut driven = Vec::new();
     for records in &ctx.roster.sketches.items {
         related.extend(records.relations.iter().map(u32::to_string));
-        for [frame, parameter, _, _] in &records.dimensions {
-            related.push(frame.to_string());
-            frames.push(frame.to_string());
-            parameters.push(parameter.to_string());
+        for dimension in &records.dimensions {
+            related.push(dimension.frame.to_string());
+            frames.push(dimension.frame.to_string());
+            parameters.push(dimension.parameter.to_string());
+            if dimension.driven {
+                driven.push(format!("{} {}", dimension.frame, dimension.parameter));
+            }
         }
     }
     if related.is_empty() {
@@ -276,18 +300,24 @@ pub(in crate::writer::generate::design::roster) fn losses(ctx: &Context<'_>) -> 
     if !frames.is_empty() {
         values.extend([
             format!(
-                "dimension frames {} (null-locus ordinal {NULL_LOCUS_ORDINAL} plus the frame's position in its sketch; the fourth point of a linear measurement its first anchor; each angular line's point positions, end then start; text frame style {STYLE} with values (0, 0, 0, 1), byte {TEXT_MARKER}, origin (0, 0, 0) and axes (1, 0, 0), (0, 1, 0); linear kind-block values (0, 1); diameter flag {DIAMETER_FLAG}; the second quadrant word equal to the first; no property block)",
+                "dimension frames {} (null-locus ordinal {NULL_LOCUS_ORDINAL} plus the frame's position in its sketch; the fourth point of a linear measurement its first anchor; each angular line's point positions, end then start; text frame style {STYLE} with values (0, 0, 0, 1) in a driving dimension, byte {TEXT_MARKER}, origin (0, 0, 0) and axes (1, 0, 0), (0, 1, 0); linear kind-block values (0, 1); diameter flag {DIAMETER_FLAG}; the second quadrant word equal to the first; no property block)",
                 frames.join(" ")
             ),
             format!(
-                "dimension parameters {} (family discriminator {DISCRIMINATOR}, the expression trailer of ten zero bytes, the owner's parameter number the source ordinal, the dimension suffix {FIRST_SUFFIX} for a sketch's first dimension of a kind and one more for each later one)",
+                "dimension parameters {} (family discriminator {DISCRIMINATOR}, the owner's parameter number the source ordinal, the dimension suffix {FIRST_SUFFIX} for a sketch's first dimension of a kind and one more for each later one; the expression trailer of ten zero bytes for a driving dimension)",
                 parameters.join(" ")
             ),
-            format!(
-                "record 198 (timeline context: context value {}, the largest source ordinal of an owned parameter; f3d.md states the value for a design whose every parameter is named d<n>)",
-                ctx.context_value()
-            ),
         ]);
+        if !driven.is_empty() {
+            values.push(format!(
+                "driven dimension frames and parameters {} (the second flag byte of the parameter's expression trailer `1` as its driven flag, f3d-open-items.md DR-144; the display text with {DRIVEN_DECIMALS} decimals and the unit of the parameter, DR-917)",
+                driven.join(", ")
+            ));
+        }
+        values.push(format!(
+            "record 198 (timeline context: context value {}, the largest source ordinal of an owned parameter; f3d.md states the value for a design whose every parameter is named d<n>)",
+            ctx.context_value()
+        ));
     }
     cadmpeg_ir::codec::write::record_residual_unavailable(
         "F3D",

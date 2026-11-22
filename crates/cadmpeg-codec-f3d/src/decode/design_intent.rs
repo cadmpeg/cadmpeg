@@ -1415,6 +1415,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         )
     };
     model.sketch_constraints.extend(dimension_constraints);
+    crate::design::dimensions::mark_driven_parameters(
+        &mut model.parameters,
+        &constraint_inputs,
+        &design.design_dimension_presentation_frames,
+    );
     let spatial_dimension_constraints =
         crate::design::dimensions::project_spatial_dimension_constraints(
             &constraint_inputs,
