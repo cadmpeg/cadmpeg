@@ -4,12 +4,17 @@ use super::{
     SilhouetteCurveConstruction, SpatialOffsetCurveConstruction, SpringCurvePayload,
     SurfaceOffsetCurveConstruction, ThreeSurfaceIntersectionCurvePayload,
 };
-use crate::geometry::{
-    pcurve::{LinePcurve, PcurveGeometry},
-    CacheContract, CacheFirstCurveForm, CacheFirstCurveParameterization, DeformableCurveData,
-    DeformableCurveSource, DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide,
-    ProceduralCurveDefinition, ProjectionRole, ProjectionTail, RevisionCacheForm, SilhouetteKind,
-    SpringLayout, SpringPcurve, SpringSupport, SupportPcurve,
+use crate::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+use crate::geometry::legacy_cache::CacheContract;
+use crate::geometry::pcurve::{LinePcurve, PcurveGeometry};
+use crate::geometry::procedural_curves::{
+    DeformableCurveData, DeformableCurveSource, DirectedParameterRange, ProceduralCurveDefinition,
+    SupportPcurve,
+};
+use crate::geometry::revision_forms::RevisionCacheForm;
+use crate::geometry::surface_curves::{
+    CacheFirstCurveForm, CacheFirstCurveParameterization, ProjectionRole, ProjectionTail,
+    SilhouetteKind, SpringLayout, SpringPcurve, SpringSupport,
 };
 use crate::ids::{CurveId, SurfaceId};
 use crate::math::{Point2, Vector3};
@@ -355,7 +360,7 @@ fn the_cache_first_curve_admissions_refuse_every_non_finite_form_scalar() {
 #[test]
 fn a_direction_offset_from_admitted_parts_matches_its_raw_admission() {
     use super::OffsetCurveConstruction;
-    use crate::geometry::{CurveOffsetRange, OffsetSide};
+    use crate::geometry::curve_offsets::{CurveOffsetRange, OffsetSide};
     use crate::ids::{CurveId, SurfaceId};
     use crate::math::Vector3;
     use crate::scalar::FiniteReal;
@@ -394,7 +399,7 @@ fn a_direction_offset_from_admitted_parts_matches_its_raw_admission() {
 fn admitted_finite_direction_offset_matches_raw_without_a_range() {
     use super::OffsetCurveConstruction;
     use crate::features::geometry::FiniteVector3;
-    use crate::geometry::OffsetSide;
+    use crate::geometry::curve_offsets::OffsetSide;
     use crate::ids::CurveId;
     use crate::math::Vector3;
     use crate::scalar::FiniteReal;
@@ -439,7 +444,7 @@ fn admitted_finite_direction_offset_matches_raw_without_a_range() {
 #[test]
 fn a_plane_normal_offset_from_a_unit_matches_raw_admission() {
     use super::OffsetCurveConstruction;
-    use crate::geometry::{CurveOffsetRange, OffsetSide};
+    use crate::geometry::curve_offsets::{CurveOffsetRange, OffsetSide};
     use crate::ids::CurveId;
     use crate::math::Vector3;
     use crate::units::UnitVector3;

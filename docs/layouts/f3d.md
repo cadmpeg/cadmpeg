@@ -9544,7 +9544,7 @@ Parsed by:
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 8 | `zero_run` | `bytes[8]` | little | spec | The circular distribution block comes next |
-| 8 | 4 | `fixed_two` | `u32` | little | spec | The circular distribution block comes next · value `2` |
+| 8 | 4 | `compute_option` | `u32` | little | spec | The circular distribution block comes next |
 | 12 | 4 | `seed_kind` | `u32` | little | spec | The circular distribution block comes next |
 | 16 | 4 | `sentinel` | `u32` | little | spec | The circular distribution block comes next |
 | 20 | 1 | `fixed_one` | `u8` | little | spec | The circular distribution block comes next · value `1` |
@@ -9559,22 +9559,22 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
-| 11 | 8 | `zero_head` | `bytes[8]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
-| 19 | 1 | `flag` | `u8` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
-| 20 | 4 | `count` | `u32` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
-| 24 | 11 | `u_count` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
-| 35 | 4 | `zero_middle` | `bytes[4]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
-| 39 | 11 | `v_count` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
-| 50 | 9 | `zero_tail` | `bytes[9]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
-| 59 | 4 | `sentinel` | `u32` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
-| 63 | 24 | `v_direction` | `f64[3]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
-| 87 | 11 | `u_distance` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
-| 98 | 11 | `v_distance` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a suffix of at least 37 bytes. |
+| 11 | 8 | `zero_head` | `bytes[8]` | little | spec | The payload has a 133-byte prefix and a suffix of at least 37 bytes. |
+| 19 | 1 | `flag` | `u8` | little | spec | The payload has a 133-byte prefix and a suffix of at least 37 bytes. |
+| 20 | 4 | `count` | `u32` | little | spec | The payload has a 133-byte prefix and a suffix of at least 37 bytes. |
+| 24 | 11 | `u_count` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a suffix of at least 37 bytes. |
+| 35 | 4 | `zero_middle` | `bytes[4]` | little | spec | The payload has a 133-byte prefix and a suffix of at least 37 bytes. |
+| 39 | 11 | `v_count` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a suffix of at least 37 bytes. |
+| 50 | 9 | `zero_tail` | `bytes[9]` | little | spec | The payload has a 133-byte prefix and a suffix of at least 37 bytes. |
+| 59 | 4 | `sentinel` | `u32` | little | spec | The payload has a 133-byte prefix and a suffix of at least 37 bytes. |
+| 63 | 24 | `v_direction` | `f64[3]` | little | spec | The payload has a 133-byte prefix and a suffix of at least 37 bytes. |
+| 87 | 11 | `u_distance` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a suffix of at least 37 bytes. |
+| 98 | 11 | `v_distance` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a suffix of at least 37 bytes. |
 | 109 | 1 | `symmetric` | `u8` | little | spec | Offset 109 stores the symmetric byte of direction one |
 | 110 | 1 | `symmetric_two` | `u8` | little | spec | Offset 110 stores the symmetric byte of direction two |
-| 111 | 11 | `v_count_repeat` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
-| 122 | 11 | `u_direction` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 111 | 11 | `v_count_repeat` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a suffix of at least 37 bytes. |
+| 122 | 11 | `u_direction` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a suffix of at least 37 bytes. |
 
 ## `rectangular_pattern_payload_distribution`
 
@@ -9604,10 +9604,10 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `u_count` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
-| 11 | 11 | `scope` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
-| 22 | 11 | `seed_group` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
-| 33 | 4 | `zero_tail` | `bytes[4]` | little | spec | The payload has a 133-byte prefix and a 37-byte suffix. |
+| 0 | 11 | `u_count` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a suffix of at least 37 bytes. |
+| 11 | 11 | `scope` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a suffix of at least 37 bytes. |
+| 22 | 11 | `seed_group` | `bytes[11]` | little | spec | The payload has a 133-byte prefix and a suffix of at least 37 bytes. |
+| 33 | 4 | `suppressed_count` | `u32` | little | spec | followed by a u32 count of suppressed instances and that many u32 instance keys. |
 
 ## `sketch_geometry_ordinal_collection_reference`
 
@@ -15526,6 +15526,26 @@ Offsets are relative to the collection's indexed header. The `k` container refer
 | 43 | 27 | `property_type` | `bytes[27]` | little | spec | The sketch collection of a component with `k` sketches stores, in order · value `[23, 0, 0, 0, 73, 110, 116, 114, 105, 110, 115, 105, 99, 77, 101, 116, 97, 84, 121, 112, 101, 117, 105, 110, 116, 54, 52]` |
 | 70 | 8 | `crv_tag_id_idx` | `u64` | little | spec | The sketch collection of a component with `k` sketches stores, in order |
 | 78 | 4 | `container_count` | `u32` | little | spec | The sketch collection of a component with `k` sketches stores, in order |
+
+## `compact_legacy_external_placement_members`
+
+Spec §1.4 · layout: byte offsets · size: 218 B
+
+Offsets start after the complete property-presence block.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/xref.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `ordinal` | `u32` | little | spec | A compact legacy external placement uses the 88-byte legacy target prefix. |
+| 4 | 4 | `metadata_guid_length` | `u32` | little | spec | A compact legacy external placement uses the 88-byte legacy target prefix. · value `36` |
+| 8 | 72 | `metadata_guid` | `bytes[72]` | little | spec | A compact legacy external placement uses the 88-byte legacy target prefix. |
+| 80 | 4 | `occurrence_guid_length` | `u32` | little | spec | A compact legacy external placement uses the 88-byte legacy target prefix. · value `36` |
+| 84 | 72 | `occurrence_guid` | `bytes[72]` | little | spec | A compact legacy external placement uses the 88-byte legacy target prefix. |
+| 156 | 1 | `separator` | `u8` | little | spec | A compact legacy external placement uses the 88-byte legacy target prefix. · value `0` |
+| 157 | 60 | `repeated_target` | `bytes[60]` | little | spec | A compact legacy external placement uses the 88-byte legacy target prefix. |
+| 217 | 1 | `identity_flag` | `u8` | little | spec | A compact legacy external placement uses the 88-byte legacy target prefix. |
 
 ## Not tabulated
 

@@ -263,7 +263,10 @@ where
                 let carrier = (self.resolve)(support, allocation_reference(bytes, &mut at)?)?;
                 for _ in 0..2 {
                     let target = (self.resolve)(support, allocation_reference(bytes, &mut at)?)?;
-                    if !matches!(self.records[target].class(), 0x27 | 0x29 | 0x38) {
+                    let record = &self.records[target];
+                    if !matches!(record.class(), 0x27 | 0x29 | 0x38)
+                        && (record.family(), record.class()) != (Family::B, 0x30)
+                    {
                         return None;
                     }
                 }
@@ -490,6 +493,7 @@ where
         ];
         let records = &self.records[p..=p];
         let mut knots = None;
+        let mut extended_spline_range = None;
         let mut extrapolation_sites = 0;
         let mut sphere_circle = None;
         let mut alternate_line = None;
@@ -550,6 +554,12 @@ where
             }
             0x21 => {
                 let (pcurve, range) = trim_curves::spline(payload(self.bytes, &records[0])?)?;
+                if let PcurveGeometry::Nurbs { nurbs } = &pcurve {
+                    let full = [*nurbs.knots().first()?, *nurbs.knots().last()?];
+                    if full != range {
+                        extended_spline_range = Some(full);
+                    }
+                }
                 (pcurve, range, range)
             }
             0x1d => {
@@ -561,7 +571,11 @@ where
                     sphere.radius.get(),
                 )?;
                 sphere_circle = Some(circle);
-                (circle.fit(circle.range)?, circle.range, circle.range)
+                (
+                    circle.fit(circle.range)?,
+                    circle.range,
+                    circle.native_range()?,
+                )
             }
             _ => return None,
         };
@@ -586,11 +600,18 @@ where
         let selectors = [node.start_parameter_ref, node.end_parameter_ref];
         let spline_range = knots
             .as_ref()
-            .and_then(|knots| Some([*knots.first()?, *knots.last()?]));
+            .and_then(|knots| Some([*knots.first()?, *knots.last()?]))
+            .or(extended_spline_range);
         let mapped = (|| {
             let map = resolve_edge(0, node.curve_ref)?;
-            let (range, affine) =
+            let (mut range, affine) =
                 stations::mapped_range(self.bytes, self.records, map, p, &self.resolve)?;
+            if let Some(circle) = sphere_circle {
+                range = range.map(|t| circle.chart_station(t));
+                if range[0] > range[1] {
+                    range.reverse();
+                }
+            }
             if matches!(pcurve, PcurveGeometry::Line(_)) {
                 let mut range =
                     range.map(|t| (t - source_range[0]) / (source_range[1] - source_range[0]));
@@ -599,7 +620,8 @@ where
                 }
                 return Some((range, affine));
             }
-            let [lo, hi] = spline_range.unwrap_or(source_range);
+            let chart_range = sphere_circle.map_or(source_range, |circle| circle.range);
+            let [lo, hi] = spline_range.unwrap_or(chart_range);
             if range[0] < lo - CHART_SLACK || range[1] > hi + CHART_SLACK {
                 return None;
             }
@@ -724,6 +746,10 @@ where
                 Some(t)
             }
         });
+        if let Some(circle) = sphere_circle {
+            stations = stations.map(|t| t.map(|t| circle.chart_station(t)));
+            primary_stations = primary_stations.map(|t| t.map(|t| circle.chart_station(t)));
+        }
         if domain.line {
             let [lo, hi] = stations
                 .into_iter()
@@ -2030,6 +2056,7 @@ fn fit_ring(
 mod tests {
     use super::{line_at, ring_tail, RingBounds, RingTail};
 
+    mod carriers;
     mod recovery;
     mod roster_priority;
 

@@ -10,13 +10,17 @@ use super::{
 };
 use crate::document::CadIr;
 use crate::examples::unit_cube;
+use crate::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+use crate::geometry::nurbs::NurbsSurface;
+use crate::geometry::pcurve::{Pcurve, PcurveGeometry, PcurveMetadata};
+use crate::geometry::procedural_curves::{
+    DirectedParameterRange, ProceduralCurveDefinition, SupportPcurve,
+};
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use crate::geometry::surface_curves::SurfaceCurveFamily;
 use crate::geometry::{
-    nurbs::NurbsSurface,
-    pcurve::{Pcurve, PcurveGeometry, PcurveMetadata},
-    Curve, CurveGeometry, DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide,
-    ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, SupportPcurve, Surface, SurfaceCurveFamily,
-    SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use crate::math::{Point2, Point3, Vector3};
@@ -121,7 +125,7 @@ macro_rules! procedural_surface {
         let mut definition = $definition;
         definition
             .set_legacy_cache($cache_fit_tolerance.map(|value: f64| {
-                crate::geometry::LegacyCache::try_new(value)
+                crate::geometry::legacy_cache::LegacyCache::try_new(value)
                     .expect("admissible fit tolerance fixture")
             }))
             .expect("valid procedural surface cache fixture");
@@ -140,7 +144,7 @@ macro_rules! procedural_curve {
         match cache_fit_tolerance {
             Some(value) => definition
                 .set_legacy_cache(
-                    crate::geometry::LegacyCache::try_new(value)
+                    crate::geometry::legacy_cache::LegacyCache::try_new(value)
                         .expect("admissible fit tolerance fixture"),
                 )
                 .expect("valid procedural curve cache fixture"),
@@ -261,7 +265,7 @@ fn mapped_surface_offset() -> CadIr {
             false,
             [[0.0, 1.0], [0.0, 1.0]],
             (base, [2.0, 3.0], [Some(2.0), Some(3.0)]),
-            crate::geometry::CacheContract::from_form(None),
+            crate::geometry::legacy_cache::CacheContract::from_form(None),
             25.0,
             [0.0, 1.0],
         )
@@ -480,10 +484,10 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
                     definition_payload.base_range().endpoints(),
                     [None, None],
                 ),
-                crate::geometry::CacheContract::from_form(
+                crate::geometry::legacy_cache::CacheContract::from_form(
                     definition_payload
                         .cache_first()
-                        .map(crate::geometry::CacheFirstCurveForm::to_raw),
+                        .map(crate::geometry::surface_curves::CacheFirstCurveForm::to_raw),
                 ),
                 definition_payload.distance().get(),
                 [
@@ -636,7 +640,7 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
                 replacement,
                 previous
                     .fit_tolerance()
-                    .map(crate::geometry::FitTolerance::get),
+                    .map(crate::geometry::legacy_cache::FitTolerance::get),
             )
         })
     }
@@ -941,7 +945,7 @@ fn procedural_surface_carrier_requires_its_exact_owner() {
     };
     ir.geometry.procedural_surfaces.push(procedural_surface! {
         id: construction.clone(),
-        definition: ProceduralSurfaceDefinition::Exact(crate::geometry::surface_payloads::ExactSurfacePayload::try_new(crate::geometry::ExactSpline::Legacy {
+        definition: ProceduralSurfaceDefinition::Exact(crate::geometry::surface_payloads::ExactSurfacePayload::try_new(crate::geometry::procedural_surfaces::ExactSpline::Legacy {
                 ranges: [[0.0, 1.0], [0.0, 1.0]],
                 extension: 0,
     cache: None,
@@ -979,7 +983,7 @@ fn procedural_curve_carrier_requires_its_exact_owner() {
     };
     ir.geometry.procedural_curves.push(procedural_curve! {
         id: construction.clone(),
-        definition: ProceduralCurveDefinition::Helix(crate::geometry::HelixCurveConstruction::try_new([0.0, std::f64::consts::TAU], crate::geometry::HelixFrame { center: Point3::new(0.0, 0.0, 0.0), major: Vector3::new(1.0, 0.0, 0.0), minor: Vector3::new(0.0, 1.0, 0.0), pitch: Vector3::new(0.0, 0.0, 1.0), axis: Vector3::new(0.0, 0.0, 1.0) }, 0.0, None).unwrap()),
+        definition: ProceduralCurveDefinition::Helix(crate::geometry::helix::HelixCurveConstruction::try_new([0.0, std::f64::consts::TAU], crate::geometry::helix::HelixFrame { center: Point3::new(0.0, 0.0, 0.0), major: Vector3::new(1.0, 0.0, 0.0), minor: Vector3::new(0.0, 1.0, 0.0), pitch: Vector3::new(0.0, 0.0, 1.0), axis: Vector3::new(0.0, 0.0, 1.0) }, 0.0, None).unwrap()),
         cache_fit_tolerance: None,
     });
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
@@ -1098,7 +1102,7 @@ fn edge_endpoint_mismatch_is_flagged() {
     let procedural = procedural_curve! {
         id: ProceduralCurveId::mint("synthetic:cube:curve-cache#0").expect("valid identity"),
         definition: ProceduralCurveDefinition::Intersection {
-            context: crate::geometry::IntcurveSupportContext::try_new(std::array::from_fn(|_| crate::geometry::IntcurveSupportSide {
+            context: crate::geometry::intersection_curves::IntcurveSupportContext::try_new(std::array::from_fn(|_| crate::geometry::intersection_curves::IntcurveSupportSide {
                     surface: None,
                     pcurve: None,
                 }), ir.geometry.edges[0].param_range().expect("cube edge range").get(), std::array::from_fn(|_| Vec::new())).unwrap(),
@@ -1161,7 +1165,9 @@ fn pcurve_surface_mismatch_is_flagged() {
             metadata: PcurveMetadata::general(
                 None,
                 None,
-                fit_tolerance.map(|value| crate::geometry::FitTolerance::try_new(value).unwrap()),
+                fit_tolerance.map(|value| {
+                    crate::geometry::legacy_cache::FitTolerance::try_new(value).unwrap()
+                }),
             ),
             native_ref: None,
         });
@@ -1266,7 +1272,7 @@ fn pcurve_surface_mismatch_is_flagged() {
         .expect("coedge owner face");
     let construction = procedural_surface! {
     id: ProceduralSurfaceId::mint("synthetic:cube:procedural-surface#0").expect("valid identity"),
-    definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(procedural.geometry.curves[0].id.clone(), (crate::features::geometry::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS), [0.0, std::f64::consts::TAU], None, Some([0.0, 1.0]), false, crate::geometry::CacheContract::from_form(None)).unwrap()),
+    definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(procedural.geometry.curves[0].id.clone(), (crate::features::geometry::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS), [0.0, std::f64::consts::TAU], None, Some([0.0, 1.0]), false, crate::geometry::legacy_cache::CacheContract::from_form(None)).unwrap()),
         cache_fit_tolerance: Some(0.01),
         record_bounds: None,
     };
@@ -1287,7 +1293,7 @@ fn pcurve_surface_mismatch_is_flagged() {
     procedural.geometry.procedural_surfaces[0].edit_definition(|definition| {
         *definition = ProceduralSurfaceDefinition::Exact(
             crate::geometry::surface_payloads::ExactSurfacePayload::try_new(
-                crate::geometry::ExactSpline::Legacy {
+                crate::geometry::procedural_surfaces::ExactSpline::Legacy {
                     ranges: [[0.0, 1.0], [0.0, 1.0]],
                     extension: 0,
                     cache: None,
@@ -1342,7 +1348,9 @@ fn pcurve_surface_mismatch_is_flagged() {
         pcurve: crate::ids::PcurveId::mint("synthetic:cube:pcurve#negative")
             .expect("valid identity"),
         isoparametric: None,
-        parameter_range: Some(crate::geometry::DirectedParameterRange::new([-10.0, 0.0]).unwrap()),
+        parameter_range: Some(
+            crate::geometry::procedural_curves::DirectedParameterRange::new([-10.0, 0.0]).unwrap(),
+        ),
     }];
     let ranged_coedge_id = coedge.id.clone();
     let negative = validate_neutral(&negative_parameterization, Vec::new())
@@ -1363,8 +1371,9 @@ fn pcurve_surface_mismatch_is_flagged() {
         .find(|coedge| coedge.id == ranged_coedge_id)
         .expect("ranged coedge")
         .pcurves[0];
-    pcurve_use.parameter_range =
-        Some(crate::geometry::DirectedParameterRange::new([-11.0, 0.0]).unwrap());
+    pcurve_use.parameter_range = Some(
+        crate::geometry::procedural_curves::DirectedParameterRange::new([-11.0, 0.0]).unwrap(),
+    );
     let invalid_range = validate_neutral(&negative_parameterization, Vec::new())
         .expect("validate the neutral model");
     assert!(invalid_range.findings.iter().any(|finding| {
