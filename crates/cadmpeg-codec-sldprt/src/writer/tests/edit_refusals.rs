@@ -228,20 +228,20 @@ fn a_bare_number_dimension_bound_to_a_scalar_is_written() {
     assert!((length(parameter) - value).abs() <= 1.0e-9, "{parameter:?}");
 }
 
-/// Renames the first hole and writes; the hole's stored record is written
-/// with the new name, and nothing is reported unwritten.
-fn rename_hole(source: &DecodeResult) {
+/// Renames the first feature that `selected` accepts and writes; the
+/// feature is written with the new name, and nothing is reported unwritten.
+fn rename_first(source: &DecodeResult, selected: fn(&Feature) -> bool) {
     let mut decoded = EditableDecodeResult::from(source.clone());
     let name = {
         let mut ir = decoded.ir_mut();
-        let hole = ir
+        let feature = ir
             .model
             .features
             .iter_mut()
-            .find(|feature| is_hole(feature))
+            .find(|feature| selected(feature))
             .unwrap();
-        let name = format!("{} renamed", hole.name.as_deref().unwrap());
-        hole.name = Some(name.clone());
+        let name = format!("{} renamed", feature.name.as_deref().unwrap());
+        feature.name = Some(name.clone());
         name
     };
 
@@ -254,21 +254,28 @@ fn rename_hole(source: &DecodeResult) {
         .model
         .features
         .iter()
-        .any(|feature| is_hole(feature) && feature.name.as_deref() == Some(name.as_str())));
+        .any(|feature| selected(feature) && feature.name.as_deref() == Some(name.as_str())));
 }
 
 /// The hole encoder cannot restate every field the decoder states for these
 /// holes; an unedited definition keeps its stored record.
 #[test]
 fn a_hole_the_encoder_cannot_restate_is_renamed() {
-    rename_hole(ftc_06());
+    rename_first(ftc_06(), is_hole);
+}
+
+/// The first extrusion's lane object name is a repeated-class record, away
+/// from its class declaration; it is the one lane name that carries it.
+#[test]
+fn an_extrusion_named_by_a_repeated_class_record_is_renamed() {
+    rename_first(ftc_06(), is_extrusion);
 }
 
 /// The fillets' compact edge selections resolve further than the lane form
 /// the writer rebuilds; an unedited selection is not an edit.
 #[test]
 fn a_rename_beside_decoder_resolved_fillet_edges_is_written() {
-    rename_hole(ftc_08());
+    rename_first(ftc_08(), is_hole);
 }
 
 /// The envelope is regenerated from the source's block container, and a

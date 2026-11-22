@@ -81,6 +81,22 @@ fn synchronize_feature_input_names(
                 }
             }
         }
+        // A later object of the class is a repeated-class record away from
+        // the declaration; it is linked when one lane name carries the name.
+        if matches.is_empty() {
+            matches = native
+                .feature_input_lanes
+                .iter()
+                .enumerate()
+                .flat_map(|(lane_index, lane)| {
+                    lane.names
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, name)| name.value == old_name)
+                        .map(move |(name_index, _)| (lane_index, name_index))
+                })
+                .collect();
+        }
         let [(lane_index, name_index)] = matches.as_slice() else {
             return Err(CodecError::NotImplemented(format!(
                 "SLDPRT feature-input name for {old_name:?} is not uniquely linked"
