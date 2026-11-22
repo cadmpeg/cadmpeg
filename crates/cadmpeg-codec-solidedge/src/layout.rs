@@ -123,3 +123,61 @@ pub(crate) mod type_compact_record {
     /// Offset of `link` (`u16`, little-endian). Spec §3.2.
     pub(crate) const LINK: usize = 18;
 }
+
+/// Byte offsets for the `profile` record.
+///
+/// Spec §5.1. Record length 304 B.
+pub(crate) mod profile {
+    /// Offset of `origin` (`f64[3]`, little-endian). Spec §5.1.
+    pub(crate) const ORIGIN: usize = 26;
+    /// Offset of `normal` (`f64[3]`, little-endian). Spec §5.1.
+    pub(crate) const NORMAL: usize = 50;
+    /// Offset of `x_axis` (`f64[3]`, little-endian). Spec §5.1.
+    pub(crate) const X_AXIS: usize = 74;
+    /// Offset of `profile_2d` (`u32`, little-endian). Spec §5.1.
+    pub(crate) const PROFILE_2D: usize = 127;
+}
+
+/// Byte offsets for the `profile_2d` record.
+///
+/// Spec §5.1. Record length 16 B.
+pub(crate) mod profile_2d {
+    /// Offset of `member_count` (`u32`, little-endian). Spec §5.1.
+    pub(crate) const MEMBER_COUNT: usize = 8;
+    /// Offset of `first_member` (`u32`, little-endian). Spec §5.1.
+    pub(crate) const FIRST_MEMBER: usize = 12;
+}
+
+/// Byte offsets for the `line_2d` record.
+///
+/// Spec §5.2. Record length 42 B.
+pub(crate) mod line_2d {
+    /// Offset of `x0` (`f64`, little-endian). Spec §5.2.
+    pub(crate) const X0: usize = 10;
+    /// Offset of `x1` (`f64`, little-endian). Spec §5.2.
+    pub(crate) const X1: usize = 26;
+}
+
+/// Byte offsets for the `circle_2d` record.
+///
+/// Spec §5.2. Record length 34 B.
+pub(crate) mod circle_2d {
+    /// Offset of `center_x` (`f64`, little-endian). Spec §5.2.
+    pub(crate) const CENTER_X: usize = 10;
+    /// Offset of `radius` (`f64`, little-endian). Spec §5.2.
+    pub(crate) const RADIUS: usize = 26;
+}
+
+/// Byte offsets for the `arc_2d` record.
+///
+/// Spec §5.2. Record length 51 B.
+pub(crate) mod arc_2d {
+    /// Offset of `center_x` (`f64`, little-endian). Spec §5.2.
+    pub(crate) const CENTER_X: usize = 10;
+    /// Offset of `radius` (`f64`, little-endian). Spec §5.2.
+    pub(crate) const RADIUS: usize = 26;
+    /// Offset of `start_angle` (`f64`, little-endian). Spec §5.2.
+    pub(crate) const START_ANGLE: usize = 35;
+    /// Offset of `end_angle` (`f64`, little-endian). Spec §5.2.
+    pub(crate) const END_ANGLE: usize = 43;
+}

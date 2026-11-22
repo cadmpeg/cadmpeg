@@ -13,6 +13,7 @@ mod layout;
 mod loss;
 mod psm;
 mod settings;
+mod sketches;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;

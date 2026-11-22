@@ -229,16 +229,23 @@ fn listed(cluster: &Cluster<'_>, types: &TypeTable, entries: &[u32]) -> Option<V
 /// The function name of a `CLSID_JMPart` object (§4.2): a counted block at
 /// offset 132, then a counted ASCII name ending with one zero byte.
 fn function_name(object: &Object<'_>) -> Option<String> {
+    function_span(object).map(|(name, _)| name)
+}
+
+/// The function name of a `CLSID_JMPart` object and the object offset after
+/// its counted name, including the zero byte (§4.2).
+pub(crate) fn function_span(object: &Object<'_>) -> Option<(String, usize)> {
     let bytes = object.bytes;
     let block = usize::try_from(View::u32_le_at(bytes, FUNCTION_BLOCK_AT)?).ok()?;
     let count_at = FUNCTION_BLOCK_AT.checked_add(4)?.checked_add(block)?;
     let count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
     let start = count_at.checked_add(4)?;
-    let (terminator, name) = bytes.get(start..start.checked_add(count)?)?.split_last()?;
+    let end = start.checked_add(count)?;
+    let (terminator, name) = bytes.get(start..end)?.split_last()?;
     if *terminator != 0 || !name.is_ascii() {
         return None;
     }
-    String::from_utf8(name.to_vec()).ok()
+    Some((String::from_utf8(name.to_vec()).ok()?, end))
 }
 
 /// The operation family of a function name. The families are the decoder's
@@ -284,7 +291,7 @@ fn operation(kind: &Kind) -> Option<(FeatureOperation, Option<String>)> {
     Some((native, Some(name.to_owned())))
 }
 
-fn feature_id(object: u32) -> FeatureId {
+pub(crate) fn feature_id(object: u32) -> FeatureId {
     FeatureId::compose(
         &cadmpeg_ir::identity_namespace!("solidedge", "model", "feature"),
         object,
@@ -436,7 +443,7 @@ pub(crate) fn project<'a>(
     });
     ir.design.containers.push(container);
     ir.design.features.extend(features);
-    Ok(())
+    crate::sketches::project(ctx, &cluster, &types, &listed, ir, losses)
 }
 
 #[cfg(test)]

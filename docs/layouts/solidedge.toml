@@ -331,3 +331,232 @@ anchor = "`u16` value `V` at record offset 18"
 offset = 20
 size = 6
 note = "§3.2 states no field after the value."
+
+[[record]]
+name = "profile"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/sketches.rs"
+section = "5.1"
+anchor = "A `CLSID_JProfile` object stores the sketch frame:"
+size = 304
+
+[[record.gap]]
+offset = 0
+size = 26
+note = "§5.1 states no field before the origin."
+
+[[record.field]]
+name = "origin"
+offset = 26
+type = "f64[3]"
+source = "spec"
+anchor = "| 26 | three `f64`: origin in model space |"
+
+[[record.field]]
+name = "normal"
+offset = 50
+type = "f64[3]"
+source = "spec"
+anchor = "| 50 | three `f64`: vector `A`, the plane normal |"
+
+[[record.field]]
+name = "x_axis"
+offset = 74
+type = "f64[3]"
+source = "spec"
+anchor = "| 74 | three `f64`: vector `B`, the local x axis |"
+
+[[record.gap]]
+offset = 98
+size = 29
+note = "§5.1 states no field between the local x axis and the profile-2d identifier."
+
+[[record.field]]
+name = "profile_2d"
+offset = 127
+type = "u32"
+source = "spec"
+anchor = "| 127 | `u32` identifier of the `CLSID_JProfile2d` object |"
+
+[[record.gap]]
+offset = 131
+size = 161
+note = "§5.1 states no field between the profile-2d identifier and the plane reference."
+
+[[record.field]]
+name = "plane_marker_a"
+offset = 292
+type = "u32"
+value = 0x10
+source = "spec"
+anchor = "| 292 | `u32` `0x10`, `u32` `0x80000000`, `u32` identifier of the plane |"
+
+[[record.field]]
+name = "plane_marker_b"
+offset = 296
+type = "u32"
+value = 0x80000000
+source = "spec"
+anchor = "| 292 | `u32` `0x10`, `u32` `0x80000000`, `u32` identifier of the plane |"
+
+[[record.field]]
+name = "plane"
+offset = 300
+type = "u32"
+source = "spec"
+anchor = "| 292 | `u32` `0x10`, `u32` `0x80000000`, `u32` identifier of the plane |"
+
+[[record]]
+name = "profile_2d"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/sketches.rs"
+section = "5.1"
+anchor = "A `CLSID_JProfile2d` object lists the profile members."
+size = 16
+
+[[record.gap]]
+offset = 0
+size = 8
+note = "§5.1 states no field before the member count."
+
+[[record.field]]
+name = "member_count"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "offset 8 is the member count `n`"
+
+[[record.field]]
+name = "first_member"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "and `n` `u32` member identifiers follow"
+
+[[record]]
+name = "line_2d"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/sketches.rs"
+section = "5.2"
+anchor = "A member of class `CLSID_JLine2d` is a line segment."
+size = 42
+
+[[record.gap]]
+offset = 0
+size = 10
+note = "§5.2 states no field before the start x."
+
+[[record.field]]
+name = "x0"
+offset = 10
+type = "f64"
+source = "spec"
+anchor = "object offsets 10, 18, 26 and 34 are x0, y0, x1 and y1 in the profile"
+
+[[record.field]]
+name = "y0"
+offset = 18
+type = "f64"
+source = "spec"
+anchor = "object offsets 10, 18, 26 and 34 are x0, y0, x1 and y1 in the profile"
+
+[[record.field]]
+name = "x1"
+offset = 26
+type = "f64"
+source = "spec"
+anchor = "object offsets 10, 18, 26 and 34 are x0, y0, x1 and y1 in the profile"
+
+[[record.field]]
+name = "y1"
+offset = 34
+type = "f64"
+source = "spec"
+anchor = "object offsets 10, 18, 26 and 34 are x0, y0, x1 and y1 in the profile"
+
+[[record]]
+name = "circle_2d"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/sketches.rs"
+section = "5.2"
+anchor = "A member of class `CLSID_JCircle2d` is a full circle."
+size = 34
+
+[[record.gap]]
+offset = 0
+size = 10
+note = "§5.2 states no field before the centre x."
+
+[[record.field]]
+name = "center_x"
+offset = 10
+type = "f64"
+source = "spec"
+anchor = "object offsets 10 and 18 are the centre x and y in the profile frame"
+
+[[record.field]]
+name = "center_y"
+offset = 18
+type = "f64"
+source = "spec"
+anchor = "object offsets 10 and 18 are the centre x and y in the profile frame"
+
+[[record.field]]
+name = "radius"
+offset = 26
+type = "f64"
+source = "spec"
+anchor = "`f64` at offset 26 is the radius."
+
+[[record]]
+name = "arc_2d"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/sketches.rs"
+section = "5.2"
+anchor = "A member of class `CLSID_JArc2d` is a circular arc."
+size = 51
+
+[[record.gap]]
+offset = 0
+size = 10
+note = "§5.2 states no field before the centre x."
+
+[[record.field]]
+name = "center_x"
+offset = 10
+type = "f64"
+source = "spec"
+anchor = "object offsets 10, 18 and 26 are the centre x, y and the radius."
+
+[[record.field]]
+name = "center_y"
+offset = 18
+type = "f64"
+source = "spec"
+anchor = "object offsets 10, 18 and 26 are the centre x, y and the radius."
+
+[[record.field]]
+name = "radius"
+offset = 26
+type = "f64"
+source = "spec"
+anchor = "object offsets 10, 18 and 26 are the centre x, y and the radius."
+
+[[record.gap]]
+offset = 34
+size = 1
+note = "§5.2 states no field between the radius and the start angle."
+
+[[record.field]]
+name = "start_angle"
+offset = 35
+type = "f64"
+source = "spec"
+anchor = "offsets 35 and 43 are the start and end angles, measured from the local x"
+
+[[record.field]]
+name = "end_angle"
+offset = 43
+type = "f64"
+source = "spec"
+anchor = "offsets 35 and 43 are the start and end angles, measured from the local x"
