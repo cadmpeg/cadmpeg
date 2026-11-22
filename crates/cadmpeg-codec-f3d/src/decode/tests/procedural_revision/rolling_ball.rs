@@ -16,7 +16,8 @@ use std::io::Cursor;
 
 #[test]
 fn decode_retains_generated_rolling_ball_definition() {
-    use cadmpeg_ir::geometry::{BlendCrossSection, BlendRadiusLaw, ProceduralSurfaceDefinition};
+    use cadmpeg_ir::geometry::blends::{BlendCrossSection, BlendRadiusLaw};
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     let f3d = f3d_with_smbh(&synthetic_rb_blend_spl_sur_smbh());
     let result = F3dCodec
@@ -27,7 +28,7 @@ fn decode_retains_generated_rolling_ball_definition() {
     assert_eq!(
         procedural
             .cache_fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         Some(0.01)
     );
     let ProceduralSurfaceDefinition::Blend(definition_payload) = procedural.definition() else {
@@ -62,9 +63,11 @@ fn decode_retains_generated_rolling_ball_definition() {
 
 #[test]
 fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
+    use cadmpeg_ir::geometry::blends::BlendRadiusLaw;
+    use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     use cadmpeg_ir::geometry::{
-        nurbs::NurbsCurve, BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition,
-        SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+        CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -114,10 +117,10 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
                     edited_spine,
                     edited_radius,
                     definition_payload.cross_section().clone(),
-                    cadmpeg_ir::geometry::CacheContract::from_form(
+                    cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(
                         definition_payload
                             .native()
-                            .map(cadmpeg_ir::geometry::RollingBallConstruction::to_raw)
+                            .map(cadmpeg_ir::geometry::blends::RollingBallConstruction::to_raw)
                             .map(Box::new),
                     ),
                 )
@@ -210,7 +213,7 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
 
 #[test]
 fn generated_rolling_ball_surface_aliases_decode_and_write_canonically() {
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     for name in ["rbblnsur", "pipe_spl_sur", "pipesur"] {
         let bytes =
@@ -251,7 +254,8 @@ fn generated_rolling_ball_surface_aliases_decode_and_write_canonically() {
 
 #[test]
 fn generated_f3d_rewrites_rolling_ball_radius_law() {
-    use cadmpeg_ir::geometry::{BlendRadiusLaw, ProceduralSurfaceDefinition};
+    use cadmpeg_ir::geometry::blends::BlendRadiusLaw;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     let source = f3d_with_smbh(&synthetic_rb_blend_spl_sur_smbh());
     let decoded = F3dCodec
@@ -272,10 +276,10 @@ fn generated_f3d_rewrites_rolling_ball_radius_law() {
             definition_payload.spine().clone(),
             edited_radius,
             definition_payload.cross_section().clone(),
-            cadmpeg_ir::geometry::CacheContract::from_form(
+            cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(
                 definition_payload
                     .native()
-                    .map(cadmpeg_ir::geometry::RollingBallConstruction::to_raw)
+                    .map(cadmpeg_ir::geometry::blends::RollingBallConstruction::to_raw)
                     .map(Box::new),
             ),
         )
@@ -303,7 +307,7 @@ fn generated_f3d_rewrites_rolling_ball_radius_law() {
 
 #[test]
 fn generated_f3d_rewrites_rolling_ball_spine_cache() {
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     let source = f3d_with_smbh(&synthetic_rb_blend_spl_sur_smbh());
     let decoded = F3dCodec
@@ -360,7 +364,7 @@ fn generated_f3d_rewrites_rolling_ball_spine_cache() {
 
 #[test]
 fn generated_f3d_rewrites_rolling_ball_support_cache() {
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     let source = f3d_with_smbh(&synthetic_rb_blend_spl_sur_smbh());
     let decoded = F3dCodec

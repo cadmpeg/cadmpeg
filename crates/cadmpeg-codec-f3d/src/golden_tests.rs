@@ -1045,7 +1045,7 @@ fn golden_fixtures_match_builders() {
 #[test]
 fn the_deleted_wire_keys_are_refused_at_the_level_they_were_deleted_from() {
     use cadmpeg_ir::features::FeatureDefinition;
-    use cadmpeg_ir::geometry::VectorOffsetRoles;
+    use cadmpeg_ir::geometry::procedural_curves::VectorOffsetRoles;
 
     let decoded = F3dCodec
         .decode(

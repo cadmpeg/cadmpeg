@@ -366,8 +366,10 @@ Payload kind is determined from **decompressed bytes**, not from `type_id`.
 | nested compressed member → `PS 00 00`           | nested Parasolid            |
 | `uoTempBodyTessData_c` / `uoTempFaceTessData_c` | tessellation / DisplayLists |
 | `ff ff 01 00`                                   | SW Objects                  |
-| `<?xml` / UTF-16LE BOM+XML / byte0 `86`+XML     | XML                         |
+| `<?xml` / UTF-16LE BOM+XML / byte0 `86`+XML / byte0 `85`+`<?xml` | XML       |
 | `unqlite`                                       | UnQLite database            |
+
+An XML payload stores its text as UTF-8, as UTF-16LE after the BOM `ff fe`, or as UTF-8 after one lead byte `85` or `86`. The `swXmlContents/KeyWords` section and a compound-file `KeyWords__ZLB` stream hold the Keywords feature history, a `Keywords` root element. Its first child element can be an `Application` element whose `Keyword` children each hold a `Name` attribute and a text value (CM-18).
 
 PNG preview dimensions and encoding fields are in `IHDR`. BMP thumbnail width, height, planes, bit depth, compression, and image size are in the 40-byte BITMAPINFOHEADER after the leading file-size word. The `swSolidWorks` XML root carries version, creation time, and path; its `swModel` child carries model and configuration names.
 

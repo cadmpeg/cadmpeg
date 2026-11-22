@@ -57,8 +57,10 @@ fn rectangular_trimmed_surface_preserves_basis_ranges_and_senses() {
         })
         .expect("trimmed surface construction");
     assert!(match procedural.definition() {
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset(matched_payload) =>
-            matches!((matched_payload.support(), &matched_payload.parameter_ranges().map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints), matched_payload.u_sense(), matched_payload.v_sense(),), (support, [[3.0, 1.0], [4.0, 2.0]], Some(false), Some(false),) if support.as_str() == "step:data:surface#7"),
+        cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Subset(
+            matched_payload,
+        ) =>
+            matches!((matched_payload.support(), &matched_payload.parameter_ranges().map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints), matched_payload.u_sense(), matched_payload.v_sense(),), (support, [[3.0, 1.0], [4.0, 2.0]], Some(false), Some(false),) if support.as_str() == "step:data:surface#7"),
         _ => false,
     });
     let index = ModelIndex::build(decoded.ir());
@@ -120,11 +122,13 @@ fn rectangular_trimmed_surface_preserves_basis_ranges_and_senses() {
         .procedural_surfaces
         .iter()
         .find(|surface| match surface.definition() {
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset(matched_payload) => matches!(
+            cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Subset(
+                matched_payload,
+            ) => matches!(
                 (
-                    &matched_payload
-                        .parameter_ranges()
-                        .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
+                    &matched_payload.parameter_ranges().map(
+                        cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints
+                    ),
                     matched_payload.u_sense(),
                     matched_payload.v_sense(),
                 ),
@@ -134,11 +138,13 @@ fn rectangular_trimmed_surface_preserves_basis_ranges_and_senses() {
         })
         .expect("round-trip trimmed surface construction");
     assert!(match round_trip.definition() {
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset(matched_payload) => matches!(
+        cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Subset(
+            matched_payload,
+        ) => matches!(
             (
-                &matched_payload
-                    .parameter_ranges()
-                    .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
+                &matched_payload.parameter_ranges().map(
+                    cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints
+                ),
                 matched_payload.u_sense(),
                 matched_payload.v_sense(),
             ),
@@ -174,8 +180,9 @@ fn rectangular_trimmed_surface_unwraps_cyclic_basis_parameters() {
                 == Some("step:data:surface#6")
         })
         .expect("cyclic trimmed surface construction");
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset(definition_payload_0) =
-        construction.definition()
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Subset(
+        definition_payload_0,
+    ) = construction.definition()
     else {
         panic!(
             "unexpected cyclic trimmed definition: {:?}",
@@ -184,7 +191,7 @@ fn rectangular_trimmed_surface_unwraps_cyclic_basis_parameters() {
     };
     let parameter_ranges = definition_payload_0
         .parameter_ranges()
-        .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints);
+        .map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints);
     let Some(true) = definition_payload_0.u_sense() else {
         panic!(
             "unexpected cyclic trimmed definition: {:?}",
@@ -245,7 +252,7 @@ fn rectangular_trimmed_surface_shifts_a_wide_finite_nurbs_seam() {
                 == Some("step:data:surface#6")
         })
         .expect("wide trimmed surface construction");
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset(payload) =
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Subset(payload) =
         construction.definition()
     else {
         panic!("wide trim is not a subset surface");
@@ -253,7 +260,7 @@ fn rectangular_trimmed_surface_shifts_a_wide_finite_nurbs_seam() {
     assert_eq!(
         payload
             .parameter_ranges()
-            .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
+            .map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints),
         [[half, max], [0.0, 1.0]]
     );
 }
@@ -315,8 +322,10 @@ fn rectangular_trimmed_surface_unwraps_both_periodic_directions_and_senses() {
             })
             .expect("periodic trimmed surface construction");
         assert!(match construction.definition() {
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset(matched_payload) =>
-                matches!((&matched_payload.parameter_ranges().map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints), matched_payload.u_sense(), matched_payload.v_sense(),), (parameter_ranges, Some(u_sense), Some(v_sense),) if parameter_ranges
+            cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Subset(
+                matched_payload,
+            ) =>
+                matches!((&matched_payload.parameter_ranges().map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints), matched_payload.u_sense(), matched_payload.v_sense(),), (parameter_ranges, Some(u_sense), Some(v_sense),) if parameter_ranges
                 .iter()
                 .flatten()
                 .zip(expected_ranges.iter().flatten())
@@ -357,8 +366,10 @@ fn rectangular_trimmed_surface_keeps_topology_pcurves_in_local_uv_space() {
         })
         .expect("trimmed face construction");
     assert!(match construction.definition() {
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset(matched_payload) =>
-            matches!((matched_payload.support(), &matched_payload.parameter_ranges().map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints), matched_payload.u_sense(), matched_payload.v_sense(),), (support, [[0.0, 10.0], [0.0, 10.0]], Some(true), Some(true),) if support.as_str() == "step:data:surface#58"),
+        cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Subset(
+            matched_payload,
+        ) =>
+            matches!((matched_payload.support(), &matched_payload.parameter_ranges().map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints), matched_payload.u_sense(), matched_payload.v_sense(),), (support, [[0.0, 10.0], [0.0, 10.0]], Some(true), Some(true),) if support.as_str() == "step:data:surface#58"),
         _ => false,
     });
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
@@ -412,7 +423,7 @@ fn line_numeric_trim_uses_vector_magnitude_and_length_unit() {
         .geometry
         .procedural_curves
         .iter()
-        .any(|curve| match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((&matched_payload.parameter_range().endpoints(),), ([start, end],) if (start - 2.0).abs() < 1.0e-12 && (end - 2.0).abs() < 1.0e-12), _ => false }));
+        .any(|curve| match curve.definition() { cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Subset(matched_payload) => matches!((&matched_payload.parameter_range().endpoints(),), ([start, end],) if (start - 2.0).abs() < 1.0e-12 && (end - 2.0).abs() < 1.0e-12), _ => false }));
 }
 
 #[test]
@@ -435,9 +446,9 @@ fn trimmed_curve_prefers_the_parameter_value_under_parameter_master() {
         .procedural_curves
         .iter()
         .find_map(|curve| match curve.definition() {
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(definition_payload_0)
-                if curve.id.as_str() == "step:construction:trimmed_curve#40" =>
-            {
+            cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Subset(
+                definition_payload_0,
+            ) if curve.id.as_str() == "step:construction:trimmed_curve#40" => {
                 let parameter_range = definition_payload_0.parameter_range();
                 {
                     Some(*parameter_range)
@@ -475,9 +486,9 @@ fn trimmed_curve_prefers_the_point_under_cartesian_master() {
         .procedural_curves
         .iter()
         .find_map(|curve| match curve.definition() {
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(definition_payload_0)
-                if curve.id.as_str() == "step:construction:trimmed_curve#40" =>
-            {
+            cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Subset(
+                definition_payload_0,
+            ) if curve.id.as_str() == "step:construction:trimmed_curve#40" => {
                 let parameter_range = definition_payload_0.parameter_range();
                 {
                     Some(*parameter_range)
@@ -516,9 +527,9 @@ fn trimmed_curve_opposed_sense_retains_the_periodic_branch() {
         .procedural_curves
         .iter()
         .find_map(|curve| match curve.definition() {
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(definition_payload_0)
-                if curve.id.as_str() == "step:construction:trimmed_curve#40" =>
-            {
+            cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Subset(
+                definition_payload_0,
+            ) if curve.id.as_str() == "step:construction:trimmed_curve#40" => {
                 let parameter_range = definition_payload_0.parameter_range();
                 {
                     Some(*parameter_range)
@@ -530,7 +541,7 @@ fn trimmed_curve_opposed_sense_retains_the_periodic_branch() {
     assert!((parameter_range.endpoints()[0] - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
     assert!((parameter_range.endpoints()[1] - std::f64::consts::TAU).abs() < 1.0e-12);
     assert!(result.ir().geometry.procedural_curves.iter().any(|curve| {
-        match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((matched_payload.sense(),), (sense,) if curve.id.as_str() == "step:construction:trimmed_curve#40" && !sense), _ => false }
+        match curve.definition() { cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Subset(matched_payload) => matches!((matched_payload.sense(),), (sense,) if curve.id.as_str() == "step:construction:trimmed_curve#40" && !sense), _ => false }
     }));
     let mut output = Vec::new();
     write_step(
@@ -565,9 +576,9 @@ fn trimmed_curve_forward_sense_wraps_a_closed_basis() {
         .procedural_curves
         .iter()
         .find_map(|curve| match curve.definition() {
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(definition_payload_0)
-                if curve.id.as_str() == "step:construction:trimmed_curve#40" =>
-            {
+            cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Subset(
+                definition_payload_0,
+            ) if curve.id.as_str() == "step:construction:trimmed_curve#40" => {
                 let parameter_range = definition_payload_0.parameter_range();
                 {
                     Some(*parameter_range)

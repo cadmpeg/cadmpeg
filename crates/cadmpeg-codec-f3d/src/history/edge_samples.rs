@@ -82,7 +82,8 @@ fn helix_sample(
     let Some((_, definition)) = definitions.next().filter(|_| definitions.next().is_none()) else {
         return Ok(None);
     };
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix) = definition.definition()
+    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Helix(helix) =
+        definition.definition()
     else {
         return Ok(None);
     };
@@ -293,10 +294,9 @@ mod tests {
 
     #[test]
     fn cacheless_helix_samples_use_the_stored_edge_interval() {
-        use cadmpeg_ir::geometry::{
-            Curve, CurveGeometry, HelixCurveConstruction, HelixFrame, ProceduralCurve,
-            ProceduralCurveDefinition,
-        };
+        use cadmpeg_ir::geometry::helix::{HelixCurveConstruction, HelixFrame};
+        use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+        use cadmpeg_ir::geometry::{Curve, CurveGeometry, ProceduralCurve};
         use cadmpeg_ir::ids::{CurveId, EdgeId, ProceduralCurveId, VertexId};
         use cadmpeg_ir::math::Vector3;
         use cadmpeg_ir::topology::{Edge, EdgeCarrier};

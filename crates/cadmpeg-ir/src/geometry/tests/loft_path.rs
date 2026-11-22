@@ -2,7 +2,7 @@
 //! The loft path carries its endpoints inside the path curve object, so
 //! endpoints without a curve have no wire form.
 
-use crate::geometry::{LoftPath, LoftPathCurve};
+use crate::geometry::lofts::{LoftPath, LoftPathCurve};
 use crate::ids::CurveId;
 
 fn curve_id() -> CurveId {
