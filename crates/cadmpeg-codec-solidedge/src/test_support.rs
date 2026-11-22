@@ -577,3 +577,207 @@ pub(crate) fn feature_document(features: &[Feature<'_>]) -> Vec<u8> {
         ("PSMtypetable", type_table(&classes, &[])),
     ])
 }
+
+/// A member of a synthetic profile.
+pub(crate) enum Member2d {
+    /// A line from (x0, y0) to (x1, y1).
+    Line([f64; 4]),
+    /// A circle by centre x, y and radius.
+    Circle([f64; 3]),
+    /// An arc by centre x, y, radius, start angle and end angle.
+    Arc([f64; 5]),
+    /// A keypoint.
+    Keypoint,
+    /// A constraint.
+    Constraint,
+}
+
+/// The frame of a synthetic profile: origin, normal `A` and x axis `B`.
+pub(crate) struct ProfileFrame {
+    pub(crate) origin: [f64; 3],
+    pub(crate) normal: [f64; 3],
+    pub(crate) x_axis: [f64; 3],
+}
+
+fn put_reals(body: &mut [u8], at: usize, values: &[f64]) {
+    // `at` is an object offset and `body` starts after the 8-byte frame.
+    for (index, value) in values.iter().enumerate() {
+        let start = at - 8 + index * 8;
+        body[start..start + 8].copy_from_slice(&value.to_le_bytes());
+    }
+}
+
+fn put_words(body: &mut [u8], at: usize, values: &[u32]) {
+    for (index, value) in values.iter().enumerate() {
+        let start = at - 8 + index * 4;
+        body[start..start + 4].copy_from_slice(&value.to_le_bytes());
+    }
+}
+
+/// The bytes after the frame of a `CLSID_JProfile` object.
+pub(crate) fn profile_body(frame: &ProfileFrame, members: u32, plane: u32) -> Vec<u8> {
+    let mut body = vec![0_u8; 304 - 8];
+    put_reals(&mut body, 26, &frame.origin);
+    put_reals(&mut body, 50, &frame.normal);
+    put_reals(&mut body, 74, &frame.x_axis);
+    put_words(&mut body, 127, &[members]);
+    put_words(&mut body, 292, &[0x10, 0x8000_0000, plane]);
+    body
+}
+
+/// The bytes after the frame of a `CLSID_JProfile2d` object.
+pub(crate) fn profile_2d_body(members: &[u32]) -> Vec<u8> {
+    let mut body = Vec::new();
+    body.extend_from_slice(&u32::try_from(members.len()).unwrap().to_le_bytes());
+    for id in members {
+        body.extend_from_slice(&id.to_le_bytes());
+    }
+    body
+}
+
+/// The bytes after the frame of a `CLSID_JMPart` object whose function block
+/// stores `profile` at the offset after the function name that `after` gives.
+pub(crate) fn part_body_with_profile(function: &str, after: usize, profile: u32) -> Vec<u8> {
+    let mut body = part_body(function);
+    // The stored profile identifier is `after` bytes past the name's end.
+    body.resize(body.len() + after, 0);
+    body.extend_from_slice(&profile.to_le_bytes());
+    body
+}
+
+/// The cluster objects of a profile group `set`, `set + 1`, `set + 2`, with the
+/// member objects `first_member`, `first_member + 1`, ... Forms are declaration
+/// indices of [`SKETCH_CLASSES`].
+pub(crate) fn profile_group(
+    set: u32,
+    frame: &ProfileFrame,
+    plane: u32,
+    first_member: u32,
+    members: &[Member2d],
+) -> Vec<Object> {
+    let mut objects = vec![
+        Object {
+            id: set,
+            form: 5,
+            flags: 0,
+            body: vec![0; 8],
+        },
+        Object {
+            id: set + 1,
+            form: 6,
+            flags: 0,
+            body: profile_body(frame, set + 2, plane),
+        },
+    ];
+    let mut ids = Vec::new();
+    let mut stored = Vec::new();
+    for (index, member) in members.iter().enumerate() {
+        let id = first_member + u32::try_from(index).unwrap();
+        ids.push(id);
+        let (form, body) = match member {
+            Member2d::Line(values) => (8, curve_body(&values[..], 42)),
+            Member2d::Circle(values) => (9, curve_body(&values[..3], 34)),
+            Member2d::Arc(values) => (10, arc_body(values)),
+            Member2d::Keypoint => (11, vec![0; 8]),
+            Member2d::Constraint => (12, vec![0; 8]),
+        };
+        stored.push(Object {
+            id,
+            form,
+            flags: 0,
+            body,
+        });
+    }
+    objects.push(Object {
+        id: set + 2,
+        form: 7,
+        flags: 0,
+        body: profile_2d_body(&ids),
+    });
+    objects.extend(stored);
+    objects
+}
+
+/// A line or circle body: `values` at object offset 10, `size` bytes in all.
+fn curve_body(values: &[f64], size: usize) -> Vec<u8> {
+    let mut body = vec![0_u8; size - 8];
+    put_reals(&mut body, 10, values);
+    body
+}
+
+fn arc_body(values: &[f64; 5]) -> Vec<u8> {
+    let mut body = vec![0_u8; 51 - 8];
+    put_reals(&mut body, 10, &values[..3]);
+    put_reals(&mut body, 35, &values[3..]);
+    body
+}
+
+/// The class names of [`sketch_document`], by form.
+pub(crate) const SKETCH_CLASSES: [&str; 14] = [
+    "ReferencePlaneObject",
+    "CLSID_JMPart",
+    "CLSID_JMGroup",
+    "CLSID_JMPartOwner",
+    "FeatureNavigatorObject",
+    "CLSID_JProfileSet",
+    "CLSID_JProfile",
+    "CLSID_JProfile2d",
+    "CLSID_JLine2d",
+    "CLSID_JCircle2d",
+    "CLSID_JArc2d",
+    "CLSID_JKeyPoint2d",
+    "CLSID_JConstraint2d",
+    "CLSID_JPatternProfile",
+];
+
+/// A document with one base-plane triple, one feature of `function` whose
+/// function block names the object `named` as its profile, and the profile
+/// groups `groups`. The feature is object 10 and the navigator lists it.
+pub(crate) fn sketch_document(
+    function: &str,
+    after: usize,
+    named: u32,
+    groups: Vec<Vec<Object>>,
+) -> Vec<u8> {
+    let mut objects = Vec::new();
+    for id in 1..=3 {
+        objects.push(Object {
+            id,
+            form: 0,
+            flags: 0,
+            body: vec![0; 8],
+        });
+    }
+    objects.push(Object {
+        id: 10,
+        form: 1,
+        flags: 0,
+        body: part_body_with_profile(function, after, named),
+    });
+    objects.push(Object {
+        id: 7,
+        form: 3,
+        flags: 0,
+        body: vec![0; 8],
+    });
+    objects.push(Object {
+        id: 5000,
+        form: 4,
+        flags: 0,
+        body: navigator_body([1, 2, 3], &[10]),
+    });
+    objects.push(Object {
+        id: 300,
+        form: 13,
+        flags: 0,
+        body: vec![0; 8],
+    });
+    objects.extend(groups.into_iter().flatten());
+    objects.sort_by_key(|object| object.id);
+    let (cluster, map) = cluster_and_map(&objects);
+    document(&[
+        ("PSMcluster0", cluster),
+        ("PSMspacemap/0x00000000", map),
+        ("PSMtypetable", type_table(&SKETCH_CLASSES, &[])),
+    ])
+}

@@ -130,3 +130,97 @@ Unstated regions:
 
 - `16..18` (2 B): §3.2 states no field before the value.
 - `20..26` (6 B): §3.2 states no field after the value.
+
+## `profile`
+
+Spec §5.1 · layout: byte offsets · size: 304 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/sketches.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 26 | 24 | `origin` | `f64[3]` | little | spec | \| 26 \| three `f64`: origin in model space \| |
+| 50 | 24 | `normal` | `f64[3]` | little | spec | \| 50 \| three `f64`: vector `A`, the plane normal \| |
+| 74 | 24 | `x_axis` | `f64[3]` | little | spec | \| 74 \| three `f64`: vector `B`, the local x axis \| |
+| 127 | 4 | `profile_2d` | `u32` | little | spec | \| 127 \| `u32` identifier of the `CLSID_JProfile2d` object \| |
+| 292 | 4 | `plane_marker_a` | `u32` | little | spec | \| 292 \| `u32` `0x10`, `u32` `0x80000000`, `u32` identifier of the plane \| · value `16` |
+| 296 | 4 | `plane_marker_b` | `u32` | little | spec | \| 292 \| `u32` `0x10`, `u32` `0x80000000`, `u32` identifier of the plane \| · value `2147483648` |
+| 300 | 4 | `plane` | `u32` | little | spec | \| 292 \| `u32` `0x10`, `u32` `0x80000000`, `u32` identifier of the plane \| |
+
+Unstated regions:
+
+- `0..26` (26 B): §5.1 states no field before the origin.
+- `98..127` (29 B): §5.1 states no field between the local x axis and the profile-2d identifier.
+- `131..292` (161 B): §5.1 states no field between the profile-2d identifier and the plane reference.
+
+## `profile_2d`
+
+Spec §5.1 · layout: byte offsets · size: 16 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/sketches.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 8 | 4 | `member_count` | `u32` | little | spec | offset 8 is the member count `n` |
+| 12 | 4 | `first_member` | `u32` | little | spec | and `n` `u32` member identifiers follow |
+
+Unstated regions:
+
+- `0..8` (8 B): §5.1 states no field before the member count.
+
+## `line_2d`
+
+Spec §5.2 · layout: byte offsets · size: 42 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/sketches.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 10 | 8 | `x0` | `f64` | little | spec | object offsets 10, 18, 26 and 34 are x0, y0, x1 and y1 in the profile |
+| 18 | 8 | `y0` | `f64` | little | spec | object offsets 10, 18, 26 and 34 are x0, y0, x1 and y1 in the profile |
+| 26 | 8 | `x1` | `f64` | little | spec | object offsets 10, 18, 26 and 34 are x0, y0, x1 and y1 in the profile |
+| 34 | 8 | `y1` | `f64` | little | spec | object offsets 10, 18, 26 and 34 are x0, y0, x1 and y1 in the profile |
+
+Unstated regions:
+
+- `0..10` (10 B): §5.2 states no field before the start x.
+
+## `circle_2d`
+
+Spec §5.2 · layout: byte offsets · size: 34 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/sketches.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 10 | 8 | `center_x` | `f64` | little | spec | object offsets 10 and 18 are the centre x and y in the profile frame |
+| 18 | 8 | `center_y` | `f64` | little | spec | object offsets 10 and 18 are the centre x and y in the profile frame |
+| 26 | 8 | `radius` | `f64` | little | spec | `f64` at offset 26 is the radius. |
+
+Unstated regions:
+
+- `0..10` (10 B): §5.2 states no field before the centre x.
+
+## `arc_2d`
+
+Spec §5.2 · layout: byte offsets · size: 51 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/sketches.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 10 | 8 | `center_x` | `f64` | little | spec | object offsets 10, 18 and 26 are the centre x, y and the radius. |
+| 18 | 8 | `center_y` | `f64` | little | spec | object offsets 10, 18 and 26 are the centre x, y and the radius. |
+| 26 | 8 | `radius` | `f64` | little | spec | object offsets 10, 18 and 26 are the centre x, y and the radius. |
+| 35 | 8 | `start_angle` | `f64` | little | spec | offsets 35 and 43 are the start and end angles, measured from the local x |
+| 43 | 8 | `end_angle` | `f64` | little | spec | offsets 35 and 43 are the start and end angles, measured from the local x |
+
+Unstated regions:
+
+- `0..10` (10 B): §5.2 states no field before the centre x.
+- `34..35` (1 B): §5.2 states no field between the radius and the start angle.

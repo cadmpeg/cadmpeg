@@ -21,6 +21,8 @@ pub(crate) enum SolidEdgeLossCode {
     FeatureKindUnknown,
     FeatureRollbackUnread,
     FeatureFolderUnread,
+    SketchUnread,
+    SketchRelationsUnread,
 }
 
 impl SolidEdgeLossCode {
@@ -48,6 +50,10 @@ impl SolidEdgeLossCode {
                 "feature.folder-unread",
                 LossTaxonomy::FeatureHistoryRetained,
             ),
+            Self::SketchUnread => ("sketch.unread", LossTaxonomy::FeatureHistoryRetained),
+            Self::SketchRelationsUnread => {
+                ("sketch.relations-unread", LossTaxonomy::RecordNotTyped)
+            }
             Self::FeatureRollbackUnread => (
                 "feature.rollback-unread",
                 LossTaxonomy::FeatureHistoryRetained,
