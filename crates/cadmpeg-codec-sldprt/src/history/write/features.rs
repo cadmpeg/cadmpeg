@@ -124,11 +124,14 @@ fn generated_feature_source_ids(
     let start = held
         .iter()
         .max()
-        .map_or(crate::writer::native::ids::FIRST_USER, |largest| {
-            largest.saturating_add(1)
+        .map_or(Some(crate::writer::native::ids::FIRST_USER), |largest| {
+            largest.checked_add(1)
         });
-    let mut free = (start..u32::MAX)
-        .chain(1..start)
+    let below = (1..u32::MAX).take_while(|&candidate| start.is_none_or(|start| candidate < start));
+    let mut free = start
+        .into_iter()
+        .flat_map(|start| start..u32::MAX)
+        .chain(below)
         .filter(|candidate| !held.contains(candidate));
     let mut allocated = HashMap::new();
     for feature in features
@@ -839,8 +842,8 @@ mod tests {
             0x00, 0x00, 0xff, 0xfe, 0xff, 0x00, 0x00, 0x00,
         ]);
         resolved.extend(0.02_f64.to_le_bytes());
-        resolved.extend([0x00, 0xff, 0xff, 0x01, 0x00, 0x10, 0x00]);
-        resolved.extend(b"moDimTolerance_c");
+        resolved.extend([0x00, 0xff, 0xff, 0x01, 0x00, 0x09, 0x00]);
+        resolved.extend(b"moAfter_c");
         let mut source = sldprt_with_body(&triangle_body());
         source.extend(make_block(
             0x42,
@@ -865,7 +868,7 @@ mod tests {
             .iter()
             .map(|scalar| scalar.object_id)
             .collect::<Vec<_>>();
-        assert_eq!(parameters, [133, 0x0010_0001]);
+        assert_eq!(parameters, [133, 0x0009_0001]);
 
         let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
         let ordinal = u64::try_from(decoded.ir().model.features.len()).expect("ordinal");
