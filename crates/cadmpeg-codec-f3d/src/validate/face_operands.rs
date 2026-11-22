@@ -390,6 +390,11 @@ pub(super) fn validate_face_operands<'a>(
                                     && operand.recipe_kind
                                         == records::recipes::ConstructionRecipeKind::BoundedFace
                             }
+                            Some(design::DesignFeatureFamily::SheetMetalBend) => {
+                                group.is_some_and(|group| {
+                                    group.role() == DesignOperandRole::ROLE_0X10
+                                })
+                            }
                             Some(design::DesignFeatureFamily::SurfaceTrim) => {
                                 group.is_some_and(|group| {
                                     group.role() == DesignOperandRole::ROLE_0X9

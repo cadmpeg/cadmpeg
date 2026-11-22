@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::decode::snapshot_active_configuration;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::parameters::{ConfigurationEvaluation, DesignConfiguration};
 use cadmpeg_ir::features::patterns::{
@@ -14,7 +13,7 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::scalar::Length;
 use std::collections::BTreeMap;
 
-fn run() -> Result<(), CodecError> {
+fn run() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     let dependency = FeatureId::mint("synthetic:test:id#snapshot-dependency").unwrap();
     let stages = vec![
@@ -101,7 +100,7 @@ fn run() -> Result<(), CodecError> {
         native_ref: None,
     });
     let features = ir.model.features.clone();
-    snapshot_active_configuration(&mut ir)?;
+    snapshot_active_configuration(&mut ir);
     assert_eq!(ir.model.features, features);
     assert_eq!(
         ir.model.configurations[0].feature_states.len(),
@@ -118,10 +117,9 @@ fn run() -> Result<(), CodecError> {
             ConfigurationEvaluation::Active { outputs }
         );
     }
-    Ok(())
 }
 
 #[test]
 fn active_feature_snapshot_copies_feature_states() {
-    run().unwrap();
+    run();
 }
